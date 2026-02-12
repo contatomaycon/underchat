@@ -12,7 +12,7 @@ import QRCode from 'qrcode';
 import P from 'pino';
 import fs from 'node:fs';
 import path from 'node:path';
-import { singleton } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
@@ -89,9 +89,13 @@ export class BaileysConnectionService {
   private userRequestedDisconnect = false;
 
   constructor(
+    @inject(CentrifugoService)
     private readonly centrifugo: CentrifugoService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(BalanceWorkerStatusGrpcClientService)
     private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
+    @inject(BaileysIncomingMessageService)
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService
   ) {}
 

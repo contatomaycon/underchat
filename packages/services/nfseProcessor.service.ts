@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AsaasService } from '@core/services/asaas';
 import { AccountPaymentNfSeUpserterRepository } from '@core/repositories/account/AccountPaymentNfSeUpserter.repository';
 import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';
@@ -6,7 +6,9 @@ import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schem
 @injectable()
 export class NfseProcessorService {
   constructor(
+    @inject(AsaasService)
     private readonly asaasService: AsaasService,
+    @inject(AccountPaymentNfSeUpserterRepository)
     private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository
   ) {}
 

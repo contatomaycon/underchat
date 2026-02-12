@@ -17,7 +17,9 @@ export class PhoneValidationService {
   constructor(
     @inject(WorkerActiveByAccountViewerRepository)
     private readonly workerActiveByAccountViewerRepository: WorkerActiveByAccountViewerRepository,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject('Redis') private readonly redis: Redis
   ) {}

@@ -1,4 +1,4 @@
-import { singleton } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import makeWASocket from '@whiskeysockets/baileys';
 import { BaileysConnectionService } from './methods/connection.service';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -19,7 +19,9 @@ export {
 @singleton()
 export class BaileysService {
   constructor(
+    @inject(BaileysConnectionService)
     private readonly connection: BaileysConnectionService,
+    @inject(BaileysPhoneValidationService)
     private readonly phoneValidationService: BaileysPhoneValidationService
   ) {}
 

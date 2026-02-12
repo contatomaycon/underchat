@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ContactGroupListerRepository } from '@core/repositories/contactGroup/ContactGroupLister.repository';
 import { ListContactGroupRequest } from '@core/schema/contactGroup/listContactGroup/request.schema';
 import { ListContactGroupResponse } from '@core/schema/contactGroup/listContactGroup/response.schema';
@@ -17,12 +17,19 @@ import { ContactGroupUpdaterTransactionRepository } from '@core/repositories/con
 @injectable()
 export class ContactGroupService {
   constructor(
+    @inject(ContactGroupListerRepository)
     private readonly contactGroupListerRepository: ContactGroupListerRepository,
+    @inject(ContactGroupAllListerRepository)
     private readonly contactGroupAllListerRepository: ContactGroupAllListerRepository,
+    @inject(ContactGroupCreatorTransactionRepository)
     private readonly contactGroupCreatorTransactionRepository: ContactGroupCreatorTransactionRepository,
+    @inject(ContactGroupViewerExistsRepository)
     private readonly contactGroupViewerExistsRepository: ContactGroupViewerExistsRepository,
+    @inject(ContactGroupViewerRepository)
     private readonly contactGroupViewerRepository: ContactGroupViewerRepository,
+    @inject(ContactGroupDeleterTransactionRepository)
     private readonly contactGroupDeleterTransactionRepository: ContactGroupDeleterTransactionRepository,
+    @inject(ContactGroupUpdaterTransactionRepository)
     private readonly contactGroupUpdaterTransactionRepository: ContactGroupUpdaterTransactionRepository
   ) {}
 

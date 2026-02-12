@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { NotificationsViewerRepository } from '@core/repositories/notifications/NotificationsViewer.repository';
 import { NotificationsUpserterRepository } from '@core/repositories/notifications/NotificationsUpserter.repository';
 import { NotificationsWorkersListerRepository } from '@core/repositories/notifications/NotificationsWorkersLister.repository';
@@ -10,8 +10,11 @@ import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/resp
 @injectable()
 export class NotificationsService {
   constructor(
+    @inject(NotificationsViewerRepository)
     private readonly notificationsViewerRepository: NotificationsViewerRepository,
+    @inject(NotificationsUpserterRepository)
     private readonly notificationsUpserterRepository: NotificationsUpserterRepository,
+    @inject(NotificationsWorkersListerRepository)
     private readonly notificationsWorkersListerRepository: NotificationsWorkersListerRepository
   ) {}
 

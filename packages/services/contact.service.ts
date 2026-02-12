@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ContactListerRepository } from '@core/repositories/contact/ContactLister.repository';
 import { ListContactRequest } from '@core/schema/contact/listContact/request.schema';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
@@ -40,25 +40,45 @@ import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 @injectable()
 export class ContactService {
   constructor(
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(ContactListerRepository)
     private readonly contactListerRepository: ContactListerRepository,
+    @inject(ContactViewerExistsRepository)
     private readonly contactViewerExistsRepository: ContactViewerExistsRepository,
+    @inject(ContactCreatorRepository)
     private readonly contactCreatorRepository: ContactCreatorRepository,
+    @inject(ContactViewerRepository)
     private readonly contactViewerRepository: ContactViewerRepository,
+    @inject(ContactDeleterRepository)
     private readonly contactDeleterRepository: ContactDeleterRepository,
+    @inject(ContactBulkDeleterRepository)
     private readonly contactBulkDeleterRepository: ContactBulkDeleterRepository,
+    @inject(ContactUpdaterRepository)
     private readonly contactUpdaterRepository: ContactUpdaterRepository,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(ContactSensitiveDataRepository)
     private readonly contactSensitiveDataRepository: ContactSensitiveDataRepository,
+    @inject(ContactExistsByEmailAndPhoneRepository)
     private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository,
+    @inject(ContactUsersListerRepository)
     private readonly contactUsersListerRepository: ContactUsersListerRepository,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ContactLabelTemplateViewerExistsRepository)
     private readonly contactLabelTemplateViewerExistsRepository: ContactLabelTemplateViewerExistsRepository,
+    @inject(ContactLabelTemplateCreatorRepository)
     private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository,
+    @inject(ContactLabelTemplateDeleterRepository)
     private readonly contactLabelTemplateDeleterRepository: ContactLabelTemplateDeleterRepository,
+    @inject(ContactChannelChannelsListerRepository)
     private readonly contactChannelChannelsListerRepository: ContactChannelChannelsListerRepository,
+    @inject(ContactChannelsUpdaterTransactionRepository)
     private readonly contactChannelsUpdaterTransactionRepository: ContactChannelsUpdaterTransactionRepository,
+    @inject(ContactGroupAssignmentCreatorRepository)
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository,
+    @inject(ContactGroupAssignmentViewerExistsRepository)
     private readonly contactGroupAssignmentViewerExistsRepository: ContactGroupAssignmentViewerExistsRepository
   ) {}
 

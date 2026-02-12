@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   MiscMessageGenerationOptions,
   WAMessageKey,
@@ -13,7 +13,9 @@ import { IStatusTextArgs } from '@core/common/interfaces/IStatusTextArgs';
 @injectable()
 export class BaileysMessageStatusStoriesService {
   constructor(
+    @inject(BaileysHelpersService)
     private readonly baileysHelpersService: BaileysHelpersService,
+    @inject(BaileysMessageEditDeleteService)
     private readonly baileysMessageEditDeleteService: BaileysMessageEditDeleteService
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ScheduleListerRepository } from '@core/repositories/schedule/ScheduleLister.repository';
 import { ListScheduleRequest } from '@core/schema/schedule/listSchedule/request.schema';
 import { ListScheduleResponse } from '@core/schema/schedule/listSchedule/response.schema';
@@ -29,17 +29,29 @@ import { onlyDigits } from '@core/common/functions/onlyDigits';
 @injectable()
 export class ScheduleService {
   constructor(
+    @inject(ScheduleListerRepository)
     private readonly scheduleListerRepository: ScheduleListerRepository,
+    @inject(ScheduleCreatorRepository)
     private readonly scheduleCreatorRepository: ScheduleCreatorRepository,
+    @inject(ScheduleViewerExistsRepository)
     private readonly scheduleViewerExistsRepository: ScheduleViewerExistsRepository,
+    @inject(ScheduleViewerRepository)
     private readonly scheduleViewerRepository: ScheduleViewerRepository,
+    @inject(ScheduleDeleterRepository)
     private readonly scheduleDeleterRepository: ScheduleDeleterRepository,
+    @inject(ScheduleUpdaterRepository)
     private readonly scheduleUpdaterRepository: ScheduleUpdaterRepository,
+    @inject(ScheduleWorkersListerRepository)
     private readonly scheduleWorkersListerRepository: ScheduleWorkersListerRepository,
+    @inject(ScheduleChatbotsListerRepository)
     private readonly scheduleChatbotsListerRepository: ScheduleChatbotsListerRepository,
+    @inject(ScheduleContactsListerRepository)
     private readonly scheduleContactsListerRepository: ScheduleContactsListerRepository,
+    @inject(ScheduleContactGroupsListerRepository)
     private readonly scheduleContactGroupsListerRepository: ScheduleContactGroupsListerRepository,
+    @inject(ScheduleMessagesListerRepository)
     private readonly scheduleMessagesListerRepository: ScheduleMessagesListerRepository,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService
   ) {}
 

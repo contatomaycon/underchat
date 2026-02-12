@@ -29,13 +29,21 @@ import Redis from 'ioredis';
 @injectable()
 export class PlanAccountCancellationService {
   constructor(
+    @inject(AsaasService)
     private readonly asaasService: AsaasService,
+    @inject(PlanAccountCancellerRepository)
     private readonly planAccountCancellerRepository: PlanAccountCancellerRepository,
+    @inject(AccountUpdaterRepository)
     private readonly accountUpdaterRepository: AccountUpdaterRepository,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService,
+    @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
+    @inject(PlanAccountReactivatorTransactionRepository)
     private readonly planAccountReactivatorTransactionRepository: PlanAccountReactivatorTransactionRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}

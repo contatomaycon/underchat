@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { LabelTemplateListerRepository } from '@core/repositories/labelTemplate/LabelTemplateLister.repository';
 import { ListLabelTemplateRequest } from '@core/schema/labelTemplate/listLabelTemplate/request.schema';
 import { ListLabelTemplateResponse } from '@core/schema/labelTemplate/listLabelTemplate/response.schema';
@@ -17,13 +17,21 @@ import { ListLabelTemplateAllResponse } from '@core/schema/labelTemplate/listLab
 @injectable()
 export class LabelTemplateService {
   constructor(
+    @inject(LabelTemplateListerRepository)
     private readonly labelTemplateListerRepository: LabelTemplateListerRepository,
+    @inject(LabelStatusViewerExistsRepository)
     private readonly labelStatusViewerExistsRepository: LabelStatusViewerExistsRepository,
+    @inject(LabelTemplateViewerExistsRepository)
     private readonly labelTemplateViewerExistsRepository: LabelTemplateViewerExistsRepository,
+    @inject(LabelTemplateCreatorRepository)
     private readonly labelTemplateCreatorRepository: LabelTemplateCreatorRepository,
+    @inject(LabelTemplateViewerRepository)
     private readonly labelTemplateViewerRepository: LabelTemplateViewerRepository,
+    @inject(LabelTemplateDeleterRepository)
     private readonly labelTemplateDeleterRepository: LabelTemplateDeleterRepository,
+    @inject(LabelTemplateUpdaterRepository)
     private readonly labelTemplateUpdaterRepository: LabelTemplateUpdaterRepository,
+    @inject(LabelTemplateAllListerRepository)
     private readonly labelTemplateAllListerRepository: LabelTemplateAllListerRepository
   ) {}
 

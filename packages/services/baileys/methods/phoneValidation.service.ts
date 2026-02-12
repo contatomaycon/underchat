@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { BaileysConnectionService } from './connection.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
@@ -8,7 +8,10 @@ import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 
 @injectable()
 export class BaileysPhoneValidationService {
-  constructor(private readonly connection: BaileysConnectionService) {}
+  constructor(
+    @inject(BaileysConnectionService)
+    private readonly connection: BaileysConnectionService
+  ) {}
 
   async validatePhone(
     ddi: string,

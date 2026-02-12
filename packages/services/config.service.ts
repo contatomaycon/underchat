@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ChannelsListerRepository } from '@core/repositories/config/ChannelsLister.repository';
 import { ChannelViewerRepository } from '@core/repositories/config/ChannelViewer.repository';
 import { ChannelsStatisticsRepository } from '@core/repositories/config/ChannelsStatistics.repository';
@@ -10,8 +10,11 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 @injectable()
 export class ConfigService {
   constructor(
+    @inject(ChannelsListerRepository)
     private readonly channelsListerRepository: ChannelsListerRepository,
+    @inject(ChannelViewerRepository)
     private readonly channelViewerRepository: ChannelViewerRepository,
+    @inject(ChannelsStatisticsRepository)
     private readonly channelsStatisticsRepository: ChannelsStatisticsRepository
   ) {}
 

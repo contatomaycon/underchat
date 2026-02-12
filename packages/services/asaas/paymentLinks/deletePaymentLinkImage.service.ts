@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import axios from 'axios';
 import { AsaasBaseService } from '../asaasBase.service';
 import { IDeleteAsaasPaymentLinkImageResponse } from '@core/common/interfaces/IAsaasPaymentLink';
@@ -6,7 +6,10 @@ import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class DeletePaymentLinkImageService {
-  constructor(private readonly asaasBaseService: AsaasBaseService) {}
+  constructor(
+    @inject(AsaasBaseService)
+    private readonly asaasBaseService: AsaasBaseService
+  ) {}
 
   deletePaymentLinkImage = async (
     paymentLinkId: string,

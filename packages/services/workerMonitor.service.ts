@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { WorkerService } from './worker.service';
 import { ServerService } from './server.service';
 import { SshService } from './ssh.service';
@@ -36,12 +36,19 @@ export class WorkerMonitorService {
   private readonly activeContinuousChecks = new Set<string>();
 
   constructor(
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(ServerService)
     private readonly serverService: ServerService,
+    @inject(SshService)
     private readonly sshService: SshService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

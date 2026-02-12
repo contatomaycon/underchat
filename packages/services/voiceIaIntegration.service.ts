@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { EVoiceIaType } from '@core/common/enums/EVoiceIaType';
 import { ViewVoiceIaResponse } from '@core/schema/voiceIa/viewVoiceIa/response.schema';
 import {
@@ -12,7 +12,9 @@ import { ConverterService } from './converter';
 @injectable()
 export class VoiceIaIntegrationService {
   constructor(
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ConverterService)
     private readonly converterService: ConverterService
   ) {}
 

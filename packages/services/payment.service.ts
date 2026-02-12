@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UserCustomerRepository } from '@core/repositories/payment/UserCustomer.repository';
 import { AsaasService } from './asaas';
@@ -31,12 +31,19 @@ import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterVi
 @injectable()
 export class PaymentService {
   constructor(
+    @inject(UserCustomerRepository)
     private readonly userCustomerRepository: UserCustomerRepository,
+    @inject(AsaasService)
     private readonly asaasService: AsaasService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(UserCardCreatorRepository)
     private readonly userCardCreatorRepository: UserCardCreatorRepository,
+    @inject(UserCardsListerRepository)
     private readonly userCardsListerRepository: UserCardsListerRepository,
+    @inject(UserInfoViewerRepository)
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
+    @inject(UserMasterViewerRepository)
     private readonly userMasterViewerRepository: UserMasterViewerRepository
   ) {}
 

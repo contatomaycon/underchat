@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import axios from 'axios';
 import { AsaasBaseService } from '../asaasBase.service';
 import {
@@ -9,7 +9,10 @@ import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class UpdateSubscriptionService {
-  constructor(private readonly asaasBaseService: AsaasBaseService) {}
+  constructor(
+    @inject(AsaasBaseService)
+    private readonly asaasBaseService: AsaasBaseService
+  ) {}
 
   updateSubscription = async (
     subscriptionId: string,

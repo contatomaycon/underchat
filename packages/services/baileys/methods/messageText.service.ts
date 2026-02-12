@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
@@ -9,7 +9,10 @@ import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageTextService {
-  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
+  constructor(
+    @inject(BaileysHelpersService)
+    private readonly baileysHelpersService: BaileysHelpersService
+  ) {}
 
   /**
    * Envia um texto simples. Pode incluir linkPreview (prévia de link) e mentions (menções a contatos no texto).

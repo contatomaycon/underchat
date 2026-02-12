@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { Buffer } from 'node:buffer';
 import { IConvertAudioResult } from '@core/common/interfaces/IConvertAudioResult';
 import { IConvertVideoResult } from '@core/common/interfaces/IConvertVideoResult';
@@ -12,11 +12,17 @@ import { VideoFfmpegConverter } from './video/videoFfmpegConverter.service';
 @injectable()
 export class ConverterService {
   constructor(
+    @inject(AudioFormatDetector)
     private readonly audioFormatDetector: AudioFormatDetector,
+    @inject(AudioFfmpegConverter)
     private readonly audioFfmpegConverter: AudioFfmpegConverter,
+    @inject(AudioWaveformGenerator)
     private readonly audioWaveformGenerator: AudioWaveformGenerator,
+    @inject(VideoFormatDetector)
     private readonly videoFormatDetector: VideoFormatDetector,
+    @inject(VideoFormatValidator)
     private readonly videoFormatValidator: VideoFormatValidator,
+    @inject(VideoFfmpegConverter)
     private readonly videoFfmpegConverter: VideoFfmpegConverter
   ) {}
 

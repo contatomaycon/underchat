@@ -49,16 +49,27 @@ export class ScheduleSendService {
   private readonly BRAZIL_TIMEZONE = 'America/Sao_Paulo';
 
   constructor(
+    @inject(SchedulePendingListerRepository)
     private readonly schedulePendingListerRepository: SchedulePendingListerRepository,
+    @inject(ScheduleContactsValidatedListerRepository)
     private readonly scheduleContactsValidatedListerRepository: ScheduleContactsValidatedListerRepository,
+    @inject(ScheduleStatusUpdaterRepository)
     private readonly scheduleStatusUpdaterRepository: ScheduleStatusUpdaterRepository,
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(ChatbotFlowRunnerService)
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
     @inject('Redis') private readonly redis: Redis
   ) {}

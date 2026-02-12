@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import axios from 'axios';
 import { ZipcodeResponseSchema } from '@core/schema/zipcode/viewZipcode/response.schema';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
@@ -13,8 +13,11 @@ import { CityListResponse } from '@core/schema/zipcode/listCities/response.schem
 @injectable()
 export class ZipcodeService {
   constructor(
+    @inject(ZipcodeViewRepository)
     private readonly zipcodeViewRepository: ZipcodeViewRepository,
+    @inject(ZipcodeStateViewRepository)
     private readonly zipcodeStateViewRepository: ZipcodeStateViewRepository,
+    @inject(ZipcodeCityViewRepository)
     private readonly zipcodeCityViewRepository: ZipcodeCityViewRepository
   ) {}
 

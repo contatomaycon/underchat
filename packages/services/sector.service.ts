@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { SectorViewerExistsRepository } from '@core/repositories/sector/SectorViewerExists.repository';
 import { CreateSectorResponse } from '@core/schema/sector/createSector/response.schema';
 import { CreateSectorRequest } from '@core/schema/sector/createSector/request.schema';
@@ -26,16 +26,27 @@ import { ListAiAgentHumanTransferSectorUsersResponse } from '@core/schema/aiAgen
 @injectable()
 export class SectorService {
   constructor(
+    @inject(SectorViewerExistsRepository)
     private readonly sectorViewerExistsRepository: SectorViewerExistsRepository,
+    @inject(SectorStatusViewerExistsRepository)
     private readonly sectorStatusViewerExistsRepository: SectorStatusViewerExistsRepository,
+    @inject(SectorListerRepository)
     private readonly sectorListerRepository: SectorListerRepository,
+    @inject(SectorViewerRepository)
     private readonly sectorViewerRepository: SectorViewerRepository,
+    @inject(SectorDeleterRepository)
     private readonly sectorDeleterRepository: SectorDeleterRepository,
+    @inject(SectorByIdExistsRepository)
     private readonly sectorByIdExistsRepository: SectorByIdExistsRepository,
+    @inject(SectorUsersListerRepository)
     private readonly sectorUsersListerRepository: SectorUsersListerRepository,
+    @inject(SectorAllListerRepository)
     private readonly sectorAllListerRepository: SectorAllListerRepository,
+    @inject(SectorTransferListerRepository)
     private readonly sectorTransferListerRepository: SectorTransferListerRepository,
+    @inject(SectorCreatorRepository)
     private readonly sectorCreatorRepository: SectorCreatorRepository,
+    @inject(SectorUpdaterRepository)
     private readonly sectorUpdaterRepository: SectorUpdaterRepository
   ) {}
 

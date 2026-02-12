@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { UserViewerRepository } from '@core/repositories/user/UserViewer.repository';
 import { ReleaseListerRepository } from '@core/repositories/release/ReleaseLister.repository';
 import { ReleaseViewerRepository } from '@core/repositories/release/ReleaseViewer.repository';
@@ -23,16 +23,27 @@ import { ListReleaseNotificationsResponse } from '@core/schema/release/listRelea
 @injectable()
 export class ReleaseService {
   constructor(
+    @inject(UserViewerRepository)
     private readonly userViewerRepository: UserViewerRepository,
+    @inject(ReleaseListerRepository)
     private readonly releaseListerRepository: ReleaseListerRepository,
+    @inject(ReleaseViewerRepository)
     private readonly releaseViewerRepository: ReleaseViewerRepository,
+    @inject(ReleaseViewViewerRepository)
     private readonly releaseViewViewerRepository: ReleaseViewViewerRepository,
+    @inject(ReleaseViewCreatorRepository)
     private readonly releaseViewCreatorRepository: ReleaseViewCreatorRepository,
+    @inject(ReleaseCreatorRepository)
     private readonly releaseCreatorRepository: ReleaseCreatorRepository,
+    @inject(ReleaseDeleterRepository)
     private readonly releaseDeleterRepository: ReleaseDeleterRepository,
+    @inject(ReleaseUpdaterRepository)
     private readonly releaseUpdaterRepository: ReleaseUpdaterRepository,
+    @inject(ReleaseUsersListerRepository)
     private readonly releaseUsersListerRepository: ReleaseUsersListerRepository,
+    @inject(ReleaseAccountsListerRepository)
     private readonly releaseAccountsListerRepository: ReleaseAccountsListerRepository,
+    @inject(ReleasePermissionRolesListerRepository)
     private readonly releasePermissionRolesListerRepository: ReleasePermissionRolesListerRepository
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +10,10 @@ import { FileUtils } from '../audio/fileUtils.service';
 
 @injectable()
 export class VideoFormatValidator {
-  constructor(private readonly videoProbeService: VideoProbeService) {}
+  constructor(
+    @inject(VideoProbeService)
+    private readonly videoProbeService: VideoProbeService
+  ) {}
 
   async checkAndReturnIfValid(
     inputBuffer: Buffer

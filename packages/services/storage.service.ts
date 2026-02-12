@@ -1,6 +1,5 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { s3Environment } from '@core/config/environments';
-import { S3Client } from '@aws-sdk/client-s3';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { BucketManager } from './storage/BucketManager';
@@ -12,30 +11,20 @@ import { S3UrlParser } from './storage/S3UrlParser';
 
 @injectable()
 export class StorageService {
-  private readonly client: S3Client;
-  private readonly bucketManager: BucketManager;
   private readonly fileValidator: FileValidator;
   private readonly fileProcessor: FileProcessor;
-  private readonly uploader: S3Uploader;
-  private readonly deleter: S3Deleter;
   private readonly urlParser: S3UrlParser;
 
-  constructor() {
-    this.client = new S3Client({
-      region: s3Environment.s3Region,
-      credentials: {
-        accessKeyId: s3Environment.s3AccessKeyId,
-        secretAccessKey: s3Environment.s3SecretAccessKey,
-      },
-      endpoint: s3Environment.s3Endpoint,
-      forcePathStyle: true,
-    });
-
-    this.bucketManager = new BucketManager(this.client);
+  constructor(
+    @inject(BucketManager)
+    private readonly bucketManager: BucketManager,
+    @inject(S3Uploader)
+    private readonly uploader: S3Uploader,
+    @inject(S3Deleter)
+    private readonly deleter: S3Deleter
+  ) {
     this.fileValidator = new FileValidator();
     this.fileProcessor = new FileProcessor();
-    this.uploader = new S3Uploader(this.client);
-    this.deleter = new S3Deleter(this.client);
     this.urlParser = new S3UrlParser();
   }
 

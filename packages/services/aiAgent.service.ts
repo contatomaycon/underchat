@@ -36,19 +36,33 @@ export class AiAgentService {
   private readonly cacheKeyPrefix = 'ai-agent:view:';
 
   constructor(
+    @inject(AiAgentListerRepository)
     private readonly aiAgentListerRepository: AiAgentListerRepository,
+    @inject(AiAgentCreatorRepository)
     private readonly aiAgentCreatorRepository: AiAgentCreatorRepository,
+    @inject(AiAgentViewerRepository)
     private readonly aiAgentViewerRepository: AiAgentViewerRepository,
+    @inject(AiAgentUpdaterRepository)
     private readonly aiAgentUpdaterRepository: AiAgentUpdaterRepository,
+    @inject(AiAgentDeleterRepository)
     private readonly aiAgentDeleterRepository: AiAgentDeleterRepository,
+    @inject(AiAgentTypeListerRepository)
     private readonly aiAgentTypeListerRepository: AiAgentTypeListerRepository,
+    @inject(AiAgentPromptListerRepository)
     private readonly aiAgentPromptListerRepository: AiAgentPromptListerRepository,
+    @inject(AiAgentPromptCreatorRepository)
     private readonly aiAgentPromptCreatorRepository: AiAgentPromptCreatorRepository,
+    @inject(AiAgentPromptViewerRepository)
     private readonly aiAgentPromptViewerRepository: AiAgentPromptViewerRepository,
+    @inject(AiAgentPromptUpdaterRepository)
     private readonly aiAgentPromptUpdaterRepository: AiAgentPromptUpdaterRepository,
+    @inject(AiAgentPromptDeleterRepository)
     private readonly aiAgentPromptDeleterRepository: AiAgentPromptDeleterRepository,
+    @inject(AiAgentUsageListerRepository)
     private readonly aiAgentUsageListerRepository: AiAgentUsageListerRepository,
+    @inject(AiAgentHumanTransferTargetListerRepository)
     private readonly aiAgentHumanTransferTargetListerRepository: AiAgentHumanTransferTargetListerRepository,
+    @inject(AiAgentHumanTransferUpserterTransactionRepository)
     private readonly aiAgentHumanTransferUpserterTransactionRepository: AiAgentHumanTransferUpserterTransactionRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}

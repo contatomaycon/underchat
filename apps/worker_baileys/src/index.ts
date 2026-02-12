@@ -16,6 +16,7 @@ import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
 import baileysOnListenHook from './hooks/baileysOnListen.hook';
 import redisPlugin from '@core/plugins/redis';
+import s3Plugin from '@core/plugins/s3';
 import workerConnectionGrpcServerPlugin from '@core/plugins/proto/workerConnectionGrpcServer';
 import baileysConsumersOnListenHook from './consumer';
 
@@ -39,6 +40,7 @@ server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
   prefix: ERouteModule.worker_baileys,
 });
 server.register(safePlugin(redisPlugin, 'redis'));
+server.register(safePlugin(s3Plugin, 's3'));
 server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
   module: ERouteModule.worker_baileys,
 });

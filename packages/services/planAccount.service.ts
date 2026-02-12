@@ -17,14 +17,23 @@ import Redis from 'ioredis';
 @injectable()
 export class PlanAccountService {
   constructor(
+    @inject(PlanAccountUpdaterRepository)
     private readonly planAccountUpdaterRepository: PlanAccountUpdaterRepository,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(RoleService)
     private readonly roleService: RoleService,
+    @inject(DashboardChatbotsRepository)
     private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
+    @inject(DashboardStatsRepository)
     private readonly dashboardStatsRepository: DashboardStatsRepository,
+    @inject(DashboardSchedulesRepository)
     private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
     @inject('Redis') private readonly redis: Redis
   ) {}

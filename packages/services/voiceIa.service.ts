@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { VoiceIaListerRepository } from '@core/repositories/voiceIa/VoiceIaLister.repository';
 import { VoiceIaCreatorRepository } from '@core/repositories/voiceIa/VoiceIaCreator.repository';
 import { VoiceIaViewerRepository } from '@core/repositories/voiceIa/VoiceIaViewer.repository';
@@ -13,10 +13,15 @@ import { UpdateVoiceIaRequest } from '@core/schema/voiceIa/updateVoiceIa/request
 @injectable()
 export class VoiceIaService {
   constructor(
+    @inject(VoiceIaListerRepository)
     private readonly voiceIaListerRepository: VoiceIaListerRepository,
+    @inject(VoiceIaCreatorRepository)
     private readonly voiceIaCreatorRepository: VoiceIaCreatorRepository,
+    @inject(VoiceIaViewerRepository)
     private readonly voiceIaViewerRepository: VoiceIaViewerRepository,
+    @inject(VoiceIaUpdaterRepository)
     private readonly voiceIaUpdaterRepository: VoiceIaUpdaterRepository,
+    @inject(VoiceIaDeleterRepository)
     private readonly voiceIaDeleterRepository: VoiceIaDeleterRepository
   ) {}
 

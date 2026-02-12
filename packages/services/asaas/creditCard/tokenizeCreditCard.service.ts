@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import axios from 'axios';
 import { AsaasBaseService } from '../asaasBase.service';
 import {
@@ -9,7 +9,10 @@ import {
 
 @injectable()
 export class TokenizeCreditCardService {
-  constructor(private readonly asaasBaseService: AsaasBaseService) {}
+  constructor(
+    @inject(AsaasBaseService)
+    private readonly asaasBaseService: AsaasBaseService
+  ) {}
 
   tokenizeCreditCard = async (
     request: ITokenizeAsaasCreditCardRequest

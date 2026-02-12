@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { NfseViewerRepository } from '@core/repositories/config/NfseViewer.repository';
 import { NfseUpdaterRepository } from '@core/repositories/config/NfseUpdater.repository';
@@ -9,7 +9,9 @@ import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.sche
 @injectable()
 export class NfseService {
   constructor(
+    @inject(NfseViewerRepository)
     private readonly nfseViewerRepository: NfseViewerRepository,
+    @inject(NfseUpdaterRepository)
     private readonly nfseUpdaterRepository: NfseUpdaterRepository
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AsaasClientsServices } from './asaasClientsServices';
 import { AsaasPaymentsServices } from './asaasPaymentsServices';
 import { AsaasInstallmentsServices } from './asaasInstallmentsServices';
@@ -128,14 +128,23 @@ import {
 @injectable()
 export class AsaasService {
   constructor(
+    @inject(AsaasClientsServices)
     private readonly clients: AsaasClientsServices,
+    @inject(AsaasPaymentsServices)
     private readonly payments: AsaasPaymentsServices,
+    @inject(AsaasInstallmentsServices)
     private readonly installments: AsaasInstallmentsServices,
+    @inject(AsaasSubscriptionsServices)
     private readonly subscriptions: AsaasSubscriptionsServices,
+    @inject(AsaasPaymentLinksServices)
     private readonly paymentLinks: AsaasPaymentLinksServices,
+    @inject(AsaasCheckoutServices)
     private readonly checkout: AsaasCheckoutServices,
+    @inject(AsaasCreditCardServices)
     private readonly creditCard: AsaasCreditCardServices,
+    @inject(AsaasRefundsServices)
     private readonly refunds: AsaasRefundsServices,
+    @inject(AsaasInvoicesServices)
     private readonly invoices: AsaasInvoicesServices
   ) {}
 

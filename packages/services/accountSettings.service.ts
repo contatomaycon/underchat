@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountPaymentNfseViewerRepository } from '@core/repositories/accountSettings/AccountPaymentNfseViewer.repository';
 import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/viewAccountPaymentNfse/response.schema';
@@ -8,8 +8,11 @@ import { PlanReleaseService } from '@core/services/planRelease.service';
 @injectable()
 export class AccountSettingsService {
   constructor(
+    @inject(AccountPaymentNfseViewerRepository)
     private readonly accountPaymentNfseViewerRepository: AccountPaymentNfseViewerRepository,
+    @inject(PlanReleaseRepository)
     private readonly planReleaseRepository: PlanReleaseRepository,
+    @inject(PlanReleaseService)
     private readonly planReleaseService: PlanReleaseService
   ) {}
 

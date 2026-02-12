@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { PermissionAssignmentUserViewerRepository } from '@core/repositories/permission/PermissionAssignmentUserViewer.repository';
 import { PermissionRoleViewerExistsRepository } from '@core/repositories/permission/PermissionRoleViewerExists.repository';
 import { PermissionRoleAccountListerRepository } from '@core/repositories/permission/PermissionRoleAccountLister.repository';
@@ -13,11 +13,17 @@ import { PermissionGroupRequest } from '@core/schema/permission/updateRolePermis
 @injectable()
 export class PermissionService {
   constructor(
+    @inject(PermissionAssignmentUserViewerRepository)
     private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository,
+    @inject(PermissionRoleViewerExistsRepository)
     private readonly permissionRoleViewerExistsRepository: PermissionRoleViewerExistsRepository,
+    @inject(PermissionRoleAccountListerRepository)
     private readonly permissionRoleAccountListerRepository: PermissionRoleAccountListerRepository,
+    @inject(PermissionRoleAccountViewerRepository)
     private readonly permissionRoleAccountViewerRepository: PermissionRoleAccountViewerRepository,
+    @inject(PermissionGroupsListerRepository)
     private readonly permissionGroupsListerRepository: PermissionGroupsListerRepository,
+    @inject(RolePermissionsUpdaterRepository)
     private readonly rolePermissionsUpdaterRepository: RolePermissionsUpdaterRepository
   ) {}
 

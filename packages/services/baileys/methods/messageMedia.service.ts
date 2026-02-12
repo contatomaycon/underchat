@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
@@ -9,7 +9,10 @@ import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageMediaService {
-  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
+  constructor(
+    @inject(BaileysHelpersService)
+    private readonly baileysHelpersService: BaileysHelpersService
+  ) {}
 
   /**
    * Envia uma imagem com caption opcional, miniatura e dimensões.

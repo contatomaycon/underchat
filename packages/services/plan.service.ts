@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ListPlanRequest } from '@core/schema/plan/listPlan/request.schema';
 import { ListPlanResponse } from '@core/schema/plan/listPlan/response.schema';
@@ -39,23 +39,41 @@ import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/
 @injectable()
 export class PlanService {
   constructor(
+    @inject(PlanListerRepository)
     private readonly planListerRepository: PlanListerRepository,
+    @inject(PlanAllListerRepository)
     private readonly planAllListerRepository: PlanAllListerRepository,
+    @inject(PlanCreatorRepository)
     private readonly planCreatorRepository: PlanCreatorRepository,
+    @inject(PlanUpdaterRepository)
     private readonly planUpdaterRepository: PlanUpdaterRepository,
+    @inject(PlanDeleterTransactionRepository)
     private readonly planDeleterTransactionRepository: PlanDeleterTransactionRepository,
+    @inject(PlanItemCreatorRepository)
     private readonly planItemCreatorRepository: PlanItemCreatorRepository,
+    @inject(PlanItemDeleterRepository)
     private readonly planItemDeleterRepository: PlanItemDeleterRepository,
+    @inject(PlanItemsListerRepository)
     private readonly planItemsListerRepository: PlanItemsListerRepository,
+    @inject(PlanProductAllListerRepository)
     private readonly planProductAllListerRepository: PlanProductAllListerRepository,
+    @inject(PlanSalesListerRepository)
     private readonly planSalesListerRepository: PlanSalesListerRepository,
+    @inject(PlanWithItemsListerRepository)
     private readonly planWithItemsListerRepository: PlanWithItemsListerRepository,
+    @inject(PlanProductWithPriceListerRepository)
     private readonly planProductWithPriceListerRepository: PlanProductWithPriceListerRepository,
+    @inject(UserCardsListerRepository)
     private readonly userCardsListerRepository: UserCardsListerRepository,
+    @inject(UserInfoViewerRepository)
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
+    @inject(UpgradeDiscountCalculatorRepository)
     private readonly upgradeDiscountCalculatorRepository: UpgradeDiscountCalculatorRepository,
+    @inject(PaymentService)
     private readonly paymentService: PaymentService,
+    @inject(CrossSellListerRepository)
     private readonly crossSellListerRepository: CrossSellListerRepository,
+    @inject(OrderPaymentCreatorRepository)
     private readonly orderPaymentCreatorRepository: OrderPaymentCreatorRepository
   ) {}
 

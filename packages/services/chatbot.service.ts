@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ChatbotCreatorRepository } from '@core/repositories/chatbot/ChatbotCreator.repository';
 import { ChatbotListerRepository } from '@core/repositories/chatbot/ChatbotLister.repository';
 import { ChatbotUpdaterRepository } from '@core/repositories/chatbot/ChatbotUpdater.repository';
@@ -34,15 +34,25 @@ type ElasticHit<T> = {
 @injectable()
 export class ChatbotService {
   constructor(
+    @inject(ChatbotCreatorRepository)
     private readonly chatbotCreatorRepository: ChatbotCreatorRepository,
+    @inject(ChatbotListerRepository)
     private readonly chatbotListerRepository: ChatbotListerRepository,
+    @inject(ChatbotUpdaterRepository)
     private readonly chatbotUpdaterRepository: ChatbotUpdaterRepository,
+    @inject(ChatbotDeleterRepository)
     private readonly chatbotDeleterRepository: ChatbotDeleterRepository,
+    @inject(ChatbotNameExistsRepository)
     private readonly chatbotNameExistsRepository: ChatbotNameExistsRepository,
+    @inject(ChatbotChatTagsListerRepository)
     private readonly chatbotChatTagsListerRepository: ChatbotChatTagsListerRepository,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

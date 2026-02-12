@@ -33,7 +33,9 @@ export class EmbeddingService {
 
   constructor(
     @inject('DatabaseElasticClient') private readonly elasticClient: Client,
+    @inject(AiAgentViewerRepository)
     private readonly aiAgentViewerRepository: AiAgentViewerRepository,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject('Redis') private readonly redis: Redis
   ) {}

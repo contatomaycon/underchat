@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ExpenditureListerRepository } from '@core/repositories/expenditure/ExpenditureLister.repository';
 import { ListExpenditureResponse } from '@core/schema/expenditure/listExpenditure/response.schema';
 import { ListExpenditureRequest } from '@core/schema/expenditure/listExpenditure/request.schema';
@@ -14,11 +14,17 @@ import { ExpenditureViewerExistsRepository } from '@core/repositories/expenditur
 @injectable()
 export class ExpenditureService {
   constructor(
+    @inject(ExpenditureListerRepository)
     private readonly expenditureListerRepository: ExpenditureListerRepository,
+    @inject(ExpenditureCreatorRepository)
     private readonly expenditureCreatorRepository: ExpenditureCreatorRepository,
+    @inject(ExpenditureViewerRepository)
     private readonly expenditureViewerRepository: ExpenditureViewerRepository,
+    @inject(ExpenditureDeleterRepository)
     private readonly expenditureDeleterRepository: ExpenditureDeleterRepository,
+    @inject(ExpenditureUpdaterRepository)
     private readonly expenditureUpdaterRepository: ExpenditureUpdaterRepository,
+    @inject(ExpenditureViewerExistsRepository)
     private readonly expenditureViewerExistsRepository: ExpenditureViewerExistsRepository
   ) {}
 

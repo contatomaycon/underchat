@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { MessageTemplateListerRepository } from '@core/repositories/messageTemplate/MessageTemplateLister.repository';
 import { ListMessageTemplateRequest } from '@core/schema/messageTemplate/listMessageTemplate/request.schema';
 import { ListMessageTemplateResponse } from '@core/schema/messageTemplate/listMessageTemplate/response.schema';
@@ -15,12 +15,19 @@ import { IUpdateMessageTemplate } from '@core/interfaces/repositories/messageTem
 @injectable()
 export class MessageTemplateService {
   constructor(
+    @inject(MessageTemplateListerRepository)
     private readonly messageTemplateListerRepository: MessageTemplateListerRepository,
+    @inject(MessageTemplateCreatorRepository)
     private readonly messageTemplateCreatorRepository: MessageTemplateCreatorRepository,
+    @inject(MessageStatusViewerExistsRepository)
     private readonly messageStatusViewerExistsRepository: MessageStatusViewerExistsRepository,
+    @inject(MessageTemplateViewerExistsRepository)
     private readonly messageTemplateViewerExistsRepository: MessageTemplateViewerExistsRepository,
+    @inject(MessageTemplateViewerRepository)
     private readonly messageTemplateViewerRepository: MessageTemplateViewerRepository,
+    @inject(MessageTemplateDeleterRepository)
     private readonly messageTemplateDeleterRepository: MessageTemplateDeleterRepository,
+    @inject(MessageTemplateUpdaterRepository)
     private readonly messageTemplateUpdaterRepository: MessageTemplateUpdaterRepository
   ) {}
 

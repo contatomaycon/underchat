@@ -8,8 +8,11 @@ import Redis from 'ioredis';
 @injectable()
 export class PlanExpirationReminderService {
   constructor(
+    @inject(PlanExpirationReminderRepository)
     private readonly planExpirationReminderRepository: PlanExpirationReminderRepository,
+    @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
+    @inject(PlanReleaseRepository)
     private readonly planReleaseRepository: PlanReleaseRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}

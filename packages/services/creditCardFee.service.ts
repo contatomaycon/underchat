@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { CreditCardFeeViewerRepository } from '@core/repositories/config/CreditCardFeeViewer.repository';
 import { CreditCardFeeUpdaterRepository } from '@core/repositories/config/CreditCardFeeUpdater.repository';
@@ -9,7 +9,9 @@ import { UpdateCreditCardFeeResponse } from '@core/schema/config/updateCreditCar
 @injectable()
 export class CreditCardFeeService {
   constructor(
+    @inject(CreditCardFeeViewerRepository)
     private readonly creditCardFeeViewerRepository: CreditCardFeeViewerRepository,
+    @inject(CreditCardFeeUpdaterRepository)
     private readonly creditCardFeeUpdaterRepository: CreditCardFeeUpdaterRepository
   ) {}
 

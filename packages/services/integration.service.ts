@@ -54,30 +54,55 @@ import { IWebhookIntegrationRequest } from '@core/common/interfaces/IWebhookInte
 export class IntegrationService {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(ApiKeyViewerRepository)
     private readonly apiKeyViewerRepository: ApiKeyViewerRepository,
+    @inject(IntegrationListerRepository)
     private readonly integrationListerRepository: IntegrationListerRepository,
+    @inject(IntegrationCreatorRepository)
     private readonly integrationCreatorRepository: IntegrationCreatorRepository,
+    @inject(IntegrationUpdaterRepository)
     private readonly integrationUpdaterRepository: IntegrationUpdaterRepository,
+    @inject(IntegrationDeleterRepository)
     private readonly integrationDeleterRepository: IntegrationDeleterRepository,
+    @inject(IntegrationViewerByIdRepository)
     private readonly integrationViewerByIdRepository: IntegrationViewerByIdRepository,
+    @inject(IntegrationStatusUpdaterRepository)
     private readonly integrationStatusUpdaterRepository: IntegrationStatusUpdaterRepository,
+    @inject(IntegrationKeyGeneratorRepository)
     private readonly integrationKeyGeneratorRepository: IntegrationKeyGeneratorRepository,
+    @inject(IntegrationAvailableChannelsListerRepository)
     private readonly integrationAvailableChannelsListerRepository: IntegrationAvailableChannelsListerRepository,
+    @inject(WebhookMappingViewerRepository)
     private readonly webhookMappingViewerRepository: WebhookMappingViewerRepository,
+    @inject(WebhookMappingSaverRepository)
     private readonly webhookMappingSaverRepository: WebhookMappingSaverRepository,
+    @inject(WebhookDataViewerRepository)
     private readonly webhookDataViewerRepository: WebhookDataViewerRepository,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(ChatbotService)
     private readonly chatbotService: ChatbotService,
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
+    @inject(LabelTemplateViewerByNameRepository)
     private readonly labelTemplateViewerByNameRepository: LabelTemplateViewerByNameRepository,
+    @inject(ContactCreatorRepository)
     private readonly contactCreatorRepository: ContactCreatorRepository,
+    @inject(LabelTemplateCreatorRepository)
     private readonly labelTemplateCreatorRepository: LabelTemplateCreatorRepository,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 

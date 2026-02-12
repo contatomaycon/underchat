@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   MiscMessageGenerationOptions,
   WAMessageKey,
@@ -7,7 +7,10 @@ import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageEditDeleteService {
-  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
+  constructor(
+    @inject(BaileysHelpersService)
+    private readonly baileysHelpersService: BaileysHelpersService
+  ) {}
 
   /**
    * Exclui uma mensagem (para todos).

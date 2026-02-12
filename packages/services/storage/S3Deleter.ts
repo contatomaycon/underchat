@@ -1,3 +1,4 @@
+import { injectable, inject } from 'tsyringe';
 import {
   S3Client,
   DeleteObjectCommand,
@@ -9,8 +10,12 @@ const MAX_VERIFICATION_ATTEMPTS = 5;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
+@injectable()
 export class S3Deleter {
-  constructor(private readonly client: S3Client) {}
+  constructor(
+    @inject('S3Client')
+    private readonly client: S3Client
+  ) {}
 
   private isNoSuchBucketError(error: any): boolean {
     return (

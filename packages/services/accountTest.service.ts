@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AccountTestRepository } from '@core/repositories/account/AccountTest.repository';
 import { EncryptService } from './encrypt.service';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
@@ -9,10 +9,15 @@ import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 @injectable()
 export class AccountTestService {
   constructor(
+    @inject(AccountTestRepository)
     private readonly accountTestRepository: AccountTestRepository,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(PlanReleaseRepository)
     private readonly planReleaseRepository: PlanReleaseRepository,
+    @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService
   ) {}
 

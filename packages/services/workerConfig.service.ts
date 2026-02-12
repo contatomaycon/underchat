@@ -16,9 +16,13 @@ import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 @injectable()
 export class WorkerConfigService {
   constructor(
+    @inject(WorkerConfigViewerRepository)
     private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
+    @inject(WorkerConfigUpserterRepository)
     private readonly workerConfigUpserterRepository: WorkerConfigUpserterRepository,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject('Redis') private readonly redis: Redis
   ) {}

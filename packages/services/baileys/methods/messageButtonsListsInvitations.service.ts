@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   ButtonReplyInfo,
   MiscMessageGenerationOptions,
@@ -8,7 +8,10 @@ import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageButtonsListsInvitationsService {
-  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
+  constructor(
+    @inject(BaileysHelpersService)
+    private readonly baileysHelpersService: BaileysHelpersService
+  ) {}
 
   /**
    * Envia resposta de botão (template ou plain).

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { WorkerProfileStatusCreatorTransactionRepository } from '@core/repositories/worker/WorkerProfileStatusCreatorTransaction.repository';
 import { WorkerProfileStatusListerRepository } from '@core/repositories/worker/WorkerProfileStatusLister.repository';
 import { WorkerProfileStatusUpdaterRepository } from '@core/repositories/worker/WorkerProfileStatusUpdater.repository';
@@ -37,19 +37,33 @@ interface IUploadProfileStatusContext {
 @injectable()
 export class WorkerProfileStatusService {
   constructor(
+    @inject(WorkerProfileStatusCreatorTransactionRepository)
     private readonly workerProfileStatusCreatorTransactionRepository: WorkerProfileStatusCreatorTransactionRepository,
+    @inject(WorkerProfileStatusListerRepository)
     private readonly workerProfileStatusListerRepository: WorkerProfileStatusListerRepository,
+    @inject(WorkerProfileStatusUpdaterRepository)
     private readonly workerProfileStatusUpdaterRepository: WorkerProfileStatusUpdaterRepository,
+    @inject(WorkerProfileStatusDeleterTransactionRepository)
     private readonly workerProfileStatusDeleterTransactionRepository: WorkerProfileStatusDeleterTransactionRepository,
+    @inject(WorkerProfileStatusViewerRepository)
     private readonly workerProfileStatusViewerRepository: WorkerProfileStatusViewerRepository,
+    @inject(WorkerProfileStatusContactListerRepository)
     private readonly workerProfileStatusContactListerRepository: WorkerProfileStatusContactListerRepository,
+    @inject(WorkerProfileStatusExternalIdUpdaterRepository)
     private readonly workerProfileStatusExternalIdUpdaterRepository: WorkerProfileStatusExternalIdUpdaterRepository,
+    @inject(WorkerProfileStatusPermanentRenewalListerRepository)
     private readonly workerProfileStatusPermanentRenewalListerRepository: WorkerProfileStatusPermanentRenewalListerRepository,
+    @inject(WorkerProfileStatusUpdatedAtUpdaterRepository)
     private readonly workerProfileStatusUpdatedAtUpdaterRepository: WorkerProfileStatusUpdatedAtUpdaterRepository,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ConverterService)
     private readonly converterService: ConverterService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(ContactService)
     private readonly contactService: ContactService
   ) {}
 

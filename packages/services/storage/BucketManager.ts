@@ -1,3 +1,4 @@
+import { injectable, inject } from 'tsyringe';
 import {
   S3Client,
   CreateBucketCommand,
@@ -5,10 +6,14 @@ import {
   DeletePublicAccessBlockCommand,
 } from '@aws-sdk/client-s3';
 
+@injectable()
 export class BucketManager {
   private readonly verifiedBuckets = new Set<string>();
 
-  constructor(private readonly client: S3Client) {}
+  constructor(
+    @inject('S3Client')
+    private readonly client: S3Client
+  ) {}
 
   private isBucketExistsError(error: any): boolean {
     return (

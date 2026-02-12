@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSync } from '@grpc/proto-loader';
@@ -37,6 +37,7 @@ if (!WorkerCommandClient) {
 @injectable()
 export class WorkerGrpcClientService {
   constructor(
+    @inject(WorkerGrpcRegistryService)
     private readonly workerGrpcRegistryService: WorkerGrpcRegistryService
   ) {}
 

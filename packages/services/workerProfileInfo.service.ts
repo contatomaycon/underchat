@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { StorageService } from '@core/services/storage.service';
 import { WorkerProfileInfoViewerRepository } from '@core/repositories/worker/WorkerProfileInfoViewer.repository';
@@ -11,8 +11,11 @@ import { workerProfileInfo } from '@core/models';
 @injectable()
 export class WorkerProfileInfoService {
   constructor(
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(WorkerProfileInfoViewerRepository)
     private readonly workerProfileInfoViewerRepository: WorkerProfileInfoViewerRepository,
+    @inject(WorkerProfileInfoUpserterRepository)
     private readonly workerProfileInfoUpserterRepository: WorkerProfileInfoUpserterRepository
   ) {}
 

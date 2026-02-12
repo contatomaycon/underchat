@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
 import { ListRoleRequest } from '@core/schema/role/listRole/request.schema';
 import { RoleListerRepository } from '@core/repositories/role/RoleLister.repository';
@@ -15,13 +15,21 @@ import { CreateRoleResponse } from '@core/schema/role/createRole/response.schema
 @injectable()
 export class RoleService {
   constructor(
+    @inject(RoleListerRepository)
     private readonly roleListerRepository: RoleListerRepository,
+    @inject(RoleViewerExistsRepository)
     private readonly roleViewerExistsRepository: RoleViewerExistsRepository,
+    @inject(RoleViewerRepository)
     private readonly roleViewerRepository: RoleViewerRepository,
+    @inject(RoleDeleterRepository)
     private readonly roleDeleterRepository: RoleDeleterRepository,
+    @inject(RoleUpdaterRepository)
     private readonly roleUpdaterRepository: RoleUpdaterRepository,
+    @inject(RoleViewerNameExistsRepository)
     private readonly roleViewerNameExistsRepository: RoleViewerNameExistsRepository,
+    @inject(RoleCreatorRepository)
     private readonly roleCreatorRepository: RoleCreatorRepository,
+    @inject(RoleTotalViewerRepository)
     private readonly roleTotalViewerRepository: RoleTotalViewerRepository
   ) {}
 

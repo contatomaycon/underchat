@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { MiscMessageGenerationOptions } from '@whiskeysockets/baileys';
 import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysMessageTemporaryService {
-  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
+  constructor(
+    @inject(BaileysHelpersService)
+    private readonly baileysHelpersService: BaileysHelpersService
+  ) {}
 
   /**
    * Liga/desliga mensagens que somem após um período (24h, 7d, etc).

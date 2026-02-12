@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { CreateServerRequest } from '@core/schema/server/createServer/request.schema';
 import { ICreateServer } from '@core/common/interfaces/ICreateServer';
@@ -44,23 +44,41 @@ import { statusServerCentrifugoQueue } from '@core/common/functions/centrifugoQu
 @injectable()
 export class ServerService {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(ServerSshViewerExistsRepository)
     private readonly serverSshViewerExistsRepository: ServerSshViewerExistsRepository,
+    @inject(ServerSshViewerRepository)
     private readonly serverSshViewerRepository: ServerSshViewerRepository,
+    @inject(ServerStatusUpdaterRepository)
     private readonly serverStatusUpdaterRepository: ServerStatusUpdaterRepository,
+    @inject(ServerDeleterRepository)
     private readonly serverDeleterRepository: ServerDeleterRepository,
+    @inject(ServerSshDeleterRepository)
     private readonly serverSshDeleterRepository: ServerSshDeleterRepository,
+    @inject(ServerViewerExistsRepository)
     private readonly serverViewerExistsRepository: ServerViewerExistsRepository,
+    @inject(ServerUpdaterRepository)
     private readonly serverUpdaterRepository: ServerUpdaterRepository,
+    @inject(ServerSshViewerNotIdByIpExistsRepository)
     private readonly serverSshViewerNotIdByIpExistsRepository: ServerSshViewerNotIdByIpExistsRepository,
+    @inject(ServerViewerRepository)
     private readonly serverViewerRepository: ServerViewerRepository,
+    @inject(ServerListerRepository)
     private readonly serverListerRepository: ServerListerRepository,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(ServerCreatorRepository)
     private readonly serverCreatorRepository: ServerCreatorRepository,
+    @inject(ServerWebDeleterRepository)
     private readonly serverWebDeleterRepository: ServerWebDeleterRepository,
+    @inject(ServerWebViewerRepository)
     private readonly serverWebViewerRepository: ServerWebViewerRepository,
+    @inject(ServerSshListerRepository)
     private readonly serverSshListerRepository: ServerSshListerRepository,
+    @inject(ServerBalanceMonitorViewerRepository)
     private readonly serverBalanceMonitorViewerRepository: ServerBalanceMonitorViewerRepository
   ) {}
 

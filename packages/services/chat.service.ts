@@ -38,8 +38,11 @@ type ElasticHit<T> = {
 export class ChatService {
   constructor(
     @inject('Redis') private readonly redis: Redis,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(WorkerConfigForChatViewerRepository)
     private readonly workerConfigForChatViewerRepository: WorkerConfigForChatViewerRepository,
+    @inject(ChatQuickMessageTemplatesListerRepository)
     private readonly chatQuickMessageTemplatesListerRepository: ChatQuickMessageTemplatesListerRepository
   ) {}
 

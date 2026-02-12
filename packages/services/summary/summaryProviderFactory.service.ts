@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ISummaryProvider } from './ISummaryProvider';
 import { OpenAISummaryProvider } from './openAiSummaryProvider.service';
 import { GeminiSummaryProvider } from './geminiSummaryProvider.service';
@@ -6,7 +6,9 @@ import { GeminiSummaryProvider } from './geminiSummaryProvider.service';
 @injectable()
 export class SummaryProviderFactory {
   constructor(
+    @inject(OpenAISummaryProvider)
     private readonly openAiProvider: OpenAISummaryProvider,
+    @inject(GeminiSummaryProvider)
     private readonly geminiProvider: GeminiSummaryProvider
   ) {}
 

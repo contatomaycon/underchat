@@ -166,22 +166,39 @@ export class ChatbotFlowRunnerService {
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
+    @inject(ChatbotService)
     private readonly chatbotService: ChatbotService,
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(ChatMessageService)
     private readonly chatMessageService: ChatMessageService,
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(LabelTemplateViewerRepository)
     private readonly labelTemplateViewerRepository: LabelTemplateViewerRepository,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(RagService)
     private readonly ragService: RagService,
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
+    @inject(OpenAIAssistantService)
     private readonly openAIAssistantService: OpenAIAssistantService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(AiAgentUsageCreatorRepository)
     private readonly aiAgentUsageCreatorRepository: AiAgentUsageCreatorRepository,
+    @inject(VoiceIaIntegrationService)
     private readonly voiceIaIntegrationService: VoiceIaIntegrationService,
+    @inject(VoiceIaService)
     private readonly voiceIaService: VoiceIaService
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { FinancialReportListerRepository } from '@core/repositories/financialReport/FinancialReportLister.repository';
 import { ListFinancialReportRequest } from '@core/schema/financialReport/listFinancialReport/request.schema';
 import { ListFinancialReportResponse } from '@core/schema/financialReport/listFinancialReport/response.schema';
@@ -6,6 +6,7 @@ import { ListFinancialReportResponse } from '@core/schema/financialReport/listFi
 @injectable()
 export class FinancialReportService {
   constructor(
+    @inject(FinancialReportListerRepository)
     private readonly financialReportListerRepository: FinancialReportListerRepository
   ) {}
 

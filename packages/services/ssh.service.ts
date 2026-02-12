@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { Client, ConnectConfig } from 'ssh2';
 import stripAnsi from 'strip-ansi';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
@@ -18,7 +18,10 @@ export class SshService {
   private readonly connectMaxRetries = 3;
   private readonly connectRetryBaseDelayMs = 1000;
 
-  constructor(private readonly centrifugoService: CentrifugoService) {}
+  constructor(
+    @inject(CentrifugoService)
+    private readonly centrifugoService: CentrifugoService
+  ) {}
 
   private connect(config: ConnectConfig): Promise<Client> {
     return this.connectWithRetry(config, 0, this.connectRetryBaseDelayMs);

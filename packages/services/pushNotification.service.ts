@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import webPush from 'web-push';
 import { PushSubscriptionListerRepository } from '@core/repositories/push/PushSubscriptionLister.repository';
 import { PushSubscriptionDeleterRepository } from '@core/repositories/push/PushSubscriptionDeleter.repository';
@@ -23,11 +23,17 @@ export class PushNotificationService {
   } | null = null;
 
   constructor(
+    @inject(PushSubscriptionListerRepository)
     private readonly pushSubscriptionListerRepository: PushSubscriptionListerRepository,
+    @inject(PushSubscriptionDeleterRepository)
     private readonly pushSubscriptionDeleterRepository: PushSubscriptionDeleterRepository,
+    @inject(UsersWithNotificationsListerRepository)
     private readonly usersWithNotificationsListerRepository: UsersWithNotificationsListerRepository,
+    @inject(PermissionAssignmentUserViewerRepository)
     private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository,
+    @inject(UserSectorsListerRepository)
     private readonly userSectorsListerRepository: UserSectorsListerRepository,
+    @inject(UserChannelChannelsListerRepository)
     private readonly userChannelChannelsListerRepository: UserChannelChannelsListerRepository
   ) {
     this.initializeVapidKeys();

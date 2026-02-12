@@ -28,19 +28,33 @@ import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 @injectable()
 export class NotificationMessageService {
   constructor(
+    @inject(NotificationMessageViewerRepository)
     private readonly notificationMessageViewerRepository: NotificationMessageViewerRepository,
+    @inject(UserMasterViewerRepository)
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(UserInfoViewerRepository)
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
+    @inject(WorkerNameViewerRepository)
     private readonly workerNameViewerRepository: WorkerNameViewerRepository,
+    @inject(PlanCurrentInvoiceViewerRepository)
     private readonly planCurrentInvoiceViewerRepository: PlanCurrentInvoiceViewerRepository,
+    @inject(EmailService)
     private readonly emailService: EmailService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(TwoFactorCreatorRepository)
     private readonly twoFactorCreatorRepository: TwoFactorCreatorRepository,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
     @inject('Redis') private readonly redis: Redis
   ) {}

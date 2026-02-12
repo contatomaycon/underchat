@@ -1,9 +1,12 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { BaileysHelpersService } from './helpers.service';
 
 @injectable()
 export class BaileysProfileService {
-  constructor(private readonly baileysHelpersService: BaileysHelpersService) {}
+  constructor(
+    @inject(BaileysHelpersService)
+    private readonly baileysHelpersService: BaileysHelpersService
+  ) {}
 
   async updateProfileName(name: string): Promise<void> {
     await this.baileysHelpersService.updateProfileName(name);

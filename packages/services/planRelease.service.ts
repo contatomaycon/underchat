@@ -17,10 +17,15 @@ import { withLock } from '@core/common/functions/withLock';
 @injectable()
 export class PlanReleaseService {
   constructor(
+    @inject(PlanReleaseRepository)
     private readonly planReleaseRepository: PlanReleaseRepository,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(AsaasService)
     private readonly asaasService: AsaasService,
+    @inject(AccountPaymentNfSeUpserterRepository)
     private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository,
+    @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
     @inject('Redis') private readonly redis: Redis
   ) {}

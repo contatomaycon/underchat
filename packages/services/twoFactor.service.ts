@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TwoFactorViewerRepository } from '@core/repositories/auth/TwoFactorViewer.repository';
 import { TwoFactorUpdaterRepository } from '@core/repositories/auth/TwoFactorUpdater.repository';
 import { ITwoFactorData } from '@core/common/interfaces/ITwoFactorData';
@@ -8,7 +8,9 @@ import { IFindTwoFactorByTokenAndEmailPhone } from '@core/common/interfaces/IFin
 @injectable()
 export class TwoFactorService {
   constructor(
+    @inject(TwoFactorViewerRepository)
     private readonly twoFactorViewerRepository: TwoFactorViewerRepository,
+    @inject(TwoFactorUpdaterRepository)
     private readonly twoFactorUpdaterRepository: TwoFactorUpdaterRepository
   ) {}
 

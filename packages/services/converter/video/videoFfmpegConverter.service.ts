@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,7 +11,10 @@ import { FileUtils } from '../audio/fileUtils.service';
 
 @injectable()
 export class VideoFfmpegConverter {
-  constructor(private readonly videoProbeService: VideoProbeService) {}
+  constructor(
+    @inject(VideoProbeService)
+    private readonly videoProbeService: VideoProbeService
+  ) {}
 
   async convert(
     inputBuffer: Buffer,

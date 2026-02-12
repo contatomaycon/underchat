@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { EmbeddingService } from './embedding.service';
 import { IRagContext } from '@core/common/interfaces/IRagContext';
 import { AiAgentPromptListerRepository } from '@core/repositories/aiAgent/AiAgentPromptLister.repository';
@@ -144,8 +144,11 @@ export class RagService {
   ]);
 
   constructor(
+    @inject(EmbeddingService)
     private readonly embeddingService: EmbeddingService,
+    @inject(AiAgentPromptListerRepository)
     private readonly aiAgentPromptListerRepository: AiAgentPromptListerRepository,
+    @inject(SummaryProviderFactory)
     private readonly summaryProviderFactory: SummaryProviderFactory
   ) {}
 

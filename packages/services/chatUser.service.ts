@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { ListChatsUserResponse } from '@core/schema/chat/listChatsUser/response.schema';
 import { ChatUserUpdaterRepository } from '@core/repositories/chat/ChatUserUpdater.repository';
@@ -7,7 +7,9 @@ import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/reques
 @injectable()
 export class ChatUserService {
   constructor(
+    @inject(ChatUserViewerRepository)
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
+    @inject(ChatUserUpdaterRepository)
     private readonly chatUserUpdaterRepository: ChatUserUpdaterRepository
   ) {}
 

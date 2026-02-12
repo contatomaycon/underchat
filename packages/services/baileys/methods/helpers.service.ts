@@ -4,7 +4,7 @@ import {
   WAMessage,
   WASocket,
 } from '@whiskeysockets/baileys';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { BaileysConnectionService } from './connection.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
@@ -13,7 +13,10 @@ import { webcrypto as nodeCrypto } from 'node:crypto';
 
 @injectable()
 export class BaileysHelpersService {
-  constructor(private readonly connection: BaileysConnectionService) {}
+  constructor(
+    @inject(BaileysConnectionService)
+    private readonly connection: BaileysConnectionService
+  ) {}
 
   async send(
     address: string,

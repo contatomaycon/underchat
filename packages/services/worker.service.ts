@@ -54,31 +54,57 @@ export class WorkerService {
   private readonly docker: Docker;
 
   constructor(
+    @inject(WorkerCreatorRepository)
     private readonly workerCreatorRepository: WorkerCreatorRepository,
+    @inject(WorkerServerListerRepository)
     private readonly workerServerListerRepository: WorkerServerListerRepository,
+    @inject(WorkerServerViewerRepository)
     private readonly workerServerViewerRepository: WorkerServerViewerRepository,
+    @inject(WorkerTotalViewerRepository)
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
+    @inject(WorkerListerRepository)
     private readonly workerListerRepository: WorkerListerRepository,
+    @inject(WorkerUpdaterRepository)
     private readonly workerUpdaterRepository: WorkerUpdaterRepository,
+    @inject(WorkerViewerRepository)
     private readonly workerViewerRepository: WorkerViewerRepository,
+    @inject(WorkerNameAndContainerIdViewerRepository)
     private readonly workerNameAndContainerIdViewerRepository: WorkerNameAndContainerIdViewerRepository,
+    @inject(WorkerViewerExistsRepository)
     private readonly workerViewerExistsRepository: WorkerViewerExistsRepository,
+    @inject(WorkerBalancerViewerRepository)
     private readonly workerBalancerViewerRepository: WorkerBalancerViewerRepository,
+    @inject(WorkerDeleterRepository)
     private readonly workerDeleterRepository: WorkerDeleterRepository,
+    @inject(WorkerPhoneConnectionDateViewerRepository)
     private readonly workerPhoneConnectionDateViewerRepository: WorkerPhoneConnectionDateViewerRepository,
+    @inject(WorkerPhoneStatusConnectionDateUpdaterRepository)
     private readonly workerPhoneStatusConnectionDateUpdaterRepository: WorkerPhoneStatusConnectionDateUpdaterRepository,
+    @inject(WorkerPhoneConnectionViewerRepository)
     private readonly workerPhoneConnectionViewerRepository: WorkerPhoneConnectionViewerRepository,
+    @inject(WorkerPhoneConnectionUpdaterRepository)
     private readonly workerPhoneConnectionUpdaterRepository: WorkerPhoneConnectionUpdaterRepository,
+    @inject(WorkerPhoneConnectionCreatorRepository)
     private readonly workerPhoneConnectionCreatorRepository: WorkerPhoneConnectionCreatorRepository,
+    @inject(WorkerTypeViewerRepository)
     private readonly workerTypeViewerRepository: WorkerTypeViewerRepository,
+    @inject(WorkerBaileysActivitiesListerRepository)
     private readonly workerBaileysActivitiesListerRepository: WorkerBaileysActivitiesListerRepository,
+    @inject(WorkerNewStatusListerRepository)
     private readonly workerNewStatusListerRepository: WorkerNewStatusListerRepository,
+    @inject(WorkerStatusUpdaterRepository)
     private readonly workerStatusUpdaterRepository: WorkerStatusUpdaterRepository,
+    @inject(WorkerNameAndIdViewerRepository)
     private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository,
+    @inject(WorkerConfigFieldsViewerRepository)
     private readonly workerConfigFieldsViewerRepository: WorkerConfigFieldsViewerRepository,
+    @inject(WorkerAllListerRepository)
     private readonly workerAllListerRepository: WorkerAllListerRepository,
+    @inject(WorkerMonitorViewerRepository)
     private readonly workerMonitorViewerRepository: WorkerMonitorViewerRepository,
+    @inject(WorkerUpdatedAtUpdaterRepository)
     private readonly workerUpdatedAtUpdaterRepository: WorkerUpdatedAtUpdaterRepository,
+    @inject(WorkerLastConnectionCheckUpdaterRepository)
     private readonly workerLastConnectionCheckUpdaterRepository: WorkerLastConnectionCheckUpdaterRepository,
     @inject('Redis') private readonly redis: Redis
   ) {

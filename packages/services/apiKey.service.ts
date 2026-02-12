@@ -1,11 +1,13 @@
 import { ApiKeyCreatorRepository } from '@core/repositories/apiKey/ApiKeyCreator.repository';
 import { ApiKeyDeleterRepository } from '@core/repositories/apiKey/ApiKeyDeleter.repository';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 
 @injectable()
 export class ApiKeyService {
   constructor(
+    @inject(ApiKeyCreatorRepository)
     private readonly apiKeyCreatorRepository: ApiKeyCreatorRepository,
+    @inject(ApiKeyDeleterRepository)
     private readonly apiKeyDeleterRepository: ApiKeyDeleterRepository
   ) {}
 

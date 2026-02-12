@@ -34,7 +34,9 @@ export class MessageStatusService {
   private circuitBreakerOpenUntil = 0;
 
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject('Redis') private readonly redis: Redis
   ) {}

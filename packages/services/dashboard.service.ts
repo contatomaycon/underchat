@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardConversationsRepository } from '@core/repositories/dashboard/DashboardConversations.repository';
@@ -17,14 +17,23 @@ import { ListOfflineChannelsFinalResponse } from '@core/schema/dashboard/listOff
 @injectable()
 export class DashboardService {
   constructor(
+    @inject(DashboardStatsRepository)
     private readonly dashboardStatsRepository: DashboardStatsRepository,
+    @inject(DashboardConversationsRepository)
     private readonly dashboardConversationsRepository: DashboardConversationsRepository,
+    @inject(DashboardContactsRepository)
     private readonly dashboardContactsRepository: DashboardContactsRepository,
+    @inject(DashboardAttendanceRepository)
     private readonly dashboardAttendanceRepository: DashboardAttendanceRepository,
+    @inject(DashboardSectorsRepository)
     private readonly dashboardSectorsRepository: DashboardSectorsRepository,
+    @inject(DashboardChatbotsRepository)
     private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
+    @inject(DashboardSchedulesRepository)
     private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
+    @inject(DashboardTemplatesRepository)
     private readonly dashboardTemplatesRepository: DashboardTemplatesRepository,
+    @inject(DashboardOfflineChannelsRepository)
     private readonly dashboardOfflineChannelsRepository: DashboardOfflineChannelsRepository
   ) {}
 

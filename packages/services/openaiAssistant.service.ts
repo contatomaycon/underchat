@@ -14,6 +14,7 @@ export class OpenAIAssistantService {
   private readonly UNSUPPORTED_MODEL_CACHE_TTL_SECONDS = 86400;
   constructor(
     @inject('Redis') private readonly redis: Redis,
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService
   ) {}
 

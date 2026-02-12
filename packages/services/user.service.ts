@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { UserListerRepository } from '@core/repositories/user/UserLister.repository';
@@ -64,45 +64,85 @@ import { ListAllUsersResponse } from '@core/schema/user/listAllUsers/response.sc
 @injectable()
 export class UserService {
   constructor(
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(UserListerRepository)
     private readonly userListerRepository: UserListerRepository,
+    @inject(UserAllListerRepository)
     private readonly userAllListerRepository: UserAllListerRepository,
+    @inject(UserViewerExistsRepository)
     private readonly userViewerExistsRepository: UserViewerExistsRepository,
+    @inject(UserDeleterRepository)
     private readonly userDeleterRepository: UserDeleterRepository,
+    @inject(UserViewerRepository)
     private readonly userViewerRepository: UserViewerRepository,
+    @inject(UserStatusViewerExistsRepository)
     private readonly userStatusViewerExistsRepository: UserStatusViewerExistsRepository,
+    @inject(UserTransactionCreatorRepository)
     private readonly userTransactionCreatorRepository: UserTransactionCreatorRepository,
+    @inject(UserDocumentTypeViewerExistsRepository)
     private readonly userDocumentTypeViewerExistsRepository: UserDocumentTypeViewerExistsRepository,
+    @inject(UserUpdaterRepository)
     private readonly userUpdaterRepository: UserUpdaterRepository,
+    @inject(UserUpdaterTransactionRepository)
     private readonly userUpdaterTransactionRepository: UserUpdaterTransactionRepository,
+    @inject(UserInfoUpdaterRepository)
     private readonly userInfoUpdaterRepository: UserInfoUpdaterRepository,
+    @inject(UserDocumentUpdaterRepository)
     private readonly userDocumentUpdaterRepository: UserDocumentUpdaterRepository,
+    @inject(UserDocumentCreatorRepository)
     private readonly userDocumentCreatorRepository: UserDocumentCreatorRepository,
+    @inject(UserAddressUpdaterRepository)
     private readonly userAddressUpdaterRepository: UserAddressUpdaterRepository,
+    @inject(UserAddressCreatorRepository)
     private readonly userAddressCreatorRepository: UserAddressCreatorRepository,
+    @inject(UserNamePhotoViewerRepository)
     private readonly userNamePhotoViewerRepository: UserNamePhotoViewerRepository,
+    @inject(UserExistsByEmailAndPhoneRepository)
     private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository,
+    @inject(UserSensitiveDataRepository)
     private readonly userSensitiveDataRepository: UserSensitiveDataRepository,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(PermissionAssignmentCreatorRepository)
     private readonly permissionAssignmentCreatorRepository: PermissionAssignmentCreatorRepository,
+    @inject(PermissionAssignmentExistsRepository)
     private readonly permissionAssignmentExistsRepository: PermissionAssignmentExistsRepository,
+    @inject(PermissionAssignmentViewerRepository)
     private readonly permissionAssignmentViewerRepository: PermissionAssignmentViewerRepository,
+    @inject(PermissionAssignmentUpdaterRepository)
     private readonly permissionAssignmentUpdaterRepository: PermissionAssignmentUpdaterRepository,
+    @inject(PermissionAssignmentDeleterRepository)
     private readonly permissionAssignmentDeleterRepository: PermissionAssignmentDeleterRepository,
+    @inject(UserAccountViewerRepository)
     private readonly userAccountViewerRepository: UserAccountViewerRepository,
+    @inject(UserEmailViewerExistsRepository)
     private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository,
+    @inject(UserTotalViewerRepository)
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
+    @inject(UserOnlineListerRepository)
     private readonly userOnlineListerRepository: UserOnlineListerRepository,
+    @inject(UserTransferListerRepository)
     private readonly userTransferListerRepository: UserTransferListerRepository,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(AccountSettingsAdditionalInfoViewerRepository)
     private readonly accountSettingsAdditionalInfoViewerRepository: AccountSettingsAdditionalInfoViewerRepository,
+    @inject(UserPasswordViewerRepository)
     private readonly userPasswordViewerRepository: UserPasswordViewerRepository,
+    @inject(UserMasterViewerRepository)
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
+    @inject(UserSectorsListerRepository)
     private readonly userSectorsListerRepository: UserSectorsListerRepository,
+    @inject(UserSectorsUpdaterTransactionRepository)
     private readonly userSectorsUpdaterTransactionRepository: UserSectorsUpdaterTransactionRepository,
+    @inject(UserChannelChannelsListerRepository)
     private readonly userChannelChannelsListerRepository: UserChannelChannelsListerRepository,
+    @inject(UserChannelsUpdaterTransactionRepository)
     private readonly userChannelsUpdaterTransactionRepository: UserChannelsUpdaterTransactionRepository,
+    @inject(ForgotPasswordViewerRepository)
     private readonly forgotPasswordViewerRepository: ForgotPasswordViewerRepository
   ) {}
 

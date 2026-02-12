@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { StorageService } from './storage.service';
 import puppeteer, { Page, ElementHandle } from 'puppeteer';
 import {
@@ -31,11 +31,17 @@ export class ReportConversationHistoryPdfService {
   private readonly contactPhoneCache: Map<string, string | null> = new Map();
 
   constructor(
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ReportConversationHistoryPdfUpdaterRepository)
     private readonly pdfUpdaterRepository: ReportConversationHistoryPdfUpdaterRepository,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(ReportConversationHistoryMessagesListerUseCase)
     private readonly messagesListerUseCase: ReportConversationHistoryMessagesListerUseCase,
+    @inject(ChatContactService)
     private readonly chatContactService: ChatContactService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
 

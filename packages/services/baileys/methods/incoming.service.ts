@@ -64,8 +64,11 @@ export class BaileysIncomingMessageService {
   private readonly MESSAGE_CACHE_PREFIX = 'wa:msg:';
 
   constructor(
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject('Redis') private readonly redis: Redis
   ) {

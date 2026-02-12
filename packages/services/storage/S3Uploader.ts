@@ -1,3 +1,4 @@
+import { injectable, inject } from 'tsyringe';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const MAX_RETRIES = 3;
@@ -10,8 +11,12 @@ interface UploadParams {
   contentType: string;
 }
 
+@injectable()
 export class S3Uploader {
-  constructor(private readonly client: S3Client) {}
+  constructor(
+    @inject('S3Client')
+    private readonly client: S3Client
+  ) {}
 
   private async sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

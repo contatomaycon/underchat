@@ -1,9 +1,10 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { CountryViewerExistsRepository } from '@core/repositories/country/CountryViewerExists.repository';
 
 @injectable()
 export class CountryService {
   constructor(
+    @inject(CountryViewerExistsRepository)
     private readonly CountryViewerExistsRepository: CountryViewerExistsRepository
   ) {}
 

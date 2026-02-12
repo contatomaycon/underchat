@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ChatContactListerRepository } from '@core/repositories/contact/ChatContactLister.repository';
 import { ChatContactViewerRepository } from '@core/repositories/contact/ChatContactViewer.repository';
 import { ChatLabelTemplateAllListerRepository } from '@core/repositories/labelTemplate/ChatLabelTemplateAllLister.repository';
@@ -16,10 +16,15 @@ import { onlyDigits } from '@core/common/functions/onlyDigits';
 @injectable()
 export class ChatContactService {
   constructor(
+    @inject(ChatContactListerRepository)
     private readonly chatContactListerRepository: ChatContactListerRepository,
+    @inject(ChatContactViewerRepository)
     private readonly chatContactViewerRepository: ChatContactViewerRepository,
+    @inject(ChatLabelTemplateAllListerRepository)
     private readonly chatLabelTemplateAllListerRepository: ChatLabelTemplateAllListerRepository,
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService
   ) {}
 

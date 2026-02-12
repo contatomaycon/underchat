@@ -1,10 +1,11 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ServerWebViewerRepository } from '@core/repositories/server/ServerWebViewer.repository';
 import { balanceEnvironment } from '@core/config/environments';
 
 @injectable()
 export class WorkerGrpcRegistryService {
   constructor(
+    @inject(ServerWebViewerRepository)
     private readonly serverWebViewerRepository: ServerWebViewerRepository
   ) {}
 

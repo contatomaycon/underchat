@@ -22,13 +22,21 @@ export class PlanRenewalService {
   private readonly concurrency = 10;
 
   constructor(
+    @inject(PlanAccountRenewalListerRepository)
     private readonly planAccountRenewalListerRepository: PlanAccountRenewalListerRepository,
+    @inject(UserMasterViewerRepository)
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
+    @inject(UserCardDefaultViewerRepository)
     private readonly userCardDefaultViewerRepository: UserCardDefaultViewerRepository,
+    @inject(PaymentService)
     private readonly paymentService: PaymentService,
+    @inject(PlanService)
     private readonly planService: PlanService,
+    @inject(PlanReleaseService)
     private readonly planReleaseService: PlanReleaseService,
+    @inject(AccountUpdaterRepository)
     private readonly accountUpdaterRepository: AccountUpdaterRepository,
+    @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
     @inject('Redis') private readonly redis: Redis
   ) {}

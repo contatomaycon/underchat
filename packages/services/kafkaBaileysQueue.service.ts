@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { KafkaService } from './kafka.service';
 
 @injectable()
@@ -6,7 +6,10 @@ export class KafkaBaileysQueueService {
   static readonly NUM_PARTITIONS = 1;
   static readonly REPLICATION_FACTOR = 2;
 
-  constructor(private readonly kafkaService: KafkaService) {}
+  constructor(
+    @inject(KafkaService)
+    private readonly kafkaService: KafkaService
+  ) {}
 
   getNumPartitions(): number {
     return KafkaBaileysQueueService.NUM_PARTITIONS;

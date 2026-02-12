@@ -1,13 +1,15 @@
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { MiddlewareApiKeyRepository } from '@core/repositories/middleware/MiddlewareApiKey.repository';
 import { MiddlewareJwtRepository } from '@core/repositories/middleware/MiddlewareJwt.repository';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { IJwtPermissionsWithPlan } from '@core/common/interfaces/IJwtPermissionsWithPlan';
 
 @injectable()
 export class ApiService {
   constructor(
+    @inject(MiddlewareJwtRepository)
     private readonly middlewareJwtRepository: MiddlewareJwtRepository,
+    @inject(MiddlewareApiKeyRepository)
     private readonly middlewareApiKeyRepository: MiddlewareApiKeyRepository
   ) {}
 

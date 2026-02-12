@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { MethodPaymentViewerRepository } from '@core/repositories/config/MethodPaymentViewer.repository';
 import { MethodPaymentUpdaterRepository } from '@core/repositories/config/MethodPaymentUpdater.repository';
@@ -10,7 +10,9 @@ import { EMethodPayment } from '@core/common/enums/EMethodPayment';
 @injectable()
 export class MethodPaymentService {
   constructor(
+    @inject(MethodPaymentViewerRepository)
     private readonly methodPaymentViewerRepository: MethodPaymentViewerRepository,
+    @inject(MethodPaymentUpdaterRepository)
     private readonly methodPaymentUpdaterRepository: MethodPaymentUpdaterRepository
   ) {}
 

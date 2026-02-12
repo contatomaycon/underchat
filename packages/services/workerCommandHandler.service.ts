@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { WorkerService } from '@core/services/worker.service';
 import { getImageWorker } from '@core/common/functions/getImageWorker';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
@@ -39,10 +39,15 @@ export class WorkerCommandHandlerService {
   >();
 
   constructor(
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(ContainerHealthService)
     private readonly containerHealthService: ContainerHealthService,
+    @inject(WorkerBaileysGrpcClientService)
     private readonly workerBaileysGrpcClientService: WorkerBaileysGrpcClientService
   ) {}
 

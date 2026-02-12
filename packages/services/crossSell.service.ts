@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ListCrossSellRequest } from '@core/schema/planCrossSell/listCrossSell/request.schema';
 import { ListCrossSellResponse } from '@core/schema/planCrossSell/listCrossSell/response.schema';
 import { CrossSellListerRepository } from '@core/repositories/planCrossSell/CrossSellLister.repository';
@@ -17,12 +17,19 @@ import { TFunction } from 'i18next';
 @injectable()
 export class CrossSellService {
   constructor(
+    @inject(CrossSellListerRepository)
     private readonly crossSellListerRepository: CrossSellListerRepository,
+    @inject(CrossSellCreatorRepository)
     private readonly crossSellCreatorRepository: CrossSellCreatorRepository,
+    @inject(CrossSellUpdaterRepository)
     private readonly crossSellUpdaterRepository: CrossSellUpdaterRepository,
+    @inject(CrossSellDeleterTransactionRepository)
     private readonly crossSellDeleterTransactionRepository: CrossSellDeleterTransactionRepository,
+    @inject(CrossSellAccountCreatorRepository)
     private readonly crossSellAccountCreatorRepository: CrossSellAccountCreatorRepository,
+    @inject(CrossSellAccountListerRepository)
     private readonly crossSellAccountListerRepository: CrossSellAccountListerRepository,
+    @inject(CrossSellAccountSingleDeleterRepository)
     private readonly crossSellAccountSingleDeleterRepository: CrossSellAccountSingleDeleterRepository
   ) {}
 
