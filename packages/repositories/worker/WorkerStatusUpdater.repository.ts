@@ -23,6 +23,7 @@ export class WorkerStatusUpdaterRepository {
 
     if (workerStatusId === EWorkerStatus.online) {
       updateData.last_connection_check_at = currentTime();
+      updateData.connection_date = currentTime();
     }
 
     const result = await this.dbRw

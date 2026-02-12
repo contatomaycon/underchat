@@ -13,6 +13,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { QrCodeCounter } from './qrCodeCounter';
+import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 
 const RETRY_DELAY = 10000;
 const RECONNECT_CHECK_DELAY = 2000;
@@ -50,12 +51,19 @@ const notifyWorkerStatusViaGrpc = async (
     BalanceWorkerStatusGrpcClientService
   );
 
+  const baileysService = container.resolve(BaileysService);
+  const phone =
+    workerStatusId === EWorkerStatus.online
+      ? getPhoneNumber(baileysService.socket?.user?.id)
+      : undefined;
+
   const dataPublish: IBaileysConnectionState = {
     code: ECodeMessage.info,
     status: baileysStatus,
     worker_id: workerId,
     account_id: accountId,
     worker_status_id: workerStatusId,
+    phone,
   };
 
   let lastError: Error | null = null;
