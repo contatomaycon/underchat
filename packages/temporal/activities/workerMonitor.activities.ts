@@ -1,5 +1,5 @@
 import { WorkerMonitorService } from '@core/services/workerMonitor.service';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 
 export interface IWorkerMonitorActivity {
   monitor(): Promise<void>;
@@ -7,7 +7,10 @@ export interface IWorkerMonitorActivity {
 
 @injectable()
 export class WorkerMonitorActivity implements IWorkerMonitorActivity {
-  constructor(private readonly workerMonitorService: WorkerMonitorService) {}
+  constructor(
+    @inject(WorkerMonitorService)
+    private readonly workerMonitorService: WorkerMonitorService
+  ) {}
 
   monitor = async (): Promise<void> => {
     await this.workerMonitorService.run();

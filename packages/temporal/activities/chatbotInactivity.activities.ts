@@ -1,5 +1,5 @@
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { createI18nInstance } from '@core/common/functions/createI18nInstance';
 
 export interface IChatbotInactivityActivity {
@@ -9,6 +9,7 @@ export interface IChatbotInactivityActivity {
 @injectable()
 export class ChatbotInactivityActivity implements IChatbotInactivityActivity {
   constructor(
+    @inject(ChatbotFlowRunnerService)
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService
   ) {}
 

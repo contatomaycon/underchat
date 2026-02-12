@@ -2,7 +2,7 @@ import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { ServerService } from '@core/services/server.service';
 import { SshService } from '@core/services/ssh.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import axios from 'axios';
 import { ConnectConfig } from 'ssh2';
 import { IBalanceMonitorServer } from '@core/common/interfaces/IBalanceMonitorServer';
@@ -23,8 +23,11 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
   private readonly activeContinuousChecks = new Set<string>();
 
   constructor(
+    @inject(ServerService)
     private readonly serverService: ServerService,
+    @inject(SshService)
     private readonly sshService: SshService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
 

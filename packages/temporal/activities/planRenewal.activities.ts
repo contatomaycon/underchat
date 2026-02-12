@@ -1,5 +1,5 @@
 import { PlanRenewalService } from '@core/services/planRenewal.service';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 
 export interface IPlanRenewalActivity {
   processPlanRenewals(): Promise<void>;
@@ -7,7 +7,10 @@ export interface IPlanRenewalActivity {
 
 @injectable()
 export class PlanRenewalActivity implements IPlanRenewalActivity {
-  constructor(private readonly planRenewalService: PlanRenewalService) {}
+  constructor(
+    @inject(PlanRenewalService)
+    private readonly planRenewalService: PlanRenewalService
+  ) {}
 
   processPlanRenewals = async (): Promise<void> => {
     await this.planRenewalService.processRenewals();

@@ -1,5 +1,5 @@
 import { ScheduleSendService } from '@core/services/scheduleSend.service';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 
 export interface IScheduleSendActivity {
   processScheduleSends(): Promise<void>;
@@ -7,7 +7,10 @@ export interface IScheduleSendActivity {
 
 @injectable()
 export class ScheduleSendActivity implements IScheduleSendActivity {
-  constructor(private readonly scheduleSendService: ScheduleSendService) {}
+  constructor(
+    @inject(ScheduleSendService)
+    private readonly scheduleSendService: ScheduleSendService
+  ) {}
 
   processScheduleSends = async (): Promise<void> => {
     await this.scheduleSendService.processSchedules();

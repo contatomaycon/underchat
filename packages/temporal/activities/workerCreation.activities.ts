@@ -5,7 +5,7 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 
 export interface IWorkerCreationActivity {
@@ -16,7 +16,9 @@ export interface IWorkerCreationActivity {
 @injectable()
 export class WorkerCreationActivity implements IWorkerCreationActivity {
   constructor(
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService
   ) {}
 

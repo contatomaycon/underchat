@@ -1,5 +1,5 @@
 import { WorkerProfileStatusService } from '@core/services/workerProfileStatus.service';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 
 export interface IProfileStatusRenewalActivity {
   renewPermanentStatuses(): Promise<void>;
@@ -8,6 +8,7 @@ export interface IProfileStatusRenewalActivity {
 @injectable()
 export class ProfileStatusRenewalActivity implements IProfileStatusRenewalActivity {
   constructor(
+    @inject(WorkerProfileStatusService)
     private readonly workerProfileStatusService: WorkerProfileStatusService
   ) {}
 

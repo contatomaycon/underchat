@@ -1,5 +1,5 @@
 import { PlanExpirationReminderService } from '@core/services/planExpirationReminder.service';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 
 export interface IPlanExpirationReminderActivity {
   processPlanExpirationReminders(): Promise<void>;
@@ -8,6 +8,7 @@ export interface IPlanExpirationReminderActivity {
 @injectable()
 export class PlanExpirationReminderActivity implements IPlanExpirationReminderActivity {
   constructor(
+    @inject(PlanExpirationReminderService)
     private readonly planExpirationReminderService: PlanExpirationReminderService
   ) {}
 
