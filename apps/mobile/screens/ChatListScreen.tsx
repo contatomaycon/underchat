@@ -65,7 +65,8 @@ function readIdentifier(value: unknown): string | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return String(value);
   }
-  return readString(value);
+  const parsed = readString(value);
+  return parsed ? parsed.toLowerCase() : null;
 }
 
 function resolveUserId(value: unknown): string | null {
@@ -307,8 +308,38 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [userSectors, setUserSectors] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [sidebarVisible, setSidebarVisible] = useState(false);
+  const locallyClearedSummaryChatIdsRef = useRef<Set<string>>(new Set());
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
+  );
+
+  const applyLocallyClearedUnreadOverrides = useCallback(
+    (items: ListChatsResult[]): ListChatsResult[] => {
+      if (items.length === 0) return items;
+
+      const cleared = locallyClearedSummaryChatIdsRef.current;
+      if (cleared.size === 0) return items;
+
+      return items.map((item) => {
+        if (!cleared.has(item.chat_id) || !item.summary) {
+          return item;
+        }
+
+        if (item.summary.unread_count <= 0) {
+          cleared.delete(item.chat_id);
+          return item;
+        }
+
+        return {
+          ...item,
+          summary: {
+            ...item.summary,
+            unread_count: 0,
+          },
+        };
+      });
+    },
+    []
   );
 
   useEffect(() => {
@@ -368,19 +399,20 @@ export function ChatListScreen({ route, navigation }: Props) {
           const results = res.results.filter(
             (r) => r.chat_id && r.chat_id.trim().length > 0
           );
+          const resolvedResults = applyLocallyClearedUnreadOverrides(results);
           if (tab === 'queue') {
-            setQueue(results);
+            setQueue(resolvedResults);
             setInChat([]);
             setCounts((c) => ({ ...c, queue: res.counts?.queue ?? 0 }));
           } else if (tab === 'in_chat') {
-            setInChat(results);
+            setInChat(resolvedResults);
             setQueue([]);
             setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
           } else if (tab === 'closed') {
-            setQueue(results);
+            setQueue(resolvedResults);
             setInChat([]);
           } else {
-            setInChat(results);
+            setInChat(resolvedResults);
             setQueue([]);
           }
         } else {
@@ -395,8 +427,8 @@ export function ChatListScreen({ route, navigation }: Props) {
         if (res) {
           const inChatList = res.results.filter((c) => c.status === 'in_chat');
           const queueList = res.results.filter((c) => c.status === 'queue');
-          setInChat(inChatList);
-          setQueue(queueList);
+          setInChat(applyLocallyClearedUnreadOverrides(inChatList));
+          setQueue(applyLocallyClearedUnreadOverrides(queueList));
           setCounts({
             queue: res.counts?.queue ?? 0,
             in_chat: res.counts?.in_chat ?? 0,
@@ -405,14 +437,14 @@ export function ChatListScreen({ route, navigation }: Props) {
       } else if (tab === 'queue') {
         const res = await listQueueChats(1, 50);
         if (res) {
-          setQueue(res.results);
+          setQueue(applyLocallyClearedUnreadOverrides(res.results));
           setCounts((c) => ({ ...c, queue: res.counts?.queue ?? 0 }));
           setInChat([]);
         }
       } else if (tab === 'in_chat') {
         const res = await listInChatChats(1, 50);
         if (res) {
-          setInChat(res.results);
+          setInChat(applyLocallyClearedUnreadOverrides(res.results));
           setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
           setQueue([]);
         }
@@ -424,10 +456,10 @@ export function ChatListScreen({ route, navigation }: Props) {
         });
         if (res) {
           if (tab === 'closed') {
-            setQueue(res.results);
+            setQueue(applyLocallyClearedUnreadOverrides(res.results));
             setInChat([]);
           } else {
-            setInChat(res.results);
+            setInChat(applyLocallyClearedUnreadOverrides(res.results));
             setQueue([]);
           }
         }
@@ -438,7 +470,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [tab, search, advancedFilterValues]);
+  }, [tab, search, advancedFilterValues, applyLocallyClearedUnreadOverrides]);
 
   const canReceiveChatNotification = useCallback(
     (chatData: SocketChatPayload): boolean => {
@@ -505,7 +537,8 @@ export function ChatListScreen({ route, navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      const offMessage = addChatSocketListener('message', () => {
+      const offMessage = addChatSocketListener('message', (payload) => {
+        locallyClearedSummaryChatIdsRef.current.delete(payload.chat_id);
         scheduleRealtimeReload();
       });
 
@@ -535,6 +568,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       chatUserId === currentUserId;
 
     if (shouldClearSummary) {
+      locallyClearedSummaryChatIdsRef.current.add(chat.chat_id);
       setQueue((prev) =>
         prev.map((item) =>
           item.chat_id === chat.chat_id && item.summary
@@ -564,7 +598,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       void clearChatSummary(chat.chat_id);
     }
 
-    navigation.navigate('ChatRoom', { chat });
+    navigation.push('ChatRoom', { chat });
   };
 
   const sections: { title: string; data: ListChatsResult[] }[] = [];

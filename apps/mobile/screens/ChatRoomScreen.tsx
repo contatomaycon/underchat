@@ -715,7 +715,8 @@ function readIdentifier(value: unknown): string | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return String(value);
   }
-  return readNonEmptyString(value);
+  const parsed = readNonEmptyString(value);
+  return parsed ? parsed.toLowerCase() : null;
 }
 
 function resolveUserId(value: unknown): string | null {
@@ -3042,25 +3043,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const scrollToBottomWithRetries = useCallback((retries = 8) => {
     const attempt = (remaining: number) => {
-      const list = listRef.current;
-      if (!list) {
-        if (remaining > 0) {
-          setTimeout(() => {
-            attempt(remaining - 1);
-          }, 40);
-        }
+      if (!pendingScrollToBottomRef.current) return;
+
+      listRef.current?.scrollToEnd({ animated: false });
+
+      if (remaining <= 0) {
+        pendingScrollToBottomRef.current = false;
         return;
       }
 
-      list.scrollToEnd({ animated: false });
-      requestAnimationFrame(() => {
-        listRef.current?.scrollToEnd({ animated: false });
-        requestAnimationFrame(() => {
-          listRef.current?.scrollToEnd({ animated: false });
-        });
-      });
-
-      pendingScrollToBottomRef.current = false;
+      setTimeout(() => {
+        attempt(remaining - 1);
+      }, 80);
     };
 
     attempt(retries);
@@ -3182,9 +3176,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     });
   }, [navigation, chatInfo.name, chatInfo.contact?.name, chatInfo.phone]);
 
-  useEffect(() => {
-    loadMessages();
-  }, [loadMessages]);
+  useFocusEffect(
+    useCallback(() => {
+      pendingScrollToBottomRef.current = true;
+      scrollOffsetRef.current = 0;
+      contentHeightRef.current = 0;
+      preserveScrollOnPrependRef.current = null;
+      void loadMessages();
+    }, [loadMessages])
+  );
 
   useEffect(() => {
     const chatId = chatInfo.chat_id;
