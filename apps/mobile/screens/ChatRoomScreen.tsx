@@ -45,9 +45,11 @@ import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
+import Constants from 'expo-constants';
 import {
   listMessages,
   createMessage,
+  clearChatSummary,
   getChatContactById,
   getChatContactByPhone,
   type ChatContactLookupResult,
@@ -102,6 +104,17 @@ function formatAudioTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function isExpoGoEnvironment(): boolean {
+  const constants = Constants as {
+    appOwnership?: string | null;
+    executionEnvironment?: string | null;
+  };
+  return (
+    constants.appOwnership === 'expo' ||
+    constants.executionEnvironment === 'storeClient'
+  );
 }
 
 function toPositiveInt(value: unknown, fallback: number): number {
@@ -626,7 +639,7 @@ async function forceDownloadToDevice(
     }
   };
 
-  if (kind === 'image' || kind === 'video') {
+  if ((kind === 'image' || kind === 'video') && !isExpoGoEnvironment()) {
     try {
       const granularPermissions: MediaLibrary.GranularPermission[] =
         kind === 'image' ? ['photo'] : ['video'];
@@ -696,6 +709,19 @@ function readNonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function readIdentifier(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return readNonEmptyString(value);
+}
+
+function resolveUserId(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as { id?: unknown; user_id?: unknown };
+  return readIdentifier(record.id) ?? readIdentifier(record.user_id);
 }
 
 function resolveStoredUserName(user: unknown): string | null {
@@ -2700,6 +2726,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const loadingOlderRef = useRef(false);
   const currentPageRef = useRef(1);
   const totalPagesRef = useRef(1);
+  const clearSummaryAttemptedForChatRef = useRef<string | null>(null);
   const preserveScrollOnPrependRef = useRef<{
     previousOffset: number;
     previousContentHeight: number;
@@ -2747,7 +2774,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     loadingOlderRef.current = false;
     currentPageRef.current = 1;
     totalPagesRef.current = 1;
+    clearSummaryAttemptedForChatRef.current = null;
     preserveScrollOnPrependRef.current = null;
+    setMessages([]);
+    setLoading(true);
+    setHighlightedMessageId(null);
     setLoadingOlder(false);
   }, [chatInfo.chat_id]);
 
@@ -2762,14 +2793,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     getUser().then((user) => {
-      const userId =
-        user && typeof user === 'object'
-          ? (user as { user_id?: unknown }).user_id
-          : null;
       const userName = resolveStoredUserName(user);
-      setCurrentUserId(
-        typeof userId === 'string' && userId.trim().length > 0 ? userId : null
-      );
+      setCurrentUserId(resolveUserId(user));
       setCurrentUserName(userName);
     });
   }, []);
@@ -3161,6 +3186,28 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     loadMessages();
   }, [loadMessages]);
 
+  useEffect(() => {
+    const chatId = chatInfo.chat_id;
+    if (!chatId) return;
+    if (loading) return;
+    if (clearSummaryAttemptedForChatRef.current === chatId) return;
+    clearSummaryAttemptedForChatRef.current = chatId;
+    void clearChatSummary(chatId).then((didClear) => {
+      if (!didClear) return;
+      setChatInfo((prev) => {
+        if (!prev.summary) return prev;
+        if (prev.summary.unread_count === 0) return prev;
+        return {
+          ...prev,
+          summary: {
+            ...prev.summary,
+            unread_count: 0,
+          },
+        };
+      });
+    });
+  }, [loading, chatInfo.chat_id]);
+
   const handleSocketMessage = useCallback(
     (payload: SocketMessagePayload) => {
       if (payload.chat_id !== chatInfo.chat_id) return;
@@ -3215,6 +3262,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           };
         }
 
+        if (
+          next.status === 'in_chat' &&
+          !!currentUserId &&
+          resolveUserId(next.user) === currentUserId &&
+          next.summary
+        ) {
+          next.summary = {
+            ...next.summary,
+            unread_count: 0,
+          };
+        }
+
         return next;
       });
 
@@ -3223,9 +3282,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         typeof payloadAny._active === 'boolean' ? payloadAny._active : false;
       const payloadUser =
         payloadAny.user && typeof payloadAny.user === 'object'
-          ? (payloadAny.user as { id?: unknown })
+          ? (payloadAny.user as { id?: unknown; user_id?: unknown })
           : null;
-      const payloadUserId = readNonEmptyString(payloadUser?.id);
+      const payloadUserId = resolveUserId(payloadUser);
 
       if (isActive && payloadUserId && currentUserId === payloadUserId) {
         loadMessages();
@@ -3322,12 +3381,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       ) : (
         <>
           <FlatList
+            key={chatInfo.chat_id}
             ref={listRef}
             data={messagesWithSeparators}
             keyExtractor={(item) =>
               item.type === 'separator'
-                ? `separator-${item.separatorDate}`
-                : `message-${item.message.message_id}`
+                ? `separator-${chatInfo.chat_id}-${item.separatorDate}`
+                : `message-${chatInfo.chat_id}-${item.message.message_id}`
             }
             renderItem={({ item }) => {
               if (item.type === 'separator') {

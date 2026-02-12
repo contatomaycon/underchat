@@ -35,10 +35,12 @@ ENV npm_config_build_from_source=true \
     npm_config_loglevel=verbose
 
 RUN pnpm install --unsafe-perm
-RUN RDKAFKA_PATH=$(find node_modules/.pnpm/node-rdkafka@* -type d -name "node-rdkafka" -path "*/node_modules/node-rdkafka" | head -1) && \
-    if [ -n "$RDKAFKA_PATH" ] && [ ! -f "$RDKAFKA_PATH/build/Release/node-librdkafka.node" ]; then \
-      cd "$RDKAFKA_PATH" && npm run install; \
-    fi
+RUN RDKAFKA_PATH=$(find /app/node_modules -type d -name "node-rdkafka" 2>/dev/null | head -1) && \
+    if [ -z "$RDKAFKA_PATH" ]; then echo "node-rdkafka não encontrado em node_modules"; exit 1; fi && \
+    if [ ! -f "$RDKAFKA_PATH/build/Release/node-librdkafka.node" ]; then \
+      (cd "$RDKAFKA_PATH" && npm run install) || (echo "Falha ao compilar node-rdkafka"; exit 1); \
+    fi && \
+    if [ ! -f "$RDKAFKA_PATH/build/Release/node-librdkafka.node" ]; then echo "Binding node-librdkafka.node não gerado"; exit 1; fi
 
 COPY infra/atlas/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

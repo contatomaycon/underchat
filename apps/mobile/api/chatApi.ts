@@ -206,6 +206,17 @@ export async function createMessage(
   return res?.data ?? null;
 }
 
+export async function clearChatSummary(chatId: string): Promise<boolean> {
+  if (!chatId || chatId.trim().length === 0) return false;
+
+  const res = await apiPost<{ success?: boolean }>(
+    `/chat/${chatId}/clear-summary`,
+    {}
+  );
+
+  return !!res?.status;
+}
+
 export async function listLabelTemplates(): Promise<LabelTemplate[] | null> {
   const res = await apiGet<LabelTemplate[]>('/chat/label-templates');
   return res?.data ?? null;

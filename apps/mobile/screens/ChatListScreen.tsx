@@ -21,6 +21,7 @@ import {
   listInChatChats,
   listChats,
   searchChats,
+  clearChatSummary,
 } from '../api/chatApi';
 import { getUser, getPermissions, getSectors } from '../storage/authStorage';
 import { canUseUserAndSectorFilters as checkUserSectorFilters } from '../constants/permissions';
@@ -60,14 +61,26 @@ function readString(value: unknown): string | null {
   return out.length > 0 ? out : null;
 }
 
+function readIdentifier(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return readString(value);
+}
+
+function resolveUserId(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const user = value as { id?: unknown; user_id?: unknown };
+  return readIdentifier(user.id) ?? readIdentifier(user.user_id);
+}
+
 function resolveSocketChatId(data: SocketChatPayload): string | null {
   return readString((data as { chat_id?: unknown }).chat_id);
 }
 
 function resolveSocketChatUserId(data: SocketChatPayload): string | null {
   const user = (data as { user?: unknown }).user;
-  if (!user || typeof user !== 'object') return null;
-  return readString((user as { id?: unknown }).id);
+  return resolveUserId(user);
 }
 
 function resolveSocketChatSectorId(data: SocketChatPayload): string | null {
@@ -307,12 +320,8 @@ export function ChatListScreen({ route, navigation }: Props) {
       const photo = info && info.photo ? String(info.photo) : null;
       setUserPhoto(photo && photo !== 'null' ? photo : null);
       const userId =
-        user && typeof user === 'object'
-          ? (user as { user_id?: unknown }).user_id
-          : null;
-      setCurrentUserId(
-        typeof userId === 'string' && userId.trim().length > 0 ? userId : null
-      );
+        user && typeof user === 'object' ? resolveUserId(user) : null;
+      setCurrentUserId(userId);
     });
   }, []);
 
@@ -519,6 +528,42 @@ export function ChatListScreen({ route, navigation }: Props) {
   );
 
   const openChat = (chat: ListChatsResult) => {
+    const chatUserId = resolveUserId(chat.user);
+    const shouldClearSummary =
+      chat.status === 'in_chat' &&
+      !!currentUserId &&
+      chatUserId === currentUserId;
+
+    if (shouldClearSummary) {
+      setQueue((prev) =>
+        prev.map((item) =>
+          item.chat_id === chat.chat_id && item.summary
+            ? {
+                ...item,
+                summary: {
+                  ...item.summary,
+                  unread_count: 0,
+                },
+              }
+            : item
+        )
+      );
+      setInChat((prev) =>
+        prev.map((item) =>
+          item.chat_id === chat.chat_id && item.summary
+            ? {
+                ...item,
+                summary: {
+                  ...item.summary,
+                  unread_count: 0,
+                },
+              }
+            : item
+        )
+      );
+      void clearChatSummary(chat.chat_id);
+    }
+
     navigation.navigate('ChatRoom', { chat });
   };
 
