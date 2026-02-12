@@ -202,6 +202,12 @@ export interface MessageContentTemplate {
   verifiedBizName?: string | null;
 }
 
+export interface MessageContextInfo {
+  is_forwarded?: boolean | null;
+  forwarding_score?: number | string | null;
+  external_ad_reply?: unknown;
+}
+
 export interface MessageContent {
   type: string;
   message?: string | null;
@@ -217,7 +223,7 @@ export interface MessageContent {
   document?: MessageContentDocument | null;
   reactions?: MessageReaction[] | null;
   version?: unknown;
-  context_info?: unknown;
+  context_info?: MessageContextInfo | null;
   template?: MessageContentTemplate | null;
   pin?: unknown;
   ephemeral?: unknown;

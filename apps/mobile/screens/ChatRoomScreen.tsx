@@ -104,10 +104,7 @@ const UUID_PATTERN =
 
 let preferredNativeDownloadDirectoryUri: string | null = null;
 
-function fitWaveformToWidth(
-  waveform: number[],
-  width: number
-): number[] {
+function fitWaveformToWidth(waveform: number[], width: number): number[] {
   if (waveform.length <= 1) return waveform;
 
   const usableWidth = Math.max(0, width - WAVEFORM_HORIZONTAL_INSET * 2);
@@ -178,10 +175,18 @@ function ChatRoomSkeleton() {
         ]}
       >
         <Animated.View
-          style={[styles.skeletonBubbleLine, styles.skeletonBubbleLineWide, { opacity }]}
+          style={[
+            styles.skeletonBubbleLine,
+            styles.skeletonBubbleLineWide,
+            { opacity },
+          ]}
         />
         <Animated.View
-          style={[styles.skeletonBubbleLine, styles.skeletonBubbleLineShort, { opacity }]}
+          style={[
+            styles.skeletonBubbleLine,
+            styles.skeletonBubbleLineShort,
+            { opacity },
+          ]}
         />
       </Animated.View>
     </View>
@@ -321,12 +326,17 @@ function formatVideoDuration(seconds: number | null | undefined): string {
   return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
 }
 
-function resolveVideoMeta(video: MessageContentVideo | null | undefined): string {
+function resolveVideoMeta(
+  video: MessageContentVideo | null | undefined
+): string {
   if (!video) return '';
-  const ext = (video.extension ?? '').replace(/^\./, '').toUpperCase() || 'VIDEO';
+  const ext =
+    (video.extension ?? '').replace(/^\./, '').toUpperCase() || 'VIDEO';
   const size = formatFileSize(video.size);
   const duration = formatVideoDuration(video.duration);
-  return [ext, size, duration].filter((value) => value && value.length > 0).join(' • ');
+  return [ext, size, duration]
+    .filter((value) => value && value.length > 0)
+    .join(' • ');
 }
 
 function resolveVideoDownloadName(
@@ -353,11 +363,15 @@ function resolveDocumentDownloadName(
 
 function resolveStickerDownloadName(msg: ListMessageResult): string {
   const sticker = msg.content?.sticker;
-  const ext = (sticker?.extension ?? '').replace(/^\./, '').toLowerCase() || 'webp';
+  const ext =
+    (sticker?.extension ?? '').replace(/^\./, '').toLowerCase() || 'webp';
   return `sticker-${msg.message_id.slice(-8)}.${ext}`;
 }
 
-function resolveImageDownloadName(msg: ListMessageResult, sourceUrl: string): string {
+function resolveImageDownloadName(
+  msg: ListMessageResult,
+  sourceUrl: string
+): string {
   const image = msg.content?.image;
   const extFromPayload = image?.extension?.replace(/^\./, '').toLowerCase();
   const extension = extFromPayload || getExtensionFromUrl(sourceUrl) || 'jpg';
@@ -511,9 +525,13 @@ async function forceDownloadToDevice(
     temporaryFile.delete();
   }
 
-  const downloadedFile = await File.downloadFileAsync(sourceUrl, temporaryFile, {
-    idempotent: true,
-  });
+  const downloadedFile = await File.downloadFileAsync(
+    sourceUrl,
+    temporaryFile,
+    {
+      idempotent: true,
+    }
+  );
 
   const cleanupDownloadedFile = () => {
     if (!downloadedFile.exists) return;
@@ -613,7 +631,10 @@ function resolveStoredUserName(user: unknown): string | null {
 
   const infoName = readNonEmptyString(info?.name);
   const infoLastName = readNonEmptyString(info?.last_name);
-  const infoFullName = [infoName, infoLastName].filter(Boolean).join(' ').trim();
+  const infoFullName = [infoName, infoLastName]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
 
   return (
     readNonEmptyString(infoFullName) ??
@@ -621,6 +642,41 @@ function resolveStoredUserName(user: unknown): string | null {
     readNonEmptyString(userRecord.user_name) ??
     readNonEmptyString(userRecord.login)
   );
+}
+
+function isForwardedMessage(
+  content: MessageContent | null | undefined
+): boolean {
+  const contextInfo = content?.context_info;
+  if (!contextInfo || typeof contextInfo !== 'object') return false;
+
+  const normalized = contextInfo as {
+    is_forwarded?: unknown;
+    forwarding_score?: unknown;
+  };
+
+  if (normalized.is_forwarded === true) return true;
+
+  if (typeof normalized.is_forwarded === 'string') {
+    const value = normalized.is_forwarded.trim().toLowerCase();
+    if (value === 'true' || value === '1') {
+      return true;
+    }
+  }
+
+  if (typeof normalized.forwarding_score === 'number') {
+    return (
+      Number.isFinite(normalized.forwarding_score) &&
+      normalized.forwarding_score > 0
+    );
+  }
+
+  if (typeof normalized.forwarding_score === 'string') {
+    const parsed = Number(normalized.forwarding_score);
+    return Number.isFinite(parsed) && parsed > 0;
+  }
+
+  return false;
 }
 
 function normalizeTypeUser(value: unknown): ETypeUserChat {
@@ -648,7 +704,9 @@ function normalizeSocketMessageToListMessage(
     message_id: messageId,
     chat_id: chatId,
     date: dateValue ?? new Date().toISOString(),
-    type_user: normalizeTypeUser((payload as { type_user?: unknown }).type_user),
+    type_user: normalizeTypeUser(
+      (payload as { type_user?: unknown }).type_user
+    ),
     user:
       (payload as { user?: unknown }).user && typeof payload.user === 'object'
         ? (payload.user as ListMessageResult['user'])
@@ -786,7 +844,8 @@ function resolveQuotedType(quoted: MessageQuoted | null | undefined): string {
   if (quoted?.sticker) return EMessageType.sticker;
   if (quoted?.location) return EMessageType.location;
   if (quoted?.contact) return EMessageType.contact_card;
-  if (quoted?.contacts && quoted.contacts.length > 0) return EMessageType.contacts;
+  if (quoted?.contacts && quoted.contacts.length > 0)
+    return EMessageType.contacts;
   return EMessageType.text;
 }
 
@@ -815,7 +874,10 @@ function resolveQuotedName(
   }
 
   const quotedContactName = quoted?.contact
-    ? [quoted.contact.name, quoted.contact.last_name].filter(Boolean).join(' ').trim()
+    ? [quoted.contact.name, quoted.contact.last_name]
+        .filter(Boolean)
+        .join(' ')
+        .trim()
     : '';
   return (
     quotedContactName ||
@@ -837,7 +899,10 @@ function resolveQuotedPreviewImage(
   if (quotedType === EMessageType.sticker) {
     return resolveMediaUri(quoted.sticker?.url);
   }
-  if (quotedType === EMessageType.video || quotedType === EMessageType.video_note) {
+  if (
+    quotedType === EMessageType.video ||
+    quotedType === EMessageType.video_note
+  ) {
     return resolveMediaUri(quoted.video?.thumbnail ?? quoted.video?.url);
   }
 
@@ -927,7 +992,10 @@ function resolveQuotedMeta(
     return [ext, size].filter(Boolean).join(' • ');
   }
 
-  if (quotedType === EMessageType.video || quotedType === EMessageType.video_note) {
+  if (
+    quotedType === EMessageType.video ||
+    quotedType === EMessageType.video_note
+  ) {
     const ext = quoted.video?.extension
       ? quoted.video.extension.replace(/^\./, '').toUpperCase()
       : 'VIDEO';
@@ -997,7 +1065,9 @@ function resolveQuotedTargetMessageId(
     }
   }
 
-  const explicitQuotedId = readNonEmptyString(message.content?.message_quoted_id);
+  const explicitQuotedId = readNonEmptyString(
+    message.content?.message_quoted_id
+  );
   if (explicitQuotedId) {
     const explicitMessage = allMessages.find(
       (entry) => entry.message_id === explicitQuotedId
@@ -1257,9 +1327,12 @@ function useChatAudio() {
       return { ...prev, [messageId]: nextWidth };
     });
   }, []);
-  const getWaveformWidth = useCallback((messageId: string): number => {
-    return waveformWidths[messageId] ?? 0;
-  }, [waveformWidths]);
+  const getWaveformWidth = useCallback(
+    (messageId: string): number => {
+      return waveformWidths[messageId] ?? 0;
+    },
+    [waveformWidths]
+  );
 
   return {
     getState,
@@ -1328,7 +1401,9 @@ function VideoMessagePreview({
       {shouldUseVideoFramePreview ? (
         <VideoView
           player={previewPlayer}
-          style={isVideoNote ? styles.videoNoteThumbVideo : styles.videoThumbVideo}
+          style={
+            isVideoNote ? styles.videoNoteThumbVideo : styles.videoThumbVideo
+          }
           contentFit="cover"
           nativeControls={false}
           fullscreenOptions={VIDEO_FULLSCREEN_DISABLED}
@@ -1369,7 +1444,9 @@ function LocationMessagePreview({
     [latitude, longitude]
   );
   const previewUri =
-    previewCandidates[Math.min(previewSourceIndex, previewCandidates.length - 1)];
+    previewCandidates[
+      Math.min(previewSourceIndex, previewCandidates.length - 1)
+    ];
   const title = name?.trim() || pt.location;
 
   const handleOpen = useCallback(() => {
@@ -1448,6 +1525,9 @@ function QuotedReplyPreview({
   const quotedImageUri = resolveQuotedPreviewImage(quoted, quotedType);
   const quotedContactPhoto = resolveQuotedContactPhoto(quoted, quotedType);
   const isContactsGroup = isQuotedContactsGroup(quoted, quotedType);
+  const isQuotedContactType =
+    quotedType === EMessageType.contact_card ||
+    quotedType === EMessageType.contacts;
   const showVideoOverlay =
     quotedType === EMessageType.video || quotedType === EMessageType.video_note;
   const canPressQuoted = typeof onPressQuoted === 'function';
@@ -1459,14 +1539,28 @@ function QuotedReplyPreview({
   const quotedInner = (
     <>
       <View style={[styles.quotedBar, fromMe && styles.quotedBarRight]} />
-      <View style={styles.quotedBody}>
+      <View
+        style={[
+          styles.quotedBody,
+          isQuotedContactType && styles.quotedBodyContact,
+        ]}
+      >
         <Text
-          style={[styles.quotedName, fromMe && styles.quotedNameRight]}
+          style={[
+            styles.quotedName,
+            fromMe && styles.quotedNameRight,
+            isQuotedContactType && styles.quotedNameContact,
+          ]}
           numberOfLines={1}
         >
           {quotedName}
         </Text>
-        <View style={styles.quotedContentRow}>
+        <View
+          style={[
+            styles.quotedContentRow,
+            isQuotedContactType && styles.quotedContentRowContact,
+          ]}
+        >
           {quotedImageUri ? (
             <View style={styles.quotedThumbWrap}>
               <Image
@@ -1481,11 +1575,19 @@ function QuotedReplyPreview({
               ) : null}
             </View>
           ) : quotedType === EMessageType.document ? (
-            <Ionicons name="document-text-outline" size={18} color={colors.primary} />
+            <Ionicons
+              name="document-text-outline"
+              size={18}
+              color={colors.primary}
+            />
           ) : quotedType === EMessageType.audio ? (
             <Ionicons name="mic-outline" size={18} color={colors.primary} />
           ) : quotedType === EMessageType.location ? (
-            <Ionicons name="location-outline" size={18} color={colors.primary} />
+            <Ionicons
+              name="location-outline"
+              size={18}
+              color={colors.primary}
+            />
           ) : quotedType === EMessageType.contact_card ||
             quotedType === EMessageType.contacts ? (
             quotedContactPhoto ? (
@@ -1496,18 +1598,36 @@ function QuotedReplyPreview({
               />
             ) : isContactsGroup ? (
               <View style={styles.quotedContactGroupIconWrap}>
-                <Ionicons name="people-outline" size={14} color={colors.primary} />
+                <Ionicons
+                  name="people-outline"
+                  size={14}
+                  color={colors.primary}
+                />
               </View>
             ) : (
-              <Ionicons name="person-outline" size={18} color={colors.primary} />
+              <Ionicons
+                name="person-outline"
+                size={18}
+                color={colors.primary}
+              />
             )
           ) : null}
 
-          <View style={styles.quotedTextWrap}>
+          <View
+            style={[
+              styles.quotedTextWrap,
+              isQuotedContactType && styles.quotedTextWrapContact,
+            ]}
+          >
             {quotedText ? (
               <Text
-                style={[styles.quotedText, fromMe && styles.quotedTextRight]}
+                style={[
+                  styles.quotedText,
+                  fromMe && styles.quotedTextRight,
+                  isQuotedContactType && styles.quotedTextContact,
+                ]}
                 numberOfLines={2}
+                ellipsizeMode="tail"
               >
                 {quotedText}
               </Text>
@@ -1529,7 +1649,10 @@ function QuotedReplyPreview({
 
   return (
     <Pressable
-      style={({ pressed }) => [quotedBlockStyle, pressed && styles.quotedBlockPressed]}
+      style={({ pressed }) => [
+        quotedBlockStyle,
+        pressed && styles.quotedBlockPressed,
+      ]}
       onPress={onPressQuoted}
     >
       {quotedInner}
@@ -1678,9 +1801,10 @@ function BubbleContent({
       audioState.duration > 0 ? audioState.duration : fallbackDuration;
     const currentTime =
       audioState.isPlaying || audioState.position > 0 ? audioState.position : 0;
-    const progressPercent = durationSec > 0
-      ? Math.max(0, Math.min(100, (currentTime / durationSec) * 100))
-      : 0;
+    const progressPercent =
+      durationSec > 0
+        ? Math.max(0, Math.min(100, (currentTime / durationSec) * 100))
+        : 0;
     const currentTimeStr = formatAudioTime(currentTime);
     const waveformWidth = audioCtrl.getWaveformWidth(messageId);
     const waveformToRender = fitWaveformToWidth(waveform, waveformWidth);
@@ -2008,6 +2132,8 @@ function MessageBubble({
   const isContactCard =
     content?.type === EMessageType.contact_card ||
     content?.type === EMessageType.contacts;
+  const isForwarded = isForwardedMessage(content);
+  const showForwardedIndicator = isForwarded && !isSystem && !isAnnotation;
   const reactionsSummary = getReactionsSummary(content?.reactions);
   const showReactionsSummary =
     reactionsSummary.length > 0 && !isAnnotation && !isSystem;
@@ -2037,6 +2163,7 @@ function MessageBubble({
       content.document?.url ||
       content.contact ||
       (content.contacts && content.contacts.length > 0) ||
+      showForwardedIndicator ||
       content.quoted ||
       content.message ||
       content.template);
@@ -2059,6 +2186,30 @@ function MessageBubble({
             highlighted && styles.bubbleHighlighted,
           ]}
         >
+          {showForwardedIndicator ? (
+            <View style={styles.forwardedIndicator}>
+              <Ionicons
+                name="return-up-back-outline"
+                size={14}
+                style={[
+                  styles.forwardedIcon,
+                  fromMe
+                    ? styles.forwardedColorRight
+                    : styles.forwardedColorLeft,
+                ]}
+              />
+              <Text
+                style={[
+                  styles.forwardedText,
+                  fromMe
+                    ? styles.forwardedColorRight
+                    : styles.forwardedColorLeft,
+                ]}
+              >
+                {pt.forwarded}
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.bubbleMeta}>
             {timeStr ? (
               <Text
@@ -2112,6 +2263,26 @@ function MessageBubble({
           highlighted && styles.bubbleHighlighted,
         ]}
       >
+        {showForwardedIndicator ? (
+          <View style={styles.forwardedIndicator}>
+            <Ionicons
+              name="return-up-back-outline"
+              size={14}
+              style={[
+                styles.forwardedIcon,
+                fromMe ? styles.forwardedColorRight : styles.forwardedColorLeft,
+              ]}
+            />
+            <Text
+              style={[
+                styles.forwardedText,
+                fromMe ? styles.forwardedColorRight : styles.forwardedColorLeft,
+              ]}
+            >
+              {pt.forwarded}
+            </Text>
+          </View>
+        ) : null}
         <QuotedReplyPreview
           msg={msg}
           fromMe={fromMe}
@@ -2164,8 +2335,12 @@ function MessageBubble({
           <View style={styles.reactionSummaryBubble}>
             {reactionsSummary.map((reaction) => (
               <View key={reaction.emoji} style={styles.reactionSummaryItem}>
-                <Text style={styles.reactionSummaryEmoji}>{reaction.emoji}</Text>
-                <Text style={styles.reactionSummaryCount}>{reaction.count}</Text>
+                <Text style={styles.reactionSummaryEmoji}>
+                  {reaction.emoji}
+                </Text>
+                <Text style={styles.reactionSummaryCount}>
+                  {reaction.count}
+                </Text>
               </View>
             ))}
           </View>
@@ -2182,9 +2357,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [chatInfo, setChatInfo] = useState(chat);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
-  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(
-    null
-  );
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
   const [messages, setMessages] = useState<ListMessageResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
@@ -2204,9 +2379,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [downloadingViewerMedia, setDownloadingViewerMedia] = useState(false);
   const audioCtrl = useChatAudio();
   const viewerVideoPlayer = useVideoPlayer(
-    viewer.kind === 'video' && viewer.src
-      ? { uri: viewer.src }
-      : null,
+    viewer.kind === 'video' && viewer.src ? { uri: viewer.src } : null,
     (player) => {
       player.loop = false;
     }
@@ -2334,7 +2507,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         }
 
         if (!lookup) {
-          const phone = normalizePhoneDigits(contact.phone ?? contact.phone_partial);
+          const phone = normalizePhoneDigits(
+            contact.phone ?? contact.phone_partial
+          );
           const phoneDdi =
             contact.phone_ddi?.trim() ||
             chatInfo.contact?.phone_ddi?.trim() ||
@@ -2380,7 +2555,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setDownloadingViewerMedia(true);
     try {
       const defaultName =
-        viewer.kind === 'video' ? `video-${Date.now()}.mp4` : `imagem-${Date.now()}.jpg`;
+        viewer.kind === 'video'
+          ? `video-${Date.now()}.mp4`
+          : `imagem-${Date.now()}.jpg`;
       const fileName = viewer.downloadName || defaultName;
       await forceDownloadToDevice(viewer.src, fileName, viewer.kind);
     } catch {
@@ -2478,7 +2655,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     navigation.setOptions({
-      title: chatInfo.name ?? chatInfo.contact?.name ?? chatInfo.phone ?? 'Chat',
+      title:
+        chatInfo.name ?? chatInfo.contact?.name ?? chatInfo.phone ?? 'Chat',
     });
   }, [navigation, chatInfo.name, chatInfo.contact?.name, chatInfo.phone]);
 
@@ -2563,7 +2741,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     useCallback(() => {
       const pendingMessages = consumePendingMessages(chatInfo.chat_id);
       if (pendingMessages.length > 0) {
-        setMessages((prev) => mergePendingSocketMessages(prev, pendingMessages));
+        setMessages((prev) =>
+          mergePendingSocketMessages(prev, pendingMessages)
+        );
       }
 
       const pendingChatUpdates = consumePendingChatUpdates(chatInfo.chat_id);
@@ -2702,7 +2882,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   <Ionicons name="download-outline" size={20} color="#FFFFFF" />
                 )}
               </Pressable>
-              <Pressable style={styles.viewerActionBtn} onPress={closeMediaViewer}>
+              <Pressable
+                style={styles.viewerActionBtn}
+                onPress={closeMediaViewer}
+              >
                 <Ionicons name="close" size={20} color="#FFFFFF" />
               </Pressable>
             </View>
@@ -2850,7 +3033,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   bubbleQuotedMinWidth: {
-    minWidth: 166,
+    minWidth: 192,
   },
   bubbleShortMinWidth: {
     minWidth: 128,
@@ -2912,12 +3095,36 @@ const styles = StyleSheet.create({
   bubbleMetaDocument: {
     marginTop: 2,
   },
+  forwardedIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+    opacity: 0.72,
+  },
+  forwardedIcon: {
+    transform: [{ scaleX: -1 }],
+  },
+  forwardedText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    fontWeight: '400',
+  },
+  forwardedColorLeft: {
+    color: colors.onSurface,
+  },
+  forwardedColorRight: {
+    color: 'rgba(17, 27, 33, 0.7)',
+  },
   quotedBlock: {
     flexDirection: 'row',
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: 'rgba(255, 255, 255, 0.58)',
     marginBottom: 8,
+    width: '100%',
+    minWidth: 152,
+    alignSelf: 'stretch',
   },
   quotedBlockRight: {
     backgroundColor: 'rgba(255, 255, 255, 0.62)',
@@ -2942,11 +3149,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     minWidth: 0,
   },
+  quotedBodyContact: {
+    paddingBottom: 15,
+  },
   quotedName: {
     fontSize: 13,
     fontWeight: '700',
     color: colors.primary,
     marginBottom: 3,
+  },
+  quotedNameContact: {
+    marginTop: 1,
+    marginBottom: 4,
+    paddingRight: 6,
   },
   quotedNameRight: {
     color: '#1E5AB4',
@@ -2955,6 +3170,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  quotedContentRowContact: {
+    alignItems: 'flex-start',
+    paddingRight: 6,
+    paddingBottom: 4,
   },
   quotedThumbWrap: {
     width: 42,
@@ -2997,10 +3217,16 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  quotedTextWrapContact: {
+    paddingBottom: 8,
+  },
   quotedText: {
     fontSize: 13,
     lineHeight: 16,
     color: colors.onSurface,
+  },
+  quotedTextContact: {
+    lineHeight: 17,
   },
   quotedTextRight: {
     color: 'rgba(17, 27, 33, 0.92)',
@@ -3067,21 +3293,21 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   mediaBubble: {
-    maxWidth: 260,
+    maxWidth: 232,
     overflow: 'hidden',
     borderRadius: 8,
   },
   imageThumb: {
     width: '100%',
-    maxWidth: 260,
-    maxHeight: 360,
+    maxWidth: 232,
+    maxHeight: 320,
     aspectRatio: 1,
     borderRadius: 6,
   },
   videoThumbWrap: {
     width: '100%',
-    maxWidth: 260,
-    height: 160,
+    maxWidth: 232,
+    height: 144,
     position: 'relative',
     borderRadius: 6,
     overflow: 'hidden',
@@ -3089,13 +3315,13 @@ const styles = StyleSheet.create({
   videoThumb: {
     width: '100%',
     height: '100%',
-    maxWidth: 260,
+    maxWidth: 232,
     borderRadius: 6,
   },
   videoThumbVideo: {
     width: '100%',
     height: '100%',
-    maxWidth: 260,
+    maxWidth: 232,
     borderRadius: 6,
     backgroundColor: '#000000',
   },

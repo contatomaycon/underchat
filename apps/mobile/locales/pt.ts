@@ -86,6 +86,7 @@ export const pt = {
   friday: 'Sexta-feira',
   saturday: 'Sábado',
   view_once_message: 'Visualização única',
+  forwarded: 'Encaminhada',
   audio: 'Áudio',
   download: 'Baixar',
   image_download_success: 'Imagem baixada com sucesso.',
