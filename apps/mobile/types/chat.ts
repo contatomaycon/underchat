@@ -174,6 +174,12 @@ export interface MessageTemplateButton {
   id: string;
 }
 
+export interface MessageReaction {
+  emoji?: string | null;
+  user_id?: string | null;
+  user_name?: string | null;
+}
+
 export interface MessageContentTemplate {
   hydratedTitleText?: string | null;
   hydratedContentText?: string | null;
@@ -195,7 +201,7 @@ export interface MessageContent {
   contacts?: MessageContentContact[] | null;
   audio?: MessageContentAudio | null;
   document?: MessageContentDocument | null;
-  reactions?: unknown;
+  reactions?: MessageReaction[] | null;
   version?: unknown;
   context_info?: unknown;
   template?: MessageContentTemplate | null;

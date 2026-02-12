@@ -24,6 +24,7 @@ import {
   type MessageContent,
   type MessageContentContact,
   type MessageContentDocument,
+  type MessageReaction,
   type MessageContentVideo,
   ETypeUserChat,
 } from '../types/chat';
@@ -653,7 +654,44 @@ function mergeMessageLists(
 
   if (existingIndex >= 0) {
     const next = [...current];
-    next[existingIndex] = { ...next[existingIndex], ...incoming };
+    const previous = next[existingIndex];
+    const mergedContent =
+      incoming.content && typeof incoming.content === 'object'
+        ? {
+            ...(previous.content ?? {}),
+            ...incoming.content,
+          }
+        : previous.content;
+    const mergedSummary =
+      incoming.summary && typeof incoming.summary === 'object'
+        ? {
+            ...(previous.summary ?? {}),
+            ...incoming.summary,
+          }
+        : previous.summary;
+    const mergedMessageKey =
+      incoming.message_key && typeof incoming.message_key === 'object'
+        ? {
+            ...(previous.message_key ?? {}),
+            ...incoming.message_key,
+          }
+        : previous.message_key;
+    const mergedUser =
+      incoming.user && typeof incoming.user === 'object'
+        ? {
+            ...(previous.user ?? {}),
+            ...incoming.user,
+          }
+        : previous.user;
+
+    next[existingIndex] = {
+      ...previous,
+      ...incoming,
+      content: mergedContent,
+      summary: mergedSummary,
+      message_key: mergedMessageKey,
+      user: mergedUser,
+    };
     return next;
   }
 
@@ -681,6 +719,31 @@ function mergePendingSocketMessages(
     next = mergeMessageLists(next, normalized);
   }
   return next;
+}
+
+type ReactionSummaryItem = { emoji: string; count: number };
+
+function getReactionsSummary(
+  reactions: MessageReaction[] | null | undefined
+): ReactionSummaryItem[] {
+  if (!reactions || reactions.length === 0) return [];
+
+  const summary = new Map<string, number>();
+
+  for (const reaction of reactions) {
+    const emoji =
+      typeof reaction?.emoji === 'string' ? reaction.emoji.trim() : '';
+    if (!emoji) continue;
+    const current = summary.get(emoji) ?? 0;
+    summary.set(emoji, current + 1);
+  }
+
+  return Array.from(summary.entries())
+    .map(([emoji, count]) => ({ emoji, count }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.emoji.localeCompare(b.emoji);
+    });
 }
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatRoom'>;
@@ -1536,6 +1599,9 @@ function MessageBubble({
   const isContactCard =
     content?.type === EMessageType.contact_card ||
     content?.type === EMessageType.contacts;
+  const reactionsSummary = getReactionsSummary(content?.reactions);
+  const showReactionsSummary =
+    reactionsSummary.length > 0 && !isAnnotation && !isSystem;
   const hasContent =
     content &&
     (content.type === EMessageType.system ||
@@ -1651,6 +1717,24 @@ function MessageBubble({
           />
         </View>
       </View>
+      {showReactionsSummary ? (
+        <View
+          style={[
+            styles.reactionsSummary,
+            fromMe ? styles.reactionsSummaryRight : styles.reactionsSummaryLeft,
+            isContactCard && styles.reactionsSummaryContact,
+          ]}
+        >
+          <View style={styles.reactionSummaryBubble}>
+            {reactionsSummary.map((reaction) => (
+              <View key={reaction.emoji} style={styles.reactionSummaryItem}>
+                <Text style={styles.reactionSummaryEmoji}>{reaction.emoji}</Text>
+                <Text style={styles.reactionSummaryCount}>{reaction.count}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -2290,6 +2374,47 @@ const styles = StyleSheet.create({
   },
   bubbleMetaDocument: {
     marginTop: 2,
+  },
+  reactionsSummary: {
+    marginTop: -2,
+    zIndex: 2,
+  },
+  reactionsSummaryRight: {
+    alignSelf: 'flex-end',
+    marginRight: 12,
+  },
+  reactionsSummaryLeft: {
+    alignSelf: 'flex-start',
+    marginLeft: 12,
+  },
+  reactionsSummaryContact: {
+    marginTop: -8,
+  },
+  reactionSummaryBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    minHeight: 22,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.14)',
+  },
+  reactionSummaryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  reactionSummaryEmoji: {
+    fontSize: 14,
+    lineHeight: 14,
+  },
+  reactionSummaryCount: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(47, 43, 61, 0.72)',
   },
   bubbleAnnotation: {
     backgroundColor: '#FFF3CD',
