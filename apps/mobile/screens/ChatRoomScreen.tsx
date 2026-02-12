@@ -123,7 +123,7 @@ const WAVEFORM_HORIZONTAL_INSET = 2;
 const WAVEFORM_FALLBACK_MAX_BARS = 28;
 const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
-const CHAT_MESSAGES_PER_PAGE = 50;
+const CHAT_MESSAGES_PER_PAGE = 10;
 const LOAD_OLDER_SCROLL_THRESHOLD = 180;
 type DownloadKind = 'image' | 'video' | 'document';
 const UUID_PATTERN =
@@ -3004,12 +3004,42 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const offsetY = event.nativeEvent.contentOffset.y;
       scrollOffsetRef.current = offsetY;
 
+      if (pendingScrollToBottomRef.current) {
+        return;
+      }
+
       if (offsetY <= LOAD_OLDER_SCROLL_THRESHOLD) {
         void loadOlderMessages();
       }
     },
     [loadOlderMessages]
   );
+
+  const scrollToBottomWithRetries = useCallback((retries = 8) => {
+    const attempt = (remaining: number) => {
+      const list = listRef.current;
+      if (!list) {
+        if (remaining > 0) {
+          setTimeout(() => {
+            attempt(remaining - 1);
+          }, 40);
+        }
+        return;
+      }
+
+      list.scrollToEnd({ animated: false });
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToEnd({ animated: false });
+        requestAnimationFrame(() => {
+          listRef.current?.scrollToEnd({ animated: false });
+        });
+      });
+
+      pendingScrollToBottomRef.current = false;
+    };
+
+    attempt(retries);
+  }, []);
 
   const handleListContentSizeChange = useCallback(
     (_width: number, height: number) => {
@@ -3032,17 +3062,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
 
       if (pendingScrollToBottomRef.current && !loading) {
-        pendingScrollToBottomRef.current = false;
-
-        requestAnimationFrame(() => {
-          listRef.current?.scrollToEnd({ animated: false });
-          requestAnimationFrame(() => {
-            listRef.current?.scrollToEnd({ animated: false });
-          });
-        });
+        scrollToBottomWithRetries();
       }
     },
-    [loading]
+    [loading, scrollToBottomWithRetries]
   );
 
   const messagesWithSeparators = useMemo((): MessageWithSeparator[] => {
@@ -3068,6 +3091,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     () => new Set(messages.map((message) => message.message_id)),
     [messages]
   );
+
+  useEffect(() => {
+    if (loading) return;
+    if (!pendingScrollToBottomRef.current) return;
+    if (messagesWithSeparators.length === 0) return;
+    scrollToBottomWithRetries();
+  }, [loading, messagesWithSeparators.length, scrollToBottomWithRetries]);
 
   const scrollToMessageById = useCallback(
     (targetMessageId: string) => {
@@ -3290,63 +3320,68 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       {loading ? (
         <ChatRoomSkeleton />
       ) : (
-        <FlatList
-          ref={listRef}
-          data={messagesWithSeparators}
-          keyExtractor={(item) =>
-            item.type === 'separator'
-              ? `separator-${item.separatorDate}`
-              : `message-${item.message.message_id}`
-          }
-          renderItem={({ item }) => {
-            if (item.type === 'separator') {
-              return <DateSeparator label={item.separatorLabel} />;
+        <>
+          <FlatList
+            ref={listRef}
+            data={messagesWithSeparators}
+            keyExtractor={(item) =>
+              item.type === 'separator'
+                ? `separator-${item.separatorDate}`
+                : `message-${item.message.message_id}`
             }
+            renderItem={({ item }) => {
+              if (item.type === 'separator') {
+                return <DateSeparator label={item.separatorLabel} />;
+              }
 
-            const quotedTargetId = resolveQuotedTargetMessageId(
-              item.message,
-              messages
-            );
-            const canGoToQuoted =
-              !!quotedTargetId && messageIdSet.has(quotedTargetId);
+              const quotedTargetId = resolveQuotedTargetMessageId(
+                item.message,
+                messages
+              );
+              const canGoToQuoted =
+                !!quotedTargetId && messageIdSet.has(quotedTargetId);
 
-            return (
-              <MessageBubble
-                msg={item.message}
-                fromMe={item.message.type_user !== ETypeUserChat.client}
-                chatInfo={chatInfo}
-                currentUserName={currentUserName}
-                highlighted={highlightedMessageId === item.message.message_id}
-                onPressQuoted={
-                  canGoToQuoted && quotedTargetId
-                    ? () => scrollToMessageById(quotedTargetId)
-                    : null
-                }
-                resolvedContactDisplay={
-                  resolvedContactCards[item.message.message_id]
-                }
-                audioCtrl={audioCtrl}
-                onOpenImage={openImageViewer}
-                onOpenVideo={openVideoViewer}
-                onTemplateButtonPress={handleTemplateButtonPress}
-                disableTemplateButtons={isQueueOrUraStatus || sending}
-              />
-            );
-          }}
-          onScrollToIndexFailed={handleScrollToIndexFailed}
-          onScroll={handleListScroll}
-          scrollEventThrottle={16}
-          onContentSizeChange={handleListContentSizeChange}
-          contentContainerStyle={styles.listContent}
-          ListHeaderComponent={
-            loadingOlder ? (
-              <View style={styles.loadingOlderWrap}>
-                <ActivityIndicator size="small" color={colors.primary} />
+              return (
+                <MessageBubble
+                  msg={item.message}
+                  fromMe={item.message.type_user !== ETypeUserChat.client}
+                  chatInfo={chatInfo}
+                  currentUserName={currentUserName}
+                  highlighted={highlightedMessageId === item.message.message_id}
+                  onPressQuoted={
+                    canGoToQuoted && quotedTargetId
+                      ? () => scrollToMessageById(quotedTargetId)
+                      : null
+                  }
+                  resolvedContactDisplay={
+                    resolvedContactCards[item.message.message_id]
+                  }
+                  audioCtrl={audioCtrl}
+                  onOpenImage={openImageViewer}
+                  onOpenVideo={openVideoViewer}
+                  onTemplateButtonPress={handleTemplateButtonPress}
+                  disableTemplateButtons={isQueueOrUraStatus || sending}
+                />
+              );
+            }}
+            onScrollToIndexFailed={handleScrollToIndexFailed}
+            onScroll={handleListScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={handleListContentSizeChange}
+            contentContainerStyle={styles.listContent}
+            inverted={false}
+          />
+          {loadingOlder ? (
+            <View pointerEvents="none" style={styles.loadingOlderTopWrap}>
+              <View style={styles.loadingOlderTopChip}>
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+                <Text style={styles.loadingOlderTopText}>
+                  {pt.loading_more_messages}
+                </Text>
               </View>
-            ) : null
-          }
-          inverted={false}
-        />
+            </View>
+          ) : null}
+        </>
       )}
       <View style={styles.inputRow}>
         <TextInput
@@ -3442,6 +3477,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+    position: 'relative',
   },
   skeletonContainer: {
     flex: 1,
@@ -3500,6 +3536,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
+  },
+  loadingOlderTopWrap: {
+    position: 'absolute',
+    top: 8,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  loadingOlderTopChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: colors.primary,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  loadingOlderTopText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.onPrimary,
   },
   dateSeparatorWrap: {
     flexDirection: 'row',

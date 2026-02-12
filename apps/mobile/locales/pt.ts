@@ -97,4 +97,5 @@ export const pt = {
   location: 'Localização',
   contacts_other: 'contatos',
   location_map_unavailable: 'Mapa indisponível',
+  loading_more_messages: 'Carregando mensagens...',
 };
