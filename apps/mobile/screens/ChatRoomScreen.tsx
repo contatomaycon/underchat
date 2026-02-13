@@ -2889,9 +2889,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     downloadName: '',
   });
   const [cameraPickerVisible, setCameraPickerVisible] = useState(false);
-  const [cameraDraft, setCameraDraft] = useState<CameraCaptureDraft | null>(
-    null
-  );
   const [sendingCapturedMedia, setSendingCapturedMedia] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [isMicPressActive, setIsMicPressActive] = useState(false);
@@ -2934,12 +2931,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     viewer.kind === 'video' && viewer.src ? { uri: viewer.src } : null,
     (player) => {
       player.loop = false;
-    }
-  );
-  const cameraPreviewPlayer = useVideoPlayer(
-    cameraDraft?.kind === 'video' ? { uri: cameraDraft.uri } : null,
-    (player) => {
-      player.loop = true;
     }
   );
 
@@ -3027,15 +3018,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       viewerVideoPlayer.currentTime = 0;
     } catch {}
   }, [viewer.kind, viewer.visible, viewerVideoPlayer]);
-
-  useEffect(() => {
-    if (cameraDraft?.kind === 'video') return;
-
-    try {
-      cameraPreviewPlayer.pause();
-      cameraPreviewPlayer.currentTime = 0;
-    } catch {}
-  }, [cameraDraft?.kind, cameraPreviewPlayer]);
 
   useEffect(() => {
     const useNative = Platform.OS !== 'web';
@@ -4175,6 +4157,57 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     })
   ).current;
 
+  const sendCapturedMediaDraft = useCallback(
+    async (draft: CameraCaptureDraft) => {
+      if (sendingCapturedMedia) return;
+
+      setSendingCapturedMedia(true);
+      try {
+        const formData = new FormData();
+        formData.append(
+          'type',
+          draft.kind === 'video' ? EMessageType.video : EMessageType.image
+        );
+        formData.append('hash', createClientMessageHash());
+
+        if (draft.kind === 'video') {
+          await appendMediaToFormData(formData, 'videos', {
+            uri: draft.uri,
+            name: draft.fileName,
+            mimeType: draft.mimeType,
+          });
+          if (draft.durationSec != null) {
+            formData.append('video_duration', String(draft.durationSec));
+          }
+        } else {
+          await appendMediaToFormData(formData, 'images', {
+            uri: draft.uri,
+            name: draft.fileName,
+            mimeType: draft.mimeType,
+          });
+        }
+
+        const result = await createMessageWithFormData(chatInfo.chat_id, formData);
+        if (!result.ok) return;
+
+        pendingScrollToBottomRef.current = true;
+        setShowScrollToBottomButton(false);
+        const createdMessage = result.message;
+        if (createdMessage) {
+          setMessages((prev) => mergeMessageLists(prev, createdMessage));
+        } else {
+          await syncLatestMessages();
+        }
+        requestAnimationFrame(() => {
+          scrollToBottomWithRetries(10);
+        });
+      } finally {
+        setSendingCapturedMedia(false);
+      }
+    },
+    [chatInfo.chat_id, scrollToBottomWithRetries, sendingCapturedMedia, syncLatestMessages]
+  );
+
   const launchCameraCapture = useCallback(
     async (mediaType: 'images' | 'videos') => {
       if (isQueueOrUraStatus || sendingCapturedMedia || sendingVoiceRecording) {
@@ -4209,7 +4242,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           ? originalName
           : `${kind}-${Date.now()}.${fallbackExtension}`;
 
-      setCameraDraft({
+      await sendCapturedMediaDraft({
         uri: asset.uri,
         kind,
         fileName,
@@ -4220,7 +4253,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             : null,
       });
     },
-    [isQueueOrUraStatus, sendingCapturedMedia, sendingVoiceRecording]
+    [
+      isQueueOrUraStatus,
+      sendCapturedMediaDraft,
+      sendingCapturedMedia,
+      sendingVoiceRecording,
+    ]
   );
 
   const handleOpenCameraPicker = useCallback(() => {
@@ -4249,64 +4287,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setCameraPickerVisible(false);
     void launchCameraCapture('videos');
   }, [launchCameraCapture]);
-
-  const handleSendCapturedMedia = useCallback(async () => {
-    if (!cameraDraft || sendingCapturedMedia) return;
-
-    setSendingCapturedMedia(true);
-    try {
-      const formData = new FormData();
-      formData.append(
-        'type',
-        cameraDraft.kind === 'video' ? EMessageType.video : EMessageType.image
-      );
-      formData.append('hash', createClientMessageHash());
-
-      if (cameraDraft.kind === 'video') {
-        await appendMediaToFormData(formData, 'videos', {
-          uri: cameraDraft.uri,
-          name: cameraDraft.fileName,
-          mimeType: cameraDraft.mimeType,
-        });
-        if (cameraDraft.durationSec != null) {
-          formData.append('video_duration', String(cameraDraft.durationSec));
-        }
-      } else {
-        await appendMediaToFormData(formData, 'images', {
-          uri: cameraDraft.uri,
-          name: cameraDraft.fileName,
-          mimeType: cameraDraft.mimeType,
-        });
-      }
-
-      const result = await createMessageWithFormData(
-        chatInfo.chat_id,
-        formData
-      );
-      if (!result.ok) return;
-
-      setCameraDraft(null);
-      pendingScrollToBottomRef.current = true;
-      setShowScrollToBottomButton(false);
-      const createdMessage = result.message;
-      if (createdMessage) {
-        setMessages((prev) => mergeMessageLists(prev, createdMessage));
-      } else {
-        await syncLatestMessages();
-      }
-      requestAnimationFrame(() => {
-        scrollToBottomWithRetries(10);
-      });
-    } finally {
-      setSendingCapturedMedia(false);
-    }
-  }, [
-    cameraDraft,
-    chatInfo.chat_id,
-    scrollToBottomWithRetries,
-    sendingCapturedMedia,
-    syncLatestMessages,
-  ]);
 
   const recordingDurationLabel = useMemo(() => {
     const durationSec = Math.max(0, (recorderState.durationMillis || 0) / 1000);
@@ -4387,11 +4367,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setInput('');
     await sendTextPayload(text);
   };
-
-  const closeCameraDraftPreview = useCallback(() => {
-    if (sendingCapturedMedia) return;
-    setCameraDraft(null);
-  }, [sendingCapturedMedia]);
 
   const hasInputText = input.trim().length > 0;
   const canUseComposerActions =
@@ -4834,75 +4809,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             >
               <Text style={styles.cameraPickerCancelText}>{pt.cancel}</Text>
             </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-      <Modal
-        visible={!!cameraDraft}
-        transparent
-        animationType="fade"
-        onRequestClose={closeCameraDraftPreview}
-      >
-        <Pressable
-          style={styles.capturePreviewOverlay}
-          onPress={closeCameraDraftPreview}
-        >
-          <Pressable
-            style={styles.capturePreviewCard}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <View style={styles.capturePreviewHeader}>
-              <Text style={styles.capturePreviewTitle}>{pt.preview_media}</Text>
-              <Pressable
-                style={styles.capturePreviewClose}
-                onPress={closeCameraDraftPreview}
-              >
-                <Ionicons name="close" size={20} color="#FFFFFF" />
-              </Pressable>
-            </View>
-
-            <View style={styles.capturePreviewMediaWrap}>
-              {cameraDraft?.kind === 'video' ? (
-                <VideoView
-                  key={cameraDraft.uri}
-                  player={cameraPreviewPlayer}
-                  style={styles.capturePreviewVideo}
-                  contentFit="contain"
-                  nativeControls
-                  fullscreenOptions={VIDEO_FULLSCREEN_ENABLED}
-                  allowsPictureInPicture
-                  playsInline
-                />
-              ) : cameraDraft ? (
-                <Image
-                  source={{ uri: cameraDraft.uri }}
-                  style={styles.capturePreviewImage}
-                  resizeMode="contain"
-                />
-              ) : null}
-            </View>
-
-            <View style={styles.capturePreviewFooter}>
-              <Text style={styles.capturePreviewName} numberOfLines={1}>
-                {cameraDraft?.fileName ?? ''}
-              </Text>
-              <Pressable
-                style={[
-                  styles.capturePreviewSendBtn,
-                  sendingCapturedMedia && styles.sendBtnDisabled,
-                ]}
-                onPress={() => {
-                  void handleSendCapturedMedia();
-                }}
-                disabled={sendingCapturedMedia}
-              >
-                {sendingCapturedMedia ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Ionicons name="send" size={18} color="#FFFFFF" />
-                )}
-              </Pressable>
-            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -6285,76 +6191,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.onSurface,
-  },
-  capturePreviewOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.82)',
-    justifyContent: 'center',
-    padding: 14,
-  },
-  capturePreviewCard: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#0F172A',
-    minHeight: 280,
-    maxHeight: '88%',
-  },
-  capturePreviewHeader: {
-    paddingHorizontal: 12,
-    height: 46,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(0,0,0,0.22)',
-  },
-  capturePreviewTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  capturePreviewClose: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.16)',
-  },
-  capturePreviewMediaWrap: {
-    flex: 1,
-    minHeight: 220,
-    backgroundColor: '#000000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  capturePreviewImage: {
-    width: '100%',
-    height: '100%',
-  },
-  capturePreviewVideo: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#000000',
-  },
-  capturePreviewFooter: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-  },
-  capturePreviewName: {
-    flex: 1,
-    color: '#D1D5DB',
-    fontSize: 12,
-  },
-  capturePreviewSendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2563EB',
   },
 });

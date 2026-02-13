@@ -15,6 +15,7 @@ import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
 import type { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
+import type { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
 import { useChatNotifications } from '@/composables/useChatNotifications';
 
 let isInitialized = false;
@@ -27,6 +28,7 @@ const pendingMessages = ref<Map<string, IChatMessage[]>>(new Map());
 const pendingChatUpdates = ref<Map<string, IChat[]>>(new Map());
 let syncIntervalId: ReturnType<typeof setInterval> | null = null;
 let lastSyncTime = 0;
+let isSyncInProgress = false;
 const SYNC_INTERVAL_MS = 30_000;
 const SYNC_DEBOUNCE_MS = 5_000;
 
@@ -89,23 +91,117 @@ const createChatSocket = () => {
     await chatStore.getChatById(requestQueue);
   };
 
+  const hasMessageSummaryChanged = (
+    currentSummary: ListMessageResult['summary'],
+    syncedSummary: ListMessageResult['summary']
+  ) => {
+    if (!currentSummary && !syncedSummary) {
+      return false;
+    }
+
+    if (!currentSummary || !syncedSummary) {
+      return true;
+    }
+
+    return (
+      currentSummary.is_sent !== syncedSummary.is_sent ||
+      currentSummary.is_delivered !== syncedSummary.is_delivered ||
+      currentSummary.is_seen !== syncedSummary.is_seen ||
+      currentSummary.is_sent_to_internal !== syncedSummary.is_sent_to_internal
+    );
+  };
+
+  const hasMessageChanged = (
+    currentMessage: ListMessageResult,
+    syncedMessage: ListMessageResult
+  ) => {
+    return (
+      hasMessageSummaryChanged(currentMessage.summary, syncedMessage.summary) ||
+      currentMessage.deleted !== syncedMessage.deleted ||
+      currentMessage.has_quoted !== syncedMessage.has_quoted
+    );
+  };
+
+  const mergeSyncedMessages = (messages: ListMessageResult[]) => {
+    if (messages.length === 0) {
+      return;
+    }
+
+    const messageIndexById = new Map<string, number>();
+    const messageIndexByHash = new Map<string, number>();
+
+    chatStore.listMessages.forEach((message, index) => {
+      messageIndexById.set(message.message_id, index);
+      if (message.hash) {
+        messageIndexByHash.set(message.hash, index);
+      }
+    });
+
+    for (const syncedMessage of messages.toReversed()) {
+      const existingIndexById = messageIndexById.get(syncedMessage.message_id);
+      const existingIndexByHash = syncedMessage.hash
+        ? messageIndexByHash.get(syncedMessage.hash)
+        : undefined;
+      const existingIndex = existingIndexById ?? existingIndexByHash;
+
+      if (existingIndex !== undefined) {
+        const currentMessage = chatStore.listMessages[existingIndex];
+        if (
+          !currentMessage ||
+          !hasMessageChanged(currentMessage, syncedMessage)
+        ) {
+          continue;
+        }
+
+        chatStore.listMessages.splice(existingIndex, 1, {
+          ...currentMessage,
+          ...syncedMessage,
+        });
+        continue;
+      }
+
+      chatStore.listMessages.push(syncedMessage);
+      const newIndex = chatStore.listMessages.length - 1;
+      messageIndexById.set(syncedMessage.message_id, newIndex);
+      if (syncedMessage.hash) {
+        messageIndexByHash.set(syncedMessage.hash, newIndex);
+      }
+    }
+  };
+
   const syncMessagesStatus = async () => {
+    if (!isChatRoute() || !chatStore.activeChat?.chat_id || isSyncInProgress) {
+      return;
+    }
+
     const now = Date.now();
     if (now - lastSyncTime < SYNC_DEBOUNCE_MS) {
       return;
     }
-    lastSyncTime = now;
 
-    if (!isChatRoute() || !chatStore.activeChat?.chat_id) {
-      return;
-    }
+    const activeChatId = chatStore.activeChat.chat_id;
+    lastSyncTime = now;
+    isSyncInProgress = true;
 
     try {
       const requestQueue: ListMessageChatsQuery = {
         current_page: 1,
         per_page: 20,
       };
-      await chatStore.getChatById(requestQueue);
+
+      const response = await chatStore.getChatMessagesById(
+        activeChatId,
+        requestQueue
+      );
+      if (!response?.results?.length) {
+        return;
+      }
+
+      if (chatStore.activeChat?.chat_id !== activeChatId) {
+        return;
+      }
+
+      mergeSyncedMessages(response.results);
 
       if (import.meta.env.DEV) {
         console.info('[ChatSocket] Synced message status for active chat');
@@ -114,6 +210,8 @@ const createChatSocket = () => {
       if (import.meta.env.DEV) {
         console.error('[ChatSocket] Error syncing message status:', error);
       }
+    } finally {
+      isSyncInProgress = false;
     }
   };
 
@@ -296,6 +394,8 @@ const createChatSocket = () => {
     subscriptions = [];
     isInitialized = false;
     initializingPromise = null;
+    isSyncInProgress = false;
+    lastSyncTime = 0;
     pendingMessages.value.clear();
     pendingChatUpdates.value.clear();
   };
@@ -418,6 +518,8 @@ const createChatSocket = () => {
     subscriptions = [];
     isInitialized = false;
     initializingPromise = null;
+    isSyncInProgress = false;
+    lastSyncTime = 0;
     pendingMessages.value.clear();
     pendingChatUpdates.value.clear();
   };
