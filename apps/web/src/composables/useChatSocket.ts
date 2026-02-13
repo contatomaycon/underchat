@@ -92,7 +92,11 @@ const createChatSocket = () => {
   };
 
   const syncFromCentrifugoHistory = async () => {
-    if (!chatStore.user?.account_id || isSyncInProgress) {
+    if (!chatStore.user?.account_id) {
+      return;
+    }
+
+    if (isSyncInProgress) {
       return;
     }
 
@@ -111,13 +115,7 @@ const createChatSocket = () => {
         fetchHistoryAndProcess(chatAccountCentrifugo(accountId)),
         fetchHistoryAndProcess(chatQueueAccountCentrifugo(accountId)),
       ]);
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error(
-          '[ChatSocket] Error syncing from Centrifugo history:',
-          error
-        );
-      }
+    } catch {
     } finally {
       isSyncInProgress = false;
     }
@@ -389,6 +387,7 @@ const createChatSocket = () => {
         );
 
         isInitialized = true;
+        startPeriodicSync();
       } catch (error) {
         if (import.meta.env.DEV) {
           console.error('Erro ao inicializar socket de chat:', error);

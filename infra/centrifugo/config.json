@@ -1,6 +1,8 @@
 {
   "client": {
-    "token": { "hmac_secret_key": "i9SHlNxpzB1GDU5K0dqzXPpn8eQBs1jKl4yHSWfSpghyvhqP8m" },
+    "token": {
+      "hmac_secret_key": "i9SHlNxpzB1GDU5K0dqzXPpn8eQBs1jKl4yHSWfSpghyvhqP8m"
+    },
     "allowed_origins": ["*"]
   },
   "http_api": { "key": "lxnxSiQMf3ps1kHNGs7GPvI9P2B2SlXdBwWVSIUe0KZvFY2rGF" },
@@ -14,7 +16,7 @@
       "allow_publish_for_client": true,
       "allow_subscribe_for_client": true
     },
-     "namespaces": [
+    "namespaces": [
       {
         "name": "worker",
         "allow_user_limited_channels": true,
@@ -24,7 +26,8 @@
         "history_size": 100,
         "history_ttl": "120s",
         "force_recovery": true,
-        "allow_recover_for_client": true
+        "allow_recover_for_client": true,
+        "allow_history_for_subscriber": true
       },
       {
         "name": "chat",
@@ -35,7 +38,8 @@
         "history_size": 500,
         "history_ttl": "300s",
         "force_recovery": true,
-        "allow_recover_for_client": true
+        "allow_recover_for_client": true,
+        "allow_history_for_subscriber": true
       },
       {
         "name": "chat.queue",
@@ -46,7 +50,8 @@
         "history_size": 200,
         "history_ttl": "300s",
         "force_recovery": true,
-        "allow_recover_for_client": true
+        "allow_recover_for_client": true,
+        "allow_history_for_subscriber": true
       },
       {
         "name": "presence",
@@ -63,7 +68,8 @@
         "history_size": 50,
         "history_ttl": "120s",
         "force_recovery": true,
-        "allow_recover_for_client": true
+        "allow_recover_for_client": true,
+        "allow_history_for_subscriber": true
       },
       {
         "name": "channels",
@@ -73,7 +79,8 @@
         "history_size": 50,
         "history_ttl": "120s",
         "force_recovery": true,
-        "allow_recover_for_client": true
+        "allow_recover_for_client": true,
+        "allow_history_for_subscriber": true
       },
       {
         "name": "reports",
@@ -83,7 +90,8 @@
         "history_size": 50,
         "history_ttl": "120s",
         "force_recovery": true,
-        "allow_recover_for_client": true
+        "allow_recover_for_client": true,
+        "allow_history_for_subscriber": true
       }
     ]
   }

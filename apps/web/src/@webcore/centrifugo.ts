@@ -382,6 +382,17 @@ export const clearStreamPosition = (channel: string): void => {
   channelStreamPositions.delete(channel);
 };
 
+const processPublicationThroughHandlers = (
+  pub: { data: unknown; offset?: number },
+  handlers: Set<(data: any, ctx: PublicationContext) => void>
+): void => {
+  for (const handler of handlers) {
+    try {
+      handler(pub.data, pub as PublicationContext);
+    } catch {}
+  }
+};
+
 /**
  * Fetches history from a channel since the last known position.
  * Returns publications that were missed and processes them through handlers.
@@ -391,11 +402,13 @@ export const fetchHistoryAndProcess = async (
   channel: string
 ): Promise<{ processed: number; newOffset?: number }> => {
   const sub = channelSubscriptions.get(channel);
+
   if (!sub || sub.state !== SubscriptionState.Subscribed) {
     return { processed: 0 };
   }
 
   const currentPosition = channelStreamPositions.get(channel);
+
   if (!currentPosition) {
     return { processed: 0 };
   }
@@ -409,7 +422,10 @@ export const fetchHistoryAndProcess = async (
       },
     });
 
-    if (!historyResult.publications || historyResult.publications.length === 0) {
+    if (
+      !historyResult.publications ||
+      historyResult.publications.length === 0
+    ) {
       return { processed: 0 };
     }
 
@@ -421,23 +437,14 @@ export const fetchHistoryAndProcess = async (
     let maxOffset = currentPosition.offset;
 
     for (const pub of historyResult.publications) {
-      if (pub.offset && pub.offset > currentPosition.offset) {
-        for (const handler of handlers) {
-          try {
-            handler(pub.data, pub as PublicationContext);
-          } catch (error) {
-            if (import.meta.env.DEV) {
-              console.error(
-                '[Centrifugo] Error processing history publication:',
-                error
-              );
-            }
-          }
-        }
+      if (!pub.offset || pub.offset <= currentPosition.offset) {
+        continue;
+      }
 
-        if (pub.offset > maxOffset) {
-          maxOffset = pub.offset;
-        }
+      processPublicationThroughHandlers(pub, handlers);
+
+      if (pub.offset > maxOffset) {
+        maxOffset = pub.offset;
       }
     }
 
@@ -448,20 +455,11 @@ export const fetchHistoryAndProcess = async (
       });
     }
 
-    if (import.meta.env.DEV && historyResult.publications.length > 0) {
-      console.info(
-        `[Centrifugo] Fetched ${historyResult.publications.length} publications from history for ${channel}`
-      );
-    }
-
     return {
       processed: historyResult.publications.length,
       newOffset: maxOffset,
     };
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.error('[Centrifugo] Error fetching history:', error);
-    }
+  } catch {
     return { processed: 0 };
   }
 };
