@@ -241,7 +241,6 @@ const createChatSocket = () => {
         event.detail.channel
       );
     }
-    syncMessagesStatus();
   };
 
   const flushMessageBatch = () => {
@@ -321,11 +320,12 @@ const createChatSocket = () => {
         (chatData as any)._active &&
         chatData.user?.id === chatStore.user?.user_id
       ) {
-        if (chatStore.activeChat?.chat_id === chatData.chat_id) {
-          refreshActiveChat();
-        } else {
+        if (chatStore.activeChat?.chat_id !== chatData.chat_id) {
           chatStore.setActiveChat(chatData.chat_id);
           refreshActiveChat();
+        } else {
+          processPendingMessages(chatData.chat_id);
+          processPendingChatUpdates(chatData.chat_id);
         }
       }
 
@@ -480,8 +480,6 @@ const createChatSocket = () => {
               unsubscribe(chatQueueAccountCentrifugo(accountId)),
           }
         );
-
-        startPeriodicSync();
 
         isInitialized = true;
       } catch (error) {
