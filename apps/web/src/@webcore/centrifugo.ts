@@ -381,3 +381,87 @@ export const getStreamPosition = (
 export const clearStreamPosition = (channel: string): void => {
   channelStreamPositions.delete(channel);
 };
+
+/**
+ * Fetches history from a channel since the last known position.
+ * Returns publications that were missed and processes them through handlers.
+ * This is used for periodic sync to catch any missed messages.
+ */
+export const fetchHistoryAndProcess = async (
+  channel: string
+): Promise<{ processed: number; newOffset?: number }> => {
+  const sub = channelSubscriptions.get(channel);
+  if (!sub || sub.state !== SubscriptionState.Subscribed) {
+    return { processed: 0 };
+  }
+
+  const currentPosition = channelStreamPositions.get(channel);
+  if (!currentPosition) {
+    return { processed: 0 };
+  }
+
+  try {
+    const historyResult = await sub.history({
+      limit: 100,
+      since: {
+        offset: currentPosition.offset,
+        epoch: currentPosition.epoch,
+      },
+    });
+
+    if (!historyResult.publications || historyResult.publications.length === 0) {
+      return { processed: 0 };
+    }
+
+    const handlers = channelHandlers.get(channel);
+    if (!handlers || handlers.size === 0) {
+      return { processed: 0 };
+    }
+
+    let maxOffset = currentPosition.offset;
+
+    for (const pub of historyResult.publications) {
+      if (pub.offset && pub.offset > currentPosition.offset) {
+        for (const handler of handlers) {
+          try {
+            handler(pub.data, pub as PublicationContext);
+          } catch (error) {
+            if (import.meta.env.DEV) {
+              console.error(
+                '[Centrifugo] Error processing history publication:',
+                error
+              );
+            }
+          }
+        }
+
+        if (pub.offset > maxOffset) {
+          maxOffset = pub.offset;
+        }
+      }
+    }
+
+    if (maxOffset > currentPosition.offset) {
+      channelStreamPositions.set(channel, {
+        offset: maxOffset,
+        epoch: historyResult.epoch || currentPosition.epoch,
+      });
+    }
+
+    if (import.meta.env.DEV && historyResult.publications.length > 0) {
+      console.info(
+        `[Centrifugo] Fetched ${historyResult.publications.length} publications from history for ${channel}`
+      );
+    }
+
+    return {
+      processed: historyResult.publications.length,
+      newOffset: maxOffset,
+    };
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.error('[Centrifugo] Error fetching history:', error);
+    }
+    return { processed: 0 };
+  }
+};
