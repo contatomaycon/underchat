@@ -350,15 +350,6 @@ export class BaileysIncomingMessageService {
       void this.handlePresenceUpdate(data);
     });
 
-    socket.ev.on('messaging-history.set', (history) => {
-      if (!history?.messages?.length) return;
-
-      for (const message of history.messages) {
-        void this.cacheMessage(message);
-        this.processHistoryMessage(socket, message);
-      }
-    });
-
     socket.ev.on('call', (callEvents: WACallEvent[]) => {
       if (!callEvents) return;
 
@@ -383,22 +374,11 @@ export class BaileysIncomingMessageService {
     );
   }
 
-  private processHistoryMessage(socket: WASocket, m: WAMessage): void {
-    this.processIncomingMessage(
-      socket,
-      m,
-      null,
-      this.kafkaServiceQueueService.upsertMessageHistory(),
-      true
-    );
-  }
-
   private processIncomingMessage(
     socket: WASocket,
     m: WAMessage,
     upsertType: string | null,
-    topic: string,
-    fromHistorySync = false
+    topic: string
   ): void {
     try {
       if (m.category === 'peer') return;
@@ -440,7 +420,6 @@ export class BaileysIncomingMessageService {
         message: m,
         photo: null,
         has_quoted: hasQuoted,
-        from_history_sync: fromHistorySync,
       };
 
       const pendingItem = this.enqueueMessage(inputUpsert, messageKey, topic);
@@ -549,13 +528,10 @@ export class BaileysIncomingMessageService {
   }
 
   private getCallKey(callEvent: WACallEvent): string | null {
-    const jid = callEvent.remoteJid || callEvent.from;
+    const jid = callEvent.chatId || callEvent.from;
     if (!jid) return null;
 
-    const callId =
-      (callEvent as { id?: string })?.id ??
-      (callEvent as { callId?: string })?.callId ??
-      Date.now().toString();
+    const callId = callEvent.id ?? Date.now().toString();
 
     return `${jid}:${callId}:${callEvent.status}`;
   }
@@ -573,9 +549,7 @@ export class BaileysIncomingMessageService {
         return;
       }
 
-      const jid = callEvent.remoteJid || callEvent.from;
-      const jidAlt = callEvent.remoteJidAlt || null;
-
+      const jid = callEvent.chatId || callEvent.from;
       if (!jid) {
         console.warn('[WARN] Call event without jid, skipping');
         return;
@@ -593,7 +567,7 @@ export class BaileysIncomingMessageService {
 
       this.processedCalls.set(callKey, Date.now());
 
-      const phone = getPhoneFromJid(jid, jidAlt);
+      const phone = getPhoneFromJid(jid, null);
       if (!phone) {
         console.warn('[WARN] Call event without phone, skipping:', jid);
         this.processedCalls.delete(callKey);
@@ -610,20 +584,16 @@ export class BaileysIncomingMessageService {
         is_call_event: true,
         call_phone: phone,
         call_jid: jid,
-        call_jid_alt: jidAlt,
-        call_name: callEvent.pushName ?? null,
+        call_name: callEvent.callerPn ?? null,
       };
 
       const pendingItem = this.enqueueMessage(callUpsert, callKey);
       if (!pendingItem) return;
 
-      const jidToUse = jidAlt?.endsWith('@s.whatsapp.net') ? jidAlt : jid;
-      this.fetchPhotoNonBlocking(socket, pendingItem, jidToUse);
+      this.fetchPhotoNonBlocking(socket, pendingItem, jid);
 
       if (this.rejectCallConfig) {
-        const callId =
-          (callEvent as { id?: string })?.id ??
-          (callEvent as { callId?: string })?.callId;
+        const callId = callEvent.id;
         if (callId && jid) {
           socket.rejectCall(callId, jid).catch(() => {});
         }
@@ -747,7 +717,6 @@ export class BaileysIncomingMessageService {
       this.currentSocket.ev.removeAllListeners('messages.update');
       this.currentSocket.ev.removeAllListeners('message-receipt.update');
       this.currentSocket.ev.removeAllListeners('presence.update');
-      this.currentSocket.ev.removeAllListeners('messaging-history.set');
       this.currentSocket.ev.removeAllListeners('call');
     } catch {}
     this.currentSocket = undefined;

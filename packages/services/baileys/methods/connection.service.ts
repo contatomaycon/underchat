@@ -3,7 +3,6 @@ import {
   fetchLatestBaileysVersion,
   fetchLatestWaWebVersion,
   makeWASocket,
-  proto,
   useMultiFileAuthState,
   type WASocket,
 } from '@whiskeysockets/baileys';
@@ -370,9 +369,6 @@ export class BaileysConnectionService {
       keepAliveIntervalMs: 15_000,
       defaultQueryTimeoutMs: 60_000,
       maxMsgRetryCount: 10,
-      syncFullHistory: false,
-      shouldSyncHistoryMessage: ({ syncType }) =>
-        syncType !== proto.HistorySync.HistorySyncType.FULL,
     });
 
     socket.ev.on('creds.update', saveCreds);

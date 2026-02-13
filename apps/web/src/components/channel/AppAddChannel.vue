@@ -29,7 +29,10 @@ const name = ref<string | null>(null);
 const type = ref<EWorkerType | null>(EWorkerType.baileys);
 const serverId = ref<string | null>(null);
 
-const itemsType = ref([{ value: EWorkerType.baileys, title: t('unofficial') }]);
+const itemsType = ref([
+  { value: EWorkerType.baileys, title: t('unofficial_socket') },
+  { value: EWorkerType.wwebjs, title: t('unofficial_browser') },
+]);
 const serverItems = ref<Array<{ value: string; title: string }>>([]);
 const serversLoading = ref(false);
 

@@ -57,7 +57,8 @@ const itemsStatus = ref([
 ]);
 
 const itemsType = ref([
-  { id: EWorkerType.baileys, text: t('unofficial') },
+  { id: EWorkerType.baileys, text: t('unofficial_socket') },
+  { id: EWorkerType.wwebjs, text: t('unofficial_browser') },
   { id: EWorkerType.whatsapp, text: t('official') },
 ]);
 
@@ -108,7 +109,9 @@ const resolveStatusVariant = (s: string | undefined | null) => {
 
 const resolveTypeVariant = (s: string | undefined | null) => {
   if (s === EWorkerType.baileys)
-    return { color: EColor.info, text: t('unofficial') };
+    return { color: EColor.info, text: t('unofficial_socket') };
+  if (s === EWorkerType.wwebjs)
+    return { color: EColor.info, text: t('unofficial_browser') };
   if (s === EWorkerType.whatsapp)
     return { color: EColor.success, text: t('official') };
 

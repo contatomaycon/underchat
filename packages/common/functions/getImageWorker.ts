@@ -14,5 +14,9 @@ export function getImageWorker(workerType: EWorkerType) {
     return EWorkerImage.discord;
   }
 
+  if (workerType === EWorkerType.wwebjs) {
+    return EWorkerImage.wwebjs;
+  }
+
   return EWorkerImage.baileys;
 }

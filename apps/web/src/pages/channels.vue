@@ -100,7 +100,8 @@ const itemsStatus = ref([
 
 const itemsType = ref([
   { id: '', text: t('all') },
-  { id: EWorkerType.baileys, text: t('unofficial') },
+  { id: EWorkerType.baileys, text: t('unofficial_socket') },
+  { id: EWorkerType.wwebjs, text: t('unofficial_browser') },
 ]);
 
 const isDialogDeleterShow = ref(false);
@@ -151,7 +152,9 @@ const resolveStatusVariant = (s: string | undefined | null) => {
 
 const resolveTypeVariant = (s: string | undefined | null) => {
   if (s === EWorkerType.baileys)
-    return { color: EColor.info, text: t('unofficial') };
+    return { color: EColor.info, text: t('unofficial_socket') };
+  if (s === EWorkerType.wwebjs)
+    return { color: EColor.info, text: t('unofficial_browser') };
   if (s === EWorkerType.whatsapp)
     return { color: EColor.success, text: t('official') };
 
@@ -295,7 +298,10 @@ onMounted(async () => {
 
 onUnmounted(async () => {
   if (user?.account_id) {
-    await unsubscribe(workerCentrifugoQueue(user.account_id), workerStatusHandler);
+    await unsubscribe(
+      workerCentrifugoQueue(user.account_id),
+      workerStatusHandler
+    );
   }
 });
 </script>
@@ -440,9 +446,7 @@ onUnmounted(async () => {
 
             <template #item.updated_at="{ item }">
               <span>{{
-                item.updated_at
-                  ? formatDateTime(item.updated_at)
-                  : '-'
+                item.updated_at ? formatDateTime(item.updated_at) : '-'
               }}</span>
             </template>
 

@@ -263,6 +263,8 @@
   "channel_add_success": "Channel added successfully!",
   "disponible": "Available",
   "unofficial": "No Official",
+  "unofficial_socket": "Unofficial (Socket)",
+  "unofficial_browser": "Unofficial (Browser)",
   "official": "Official",
   "type": "Type",
   "select_type": "Select type",
