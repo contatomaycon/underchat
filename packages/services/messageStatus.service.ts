@@ -111,6 +111,7 @@ export class MessageStatusService {
           channel,
         },
       });
+      throw error;
     }
   }
 

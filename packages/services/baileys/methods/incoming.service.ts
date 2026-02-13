@@ -716,12 +716,27 @@ export class BaileysIncomingMessageService {
       };
 
       const kafkaKey = `${baileysEnvironment.baileysAccountId}:${key.id}:${MessageStatusService.hashPatch(patch)}`;
+      const topic = this.kafkaServiceQueueService.updateMessageStatus();
 
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.updateMessageStatus(),
-        statusUpdate,
-        kafkaKey
-      );
+      let lastError: unknown = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await this.streamProducerService.send(topic, statusUpdate, kafkaKey);
+          return;
+        } catch (error) {
+          lastError = error;
+          if (attempt < 3) {
+            await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+          }
+        }
+      }
+
+      console.error('[BAILEYS] Failed to enqueue message status update', {
+        account_id: statusUpdate.account_id,
+        message_id: statusUpdate.message_id,
+        patch: statusUpdate.patch,
+        error: lastError,
+      });
     } catch {}
   }
 

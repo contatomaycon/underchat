@@ -32,6 +32,7 @@ export class MessageStatusUpdateConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
   private partitionChains: Map<number, Promise<void>> = new Map();
+  private failedPartitions = new Set<number>();
   private readonly idempotencyTtlSeconds = 86400;
   private readonly idempotencyPrefix = 'status-update:';
   private readonly batchWindowMs = 50;
@@ -102,6 +103,9 @@ export class MessageStatusUpdateConsume {
 
       const partition = message.partition;
       const offset = message.offset;
+      if (this.failedPartitions.has(partition)) {
+        return;
+      }
 
       const previousChain =
         this.partitionChains.get(partition) ?? Promise.resolve();
@@ -116,15 +120,11 @@ export class MessageStatusUpdateConsume {
         try {
           await this.addToBatch(data, topic, partition, offset);
         } catch (error) {
-          logger.error(
-            {
-              err: error,
-              account_id: data.account_id,
-              message_id: data.message_id,
-              type: 'message_status_update_batch_error',
-            },
-            'Erro ao adicionar atualização ao batch'
-          );
+          this.markPartitionAsFailed(topic, partition, error, {
+            account_id: data.account_id,
+            message_id: data.message_id,
+          });
+          throw error;
         } finally {
           stop();
         }
@@ -175,6 +175,7 @@ export class MessageStatusUpdateConsume {
     } finally {
       this.consumer = null;
       this.partitionChains.clear();
+      this.failedPartitions.clear();
     }
   }
 
@@ -204,6 +205,45 @@ export class MessageStatusUpdateConsume {
       'code' in error &&
       typeof (error as { code: unknown }).code === 'number'
     );
+  }
+
+  private markPartitionAsFailed(
+    topic: string,
+    partition: number,
+    error: unknown,
+    details?: { account_id?: string; message_id?: string }
+  ): void {
+    if (this.failedPartitions.has(partition)) {
+      return;
+    }
+
+    this.failedPartitions.add(partition);
+
+    logger.error(
+      {
+        err: error,
+        topic,
+        partition,
+        account_id: details?.account_id,
+        message_id: details?.message_id,
+        type: 'message_status_update_partition_paused',
+      },
+      'Partição pausada após falha crítica no processamento de status'
+    );
+
+    try {
+      this.consumerOrThrow.pause([{ topic, partition }]);
+    } catch (pauseError) {
+      logger.error(
+        {
+          err: pauseError,
+          topic,
+          partition,
+          type: 'message_status_update_partition_pause_error',
+        },
+        'Falha ao pausar partição após erro crítico'
+      );
+    }
   }
 
   private getIdempotencyKey(data: IMessageStatusUpdate): string {
@@ -257,7 +297,7 @@ export class MessageStatusUpdateConsume {
 
     const timer = setTimeout(() => {
       this.batchTimers.delete(messageKey);
-      void this.flushBatch(messageKey);
+      void this.flushBatch(messageKey).catch(() => {});
     }, this.batchWindowMs);
 
     this.batchTimers.set(messageKey, timer);
@@ -349,12 +389,16 @@ export class MessageStatusUpdateConsume {
       });
       metricsDistribution('message_status_update_error_duration', duration);
 
-      await Promise.allSettled(
-        buffered.map((item) =>
-          this.commitNext(item.topic, item.partition, item.offset)
-        )
+      const firstBuffered = buffered[0];
+      this.markPartitionAsFailed(
+        firstBuffered.topic,
+        firstBuffered.partition,
+        error,
+        {
+          account_id: firstUpdate.account_id,
+          message_id: firstUpdate.message_id,
+        }
       );
-
       throw error;
     }
   }

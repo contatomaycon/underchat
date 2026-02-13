@@ -722,8 +722,10 @@ export class CentrifugoService {
 
   private async withPublishRetry(
     action: () => Promise<PublishResult>,
-    context: { channel: string; subId?: string }
+    context: { channel: string; subId?: string },
+    options?: { failHard?: boolean }
   ): Promise<PublishResult> {
+    const failHard = options?.failHard ?? false;
     let lastError: Error | null = null;
     const startTime = Date.now();
 
@@ -798,6 +800,10 @@ export class CentrifugoService {
             },
           });
 
+          if (failHard) {
+            throw normalizedError;
+          }
+
           return {} as PublishResult;
         }
 
@@ -839,6 +845,10 @@ export class CentrifugoService {
           durationMs: Date.now() - startTime,
         },
       });
+    }
+
+    if (failHard && lastError) {
+      throw lastError;
     }
 
     return {} as PublishResult;
@@ -1095,34 +1105,29 @@ export class CentrifugoService {
     channel: string,
     data: unknown
   ): Promise<PublishResult> {
-    try {
-      const subId = this.extractSubId(channel);
+    const subId = this.extractSubId(channel);
 
-      if (!subId) {
-        logger.warn(
-          {
-            type: 'centrifugo_invalid_channel',
-            channel,
-          },
-          'Invalid channel format for publishSubImmediate'
-        );
-        return {} as PublishResult;
-      }
-
-      return await this.withPublishRetry(
-        () => this.publishViaHttpApiDirectWithHistory(channel, data),
+    if (!subId) {
+      logger.warn(
         {
+          type: 'centrifugo_invalid_channel',
           channel,
-          subId,
-        }
+        },
+        'Invalid channel format for publishSubImmediate'
       );
-    } catch (error) {
-      return this.handlePublishError(
-        error,
-        channel,
-        'centrifugo_publish_sub_immediate_error'
-      );
+      throw new Error('Invalid channel format for publishSubImmediate');
     }
+
+    return this.withPublishRetry(
+      () => this.publishViaHttpApiDirectWithHistory(channel, data),
+      {
+        channel,
+        subId,
+      },
+      {
+        failHard: true,
+      }
+    );
   }
 
   /**
