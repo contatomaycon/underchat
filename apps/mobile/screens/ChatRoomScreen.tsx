@@ -4014,6 +4014,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const startVoiceRecordingCbRef = useRef(startVoiceRecording);
   const sendRecordedVoiceMessageCbRef = useRef(sendRecordedVoiceMessage);
   const lockVoiceRecordingCbRef = useRef(lockVoiceRecording);
+  const discardVoiceRecordingCbRef = useRef(discardVoiceRecording);
 
   useEffect(() => {
     startVoiceRecordingCbRef.current = startVoiceRecording;
@@ -4026,6 +4027,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   useEffect(() => {
     lockVoiceRecordingCbRef.current = lockVoiceRecording;
   }, [lockVoiceRecording]);
+
+  useEffect(() => {
+    discardVoiceRecordingCbRef.current = discardVoiceRecording;
+  }, [discardVoiceRecording]);
 
   const cancelVoiceRecording = useCallback(async () => {
     // Invalidate any in-flight `startVoiceRecording` so it can't "finish" after cancel.
@@ -4328,10 +4333,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     };
   }, [applyRecordingAudioMode, recorder]);
 
+  const previousChatIdRef = useRef(chatInfo.chat_id);
   useEffect(() => {
+    if (previousChatIdRef.current === chatInfo.chat_id) return;
+    previousChatIdRef.current = chatInfo.chat_id;
     if (!recordingActiveRef.current) return;
-    void discardVoiceRecording();
-  }, [chatInfo.chat_id, discardVoiceRecording]);
+    void discardVoiceRecordingCbRef.current();
+  }, [chatInfo.chat_id]);
 
   const sendTextPayload = useCallback(
     async (rawText: string) => {

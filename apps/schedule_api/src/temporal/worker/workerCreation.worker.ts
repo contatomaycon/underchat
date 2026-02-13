@@ -14,7 +14,7 @@ export const workerCreationWorker = async (fastify: FastifyInstance) => {
     connection: fastify.temporal.nativeConnection,
     workflowsPath: path.resolve(
       __dirname,
-      '../../../../../packages/temporal/workflows/workerCreation.workflow'
+      '../../../../../packages/temporal/workflows/workerCreation.workflow.ts'
     ),
     activities: {
       listWorkerNewStatusActivities: activity.listWorkerNewStatusActivities,

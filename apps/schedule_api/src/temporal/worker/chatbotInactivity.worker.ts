@@ -14,7 +14,7 @@ export const chatbotInactivityWorker = async (fastify: FastifyInstance) => {
     connection: fastify.temporal.nativeConnection,
     workflowsPath: path.resolve(
       __dirname,
-      '../../../../../packages/temporal/workflows/chatbotInactivity.workflow'
+      '../../../../../packages/temporal/workflows/chatbotInactivity.workflow.ts'
     ),
     activities: {
       processScheduledInactivityChecks:

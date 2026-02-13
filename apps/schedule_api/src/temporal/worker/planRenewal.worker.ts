@@ -14,7 +14,7 @@ export const planRenewalWorker = async (fastify: FastifyInstance) => {
     connection: fastify.temporal.nativeConnection,
     workflowsPath: path.resolve(
       __dirname,
-      '../../../../../packages/temporal/workflows/planRenewal.workflow'
+      '../../../../../packages/temporal/workflows/planRenewal.workflow.ts'
     ),
     activities: {
       processPlanRenewals: activity.processPlanRenewals,

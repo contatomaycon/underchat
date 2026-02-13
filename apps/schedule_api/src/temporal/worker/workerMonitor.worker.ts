@@ -14,7 +14,7 @@ export const workerMonitorWorker = async (fastify: FastifyInstance) => {
     connection: fastify.temporal.nativeConnection,
     workflowsPath: path.resolve(
       __dirname,
-      '../../../../../packages/temporal/workflows/workerMonitor.workflow'
+      '../../../../../packages/temporal/workflows/workerMonitor.workflow.ts'
     ),
     activities: {
       monitor: activity.monitor,

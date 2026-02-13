@@ -14,7 +14,7 @@ export const profileStatusRenewalWorker = async (fastify: FastifyInstance) => {
     connection: fastify.temporal.nativeConnection,
     workflowsPath: path.resolve(
       __dirname,
-      '../../../../../packages/temporal/workflows/profileStatusRenewal.workflow'
+      '../../../../../packages/temporal/workflows/profileStatusRenewal.workflow.ts'
     ),
     activities: {
       renewPermanentStatuses: activity.renewPermanentStatuses,

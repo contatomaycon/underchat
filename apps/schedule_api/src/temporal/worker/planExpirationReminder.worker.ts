@@ -16,7 +16,7 @@ export const planExpirationReminderWorker = async (
     connection: fastify.temporal.nativeConnection,
     workflowsPath: path.resolve(
       __dirname,
-      '../../../../../packages/temporal/workflows/planExpirationReminder.workflow'
+      '../../../../../packages/temporal/workflows/planExpirationReminder.workflow.ts'
     ),
     activities: {
       processPlanExpirationReminders: activity.processPlanExpirationReminders,

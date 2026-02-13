@@ -14,7 +14,7 @@ export const scheduleSendWorker = async (fastify: FastifyInstance) => {
     connection: fastify.temporal.nativeConnection,
     workflowsPath: path.resolve(
       __dirname,
-      '../../../../../packages/temporal/workflows/scheduleSend.workflow'
+      '../../../../../packages/temporal/workflows/scheduleSend.workflow.ts'
     ),
     activities: {
       processScheduleSends: activity.processScheduleSends,
