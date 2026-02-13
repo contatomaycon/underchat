@@ -67,9 +67,9 @@ export class BaileysHelpersService {
     }
 
     const text = this.extractText(content);
-    const durationMs = this.estimateTypingMs(text);
+    const durationMs = this.estimateTypingMs(text) * 0.5;
 
-    const preThink = this.rand(200, 900);
+    const preThink = this.rand(100, 450);
     await this.sleep(preThink);
 
     const start = Date.now();
@@ -79,14 +79,14 @@ export class BaileysHelpersService {
       const elapsed = Date.now() - start;
       const remaining = durationMs - elapsed;
 
-      const baseTick = this.rand(1200, 2400);
+      const baseTick = this.rand(600, 1200);
       const tick = Math.min(baseTick, remaining);
       await this.sleep(tick);
 
       if (Date.now() - start < durationMs) {
         if (this.rngFloat() < 0.12) {
           await sock.sendPresenceUpdate('paused', jid);
-          const thinkPause = this.rand(500, 1500);
+          const thinkPause = this.rand(250, 750);
           await this.sleep(thinkPause);
           await sock.sendPresenceUpdate('composing', jid);
         } else {
@@ -95,7 +95,7 @@ export class BaileysHelpersService {
       }
     }
 
-    const windDown = this.rand(150, 500);
+    const windDown = this.rand(75, 250);
     await this.sleep(windDown);
     await sock.sendPresenceUpdate('paused', jid);
   }
