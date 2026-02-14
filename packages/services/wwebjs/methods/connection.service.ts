@@ -240,9 +240,28 @@ export class WwebjsConnectionService {
     }
   }
 
+  private clearChromiumProfileLock(): void {
+    const sessionDir = path.join(FOLDER, '.wwebjs_auth', `session-${WORKER}`);
+    if (!fs.existsSync(sessionDir)) {
+      return;
+    }
+
+    const lockNames = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
+    for (const name of lockNames) {
+      try {
+        const p = path.join(sessionDir, name);
+        if (fs.existsSync(p)) {
+          fs.rmSync(p, { force: true });
+        }
+      } catch {}
+    }
+  }
+
   private createAndWaitClient(): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve) => {
       this.pendingResolve = resolve;
+
+      this.clearChromiumProfileLock();
 
       const authPath = path.join(FOLDER, `.wwebjs_auth`);
       const puppeteerOpts: {
