@@ -1,9 +1,11 @@
 import { injectable, inject } from 'tsyringe';
-import { Location } from 'whatsapp-web.js';
+import whatsappWeb from 'whatsapp-web.js';
 import { WwebjsHelpersService } from './helpers.service';
 import { messageToWaLike } from '../util/messageToWaLike';
 import type { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyResponse';
 import type { IWALocationMessage } from '@core/common/interfaces/IWALocationMessage';
+
+const { Location } = whatsappWeb;
 
 @injectable()
 export class WwebjsMessageLocationContactService {

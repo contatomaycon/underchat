@@ -1,4 +1,4 @@
-import { Client, LocalAuth } from 'whatsapp-web.js';
+import whatsappWeb from 'whatsapp-web.js';
 import QRCode from 'qrcode';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,6 +28,9 @@ const WORKER = wwebjsEnvironment.wwebjsWorkerId;
 const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 const RETRY_DELAY = 2000;
 const MAX_RETRIES = 5;
+
+const { Client: ClientCtor, LocalAuth } = whatsappWeb;
+type Client = InstanceType<typeof ClientCtor>;
 
 @singleton()
 export class WwebjsConnectionService {
@@ -238,7 +241,7 @@ export class WwebjsConnectionService {
       this.pendingResolve = resolve;
 
       const authPath = path.join(FOLDER, `.wwebjs_auth`);
-      const client = new Client({
+      const client = new ClientCtor({
         authStrategy: new LocalAuth({
           clientId: WORKER,
           dataPath: authPath,
@@ -255,7 +258,7 @@ export class WwebjsConnectionService {
         },
       });
 
-      this.client = client as Client;
+      this.client = client;
 
       client.on('qr', async (qr: string) => {
         if (this.typeConnection !== EBaileysConnectionType.qrcode) {

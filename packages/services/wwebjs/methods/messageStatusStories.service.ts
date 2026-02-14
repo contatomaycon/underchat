@@ -1,5 +1,5 @@
 import { injectable, inject } from 'tsyringe';
-import { MessageMedia } from 'whatsapp-web.js';
+import whatsappWeb from 'whatsapp-web.js';
 import { withMediaUrlFromInput } from '@core/common/functions/getMediaUrlFromInput';
 import { WwebjsHelpersService } from './helpers.service';
 import { WwebjsMessageEditDeleteService } from './messageEditDelete.service';
@@ -7,7 +7,10 @@ import { messageToWaLike } from '../util/messageToWaLike';
 import type { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyResponse';
 import type { IMediaInput } from '@core/common/interfaces/IMediaInput';
 
-async function mediaFromInput(input: IMediaInput): Promise<MessageMedia> {
+const { MessageMedia } = whatsappWeb;
+type MessageMediaType = InstanceType<typeof MessageMedia>;
+
+async function mediaFromInput(input: IMediaInput): Promise<MessageMediaType> {
   return withMediaUrlFromInput(input, (url) => MessageMedia.fromUrl(url));
 }
 
