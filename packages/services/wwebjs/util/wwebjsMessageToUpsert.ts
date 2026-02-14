@@ -157,6 +157,34 @@ function buildContactPayload(
   };
 }
 
+function getDocumentCaption(msg: Message): string | undefined {
+  const raw = msg as unknown as {
+    _data?: {
+      caption?: unknown;
+      filename?: unknown;
+      isCaptionByUser?: unknown;
+    };
+  };
+  const caption = getNonEmptyString(raw._data?.caption);
+  if (!caption) return undefined;
+
+  const filename = getNonEmptyString(raw._data?.filename);
+  const isCaptionByUser = raw._data?.isCaptionByUser;
+
+  if (isCaptionByUser === true) {
+    return caption;
+  }
+  if (isCaptionByUser === false) {
+    return undefined;
+  }
+
+  if (filename && caption === filename) {
+    return undefined;
+  }
+
+  return caption;
+}
+
 interface WwebjsResolvedJids {
   remoteJid?: string;
   remoteJidAlt?: string;
@@ -194,6 +222,12 @@ export function wwebjsMessageToUpsert(
     innerMessage.conversation = body;
     innerMessage.extendedTextMessage = { text: body };
   }
+  if (rawType === 'document') {
+    const caption = getDocumentCaption(msg);
+    if (caption) {
+      innerMessage.documentMessage = { caption };
+    }
+  }
   if (rawType === 'location') {
     const locationMessage = buildLocationMessage(msg);
     if (locationMessage) {
@@ -208,6 +242,7 @@ export function wwebjsMessageToUpsert(
     Object.keys(innerMessage).length === 0 &&
     body &&
     rawType !== 'location' &&
+    rawType !== 'document' &&
     rawType !== 'vcard' &&
     rawType !== 'contact' &&
     rawType !== 'multi_vcard' &&
