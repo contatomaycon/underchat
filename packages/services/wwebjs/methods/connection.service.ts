@@ -14,6 +14,7 @@ import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { EAppEnvironment } from '@core/common/enums/EAppEnvironment';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
@@ -28,6 +29,8 @@ const WORKER = wwebjsEnvironment.wwebjsWorkerId;
 const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 const RETRY_DELAY = 2000;
 const MAX_RETRIES = 5;
+const SHOULD_PRINT_QR_IN_TERMINAL =
+  process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 const CHROMIUM_LOCK_FILE_NAMES = [
   'SingletonLock',
   'SingletonSocket',
@@ -293,6 +296,25 @@ export class WwebjsConnectionService {
     }
   }
 
+  private async printQrInConsole(qr: string): Promise<void> {
+    if (!SHOULD_PRINT_QR_IN_TERMINAL) {
+      return;
+    }
+
+    try {
+      const terminalQr = await QRCode.toString(qr, {
+        type: 'terminal',
+        small: true,
+      });
+
+      console.log('\n[Wwebjs][QR] Escaneie o QR code abaixo:\n');
+      console.log(terminalQr);
+      console.log('[Wwebjs][QR] Fim do QR code\n');
+    } catch (error) {
+      console.error('[Wwebjs][QR] Falha ao renderizar QR no console', error);
+    }
+  }
+
   private isChromiumProfileLockedError(message: string): boolean {
     const normalizedMessage = message.toLowerCase();
 
@@ -398,6 +420,7 @@ export class WwebjsConnectionService {
         this.qrHash = hash;
         this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
 
+        await this.printQrInConsole(qr);
         const img = await QRCode.toDataURL(qr);
 
         const payload: IBaileysConnectionState = {

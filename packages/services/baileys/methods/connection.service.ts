@@ -24,6 +24,7 @@ import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { EAppEnvironment } from '@core/common/enums/EAppEnvironment';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
@@ -37,6 +38,8 @@ const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
 const WORKER = baileysEnvironment.baileysWorkerId;
 const ACCOUNT = baileysEnvironment.baileysAccountId;
 const WA_VERSION_TTL_MS = 6 * 60 * 60 * 1000;
+const SHOULD_PRINT_QR_IN_TERMINAL =
+  process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 let cachedWaVersion: {
   version: [number, number, number];
   fetchedAt: number;
@@ -468,6 +471,7 @@ export class BaileysConnectionService {
     this.qrHash = qr.slice(-20);
     this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
 
+    await this.printQrInConsole(qr);
     const img = await QRCode.toDataURL(qr);
 
     this.publishSub({
@@ -492,6 +496,25 @@ export class BaileysConnectionService {
     resolve(this.state(img));
 
     this.pendingResolve = undefined;
+  }
+
+  private async printQrInConsole(qr: string): Promise<void> {
+    if (!SHOULD_PRINT_QR_IN_TERMINAL) {
+      return;
+    }
+
+    try {
+      const terminalQr = await QRCode.toString(qr, {
+        type: 'terminal',
+        small: true,
+      });
+
+      console.log('\n[Baileys][QR] Escaneie o QR code abaixo:\n');
+      console.log(terminalQr);
+      console.log('[Baileys][QR] Fim do QR code\n');
+    } catch (error) {
+      console.error('[Baileys][QR] Falha ao renderizar QR no console', error);
+    }
   }
 
   private async onOpen(
