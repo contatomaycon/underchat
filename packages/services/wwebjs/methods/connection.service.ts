@@ -241,21 +241,31 @@ export class WwebjsConnectionService {
       this.pendingResolve = resolve;
 
       const authPath = path.join(FOLDER, `.wwebjs_auth`);
+      const puppeteerOpts: {
+        headless: boolean;
+        args: string[];
+        executablePath?: string;
+      } = {
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
+        ],
+      };
+      const systemChrome = process.env.PUPPETEER_EXECUTABLE_PATH;
+      if (systemChrome) {
+        puppeteerOpts.executablePath = systemChrome;
+      }
+
       const client = new ClientCtor({
         authStrategy: new LocalAuth({
           clientId: WORKER,
           dataPath: authPath,
         }),
-        puppeteer: {
-          headless: true,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--disable-gpu',
-          ],
-        },
+        puppeteer: puppeteerOpts,
       });
 
       this.client = client;
@@ -418,6 +428,8 @@ export class WwebjsConnectionService {
       });
 
       client.initialize().catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[Wwebjs] client.initialize() failed:', msg);
         this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
         this.pendingResolve?.(this.state());
         this.pendingResolve = undefined;
@@ -425,7 +437,7 @@ export class WwebjsConnectionService {
           worker_id: WORKER,
           status: Status.disconnected,
           code: ECodeMessage.connectionLost,
-          message: err instanceof Error ? err.message : String(err),
+          message: msg,
           date: new Date(),
         });
       });
