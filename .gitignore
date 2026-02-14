@@ -137,3 +137,6 @@ dist
 
 # storage de worker_baileys 
 apps/worker_baileys/storagex
+
+# storage de worker_wwebjs
+.wwebjs_cache
