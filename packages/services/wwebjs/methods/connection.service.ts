@@ -398,6 +398,7 @@ export class WwebjsConnectionService {
         this.qrHash = hash;
         this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
 
+        await this.printQrInConsole(qr);
         const img = await QRCode.toDataURL(qr);
 
         const payload: IBaileysConnectionState = {
@@ -548,6 +549,21 @@ export class WwebjsConnectionService {
         this.handleInitializeError(msg);
       });
     });
+  }
+
+  private async printQrInConsole(qr: string): Promise<void> {
+    try {
+      const terminalQr = await QRCode.toString(qr, {
+        type: 'terminal',
+        small: true,
+      });
+
+      console.log('\n[Wwebjs][QR] Escaneie o QR code abaixo:\n');
+      console.log(terminalQr);
+      console.log('[Wwebjs][QR] Fim do QR code\n');
+    } catch (error) {
+      console.error('[Wwebjs][QR] Falha ao renderizar QR no console', error);
+    }
   }
 
   private mapDisconnectReason(reason: string): ECodeMessage {
