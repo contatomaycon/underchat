@@ -87,8 +87,12 @@ export class WwebjsConnectionService {
 
     try {
       const payload = JSON.parse(this.lastPayload) as IBaileysConnectionState;
-      void this.centrifugo.publishSub(CHANNEL, payload).catch(() => {});
-    } catch {}
+      void this.centrifugo.publishSub(CHANNEL, payload).catch((error) => {
+        console.error('[WwebjsConnection] Republish failed', error);
+      });
+    } catch (error) {
+      console.error('[WwebjsConnection] Failed to parse lastPayload', error);
+    }
   }
 
   hasSession(): boolean {
@@ -548,7 +552,9 @@ export class WwebjsConnectionService {
     }
 
     this.lastPayload = data;
-    void this.centrifugo.publishSub(CHANNEL, payload).catch(() => {});
+    void this.centrifugo.publishSub(CHANNEL, payload).catch((error) => {
+      console.error('[WwebjsConnection] Publish failed', error);
+    });
   }
 
   private async updateWorkerMismatchedStatus(): Promise<void> {
