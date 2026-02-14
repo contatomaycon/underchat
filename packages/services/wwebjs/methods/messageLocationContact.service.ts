@@ -37,7 +37,6 @@ export class WwebjsMessageLocationContactService {
   async sendContactCard(
     jid: string,
     vcard: string,
-    displayName?: string,
     quoted?: { key: { id: string } }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();

@@ -552,13 +552,10 @@ export class MessageSendWwebjsConsume {
     if (contactData.email) vcardLines.push(`EMAIL:${contactData.email}`);
     vcardLines.push('END:VCARD');
     const vcard = vcardLines.join('\n');
-    const displayName =
-      `${contactData.name} ${contactData.last_name ?? ''}`.trim() || 'Contato';
     const result =
       await this.wwebjsMessageLocationContactService.sendContactCard(
         jid,
         vcard,
-        displayName,
         this.getQuotedKey(data)
       );
     if (result) await this.pushUpdate({ message: result, data });
