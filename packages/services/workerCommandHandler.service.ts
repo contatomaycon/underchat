@@ -111,9 +111,14 @@ export class WorkerCommandHandlerService {
 
     this.stopConnectionRequestRetry(payload.worker_id);
     try {
+      const workerType = await this.resolveWorkerTypeForConnection(
+        input.worker_id,
+        accountId
+      );
       await this.workerBaileysGrpcClientService.requestConnection(
         input.worker_id,
-        payload
+        payload,
+        workerType
       );
     } catch (err) {
       if (!this.isTopicOrPartitionMissing(err)) {
@@ -307,7 +312,7 @@ export class WorkerCommandHandlerService {
     this.stopConnectionRequestRetry(payload.worker_id);
     this.connectionRequestPayloads.set(payload.worker_id, payload);
     this.connectionRequestAttempts.set(payload.worker_id, 0);
-    this.runConnectionRequestAttempt(payload.worker_id);
+    void this.runConnectionRequestAttempt(payload.worker_id);
   }
 
   private stopConnectionRequestRetry(workerId: string): void {
@@ -322,12 +327,12 @@ export class WorkerCommandHandlerService {
 
   private scheduleNextConnectionRequest(workerId: string): void {
     const timer = setTimeout(() => {
-      this.runConnectionRequestAttempt(workerId);
+      void this.runConnectionRequestAttempt(workerId);
     }, this.connectionRequestRetryIntervalMs);
     this.connectionRequestTimers.set(workerId, timer);
   }
 
-  private runConnectionRequestAttempt(workerId: string): void {
+  private async runConnectionRequestAttempt(workerId: string): Promise<void> {
     const payload = this.connectionRequestPayloads.get(workerId);
     if (!payload) {
       return;
@@ -336,8 +341,10 @@ export class WorkerCommandHandlerService {
     const attempt = (this.connectionRequestAttempts.get(workerId) ?? 0) + 1;
     this.connectionRequestAttempts.set(workerId, attempt);
 
+    const workerType = await this.resolveWorkerTypeForConnection(workerId);
+
     this.workerBaileysGrpcClientService
-      .requestConnection(workerId, payload)
+      .requestConnection(workerId, payload, workerType)
       .then(() => {
         this.stopConnectionRequestRetry(workerId);
       })
@@ -351,6 +358,29 @@ export class WorkerCommandHandlerService {
 
         this.scheduleNextConnectionRequest(workerId);
       });
+  }
+
+  private async resolveWorkerTypeForConnection(
+    workerId: string,
+    accountId?: string
+  ): Promise<EWorkerType | undefined> {
+    if (accountId) {
+      const viewWorkerType = await this.workerService.viewWorkerType(
+        accountId,
+        workerId
+      );
+
+      if (viewWorkerType?.worker_type_id) {
+        return viewWorkerType.worker_type_id as EWorkerType;
+      }
+    }
+
+    const monitorView = await this.workerService.viewWorkerForMonitor(workerId);
+    if (monitorView?.worker_type_id) {
+      return monitorView.worker_type_id as EWorkerType;
+    }
+
+    return undefined;
   }
 
   private centrifugoPublish(
@@ -531,17 +561,23 @@ export class WorkerCommandHandlerService {
     const payload: StatusConnectionWorkerRequest = {
       worker_id: data.worker_id,
       status: EWorkerStatus.recreating,
-      type: data.worker_type_id as EWorkerType,
+      type: EBaileysConnectionType.qrcode,
     };
 
     try {
       await this.workerBaileysGrpcClientService.requestConnection(
         data.worker_id,
-        payload
+        payload,
+        data.worker_type_id as EWorkerType
       );
     } catch (err) {
       if (!this.isTopicOrPartitionMissing(err)) {
-        throw err;
+        console.error('Failed to request worker connection after recreate', {
+          workerId: data.worker_id,
+          accountId: data.account_id,
+          workerTypeId: data.worker_type_id,
+          error: getErrorMessage(err),
+        });
       }
     }
 
@@ -613,9 +649,14 @@ export class WorkerCommandHandlerService {
     };
 
     try {
+      const workerType = await this.resolveWorkerTypeForConnection(
+        data.worker_id,
+        data.account_id
+      );
       await this.workerBaileysGrpcClientService.requestConnection(
         data.worker_id,
-        payload
+        payload,
+        workerType
       );
     } catch (err) {
       if (!this.isTopicOrPartitionMissing(err)) {
@@ -798,7 +839,10 @@ export class WorkerCommandHandlerService {
       console.error('Failed to publish worker available status:', err);
     });
 
-    if (data.worker_type_id === EWorkerType.baileys) {
+    if (
+      data.worker_type_id === EWorkerType.baileys ||
+      data.worker_type_id === EWorkerType.wwebjs
+    ) {
       const payload: StatusConnectionWorkerRequest = {
         worker_id: data.worker_id,
         status: connectionRequest?.status ?? EWorkerStatus.online,
@@ -809,7 +853,11 @@ export class WorkerCommandHandlerService {
       };
 
       void this.workerBaileysGrpcClientService
-        .requestConnection(data.worker_id, payload)
+        .requestConnection(
+          data.worker_id,
+          payload,
+          data.worker_type_id as EWorkerType
+        )
         .catch((err) => {
           if (!this.isTopicOrPartitionMissing(err)) {
             console.error('Failed to request worker connection:', err);

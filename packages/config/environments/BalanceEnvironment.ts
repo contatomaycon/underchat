@@ -21,4 +21,8 @@ export class BalanceEnvironment {
   public get workerBaileysGrpcPort(): number {
     return 50052;
   }
+
+  public get workerWwebjsGrpcPort(): number {
+    return 50053;
+  }
 }
