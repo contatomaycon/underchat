@@ -1,4 +1,5 @@
 import { inject, singleton } from 'tsyringe';
+import Redis from 'ioredis';
 import type { Client, Message } from 'whatsapp-web.js';
 import type { IMessageKeyLike } from '@core/common/interfaces/IMessageKeyLike';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
@@ -128,12 +129,18 @@ export class WwebjsIncomingMessageService {
   private currentClient: Client | undefined;
   private rejectCallConfig = false;
   private readonly processedCalls = new Map<string, number>();
+  private readonly PHOTO_CACHE_TTL = 86400;
+  private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
+  private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
+  private readonly PHOTO_CACHE_NO_PHOTO = '__no_photo__';
+  private readonly PROFILE_PIC_TIMEOUT_MS = 3000;
 
   constructor(
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject('Redis') private readonly redis: Redis,
     @inject(WwebjsUpsertMediaEnricher)
     private readonly upsertMediaEnricher: WwebjsUpsertMediaEnricher
   ) {}
@@ -263,14 +270,17 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const [resolvedJids, pushName] = await Promise.all([
-      this.resolveRemoteJids(client, msg),
-      this.resolvePushName(msg),
-    ]);
+    const resolvedJids = await this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
+
+    const [pushName, photo] = await Promise.all([
+      this.resolvePushName(msg),
+      this.resolvePhotoForMessage(client, msg, resolvedJids),
+    ]);
 
     const upsert = wwebjsMessageToUpsert(msg, resolvedJids, pushName);
     if (!upsert) return;
+    upsert.photo = photo ?? null;
 
     await this.upsertMediaEnricher.enrich(upsert, msg);
 
@@ -286,16 +296,12 @@ export class WwebjsIncomingMessageService {
     };
 
     const rawNotifyName = normalizeNameCandidate(raw._data?.notifyName);
+    if (rawNotifyName) {
+      return rawNotifyName;
+    }
 
     try {
       const contact = await msg.getContact();
-      const contactName = normalizeNameCandidate(
-        (contact as { name?: unknown } | undefined)?.name
-      );
-      if (contactName) {
-        return contactName;
-      }
-
       const contactPushName = normalizeNameCandidate(
         (contact as { pushname?: unknown } | undefined)?.pushname
       );
@@ -309,11 +315,14 @@ export class WwebjsIncomingMessageService {
       if (contactShortName) {
         return contactShortName;
       }
-    } catch {}
 
-    if (rawNotifyName) {
-      return rawNotifyName;
-    }
+      const contactName = normalizeNameCandidate(
+        (contact as { name?: unknown } | undefined)?.name
+      );
+      if (contactName) {
+        return contactName;
+      }
+    } catch {}
 
     try {
       const chat = await msg.getChat();
@@ -325,6 +334,188 @@ export class WwebjsIncomingMessageService {
       }
     } catch {}
 
+    return undefined;
+  }
+
+  private buildPhotoCandidates(rawJids: Array<string | undefined>): string[] {
+    const candidates = new Set<string>();
+
+    for (const raw of rawJids) {
+      if (!raw) continue;
+
+      const normalized = normalizeJid(raw) ?? raw;
+      if (!normalized) continue;
+      if (this.shouldSkipChat(normalized)) continue;
+      if (this.isGroupOrBroadcastJid(normalized)) continue;
+
+      candidates.add(normalized);
+
+      const phone = getPhoneFromJid(normalized, null);
+      if (!phone) continue;
+
+      candidates.add(`${phone}@c.us`);
+      candidates.add(`${phone}@s.whatsapp.net`);
+    }
+
+    return Array.from(candidates);
+  }
+
+  private async withProfileTimeout(
+    promise: Promise<string>
+  ): Promise<string | undefined> {
+    try {
+      const timeout = new Promise<undefined>((resolve) =>
+        setTimeout(() => resolve(undefined), this.PROFILE_PIC_TIMEOUT_MS)
+      );
+      const result = await Promise.race([promise, timeout]);
+      return getNonEmptyString(result);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async getCachedPhoto(
+    candidates: string[]
+  ): Promise<string | null | undefined> {
+    let hasNoPhotoCache = false;
+
+    for (const candidate of candidates) {
+      try {
+        const cached = await this.redis.get(
+          `${this.PHOTO_CACHE_PREFIX}${candidate}`
+        );
+        if (!cached) {
+          continue;
+        }
+
+        if (cached === this.PHOTO_CACHE_NO_PHOTO) {
+          hasNoPhotoCache = true;
+          continue;
+        }
+
+        return cached;
+      } catch {}
+    }
+
+    return hasNoPhotoCache ? null : undefined;
+  }
+
+  private cachePhoto(candidates: string[], photo: string): void {
+    const unique = new Set(candidates);
+    for (const candidate of unique) {
+      this.redis
+        .set(
+          `${this.PHOTO_CACHE_PREFIX}${candidate}`,
+          photo,
+          'EX',
+          this.PHOTO_CACHE_TTL
+        )
+        .catch(() => {});
+    }
+  }
+
+  private cacheNoPhoto(candidates: string[]): void {
+    const unique = new Set(candidates);
+    for (const candidate of unique) {
+      this.redis
+        .set(
+          `${this.PHOTO_CACHE_PREFIX}${candidate}`,
+          this.PHOTO_CACHE_NO_PHOTO,
+          'EX',
+          this.PHOTO_CACHE_NO_PHOTO_TTL
+        )
+        .catch(() => {});
+    }
+  }
+
+  private async fetchPhotoByCandidates(
+    client: Client,
+    candidates: string[]
+  ): Promise<string | undefined> {
+    for (const candidate of candidates) {
+      const photo = await this.withProfileTimeout(
+        client.getProfilePicUrl(candidate)
+      );
+      if (photo) {
+        return photo;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async resolvePhotoForMessage(
+    client: Client,
+    msg: Message,
+    resolvedJids: WwebjsResolvedJids
+  ): Promise<string | undefined> {
+    const candidates = this.buildPhotoCandidates([
+      resolvedJids.remoteJid,
+      resolvedJids.remoteJidAlt,
+      msg.from,
+      msg.to,
+      getMessageRemoteFromId(msg),
+    ]);
+    if (!candidates.length) {
+      return undefined;
+    }
+
+    const cached = await this.getCachedPhoto(candidates);
+    if (cached === null) {
+      return undefined;
+    }
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const contact = await msg.getContact();
+      const photoFromContact = await this.withProfileTimeout(
+        contact.getProfilePicUrl()
+      );
+      if (photoFromContact) {
+        this.cachePhoto(candidates, photoFromContact);
+        return photoFromContact;
+      }
+    } catch {}
+
+    const photoFromClient = await this.fetchPhotoByCandidates(
+      client,
+      candidates
+    );
+    if (photoFromClient) {
+      this.cachePhoto(candidates, photoFromClient);
+      return photoFromClient;
+    }
+
+    this.cacheNoPhoto(candidates);
+    return undefined;
+  }
+
+  private async resolvePhotoForCall(
+    client: Client,
+    jid: string
+  ): Promise<string | undefined> {
+    const candidates = this.buildPhotoCandidates([jid]);
+    if (!candidates.length) {
+      return undefined;
+    }
+
+    const cached = await this.getCachedPhoto(candidates);
+    if (cached === null) {
+      return undefined;
+    }
+    if (cached) {
+      return cached;
+    }
+
+    const photo = await this.fetchPhotoByCandidates(client, candidates);
+    if (photo) {
+      this.cachePhoto(candidates, photo);
+      return photo;
+    }
+
+    this.cacheNoPhoto(candidates);
     return undefined;
   }
 
@@ -444,6 +635,9 @@ export class WwebjsIncomingMessageService {
     fromMe?: boolean;
     reject?: () => Promise<void>;
   }): Promise<void> {
+    const client = this.currentClient;
+    if (!client) return;
+
     const jid = call.from;
     if (!jid) return;
     if (call.fromMe) return;
@@ -456,6 +650,8 @@ export class WwebjsIncomingMessageService {
     if (!phone) return;
 
     const upsert = buildCallUpsert(jid, null, phone);
+    const photo = await this.resolvePhotoForCall(client, jid);
+    upsert.photo = photo ?? null;
     const topic = this.kafkaServiceQueueService.upsertMessage();
     await this.streamProducerService.send(topic, upsert);
 
