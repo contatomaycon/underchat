@@ -31,6 +31,132 @@ function mapWwebjsTypeToMessageType(type: string | undefined): EMessageType {
   return EMessageType.text;
 }
 
+function getNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function getNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function buildLocationMessage(
+  msg: Message
+): Record<string, unknown> | undefined {
+  const raw = msg as unknown as {
+    location?: {
+      latitude?: unknown;
+      longitude?: unknown;
+      name?: unknown;
+      address?: unknown;
+      description?: unknown;
+    };
+    _data?: {
+      lat?: unknown;
+      lng?: unknown;
+      loc?: unknown;
+    };
+  };
+  const location = raw.location;
+  const data = raw._data;
+
+  const latitude = getNumber(location?.latitude) ?? getNumber(data?.lat);
+  const longitude = getNumber(location?.longitude) ?? getNumber(data?.lng);
+  const name =
+    getNonEmptyString(location?.name) ?? getNonEmptyString(data?.loc);
+  const address =
+    getNonEmptyString(location?.address) ??
+    getNonEmptyString(location?.description) ??
+    getNonEmptyString(data?.loc);
+
+  const locationMessage: Record<string, unknown> = {};
+  if (latitude !== undefined) {
+    locationMessage.degreesLatitude = latitude;
+  }
+  if (longitude !== undefined) {
+    locationMessage.degreesLongitude = longitude;
+  }
+  if (name) {
+    locationMessage.name = name;
+  }
+  if (address) {
+    locationMessage.address = address;
+  }
+
+  return Object.keys(locationMessage).length > 0 ? locationMessage : undefined;
+}
+
+function getVcards(msg: Message): string[] {
+  const raw = msg as unknown as { vCards?: unknown };
+  if (!Array.isArray(raw.vCards)) return [];
+  return raw.vCards.filter((value): value is string => {
+    return typeof value === 'string' && value.trim().length > 0;
+  });
+}
+
+function getVcardDisplayName(vcard: string): string | undefined {
+  const lines = vcard.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('FN:')) {
+      return getNonEmptyString(trimmed.slice(3));
+    }
+  }
+  return undefined;
+}
+
+function buildContactPayload(
+  msg: Message,
+  rawType: string,
+  body: string
+): Record<string, unknown> | undefined {
+  const isSingleContact = rawType === 'vcard' || rawType === 'contact';
+  const isMultiContact = rawType === 'multi_vcard' || rawType === 'contacts';
+  if (!isSingleContact && !isMultiContact) return undefined;
+
+  const vcards = getVcards(msg);
+  const bodyVcard = getNonEmptyString(body);
+  const raw = msg as unknown as {
+    _data?: { vcardFormattedName?: unknown };
+  };
+  const vcardFormattedName = getNonEmptyString(raw._data?.vcardFormattedName);
+
+  if (isSingleContact) {
+    const vcard = vcards[0] ?? bodyVcard;
+    if (!vcard) return undefined;
+
+    return {
+      contactMessage: {
+        vcard,
+        displayName: vcardFormattedName ?? getVcardDisplayName(vcard),
+      },
+    };
+  }
+
+  const contactVcards =
+    vcards.length > 0 ? vcards : bodyVcard ? [bodyVcard] : [];
+  if (!contactVcards.length) return undefined;
+
+  return {
+    contactsArrayMessage: {
+      contacts: contactVcards.map((vcard) => ({
+        vcard,
+        displayName: getVcardDisplayName(vcard),
+      })),
+    },
+  };
+}
+
 interface WwebjsResolvedJids {
   remoteJid?: string;
   remoteJidAlt?: string;
@@ -55,8 +181,9 @@ export function wwebjsMessageToUpsert(
   if (!remoteJid) return null;
   const remoteJidAlt = resolvedJids?.remoteJidAlt;
 
+  const rawType = (msg.type ?? 'chat').toLowerCase();
   const body = typeof msg.body === 'string' ? msg.body : '';
-  let messageType = mapWwebjsTypeToMessageType(msg.type);
+  let messageType = mapWwebjsTypeToMessageType(rawType);
   const isViewOnce = (msg as { isViewOnce?: boolean }).isViewOnce === true;
   if (isViewOnce) {
     messageType = EMessageType.view_once;
@@ -67,7 +194,25 @@ export function wwebjsMessageToUpsert(
     innerMessage.conversation = body;
     innerMessage.extendedTextMessage = { text: body };
   }
-  if (Object.keys(innerMessage).length === 0 && body) {
+  if (rawType === 'location') {
+    const locationMessage = buildLocationMessage(msg);
+    if (locationMessage) {
+      innerMessage.locationMessage = locationMessage;
+    }
+  }
+  const contactPayload = buildContactPayload(msg, rawType, body);
+  if (contactPayload) {
+    Object.assign(innerMessage, contactPayload);
+  }
+  if (
+    Object.keys(innerMessage).length === 0 &&
+    body &&
+    rawType !== 'location' &&
+    rawType !== 'vcard' &&
+    rawType !== 'contact' &&
+    rawType !== 'multi_vcard' &&
+    rawType !== 'contacts'
+  ) {
     innerMessage.conversation = body;
   }
 

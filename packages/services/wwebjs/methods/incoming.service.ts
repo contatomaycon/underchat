@@ -117,6 +117,9 @@ export class WwebjsIncomingMessageService {
   bindTo(client: Client): void {
     this.currentClient = client;
     client.on('message', (msg: Message) => {
+      console.log('Messages upsert');
+      console.dir(msg, { depth: null, colors: true });
+
       void this.handleIncomingMessage(msg);
     });
     client.on('message_revoke_everyone', (after: Message, before?: Message) => {
