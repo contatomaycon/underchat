@@ -19,10 +19,16 @@ import {
   buildRevokeMeUpsert,
 } from '../util/wwebjsUpsertBuilders';
 import { WwebjsUpsertMediaEnricher } from './upsertMediaEnricher.service';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
 
 const ACK_DEVICE = 2;
 const ACK_READ = 3;
 const ACK_PLAYED = 4;
+
+interface WwebjsResolvedJids {
+  remoteJid: string;
+  remoteJidAlt?: string;
+}
 
 function getMessageIdSerialized(msg: { id?: unknown }): string | undefined {
   if (!msg?.id) return undefined;
@@ -55,6 +61,42 @@ function getReactionIdSerialized(reaction: {
     return (m as { _serialized: string })._serialized;
   }
   return `react_${Date.now()}`;
+}
+
+function getRemoteFromSerializedMessageId(
+  serializedMessageId: string
+): string | undefined {
+  const firstSeparator = serializedMessageId.indexOf('_');
+  const lastSeparator = serializedMessageId.lastIndexOf('_');
+  if (firstSeparator <= 0 || lastSeparator <= firstSeparator) {
+    return undefined;
+  }
+
+  return serializedMessageId.slice(firstSeparator + 1, lastSeparator);
+}
+
+function getMessageRemoteFromId(msg: Message): string | undefined {
+  if (!msg?.id) {
+    return undefined;
+  }
+
+  if (typeof msg.id === 'object' && msg.id !== null) {
+    const value = msg.id as { remote?: string; _serialized?: string };
+
+    if (typeof value.remote === 'string' && value.remote) {
+      return value.remote;
+    }
+
+    if (typeof value._serialized === 'string') {
+      return getRemoteFromSerializedMessageId(value._serialized);
+    }
+  }
+
+  if (typeof msg.id === 'string') {
+    return getRemoteFromSerializedMessageId(msg.id);
+  }
+
+  return undefined;
 }
 
 @singleton()
@@ -121,11 +163,83 @@ export class WwebjsIncomingMessageService {
     return false;
   }
 
-  private async handleIncomingMessage(msg: Message): Promise<void> {
-    const remoteJid = msg.from || msg.to || '';
-    if (this.shouldSkipChat(remoteJid)) return;
+  private isGroupOrBroadcastJid(jid: string): boolean {
+    return jid.endsWith('@g.us') || jid.endsWith('@broadcast');
+  }
 
-    const upsert = wwebjsMessageToUpsert(msg);
+  private async resolveRemoteJids(
+    client: Client,
+    msg: Message
+  ): Promise<WwebjsResolvedJids | null> {
+    const fallbackRaw = msg.fromMe
+      ? msg.to || msg.from || ''
+      : msg.from || msg.to || '';
+    const fallbackJid = normalizeJid(fallbackRaw) ?? fallbackRaw;
+
+    if (!fallbackJid || this.shouldSkipChat(fallbackJid)) {
+      return null;
+    }
+
+    if (this.isGroupOrBroadcastJid(fallbackJid)) {
+      return { remoteJid: fallbackJid };
+    }
+
+    const messageIdRemoteRaw = getMessageRemoteFromId(msg);
+    const messageIdRemote = messageIdRemoteRaw
+      ? (normalizeJid(messageIdRemoteRaw) ?? messageIdRemoteRaw)
+      : undefined;
+
+    const userIds = Array.from(
+      new Set([fallbackJid, messageIdRemote].filter(Boolean))
+    ) as string[];
+
+    if (!userIds.length) {
+      return { remoteJid: fallbackJid };
+    }
+
+    try {
+      const mappings = await client.getContactLidAndPhone(userIds);
+      const first = mappings.find((entry) => entry?.lid || entry?.pn);
+      const lid = first?.lid
+        ? (normalizeJid(first.lid) ?? first.lid)
+        : undefined;
+      const pn = first?.pn ? (normalizeJid(first.pn) ?? first.pn) : undefined;
+
+      if (pn && lid && pn !== lid) {
+        return {
+          remoteJid: pn,
+          remoteJidAlt: lid,
+        };
+      }
+
+      if (pn && pn !== fallbackJid) {
+        return {
+          remoteJid: pn,
+          remoteJidAlt: fallbackJid,
+        };
+      }
+
+      if (lid && lid !== fallbackJid) {
+        return {
+          remoteJid: fallbackJid,
+          remoteJidAlt: lid,
+        };
+      }
+    } catch {}
+
+    return { remoteJid: fallbackJid };
+  }
+
+  private async handleIncomingMessage(msg: Message): Promise<void> {
+    const client = this.currentClient;
+    if (!client) {
+      return;
+    }
+
+    const resolvedJids = await this.resolveRemoteJids(client, msg);
+    if (!resolvedJids) return;
+
+    const upsert = wwebjsMessageToUpsert(msg, resolvedJids);
     if (!upsert) return;
 
     await this.upsertMediaEnricher.enrich(upsert, msg);
@@ -138,14 +252,30 @@ export class WwebjsIncomingMessageService {
     after: Message,
     before: Message | undefined
   ): Promise<void> {
-    const upsert = buildDeleteMessageUpsert(after, before);
+    const client = this.currentClient;
+    if (!client) {
+      return;
+    }
+
+    const resolvedJids = await this.resolveRemoteJids(client, after);
+    if (!resolvedJids) return;
+
+    const upsert = buildDeleteMessageUpsert(after, before, resolvedJids);
     if (!upsert) return;
     const topic = this.kafkaServiceQueueService.upsertMessage();
     await this.streamProducerService.send(topic, upsert);
   }
 
   private async handleRevokeMe(msg: Message): Promise<void> {
-    const upsert = buildRevokeMeUpsert(msg);
+    const client = this.currentClient;
+    if (!client) {
+      return;
+    }
+
+    const resolvedJids = await this.resolveRemoteJids(client, msg);
+    if (!resolvedJids) return;
+
+    const upsert = buildRevokeMeUpsert(msg, resolvedJids);
     if (!upsert) return;
     const topic = this.kafkaServiceQueueService.upsertMessage();
     await this.streamProducerService.send(topic, upsert);
@@ -155,7 +285,15 @@ export class WwebjsIncomingMessageService {
     message: Message,
     newBody: string
   ): Promise<void> {
-    const upsert = buildEditMessageUpsert(message, newBody);
+    const client = this.currentClient;
+    if (!client) {
+      return;
+    }
+
+    const resolvedJids = await this.resolveRemoteJids(client, message);
+    if (!resolvedJids) return;
+
+    const upsert = buildEditMessageUpsert(message, newBody, resolvedJids);
     if (!upsert) return;
     const topic = this.kafkaServiceQueueService.upsertMessage();
     await this.streamProducerService.send(topic, upsert);
@@ -175,9 +313,16 @@ export class WwebjsIncomingMessageService {
     if (!parentMsgId) return;
 
     let remoteJid: string;
+    let remoteJidAlt: string | undefined;
     try {
       const parentMsg = await client.getMessageById(parentMsgId);
-      remoteJid = parentMsg?.from || parentMsg?.to || '';
+      if (!parentMsg) {
+        return;
+      }
+
+      const resolvedJids = await this.resolveRemoteJids(client, parentMsg);
+      remoteJid = resolvedJids?.remoteJid ?? '';
+      remoteJidAlt = resolvedJids?.remoteJidAlt;
     } catch {
       return;
     }
@@ -201,6 +346,7 @@ export class WwebjsIncomingMessageService {
 
     const upsert = buildReactionUpsert(
       remoteJid,
+      remoteJidAlt,
       reactionId,
       parentMsgId,
       emoji,

@@ -3,6 +3,7 @@ import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { messageToWaLike } from './messageToWaLike';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
 
 function getMessageId(msg: Message): string | undefined {
   if (!msg?.id) return undefined;
@@ -30,15 +31,29 @@ function mapWwebjsTypeToMessageType(type: string | undefined): EMessageType {
   return EMessageType.text;
 }
 
-export function wwebjsMessageToUpsert(msg: Message): IUpsertMessage | null {
+interface WwebjsResolvedJids {
+  remoteJid?: string;
+  remoteJidAlt?: string;
+}
+
+export function wwebjsMessageToUpsert(
+  msg: Message,
+  resolvedJids?: WwebjsResolvedJids
+): IUpsertMessage | null {
   const keyLike = messageToWaLike(msg);
   if (!keyLike?.key) return null;
 
   const id = getMessageId(msg);
   if (!id) return null;
 
-  const remoteJid = msg.from || msg.to || '';
+  const fallbackRemoteJidRaw = msg.fromMe
+    ? msg.to || msg.from || ''
+    : msg.from || msg.to || '';
+  const fallbackRemoteJid =
+    normalizeJid(fallbackRemoteJidRaw) ?? fallbackRemoteJidRaw;
+  const remoteJid = resolvedJids?.remoteJid ?? fallbackRemoteJid;
   if (!remoteJid) return null;
+  const remoteJidAlt = resolvedJids?.remoteJidAlt;
 
   const body = typeof msg.body === 'string' ? msg.body : '';
   let messageType = mapWwebjsTypeToMessageType(msg.type);
@@ -60,6 +75,7 @@ export function wwebjsMessageToUpsert(msg: Message): IUpsertMessage | null {
     key: {
       id,
       remoteJid,
+      remoteJidAlt,
       fromMe: msg.fromMe ?? false,
       participant: msg.from?.includes('@g.us') ? msg.from : undefined,
       isViewOnce: isViewOnce || undefined,

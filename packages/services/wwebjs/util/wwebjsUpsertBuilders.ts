@@ -2,6 +2,7 @@ import type { Message } from 'whatsapp-web.js';
 import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { wwebjsEnvironment } from '@core/config/environments';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
 
 function getMessageId(msg: { id?: unknown }): string | undefined {
   if (!msg?.id) return undefined;
@@ -15,19 +16,27 @@ function getMessageId(msg: { id?: unknown }): string | undefined {
   return String(msg.id);
 }
 
+interface WwebjsResolvedJids {
+  remoteJid?: string;
+  remoteJidAlt?: string;
+}
+
 function getRemoteJid(msg: Message): string {
-  return msg.from || msg.to || '';
+  const raw = msg.fromMe ? msg.to || msg.from || '' : msg.from || msg.to || '';
+  return normalizeJid(raw) ?? raw;
 }
 
 export function buildDeleteMessageUpsert(
   after: Message,
-  before: Message | null | undefined
+  before: Message | null | undefined,
+  resolvedJids?: WwebjsResolvedJids
 ): IUpsertMessage | null {
   const deletedId = before ? getMessageId(before) : getMessageId(after);
   if (!deletedId) return null;
 
-  const remoteJid = getRemoteJid(after);
+  const remoteJid = resolvedJids?.remoteJid ?? getRemoteJid(after);
   if (!remoteJid) return null;
+  const remoteJidAlt = resolvedJids?.remoteJidAlt;
 
   const id = getMessageId(after) ?? `revoke_${deletedId}_${Date.now()}`;
 
@@ -39,6 +48,7 @@ export function buildDeleteMessageUpsert(
       key: {
         id,
         remoteJid,
+        remoteJidAlt,
         fromMe: after.fromMe ?? false,
         participant: after.from?.includes('@g.us') ? after.from : undefined,
       },
@@ -53,12 +63,16 @@ export function buildDeleteMessageUpsert(
   };
 }
 
-export function buildRevokeMeUpsert(msg: Message): IUpsertMessage | null {
+export function buildRevokeMeUpsert(
+  msg: Message,
+  resolvedJids?: WwebjsResolvedJids
+): IUpsertMessage | null {
   const deletedId = getMessageId(msg);
   if (!deletedId) return null;
 
-  const remoteJid = getRemoteJid(msg);
+  const remoteJid = resolvedJids?.remoteJid ?? getRemoteJid(msg);
   if (!remoteJid) return null;
+  const remoteJidAlt = resolvedJids?.remoteJidAlt;
 
   return {
     worker_id: wwebjsEnvironment.wwebjsWorkerId,
@@ -68,6 +82,7 @@ export function buildRevokeMeUpsert(msg: Message): IUpsertMessage | null {
       key: {
         id: `revoke_me_${deletedId}_${Date.now()}`,
         remoteJid,
+        remoteJidAlt,
         fromMe: msg.fromMe ?? false,
         participant: msg.from?.includes('@g.us') ? msg.from : undefined,
       },
@@ -84,13 +99,15 @@ export function buildRevokeMeUpsert(msg: Message): IUpsertMessage | null {
 
 export function buildEditMessageUpsert(
   message: Message,
-  newBody: string
+  newBody: string,
+  resolvedJids?: WwebjsResolvedJids
 ): IUpsertMessage | null {
   const id = getMessageId(message);
   if (!id) return null;
 
-  const remoteJid = getRemoteJid(message);
+  const remoteJid = resolvedJids?.remoteJid ?? getRemoteJid(message);
   if (!remoteJid) return null;
+  const remoteJidAlt = resolvedJids?.remoteJidAlt;
 
   const protocolMessage = {
     key: { id },
@@ -108,6 +125,7 @@ export function buildEditMessageUpsert(
       key: {
         id: `edit_${id}_${Date.now()}`,
         remoteJid,
+        remoteJidAlt,
         fromMe: message.fromMe ?? false,
         participant: message.from?.includes('@g.us') ? message.from : undefined,
       },
@@ -127,6 +145,7 @@ export function buildEditMessageUpsert(
 
 export function buildReactionUpsert(
   remoteJid: string,
+  remoteJidAlt: string | undefined,
   reactionId: string,
   targetMessageId: string,
   emoji: string,
@@ -142,6 +161,7 @@ export function buildReactionUpsert(
       key: {
         id: reactionId,
         remoteJid,
+        remoteJidAlt,
         fromMe,
         participant,
       },
