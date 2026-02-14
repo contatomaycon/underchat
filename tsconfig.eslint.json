@@ -13,6 +13,7 @@
     "apps/web/**/*.ts",
     "apps/web/**/*.tsx",
     "apps/worker_baileys/src/**/*.ts",
+    "apps/worker_wwebjs/src/**/*.ts",
     "packages/**/src/**/*.ts",
     "packages/**/src/**/*.tsx",
     "packages/**/*.ts",

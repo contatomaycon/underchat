@@ -36,6 +36,7 @@ import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpda
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IBaileysPendingMessage } from '@core/common/interfaces/IBaileysPendingMessage';
+import { BaileysUpsertMediaEnricher } from './upsertMediaEnricher.service';
 
 @singleton()
 export class BaileysIncomingMessageService {
@@ -72,7 +73,9 @@ export class BaileysIncomingMessageService {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    @inject(BaileysUpsertMediaEnricher)
+    private readonly upsertMediaEnricher: BaileysUpsertMediaEnricher
   ) {
     this.startCleanupInterval();
     this.startQueueProcessor();
@@ -235,7 +238,9 @@ export class BaileysIncomingMessageService {
           item.retries++;
 
           if (item.retries === 1) {
-            void this.cacheMessage(item.inputUpsert.message, { isRetry: true });
+            void this.cacheMessage(item.inputUpsert.message as WAMessage, {
+              isRetry: true,
+            });
           }
 
           if (item.retries < this.MAX_RETRIES) {
@@ -271,6 +276,17 @@ export class BaileysIncomingMessageService {
 
     if (item.retries > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    if (
+      !item.inputUpsert.is_call_event &&
+      item.inputUpsert.message &&
+      (item.inputUpsert.message as WAMessage).message
+    ) {
+      await this.upsertMediaEnricher.enrich(
+        item.inputUpsert,
+        item.inputUpsert.message as WAMessage
+      );
     }
 
     await this.streamProducerService.send(
@@ -417,7 +433,7 @@ export class BaileysIncomingMessageService {
         worker_id: baileysEnvironment.baileysWorkerId,
         account_id: baileysEnvironment.baileysAccountId,
         type,
-        message: m,
+        message: m as unknown as IUpsertMessage['message'],
         photo: null,
         has_quoted: hasQuoted,
       };
@@ -578,7 +594,7 @@ export class BaileysIncomingMessageService {
         worker_id: baileysEnvironment.baileysWorkerId,
         account_id: baileysEnvironment.baileysAccountId,
         type: EMessageType.system,
-        message: {} as WAMessage,
+        message: {} as IUpsertMessage['message'],
         photo: null,
         has_quoted: false,
         is_call_event: true,

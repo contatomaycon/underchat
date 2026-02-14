@@ -50,6 +50,7 @@ declare module 'fastify' {
       registerWorker: (worker: Worker) => void;
     };
     baileysInitialized: Promise<void>;
+    wwebjsInitialized: Promise<void>;
   }
 
   export interface FastifyRequest {

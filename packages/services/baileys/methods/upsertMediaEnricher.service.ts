@@ -1,0 +1,307 @@
+import { injectable, inject } from 'tsyringe';
+import { Buffer } from 'node:buffer';
+import {
+  downloadMediaMessage,
+  proto,
+  WAMessage,
+} from '@whiskeysockets/baileys';
+import { unwrapMessage } from '@core/common/functions/unwrapMessage';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import type { IContent } from '@core/common/interfaces/IChatMessage';
+import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
+import { StorageService } from '@core/services/storage.service';
+import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
+
+const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000;
+
+@injectable()
+export class BaileysUpsertMediaEnricher {
+  constructor(
+    @inject(StorageService)
+    private readonly storageService: StorageService
+  ) {}
+
+  async enrich(upsert: IUpsertMessage, waMessage: WAMessage): Promise<void> {
+    const type = upsert.type;
+    const content: Partial<IContent> = { type };
+
+    if (type === EMessageType.image) {
+      await this.enrichImage(content, waMessage, upsert.account_id);
+    }
+    if (type === EMessageType.video || type === EMessageType.video_note) {
+      await this.enrichVideo(content, waMessage, upsert.account_id);
+    }
+    if (type === EMessageType.audio) {
+      await this.enrichAudio(content, waMessage, upsert.account_id);
+    }
+    if (type === EMessageType.document) {
+      await this.enrichDocument(content, waMessage, upsert.account_id);
+    }
+    if (type === EMessageType.sticker) {
+      await this.enrichSticker(content, waMessage, upsert.account_id);
+    }
+
+    const hasMedia =
+      content.image ||
+      content.video ||
+      content.audio ||
+      content.document ||
+      content.sticker;
+    if (hasMedia) {
+      upsert.content = { ...upsert.content, ...content } as IContent;
+    }
+  }
+
+  private getInnerMessage(
+    waMessage: WAMessage,
+    keepViewOnce = false
+  ): proto.IMessage | null {
+    const msg = waMessage.message;
+    if (!msg) return null;
+    return unwrapMessage(msg, { keepViewOnce }) ?? msg;
+  }
+
+  private async downloadWithTimeout(message: WAMessage): Promise<Buffer> {
+    return Promise.race([
+      downloadMediaMessage(message, 'buffer', { startByte: 0 }),
+      new Promise<Buffer>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('Download timeout')),
+          MEDIA_DOWNLOAD_TIMEOUT_MS
+        )
+      ),
+    ]);
+  }
+
+  private getImageMessage(
+    waMessage: WAMessage
+  ): proto.Message.IImageMessage | null {
+    const msg = this.getInnerMessage(waMessage);
+    if (!msg) return null;
+    if (msg.imageMessage?.url) return msg.imageMessage;
+    const withCaption = (msg as Record<string, unknown>)
+      .imageWithCaptionMessage as
+      | { message?: { imageMessage?: proto.Message.IImageMessage } }
+      | undefined;
+    if (withCaption?.message?.imageMessage?.url) {
+      return withCaption.message.imageMessage;
+    }
+    return null;
+  }
+
+  private getVideoMessage(
+    waMessage: WAMessage
+  ): proto.Message.IVideoMessage | null {
+    const msg = this.getInnerMessage(waMessage) as
+      | Record<string, unknown>
+      | undefined;
+    if (!msg) return null;
+    const ptv = msg.ptvMessage as proto.Message.IVideoMessage | undefined;
+    if (ptv?.url) return ptv;
+    if ((msg.videoMessage as proto.Message.IVideoMessage | undefined)?.url) {
+      return msg.videoMessage as proto.Message.IVideoMessage;
+    }
+    const withCaption = msg.videoWithCaptionMessage as
+      | { message?: { videoMessage?: proto.Message.IVideoMessage } }
+      | undefined;
+    if (withCaption?.message?.videoMessage?.url) {
+      return withCaption.message.videoMessage;
+    }
+    return null;
+  }
+
+  private getDocumentMessage(
+    waMessage: WAMessage
+  ): proto.Message.IDocumentMessage | null {
+    const msg = this.getInnerMessage(waMessage);
+    if (!msg) return null;
+    if (msg.documentMessage?.url) return msg.documentMessage;
+    const withCaption = (msg as Record<string, unknown>)
+      .documentWithCaptionMessage as
+      | { message?: { documentMessage?: proto.Message.IDocumentMessage } }
+      | undefined;
+    if (withCaption?.message?.documentMessage?.url) {
+      return withCaption.message.documentMessage;
+    }
+    return null;
+  }
+
+  private async enrichImage(
+    content: Partial<IContent>,
+    waMessage: WAMessage,
+    accountId: string
+  ): Promise<void> {
+    const imageMsg = this.getImageMessage(waMessage);
+    if (!imageMsg) return;
+
+    try {
+      const buffer = await this.downloadWithTimeout(waMessage);
+      const photoResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        accountId
+      );
+      if (photoResult) {
+        content.image = {
+          url: photoResult.url,
+          caption: imageMsg.caption ?? null,
+          mimetype: imageMsg.mimetype ?? null,
+          extension: photoResult.extension,
+          size: photoResult.size,
+          height: imageMsg.height ?? null,
+          width: imageMsg.width ?? null,
+        };
+      }
+    } catch {
+      content.media_download_failed = true;
+    }
+  }
+
+  private async enrichVideo(
+    content: Partial<IContent>,
+    waMessage: WAMessage,
+    accountId: string
+  ): Promise<void> {
+    const videoMsg = this.getVideoMessage(waMessage);
+    if (!videoMsg) return;
+
+    try {
+      const buffer = await this.downloadWithTimeout(waMessage);
+      const inferredVideoName =
+        (videoMsg as { fileName?: string | null }).fileName ?? undefined;
+      const videoResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        accountId,
+        {
+          fileName: inferredVideoName,
+          mimetype: videoMsg.mimetype ?? undefined,
+        }
+      );
+
+      const thumb =
+        videoMsg.jpegThumbnail && videoMsg.jpegThumbnail.length > 0
+          ? `data:image/jpeg;base64,${Buffer.from(videoMsg.jpegThumbnail).toString('base64')}`
+          : null;
+
+      if (videoResult) {
+        content.video = {
+          url: videoResult.url,
+          caption: videoMsg.caption ?? null,
+          name: inferredVideoName ?? videoResult.name,
+          mimetype: videoMsg.mimetype ?? videoResult.mimetype ?? 'video/mp4',
+          extension: videoResult.extension,
+          size: videoResult.size,
+          duration: videoMsg.seconds ?? null,
+          height: videoMsg.height ?? null,
+          width: videoMsg.width ?? null,
+          thumbnail: thumb,
+        };
+      }
+    } catch {
+      content.media_download_failed = true;
+    }
+  }
+
+  private async enrichAudio(
+    content: Partial<IContent>,
+    waMessage: WAMessage,
+    accountId: string
+  ): Promise<void> {
+    const msg = this.getInnerMessage(waMessage);
+    if (!msg?.audioMessage?.url) return;
+
+    const audioMsg = msg.audioMessage;
+    try {
+      const buffer = await this.downloadWithTimeout(waMessage);
+      const inferredAudioName =
+        (audioMsg as { fileName?: string | null }).fileName ?? undefined;
+      const audioResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        accountId,
+        {
+          fileName: inferredAudioName,
+          mimetype: audioMsg.mimetype ?? undefined,
+        }
+      );
+      const waveform = convertWaveformToBase64(audioMsg.waveform);
+
+      if (audioResult) {
+        content.audio = {
+          url: audioResult.url,
+          name: inferredAudioName ?? audioResult.name,
+          mimetype: audioMsg.mimetype ?? audioResult.mimetype ?? null,
+          extension: audioResult.extension,
+          size: audioResult.size,
+          duration: audioMsg.seconds ?? null,
+          ptt: audioMsg.ptt ?? false,
+          view_once: waMessage.key?.isViewOnce ?? false,
+          waveform: waveform ?? null,
+        };
+      }
+    } catch {
+      content.media_download_failed = true;
+    }
+  }
+
+  private async enrichDocument(
+    content: Partial<IContent>,
+    waMessage: WAMessage,
+    accountId: string
+  ): Promise<void> {
+    const documentMsg = this.getDocumentMessage(waMessage);
+    if (!documentMsg) return;
+
+    try {
+      const buffer = await this.downloadWithTimeout(waMessage);
+      const documentResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        accountId,
+        {
+          fileName: documentMsg.fileName ?? undefined,
+          mimetype: documentMsg.mimetype ?? undefined,
+        }
+      );
+      if (documentResult) {
+        content.document = {
+          url: documentResult.url,
+          name: documentMsg.fileName ?? documentResult.name,
+          mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
+          extension: documentResult.extension,
+          size: documentResult.size,
+        };
+      }
+    } catch {
+      content.media_download_failed = true;
+    }
+  }
+
+  private async enrichSticker(
+    content: Partial<IContent>,
+    waMessage: WAMessage,
+    accountId: string
+  ): Promise<void> {
+    const msg = this.getInnerMessage(waMessage);
+    if (!msg?.stickerMessage?.url) return;
+
+    const stickerMsg = msg.stickerMessage;
+    try {
+      const buffer = await this.downloadWithTimeout(waMessage);
+      const stickerResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        accountId
+      );
+      if (stickerResult) {
+        content.sticker = {
+          url: stickerResult.url,
+          mimetype: stickerMsg.mimetype ?? stickerResult.mimetype ?? null,
+          extension: stickerResult.extension,
+          size: stickerResult.size,
+          height: stickerMsg.height ?? stickerResult.height ?? null,
+          width: stickerMsg.width ?? stickerResult.width ?? null,
+          is_animated: stickerMsg.isAnimated ?? false,
+        };
+      }
+    } catch {
+      content.media_download_failed = true;
+    }
+  }
+}

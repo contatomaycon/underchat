@@ -3,7 +3,11 @@ import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
-import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
+import {
+  type IUpsertMessageEnvelope,
+  type IUpsertMessageKey,
+  IUpsertMessage,
+} from '@core/common/interfaces/IUpsertMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
@@ -39,16 +43,8 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
-import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import {
-  downloadMediaMessage,
-  proto,
-  WAMessage,
-  WAMessageKey,
-} from '@whiskeysockets/baileys';
-import { Buffer } from 'node:buffer';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
@@ -85,8 +81,10 @@ export class MessageUpsertConsume {
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAYS = [100, 500, 2000];
   private readonly MESSAGE_PROCESSING_TIMEOUT_MS = 120000;
-  private readonly MEDIA_DOWNLOAD_TIMEOUT_MS = 15000;
   private readonly MAX_CONSECUTIVE_FAILURES = 10;
+
+  private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING = 3;
+  private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE = 4;
   private partitionFailureCounts: Map<number, number> = new Map();
 
   constructor(
@@ -355,7 +353,7 @@ export class MessageUpsertConsume {
   private async markIncomingMessageAsRead(
     accountId: string,
     workerId: string,
-    key: WAMessageKey
+    key: IUpsertMessageKey
   ): Promise<void> {
     const markReadData: IMessageMarkRead = {
       account_id: accountId,
@@ -429,7 +427,9 @@ export class MessageUpsertConsume {
       return null;
     }
 
-    const reactionMsg = extractReactionMessage(data.message?.message);
+    const reactionMsg = extractReactionMessage(
+      data.message?.message as Parameters<typeof extractReactionMessage>[0]
+    );
     if (!reactionMsg?.key?.id) {
       return null;
     }
@@ -503,15 +503,20 @@ export class MessageUpsertConsume {
     if (data.type !== EMessageType.edit_text) return null;
 
     const baseMessage = this.getBaseMessage(data);
-    const editedMessage = (baseMessage?.message?.editedMessage ??
-      baseMessage?.message) as proto.Message.IFutureProofMessage &
-      proto.IMessage;
+    const rawEdited = baseMessage?.message as
+      | Record<string, unknown>
+      | undefined;
+    const editedMessage = (rawEdited?.editedMessage ?? rawEdited) as
+      | Record<string, unknown>
+      | undefined;
 
-    const protocolMessage =
-      editedMessage?.message?.protocolMessage ?? editedMessage?.protocolMessage;
-
-    const targetMessageId = protocolMessage?.key?.id;
-    const editedContent = protocolMessage?.editedMessage;
+    const protocolMessage = (editedMessage?.message ??
+      editedMessage?.protocolMessage) as Record<string, unknown> | undefined;
+    const protocolKey = protocolMessage?.key as { id?: string } | undefined;
+    const targetMessageId = protocolKey?.id;
+    const editedContent = protocolMessage?.editedMessage as
+      | Record<string, unknown>
+      | undefined;
 
     if (!targetMessageId || !editedContent) return true;
 
@@ -525,10 +530,11 @@ export class MessageUpsertConsume {
       return true;
     }
 
+    const extText = editedContent.extendedTextMessage as
+      | { text?: string }
+      | undefined;
     const newText =
-      editedContent.conversation ??
-      editedContent.extendedTextMessage?.text ??
-      '';
+      (editedContent.conversation as string | undefined) ?? extText?.text ?? '';
 
     if (!newText) {
       return true;
@@ -564,15 +570,20 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean | null> {
+    const rawMsg = this.getBaseMessage(data)?.message as
+      | Record<string, unknown>
+      | undefined;
+    const protocolMessage = rawMsg?.protocolMessage as
+      | { key?: { id?: string } }
+      | undefined;
     if (
       data.type !== EMessageType.delete_message ||
-      !this.getBaseMessage(data)?.message?.protocolMessage?.key?.id
+      !protocolMessage?.key?.id
     ) {
       return null;
     }
 
-    const protocolMessage = this.getBaseMessage(data)?.message?.protocolMessage;
-    const targetMessageId = protocolMessage?.key?.id;
+    const targetMessageId = protocolMessage.key.id;
     if (!targetMessageId) {
       return true;
     }
@@ -630,13 +641,16 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const pinMessage = (this.getBaseMessage(data)?.message as any)
-      ?.pinInChatMessage;
-    if (!pinMessage?.key?.id) {
+    const rawMsg = this.getBaseMessage(data)?.message as
+      | Record<string, unknown>
+      | undefined;
+    const pinMessage = rawMsg?.pinInChatMessage as
+      | { key?: { id?: string }; type?: unknown }
+      | undefined;
+    const targetMessageId = pinMessage?.key?.id;
+    if (!targetMessageId) {
       return;
     }
-
-    const targetMessageId = pinMessage.key.id;
     const targetMessage = await this.findMessageByKeyId(
       data.account_id,
       getChat.chat_id,
@@ -894,34 +908,25 @@ export class MessageUpsertConsume {
     await Promise.allSettled(mediaPromises);
   }
 
-  private async downloadMediaMessageWithTimeout(
-    message: import('@whiskeysockets/baileys').WAMessage
-  ): Promise<Buffer> {
-    return Promise.race([
-      downloadMediaMessage(message, 'buffer', { startByte: 0 }),
-      new Promise<Buffer>((_, reject) =>
-        setTimeout(
-          () => reject(new Error('Download timeout')),
-          this.MEDIA_DOWNLOAD_TIMEOUT_MS
-        )
-      ),
-    ]);
-  }
-
   private getDocumentMessage(
     data: IUpsertMessage
-  ): proto.Message.IDocumentMessage | null {
+  ): Record<string, unknown> | null {
     const msg = this.getInnerMessage(data);
     if (!msg) return null;
 
-    if (msg.documentMessage?.url) {
-      return msg.documentMessage;
+    if ((msg as Record<string, unknown>).documentMessage) {
+      return (msg as Record<string, unknown>).documentMessage as Record<
+        string,
+        unknown
+      >;
     }
 
-    const withCaption = (msg as any).documentWithCaptionMessage?.message
-      ?.documentMessage as proto.Message.IDocumentMessage | undefined;
-    if (withCaption?.url) {
-      return withCaption;
+    const withCaption = (msg as Record<string, unknown>)
+      .documentWithCaptionMessage as Record<string, unknown> | undefined;
+    const doc = withCaption?.message as Record<string, unknown> | undefined;
+    const documentMessage = doc?.documentMessage;
+    if (documentMessage) {
+      return documentMessage as Record<string, unknown>;
     }
 
     return null;
@@ -929,18 +934,23 @@ export class MessageUpsertConsume {
 
   private getImageMessage(
     data: IUpsertMessage
-  ): proto.Message.IImageMessage | null {
+  ): Record<string, unknown> | null {
     const msg = this.getInnerMessage(data);
     if (!msg) return null;
 
-    if (msg.imageMessage?.url) {
-      return msg.imageMessage;
+    if ((msg as Record<string, unknown>).imageMessage) {
+      return (msg as Record<string, unknown>).imageMessage as Record<
+        string,
+        unknown
+      >;
     }
 
-    const withCaption = (msg as any).imageWithCaptionMessage?.message
-      ?.imageMessage as proto.Message.IImageMessage | undefined;
-    if (withCaption?.url) {
-      return withCaption;
+    const withCaption = (msg as Record<string, unknown>)
+      .imageWithCaptionMessage as Record<string, unknown> | undefined;
+    const inner = withCaption?.message as Record<string, unknown> | undefined;
+    const imageMessage = inner?.imageMessage;
+    if (imageMessage) {
+      return imageMessage as Record<string, unknown>;
     }
 
     return null;
@@ -948,25 +958,28 @@ export class MessageUpsertConsume {
 
   private getVideoMessage(
     data: IUpsertMessage
-  ): proto.Message.IVideoMessage | null {
+  ): Record<string, unknown> | null {
     const msg = this.getInnerMessage(data) as
-      | (proto.IMessage & { ptvMessage?: proto.Message.IVideoMessage })
+      | Record<string, unknown>
       | undefined;
     if (!msg) return null;
 
     const ptv = msg.ptvMessage;
-    if (ptv?.url) {
-      return ptv;
+    if (ptv && (ptv as Record<string, unknown>).url) {
+      return ptv as Record<string, unknown>;
     }
 
-    if (msg.videoMessage?.url) {
-      return msg.videoMessage;
+    if ((msg.videoMessage as Record<string, unknown> | undefined)?.url) {
+      return msg.videoMessage as Record<string, unknown>;
     }
 
-    const withCaption = (msg as any).videoWithCaptionMessage?.message
-      ?.videoMessage as proto.Message.IVideoMessage | undefined;
-    if (withCaption?.url) {
-      return withCaption;
+    const withCaption = msg.videoWithCaptionMessage as
+      | Record<string, unknown>
+      | undefined;
+    const inner = withCaption?.message as Record<string, unknown> | undefined;
+    const videoMessage = inner?.videoMessage;
+    if (videoMessage) {
+      return videoMessage as Record<string, unknown>;
     }
 
     return null;
@@ -980,40 +993,21 @@ export class MessageUpsertConsume {
       return;
     }
 
+    if (data.content?.image) {
+      content.image = data.content.image;
+      return;
+    }
+
+    if (content.image) {
+      return;
+    }
+
     const imageMsg = this.getImageMessage(data);
     if (!imageMsg) {
       return;
     }
 
-    try {
-      const baseMessage = this.getBaseMessage(data);
-      if (!baseMessage) return;
-
-      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
-
-      const photoResult = await this.storageService.uploadFromBuffer(
-        buffer,
-        data.account_id
-      );
-
-      content.image = photoResult
-        ? {
-            url: photoResult.url,
-            caption: imageMsg.caption ?? null,
-            mimetype: imageMsg.mimetype,
-            extension: photoResult.extension,
-            size: photoResult.size,
-            height: imageMsg.height,
-            width: imageMsg.width,
-          }
-        : undefined;
-    } catch (error) {
-      console.error(
-        `[MessageUpsert] Failed to download image for message ${data.message?.key?.id}:`,
-        error instanceof Error ? error.message : error
-      );
-      content.media_download_failed = true;
-    }
+    content.media_download_failed = true;
   }
 
   private async handleVideoMessage(
@@ -1027,114 +1021,46 @@ export class MessageUpsertConsume {
       return;
     }
 
+    if (data.content?.video) {
+      content.video = data.content.video;
+      return;
+    }
+
+    if (content.video) {
+      return;
+    }
+
     const videoMsg = this.getVideoMessage(data);
     if (!videoMsg) {
       return;
     }
 
-    try {
-      const baseMessage = this.getBaseMessage(data);
-      if (!baseMessage) return;
-
-      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
-
-      const inferredVideoName =
-        (videoMsg as { fileName?: string | null })?.fileName ?? undefined;
-
-      const videoResult = await this.storageService.uploadFromBuffer(
-        buffer,
-        data.account_id,
-        {
-          fileName: inferredVideoName,
-          mimetype: videoMsg.mimetype ?? undefined,
-        }
-      );
-
-      const thumb =
-        videoMsg.jpegThumbnail && videoMsg.jpegThumbnail.length > 0
-          ? `data:image/jpeg;base64,${Buffer.from(
-              videoMsg.jpegThumbnail
-            ).toString('base64')}`
-          : null;
-
-      content.video = videoResult
-        ? {
-            url: videoResult.url,
-            caption: videoMsg.caption ?? null,
-            name: inferredVideoName ?? videoResult.name,
-            mimetype: videoMsg.mimetype ?? videoResult.mimetype ?? 'video/mp4',
-            extension: videoResult.extension,
-            size: videoResult.size,
-            duration: videoMsg.seconds ?? null,
-            height: videoMsg.height ?? null,
-            width: videoMsg.width ?? null,
-            thumbnail: thumb,
-          }
-        : undefined;
-    } catch (error) {
-      console.error(
-        `[MessageUpsert] Failed to download video for message ${data.message?.key?.id}:`,
-        error instanceof Error ? error.message : error
-      );
-      content.media_download_failed = true;
-    }
+    content.media_download_failed = true;
   }
 
   private async handleAudioMessage(
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (
-      content.type !== EMessageType.audio ||
-      !this.getInnerMessage(data)?.audioMessage?.url
-    ) {
+    if (content.type !== EMessageType.audio) {
       return;
     }
 
-    try {
-      const msg = this.getInnerMessage(data);
-      if (!msg?.audioMessage) return;
-
-      const audioMsg = msg.audioMessage;
-      const baseMessage = this.getBaseMessage(data);
-      if (!baseMessage) return;
-
-      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
-
-      const inferredAudioName =
-        (audioMsg as { fileName?: string | null })?.fileName ?? undefined;
-
-      const audioResult = await this.storageService.uploadFromBuffer(
-        buffer,
-        data.account_id,
-        {
-          fileName: inferredAudioName,
-          mimetype: audioMsg.mimetype ?? undefined,
-        }
-      );
-
-      const waveform = convertWaveformToBase64(audioMsg.waveform);
-
-      content.audio = audioResult
-        ? {
-            url: audioResult.url,
-            name: inferredAudioName ?? audioResult.name,
-            mimetype: audioMsg.mimetype ?? audioResult.mimetype ?? null,
-            extension: audioResult.extension,
-            size: audioResult.size,
-            duration: audioMsg.seconds ?? null,
-            ptt: audioMsg.ptt ?? false,
-            view_once: data.message?.key?.isViewOnce ?? false,
-            waveform: waveform ?? null,
-          }
-        : undefined;
-    } catch (error) {
-      console.error(
-        `[MessageUpsert] Failed to download audio for message ${data.message?.key?.id}:`,
-        error instanceof Error ? error.message : error
-      );
-      content.media_download_failed = true;
+    if (data.content?.audio) {
+      content.audio = data.content.audio;
+      return;
     }
+
+    if (content.audio) {
+      return;
+    }
+
+    const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
+    if (!msg?.audioMessage) {
+      return;
+    }
+
+    content.media_download_failed = true;
   }
 
   private async handleDocumentMessage(
@@ -1145,88 +1071,46 @@ export class MessageUpsertConsume {
       return;
     }
 
+    if (data.content?.document) {
+      content.document = data.content.document;
+      return;
+    }
+
+    if (content.document) {
+      return;
+    }
+
     const documentMsg = this.getDocumentMessage(data);
     if (!documentMsg) {
       return;
     }
 
-    try {
-      const baseMessage = this.getBaseMessage(data);
-      if (!baseMessage) return;
-
-      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
-
-      const documentResult = await this.storageService.uploadFromBuffer(
-        buffer,
-        data.account_id,
-        {
-          fileName: documentMsg.fileName ?? undefined,
-          mimetype: documentMsg.mimetype ?? undefined,
-        }
-      );
-
-      content.document = documentResult
-        ? {
-            url: documentResult.url,
-            name: documentMsg.fileName ?? documentResult.name,
-            mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
-            extension: documentResult.extension,
-            size: documentResult.size,
-          }
-        : undefined;
-    } catch (error) {
-      console.error(
-        `[MessageUpsert] Failed to download document for message ${data.message?.key?.id}:`,
-        error instanceof Error ? error.message : error
-      );
-      content.media_download_failed = true;
-    }
+    content.media_download_failed = true;
   }
 
   private async handleStickerMessage(
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (
-      content.type !== EMessageType.sticker ||
-      !this.getInnerMessage(data)?.stickerMessage?.url
-    ) {
+    if (content.type !== EMessageType.sticker) {
       return;
     }
 
-    try {
-      const msg = this.getInnerMessage(data);
-      if (!msg?.stickerMessage) return;
-
-      const stickerMsg = msg.stickerMessage;
-      const baseMessage = this.getBaseMessage(data);
-      if (!baseMessage) return;
-
-      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
-
-      const stickerResult = await this.storageService.uploadFromBuffer(
-        buffer,
-        data.account_id
-      );
-
-      content.sticker = stickerResult
-        ? {
-            url: stickerResult.url,
-            mimetype: stickerMsg.mimetype ?? stickerResult.mimetype ?? null,
-            extension: stickerResult.extension,
-            size: stickerResult.size,
-            height: stickerMsg.height ?? stickerResult.height ?? null,
-            width: stickerMsg.width ?? stickerResult.width ?? null,
-            is_animated: stickerMsg.isAnimated ?? false,
-          }
-        : undefined;
-    } catch (error) {
-      console.error(
-        `[MessageUpsert] Failed to download sticker for message ${data.message?.key?.id}:`,
-        error instanceof Error ? error.message : error
-      );
-      content.media_download_failed = true;
+    if (data.content?.sticker) {
+      content.sticker = data.content.sticker;
+      return;
     }
+
+    if (content.sticker) {
+      return;
+    }
+
+    const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
+    if (!msg?.stickerMessage) {
+      return;
+    }
+
+    content.media_download_failed = true;
   }
 
   private async handleLocationMessage(
@@ -1240,10 +1124,16 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const msg = this.getInnerMessage(data);
-    if (!msg?.locationMessage) return;
-
-    const locationMsg = msg.locationMessage;
+    const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
+    const locationMsg = msg?.locationMessage as
+      | {
+          degreesLatitude?: number;
+          degreesLongitude?: number;
+          name?: string;
+          address?: string;
+        }
+      | undefined;
+    if (!locationMsg) return;
 
     content.location = {
       latitude: locationMsg.degreesLatitude ?? null,
@@ -1458,22 +1348,21 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (
-      content.type !== EMessageType.contact_card ||
-      !this.getInnerMessage(data)?.contactMessage?.vcard
-    ) {
+    const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
+    const contactMsg = msg?.contactMessage as
+      | { vcard?: string; displayName?: string }
+      | undefined;
+    if (content.type !== EMessageType.contact_card || !contactMsg?.vcard) {
       return;
     }
 
     try {
-      const msg = this.getInnerMessage(data);
-      if (!msg?.contactMessage) return;
-
-      const contactMsg = msg.contactMessage;
       const vcard = contactMsg.vcard ?? '';
       const parsed = this.parseVCard(vcard);
 
-      const phoneAndDdi = extractPhoneAndDdiFromContactMessage(contactMsg);
+      const phoneAndDdi = extractPhoneAndDdiFromContactMessage(
+        contactMsg as Parameters<typeof extractPhoneAndDdiFromContactMessage>[0]
+      );
 
       if (!phoneAndDdi) return;
 
@@ -1528,17 +1417,16 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (
-      content.type !== EMessageType.contacts ||
-      !this.getInnerMessage(data)?.contactsArrayMessage?.contacts?.length
-    ) {
+    const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
+    const contactsArrayMessage = msg?.contactsArrayMessage as
+      | { contacts?: Array<{ vcard?: string; displayName?: string }> }
+      | undefined;
+    const contactsArray = contactsArrayMessage?.contacts;
+    if (content.type !== EMessageType.contacts || !contactsArray?.length) {
       return;
     }
 
     try {
-      const msg = this.getInnerMessage(data);
-      const contactsArray = msg?.contactsArrayMessage?.contacts;
-      if (!contactsArray?.length) return;
       const processedContacts: IContactMessage[] = [];
 
       for (const contactMsg of contactsArray) {
@@ -1547,7 +1435,11 @@ export class MessageUpsertConsume {
         const vcard = contactMsg.vcard;
         const parsed = this.parseVCard(vcard);
 
-        const phoneAndDdi = extractPhoneAndDdiFromContactMessage(contactMsg);
+        const phoneAndDdi = extractPhoneAndDdiFromContactMessage(
+          contactMsg as Parameters<
+            typeof extractPhoneAndDdiFromContactMessage
+          >[0]
+        );
 
         if (!phoneAndDdi) continue;
 
@@ -2263,15 +2155,21 @@ export class MessageUpsertConsume {
     return name;
   }
 
-  private getInnerMessage(data: IUpsertMessage): proto.IMessage | null {
+  private getInnerMessage(
+    data: IUpsertMessage
+  ): Record<string, unknown> | null {
     const msg = data.message?.message;
     if (!msg) return null;
 
     const keepViewOnce = data.type === EMessageType.view_once;
-    return unwrapMessage(msg, { keepViewOnce }) ?? msg;
+    const unwrapped = unwrapMessage(
+      msg as Parameters<typeof unwrapMessage>[0],
+      { keepViewOnce }
+    );
+    return (unwrapped ?? msg) as Record<string, unknown>;
   }
 
-  private getBaseMessage(data: IUpsertMessage): WAMessage | null {
+  private getBaseMessage(data: IUpsertMessage): IUpsertMessageEnvelope | null {
     const raw = data.message;
     if (!raw) return null;
 
@@ -2301,12 +2199,14 @@ export class MessageUpsertConsume {
       return true;
     }
 
-    const msg = this.getInnerMessage(data);
-    const pType = msg?.protocolMessage?.type;
+    const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
+    const protocolMsg = msg?.protocolMessage as { type?: number } | undefined;
+    const pType = protocolMsg?.type;
 
     return (
-      pType === proto.Message.ProtocolMessage.Type.EPHEMERAL_SETTING ||
-      pType === proto.Message.ProtocolMessage.Type.EPHEMERAL_SYNC_RESPONSE
+      pType === MessageUpsertConsume.PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING ||
+      pType ===
+        MessageUpsertConsume.PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE
     );
   }
 
@@ -2315,39 +2215,47 @@ export class MessageUpsertConsume {
       return false;
     }
 
-    const msg = this.getInnerMessage(data);
-    const messageText = msg?.extendedTextMessage?.text ?? msg?.conversation;
+    const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
+    const ext = msg?.extendedTextMessage as { text?: string } | undefined;
+    const messageText = ext?.text ?? (msg?.conversation as string | undefined);
     return !messageText || messageText.trim() === '';
   }
 
   private buildMessageContent(data: IUpsertMessage): IContent {
     const baseMessage = this.getBaseMessage(data);
-    const msg = baseMessage?.message;
-    const extended = msg?.extendedTextMessage;
+    const msg = baseMessage?.message as Record<string, unknown> | undefined;
+    const extended = msg?.extendedTextMessage as
+      | Record<string, unknown>
+      | undefined;
     const templateMessage = (msg as any)?.templateMessage?.hydratedTemplate;
 
     const linkPreview = extended
       ? ({
-          'canonical-url': extended?.matchedText ?? '',
-          'matched-text': extended?.matchedText ?? '',
-          title: extended?.title ?? '',
-          description: extended?.description ?? '',
+          'canonical-url': (extended?.matchedText as string) ?? '',
+          'matched-text': (extended?.matchedText as string) ?? '',
+          title: (extended?.title as string) ?? '',
+          description: (extended?.description as string) ?? '',
           jpegThumbnail: extended?.jpegThumbnail,
         } as LinkPreview)
       : undefined;
 
+    const extText = msg?.extendedTextMessage as { text?: string } | undefined;
     let messageText: string | undefined =
-      msg?.extendedTextMessage?.text ?? msg?.conversation ?? undefined;
+      extText?.text ?? (msg?.conversation as string | undefined) ?? undefined;
 
     if (!messageText && data.type === EMessageType.document) {
-      const documentMsg = this.getDocumentMessage(data);
+      const documentMsg = this.getDocumentMessage(data) as {
+        caption?: string;
+      } | null;
       if (documentMsg?.caption) {
         messageText = documentMsg.caption;
       }
     }
 
     if (!messageText && data.type === EMessageType.image) {
-      const imageMsg = this.getImageMessage(data);
+      const imageMsg = this.getImageMessage(data) as {
+        caption?: string;
+      } | null;
       if (imageMsg?.caption) {
         messageText = imageMsg.caption;
       }
@@ -2358,7 +2266,9 @@ export class MessageUpsertConsume {
       (data.type === EMessageType.video ||
         data.type === EMessageType.video_note)
     ) {
-      const videoMsg = this.getVideoMessage(data);
+      const videoMsg = this.getVideoMessage(data) as {
+        caption?: string;
+      } | null;
       if (videoMsg?.caption) {
         messageText = videoMsg.caption;
       }
@@ -2368,9 +2278,15 @@ export class MessageUpsertConsume {
       type: data.type,
       message: messageText,
       link_preview: linkPreview,
-      quoted: baseMessage ? buildQuotedTextFromExtended(baseMessage) : null,
+      quoted: baseMessage
+        ? buildQuotedTextFromExtended(
+            baseMessage as Parameters<typeof buildQuotedTextFromExtended>[0]
+          )
+        : null,
       context_info: baseMessage
-        ? buildContextInfoFromMessage(baseMessage)
+        ? buildContextInfoFromMessage(
+            baseMessage as Parameters<typeof buildContextInfoFromMessage>[0]
+          )
         : null,
     };
 
@@ -2410,11 +2326,19 @@ export class MessageUpsertConsume {
 
     if (templateMessage) {
       const hydratedButtons = templateMessage.hydratedButtons
-        ?.filter((btn: proto.IHydratedTemplateButton) => btn.quickReplyButton)
-        .map((btn: proto.IHydratedTemplateButton) => ({
-          displayText: btn.quickReplyButton?.displayText ?? '',
-          id: btn.quickReplyButton?.id ?? '',
-        }));
+        ?.filter(
+          (btn: Record<string, unknown>) =>
+            (btn as { quickReplyButton?: unknown }).quickReplyButton
+        )
+        .map((btn: Record<string, unknown>) => {
+          const quickReply = (
+            btn as { quickReplyButton?: { displayText?: string; id?: string } }
+          ).quickReplyButton;
+          return {
+            displayText: quickReply?.displayText ?? '',
+            id: quickReply?.id ?? '',
+          };
+        });
 
       content.template = {
         hydratedTitleText: templateMessage.hydratedTitleText ?? null,

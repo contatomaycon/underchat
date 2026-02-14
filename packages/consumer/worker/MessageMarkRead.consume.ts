@@ -14,6 +14,7 @@ import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpda
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageStatusService } from '@core/services/messageStatus.service';
+import type { WAMessageKey } from '@whiskeysockets/baileys';
 
 @singleton()
 export class MessageMarkReadConsume {
@@ -101,7 +102,9 @@ export class MessageMarkReadConsume {
         const stop = startHeartbeat(heartbeat);
 
         try {
-          await this.baileysIncomingMessageService.markRead(data.keys);
+          await this.baileysIncomingMessageService.markRead(
+            data.keys as WAMessageKey[]
+          );
 
           await Promise.all(
             data.keys.map(async (key) => {
@@ -111,7 +114,7 @@ export class MessageMarkReadConsume {
                 account_id: data.account_id,
                 message_id: key.id,
                 patch: { is_seen: true },
-                key,
+                key: key as WAMessageKey,
               };
 
               const kafkaKey = `${data.account_id}:${key.id}:${MessageStatusService.hashPatch(statusUpdate.patch)}`;

@@ -1,12 +1,30 @@
-import { WAMessage } from '@whiskeysockets/baileys';
 import { EMessageType } from '../enums/EMessageType';
 import { IContent } from './IChatMessage';
+
+export interface IUpsertMessageKey {
+  id?: string;
+  remoteJid?: string;
+  remoteJidAlt?: string;
+  fromMe?: boolean;
+  participant?: string;
+  participantAlt?: string;
+  isViewOnce?: boolean;
+  addressingMode?: string;
+}
+
+export interface IUpsertMessageEnvelope {
+  key: IUpsertMessageKey;
+  message?: Record<string, unknown> | null;
+  messageTimestamp?: number;
+  pushName?: string | null;
+  verifiedBizName?: string | null;
+}
 
 export interface IUpsertMessage {
   worker_id: string;
   account_id: string;
   type: EMessageType;
-  message: WAMessage;
+  message: IUpsertMessageEnvelope;
   content?: IContent | null;
   photo?: string | null;
   has_quoted: boolean;

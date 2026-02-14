@@ -1,5 +1,7 @@
-import { WAMessageKey } from '@whiskeysockets/baileys';
+export function remoteJid(
+  m?: { remoteJid?: string | null } | null
+): string | undefined {
+  const value = m?.remoteJid;
 
-export function remoteJid(m?: WAMessageKey | null) {
-  return m?.remoteJid;
+  return value === null ? undefined : value;
 }

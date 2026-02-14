@@ -199,7 +199,7 @@ export class WebhookIntegrationConsume {
       account_id: request.account_id,
       worker_id: request.worker_id,
       type: EMessageType.text,
-      message: waMessage,
+      message: waMessage as unknown as IUpsertMessage['message'],
       has_quoted: false,
       is_call_event: false,
     };

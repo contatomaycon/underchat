@@ -1,5 +1,7 @@
-import { WAMessageKey } from '@whiskeysockets/baileys';
+export function remoteJidAlt(
+  m?: { remoteJidAlt?: string | null } | null
+): string | undefined {
+  const value = m?.remoteJidAlt;
 
-export function remoteJidAlt(m?: WAMessageKey | null) {
-  return m?.remoteJidAlt;
+  return value === null ? undefined : value;
 }

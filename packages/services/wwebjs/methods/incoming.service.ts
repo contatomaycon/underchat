@@ -1,0 +1,309 @@
+import { inject, singleton } from 'tsyringe';
+import type { Client, Message } from 'whatsapp-web.js';
+import type { IMessageKeyLike } from '@core/common/interfaces/IMessageKeyLike';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import {
+  MessageStatusService,
+  MessageSummaryPatch,
+} from '@core/services/messageStatus.service';
+import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
+import { wwebjsEnvironment } from '@core/config/environments';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
+import { wwebjsMessageToUpsert } from '../util/wwebjsMessageToUpsert';
+import {
+  buildCallUpsert,
+  buildDeleteMessageUpsert,
+  buildEditMessageUpsert,
+  buildReactionUpsert,
+  buildRevokeMeUpsert,
+} from '../util/wwebjsUpsertBuilders';
+import { WwebjsUpsertMediaEnricher } from './upsertMediaEnricher.service';
+
+const ACK_DEVICE = 2;
+const ACK_READ = 3;
+const ACK_PLAYED = 4;
+
+function getMessageIdSerialized(msg: { id?: unknown }): string | undefined {
+  if (!msg?.id) return undefined;
+  if (
+    typeof msg.id === 'object' &&
+    msg.id !== null &&
+    '_serialized' in (msg.id as object)
+  ) {
+    return (msg.id as { _serialized: string })._serialized;
+  }
+  return String(msg.id);
+}
+
+function getReactionMsgIdSerialized(reaction: {
+  msgId?: { _serialized?: string; id?: string };
+}): string | undefined {
+  const m = reaction.msgId;
+  if (!m) return undefined;
+  if (typeof m === 'object' && m !== null && '_serialized' in m) {
+    return (m as { _serialized: string })._serialized;
+  }
+  return undefined;
+}
+
+function getReactionIdSerialized(reaction: {
+  id?: { _serialized?: string };
+}): string {
+  const m = reaction.id;
+  if (typeof m === 'object' && m !== null && '_serialized' in (m ?? {})) {
+    return (m as { _serialized: string })._serialized;
+  }
+  return `react_${Date.now()}`;
+}
+
+@singleton()
+export class WwebjsIncomingMessageService {
+  private currentClient: Client | undefined;
+  private rejectCallConfig = false;
+  private readonly processedCalls = new Map<string, number>();
+
+  constructor(
+    @inject(StreamProducerService)
+    private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(WwebjsUpsertMediaEnricher)
+    private readonly upsertMediaEnricher: WwebjsUpsertMediaEnricher
+  ) {}
+
+  bindTo(client: Client): void {
+    this.currentClient = client;
+    client.on('message', (msg: Message) => {
+      void this.handleIncomingMessage(msg);
+    });
+    client.on('message_revoke_everyone', (after: Message, before?: Message) => {
+      void this.handleRevokeEveryone(after, before);
+    });
+    client.on('message_revoke_me', (msg: Message) => {
+      void this.handleRevokeMe(msg);
+    });
+    client.on('message_edit', (message: Message, newBody: string) => {
+      void this.handleMessageEdit(message, newBody);
+    });
+    client.on(
+      'message_reaction',
+      (reaction: {
+        id?: { _serialized?: string };
+        msgId?: { _serialized?: string };
+        reaction?: string;
+        senderId?: string;
+        timestamp?: number;
+      }) => {
+        void this.handleMessageReaction(client, reaction);
+      }
+    );
+    client.on(
+      'call',
+      (call: {
+        id?: string;
+        from?: string;
+        fromMe?: boolean;
+        reject?: () => Promise<void>;
+      }) => {
+        void this.handleCall(call);
+      }
+    );
+    client.on('message_ack', (msg: Message, ack: number) => {
+      void this.handleMessageAck(msg, ack);
+    });
+  }
+
+  private shouldSkipChat(remoteJid: string): boolean {
+    if (!remoteJid) return true;
+    if (remoteJid === 'status@broadcast') return true;
+    if (remoteJid.endsWith('@broadcast')) return true;
+    return false;
+  }
+
+  private async handleIncomingMessage(msg: Message): Promise<void> {
+    const remoteJid = msg.from || msg.to || '';
+    if (this.shouldSkipChat(remoteJid)) return;
+
+    const upsert = wwebjsMessageToUpsert(msg);
+    if (!upsert) return;
+
+    await this.upsertMediaEnricher.enrich(upsert, msg);
+
+    const topic = this.kafkaServiceQueueService.upsertMessage();
+    await this.streamProducerService.send(topic, upsert);
+  }
+
+  private async handleRevokeEveryone(
+    after: Message,
+    before: Message | undefined
+  ): Promise<void> {
+    const upsert = buildDeleteMessageUpsert(after, before);
+    if (!upsert) return;
+    const topic = this.kafkaServiceQueueService.upsertMessage();
+    await this.streamProducerService.send(topic, upsert);
+  }
+
+  private async handleRevokeMe(msg: Message): Promise<void> {
+    const upsert = buildRevokeMeUpsert(msg);
+    if (!upsert) return;
+    const topic = this.kafkaServiceQueueService.upsertMessage();
+    await this.streamProducerService.send(topic, upsert);
+  }
+
+  private async handleMessageEdit(
+    message: Message,
+    newBody: string
+  ): Promise<void> {
+    const upsert = buildEditMessageUpsert(message, newBody);
+    if (!upsert) return;
+    const topic = this.kafkaServiceQueueService.upsertMessage();
+    await this.streamProducerService.send(topic, upsert);
+  }
+
+  private async handleMessageReaction(
+    client: Client,
+    reaction: {
+      id?: { _serialized?: string };
+      msgId?: { _serialized?: string };
+      reaction?: string;
+      senderId?: string;
+      timestamp?: number;
+    }
+  ): Promise<void> {
+    const parentMsgId = getReactionMsgIdSerialized(reaction);
+    if (!parentMsgId) return;
+
+    let remoteJid: string;
+    try {
+      const parentMsg = await client.getMessageById(parentMsgId);
+      remoteJid = parentMsg?.from || parentMsg?.to || '';
+    } catch {
+      return;
+    }
+    if (!remoteJid) return;
+
+    const reactionId = getReactionIdSerialized(reaction);
+    const emoji = reaction.reaction ?? '';
+    const myJid =
+      (this.currentClient?.info?.wid as { _serialized?: string } | undefined)
+        ?._serialized ?? '';
+    const fromMe = Boolean(
+      reaction.senderId &&
+      myJid &&
+      (reaction.senderId === myJid ||
+        reaction.senderId.replace(/@s\.whatsapp\.net$/, '') ===
+          myJid.replace(/@s\.whatsapp\.net$/, ''))
+    );
+    const participant = remoteJid.includes('@g.us')
+      ? reaction.senderId
+      : undefined;
+
+    const upsert = buildReactionUpsert(
+      remoteJid,
+      reactionId,
+      parentMsgId,
+      emoji,
+      fromMe,
+      participant,
+      reaction.timestamp ?? Math.floor(Date.now() / 1000)
+    );
+    const topic = this.kafkaServiceQueueService.upsertMessage();
+    await this.streamProducerService.send(topic, upsert);
+  }
+
+  private async handleCall(call: {
+    id?: string;
+    from?: string;
+    fromMe?: boolean;
+    reject?: () => Promise<void>;
+  }): Promise<void> {
+    const jid = call.from;
+    if (!jid) return;
+    if (call.fromMe) return;
+
+    const callKey = `${jid}:${call.id ?? ''}:offer`;
+    if (this.processedCalls.has(callKey)) return;
+    this.processedCalls.set(callKey, Date.now());
+
+    const phone = getPhoneFromJid(jid, null);
+    if (!phone) return;
+
+    const upsert = buildCallUpsert(jid, null, phone);
+    const topic = this.kafkaServiceQueueService.upsertMessage();
+    await this.streamProducerService.send(topic, upsert);
+
+    if (this.rejectCallConfig && call.reject) {
+      call.reject().catch(() => {});
+    }
+  }
+
+  private mapAckToPatch(ack: number): MessageSummaryPatch | null {
+    if (ack < 1) return null;
+    const patch: MessageSummaryPatch = { is_sent: true };
+    if (ack >= ACK_DEVICE) {
+      patch.is_delivered = true;
+    }
+    if (ack >= ACK_READ || ack === ACK_PLAYED) {
+      patch.is_seen = true;
+      patch.is_delivered = true;
+    }
+    return patch;
+  }
+
+  private async handleMessageAck(msg: Message, ack: number): Promise<void> {
+    if (!msg.fromMe) return;
+
+    const messageId = getMessageIdSerialized(msg);
+    if (!messageId) return;
+
+    const patch = this.mapAckToPatch(ack);
+    if (!patch) return;
+
+    const statusUpdate: IMessageStatusUpdate = {
+      account_id: wwebjsEnvironment.wwebjsAccountId,
+      message_id: messageId,
+      patch,
+    };
+
+    const topic = this.kafkaServiceQueueService.updateMessageStatus();
+    const kafkaKey = `${wwebjsEnvironment.wwebjsAccountId}:${messageId}:${MessageStatusService.hashPatch(patch)}`;
+    await this.streamProducerService.send(topic, statusUpdate, kafkaKey);
+  }
+
+  unbind(): void {
+    this.currentClient = undefined;
+    this.processedCalls.clear();
+  }
+
+  async markRead(keys: IMessageKeyLike[]): Promise<void> {
+    if (!this.currentClient) {
+      return;
+    }
+
+    const chatIds = new Set<string>();
+
+    for (let i = 0; i < keys.length; i++) {
+      const jid = keys[i].remoteJid ?? keys[i].remote_jid;
+      if (jid) {
+        chatIds.add(jid);
+      }
+    }
+
+    const client = this.currentClient;
+    const promises: Promise<unknown>[] = [];
+    for (const chatId of chatIds) {
+      promises.push(client.sendSeen(chatId));
+    }
+
+    await Promise.all(promises);
+  }
+
+  updateRejectCallConfig(reject: boolean): void {
+    this.rejectCallConfig = reject;
+  }
+
+  getRejectCallConfig(): boolean {
+    return this.rejectCallConfig;
+  }
+}

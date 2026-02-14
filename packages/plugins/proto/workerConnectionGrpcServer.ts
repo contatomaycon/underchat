@@ -12,11 +12,16 @@ import {
   status,
 } from '@grpc/grpc-js';
 import { container } from 'tsyringe';
-import { baileysEnvironment } from '@core/config/environments';
+import {
+  baileysEnvironment,
+  wwebjsEnvironment,
+} from '@core/config/environments';
 import { WorkerConnectionStatusConsume } from '@core/consumer/worker/WorkerConnectionStatus.consume';
+import { WorkerConnectionStatusWwebjsConsume } from '@core/consumer/worker/WorkerConnectionStatusWwebjs.consume';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { ERouteModule } from '@core/common/enums/ERouteModule';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,10 +57,22 @@ interface IStatusConnectionRequestProto {
   phone_connection?: string;
 }
 
-const workerConnectionGrpcServerPlugin: FastifyPluginAsync = async (
-  fastify: FastifyInstance
-) => {
-  const connectionConsume = container.resolve(WorkerConnectionStatusConsume);
+interface WorkerConnectionGrpcOptions {
+  module?: ERouteModule;
+}
+
+const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
+  WorkerConnectionGrpcOptions
+> = async (fastify: FastifyInstance, options?: WorkerConnectionGrpcOptions) => {
+  const module = options?.module ?? ERouteModule.worker_baileys;
+  const connectionConsume =
+    module === ERouteModule.worker_wwebjs
+      ? container.resolve(WorkerConnectionStatusWwebjsConsume)
+      : container.resolve(WorkerConnectionStatusConsume);
+  const grpcPort =
+    module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.grpcPort
+      : baileysEnvironment.grpcPort;
   const grpcServer = new Server();
 
   const handleRequestConnection = (
@@ -87,7 +104,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync = async (
     RequestConnection: handleRequestConnection,
   });
 
-  const bind = `0.0.0.0:${baileysEnvironment.grpcPort}`;
+  const bind = `0.0.0.0:${grpcPort}`;
   await new Promise<void>((resolve, reject) => {
     grpcServer.bindAsync(
       bind,

@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "lib": ["ES2022"],
+    "moduleResolution": "bundler",
+    "declaration": true,
+    "outDir": "./dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "baseUrl": ".",
+    "typeRoots": ["./node_modules/@types", "../../packages/common/types"],
+    "paths": {
+      "@/*": ["src/*"],
+      "@core/*": ["../../packages/*"],
+      "@elastic/elasticsearch/lib/api/types": [
+        "../../node_modules/@elastic/elasticsearch/lib/api/types"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "../../packages/common/types/**/*.d.ts",
+    "../../packages/plugins/proto/workerGrpcServer.ts",
+    "../../packages/plugins/proto/workerConnectionGrpcServer.ts"
+  ],
+  "exclude": ["node_modules"]
+}

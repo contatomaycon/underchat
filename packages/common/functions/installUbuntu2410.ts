@@ -107,6 +107,17 @@ export async function installUbuntu2410(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
+      docker stop under-worker-wwebjs 2>/dev/null || true && \
+      docker rm -f under-worker-wwebjs 2>/dev/null || true"`,
+
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
+      docker build --no-cache -t under-worker-wwebjs:latest -f ./apps/worker_wwebjs/Dockerfile ."`,
+
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
       if docker ps -a --format '{{.Names}}' | grep -q '^under-balance-api$'; then \
         docker stop under-balance-api 2>/dev/null || true && \
         docker rm -f under-balance-api 2>/dev/null || true; \
