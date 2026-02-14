@@ -185,6 +185,15 @@ function getDocumentCaption(msg: Message): string | undefined {
   return caption;
 }
 
+function getNotifyNameFromMessage(msg: Message): string | undefined {
+  const raw = msg as unknown as {
+    _data?: {
+      notifyName?: unknown;
+    };
+  };
+  return getNonEmptyString(raw._data?.notifyName);
+}
+
 interface WwebjsResolvedJids {
   remoteJid?: string;
   remoteJidAlt?: string;
@@ -192,7 +201,8 @@ interface WwebjsResolvedJids {
 
 export function wwebjsMessageToUpsert(
   msg: Message,
-  resolvedJids?: WwebjsResolvedJids
+  resolvedJids?: WwebjsResolvedJids,
+  pushName?: string
 ): IUpsertMessage | null {
   const keyLike = messageToWaLike(msg);
   if (!keyLike?.key) return null;
@@ -262,7 +272,7 @@ export function wwebjsMessageToUpsert(
     },
     message: innerMessage,
     messageTimestamp: msg.timestamp,
-    pushName: undefined,
+    pushName: pushName ?? getNotifyNameFromMessage(msg),
   };
 
   return {

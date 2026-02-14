@@ -30,6 +30,30 @@ interface WwebjsResolvedJids {
   remoteJidAlt?: string;
 }
 
+function getNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isPhoneLikeName(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) return false;
+
+  const digits = normalized.replace(/\D/g, '');
+  if (digits.length < 8) return false;
+
+  const nonPhoneChars = normalized.replace(/[0-9+\-().\s]/g, '');
+  return nonPhoneChars.length === 0;
+}
+
+function normalizeNameCandidate(value: unknown): string | undefined {
+  const name = getNonEmptyString(value);
+  if (!name) return undefined;
+  if (isPhoneLikeName(name)) return undefined;
+  return name;
+}
+
 function getMessageIdSerialized(msg: { id?: unknown }): string | undefined {
   if (!msg?.id) return undefined;
   if (
@@ -239,16 +263,69 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, msg);
+    const [resolvedJids, pushName] = await Promise.all([
+      this.resolveRemoteJids(client, msg),
+      this.resolvePushName(msg),
+    ]);
     if (!resolvedJids) return;
 
-    const upsert = wwebjsMessageToUpsert(msg, resolvedJids);
+    const upsert = wwebjsMessageToUpsert(msg, resolvedJids, pushName);
     if (!upsert) return;
 
     await this.upsertMediaEnricher.enrich(upsert, msg);
 
     const topic = this.kafkaServiceQueueService.upsertMessage();
     await this.streamProducerService.send(topic, upsert);
+  }
+
+  private async resolvePushName(msg: Message): Promise<string | undefined> {
+    const raw = msg as unknown as {
+      _data?: {
+        notifyName?: unknown;
+      };
+    };
+
+    const rawNotifyName = normalizeNameCandidate(raw._data?.notifyName);
+
+    try {
+      const contact = await msg.getContact();
+      const contactName = normalizeNameCandidate(
+        (contact as { name?: unknown } | undefined)?.name
+      );
+      if (contactName) {
+        return contactName;
+      }
+
+      const contactPushName = normalizeNameCandidate(
+        (contact as { pushname?: unknown } | undefined)?.pushname
+      );
+      if (contactPushName) {
+        return contactPushName;
+      }
+
+      const contactShortName = normalizeNameCandidate(
+        (contact as { shortName?: unknown } | undefined)?.shortName
+      );
+      if (contactShortName) {
+        return contactShortName;
+      }
+    } catch {}
+
+    if (rawNotifyName) {
+      return rawNotifyName;
+    }
+
+    try {
+      const chat = await msg.getChat();
+      const chatName = normalizeNameCandidate(
+        (chat as { name?: unknown } | undefined)?.name
+      );
+      if (chatName) {
+        return chatName;
+      }
+    } catch {}
+
+    return undefined;
   }
 
   private async handleRevokeEveryone(
