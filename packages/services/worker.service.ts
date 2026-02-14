@@ -202,6 +202,9 @@ export class WorkerService {
       HostConfig: {
         Binds: [`${workerId}:/app/data`],
         NetworkMode: 'underchat',
+        RestartPolicy: {
+          Name: 'unless-stopped',
+        },
       },
       Volumes: {
         '/app/data': {},

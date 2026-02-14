@@ -404,6 +404,15 @@ const wwebjsOnListenHook = fp(async (fastify) => {
       );
     }
   });
+
+  fastify.addHook('onClose', async () => {
+    try {
+      const wwebjsService = container.resolve(WwebjsService);
+      await wwebjsService.shutdown();
+    } catch (err) {
+      fastify.log.error({ err }, 'Wwebjs: erro ao encerrar conexão no onClose');
+    }
+  });
 });
 
 export default wwebjsOnListenHook;

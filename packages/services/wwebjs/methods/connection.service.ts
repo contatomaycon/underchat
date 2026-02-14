@@ -28,6 +28,12 @@ const WORKER = wwebjsEnvironment.wwebjsWorkerId;
 const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 const RETRY_DELAY = 2000;
 const MAX_RETRIES = 5;
+const CHROMIUM_LOCK_FILE_NAMES = [
+  'SingletonLock',
+  'SingletonSocket',
+  'SingletonCookie',
+] as const;
+const CHROMIUM_PROFILE_SUBDIRECTORIES = ['', 'Default'] as const;
 
 const { Client: ClientCtor, LocalAuth } = whatsappWeb;
 type Client = InstanceType<typeof ClientCtor>;
@@ -96,8 +102,7 @@ export class WwebjsConnectionService {
   }
 
   hasSession(): boolean {
-    const authPath = path.join(FOLDER, '.wwebjs_auth');
-    const sessionPath = path.join(authPath, `session-${WORKER}`);
+    const sessionPath = this.getSessionPath();
     return fs.existsSync(sessionPath) && fs.readdirSync(sessionPath).length > 0;
   }
 
@@ -149,6 +154,7 @@ export class WwebjsConnectionService {
     const {
       initial_connection: initialConnection = false,
       disconnected_user: disconnectedUser = false,
+      preserve_session: preserveSession = false,
     } = input;
 
     this.initialConnection = initialConnection;
@@ -160,7 +166,9 @@ export class WwebjsConnectionService {
 
     await this.safeDestroy();
     this.cancelAttempt(false);
-    this.clearFolder();
+    if (!preserveSession) {
+      this.clearFolder();
+    }
 
     this.saveLogWppConnection({
       worker_id: WORKER,
@@ -210,6 +218,24 @@ export class WwebjsConnectionService {
     });
   }
 
+  async shutdown(): Promise<void> {
+    this.pendingResolve?.(this.state());
+    this.pendingResolve = undefined;
+    this.currentPromise = undefined;
+    this.connecting = false;
+    this.connectionEstablished = false;
+    this.incomingMessageService.unbind();
+
+    if (this.client) {
+      try {
+        await this.client.destroy();
+      } catch {}
+      this.client = undefined;
+    }
+
+    this.clearChromiumProfileLock();
+  }
+
   private startConnection(): Promise<IBaileysConnectionState> {
     this.prepareFolder();
     this.connecting = true;
@@ -240,21 +266,87 @@ export class WwebjsConnectionService {
     }
   }
 
+  private getSessionPath(): string {
+    return path.join(FOLDER, '.wwebjs_auth', `session-${WORKER}`);
+  }
+
   private clearChromiumProfileLock(): void {
-    const sessionDir = path.join(FOLDER, '.wwebjs_auth', `session-${WORKER}`);
+    const sessionDir = this.getSessionPath();
     if (!fs.existsSync(sessionDir)) {
       return;
     }
 
-    const lockNames = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
-    for (const name of lockNames) {
-      try {
-        const p = path.join(sessionDir, name);
-        if (fs.existsSync(p)) {
-          fs.rmSync(p, { force: true });
-        }
-      } catch {}
+    for (const subDirectory of CHROMIUM_PROFILE_SUBDIRECTORIES) {
+      const targetDir = subDirectory
+        ? path.join(sessionDir, subDirectory)
+        : sessionDir;
+
+      for (const name of CHROMIUM_LOCK_FILE_NAMES) {
+        try {
+          // Chromium can leave broken symlinks here after abrupt restarts.
+          fs.rmSync(path.join(targetDir, name), {
+            force: true,
+            recursive: true,
+          });
+        } catch {}
+      }
     }
+  }
+
+  private isChromiumProfileLockedError(message: string): boolean {
+    const normalizedMessage = message.toLowerCase();
+
+    return (
+      normalizedMessage.includes(
+        'profile appears to be in use by another chromium process'
+      ) ||
+      normalizedMessage.includes('chromium has locked the profile') ||
+      normalizedMessage.includes('process_singleton_posix')
+    );
+  }
+
+  private reconnectAfterProfileUnlock(): void {
+    if (this.retryCount >= MAX_RETRIES) {
+      return;
+    }
+
+    this.retryCount += 1;
+
+    setTimeout(() => {
+      this.connect({
+        initial_connection: this.initialConnection,
+        force_new: true,
+        allow_restore: true,
+        type: this.typeConnection,
+        requested_by_user: false,
+        from_disconnect_restart: true,
+      }).catch(() => {});
+    }, RETRY_DELAY);
+  }
+
+  private handleInitializeError(message: string): void {
+    console.error('[Wwebjs] client.initialize() failed:', message);
+    this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
+    this.pendingResolve?.(this.state());
+    this.pendingResolve = undefined;
+
+    if (this.client) {
+      this.client.destroy().catch(() => {});
+      this.client = undefined;
+    }
+
+    if (this.isChromiumProfileLockedError(message)) {
+      this.clearChromiumProfileLock();
+      this.reconnectAfterProfileUnlock();
+    }
+
+    this.saveLogWppConnection({
+      worker_id: WORKER,
+      status: Status.disconnected,
+      code: ECodeMessage.connectionLost,
+      message,
+      date: new Date(),
+    });
   }
 
   private createAndWaitClient(): Promise<IBaileysConnectionState> {
@@ -335,6 +427,7 @@ export class WwebjsConnectionService {
 
       client.on('ready', () => {
         this.qrHash = undefined;
+        this.retryCount = 0;
         this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
         this.connectionEstablished = true;
         this.incomingMessageService.bindTo(client);
@@ -452,17 +545,7 @@ export class WwebjsConnectionService {
 
       client.initialize().catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error('[Wwebjs] client.initialize() failed:', msg);
-        this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
-        this.pendingResolve?.(this.state());
-        this.pendingResolve = undefined;
-        this.saveLogWppConnection({
-          worker_id: WORKER,
-          status: Status.disconnected,
-          code: ECodeMessage.connectionLost,
-          message: msg,
-          date: new Date(),
-        });
+        this.handleInitializeError(msg);
       });
     });
   }
@@ -516,6 +599,7 @@ export class WwebjsConnectionService {
     }
 
     this.client = undefined;
+    this.clearChromiumProfileLock();
     this.setStatus(Status.disconnected, ECodeMessage.loggedOut);
   }
 

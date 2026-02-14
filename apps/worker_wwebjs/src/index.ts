@@ -68,3 +68,32 @@ const start = async () => {
 };
 
 start();
+
+let shuttingDown = false;
+
+const shutdown = async (signal: string) => {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+
+  try {
+    server.log.info({ signal }, 'Iniciando shutdown gracioso do worker_wwebjs');
+    await server.close();
+    process.exit(0);
+  } catch (err) {
+    server.log.error(
+      { err, signal },
+      'Erro durante shutdown gracioso do worker_wwebjs'
+    );
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => {
+  void shutdown('SIGTERM');
+});
+
+process.on('SIGINT', () => {
+  void shutdown('SIGINT');
+});

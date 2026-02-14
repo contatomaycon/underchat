@@ -71,6 +71,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/worker_wwebjs/package*.json ./apps/worker_wwebjs
 COPY --from=builder /app/packages/proto ./packages/proto
+COPY apps/worker_wwebjs/docker-entrypoint.sh /usr/local/bin/worker-wwebjs-entrypoint.sh
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -100,10 +101,12 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN chmod +x /usr/local/bin/worker-wwebjs-entrypoint.sh
+
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 EXPOSE 3005 50052
 
 WORKDIR /app/apps/worker_wwebjs
 
-CMD ["node", "src/index.js"]
+CMD ["/usr/local/bin/worker-wwebjs-entrypoint.sh", "node", "src/index.js"]

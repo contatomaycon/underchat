@@ -9,4 +9,5 @@ export interface IBaileysConnection {
   force_new?: boolean;
   requested_by_user?: boolean;
   from_disconnect_restart?: boolean;
+  preserve_session?: boolean;
 }

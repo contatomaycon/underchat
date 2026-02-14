@@ -69,6 +69,10 @@ export class WwebjsService {
     this.connection.republishLastState();
   }
 
+  shutdown(): Promise<void> {
+    return this.connection.shutdown();
+  }
+
   validatePhone(ddi: string, number: string): Promise<IPhoneValidationResult> {
     return this.phoneValidationService.validatePhone(ddi, number);
   }

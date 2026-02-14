@@ -106,6 +106,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     await this.wwebjsService.disconnect({
       initial_connection: true,
       disconnected_user: true,
+      preserve_session: true,
     });
 
     const workerId = wwebjsEnvironment.wwebjsWorkerId;
@@ -233,6 +234,7 @@ export class WorkerConnectionStatusWwebjsConsume {
         .disconnect({
           initial_connection: true,
           disconnected_user: true,
+          preserve_session: true,
         })
         .catch((error) => {
           console.error('Error disconnecting Wwebjs after retries:', error);
@@ -282,6 +284,7 @@ export class WorkerConnectionStatusWwebjsConsume {
             .disconnect({
               initial_connection: true,
               disconnected_user: true,
+              preserve_session: true,
             })
             .catch((error) => {
               console.error('Error disconnecting Wwebjs after retries:', error);
