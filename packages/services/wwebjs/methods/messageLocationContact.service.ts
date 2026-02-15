@@ -2,6 +2,10 @@ import { injectable, inject } from 'tsyringe';
 import whatsappWeb from '@wwebjs/whatsapp-web.js';
 import { WwebjsHelpersService } from './helpers.service';
 import { messageToWaLike } from '../util/messageToWaLike';
+import {
+  resolveQuotedMessageId,
+  type IWwebjsQuotedKeyInput,
+} from '../util/resolveQuotedMessageId';
 import type { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyResponse';
 import type { IWALocationMessage } from '@core/common/interfaces/IWALocationMessage';
 
@@ -17,9 +21,14 @@ export class WwebjsMessageLocationContactService {
   async sendLocation(
     jid: string,
     location: IWALocationMessage,
-    quoted?: { key: { id: string } }
+    quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
+    const quotedMessageId = quoted?.key?.id
+      ? ((await resolveQuotedMessageId(client, jid, quoted.key)) ??
+        quoted.key.id)
+      : undefined;
+
     const loc = new Location(
       location.degreesLatitude,
       location.degreesLongitude,
@@ -29,7 +38,8 @@ export class WwebjsMessageLocationContactService {
       }
     );
     const msg = await client.sendMessage(jid, loc, {
-      quotedMessageId: quoted?.key?.id,
+      quotedMessageId,
+      ignoreQuoteErrors: quotedMessageId ? false : undefined,
     });
     return messageToWaLike(msg ?? undefined);
   }
@@ -37,12 +47,18 @@ export class WwebjsMessageLocationContactService {
   async sendContactCard(
     jid: string,
     vcard: string,
-    quoted?: { key: { id: string } }
+    quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
+    const quotedMessageId = quoted?.key?.id
+      ? ((await resolveQuotedMessageId(client, jid, quoted.key)) ??
+        quoted.key.id)
+      : undefined;
+
     const msg = await client.sendMessage(jid, vcard, {
       parseVCards: true,
-      quotedMessageId: quoted?.key?.id,
+      quotedMessageId,
+      ignoreQuoteErrors: quotedMessageId ? false : undefined,
     });
     return messageToWaLike(msg ?? undefined);
   }

@@ -3,6 +3,10 @@ import whatsappWeb from '@wwebjs/whatsapp-web.js';
 import { withMediaUrlFromInput } from '@core/common/functions/getMediaUrlFromInput';
 import { WwebjsHelpersService } from './helpers.service';
 import { messageToWaLike } from '../util/messageToWaLike';
+import {
+  resolveQuotedMessageId,
+  type IWwebjsQuotedKeyInput,
+} from '../util/resolveQuotedMessageId';
 import type { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyResponse';
 import type { IMediaInput } from '@core/common/interfaces/IMediaInput';
 
@@ -11,6 +15,20 @@ type MessageMediaType = InstanceType<typeof MessageMedia>;
 
 async function mediaFromInput(input: IMediaInput): Promise<MessageMediaType> {
   return withMediaUrlFromInput(input, (url) => MessageMedia.fromUrl(url));
+}
+
+async function getQuotedMessageId(
+  client: ReturnType<WwebjsHelpersService['getClient']>,
+  jid: string,
+  quoted?: { key: IWwebjsQuotedKeyInput }
+): Promise<string | undefined> {
+  if (!quoted?.key?.id) {
+    return undefined;
+  }
+
+  return (
+    (await resolveQuotedMessageId(client, jid, quoted.key)) ?? quoted.key.id
+  );
 }
 
 @injectable()
@@ -24,13 +42,15 @@ export class WwebjsMessageMediaService {
     jid: string,
     image: IMediaInput,
     args?: { caption?: string },
-    quoted?: { key: { id: string } }
+    quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(image);
+    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
     const msg = await client.sendMessage(jid, media, {
       caption: args?.caption,
-      quotedMessageId: quoted?.key?.id,
+      quotedMessageId,
+      ignoreQuoteErrors: quotedMessageId ? false : undefined,
     });
 
     return messageToWaLike(msg ?? undefined);
@@ -40,13 +60,15 @@ export class WwebjsMessageMediaService {
     jid: string,
     video: IMediaInput,
     args?: { caption?: string; seconds?: number },
-    quoted?: { key: { id: string } }
+    quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(video);
+    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
     const msg = await client.sendMessage(jid, media, {
       caption: args?.caption,
-      quotedMessageId: quoted?.key?.id,
+      quotedMessageId,
+      ignoreQuoteErrors: quotedMessageId ? false : undefined,
     });
 
     return messageToWaLike(msg ?? undefined);
@@ -62,13 +84,15 @@ export class WwebjsMessageMediaService {
       viewOnce?: boolean;
       waveform?: Uint8Array;
     },
-    quoted?: { key: { id: string } }
+    quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(audio);
+    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
     const msg = await client.sendMessage(jid, media, {
       sendAudioAsVoice: args?.ptt ?? true,
-      quotedMessageId: quoted?.key?.id,
+      quotedMessageId,
+      ignoreQuoteErrors: quotedMessageId ? false : undefined,
     });
 
     return messageToWaLike(msg ?? undefined);
@@ -77,13 +101,15 @@ export class WwebjsMessageMediaService {
   async sendSticker(
     jid: string,
     sticker: IMediaInput,
-    quoted?: { key: { id: string } }
+    quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(sticker);
+    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
     const msg = await client.sendMessage(jid, media, {
       sendMediaAsSticker: true,
-      quotedMessageId: quoted?.key?.id,
+      quotedMessageId,
+      ignoreQuoteErrors: quotedMessageId ? false : undefined,
     });
 
     return messageToWaLike(msg ?? undefined);
@@ -93,14 +119,16 @@ export class WwebjsMessageMediaService {
     jid: string,
     document: IMediaInput,
     args: { mimetype: string; fileName?: string; caption?: string },
-    quoted?: { key: { id: string } }
+    quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(document);
+    const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
     const msg = await client.sendMessage(jid, media, {
       sendMediaAsDocument: true,
       caption: args.caption,
-      quotedMessageId: quoted?.key?.id,
+      quotedMessageId,
+      ignoreQuoteErrors: quotedMessageId ? false : undefined,
     });
 
     return messageToWaLike(msg ?? undefined);

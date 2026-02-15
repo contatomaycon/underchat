@@ -585,7 +585,7 @@ export class MessageSendConsume {
 
     const currentType = data?.content?.type;
     const lastType = this.lastMessageTypeByChatId.get(chatId);
-    const hasQuoted = data.has_quoted ?? !!data.content?.quoted;
+    const hasQuoted = !!data.content?.quoted || data.has_quoted === true;
 
     const handler = this.selectMessageHandler(
       currentType,

@@ -314,11 +314,28 @@ export class MessageSendWwebjsConsume {
     return false;
   }
 
-  private getQuotedKey(
-    data: IChatMessage
-  ): { key: { id: string } } | undefined {
-    const id = data.content?.quoted?.key?.id;
-    return id ? { key: { id } } : undefined;
+  private getQuotedKey(data: IChatMessage):
+    | {
+        key: {
+          id: string;
+          remote_jid?: string | null;
+          remote_jid_alt?: string | null;
+          from_me?: boolean | null;
+        };
+      }
+    | undefined {
+    const quotedKey = data.content?.quoted?.key;
+    const id = quotedKey?.id;
+    if (!id) return undefined;
+
+    return {
+      key: {
+        id,
+        remote_jid: quotedKey.remote_jid ?? null,
+        remote_jid_alt: quotedKey.remote_jid_alt ?? null,
+        from_me: quotedKey.from_me ?? null,
+      },
+    };
   }
 
   private async processMessage(data: IChatMessage): Promise<void> {
@@ -327,7 +344,7 @@ export class MessageSendWwebjsConsume {
     const chatId = this.resolveChatId(data);
     if (!chatId) throw new Error('Received message without chatId');
     const currentType = data?.content?.type;
-    const hasQuoted = data.has_quoted ?? !!data.content?.quoted;
+    const hasQuoted = !!data.content?.quoted || data.has_quoted === true;
 
     if (
       await this.processTextOrSystemMessage(
@@ -367,16 +384,25 @@ export class MessageSendWwebjsConsume {
     ) {
       return false;
     }
-    if (hasQuoted && data.content?.quoted?.key?.id) {
+    const quotedKey = this.getQuotedKey(data);
+
+    if (hasQuoted && quotedKey) {
       const result = await this.wwebjsMessageTextService.sendTextQuoted(
         jid,
         data.content?.message ?? '',
-        { key: { id: data.content.quoted.key.id } }
+        quotedKey
       );
       if (result) await this.pushUpdate({ message: result, data });
       this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
       return true;
     }
+
+    if (hasQuoted && !quotedKey) {
+      console.warn(
+        '[MessageSendWwebjs] Quoted flag is true but quoted key is missing. Sending as regular text.'
+      );
+    }
+
     const result = await this.wwebjsMessageTextService.sendText(
       jid,
       data.content?.message ?? '',
