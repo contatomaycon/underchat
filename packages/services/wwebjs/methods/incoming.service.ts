@@ -278,7 +278,7 @@ export class WwebjsIncomingMessageService {
       this.resolvePhotoForMessage(client, msg, resolvedJids),
     ]);
 
-    const upsert = wwebjsMessageToUpsert(msg, resolvedJids, pushName);
+    const upsert = await wwebjsMessageToUpsert(msg, resolvedJids, pushName);
     if (!upsert) return;
     upsert.photo = photo ?? null;
 

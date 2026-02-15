@@ -50,6 +50,10 @@ function getNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function getBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 function buildLocationMessage(
   msg: Message
 ): Record<string, unknown> | undefined {
@@ -194,16 +198,329 @@ function getNotifyNameFromMessage(msg: Message): string | undefined {
   return getNonEmptyString(raw._data?.notifyName);
 }
 
+function resolveGroupParticipant(
+  msg: Message,
+  remoteJid: string
+): string | undefined {
+  if (!remoteJid.endsWith('@g.us')) return undefined;
+
+  const author = getNonEmptyString(
+    (msg as unknown as { author?: unknown }).author
+  );
+  if (author) {
+    const normalized = normalizeJid(author) ?? author;
+    if (normalized !== remoteJid) return normalized;
+  }
+
+  const from = getNonEmptyString(msg.from);
+  if (from) {
+    const normalized = normalizeJid(from) ?? from;
+    if (normalized !== remoteJid && !normalized.endsWith('@g.us')) {
+      return normalized;
+    }
+  }
+
+  return undefined;
+}
+
+function getRawMessageData(msg: Message): Record<string, unknown> | undefined {
+  const rawData = (msg as unknown as { rawData?: unknown }).rawData;
+  if (rawData && typeof rawData === 'object') {
+    return rawData as Record<string, unknown>;
+  }
+
+  const data = (msg as unknown as { _data?: unknown })._data;
+  if (data && typeof data === 'object') {
+    return data as Record<string, unknown>;
+  }
+
+  return undefined;
+}
+
+function getSerializedId(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') {
+    return getNonEmptyString(value);
+  }
+  if (typeof value !== 'object') return undefined;
+
+  const objectValue = value as Record<string, unknown>;
+  const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
+  for (const key of directKeys) {
+    const candidate = objectValue[key];
+    if (typeof candidate === 'string') {
+      const normalized = getNonEmptyString(candidate);
+      if (normalized) return normalized;
+    }
+  }
+
+  return undefined;
+}
+
+function getQuotedIdFromRaw(raw?: Record<string, unknown>): string | undefined {
+  if (!raw) return undefined;
+
+  const directKeys = [
+    'quotedStanzaID',
+    'quotedStanzaId',
+    'quotedMsgId',
+    'quotedMsgID',
+    'quotedMessageId',
+    'quotedMessageID',
+  ];
+  for (const key of directKeys) {
+    const quotedId = getSerializedId(raw[key]);
+    if (quotedId) return quotedId;
+  }
+
+  const keyLikeKeys = [
+    'quotedMsgKey',
+    'quotedMessageKey',
+    'quotedParentMsgKey',
+    'quotedMsg',
+    'quotedMessage',
+  ];
+  for (const key of keyLikeKeys) {
+    const keyLike = raw[key];
+    const quotedId = getSerializedId(keyLike);
+    if (quotedId) return quotedId;
+
+    if (keyLike && typeof keyLike === 'object') {
+      const nestedId = getSerializedId((keyLike as Record<string, unknown>).id);
+      if (nestedId) return nestedId;
+    }
+  }
+
+  return undefined;
+}
+
+function getQuotedParticipantFromRaw(
+  raw?: Record<string, unknown>
+): string | undefined {
+  if (!raw) return undefined;
+
+  const candidateKeys = [
+    'quotedParticipant',
+    'quotedParticipantId',
+    'quotedAuthor',
+  ];
+  for (const key of candidateKeys) {
+    const participant =
+      getSerializedId(raw[key]) ?? getNonEmptyString(raw[key]);
+    if (!participant) continue;
+    const normalized = normalizeJid(participant) ?? participant;
+    if (!normalized.endsWith('@g.us')) {
+      return normalized;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveQuotedParticipant(msg: Message): string | undefined {
+  const author = getNonEmptyString(
+    (msg as unknown as { author?: unknown }).author
+  );
+  if (author) {
+    return normalizeJid(author) ?? author;
+  }
+
+  const from = getNonEmptyString(msg.from);
+  if (from && !from.endsWith('@g.us')) {
+    return normalizeJid(from) ?? from;
+  }
+
+  return undefined;
+}
+
+function buildQuotedProtoMessage(
+  quoted: Message
+): Record<string, unknown> | undefined {
+  const rawType = (quoted.type ?? 'chat').toLowerCase();
+  const body = typeof quoted.body === 'string' ? quoted.body : '';
+  const raw = quoted as unknown as {
+    _data?: {
+      mimetype?: unknown;
+      filename?: unknown;
+      duration?: unknown;
+      seconds?: unknown;
+      isAnimated?: unknown;
+      width?: unknown;
+      height?: unknown;
+    };
+  };
+  const rawData = raw._data;
+
+  if (rawType === 'chat') {
+    return {
+      conversation: body,
+      extendedTextMessage: { text: body },
+    };
+  }
+
+  if (rawType === 'image') {
+    return {
+      imageMessage: {
+        caption: body || undefined,
+        mimetype: getNonEmptyString(rawData?.mimetype),
+        width: getNumber(rawData?.width),
+        height: getNumber(rawData?.height),
+      },
+    };
+  }
+
+  if (rawType === 'video') {
+    return {
+      videoMessage: {
+        caption: body || undefined,
+        mimetype: getNonEmptyString(rawData?.mimetype),
+        seconds: getNumber(rawData?.seconds) ?? getNumber(rawData?.duration),
+        width: getNumber(rawData?.width),
+        height: getNumber(rawData?.height),
+      },
+    };
+  }
+
+  if (rawType === 'ptt') {
+    return {
+      audioMessage: {
+        ptt: true,
+        mimetype: getNonEmptyString(rawData?.mimetype),
+        seconds: getNumber(rawData?.seconds) ?? getNumber(rawData?.duration),
+      },
+    };
+  }
+
+  if (rawType === 'audio') {
+    return {
+      audioMessage: {
+        ptt: false,
+        mimetype: getNonEmptyString(rawData?.mimetype),
+        seconds: getNumber(rawData?.seconds) ?? getNumber(rawData?.duration),
+      },
+    };
+  }
+
+  if (rawType === 'sticker') {
+    return {
+      stickerMessage: {
+        mimetype: getNonEmptyString(rawData?.mimetype),
+        isAnimated: getBoolean(rawData?.isAnimated),
+        width: getNumber(rawData?.width),
+        height: getNumber(rawData?.height),
+      },
+    };
+  }
+
+  if (rawType === 'document') {
+    const caption = getDocumentCaption(quoted) ?? body;
+    return {
+      documentMessage: {
+        caption: caption || undefined,
+        fileName: getNonEmptyString(rawData?.filename),
+        mimetype: getNonEmptyString(rawData?.mimetype),
+      },
+    };
+  }
+
+  if (rawType === 'location') {
+    const locationMessage = buildLocationMessage(quoted);
+    if (!locationMessage) return undefined;
+    return { locationMessage };
+  }
+
+  if (
+    rawType === 'vcard' ||
+    rawType === 'contact' ||
+    rawType === 'multi_vcard' ||
+    rawType === 'contacts'
+  ) {
+    const contactPayload = buildContactPayload(quoted, rawType, body) as
+      | {
+          contactMessage?: Record<string, unknown>;
+          contactsArrayMessage?: { contacts?: Array<Record<string, unknown>> };
+        }
+      | undefined;
+    const singleContact = contactPayload?.contactMessage;
+    if (singleContact) {
+      return { contactMessage: singleContact };
+    }
+
+    const firstContact = contactPayload?.contactsArrayMessage?.contacts?.[0];
+    if (firstContact?.vcard) {
+      return {
+        contactMessage: {
+          vcard: firstContact.vcard,
+          displayName: firstContact.displayName,
+        },
+      };
+    }
+  }
+
+  if (body) {
+    return {
+      conversation: body,
+      extendedTextMessage: { text: body },
+    };
+  }
+
+  return undefined;
+}
+
+async function buildQuotedContextInfo(
+  msg: Message
+): Promise<Record<string, unknown> | undefined> {
+  if (!msg.hasQuotedMsg) return undefined;
+
+  const rawData = getRawMessageData(msg);
+  const rawQuotedId = getQuotedIdFromRaw(rawData);
+  const rawParticipant = getQuotedParticipantFromRaw(rawData);
+
+  try {
+    const quoted = await msg.getQuotedMessage();
+    if (quoted) {
+      const stanzaId = getMessageId(quoted) ?? rawQuotedId;
+      if (!stanzaId) return undefined;
+
+      const quotedMessage = buildQuotedProtoMessage(quoted) ?? {};
+      const participant = resolveQuotedParticipant(quoted) ?? rawParticipant;
+      const contextInfo: Record<string, unknown> = {
+        stanzaId,
+        quotedMessage,
+      };
+
+      if (participant) {
+        contextInfo.participant = participant;
+      }
+
+      return contextInfo;
+    }
+  } catch {}
+
+  if (!rawQuotedId) return undefined;
+
+  const contextInfo: Record<string, unknown> = {
+    stanzaId: rawQuotedId,
+    quotedMessage: {},
+  };
+
+  if (rawParticipant) {
+    contextInfo.participant = rawParticipant;
+  }
+
+  return contextInfo;
+}
+
 interface WwebjsResolvedJids {
   remoteJid?: string;
   remoteJidAlt?: string;
 }
 
-export function wwebjsMessageToUpsert(
+export async function wwebjsMessageToUpsert(
   msg: Message,
   resolvedJids?: WwebjsResolvedJids,
   pushName?: string
-): IUpsertMessage | null {
+): Promise<IUpsertMessage | null> {
   const keyLike = messageToWaLike(msg);
   if (!keyLike?.key) return null;
 
@@ -248,6 +565,17 @@ export function wwebjsMessageToUpsert(
   if (contactPayload) {
     Object.assign(innerMessage, contactPayload);
   }
+
+  const quotedContextInfo = await buildQuotedContextInfo(msg);
+  if (quotedContextInfo) {
+    const currentExtendedText = (innerMessage.extendedTextMessage ??
+      {}) as Record<string, unknown>;
+    innerMessage.extendedTextMessage = {
+      ...currentExtendedText,
+      contextInfo: quotedContextInfo,
+    };
+  }
+
   if (
     Object.keys(innerMessage).length === 0 &&
     body &&
@@ -267,7 +595,7 @@ export function wwebjsMessageToUpsert(
       remoteJid,
       remoteJidAlt,
       fromMe: msg.fromMe ?? false,
-      participant: msg.from?.includes('@g.us') ? msg.from : undefined,
+      participant: resolveGroupParticipant(msg, remoteJid),
       isViewOnce: isViewOnce || undefined,
     },
     message: innerMessage,
@@ -280,6 +608,6 @@ export function wwebjsMessageToUpsert(
     account_id: wwebjsEnvironment.wwebjsAccountId,
     type: messageType,
     message: envelope,
-    has_quoted: msg.hasQuotedMsg ?? false,
+    has_quoted: (msg.hasQuotedMsg ?? false) || !!quotedContextInfo,
   };
 }

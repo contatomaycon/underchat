@@ -1,4 +1,4 @@
-import whatsappWeb from 'whatsapp-web.js';
+import whatsappWeb from '@wwebjs/whatsapp-web.js';
 import QRCode from 'qrcode';
 import fs from 'node:fs';
 import path from 'node:path';

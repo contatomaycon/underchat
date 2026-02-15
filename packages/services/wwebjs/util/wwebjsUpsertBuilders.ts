@@ -16,6 +16,12 @@ function getMessageId(msg: { id?: unknown }): string | undefined {
   return String(msg.id);
 }
 
+function getNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 interface WwebjsResolvedJids {
   remoteJid?: string;
   remoteJidAlt?: string;
@@ -24,6 +30,31 @@ interface WwebjsResolvedJids {
 function getRemoteJid(msg: Message): string {
   const raw = msg.fromMe ? msg.to || msg.from || '' : msg.from || msg.to || '';
   return normalizeJid(raw) ?? raw;
+}
+
+function resolveGroupParticipant(
+  msg: Message,
+  remoteJid: string
+): string | undefined {
+  if (!remoteJid.endsWith('@g.us')) return undefined;
+
+  const author = getNonEmptyString(
+    (msg as unknown as { author?: unknown }).author
+  );
+  if (author) {
+    const normalized = normalizeJid(author) ?? author;
+    if (normalized !== remoteJid) return normalized;
+  }
+
+  const from = getNonEmptyString(msg.from);
+  if (from) {
+    const normalized = normalizeJid(from) ?? from;
+    if (normalized !== remoteJid && !normalized.endsWith('@g.us')) {
+      return normalized;
+    }
+  }
+
+  return undefined;
 }
 
 export function buildDeleteMessageUpsert(
@@ -37,6 +68,9 @@ export function buildDeleteMessageUpsert(
   const remoteJid = resolvedJids?.remoteJid ?? getRemoteJid(after);
   if (!remoteJid) return null;
   const remoteJidAlt = resolvedJids?.remoteJidAlt;
+  const participant =
+    resolveGroupParticipant(after, remoteJid) ??
+    (before ? resolveGroupParticipant(before, remoteJid) : undefined);
 
   const id = getMessageId(after) ?? `revoke_${deletedId}_${Date.now()}`;
 
@@ -50,7 +84,7 @@ export function buildDeleteMessageUpsert(
         remoteJid,
         remoteJidAlt,
         fromMe: after.fromMe ?? false,
-        participant: after.from?.includes('@g.us') ? after.from : undefined,
+        participant,
       },
       message: {
         protocolMessage: {
@@ -73,6 +107,7 @@ export function buildRevokeMeUpsert(
   const remoteJid = resolvedJids?.remoteJid ?? getRemoteJid(msg);
   if (!remoteJid) return null;
   const remoteJidAlt = resolvedJids?.remoteJidAlt;
+  const participant = resolveGroupParticipant(msg, remoteJid);
 
   return {
     worker_id: wwebjsEnvironment.wwebjsWorkerId,
@@ -84,7 +119,7 @@ export function buildRevokeMeUpsert(
         remoteJid,
         remoteJidAlt,
         fromMe: msg.fromMe ?? false,
-        participant: msg.from?.includes('@g.us') ? msg.from : undefined,
+        participant,
       },
       message: {
         protocolMessage: {
@@ -108,6 +143,7 @@ export function buildEditMessageUpsert(
   const remoteJid = resolvedJids?.remoteJid ?? getRemoteJid(message);
   if (!remoteJid) return null;
   const remoteJidAlt = resolvedJids?.remoteJidAlt;
+  const participant = resolveGroupParticipant(message, remoteJid);
 
   const protocolMessage = {
     key: { id },
@@ -127,7 +163,7 @@ export function buildEditMessageUpsert(
         remoteJid,
         remoteJidAlt,
         fromMe: message.fromMe ?? false,
-        participant: message.from?.includes('@g.us') ? message.from : undefined,
+        participant,
       },
       message: {
         editedMessage: {
