@@ -1,4 +1,4 @@
-import type { Message } from 'whatsapp-web.js';
+import type { Message } from '@wwebjs/whatsapp-web.js';
 import { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyResponse';
 
 export function messageToWaLike(

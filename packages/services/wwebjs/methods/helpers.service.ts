@@ -3,7 +3,7 @@ import { WwebjsConnectionService } from './connection.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
-import type { Client } from 'whatsapp-web.js';
+import { MessageMedia, type Client } from '@wwebjs/whatsapp-web.js';
 
 @injectable()
 export class WwebjsHelpersService {
@@ -71,7 +71,6 @@ export class WwebjsHelpersService {
   }
 
   async updateProfilePicture(photoUrl: string): Promise<void> {
-    const { MessageMedia } = await import('whatsapp-web.js');
     const client = this.getClient();
     const media = await MessageMedia.fromUrl(photoUrl);
     await client.setProfilePicture(media);

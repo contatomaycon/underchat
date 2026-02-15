@@ -1,5 +1,5 @@
 import { injectable, inject } from 'tsyringe';
-import whatsappWeb from 'whatsapp-web.js';
+import whatsappWeb from '@wwebjs/whatsapp-web.js';
 import { withMediaUrlFromInput } from '@core/common/functions/getMediaUrlFromInput';
 import { WwebjsHelpersService } from './helpers.service';
 import { WwebjsMessageEditDeleteService } from './messageEditDelete.service';

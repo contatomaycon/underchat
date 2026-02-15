@@ -1,5 +1,5 @@
 import { injectable, inject } from 'tsyringe';
-import whatsappWeb from 'whatsapp-web.js';
+import whatsappWeb from '@wwebjs/whatsapp-web.js';
 import { WwebjsHelpersService } from './helpers.service';
 import { messageToWaLike } from '../util/messageToWaLike';
 import type { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyResponse';

@@ -1,6 +1,6 @@
 import { inject, singleton } from 'tsyringe';
 import Redis from 'ioredis';
-import type { Client, Message } from 'whatsapp-web.js';
+import { Message, type Client } from '@wwebjs/whatsapp-web.js';
 import type { IMessageKeyLike } from '@core/common/interfaces/IMessageKeyLike';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';

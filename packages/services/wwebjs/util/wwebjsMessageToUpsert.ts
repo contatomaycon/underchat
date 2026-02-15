@@ -1,4 +1,4 @@
-import type { Message } from 'whatsapp-web.js';
+import type { Message } from '@wwebjs/whatsapp-web.js';
 import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { wwebjsEnvironment } from '@core/config/environments';

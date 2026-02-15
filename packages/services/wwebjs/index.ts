@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import type { Client } from 'whatsapp-web.js';
+import type { Client } from '@wwebjs/whatsapp-web.js';
 import { WwebjsConnectionService } from './methods/connection.service';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';

@@ -1,6 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import { Buffer } from 'node:buffer';
-import type { Message } from 'whatsapp-web.js';
+import type { Message } from '@wwebjs/whatsapp-web.js';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import type { IContent } from '@core/common/interfaces/IChatMessage';
 import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
