@@ -103,8 +103,8 @@ importers:
         specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/13.2.2026/files/154
         version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/13.2.2026/files/154(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)
       '@wwebjs/whatsapp-web.js':
-        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/162
-        version: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/162(typescript@5.9.3)
+        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/163
+        version: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/163(typescript@5.9.3)
       audio-decode:
         specifier: ^2.2.3
         version: 2.2.3
@@ -5243,8 +5243,8 @@ packages:
     resolution: {tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67}
     version: 2.0.1
 
-  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/162':
-    resolution: {integrity: sha512-5swpS1B03X2GTWUkMwX9284BfuMA4WS/1knBmZ7gjmSJqN9UKT0pI9i3G9F+3pFAPRFdOJGmVmCUEHlV1hr6OA==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/162}
+  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/163':
+    resolution: {integrity: sha512-z0AE7PEUSqxpL23emw6wu4Bliiu+EJjnu2VHa8kQK5IiCVU/FjKGdJFy6Tu4pe1kelIEQrcTZvt1sRmA9IM8sg==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/163}
     version: 1.34.6
     engines: {node: '>=18.0.0'}
 
@@ -17901,7 +17901,7 @@ snapshots:
       curve25519-js: 0.0.4
       protobufjs: 6.8.8
 
-  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/162(typescript@5.9.3)':
+  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/163(typescript@5.9.3)':
     dependencies:
       fluent-ffmpeg: 2.1.3
       mime: 3.0.0

@@ -27,8 +27,7 @@ export class WwebjsMessageStatusStoriesService {
     jid: string,
     text: string
   ): Promise<IMessageKeyResponse | undefined> {
-    const client = this.helpers.getClient();
-    const msg = await client.sendMessage(jid, text);
+    const msg = await this.helpers.sendMessage(jid, text);
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -38,10 +37,9 @@ export class WwebjsMessageStatusStoriesService {
     media: IMediaInput,
     args: { caption?: string }
   ): Promise<IMessageKeyResponse | undefined> {
-    const client = this.helpers.getClient();
     const messageMedia = await mediaFromInput(media);
     const options = { caption: args.caption };
-    const msg = await client.sendMessage(jid, messageMedia, options);
+    const msg = await this.helpers.sendMessage(jid, messageMedia, options);
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -50,10 +48,9 @@ export class WwebjsMessageStatusStoriesService {
     media: IMediaInput,
     args: { caption?: string }
   ): Promise<IMessageKeyResponse | undefined> {
-    const client = this.helpers.getClient();
     const messageMedia = await mediaFromInput(media);
     const options = { caption: args.caption };
-    const msg = await client.sendMessage(jid, messageMedia, options);
+    const msg = await this.helpers.sendMessage(jid, messageMedia, options);
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -62,10 +59,9 @@ export class WwebjsMessageStatusStoriesService {
     media: IMediaInput,
     args: { caption?: string }
   ): Promise<IMessageKeyResponse | undefined> {
-    const client = this.helpers.getClient();
     const messageMedia = await mediaFromInput(media);
     const options = { caption: args.caption, sendAudioAsVoice: true };
-    const msg = await client.sendMessage(jid, messageMedia, options);
+    const msg = await this.helpers.sendMessage(jid, messageMedia, options);
     return messageToWaLike(msg ?? undefined);
   }
 

@@ -20,8 +20,6 @@ export class WwebjsMessageTextService {
     text: string,
     options?: { linkPreview?: IWAUrlInfo | null; mentions?: string[] }
   ): Promise<IMessageKeyResponse | undefined> {
-    const client = this.helpers.getClient();
-
     const sendOptions: { linkPreview?: boolean; mentions?: string[] } = {
       linkPreview: true,
     };
@@ -29,7 +27,7 @@ export class WwebjsMessageTextService {
       sendOptions.mentions = options.mentions;
     }
 
-    const msg = await client.sendMessage(jid, text, sendOptions);
+    const msg = await this.helpers.sendMessage(jid, text, sendOptions);
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -46,7 +44,7 @@ export class WwebjsMessageTextService {
       quotedMessageId,
       ignoreQuoteErrors: false,
     };
-    const msg = await client.sendMessage(jid, text, sendOptions);
+    const msg = await this.helpers.sendMessage(jid, text, sendOptions);
 
     return messageToWaLike(msg ?? undefined);
   }

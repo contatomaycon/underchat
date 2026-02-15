@@ -41,7 +41,7 @@ export class WwebjsMessageLocationContactService {
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
     };
-    const msg = await client.sendMessage(jid, loc, options);
+    const msg = await this.helpers.sendMessage(jid, loc, options);
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -62,7 +62,7 @@ export class WwebjsMessageLocationContactService {
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
     };
-    const msg = await client.sendMessage(jid, vcard, options);
+    const msg = await this.helpers.sendMessage(jid, vcard, options);
 
     return messageToWaLike(msg ?? undefined);
   }

@@ -52,7 +52,7 @@ export class WwebjsMessageMediaService {
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
     };
-    const msg = await client.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -71,7 +71,7 @@ export class WwebjsMessageMediaService {
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
     };
-    const msg = await client.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -97,7 +97,7 @@ export class WwebjsMessageMediaService {
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
     };
 
-    const msg = await client.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -115,7 +115,7 @@ export class WwebjsMessageMediaService {
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
     };
-    const msg = await client.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(jid, media, options);
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -134,7 +134,7 @@ export class WwebjsMessageMediaService {
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
     };
-    const msg = await client.sendMessage(jid, media, options);
+    const msg = await this.helpers.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
   }
