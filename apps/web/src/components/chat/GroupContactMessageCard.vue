@@ -51,6 +51,7 @@
           <div class="group-contact-card__meta">
             <div class="group-contact-card__time">{{ time }}</div>
             <VIcon
+              v-if="align === 'right'"
               class="group-contact-card__checks"
               size="16"
               :color="seen ? 'primary' : undefined"

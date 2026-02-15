@@ -34,6 +34,7 @@ import { can } from '@layouts/plugins/casl';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 
 const { t } = useI18n();
@@ -159,6 +160,11 @@ const audioPlaybackRates = reactive<Record<string, number>>({});
 
 type FeedbackIcon = { icon: string; color?: string };
 
+const isOutgoingMessage = (message: ListMessageResult): boolean => {
+  if (message.message_key?.from_me === true) return true;
+  return message.type_user === ETypeUserChat.operator;
+};
+
 const canViewChatContent = () => {
   const permissions = [
     EGeneralPermissions.full_access,
@@ -185,7 +191,11 @@ const shouldBlurMessageContent = computed(() => {
   return isQueueOrUra && !canViewChatContent();
 });
 
-const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
+const resolveFeedbackIcon = (
+  message: ListMessageResult
+): FeedbackIcon | null => {
+  if (!isOutgoingMessage(message)) return null;
+
   if (message.content?.type === EMessageType.annotation)
     return { icon: 'tabler-file', color: undefined };
 
@@ -193,16 +203,6 @@ const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
     return { icon: 'tabler-alert-triangle', color: 'error' };
   if (message.summary?.is_sent_to_internal === false)
     return { icon: 'tabler-clock', color: undefined };
-
-  if (isTypeUser(message)) {
-    if (message.summary?.is_seen)
-      return { icon: 'tabler-checks', color: 'primary' };
-    if (message.summary?.is_delivered)
-      return { icon: 'tabler-checks', color: undefined };
-    if (message.summary?.is_sent)
-      return { icon: 'tabler-check', color: undefined };
-    return { icon: 'tabler-check', color: undefined };
-  }
 
   if (message.summary?.is_seen)
     return { icon: 'tabler-checks', color: 'primary' };
@@ -4035,10 +4035,11 @@ onUnmounted(() => {
                           }}
                         </span>
                         <VIcon
+                          v-if="resolveFeedbackIcon(item.message)"
                           size="16"
-                          :color="resolveFeedbackIcon(item.message).color"
+                          :color="resolveFeedbackIcon(item.message)?.color"
                         >
-                          {{ resolveFeedbackIcon(item.message).icon }}
+                          {{ resolveFeedbackIcon(item.message)?.icon }}
                         </VIcon>
                       </div>
                     </div>

@@ -745,9 +745,9 @@ export class MessageUpsertConsume {
     return {
       typeUser: ETypeUserChat.client,
       summary: {
-        is_sent: true,
-        is_delivered: true,
-        is_seen: true,
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
         is_sent_to_internal: true,
       },
     };

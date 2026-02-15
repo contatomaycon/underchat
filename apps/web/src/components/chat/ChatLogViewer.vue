@@ -18,6 +18,7 @@ import { useTheme } from 'vuetify';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EColor } from '@core/common/enums/EColor';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 
@@ -1265,6 +1266,11 @@ interface IReaction {
 
 type FeedbackIcon = { icon: string; color?: string };
 
+const isOutgoingMessage = (message: ListMessageResult): boolean => {
+  if (message.message_key?.from_me === true) return true;
+  return message.type_user === ETypeUserChat.operator;
+};
+
 const getReactionsSummary = (
   reactions?: IReaction[] | null
 ): Array<{ emoji: string; count: number }> => {
@@ -1286,22 +1292,14 @@ const getReactionsSummary = (
   });
 };
 
-const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon => {
+const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon | null => {
+  if (!isOutgoingMessage(message)) return null;
+
   if (message.content?.type === EMessageType.annotation)
     return { icon: 'tabler-file', color: undefined };
 
   if (message.summary?.is_sent_to_internal === false)
     return { icon: 'tabler-clock', color: undefined };
-
-  if (isTypeUser(message)) {
-    if (message.summary?.is_seen)
-      return { icon: 'tabler-checks', color: 'primary' };
-    if (message.summary?.is_delivered)
-      return { icon: 'tabler-checks', color: undefined };
-    if (message.summary?.is_sent)
-      return { icon: 'tabler-check', color: undefined };
-    return { icon: 'tabler-check', color: undefined };
-  }
 
   if (message.summary?.is_seen)
     return { icon: 'tabler-checks', color: 'primary' };
@@ -2839,10 +2837,11 @@ const handleContactClick = (message: ListMessageResult) => {
                           }}
                         </span>
                         <VIcon
+                          v-if="resolveFeedbackIcon(item.message)"
                           size="16"
-                          :color="resolveFeedbackIcon(item.message).color"
+                          :color="resolveFeedbackIcon(item.message)?.color"
                         >
-                          {{ resolveFeedbackIcon(item.message).icon }}
+                          {{ resolveFeedbackIcon(item.message)?.icon }}
                         </VIcon>
                       </div>
                     </div>
