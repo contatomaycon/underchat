@@ -47,11 +47,12 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(image);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const msg = await client.sendMessage(jid, media, {
+    const options = {
       caption: args?.caption,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
-    });
+    };
+    const msg = await client.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -65,11 +66,12 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(video);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const msg = await client.sendMessage(jid, media, {
+    const options = {
       caption: args?.caption,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
-    });
+    };
+    const msg = await client.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -89,11 +91,13 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(audio);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const msg = await client.sendMessage(jid, media, {
+    const options = {
       sendAudioAsVoice: args?.ptt ?? true,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
-    });
+    };
+
+    const msg = await client.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
   }
@@ -106,12 +110,12 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(sticker);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const msg = await client.sendMessage(jid, media, {
+    const options = {
       sendMediaAsSticker: true,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
-    });
-
+    };
+    const msg = await client.sendMessage(jid, media, options);
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -124,12 +128,13 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(document);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const msg = await client.sendMessage(jid, media, {
+    const options = {
       sendMediaAsDocument: true,
       caption: args.caption,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
-    });
+    };
+    const msg = await client.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
   }

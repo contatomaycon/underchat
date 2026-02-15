@@ -29,6 +29,7 @@ export class WwebjsMessageStatusStoriesService {
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const msg = await client.sendMessage(jid, text);
+
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -39,9 +40,8 @@ export class WwebjsMessageStatusStoriesService {
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const messageMedia = await mediaFromInput(media);
-    const msg = await client.sendMessage(jid, messageMedia, {
-      caption: args.caption,
-    });
+    const options = { caption: args.caption };
+    const msg = await client.sendMessage(jid, messageMedia, options);
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -52,9 +52,8 @@ export class WwebjsMessageStatusStoriesService {
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const messageMedia = await mediaFromInput(media);
-    const msg = await client.sendMessage(jid, messageMedia, {
-      caption: args.caption,
-    });
+    const options = { caption: args.caption };
+    const msg = await client.sendMessage(jid, messageMedia, options);
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -65,10 +64,8 @@ export class WwebjsMessageStatusStoriesService {
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const messageMedia = await mediaFromInput(media);
-    const msg = await client.sendMessage(jid, messageMedia, {
-      caption: args.caption,
-      sendAudioAsVoice: true,
-    });
+    const options = { caption: args.caption, sendAudioAsVoice: true };
+    const msg = await client.sendMessage(jid, messageMedia, options);
     return messageToWaLike(msg ?? undefined);
   }
 

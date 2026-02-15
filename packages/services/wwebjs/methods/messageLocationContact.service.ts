@@ -37,10 +37,12 @@ export class WwebjsMessageLocationContactService {
         address: location.address,
       }
     );
-    const msg = await client.sendMessage(jid, loc, {
+    const options = {
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
-    });
+    };
+    const msg = await client.sendMessage(jid, loc, options);
+
     return messageToWaLike(msg ?? undefined);
   }
 
@@ -55,11 +57,13 @@ export class WwebjsMessageLocationContactService {
         quoted.key.id)
       : undefined;
 
-    const msg = await client.sendMessage(jid, vcard, {
+    const options = {
       parseVCards: true,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
-    });
+    };
+    const msg = await client.sendMessage(jid, vcard, options);
+
     return messageToWaLike(msg ?? undefined);
   }
 }

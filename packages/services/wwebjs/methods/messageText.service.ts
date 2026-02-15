@@ -42,10 +42,12 @@ export class WwebjsMessageTextService {
     const quotedMessageId =
       (await resolveQuotedMessageId(client, jid, quoted.key)) ?? quoted.key.id;
 
-    const msg = await client.sendMessage(jid, text, {
+    const sendOptions = {
       quotedMessageId,
       ignoreQuoteErrors: false,
-    });
+    };
+    const msg = await client.sendMessage(jid, text, sendOptions);
+
     return messageToWaLike(msg ?? undefined);
   }
 }
