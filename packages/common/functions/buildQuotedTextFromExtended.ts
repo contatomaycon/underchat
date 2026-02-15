@@ -220,6 +220,7 @@ export function buildQuotedTextFromExtended(
     message.stickerMessage?.contextInfo,
     message.locationMessage?.contextInfo,
     message.contactMessage?.contextInfo,
+    (message as any).contactsArrayMessage?.contextInfo,
     (message as any).buttonsMessage?.contextInfo,
     (message as any).templateButtonReplyMessage?.contextInfo,
     (message as any).interactiveResponseMessage?.contextInfo,

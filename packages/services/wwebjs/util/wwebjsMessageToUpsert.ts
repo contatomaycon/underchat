@@ -237,6 +237,137 @@ function getRawMessageData(msg: Message): Record<string, unknown> | undefined {
   return undefined;
 }
 
+function getObjectRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function buildForwardedContextInfo(
+  msg: Message
+): Record<string, unknown> | undefined {
+  const rawData = getRawMessageData(msg);
+
+  const topIsForwarded = getBoolean(
+    (msg as unknown as { isForwarded?: unknown }).isForwarded
+  );
+  const rawIsForwarded = getBoolean(rawData?.isForwarded);
+  const isForwarded = topIsForwarded ?? rawIsForwarded;
+
+  if (isForwarded !== true) {
+    return undefined;
+  }
+
+  const topForwardingScore = getNumber(
+    (msg as unknown as { forwardingScore?: unknown }).forwardingScore
+  );
+  const rawForwardingScore =
+    getNumber(rawData?.forwardingScore) ?? getNumber(rawData?.forwardsCount);
+  const forwardingScore = topForwardingScore ?? rawForwardingScore;
+
+  const contextInfo: Record<string, unknown> = {
+    isForwarded: true,
+  };
+
+  if (forwardingScore !== undefined) {
+    contextInfo.forwardingScore = forwardingScore;
+  }
+
+  return contextInfo;
+}
+
+function mergeContextInfo(
+  quoted?: Record<string, unknown>,
+  forwarded?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!quoted && !forwarded) {
+    return undefined;
+  }
+
+  return {
+    ...(quoted ?? {}),
+    ...(forwarded ?? {}),
+  };
+}
+
+function getContextInfoTargetKey(
+  rawType: string,
+  messageType: EMessageType,
+  innerMessage: Record<string, unknown>
+): string | undefined {
+  if (
+    messageType === EMessageType.text ||
+    messageType === EMessageType.system ||
+    messageType === EMessageType.annotation
+  ) {
+    return 'extendedTextMessage';
+  }
+
+  const keyByRawType: Record<string, string> = {
+    image: 'imageMessage',
+    video: 'videoMessage',
+    ptt: 'audioMessage',
+    audio: 'audioMessage',
+    document: 'documentMessage',
+    sticker: 'stickerMessage',
+    location: 'locationMessage',
+    vcard: 'contactMessage',
+    contact: 'contactMessage',
+    multi_vcard: 'contactsArrayMessage',
+    contacts: 'contactsArrayMessage',
+  };
+
+  if (keyByRawType[rawType]) {
+    return keyByRawType[rawType];
+  }
+
+  const knownContextKeys = [
+    'extendedTextMessage',
+    'imageMessage',
+    'videoMessage',
+    'ptvMessage',
+    'documentMessage',
+    'audioMessage',
+    'stickerMessage',
+    'locationMessage',
+    'contactMessage',
+    'contactsArrayMessage',
+  ];
+
+  for (const key of knownContextKeys) {
+    if (getObjectRecord(innerMessage[key])) {
+      return key;
+    }
+  }
+
+  return undefined;
+}
+
+function attachContextInfo(
+  innerMessage: Record<string, unknown>,
+  contextInfo: Record<string, unknown>,
+  rawType: string,
+  messageType: EMessageType
+): void {
+  const targetKey = getContextInfoTargetKey(rawType, messageType, innerMessage);
+  if (!targetKey) {
+    return;
+  }
+
+  const currentTarget = getObjectRecord(innerMessage[targetKey]) ?? {};
+  const currentContext = getObjectRecord(currentTarget.contextInfo) ?? {};
+
+  innerMessage[targetKey] = {
+    ...currentTarget,
+    contextInfo: {
+      ...currentContext,
+      ...contextInfo,
+    },
+  };
+}
+
 function getSerializedId(value: unknown): string | undefined {
   if (!value) return undefined;
   if (typeof value === 'string') {
@@ -567,13 +698,10 @@ export async function wwebjsMessageToUpsert(
   }
 
   const quotedContextInfo = await buildQuotedContextInfo(msg);
-  if (quotedContextInfo) {
-    const currentExtendedText = (innerMessage.extendedTextMessage ??
-      {}) as Record<string, unknown>;
-    innerMessage.extendedTextMessage = {
-      ...currentExtendedText,
-      contextInfo: quotedContextInfo,
-    };
+  const forwardedContextInfo = buildForwardedContextInfo(msg);
+  const contextInfo = mergeContextInfo(quotedContextInfo, forwardedContextInfo);
+  if (contextInfo) {
+    attachContextInfo(innerMessage, contextInfo, rawType, messageType);
   }
 
   if (

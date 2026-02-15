@@ -50,6 +50,7 @@ function getContextInfoFromMessage(
     message.stickerMessage?.contextInfo,
     message.locationMessage?.contextInfo,
     message.contactMessage?.contextInfo,
+    message.contactsArrayMessage?.contextInfo,
     message.buttonsMessage?.contextInfo,
     message.templateButtonReplyMessage?.contextInfo,
     (message as any).interactiveResponseMessage?.contextInfo,
