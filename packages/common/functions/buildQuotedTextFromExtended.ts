@@ -102,10 +102,6 @@ function processDocumentMessage(
       ? Number(documentMessage.fileLength.toString())
       : null,
   };
-
-  if (!quoted.message && documentMessage.fileName) {
-    quoted.message = documentMessage.fileName;
-  }
 }
 
 function processAudioMessage(quotedMessage: any, quoted: IQuotedMessage): void {

@@ -544,7 +544,7 @@ function buildQuotedProtoMessage(
   }
 
   if (rawType === 'document') {
-    const caption = getDocumentCaption(quoted) ?? body;
+    const caption = getDocumentCaption(quoted);
     return {
       documentMessage: {
         caption: caption || undefined,
