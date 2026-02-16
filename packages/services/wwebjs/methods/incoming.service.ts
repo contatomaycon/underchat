@@ -378,6 +378,43 @@ export class WwebjsIncomingMessageService {
     return Array.from(candidates);
   }
 
+  private buildSelfPhotoCandidates(client: Client): Set<string> {
+    const selfCandidates = new Set<string>();
+
+    const infoWidSerialized = (
+      client.info?.wid as { _serialized?: string } | undefined
+    )?._serialized;
+    const selfJidRaw = getNonEmptyString(infoWidSerialized);
+    if (!selfJidRaw) {
+      return selfCandidates;
+    }
+
+    const normalizedSelf = normalizeJid(selfJidRaw) ?? selfJidRaw;
+    selfCandidates.add(normalizedSelf);
+
+    const selfPhone = getPhoneFromJid(normalizedSelf, null);
+    if (!selfPhone) {
+      return selfCandidates;
+    }
+
+    selfCandidates.add(`${selfPhone}@c.us`);
+    selfCandidates.add(`${selfPhone}@s.whatsapp.net`);
+
+    return selfCandidates;
+  }
+
+  private removeSelfPhotoCandidates(
+    client: Client,
+    candidates: string[]
+  ): string[] {
+    if (!candidates.length) return candidates;
+
+    const selfCandidates = this.buildSelfPhotoCandidates(client);
+    if (!selfCandidates.size) return candidates;
+
+    return candidates.filter((candidate) => !selfCandidates.has(candidate));
+  }
+
   private async withProfileTimeout(
     promise: Promise<string>
   ): Promise<string | undefined> {
@@ -467,13 +504,16 @@ export class WwebjsIncomingMessageService {
     msg: Message,
     resolvedJids: WwebjsResolvedJids
   ): Promise<string | undefined> {
-    const candidates = this.buildPhotoCandidates([
-      resolvedJids.remoteJid,
-      resolvedJids.remoteJidAlt,
-      msg.from,
-      msg.to,
-      getMessageRemoteFromId(msg),
-    ]);
+    const directPeerJid = msg.fromMe ? msg.to : msg.from;
+    const candidates = this.removeSelfPhotoCandidates(
+      client,
+      this.buildPhotoCandidates([
+        resolvedJids.remoteJid,
+        resolvedJids.remoteJidAlt,
+        directPeerJid,
+        getMessageRemoteFromId(msg),
+      ])
+    );
     if (!candidates.length) {
       return undefined;
     }
