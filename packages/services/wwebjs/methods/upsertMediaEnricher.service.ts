@@ -8,6 +8,8 @@ import { StorageService } from '@core/services/storage.service';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000;
 const LOTTIE_STICKER_EXT = 'was';
+const LOTTIE_STICKER_MIME = 'application/was';
+const LOTTIE_ZIP_ENTRY_MARKER = Buffer.from('animation/animation.json');
 
 interface WwebjsStickerRawData {
   mimetype?: unknown;
@@ -230,7 +232,13 @@ export class WwebjsUpsertMediaEnricher {
     msg: Message
   ): Promise<void> {
     const stickerMeta = this.resolveStickerMeta(msg);
-    const mimetype = media.mimetype ?? stickerMeta.mimetype;
+    const payloadLooksLottie = this.isLottiePayload(buffer);
+    const isLottie = stickerMeta.isLottie || payloadLooksLottie;
+    const isAnimated = stickerMeta.isAnimated || isLottie;
+    const sourceMimetype = this.normalizeMimetype(
+      media.mimetype ?? stickerMeta.mimetype
+    );
+    const mimetype = this.resolveStickerMimetype(sourceMimetype, isLottie);
     const forcedExt = this.resolveStickerExtension(mimetype, stickerMeta);
     const forcedFileName = forcedExt
       ? `sticker-${Date.now()}.${forcedExt}`
@@ -252,7 +260,7 @@ export class WwebjsUpsertMediaEnricher {
         size: result.size,
         height: stickerMeta.height,
         width: stickerMeta.width,
-        is_animated: stickerMeta.isAnimated,
+        is_animated: isAnimated,
       };
     }
   }
@@ -296,6 +304,21 @@ export class WwebjsUpsertMediaEnricher {
     return undefined;
   }
 
+  private resolveStickerMimetype(
+    mimetype: string | undefined,
+    isLottie: boolean
+  ): string | undefined {
+    if (isLottie) return LOTTIE_STICKER_MIME;
+    return mimetype;
+  }
+
+  private normalizeMimetype(mimetype?: string): string | undefined {
+    if (typeof mimetype !== 'string') return undefined;
+    const normalized = mimetype.trim().toLowerCase();
+    if (!normalized) return undefined;
+    return normalized;
+  }
+
   private toNullableNumber(value: unknown): number | null {
     if (typeof value !== 'number') return null;
     if (!Number.isFinite(value)) return null;
@@ -304,5 +327,12 @@ export class WwebjsUpsertMediaEnricher {
 
   private isTrue(value: unknown): boolean {
     return value === true;
+  }
+
+  private isLottiePayload(buffer: Buffer): boolean {
+    if (buffer.length < 4) return false;
+    const hasZipHeader = buffer[0] === 0x50 && buffer[1] === 0x4b;
+    if (!hasZipHeader) return false;
+    return buffer.includes(LOTTIE_ZIP_ENTRY_MARKER);
   }
 }
