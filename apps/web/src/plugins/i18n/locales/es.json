@@ -612,6 +612,7 @@
   "close_service_confirmation": "¿Está seguro de que desea cerrar este servicio?",
   "chat_closed_successfully": "Servicio cerrado con éxito",
   "is_typing": "está escribiendo...",
+  "is_recording_audio": "está grabando audio...",
   "message_pinned_by_user": "{name} fijó un mensaje",
   "message_pinned_by_phone": "{phone} fijó un mensaje",
   "message_unpinned_by_user": "{name} desfijó un mensaje",

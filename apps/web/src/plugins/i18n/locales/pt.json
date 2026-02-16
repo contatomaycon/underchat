@@ -613,6 +613,7 @@
   "close_service_confirmation": "Tem certeza que deseja encerrar este atendimento?",
   "chat_closed_successfully": "Atendimento encerrado com sucesso",
   "is_typing": "está digitando...",
+  "is_recording_audio": "está gravando áudio...",
   "message_pinned_by_user": "{name} fixou uma mensagem",
   "message_pinned_by_phone": "{phone} fixou uma mensagem",
   "message_unpinned_by_user": "{name} desfixou uma mensagem",

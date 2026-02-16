@@ -163,8 +163,9 @@ const isViewEmailDecrypted = ref(false);
 const isViewPhoneDecrypted = ref(false);
 const isLoadingViewEmail = ref(false);
 const isLoadingViewPhone = ref(false);
+type RemoteActivityMode = 'typing' | 'recording';
 const typingStates = ref(
-  new Map<string, { isTyping: boolean; timestamp: number }>()
+  new Map<string, { mode: RemoteActivityMode; timestamp: number }>()
 );
 const typingTimeouts = ref(new Map<string, NodeJS.Timeout>());
 const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
@@ -4383,6 +4384,29 @@ const onRetryMessage = async (e: Event) => {
 
 const TYPING_TIMEOUT_MS = 5000;
 
+const resolveTypingMode = (typingData: IChatTyping): RemoteActivityMode | null => {
+  if (
+    typingData.typing_state === 'typing' ||
+    typingData.typing_state === 'recording'
+  ) {
+    return typingData.typing_state;
+  }
+
+  if (typingData.typing_state === 'available') {
+    return null;
+  }
+
+  if (typingData.is_recording === true) {
+    return 'recording';
+  }
+
+  if (typingData.is_typing === true) {
+    return 'typing';
+  }
+
+  return null;
+};
+
 const clearTypingTimeout = (chatId?: string) => {
   if (chatId) {
     const timeout = typingTimeouts.value.get(chatId);
@@ -4399,46 +4423,58 @@ const clearTypingTimeout = (chatId?: string) => {
   typingTimeouts.value.clear();
 };
 
-const setTypingState = (chatId: string, isTyping: boolean) => {
-  const now = Date.now();
-  typingStates.value.set(chatId, { isTyping, timestamp: now });
-
+const setTypingState = (chatId: string, mode: RemoteActivityMode | null) => {
   clearTypingTimeout(chatId);
 
-  if (isTyping) {
-    const timeout = setTimeout(() => {
-      typingStates.value.delete(chatId);
-      typingTimeouts.value.delete(chatId);
-    }, TYPING_TIMEOUT_MS);
-    typingTimeouts.value.set(chatId, timeout);
-  } else {
+  if (!mode) {
     typingStates.value.delete(chatId);
+    return;
   }
+
+  const now = Date.now();
+  typingStates.value.set(chatId, { mode, timestamp: now });
+
+  const timeout = setTimeout(() => {
+    typingStates.value.delete(chatId);
+    typingTimeouts.value.delete(chatId);
+  }, TYPING_TIMEOUT_MS);
+  typingTimeouts.value.set(chatId, timeout);
 };
 
-const getTypingState = (chatId: string): boolean => {
+const getTypingState = (chatId: string): RemoteActivityMode | null => {
   const state = typingStates.value.get(chatId);
   if (!state) {
-    return false;
+    return null;
   }
 
   const elapsed = Date.now() - state.timestamp;
   if (elapsed >= TYPING_TIMEOUT_MS) {
     typingStates.value.delete(chatId);
     clearTypingTimeout(chatId);
-    return false;
+    return null;
   }
 
-  return state.isTyping;
+  return state.mode;
 };
 
-const isTyping = computed(() => {
+const activeTypingMode = computed<RemoteActivityMode | null>(() => {
   const activeChatId = chatStore.activeChat?.chat_id;
   if (!activeChatId) {
-    return false;
+    return null;
   }
+
   return getTypingState(activeChatId);
 });
+
+const isTyping = computed(() => activeTypingMode.value !== null);
+const typingIndicatorIcon = computed(() =>
+  activeTypingMode.value === 'recording' ? 'tabler-microphone' : 'tabler-pencil'
+);
+const typingIndicatorText = computed(() =>
+  activeTypingMode.value === 'recording'
+    ? t('is_recording_audio')
+    : t('is_typing')
+);
 
 const checkJidMatches = (
   eventJid: string,
@@ -4474,7 +4510,7 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
   if ('message_id' in data) {
     const chatId = data.chat_id;
     if (chatId) {
-      setTypingState(chatId, false);
+      setTypingState(chatId, null);
     }
     return;
   }
@@ -4497,7 +4533,7 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
     return;
   }
 
-  setTypingState(activeChat.chat_id, typingData.is_typing);
+  setTypingState(activeChat.chat_id, resolveTypingMode(typingData));
 };
 
 const handleGlobalMessage = (e: Event) => {
@@ -5077,7 +5113,7 @@ onBeforeUnmount(() => {
               v-if="isTyping && chatStore.activeChat"
               class="typing-indicator d-flex align-center gap-2 mb-2"
             >
-              <VIcon size="20" color="primary" icon="tabler-pencil" />
+              <VIcon size="20" color="primary" :icon="typingIndicatorIcon" />
               <span
                 class="text-primary"
                 style="font-style: italic; font-size: 0.8rem; font-weight: 400"
@@ -5091,7 +5127,7 @@ onBeforeUnmount(() => {
                     : chatStore.activeChat.contact?.phone) ??
                   chatStore.activeChat.phone
                 }}
-                {{ $t('is_typing') }}
+                {{ typingIndicatorText }}
               </span>
             </div>
           </Transition>

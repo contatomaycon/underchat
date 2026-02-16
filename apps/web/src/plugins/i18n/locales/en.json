@@ -612,6 +612,7 @@
   "close_service_confirmation": "Are you sure you want to close this service?",
   "chat_closed_successfully": "Service closed successfully",
   "is_typing": "is typing...",
+  "is_recording_audio": "is recording audio...",
   "message_pinned_by_user": "{name} pinned a message",
   "message_pinned_by_phone": "{phone} pinned a message",
   "message_unpinned_by_user": "{name} unpinned a message",

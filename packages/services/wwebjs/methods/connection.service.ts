@@ -1,4 +1,4 @@
-import whatsappWeb from '@wwebjs/whatsapp-web.js';
+import whatsappWeb, { type ChatState } from '@wwebjs/whatsapp-web.js';
 import QRCode from 'qrcode';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,14 +17,20 @@ import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionTyp
 import { EAppEnvironment } from '@core/common/enums/EAppEnvironment';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  chatAccountCentrifugo,
+  workerCentrifugoQueue,
+} from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { triggerConnectionEstablished } from '../callbacks';
 import { WwebjsIncomingMessageService } from './incoming.service';
+import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 
 const FOLDER = `/app/data/wwebjs/storage/${wwebjsEnvironment.wwebjsWorkerId}`;
 const CHANNEL = workerCentrifugoQueue(wwebjsEnvironment.wwebjsAccountId);
+const CHAT_CHANNEL = chatAccountCentrifugo(wwebjsEnvironment.wwebjsAccountId);
 const WORKER = wwebjsEnvironment.wwebjsWorkerId;
 const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 const RETRY_DELAY = 2000;
@@ -566,11 +572,121 @@ export class WwebjsConnectionService {
         this.pendingResolve = undefined;
       });
 
+      client.on('chat_state', (state) => {
+        this.handleChatState(state);
+      });
+
       client.initialize().catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         this.handleInitializeError(msg);
       });
     });
+  }
+
+  private normalizeChatStateUsers(userIds: string[] | undefined): Set<string> {
+    const normalized = new Set<string>();
+
+    if (!Array.isArray(userIds)) {
+      return normalized;
+    }
+
+    for (const userId of userIds) {
+      const resolved = normalizeJid(userId) ?? userId;
+      if (resolved) {
+        normalized.add(resolved);
+      }
+    }
+
+    return normalized;
+  }
+
+  private resolveChatStateType(state: ChatState): {
+    is_typing: boolean;
+    is_recording: boolean;
+    typing_state: 'typing' | 'recording' | 'available';
+  } | null {
+    const normalizedState = state.state?.toLowerCase();
+
+    if (
+      normalizedState === 'available' ||
+      normalizedState === 'unavailable' ||
+      normalizedState === 'paused'
+    ) {
+      return {
+        is_typing: false,
+        is_recording: false,
+        typing_state: 'available',
+      };
+    }
+
+    if (normalizedState === 'typing' || normalizedState === 'composing') {
+      return {
+        is_typing: true,
+        is_recording: false,
+        typing_state: 'typing',
+      };
+    }
+
+    if (
+      normalizedState === 'recording' ||
+      normalizedState === 'recording_audio'
+    ) {
+      return {
+        is_typing: false,
+        is_recording: true,
+        typing_state: 'recording',
+      };
+    }
+
+    const normalizedUserId =
+      normalizeJid(state.userId ?? '') ?? state.userId ?? '';
+    const typingUserIds = this.normalizeChatStateUsers(state.typingUserIds);
+    const recordingUserIds = this.normalizeChatStateUsers(
+      state.recordingUserIds
+    );
+
+    const isRecording = normalizedUserId
+      ? recordingUserIds.has(normalizedUserId)
+      : recordingUserIds.size > 0;
+    const isTyping = isRecording
+      ? false
+      : normalizedUserId
+        ? typingUserIds.has(normalizedUserId)
+        : typingUserIds.size > 0;
+
+    if (!isTyping && !isRecording) {
+      return null;
+    }
+
+    return {
+      is_typing: isTyping,
+      is_recording: isRecording,
+      typing_state: isRecording ? 'recording' : 'typing',
+    };
+  }
+
+  private handleChatState(state: ChatState): void {
+    const chatJid = normalizeJid(state.chatId) ?? state.chatId;
+    if (!chatJid) {
+      return;
+    }
+
+    const resolved = this.resolveChatStateType(state);
+    if (!resolved) {
+      return;
+    }
+
+    const typingEvent: IChatTyping = {
+      type: 'typing',
+      jid: chatJid,
+      is_typing: resolved.is_typing,
+      is_recording: resolved.is_recording,
+      typing_state: resolved.typing_state,
+      account_id: ACCOUNT,
+      worker_id: WORKER,
+    };
+
+    void this.centrifugo.publishSub(CHAT_CHANNEL, typingEvent).catch(() => {});
   }
 
   private mapDisconnectReason(reason: string): ECodeMessage {

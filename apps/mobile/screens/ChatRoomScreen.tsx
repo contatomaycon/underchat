@@ -205,6 +205,7 @@ const CHAT_SOCKET_SYNC_DEBOUNCE_MS = 5000;
 const LOAD_OLDER_SCROLL_THRESHOLD = 180;
 const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 const TYPING_TIMEOUT_MS = 5000;
+type RemoteActivityMode = 'typing' | 'recording';
 const VOICE_LOCK_SWIPE_THRESHOLD = 70;
 const VOICE_RELEASE_LOCK_GRACE_MS = 220;
 const VOICE_CANCEL_SWIPE_THRESHOLD = 90;
@@ -820,6 +821,32 @@ function checkTypingJidMatches(
   }
 
   return false;
+}
+
+function resolveSocketTypingMode(
+  payload: SocketTypingPayload
+): RemoteActivityMode | null {
+  const typingState = readNonEmptyString(
+    (payload as { typing_state?: unknown }).typing_state
+  );
+  if (typingState === 'typing' || typingState === 'recording') {
+    return typingState;
+  }
+  if (typingState === 'available') {
+    return null;
+  }
+
+  const isRecording =
+    (payload as { is_recording?: unknown }).is_recording === true;
+  if (isRecording) {
+    return 'recording';
+  }
+
+  if (payload.is_typing === true) {
+    return 'typing';
+  }
+
+  return null;
 }
 
 function resolveTypingDisplayName(chatInfo: ListChatsResult): string {
@@ -2871,6 +2898,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [remoteActivityMode, setRemoteActivityMode] =
+    useState<RemoteActivityMode | null>(null);
   const [showScrollToBottomButton, setShowScrollToBottomButton] =
     useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<
@@ -2918,13 +2947,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const recorder = useAudioRecorder(recorderOptions);
   const recorderState = useAudioRecorderState(recorder, 100);
   const typingLabel = useMemo(() => {
-    return `${resolveTypingDisplayName(chatInfo)} ${pt.is_typing}`;
+    const typingStatus =
+      remoteActivityMode === 'recording' ? pt.is_recording_audio : pt.is_typing;
+    return `${resolveTypingDisplayName(chatInfo)} ${typingStatus}`;
   }, [
     chatInfo.contact?.name,
     chatInfo.name,
     chatInfo.contact?.phone_ddi,
     chatInfo.contact?.phone,
     chatInfo.phone,
+    remoteActivityMode,
   ]);
   const audioCtrl = useChatAudio();
   const viewerVideoPlayer = useVideoPlayer(
@@ -2978,16 +3010,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, []);
 
   const setTypingIndicator = useCallback(
-    (typing: boolean) => {
+    (mode: RemoteActivityMode | null) => {
       clearTypingTimeout();
-      if (!typing) {
+      if (!mode) {
         setIsTyping(false);
+        setRemoteActivityMode(null);
         return;
       }
 
       setIsTyping(true);
+      setRemoteActivityMode(mode);
       typingTimeoutRef.current = setTimeout(() => {
         setIsTyping(false);
+        setRemoteActivityMode(null);
         typingTimeoutRef.current = null;
       }, TYPING_TIMEOUT_MS);
     },
@@ -2999,7 +3034,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [messages]);
 
   useEffect(() => {
-    setTypingIndicator(false);
+    setTypingIndicator(null);
   }, [chatInfo.chat_id, setTypingIndicator]);
 
   useEffect(() => {
@@ -3560,7 +3595,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const handleSocketMessage = useCallback(
     (payload: SocketMessagePayload) => {
       if (payload.chat_id !== chatInfo.chat_id) return;
-      setTypingIndicator(false);
+      setTypingIndicator(null);
 
       const incomingMessageId = readNonEmptyString(payload.message_id);
       const shouldAutoScroll =
@@ -3605,7 +3640,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         }
       }
 
-      setTypingIndicator(payload.is_typing === true);
+      setTypingIndicator(resolveSocketTypingMode(payload));
     },
     [chatInfo.chat_id, setTypingIndicator]
   );
@@ -3716,7 +3751,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       );
 
       return () => {
-        setTypingIndicator(false);
+        setTypingIndicator(null);
         offMessage();
         offTyping();
         offChatUpdate();
@@ -4470,7 +4505,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       ) : null}
       {isTyping ? (
         <View style={styles.typingIndicatorWrap}>
-          <Ionicons name="create-outline" size={18} color={colors.primary} />
+          <Ionicons
+            name={
+              remoteActivityMode === 'recording'
+                ? 'mic-outline'
+                : 'create-outline'
+            }
+            size={18}
+            color={colors.primary}
+          />
           <Text style={styles.typingIndicatorText} numberOfLines={1}>
             {typingLabel}
           </Text>

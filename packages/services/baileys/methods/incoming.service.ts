@@ -517,19 +517,17 @@ export class BaileysIncomingMessageService {
     for (const [, presence] of Object.entries(presences)) {
       if (!presence) continue;
 
-      const lastKnownPresence = presence?.lastKnownPresence;
-
-      if (
-        lastKnownPresence !== 'composing' &&
-        lastKnownPresence !== 'available'
-      ) {
+      const state = this.mapPresenceToTypingState(presence.lastKnownPresence);
+      if (!state) {
         continue;
       }
 
       const typingEvent: IChatTyping = {
         type: 'typing',
         jid: chatJid,
-        is_typing: lastKnownPresence === 'composing',
+        is_typing: state.is_typing,
+        is_recording: state.is_recording,
+        typing_state: state.typing_state,
         account_id: baileysEnvironment.baileysAccountId,
         worker_id: baileysEnvironment.baileysWorkerId,
       };
@@ -541,6 +539,47 @@ export class BaileysIncomingMessageService {
         )
         .catch(() => {});
     }
+  }
+
+  private mapPresenceToTypingState(lastKnownPresence?: string): {
+    is_typing: boolean;
+    is_recording: boolean;
+    typing_state: 'typing' | 'recording' | 'available';
+  } | null {
+    const normalizedPresence = lastKnownPresence?.toLowerCase();
+
+    if (normalizedPresence === 'composing' || normalizedPresence === 'typing') {
+      return {
+        is_typing: true,
+        is_recording: false,
+        typing_state: 'typing',
+      };
+    }
+
+    if (
+      normalizedPresence === 'recording' ||
+      normalizedPresence === 'recording_audio'
+    ) {
+      return {
+        is_typing: false,
+        is_recording: true,
+        typing_state: 'recording',
+      };
+    }
+
+    if (
+      normalizedPresence === 'available' ||
+      normalizedPresence === 'unavailable' ||
+      normalizedPresence === 'paused'
+    ) {
+      return {
+        is_typing: false,
+        is_recording: false,
+        typing_state: 'available',
+      };
+    }
+
+    return null;
   }
 
   private getCallKey(callEvent: WACallEvent): string | null {
