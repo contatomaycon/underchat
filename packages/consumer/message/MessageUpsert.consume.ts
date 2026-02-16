@@ -2265,7 +2265,7 @@ export class MessageUpsertConsume {
 
   private shouldDiscardUpsert(data: IUpsertMessage): boolean {
     if (data.type === EMessageType.set_disappearing_messages) {
-      return true;
+      return false;
     }
 
     const msg = this.getInnerMessage(data) as Record<string, unknown> | null;

@@ -27,8 +27,20 @@ function getMessageId(msg: Message): string | undefined {
   return String(msg.id);
 }
 
-function mapWwebjsTypeToMessageType(type: string | undefined): EMessageType {
+function mapWwebjsTypeToMessageType(
+  type: string | undefined,
+  rawData?: Record<string, unknown>
+): EMessageType {
   const t = (type ?? 'chat').toLowerCase();
+  const subType = getNonEmptyString(rawData?.subtype)?.toLowerCase();
+
+  if (
+    t === 'protocol' &&
+    (subType === 'ephemeral_setting' || subType === 'ephemeral_sync_response')
+  ) {
+    return EMessageType.set_disappearing_messages;
+  }
+
   if (t === 'chat') return EMessageType.text;
   if (t === 'image') return EMessageType.image;
   if (t === 'video') return EMessageType.video;
@@ -177,6 +189,48 @@ function buildPinInChatMessage(
   }
 
   return pinPayload;
+}
+
+function getEphemeralExpiration(rawData?: Record<string, unknown>): number {
+  const candidates = [
+    rawData?.ephemeralDuration,
+    rawData?.ephemeralExpiration,
+    rawData?.disappearingMessagesInChat,
+  ];
+
+  for (const candidate of candidates) {
+    const value = getNumber(candidate);
+    if (value !== undefined) {
+      return value > 0 ? value : 0;
+    }
+  }
+
+  if (rawData?.disappearingMessagesInChat === false) {
+    return 0;
+  }
+
+  return 0;
+}
+
+function buildDisappearingProtocolMessage(
+  rawType: string,
+  rawData?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (rawType !== 'protocol') {
+    return undefined;
+  }
+
+  const subType = getNonEmptyString(rawData?.subtype)?.toLowerCase();
+  if (subType !== 'ephemeral_setting' && subType !== 'ephemeral_sync_response') {
+    return undefined;
+  }
+
+  const expiration = getEphemeralExpiration(rawData);
+  return {
+    protocolMessage: {
+      ephemeralExpiration: expiration,
+    },
+  };
 }
 
 function buildLocationMessage(
@@ -796,14 +850,21 @@ export async function wwebjsMessageToUpsert(
   const rawType = (msg.type ?? 'chat').toLowerCase();
   const body = typeof msg.body === 'string' ? msg.body : '';
   const rawData = getRawMessageData(msg);
-  let messageType = mapWwebjsTypeToMessageType(rawType);
+  let messageType = mapWwebjsTypeToMessageType(rawType, rawData);
   const pinInChatMessage = buildPinInChatMessage(
     rawType,
     rawData,
     pinEventData
   );
+  const disappearingProtocolMessage = buildDisappearingProtocolMessage(
+    rawType,
+    rawData
+  );
   if (pinInChatMessage) {
     messageType = EMessageType.system;
+  }
+  if (disappearingProtocolMessage) {
+    messageType = EMessageType.set_disappearing_messages;
   }
   const isViewOnce = (msg as { isViewOnce?: boolean }).isViewOnce === true;
   if (isViewOnce) {
@@ -833,6 +894,9 @@ export async function wwebjsMessageToUpsert(
   }
   if (pinInChatMessage) {
     innerMessage.pinInChatMessage = pinInChatMessage;
+  }
+  if (disappearingProtocolMessage) {
+    Object.assign(innerMessage, disappearingProtocolMessage);
   }
 
   const quotedContextInfo = await buildQuotedContextInfo(msg);
