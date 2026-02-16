@@ -458,6 +458,8 @@ export class ScheduleMessageWwebjsConsume {
           ptt: audio.ptt ?? false,
           seconds: audio.duration ?? undefined,
           mimetype: audio.mimetype ?? undefined,
+          viewOnce:
+            data.message.message_key?.is_view_once ?? audio.view_once ?? false,
         }
       );
 

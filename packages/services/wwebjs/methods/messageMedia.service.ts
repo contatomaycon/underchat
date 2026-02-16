@@ -93,6 +93,7 @@ export class WwebjsMessageMediaService {
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
     const options = {
       sendAudioAsVoice: args?.ptt ?? true,
+      isViewOnce: args?.viewOnce,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
     };
