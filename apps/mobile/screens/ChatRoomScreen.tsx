@@ -527,6 +527,32 @@ function resolveDocumentDownloadName(
   return `documento.${ext}`;
 }
 
+function isRenderableSticker(sticker?: {
+  url?: string | null;
+  mimetype?: string | null;
+  extension?: string | null;
+} | null): boolean {
+  if (!sticker?.url) return false;
+
+  const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
+  const extension = (sticker.extension ?? '')
+    .replace(/^\./, '')
+    .trim()
+    .toLowerCase();
+
+  if (mimetype === 'application/was' || mimetype === 'application/x-tgsticker')
+    return false;
+
+  if (extension === 'was' || extension === 'tgs' || extension === 'zip') {
+    return false;
+  }
+
+  if (mimetype.startsWith('image/')) return true;
+  if (extension === 'webp') return true;
+
+  return true;
+}
+
 function resolveStickerDownloadName(msg: ListMessageResult): string {
   const sticker = msg.content?.sticker;
   const ext =
@@ -1162,6 +1188,7 @@ function resolveQuotedPreviewImage(
     return resolveMediaUri(quoted.image?.thumbnail ?? quoted.image?.url);
   }
   if (quotedType === EMessageType.sticker) {
+    if (!isRenderableSticker(quoted.sticker)) return null;
     return resolveMediaUri(quoted.sticker?.url);
   }
   if (
@@ -1999,6 +2026,8 @@ function QuotedReplyPreview({
               size={18}
               color={colors.primary}
             />
+          ) : quotedType === EMessageType.sticker ? (
+            <Ionicons name="pricetag-outline" size={18} color={colors.primary} />
           ) : quotedType === EMessageType.contact_card ||
             quotedType === EMessageType.contacts ? (
             quotedContactPhoto ? (
@@ -2195,6 +2224,23 @@ function BubbleContent({
   if (type === EMessageType.sticker && content.sticker?.url) {
     const stickerUri = resolveMediaUri(content.sticker.url);
     if (!stickerUri) return null;
+    if (!isRenderableSticker(content.sticker)) {
+      return renderWithContextCards(
+        <Pressable
+          style={styles.stickerFallback}
+          onPress={() =>
+            void forceDownloadToDevice(
+              stickerUri,
+              resolveStickerDownloadName(msg),
+              'document'
+            )
+          }
+        >
+          <Ionicons name="document-outline" size={20} color={colors.grey700} />
+          <Text style={styles.stickerFallbackText}>Sticker</Text>
+        </Pressable>
+      );
+    }
     return renderWithContextCards(
       <Pressable onPress={() => onOpenImage(msg)}>
         <Image
@@ -3155,10 +3201,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, []);
 
   const openImageViewer = useCallback((msg: ListMessageResult) => {
-    const stickerUrl = msg.content?.sticker?.url;
+    const sticker = msg.content?.sticker;
+    const stickerUrl = sticker?.url;
     if (stickerUrl) {
       const stickerSrc = resolveMediaUri(stickerUrl);
       if (!stickerSrc) return;
+      if (!isRenderableSticker(sticker)) {
+        void forceDownloadToDevice(
+          stickerSrc,
+          resolveStickerDownloadName(msg),
+          'document'
+        );
+        return;
+      }
       setViewer({
         visible: true,
         kind: 'image',
@@ -5430,6 +5485,20 @@ const styles = StyleSheet.create({
     height: 100,
     maxWidth: 100,
     maxHeight: 100,
+  },
+  stickerFallback: {
+    width: 100,
+    height: 100,
+    borderRadius: 8,
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  stickerFallbackText: {
+    fontSize: 12,
+    color: colors.grey700,
+    fontWeight: '500',
   },
   locationBubble: {
     width: 200,

@@ -519,6 +519,12 @@ importers:
       geojson:
         specifier: ^0.5.0
         version: 0.5.0
+      jszip:
+        specifier: ^3.10.1
+        version: 3.10.1
+      lottie-web:
+        specifier: ^5.13.0
+        version: 5.13.0
       mapbox-gl:
         specifier: 3.18.1
         version: 3.18.1
@@ -5244,7 +5250,7 @@ packages:
     version: 2.0.1
 
   '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/199':
-    resolution: {integrity: sha512-MN9Goe6ux40sXg/bmU1U52XDX5mhIbntAiZimSrhaUtJ347MnWzjTekK93DAj2Ku3zhMnwx81bpOosmpzrkT5g==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/199}
+    resolution: {tarball: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.6/files/199}
     version: 1.34.6
     engines: {node: '>=18.0.0'}
 
@@ -8855,6 +8861,9 @@ packages:
 
   lop@0.4.2:
     resolution: {integrity: sha512-RefILVDQ4DKoRZsJ4Pj22TxE3omDO47yFpkIBoDKzkqPRISs5U1cnAdg/5583YPkWPaLIYHOKRMQSvjFsO26cw==}
+
+  lottie-web@5.13.0:
+    resolution: {integrity: sha512-+gfBXl6sxXMPe8tKQm7qzLnUy5DUPJPKIyRHwtpCpyUEYjHYRJC/5gjUvdkuO2c3JllrPtHXH5UJJK8LRYl5yQ==}
 
   lru-cache@10.4.3:
     resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
@@ -22129,6 +22138,8 @@ snapshots:
       duck: 0.1.12
       option: 0.2.4
       underscore: 1.13.7
+
+  lottie-web@5.13.0: {}
 
   lru-cache@10.4.3: {}
 

@@ -21,6 +21,8 @@ export class FileProcessor {
 
   extFromMime(mime: string): string | null {
     const clean = (mime ?? '').toLowerCase().split(';')[0].trim();
+    if (clean === 'application/was') return 'was';
+    if (clean === 'application/x-tgsticker') return 'tgs';
     return (mimeToExt(clean) as string) ?? null;
   }
 

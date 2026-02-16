@@ -36,6 +36,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
+import LottieSticker from '@/components/chat/LottieSticker.vue';
 
 const { t } = useI18n();
 const { global } = useTheme();
@@ -623,6 +624,48 @@ const isDownloadableAudio = (message: ListMessageResult): boolean => {
   if (!audio.url) return false;
   if (message.message_key?.is_view_once) return false;
   return message.content?.type === EMessageType.audio;
+};
+
+type StickerPayload = {
+  url?: string | null;
+  mimetype?: string | null;
+  extension?: string | null;
+};
+
+const isLottieSticker = (sticker?: StickerPayload | null): boolean => {
+  if (!sticker?.url) return false;
+
+  const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
+  const extension = (sticker.extension ?? '')
+    .replace(/^\./, '')
+    .trim()
+    .toLowerCase();
+
+  if (mimetype === 'application/was' || mimetype === 'application/x-tgsticker')
+    return true;
+
+  if (extension === 'was' || extension === 'tgs') return true;
+  return false;
+};
+
+const isRenderableSticker = (sticker?: StickerPayload | null): boolean => {
+  if (!sticker?.url) return false;
+  if (isLottieSticker(sticker)) return true;
+
+  const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
+  const extension = (sticker.extension ?? '')
+    .replace(/^\./, '')
+    .trim()
+    .toLowerCase();
+
+  if (extension === 'zip') {
+    return false;
+  }
+
+  if (mimetype.startsWith('image/')) return true;
+  if (extension === 'webp') return true;
+
+  return true;
 };
 
 const isDownloadableSticker = (message: ListMessageResult): boolean => {
@@ -1364,7 +1407,10 @@ const resolveQuotedImageSrc = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedStickerSrc = (m: ListMessageResult): string => {
-  return m.content?.quoted?.sticker?.url || '';
+  const sticker = m.content?.quoted?.sticker;
+  if (isLottieSticker(sticker)) return '';
+  if (!isRenderableSticker(sticker)) return '';
+  return sticker?.url || '';
 };
 
 const resolveQuotedVideoUrl = (m: ListMessageResult): string => {
@@ -1612,10 +1658,18 @@ const goToQuoted = (m: ListMessageResult) => {
 
 const openImage = (m: ListMessageResult) => {
   viewerKind.value = 'image';
-  if (m.content?.sticker?.url) {
-    viewerSrc.value = m.content.sticker.url;
+  const sticker = m.content?.sticker;
+  if (sticker?.url) {
+    if (isLottieSticker(sticker)) return;
+
+    if (!isRenderableSticker(sticker)) {
+      downloadImage(sticker.url, stickerDownloadName(sticker));
+      return;
+    }
+
+    viewerSrc.value = sticker.url;
     viewerCaption.value = '';
-    viewerDownloadName.value = stickerDownloadName(m.content.sticker);
+    viewerDownloadName.value = stickerDownloadName(sticker);
     viewerOpen.value = true;
     return;
   }
@@ -2540,7 +2594,10 @@ onUnmounted(() => {
                         v-if="hasQuotedSticker(item.message)"
                         class="quoted-sticker"
                       >
-                        <div class="quoted-media quoted-media--image">
+                        <div
+                          v-if="resolveQuotedStickerSrc(item.message)"
+                          class="quoted-media quoted-media--image"
+                        >
                           <img
                             :src="resolveQuotedStickerSrc(item.message)"
                             alt="Sticker"
@@ -2550,6 +2607,9 @@ onUnmounted(() => {
                               object-fit: contain;
                             "
                           />
+                        </div>
+                        <div v-else class="quoted-sticker-icon">
+                          <VIcon size="22">tabler-file-description</VIcon>
                         </div>
                         <div class="quoted-sticker-label">
                           {{ t('sticker_label') }}
@@ -3198,7 +3258,15 @@ onUnmounted(() => {
                     ]"
                     @click="openImage(item.message)"
                   >
+                    <LottieSticker
+                      v-if="isLottieSticker(item.message.content.sticker)"
+                      :src="item.message.content.sticker.url"
+                      class="sticker-lottie"
+                    />
                     <img
+                      v-else-if="
+                        isRenderableSticker(item.message.content.sticker)
+                      "
                       :src="item.message.content.sticker.url"
                       :alt="
                         item.message.content.sticker.is_animated
@@ -3217,6 +3285,10 @@ onUnmounted(() => {
                         object-fit: contain;
                       "
                     />
+                    <div v-else class="sticker-fallback">
+                      <VIcon size="22">tabler-file-description</VIcon>
+                      <span>{{ t('sticker_label') }}</span>
+                    </div>
                     <div
                       v-if="item.message.content?.pin"
                       class="d-flex align-center mt-2"
@@ -4858,6 +4930,17 @@ onUnmounted(() => {
         white-space: nowrap;
       }
 
+      .quoted-sticker-icon {
+        inline-size: 44px;
+        block-size: 44px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(var(--v-theme-primary), 0.08);
+        color: rgba(var(--v-theme-primary), 0.9);
+      }
+
       .quoted-location {
         display: flex;
         align-items: center;
@@ -5112,6 +5195,28 @@ onUnmounted(() => {
           border-radius: 8px;
         }
 
+        .sticker-lottie {
+          inline-size: 100px;
+          block-size: 100px;
+          border-radius: 8px;
+          overflow: hidden;
+        }
+
+        .sticker-fallback {
+          inline-size: 100px;
+          block-size: 100px;
+          border-radius: 8px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          background: rgba(var(--v-theme-on-surface), 0.08);
+          color: rgba(var(--v-theme-on-surface), 0.72);
+          font-size: 0.72rem;
+          font-weight: 500;
+        }
+
         &.is-deleted {
           cursor: default;
           pointer-events: none;
@@ -5125,6 +5230,22 @@ onUnmounted(() => {
       }
 
       .sticker-bubble--right .sticker-thumb {
+        border-start-start-radius: 6px;
+      }
+
+      .sticker-bubble--left .sticker-lottie {
+        border-start-end-radius: 6px;
+      }
+
+      .sticker-bubble--right .sticker-lottie {
+        border-start-start-radius: 6px;
+      }
+
+      .sticker-bubble--left .sticker-fallback {
+        border-start-end-radius: 6px;
+      }
+
+      .sticker-bubble--right .sticker-fallback {
         border-start-start-radius: 6px;
       }
 

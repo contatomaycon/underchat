@@ -5,6 +5,7 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
 import { useI18n } from 'vue-i18n';
+import LottieSticker from '@/components/chat/LottieSticker.vue';
 
 const chatStore = useChatStore();
 const { t } = useI18n();
@@ -50,6 +51,50 @@ const replyIsSticker = computed(
   () => replying.value?.content?.type === EMessageType.sticker
 );
 
+const isLottieSticker = (sticker?: {
+  url?: string | null;
+  mimetype?: string | null;
+  extension?: string | null;
+} | null): boolean => {
+  if (!sticker?.url) return false;
+
+  const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
+  const extension = (sticker.extension ?? '')
+    .replace(/^\./, '')
+    .trim()
+    .toLowerCase();
+
+  if (mimetype === 'application/was' || mimetype === 'application/x-tgsticker')
+    return true;
+
+  if (extension === 'was' || extension === 'tgs') return true;
+  return false;
+};
+
+const isRenderableSticker = (sticker?: {
+  url?: string | null;
+  mimetype?: string | null;
+  extension?: string | null;
+} | null): boolean => {
+  if (!sticker?.url) return false;
+  if (isLottieSticker(sticker)) return true;
+
+  const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
+  const extension = (sticker.extension ?? '')
+    .replace(/^\./, '')
+    .trim()
+    .toLowerCase();
+
+  if (extension === 'zip') {
+    return false;
+  }
+
+  if (mimetype.startsWith('image/')) return true;
+  if (extension === 'webp') return true;
+
+  return true;
+};
+
 const replyIsLocation = computed(
   () => replying.value?.content?.type === EMessageType.location
 );
@@ -74,11 +119,24 @@ const replyImageSrc = computed(() => {
 
 const replyStickerSrc = computed(() => {
   const sticker = replying.value?.content?.sticker;
-  if (!sticker) {
+  if (
+    !isRenderableSticker(sticker) ||
+    isLottieSticker(sticker) ||
+    !sticker?.url
+  ) {
     return null;
   }
 
-  return sticker.url || null;
+  return sticker.url;
+});
+
+const replyLottieStickerSrc = computed(() => {
+  const sticker = replying.value?.content?.sticker;
+  if (!isLottieSticker(sticker) || !sticker?.url) {
+    return null;
+  }
+
+  return sticker.url;
 });
 
 const replyContactPhoto = computed(() => {
@@ -279,8 +337,17 @@ onMounted(() => {
     <div v-if="replyIsImage && replyImageSrc" class="rp-media">
       <img :src="replyImageSrc" alt="preview" />
     </div>
+    <div v-if="replyIsSticker && replyLottieStickerSrc" class="rp-media">
+      <LottieSticker :src="replyLottieStickerSrc" />
+    </div>
     <div v-if="replyIsSticker && replyStickerSrc" class="rp-media">
       <img :src="replyStickerSrc" alt="sticker preview" />
+    </div>
+    <div
+      v-if="replyIsSticker && !replyStickerSrc && !replyLottieStickerSrc"
+      class="rp-doc-icon"
+    >
+      <VIcon size="26" color="primary">tabler-file-description</VIcon>
     </div>
     <div v-if="replyIsLocation" class="rp-doc-icon rp-location-icon">
       <VIcon size="26" color="primary">tabler-map-pin</VIcon>

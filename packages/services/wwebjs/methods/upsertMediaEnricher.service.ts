@@ -7,6 +7,23 @@ import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { StorageService } from '@core/services/storage.service';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000;
+const LOTTIE_STICKER_EXT = 'was';
+
+interface WwebjsStickerRawData {
+  mimetype?: unknown;
+  isAnimated?: unknown;
+  isLottie?: unknown;
+  width?: unknown;
+  height?: unknown;
+}
+
+interface WwebjsStickerMeta {
+  mimetype?: string;
+  isAnimated: boolean;
+  isLottie: boolean;
+  width: number | null;
+  height: number | null;
+}
 
 @injectable()
 export class WwebjsUpsertMediaEnricher {
@@ -74,7 +91,13 @@ export class WwebjsUpsertMediaEnricher {
       await this.enrichDocument(content, buffer, upsert.account_id, mediaOpts);
     }
     if (type === EMessageType.sticker) {
-      await this.enrichSticker(content, buffer, upsert.account_id, mediaOpts);
+      await this.enrichSticker(
+        content,
+        buffer,
+        upsert.account_id,
+        mediaOpts,
+        msg
+      );
     }
 
     const hasMedia =
@@ -203,25 +226,83 @@ export class WwebjsUpsertMediaEnricher {
     content: Partial<IContent>,
     buffer: Buffer,
     accountId: string,
-    media: { mimetype?: string; filename?: string }
+    media: { mimetype?: string; filename?: string },
+    msg: Message
   ): Promise<void> {
+    const stickerMeta = this.resolveStickerMeta(msg);
+    const mimetype = media.mimetype ?? stickerMeta.mimetype;
+    const forcedExt = this.resolveStickerExtension(mimetype, stickerMeta);
+    const forcedFileName = forcedExt
+      ? `sticker-${Date.now()}.${forcedExt}`
+      : undefined;
+
     const result = await this.storageService.uploadFromBuffer(
       buffer,
       accountId,
       {
-        mimetype: media.mimetype,
+        fileName: forcedFileName,
+        mimetype,
       }
     );
     if (result) {
       content.sticker = {
         url: result.url,
-        mimetype: media.mimetype ?? result.mimetype ?? null,
+        mimetype: mimetype ?? result.mimetype ?? null,
         extension: result.extension,
         size: result.size,
-        height: null,
-        width: null,
-        is_animated: false,
+        height: stickerMeta.height,
+        width: stickerMeta.width,
+        is_animated: stickerMeta.isAnimated,
       };
     }
+  }
+
+  private resolveStickerMeta(msg: Message): WwebjsStickerMeta {
+    const rawData = (msg as unknown as { _data?: WwebjsStickerRawData })._data;
+
+    const mimetype =
+      typeof rawData?.mimetype === 'string'
+        ? rawData.mimetype.trim().toLowerCase()
+        : undefined;
+    const isAnimated = this.isTrue(rawData?.isAnimated);
+    const isLottie = this.isTrue(rawData?.isLottie);
+
+    return {
+      mimetype,
+      isAnimated: isAnimated || isLottie,
+      isLottie,
+      width: this.toNullableNumber(rawData?.width),
+      height: this.toNullableNumber(rawData?.height),
+    };
+  }
+
+  private resolveStickerExtension(
+    mimetype: string | undefined,
+    meta: WwebjsStickerMeta
+  ): string | undefined {
+    const normalizedMime = mimetype?.trim().toLowerCase();
+    if (meta.isLottie || normalizedMime === 'application/was') {
+      return LOTTIE_STICKER_EXT;
+    }
+
+    if (normalizedMime === 'application/x-tgsticker') {
+      return 'tgs';
+    }
+
+    if (normalizedMime === 'image/webp') {
+      return 'webp';
+    }
+
+    return undefined;
+  }
+
+  private toNullableNumber(value: unknown): number | null {
+    if (typeof value !== 'number') return null;
+    if (!Number.isFinite(value)) return null;
+    return value > 0 ? value : null;
+  }
+
+  private isTrue(value: unknown): boolean {
+    return value === true;
   }
 }

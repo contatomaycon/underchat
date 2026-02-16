@@ -21,6 +21,7 @@ import { EColor } from '@core/common/enums/EColor';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
+import LottieSticker from '@/components/chat/LottieSticker.vue';
 
 interface Props {
   messages: ListMessageResult[];
@@ -919,6 +920,48 @@ const hasQuotedAudio = (m: ListMessageResult): boolean =>
 const hasQuotedSticker = (m: ListMessageResult): boolean =>
   !!m.content?.quoted?.sticker;
 
+type StickerPayload = {
+  url?: string | null;
+  mimetype?: string | null;
+  extension?: string | null;
+};
+
+const isLottieSticker = (sticker?: StickerPayload | null): boolean => {
+  if (!sticker?.url) return false;
+
+  const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
+  const extension = (sticker.extension ?? '')
+    .replace(/^\./, '')
+    .trim()
+    .toLowerCase();
+
+  if (mimetype === 'application/was' || mimetype === 'application/x-tgsticker')
+    return true;
+
+  if (extension === 'was' || extension === 'tgs') return true;
+  return false;
+};
+
+const isRenderableSticker = (sticker?: StickerPayload | null): boolean => {
+  if (!sticker?.url) return false;
+  if (isLottieSticker(sticker)) return true;
+
+  const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
+  const extension = (sticker.extension ?? '')
+    .replace(/^\./, '')
+    .trim()
+    .toLowerCase();
+
+  if (extension === 'zip') {
+    return false;
+  }
+
+  if (mimetype.startsWith('image/')) return true;
+  if (extension === 'webp') return true;
+
+  return true;
+};
+
 const hasQuotedLocation = (m: ListMessageResult): boolean =>
   !!(
     m.content?.quoted?.type === EMessageType.location &&
@@ -1228,7 +1271,10 @@ const resolveQuotedAudioMeta = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedStickerSrc = (m: ListMessageResult): string => {
-  return m.content?.quoted?.sticker?.url || '';
+  const sticker = m.content?.quoted?.sticker;
+  if (isLottieSticker(sticker)) return '';
+  if (!isRenderableSticker(sticker)) return '';
+  return sticker?.url || '';
 };
 
 const resolvePreviewImage = (linkPreview?: {
@@ -1323,8 +1369,16 @@ const emit = defineEmits<{
 }>();
 
 const handleOpenImage = (message: ListMessageResult) => {
-  if (message.content?.sticker?.url) {
-    emit('openImage', message.content.sticker.url);
+  const sticker = message.content?.sticker;
+  if (sticker?.url) {
+    if (isLottieSticker(sticker)) return;
+
+    if (!isRenderableSticker(sticker)) {
+      globalThis.open(sticker.url, '_blank');
+      return;
+    }
+
+    emit('openImage', sticker.url);
     return;
   }
   const imageUrl = message.content?.image?.url || '';
@@ -1605,7 +1659,10 @@ const handleContactClick = (message: ListMessageResult) => {
                         v-if="hasQuotedSticker(item.message)"
                         class="quoted-sticker"
                       >
-                        <div class="quoted-media quoted-media--image">
+                        <div
+                          v-if="resolveQuotedStickerSrc(item.message)"
+                          class="quoted-media quoted-media--image"
+                        >
                           <img
                             :src="resolveQuotedStickerSrc(item.message)"
                             alt="Sticker"
@@ -1615,6 +1672,9 @@ const handleContactClick = (message: ListMessageResult) => {
                               object-fit: contain;
                             "
                           />
+                        </div>
+                        <div v-else class="quoted-sticker-icon">
+                          <VIcon size="20">tabler-file-description</VIcon>
                         </div>
                       </div>
 
@@ -2231,7 +2291,15 @@ const handleContactClick = (message: ListMessageResult) => {
                     ]"
                     @click="handleOpenImage(item.message)"
                   >
+                    <LottieSticker
+                      v-if="isLottieSticker(item.message.content.sticker)"
+                      :src="item.message.content.sticker.url"
+                      class="sticker-lottie"
+                    />
                     <img
+                      v-else-if="
+                        isRenderableSticker(item.message.content.sticker)
+                      "
                       :src="item.message.content.sticker.url"
                       :alt="
                         item.message.content.sticker.is_animated
@@ -2250,6 +2318,10 @@ const handleContactClick = (message: ListMessageResult) => {
                         object-fit: contain;
                       "
                     />
+                    <div v-else class="sticker-fallback">
+                      <VIcon size="22">tabler-file-description</VIcon>
+                      <span>{{ t('sticker_label') }}</span>
+                    </div>
                   </div>
 
                   <div
@@ -3386,6 +3458,17 @@ const handleContactClick = (message: ListMessageResult) => {
       object-fit: cover;
     }
 
+    .quoted-sticker-icon {
+      inline-size: 44px;
+      block-size: 44px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(var(--v-theme-primary), 0.08);
+      color: rgba(var(--v-theme-primary), 0.9);
+    }
+
     .quoted-video-overlay {
       position: absolute;
       inset: 0;
@@ -3641,6 +3724,28 @@ const handleContactClick = (message: ListMessageResult) => {
 
   .sticker-thumb {
     display: block;
+  }
+
+  .sticker-lottie {
+    width: 100px;
+    height: 100px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .sticker-fallback {
+    width: 100px;
+    height: 100px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: rgba(var(--v-theme-on-surface), 0.08);
+    color: rgba(var(--v-theme-on-surface), 0.72);
+    font-size: 0.72rem;
+    font-weight: 500;
   }
 
   .document-bubble {

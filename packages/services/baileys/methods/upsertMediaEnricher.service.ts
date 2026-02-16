@@ -13,6 +13,7 @@ import { StorageService } from '@core/services/storage.service';
 import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
 
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000;
+const LOTTIE_STICKER_EXT = 'was';
 
 @injectable()
 export class BaileysUpsertMediaEnricher {
@@ -284,24 +285,62 @@ export class BaileysUpsertMediaEnricher {
 
     const stickerMsg = msg.stickerMessage;
     try {
+      const mimetype = stickerMsg.mimetype?.trim().toLowerCase() || undefined;
+      const isLottie = this.isLottieSticker(stickerMsg, mimetype);
+      const forcedExt = this.resolveStickerExtension(mimetype, isLottie);
+      const forcedFileName = forcedExt
+        ? `sticker-${Date.now()}.${forcedExt}`
+        : undefined;
       const buffer = await this.downloadWithTimeout(waMessage);
       const stickerResult = await this.storageService.uploadFromBuffer(
         buffer,
-        accountId
+        accountId,
+        {
+          fileName: forcedFileName,
+          mimetype,
+        }
       );
       if (stickerResult) {
         content.sticker = {
           url: stickerResult.url,
-          mimetype: stickerMsg.mimetype ?? stickerResult.mimetype ?? null,
+          mimetype: mimetype ?? stickerResult.mimetype ?? null,
           extension: stickerResult.extension,
           size: stickerResult.size,
           height: stickerMsg.height ?? stickerResult.height ?? null,
           width: stickerMsg.width ?? stickerResult.width ?? null,
-          is_animated: stickerMsg.isAnimated ?? false,
+          is_animated: stickerMsg.isAnimated ?? isLottie,
         };
       }
     } catch {
       content.media_download_failed = true;
     }
+  }
+
+  private isLottieSticker(
+    stickerMessage: proto.Message.IStickerMessage,
+    mimetype?: string
+  ): boolean {
+    const lottieFlag =
+      (stickerMessage as unknown as { isLottie?: unknown }).isLottie === true;
+    return lottieFlag || mimetype === 'application/was';
+  }
+
+  private resolveStickerExtension(
+    mimetype: string | undefined,
+    isLottie: boolean
+  ): string | undefined {
+    if (isLottie || mimetype === 'application/was') {
+      return LOTTIE_STICKER_EXT;
+    }
+
+    if (mimetype === 'application/x-tgsticker') {
+      return 'tgs';
+    }
+
+    if (mimetype === 'image/webp') {
+      return 'webp';
+    }
+
+    return undefined;
   }
 }
