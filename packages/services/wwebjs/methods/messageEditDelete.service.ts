@@ -38,7 +38,6 @@ export class WwebjsMessageEditDeleteService {
   }
 
   async editText(
-    jid: string,
     newText: string,
     editKey: IMessageKeyInput
   ): Promise<IMessageKeyResponse | undefined> {
@@ -55,7 +54,6 @@ export class WwebjsMessageEditDeleteService {
       return messageToWaLike(msg);
     }
 
-    const sent = await client.sendMessage(jid, newText);
-    return messageToWaLike(sent ?? undefined);
+    return undefined;
   }
 }

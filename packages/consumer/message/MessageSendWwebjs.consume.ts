@@ -384,6 +384,39 @@ export class MessageSendWwebjsConsume {
     ) {
       return false;
     }
+
+    const hasVersions = !!data.content?.version?.length;
+    const messageKey = data.message_key;
+    const hasMessageKey = !!messageKey?.id;
+
+    if (currentType === EMessageType.text && hasVersions && hasMessageKey) {
+      const latestVersion = data.content?.version
+        ? [...data.content.version].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          )[0]
+        : null;
+
+      const newText = latestVersion?.message ?? data.content?.message ?? '';
+
+      const result = await this.wwebjsMessageEditDeleteService.editText(
+        newText,
+        {
+          remoteJid: messageKey?.remote_jid ?? jid,
+          fromMe: messageKey?.from_me ?? false,
+          id: messageKey?.id ?? '',
+          participant: messageKey?.participant ?? undefined,
+        }
+      );
+
+      if (!result) {
+        throw new Error('Failed to edit message');
+      }
+
+      await this.pushUpdate({ message: result, data });
+      this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
+      return true;
+    }
+
     const quotedKey = this.getQuotedKey(data);
 
     if (hasQuoted && quotedKey) {
