@@ -11,7 +11,10 @@ import {
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
-import { wwebjsMessageToUpsert } from '../util/wwebjsMessageToUpsert';
+import {
+  type WwebjsPinEventData,
+  wwebjsMessageToUpsert,
+} from '../util/wwebjsMessageToUpsert';
 import {
   buildCallUpsert,
   buildDeleteMessageUpsert,
@@ -142,6 +145,8 @@ export class WwebjsIncomingMessageService {
   private currentClient: Client | undefined;
   private rejectCallConfig = false;
   private readonly processedCalls = new Map<string, number>();
+  private readonly processedPinMessages = new Map<string, number>();
+  private readonly PIN_MESSAGE_CACHE_TTL_MS = 15000;
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
@@ -204,12 +209,36 @@ export class WwebjsIncomingMessageService {
     client.on('message_ack', (msg: Message, ack: number) => {
       void this.handleMessageAck(msg, ack);
     });
+    client.on('message_pinned', (message: Message, pinData) => {
+      void this.handlePinnedMessage(message, pinData);
+    });
   }
 
   private shouldSkipChat(remoteJid: string): boolean {
     if (!remoteJid) return true;
     if (remoteJid === 'status@broadcast') return true;
     if (remoteJid.endsWith('@broadcast')) return true;
+    return false;
+  }
+
+  private shouldSkipPinnedMessage(msg: Message): boolean {
+    const messageId = getMessageIdSerialized(msg);
+    if (!messageId) {
+      return false;
+    }
+
+    const now = Date.now();
+    for (const [key, timestamp] of this.processedPinMessages.entries()) {
+      if (now - timestamp > this.PIN_MESSAGE_CACHE_TTL_MS) {
+        this.processedPinMessages.delete(key);
+      }
+    }
+
+    if (this.processedPinMessages.has(messageId)) {
+      return true;
+    }
+
+    this.processedPinMessages.set(messageId, now);
     return false;
   }
 
@@ -301,6 +330,40 @@ export class WwebjsIncomingMessageService {
     upsert.photo = photo ?? null;
 
     await this.upsertMediaEnricher.enrich(upsert, msg);
+
+    const topic = this.kafkaServiceQueueService.upsertMessage();
+    await this.streamProducerService.send(topic, upsert);
+  }
+
+  private async handlePinnedMessage(
+    msg: Message,
+    pinData?: WwebjsPinEventData
+  ): Promise<void> {
+    const client = this.currentClient;
+    if (!client) {
+      return;
+    }
+
+    if (this.shouldSkipPinnedMessage(msg)) {
+      return;
+    }
+
+    const resolvedJids = await this.resolveRemoteJids(client, msg);
+    if (!resolvedJids) return;
+
+    const [pushName, photo] = await Promise.all([
+      this.resolvePushName(msg),
+      this.resolvePhotoForMessage(client, msg, resolvedJids),
+    ]);
+
+    const upsert = await wwebjsMessageToUpsert(
+      msg,
+      resolvedJids,
+      pushName,
+      pinData
+    );
+    if (!upsert) return;
+    upsert.photo = photo ?? null;
 
     const topic = this.kafkaServiceQueueService.upsertMessage();
     await this.streamProducerService.send(topic, upsert);
@@ -770,6 +833,7 @@ export class WwebjsIncomingMessageService {
   unbind(): void {
     this.currentClient = undefined;
     this.processedCalls.clear();
+    this.processedPinMessages.clear();
   }
 
   async markRead(keys: IMessageKeyLike[]): Promise<void> {

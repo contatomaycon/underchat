@@ -5,6 +5,16 @@ import { wwebjsEnvironment } from '@core/config/environments';
 import { messageToWaLike } from './messageToWaLike';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 
+export interface WwebjsPinEventData {
+  pinType?: string | null;
+  isPinned?: boolean | null;
+  parentMessageId?: string | null;
+  senderId?: string | null;
+  chatId?: string | null;
+  messageType?: string | null;
+  source?: string;
+}
+
 function getMessageId(msg: Message): string | undefined {
   if (!msg?.id) return undefined;
   if (
@@ -28,6 +38,9 @@ function mapWwebjsTypeToMessageType(type: string | undefined): EMessageType {
   if (t === 'location') return EMessageType.location;
   if (t === 'contacts' || t === 'multi_vcard') return EMessageType.contacts;
   if (t === 'contact' || t === 'vcard') return EMessageType.contact_card;
+  if (t === 'pin_message' || t === 'pinned_message') {
+    return EMessageType.system;
+  }
   return EMessageType.text;
 }
 
@@ -52,6 +65,118 @@ function getNumber(value: unknown): number | undefined {
 
 function getBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function getPinTypeValue(value: unknown): string | number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const parsed = Number(trimmed);
+  if (Number.isFinite(parsed) && String(parsed) === trimmed) {
+    return parsed;
+  }
+
+  return trimmed;
+}
+
+function resolvePinType(
+  rawType: string,
+  rawData?: Record<string, unknown>,
+  pinEventData?: WwebjsPinEventData
+): string | number | undefined {
+  const candidates = [
+    pinEventData?.pinType,
+    rawData?.pinMessageType,
+    rawData?.pinType,
+    rawData?.pinActionType,
+    rawData?.pinAction,
+  ];
+
+  for (const candidate of candidates) {
+    const value = getPinTypeValue(candidate);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  if (pinEventData?.isPinned === false) {
+    return 'UNPIN';
+  }
+  if (pinEventData?.isPinned === true) {
+    return 'PIN';
+  }
+
+  if (rawType === 'pinned_message') {
+    return 'PIN';
+  }
+
+  return undefined;
+}
+
+function resolvePinParentMessageId(
+  rawData?: Record<string, unknown>,
+  pinEventData?: WwebjsPinEventData
+): string | undefined {
+  const candidates: unknown[] = [
+    pinEventData?.parentMessageId,
+    rawData?.pinParentKey,
+    rawData?.parentMsgKey,
+    rawData?.targetMsgKey,
+  ];
+
+  for (const candidate of candidates) {
+    const serializedId = getSerializedId(candidate);
+    if (serializedId) {
+      return serializedId;
+    }
+  }
+
+  return undefined;
+}
+
+function buildPinInChatMessage(
+  rawType: string,
+  rawData?: Record<string, unknown>,
+  pinEventData?: WwebjsPinEventData
+): Record<string, unknown> | undefined {
+  const hasPinSignals =
+    rawType === 'pin_message' ||
+    rawType === 'pinned_message' ||
+    pinEventData !== undefined ||
+    rawData?.pinMessageType !== undefined ||
+    rawData?.pinType !== undefined ||
+    rawData?.pinParentKey !== undefined ||
+    rawData?.parentMsgKey !== undefined;
+
+  if (!hasPinSignals) {
+    return undefined;
+  }
+
+  const pinType = resolvePinType(rawType, rawData, pinEventData);
+  const parentMessageId = resolvePinParentMessageId(rawData, pinEventData);
+
+  if (pinType === undefined && !parentMessageId) {
+    return undefined;
+  }
+
+  const pinPayload: Record<string, unknown> = {};
+  if (parentMessageId) {
+    pinPayload.key = { id: parentMessageId };
+  }
+  if (pinType !== undefined) {
+    pinPayload.type = pinType;
+  }
+
+  return pinPayload;
 }
 
 function buildLocationMessage(
@@ -650,7 +775,8 @@ interface WwebjsResolvedJids {
 export async function wwebjsMessageToUpsert(
   msg: Message,
   resolvedJids?: WwebjsResolvedJids,
-  pushName?: string
+  pushName?: string,
+  pinEventData?: WwebjsPinEventData
 ): Promise<IUpsertMessage | null> {
   const keyLike = messageToWaLike(msg);
   if (!keyLike?.key) return null;
@@ -669,7 +795,16 @@ export async function wwebjsMessageToUpsert(
 
   const rawType = (msg.type ?? 'chat').toLowerCase();
   const body = typeof msg.body === 'string' ? msg.body : '';
+  const rawData = getRawMessageData(msg);
   let messageType = mapWwebjsTypeToMessageType(rawType);
+  const pinInChatMessage = buildPinInChatMessage(
+    rawType,
+    rawData,
+    pinEventData
+  );
+  if (pinInChatMessage) {
+    messageType = EMessageType.system;
+  }
   const isViewOnce = (msg as { isViewOnce?: boolean }).isViewOnce === true;
   if (isViewOnce) {
     messageType = EMessageType.view_once;
@@ -695,6 +830,9 @@ export async function wwebjsMessageToUpsert(
   const contactPayload = buildContactPayload(msg, rawType, body);
   if (contactPayload) {
     Object.assign(innerMessage, contactPayload);
+  }
+  if (pinInChatMessage) {
+    innerMessage.pinInChatMessage = pinInChatMessage;
   }
 
   const quotedContextInfo = await buildQuotedContextInfo(msg);
