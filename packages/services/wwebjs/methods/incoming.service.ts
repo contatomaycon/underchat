@@ -106,13 +106,26 @@ function getMessageRemoteFromId(msg: Message): string | undefined {
   }
 
   if (typeof msg.id === 'object' && msg.id !== null) {
-    const value = msg.id as { remote?: string; _serialized?: string };
+    const value = msg.id as {
+      remote?: unknown;
+      _serialized?: unknown;
+    };
 
     if (typeof value.remote === 'string' && value.remote) {
       return value.remote;
     }
 
-    if (typeof value._serialized === 'string') {
+    const remoteSerialized =
+      typeof value.remote === 'object' &&
+      value.remote !== null &&
+      '_serialized' in (value.remote as object)
+        ? (value.remote as { _serialized?: unknown })._serialized
+        : undefined;
+    if (typeof remoteSerialized === 'string' && remoteSerialized) {
+      return remoteSerialized;
+    }
+
+    if (typeof value._serialized === 'string' && value._serialized) {
       return getRemoteFromSerializedMessageId(value._serialized);
     }
   }
@@ -159,9 +172,12 @@ export class WwebjsIncomingMessageService {
     client.on('message_revoke_me', (msg: Message) => {
       void this.handleRevokeMe(msg);
     });
-    client.on('message_edit', (message: Message, newBody: string) => {
-      void this.handleMessageEdit(message, newBody);
-    });
+    client.on(
+      'message_edit',
+      (message: Message, newBody: string, prevBody: string) => {
+        void this.handleMessageEdit(message, newBody, prevBody);
+      }
+    );
     client.on(
       'message_reaction',
       (reaction: {
@@ -205,30 +221,32 @@ export class WwebjsIncomingMessageService {
     client: Client,
     msg: Message
   ): Promise<WwebjsResolvedJids | null> {
-    const fallbackRaw = msg.fromMe
-      ? msg.to || msg.from || ''
-      : msg.from || msg.to || '';
-    const fallbackJid = normalizeJid(fallbackRaw) ?? fallbackRaw;
-
-    if (!fallbackJid || this.shouldSkipChat(fallbackJid)) {
-      return null;
-    }
-
-    if (this.isGroupOrBroadcastJid(fallbackJid)) {
-      return { remoteJid: fallbackJid };
-    }
-
     const messageIdRemoteRaw = getMessageRemoteFromId(msg);
     const messageIdRemote = messageIdRemoteRaw
       ? (normalizeJid(messageIdRemoteRaw) ?? messageIdRemoteRaw)
       : undefined;
 
+    const fallbackRaw = msg.fromMe
+      ? msg.to || msg.from || ''
+      : msg.from || msg.to || '';
+    const fallbackJid = normalizeJid(fallbackRaw) ?? fallbackRaw;
+
+    const primaryJid = fallbackJid || messageIdRemote || '';
+
+    if (!primaryJid || this.shouldSkipChat(primaryJid)) {
+      return null;
+    }
+
+    if (this.isGroupOrBroadcastJid(primaryJid)) {
+      return { remoteJid: primaryJid };
+    }
+
     const userIds = Array.from(
-      new Set([fallbackJid, messageIdRemote].filter(Boolean))
+      new Set([primaryJid, messageIdRemote].filter(Boolean))
     ) as string[];
 
     if (!userIds.length) {
-      return { remoteJid: fallbackJid };
+      return { remoteJid: primaryJid };
     }
 
     try {
@@ -246,22 +264,22 @@ export class WwebjsIncomingMessageService {
         };
       }
 
-      if (pn && pn !== fallbackJid) {
+      if (pn && pn !== primaryJid) {
         return {
           remoteJid: pn,
-          remoteJidAlt: fallbackJid,
+          remoteJidAlt: primaryJid,
         };
       }
 
-      if (lid && lid !== fallbackJid) {
+      if (lid && lid !== primaryJid) {
         return {
-          remoteJid: fallbackJid,
+          remoteJid: primaryJid,
           remoteJidAlt: lid,
         };
       }
     } catch {}
 
-    return { remoteJid: fallbackJid };
+    return { remoteJid: primaryJid };
   }
 
   private async handleIncomingMessage(msg: Message): Promise<void> {
@@ -554,17 +572,33 @@ export class WwebjsIncomingMessageService {
 
   private async handleMessageEdit(
     message: Message,
-    newBody: string
+    newBody: string,
+    prevBody?: string
   ): Promise<void> {
     const client = this.currentClient;
     if (!client) {
       return;
     }
 
+    const normalizedNewBody =
+      getNonEmptyString(newBody) ?? getNonEmptyString(message.body);
+    if (!normalizedNewBody) {
+      return;
+    }
+
+    const normalizedPrevBody = getNonEmptyString(prevBody);
+    if (normalizedPrevBody && normalizedPrevBody === normalizedNewBody) {
+      return;
+    }
+
     const resolvedJids = await this.resolveRemoteJids(client, message);
     if (!resolvedJids) return;
 
-    const upsert = buildEditMessageUpsert(message, newBody, resolvedJids);
+    const upsert = buildEditMessageUpsert(
+      message,
+      normalizedNewBody,
+      resolvedJids
+    );
     if (!upsert) return;
     const topic = this.kafkaServiceQueueService.upsertMessage();
     await this.streamProducerService.send(topic, upsert);

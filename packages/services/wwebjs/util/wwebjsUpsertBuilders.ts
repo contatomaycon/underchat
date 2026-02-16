@@ -6,14 +6,45 @@ import { normalizeJid } from '@core/common/functions/normalizeJid';
 
 function getMessageId(msg: { id?: unknown }): string | undefined {
   if (!msg?.id) return undefined;
-  if (
-    typeof msg.id === 'object' &&
-    msg.id !== null &&
-    '_serialized' in (msg.id as object)
-  ) {
-    return (msg.id as { _serialized: string })._serialized;
+  if (typeof msg.id === 'object' && msg.id !== null) {
+    const idObject = msg.id as {
+      _serialized?: unknown;
+      id?: unknown;
+      remote?: unknown;
+      fromMe?: unknown;
+    };
+
+    if (typeof idObject._serialized === 'string' && idObject._serialized) {
+      return idObject._serialized;
+    }
+
+    const idPart =
+      typeof idObject.id === 'string' && idObject.id ? idObject.id : undefined;
+    const remotePart =
+      typeof idObject.remote === 'string'
+        ? idObject.remote
+        : typeof idObject.remote === 'object' &&
+            idObject.remote !== null &&
+            '_serialized' in (idObject.remote as object)
+          ? ((idObject.remote as { _serialized?: unknown })._serialized as
+              | string
+              | undefined)
+          : undefined;
+    const fromMePart =
+      typeof idObject.fromMe === 'boolean' ? idObject.fromMe : false;
+
+    if (idPart && remotePart) {
+      return `${fromMePart}_${remotePart}_${idPart}`;
+    }
+
+    if (idPart) {
+      return idPart;
+    }
   }
-  return String(msg.id);
+  if (typeof msg.id === 'string') {
+    return msg.id;
+  }
+  return undefined;
 }
 
 function getNonEmptyString(value: unknown): string | undefined {
@@ -166,11 +197,6 @@ export function buildEditMessageUpsert(
         participant,
       },
       message: {
-        editedMessage: {
-          message: {
-            protocolMessage,
-          },
-        },
         protocolMessage,
       },
       messageTimestamp: message.timestamp,

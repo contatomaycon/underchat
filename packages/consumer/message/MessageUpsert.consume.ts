@@ -419,6 +419,61 @@ export class MessageUpsertConsume {
     return result.hits.hits[0]._source as IChatMessage;
   }
 
+  private async findMessageByKeyIdInAccount(
+    accountId: string,
+    workerId: string,
+    messageId: string
+  ): Promise<IChatMessage | null> {
+    if (!accountId || !workerId || !messageId) {
+      return null;
+    }
+
+    const queryElastic = {
+      size: 1,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: { 'account.id': accountId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'message_key',
+                query: {
+                  term: { 'message_key.id': messageId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: { 'worker.id': workerId },
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    if (!result || result.hits.hits.length === 0) {
+      return null;
+    }
+
+    return result.hits.hits[0]._source as IChatMessage;
+  }
+
   private async handleReactionMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -520,11 +575,25 @@ export class MessageUpsertConsume {
 
     if (!targetMessageId || !editedContent) return true;
 
-    const targetMessage = await this.findMessageByKeyId(
+    let targetMessage = await this.findMessageByKeyId(
       data.account_id,
       getChat.chat_id,
       targetMessageId
     );
+
+    if (!targetMessage) {
+      const isWwebjsSerializedId = /^(true|false)_.+@.+_.+$/.test(
+        targetMessageId
+      );
+
+      if (isWwebjsSerializedId) {
+        targetMessage = await this.findMessageByKeyIdInAccount(
+          data.account_id,
+          data.worker_id,
+          targetMessageId
+        );
+      }
+    }
 
     if (!targetMessage?.content) {
       return true;
