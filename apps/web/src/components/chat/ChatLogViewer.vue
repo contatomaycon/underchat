@@ -2498,8 +2498,10 @@ const handleContactClick = (message: ListMessageResult) => {
                     v-if="
                       getLatestMessageText(item.message) &&
                       item.message.content?.type !== EMessageType.image &&
-                      item.message.content?.type !== EMessageType.video_note &&
-                      item.message.content?.type !== EMessageType.video &&
+                      (item.message.content?.type !== EMessageType.video_note ||
+                        !item.message.content?.video?.url) &&
+                      (item.message.content?.type !== EMessageType.video ||
+                        !item.message.content?.video?.url) &&
                       item.message.content?.type !== EMessageType.document &&
                       item.message.content?.type !==
                         EMessageType.contact_card &&

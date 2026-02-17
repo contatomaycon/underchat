@@ -27,6 +27,20 @@ interface WwebjsStickerMeta {
   height: number | null;
 }
 
+interface WwebjsRawData {
+  body?: unknown;
+  caption?: unknown;
+  mimetype?: unknown;
+  filename?: unknown;
+  duration?: unknown;
+  width?: unknown;
+  height?: unknown;
+  staticUrl?: unknown;
+  campaignId?: unknown;
+  isAnimated?: unknown;
+  isLottie?: unknown;
+}
+
 @injectable()
 export class WwebjsUpsertMediaEnricher {
   constructor(
@@ -35,10 +49,17 @@ export class WwebjsUpsertMediaEnricher {
   ) {}
 
   async enrich(upsert: IUpsertMessage, msg: Message): Promise<void> {
-    if (!msg.hasMedia) return;
-
     const type = upsert.type;
     const content: Partial<IContent> = { type };
+
+    if (!msg.hasMedia) {
+      const handledWithoutDownload =
+        await this.enrichCampaignMediaWithoutDownload(upsert, content, msg);
+      if (handledWithoutDownload) {
+        return;
+      }
+      return;
+    }
 
     const downloadPromise = msg.downloadMedia();
     const timeoutPromise = new Promise<never>((_, reject) =>
@@ -84,7 +105,13 @@ export class WwebjsUpsertMediaEnricher {
       );
     }
     if (type === EMessageType.video || type === EMessageType.video_note) {
-      await this.enrichVideo(content, buffer, upsert.account_id, mediaOpts);
+      await this.enrichVideo(
+        content,
+        buffer,
+        upsert.account_id,
+        mediaOpts,
+        msg
+      );
     }
     if (type === EMessageType.audio) {
       await this.enrichAudio(content, buffer, upsert.account_id, mediaOpts);
@@ -113,6 +140,107 @@ export class WwebjsUpsertMediaEnricher {
     }
   }
 
+  private async enrichCampaignMediaWithoutDownload(
+    upsert: IUpsertMessage,
+    content: Partial<IContent>,
+    msg: Message
+  ): Promise<boolean> {
+    if (upsert.type !== EMessageType.video) {
+      return false;
+    }
+
+    const rawData = this.getRawData(msg);
+    const campaignId = this.getNonEmptyString(rawData.campaignId);
+    const staticUrl = this.getNonEmptyString(rawData.staticUrl);
+
+    if (!campaignId && !staticUrl) {
+      return false;
+    }
+
+    const caption = this.resolveCaption(msg, rawData);
+    const base64Body =
+      this.getNonEmptyString(rawData.body) ?? this.getNonEmptyString(msg.body);
+    const previewBuffer = this.decodeBase64Image(base64Body);
+
+    if (previewBuffer) {
+      const result = await this.storageService.uploadFromBuffer(
+        previewBuffer,
+        upsert.account_id,
+        {
+          fileName: campaignId
+            ? `campaign-${campaignId}.png`
+            : `campaign-${Date.now()}.png`,
+          mimetype: 'image/png',
+        }
+      );
+
+      if (result) {
+        upsert.type = EMessageType.image;
+        content.type = EMessageType.image;
+        content.image = {
+          url: result.url,
+          caption,
+          mimetype: result.mimetype ?? 'image/png',
+          extension: result.extension,
+          size: result.size,
+          height: result.height ?? null,
+          width: result.width ?? null,
+        };
+        upsert.content = { ...upsert.content, ...content } as IContent;
+        return true;
+      }
+    }
+
+    if (!staticUrl) {
+      return false;
+    }
+
+    try {
+      const uploaded = await this.storageService.uploadFromUrl(
+        staticUrl,
+        upsert.account_id,
+        campaignId ? `campaign-${campaignId}` : undefined
+      );
+
+      if (!uploaded) {
+        return false;
+      }
+
+      const isImage = (uploaded.mimetype ?? '').startsWith('image/');
+      if (isImage) {
+        upsert.type = EMessageType.image;
+        content.type = EMessageType.image;
+        content.image = {
+          url: uploaded.url,
+          caption,
+          mimetype: uploaded.mimetype ?? null,
+          extension: uploaded.extension,
+          size: uploaded.size,
+          height: uploaded.height ?? null,
+          width: uploaded.width ?? null,
+        };
+      } else {
+        content.video = {
+          url: uploaded.url,
+          caption,
+          name: uploaded.name,
+          mimetype: uploaded.mimetype ?? 'video/mp4',
+          extension: uploaded.extension,
+          size: uploaded.size,
+          duration: this.toNullableNumber(rawData.duration),
+          height: this.toNullableNumber(rawData.height),
+          width: this.toNullableNumber(rawData.width),
+          thumbnail: null,
+        };
+      }
+
+      upsert.content = { ...upsert.content, ...content } as IContent;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async enrichImage(
     content: Partial<IContent>,
     buffer: Buffer,
@@ -130,7 +258,7 @@ export class WwebjsUpsertMediaEnricher {
     if (result) {
       content.image = {
         url: result.url,
-        caption: typeof msg.body === 'string' ? msg.body : null,
+        caption: this.resolveCaption(msg),
         mimetype: media.mimetype ?? null,
         extension: result.extension,
         size: result.size,
@@ -144,8 +272,10 @@ export class WwebjsUpsertMediaEnricher {
     content: Partial<IContent>,
     buffer: Buffer,
     accountId: string,
-    media: { mimetype?: string; filename?: string | undefined }
+    media: { mimetype?: string; filename?: string | undefined },
+    msg: Message
   ): Promise<void> {
+    const rawData = this.getRawData(msg);
     const result = await this.storageService.uploadFromBuffer(
       buffer,
       accountId,
@@ -157,14 +287,14 @@ export class WwebjsUpsertMediaEnricher {
     if (result) {
       content.video = {
         url: result.url,
-        caption: null,
+        caption: this.resolveCaption(msg, rawData),
         name: media.filename ?? result.name,
         mimetype: media.mimetype ?? result.mimetype ?? 'video/mp4',
         extension: result.extension,
         size: result.size,
-        duration: null,
-        height: null,
-        width: null,
+        duration: this.toNullableNumber(rawData.duration),
+        height: this.toNullableNumber(rawData.height),
+        width: this.toNullableNumber(rawData.width),
         thumbnail: null,
       };
     }
@@ -265,6 +395,97 @@ export class WwebjsUpsertMediaEnricher {
     }
   }
 
+  private getRawData(msg: Message): WwebjsRawData {
+    const rawData = (msg as unknown as { _data?: unknown })._data;
+    if (!rawData || typeof rawData !== 'object') {
+      return {};
+    }
+
+    return rawData as WwebjsRawData;
+  }
+
+  private getNonEmptyString(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private resolveCaption(
+    msg: Message,
+    rawData: WwebjsRawData = this.getRawData(msg)
+  ): string | null {
+    const caption = this.getNonEmptyString(rawData.caption);
+    if (caption) {
+      return caption;
+    }
+
+    const body = this.getNonEmptyString(msg.body);
+    if (!body) {
+      return null;
+    }
+
+    return this.isLikelyBase64ImagePayload(body) ? null : body;
+  }
+
+  private isLikelyBase64ImagePayload(value: string): boolean {
+    const normalized = value.trim();
+    if (!normalized) return false;
+    if (normalized.startsWith('data:image/')) return true;
+    if (normalized.length < 256) return false;
+    if (!/^[A-Za-z0-9+/=]+$/.test(normalized)) return false;
+
+    return (
+      normalized.startsWith('iVBORw0KGgo') ||
+      normalized.startsWith('/9j/') ||
+      normalized.startsWith('R0lGOD') ||
+      normalized.startsWith('UklGR')
+    );
+  }
+
+  private isImageBuffer(buffer: Buffer): boolean {
+    if (buffer.length < 4) return false;
+
+    const isPng =
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47;
+    if (isPng) return true;
+
+    const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8;
+    if (isJpeg) return true;
+
+    const isGif = buffer.toString('ascii', 0, 3) === 'GIF';
+    if (isGif) return true;
+
+    const isWebp =
+      buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WEBP';
+    if (isWebp) return true;
+
+    return false;
+  }
+
+  private decodeBase64Image(value?: string): Buffer | null {
+    if (!value) return null;
+
+    const normalized = value
+      .trim()
+      .replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '');
+
+    if (!this.isLikelyBase64ImagePayload(normalized)) {
+      return null;
+    }
+
+    try {
+      const buffer = Buffer.from(normalized, 'base64');
+      if (!buffer.length) return null;
+      return this.isImageBuffer(buffer) ? buffer : null;
+    } catch {
+      return null;
+    }
+  }
+
   private resolveStickerMeta(msg: Message): WwebjsStickerMeta {
     const rawData = (msg as unknown as { _data?: WwebjsStickerRawData })._data;
 
@@ -320,9 +541,18 @@ export class WwebjsUpsertMediaEnricher {
   }
 
   private toNullableNumber(value: unknown): number | null {
-    if (typeof value !== 'number') return null;
-    if (!Number.isFinite(value)) return null;
-    return value > 0 ? value : null;
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return null;
+      return value > 0 ? value : null;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      if (!Number.isFinite(parsed)) return null;
+      return parsed > 0 ? parsed : null;
+    }
+
+    return null;
   }
 
   private isTrue(value: unknown): boolean {

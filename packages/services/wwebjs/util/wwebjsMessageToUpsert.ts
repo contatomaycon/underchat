@@ -80,6 +80,41 @@ function getBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 
+function isLikelyBase64MediaPayload(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) return false;
+  if (normalized.startsWith('data:image/')) return true;
+  if (normalized.length < 256) return false;
+  if (!/^[A-Za-z0-9+/=]+$/.test(normalized)) return false;
+
+  return (
+    normalized.startsWith('iVBORw0KGgo') ||
+    normalized.startsWith('/9j/') ||
+    normalized.startsWith('R0lGOD') ||
+    normalized.startsWith('UklGR')
+  );
+}
+
+function resolveMessageBody(
+  rawType: string,
+  body: string,
+  rawData?: Record<string, unknown>
+): string {
+  const caption = getNonEmptyString(rawData?.caption);
+  const isMediaType =
+    rawType === 'image' || rawType === 'video' || rawType === 'ptv';
+
+  if (!body) {
+    return caption ?? '';
+  }
+
+  if (isMediaType && caption && isLikelyBase64MediaPayload(body)) {
+    return caption;
+  }
+
+  return body;
+}
+
 function getPinTypeValue(value: unknown): string | number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -865,8 +900,9 @@ export async function wwebjsMessageToUpsert(
   const remoteJidAlt = resolvedJids?.remoteJidAlt;
 
   const rawType = (msg.type ?? 'chat').toLowerCase();
-  const body = typeof msg.body === 'string' ? msg.body : '';
   const rawData = getRawMessageData(msg);
+  const rawBody = typeof msg.body === 'string' ? msg.body : '';
+  const body = resolveMessageBody(rawType, rawBody, rawData);
   let messageType = mapWwebjsTypeToMessageType(rawType, rawData);
   const pinInChatMessage = buildPinInChatMessage(
     rawType,
@@ -905,7 +941,7 @@ export async function wwebjsMessageToUpsert(
       innerMessage.locationMessage = locationMessage;
     }
   }
-  const contactPayload = buildContactPayload(msg, rawType, body);
+  const contactPayload = buildContactPayload(msg, rawType, rawBody);
   if (contactPayload) {
     Object.assign(innerMessage, contactPayload);
   }
