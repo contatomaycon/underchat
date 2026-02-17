@@ -158,9 +158,12 @@ export class WwebjsIncomingMessageService {
   private readonly processedCalls = new Map<string, number>();
   private readonly processedPinMessages = new Map<string, number>();
   private readonly processedIncomingMessages = new Map<string, number>();
+  private boundAtMs = Date.now();
   private readonly PIN_MESSAGE_CACHE_TTL_MS = 15000;
   private readonly INCOMING_MESSAGE_CACHE_TTL_MS = 30000;
   private readonly INCOMING_MESSAGE_CACHE_MAX_SIZE = 100000;
+  private readonly HISTORICAL_MESSAGE_GRACE_MS = 15000;
+  private readonly HISTORICAL_TIMESTAMP_DRIFT_SECONDS = 120;
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
@@ -181,7 +184,11 @@ export class WwebjsIncomingMessageService {
 
   bindTo(client: Client): void {
     this.currentClient = client;
+    this.boundAtMs = Date.now();
     client.on('message', (msg: Message) => {
+      if (this.shouldSkipHistoricalMessage(msg)) {
+        return;
+      }
       if (this.shouldSkipIncomingMessage(msg)) {
         return;
       }
@@ -195,17 +202,20 @@ export class WwebjsIncomingMessageService {
       if (!this.shouldHandleCiphertextMessage(msg)) {
         return;
       }
+      if (this.shouldSkipHistoricalMessage(msg)) {
+        return;
+      }
       if (this.shouldSkipIncomingMessage(msg)) {
         return;
       }
-
-      console.log('Messages upsert (ciphertext)');
-      console.dir(msg, { depth: null, colors: true });
 
       void this.handleIncomingMessage(msg);
     });
     client.on('message_create', (msg: Message) => {
       if (!this.shouldHandleFromMeCreatedMessage(msg)) {
+        return;
+      }
+      if (this.shouldSkipHistoricalMessage(msg)) {
         return;
       }
       if (this.shouldSkipIncomingMessage(msg)) {
@@ -358,6 +368,58 @@ export class WwebjsIncomingMessageService {
       rawSubtype === 'view_once_unavailable_fanout' ||
       rawSubtype.startsWith('view_once_unavailable_')
     );
+  }
+
+  private getMessageClientReceivedTsMillis(msg: Message): number | undefined {
+    const raw = (
+      msg as unknown as { _data?: { clientReceivedTsMillis?: unknown } }
+    )?._data?.clientReceivedTsMillis;
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+      return raw;
+    }
+    if (typeof raw === 'string') {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return undefined;
+  }
+
+  private getMessageTimestampSeconds(msg: Message): number | undefined {
+    if (typeof msg.timestamp === 'number' && Number.isFinite(msg.timestamp)) {
+      return msg.timestamp;
+    }
+
+    const raw = (msg as unknown as { _data?: { t?: unknown } })._data?.t;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return raw;
+    }
+    if (typeof raw === 'string') {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  }
+
+  private shouldSkipHistoricalMessage(msg: Message): boolean {
+    const cutoffMs = this.boundAtMs - this.HISTORICAL_MESSAGE_GRACE_MS;
+    const clientReceivedTsMillis = this.getMessageClientReceivedTsMillis(msg);
+    if (clientReceivedTsMillis !== undefined) {
+      return clientReceivedTsMillis < cutoffMs;
+    }
+
+    const timestampSeconds = this.getMessageTimestampSeconds(msg);
+    if (timestampSeconds === undefined) {
+      return false;
+    }
+
+    const cutoffSeconds =
+      Math.floor(cutoffMs / 1000) - this.HISTORICAL_TIMESTAMP_DRIFT_SECONDS;
+    return timestampSeconds < cutoffSeconds;
   }
 
   private shouldSkipPinnedMessage(msg: Message): boolean {
