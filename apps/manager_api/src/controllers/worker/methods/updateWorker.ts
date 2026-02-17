@@ -4,22 +4,31 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { WorkerUpdaterUseCase } from '@core/useCases/worker/WorkerUpdater.useCase';
-import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
+import {
+  EditWorkerParams,
+  EditWorkerBody,
+} from '@core/schema/worker/editWorker/request.schema';
 
 export const updateWorker = async (
   request: FastifyRequest<{
-    Params: EditWorkerRequest;
+    Params: EditWorkerParams;
+    Body: EditWorkerBody;
   }>,
   reply: FastifyReply
 ) => {
   const workerUpdaterUseCase = container.resolve(WorkerUpdaterUseCase);
   const { t, tokenJwtData } = request;
 
+  const input: EditWorkerParams & EditWorkerBody = {
+    ...request.params,
+    ...request.body,
+  };
+
   try {
     const response = await workerUpdaterUseCase.execute(
       t,
       tokenJwtData.account_id,
-      request.params
+      input
     );
 
     if (response) {

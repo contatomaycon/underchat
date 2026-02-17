@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { useChannelsStore } from '@/@webcore/stores/channels';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
@@ -20,6 +21,12 @@ const isVisible = computed({
 
 const channelId = toRef(props, 'channelId');
 const name = ref<string | null>(null);
+const type = ref<EWorkerType | null>(null);
+
+const itemsType = ref([
+  { value: EWorkerType.baileys, title: t('unofficial_socket') },
+  { value: EWorkerType.wwebjs, title: t('unofficial_browser') },
+]);
 
 const refFormEditChannel = ref<VForm>();
 const isInitializingModal = ref(false);
@@ -35,6 +42,7 @@ const updateServer = async () => {
   const payload: EditWorkerRequest = {
     name: name.value,
     worker_id: channelId.value,
+    worker_type: type.value ?? undefined,
   };
 
   const result = await channelStore.updateChannel(payload);
@@ -56,6 +64,7 @@ const initializeModal = async () => {
     const channel = await channelStore.getWorkerById(channelId.value);
     if (channel) {
       name.value = channel.name;
+      type.value = (channel.type?.id as EWorkerType) ?? null;
     }
   } finally {
     isInitializingModal.value = false;
@@ -88,7 +97,19 @@ watch(
         </VOverlay>
         <VCardText>
           <VRow>
-            <VCol cols="12">
+            <VCol cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
+              <AppSelectSearch
+                v-model="type"
+                :items="itemsType"
+                :placeholder="$t('type')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
+            </VCol>
+
+            <VCol cols="12" sm="6" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"

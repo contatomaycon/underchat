@@ -1,12 +1,13 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { editWorkerRequestSchema } from './request.schema';
+import { editWorkerParamsSchema, editWorkerBodySchema } from './request.schema';
 
 export const editWorkerSchema = {
   description: 'Edita um canal',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
+  consumes: ['application/json'],
   security: [
     {
       authenticateJwt: [],
@@ -21,7 +22,8 @@ export const editWorkerSchema = {
       })
     ),
   }),
-  params: editWorkerRequestSchema,
+  params: editWorkerParamsSchema,
+  body: editWorkerBodySchema,
   response: {
     200: Type.Object(
       {

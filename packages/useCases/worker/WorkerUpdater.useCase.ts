@@ -1,5 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerService } from '@core/services/worker.service';
 import { AccountService } from '@core/services/account.service';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
@@ -37,6 +38,10 @@ export class WorkerUpdaterUseCase {
       worker_id: input.worker_id,
       name: input.name,
     };
+
+    if (input.worker_type) {
+      inputUpdate.worker_type_id = input.worker_type as EWorkerType;
+    }
 
     const updateWorkerById = await this.workerService.updateWorkerById(
       accountId,

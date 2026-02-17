@@ -106,7 +106,7 @@ export default function workerRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.patch('/worker/:worker_id/:name', {
+  server.patch('/worker/:worker_id', {
     schema: editWorkerSchema,
     handler: workerController.updateWorker,
     preHandler: [
