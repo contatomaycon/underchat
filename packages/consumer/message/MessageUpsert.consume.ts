@@ -2509,13 +2509,21 @@ export class MessageUpsertConsume {
     }
 
     if (data.photo) {
-      const photoResult = await this.storageService.uploadFromUrl(
-        data.photo,
-        data.account_id,
-        chatId
-      );
-      inputChatMessage.photo =
-        inputChatMessage.contact?.photo ?? photoResult?.url ?? null;
+      try {
+        const photoResult = await this.storageService.uploadFromUrl(
+          data.photo,
+          data.account_id,
+          chatId
+        );
+        inputChatMessage.photo =
+          inputChatMessage.contact?.photo ?? photoResult?.url ?? null;
+      } catch (error) {
+        console.error(
+          `[MessageUpsert] Failed to upload photo for new chat ${chatId}:`,
+          error instanceof Error ? error.message : error
+        );
+        inputChatMessage.photo = inputChatMessage.contact?.photo ?? null;
+      }
     }
 
     if (
