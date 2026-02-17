@@ -113,9 +113,17 @@ function getMessageRemoteFromId(msg: Message): string | undefined {
 
   if (typeof msg.id === 'object' && msg.id !== null) {
     const value = msg.id as {
+      remoteJid?: unknown;
+      remote_jid?: unknown;
       remote?: unknown;
       _serialized?: unknown;
     };
+
+    const remoteJidValue =
+      getNonEmptyString(value.remoteJid) ?? getNonEmptyString(value.remote_jid);
+    if (remoteJidValue) {
+      return remoteJidValue;
+    }
 
     if (typeof value.remote === 'string' && value.remote) {
       return value.remote;
@@ -153,8 +161,6 @@ export class WwebjsIncomingMessageService {
   private readonly PIN_MESSAGE_CACHE_TTL_MS = 15000;
   private readonly INCOMING_MESSAGE_CACHE_TTL_MS = 30000;
   private readonly INCOMING_MESSAGE_CACHE_MAX_SIZE = 100000;
-  private readonly LID_PHONE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-  private readonly LID_PHONE_CACHE_PREFIX = 'wwebjs:lid-phone:';
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
@@ -248,40 +254,6 @@ export class WwebjsIncomingMessageService {
     if (remoteJid === 'status@broadcast') return true;
     if (remoteJid.endsWith('@broadcast')) return true;
     return false;
-  }
-
-  private getOwnJid(client: Client): string | undefined {
-    const infoWidSerialized = (
-      client.info?.wid as { _serialized?: string } | undefined
-    )?._serialized;
-    const own = getNonEmptyString(infoWidSerialized);
-    return own ? (normalizeJid(own) ?? own) : undefined;
-  }
-
-  private expandUserIdsForLidLookup(
-    values: Array<string | undefined>
-  ): string[] {
-    const unique = new Set<string>();
-
-    for (const value of values) {
-      const normalized = value ? (normalizeJid(value) ?? value) : undefined;
-      const candidate = getNonEmptyString(normalized);
-      if (!candidate) {
-        continue;
-      }
-
-      unique.add(candidate);
-
-      const atIndex = candidate.indexOf('@');
-      if (atIndex > 0) {
-        const bare = candidate.slice(0, atIndex);
-        if (bare) {
-          unique.add(bare);
-        }
-      }
-    }
-
-    return Array.from(unique);
   }
 
   private getMessageAuthor(msg: Message): string | undefined {
@@ -385,268 +357,79 @@ export class WwebjsIncomingMessageService {
     return !!jid && jid.endsWith('@lid');
   }
 
-  private getLidCacheKeys(lidJid: string): string[] {
-    const normalized = normalizeJid(lidJid) ?? lidJid;
-    const bare = normalized.includes('@')
-      ? normalized.slice(0, normalized.indexOf('@'))
-      : normalized;
-
-    const keys = new Set<string>();
-    keys.add(`${this.LID_PHONE_CACHE_PREFIX}${normalized}`);
-    if (bare) {
-      keys.add(`${this.LID_PHONE_CACHE_PREFIX}${bare}`);
-    }
-
-    return Array.from(keys);
-  }
-
-  private async cacheLidPhoneMapping(
-    lidJid: string,
-    phoneJid: string
-  ): Promise<void> {
-    if (!this.isLidJid(lidJid)) return;
-    if (!phoneJid || this.isLidJid(phoneJid)) return;
-
-    const normalizedPhone = normalizeJid(phoneJid) ?? phoneJid;
-    if (!normalizedPhone || this.isLidJid(normalizedPhone)) return;
-
-    const keys = this.getLidCacheKeys(lidJid);
-    await Promise.all(
-      keys.map((key) =>
-        this.redis
-          .set(key, normalizedPhone, 'EX', this.LID_PHONE_CACHE_TTL_SECONDS)
-          .catch(() => {})
-      )
-    );
-  }
-
-  private async getPhoneJidFromLidCache(
-    lidJid: string
-  ): Promise<string | undefined> {
-    if (!this.isLidJid(lidJid)) return undefined;
-
-    const keys = this.getLidCacheKeys(lidJid);
-    for (const key of keys) {
-      const cached = getNonEmptyString(
-        await this.redis.get(key).catch(() => '')
-      );
-      if (!cached) {
-        continue;
-      }
-
-      const normalized = normalizeJid(cached) ?? cached;
-      if (normalized && !this.isLidJid(normalized)) {
-        return normalized;
-      }
-    }
-
-    return undefined;
-  }
-
-  private extractPhoneJidCandidate(value: unknown): string | undefined {
-    const normalized = getNonEmptyString(value);
-    if (!normalized) return undefined;
-
-    const jid = normalizeJid(normalized) ?? normalized;
-    if (!jid || this.isGroupOrBroadcastJid(jid) || this.isLidJid(jid)) {
-      return undefined;
-    }
-
-    return jid;
-  }
-
-  private async resolvePhoneJidFromContactOrChat(
-    msg: Message,
-    ownJid?: string
-  ): Promise<string | undefined> {
-    const candidates = new Set<string>();
-
-    try {
-      const contact = (await msg.getContact()) as unknown as {
-        id?: { _serialized?: string; user?: string };
-        number?: string;
-        userid?: string;
-      };
-
-      const contactId = this.extractPhoneJidCandidate(contact?.id?._serialized);
-      if (contactId) candidates.add(contactId);
-
-      const contactUser = getNonEmptyString(contact?.id?.user);
-      if (contactUser) {
-        candidates.add(`${contactUser}@s.whatsapp.net`);
-      }
-
-      const contactNumber = getNonEmptyString(contact?.number);
-      if (contactNumber) {
-        const onlyDigits = contactNumber.replace(/\D/g, '');
-        if (onlyDigits) {
-          candidates.add(`${onlyDigits}@s.whatsapp.net`);
-        }
-      }
-
-      const userId = getNonEmptyString(contact?.userid);
-      if (userId) {
-        const onlyDigits = userId.replace(/\D/g, '');
-        if (onlyDigits) {
-          candidates.add(`${onlyDigits}@s.whatsapp.net`);
-        }
-      }
-    } catch {}
-
-    try {
-      const chat = (await msg.getChat()) as unknown as {
-        id?: { _serialized?: string; user?: string };
-      };
-      const chatId = this.extractPhoneJidCandidate(chat?.id?._serialized);
-      if (chatId) candidates.add(chatId);
-
-      const chatUser = getNonEmptyString(chat?.id?.user);
-      if (chatUser) {
-        candidates.add(`${chatUser}@s.whatsapp.net`);
-      }
-    } catch {}
-
-    for (const candidate of candidates) {
-      const normalized = normalizeJid(candidate) ?? candidate;
-      if (!normalized) continue;
-      if (ownJid && normalized === ownJid) continue;
-      if (this.isLidJid(normalized)) continue;
-      if (this.isGroupOrBroadcastJid(normalized)) continue;
-      return normalized;
-    }
-
-    return undefined;
-  }
-
-  private async resolveRemoteJids(
-    client: Client,
+  private resolveRemoteJids(
+    _client: Client,
     msg: Message
-  ): Promise<WwebjsResolvedJids | null> {
-    const messageIdRemoteRaw = getMessageRemoteFromId(msg);
-    const messageIdRemote = messageIdRemoteRaw
-      ? (normalizeJid(messageIdRemoteRaw) ?? messageIdRemoteRaw)
-      : undefined;
+  ): WwebjsResolvedJids | null {
+    const idValue =
+      typeof msg.id === 'object' && msg.id !== null
+        ? (msg.id as {
+            remoteJid?: unknown;
+            remote_jid?: unknown;
+            remoteJidAlt?: unknown;
+            remote_jid_alt?: unknown;
+            remote?: unknown;
+          })
+        : undefined;
+
+    const normalizeCandidate = (value: unknown): string | undefined => {
+      const raw = getNonEmptyString(value);
+      if (!raw) {
+        return undefined;
+      }
+      const normalized = normalizeJid(raw) ?? raw;
+      if (this.shouldSkipChat(normalized)) {
+        return undefined;
+      }
+      return normalized;
+    };
+
+    const idRemoteJid =
+      normalizeCandidate(idValue?.remoteJid) ??
+      normalizeCandidate(idValue?.remote_jid);
+    const idRemoteJidAlt =
+      normalizeCandidate(idValue?.remoteJidAlt) ??
+      normalizeCandidate(idValue?.remote_jid_alt);
+    const idRemote = normalizeCandidate(idValue?.remote);
+    const serializedRemote = normalizeCandidate(getMessageRemoteFromId(msg));
 
     const fallbackRaw = msg.fromMe
       ? msg.to || msg.from || ''
       : msg.from || msg.to || '';
-    const fallbackJid = normalizeJid(fallbackRaw) ?? fallbackRaw;
+    const fallbackJid = normalizeCandidate(fallbackRaw);
 
-    const primaryJid = fallbackJid || messageIdRemote || '';
+    const orderedCandidates = [
+      idRemoteJid,
+      fallbackJid,
+      idRemote,
+      idRemoteJidAlt,
+      serializedRemote,
+    ].filter((candidate): candidate is string => !!candidate);
 
-    if (!primaryJid || this.shouldSkipChat(primaryJid)) {
+    if (!orderedCandidates.length) {
       return null;
     }
+
+    const uniqueCandidates = Array.from(new Set(orderedCandidates));
+    const nonLidCandidate = uniqueCandidates.find(
+      (candidate) => !this.isLidJid(candidate)
+    );
+    const primaryJid = nonLidCandidate ?? uniqueCandidates[0];
 
     if (this.isGroupOrBroadcastJid(primaryJid)) {
       return { remoteJid: primaryJid };
     }
 
-    const userIds = this.expandUserIdsForLidLookup([
-      primaryJid,
-      messageIdRemote,
-    ]);
+    const lidAlternative = uniqueCandidates.find(
+      (candidate) => candidate !== primaryJid && this.isLidJid(candidate)
+    );
+    const alternativeJid =
+      lidAlternative ??
+      uniqueCandidates.find((candidate) => candidate !== primaryJid);
 
-    if (!userIds.length) {
-      return { remoteJid: primaryJid };
-    }
-
-    try {
-      const mappings = await client.getContactLidAndPhone(userIds);
-      const ownJid = this.getOwnJid(client);
-      const normalizedMappings = mappings
-        .map((entry) => {
-          const lid = entry?.lid ? (normalizeJid(entry.lid) ?? entry.lid) : '';
-          const pn = entry?.pn ? (normalizeJid(entry.pn) ?? entry.pn) : '';
-
-          return {
-            lid: getNonEmptyString(lid),
-            pn: getNonEmptyString(pn),
-          };
-        })
-        .filter((entry) => entry.lid || entry.pn)
-        .filter((entry) => !(entry.pn && ownJid && entry.pn === ownJid));
-
-      const preferredWithPhone = normalizedMappings.find((entry) => {
-        if (!entry.pn) {
-          return false;
-        }
-
-        const lidMatchesPrimary = entry.lid && entry.lid === primaryJid;
-        const pnMatchesPrimary = entry.pn === primaryJid;
-
-        if (lidMatchesPrimary || pnMatchesPrimary) {
-          return true;
-        }
-
-        if (messageIdRemote) {
-          return entry.lid === messageIdRemote || entry.pn === messageIdRemote;
-        }
-
-        return true;
-      });
-
-      const selected = preferredWithPhone ?? normalizedMappings[0];
-      const lid = selected?.lid;
-      const pn = selected?.pn;
-
-      if (pn && lid && pn !== lid) {
-        await this.cacheLidPhoneMapping(lid, pn);
-        return {
-          remoteJid: pn,
-          remoteJidAlt: lid,
-        };
-      }
-
-      if (pn && pn !== primaryJid) {
-        if (this.isLidJid(primaryJid)) {
-          await this.cacheLidPhoneMapping(primaryJid, pn);
-        }
-        return {
-          remoteJid: pn,
-          remoteJidAlt: primaryJid,
-        };
-      }
-
-      if (lid && lid !== primaryJid) {
-        return {
-          remoteJid: primaryJid,
-          remoteJidAlt: lid,
-        };
-      }
-    } catch {}
-
-    if (this.isLidJid(primaryJid)) {
-      const cachedPhoneJid = await this.getPhoneJidFromLidCache(primaryJid);
-      if (cachedPhoneJid) {
-        return {
-          remoteJid: cachedPhoneJid,
-          remoteJidAlt: primaryJid,
-        };
-      }
-
-      const ownJid = this.getOwnJid(client);
-      const contactPhoneJid = await this.resolvePhoneJidFromContactOrChat(
-        msg,
-        ownJid
-      );
-      if (contactPhoneJid && contactPhoneJid !== primaryJid) {
-        await this.cacheLidPhoneMapping(primaryJid, contactPhoneJid);
-        return {
-          remoteJid: contactPhoneJid,
-          remoteJidAlt: primaryJid,
-        };
-      }
-    }
-
-    if (messageIdRemote && messageIdRemote !== primaryJid) {
-      return {
-        remoteJid: primaryJid,
-        remoteJidAlt: messageIdRemote,
-      };
-    }
-
-    return { remoteJid: primaryJid };
+    return alternativeJid
+      ? { remoteJid: primaryJid, remoteJidAlt: alternativeJid }
+      : { remoteJid: primaryJid };
   }
 
   private async handleIncomingMessage(msg: Message): Promise<void> {
