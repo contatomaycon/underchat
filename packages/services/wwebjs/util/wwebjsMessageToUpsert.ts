@@ -1183,7 +1183,8 @@ export async function wwebjsMessageToUpsert(
   if (
     normalizedRemoteJid === 'status@broadcast' ||
     normalizedRemoteJid.endsWith('@broadcast') ||
-    normalizedRemoteJid.endsWith('@g.us')
+    normalizedRemoteJid.endsWith('@g.us') ||
+    normalizedRemoteJid.endsWith('@newsletter')
   ) {
     return null;
   }

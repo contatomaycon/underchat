@@ -267,6 +267,7 @@ export class WwebjsIncomingMessageService {
     if (!remoteJid) return true;
     if (remoteJid === 'status@broadcast') return true;
     if (remoteJid.endsWith('@broadcast')) return true;
+    if (remoteJid.endsWith('@newsletter')) return true;
     return false;
   }
 
@@ -491,7 +492,11 @@ export class WwebjsIncomingMessageService {
   }
 
   private isGroupOrBroadcastJid(jid: string): boolean {
-    return jid.endsWith('@g.us') || jid.endsWith('@broadcast');
+    return (
+      jid.endsWith('@g.us') ||
+      jid.endsWith('@broadcast') ||
+      jid.endsWith('@newsletter')
+    );
   }
 
   private shouldSkipResolvedJids(resolvedJids: WwebjsResolvedJids): boolean {
