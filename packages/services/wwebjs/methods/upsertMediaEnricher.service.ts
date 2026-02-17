@@ -33,8 +33,11 @@ interface WwebjsRawData {
   mimetype?: unknown;
   filename?: unknown;
   duration?: unknown;
+  seconds?: unknown;
   width?: unknown;
   height?: unknown;
+  ptt?: unknown;
+  isPtt?: unknown;
   staticUrl?: unknown;
   campaignId?: unknown;
   isAnimated?: unknown;
@@ -114,7 +117,13 @@ export class WwebjsUpsertMediaEnricher {
       );
     }
     if (type === EMessageType.audio) {
-      await this.enrichAudio(content, buffer, upsert.account_id, mediaOpts);
+      await this.enrichAudio(
+        content,
+        buffer,
+        upsert.account_id,
+        mediaOpts,
+        msg
+      );
     }
     if (type === EMessageType.document) {
       await this.enrichDocument(content, buffer, upsert.account_id, mediaOpts);
@@ -248,6 +257,7 @@ export class WwebjsUpsertMediaEnricher {
     msg: Message,
     media: { mimetype?: string; filename?: string }
   ): Promise<void> {
+    const rawData = this.getRawData(msg);
     const result = await this.storageService.uploadFromBuffer(
       buffer,
       accountId,
@@ -262,8 +272,8 @@ export class WwebjsUpsertMediaEnricher {
         mimetype: media.mimetype ?? null,
         extension: result.extension,
         size: result.size,
-        height: null,
-        width: null,
+        height: this.toNullableNumber(rawData.height),
+        width: this.toNullableNumber(rawData.width),
       };
     }
   }
@@ -304,8 +314,18 @@ export class WwebjsUpsertMediaEnricher {
     content: Partial<IContent>,
     buffer: Buffer,
     accountId: string,
-    media: { mimetype?: string; filename?: string | undefined }
+    media: { mimetype?: string; filename?: string | undefined },
+    msg: Message
   ): Promise<void> {
+    const rawData = this.getRawData(msg);
+    const rawType = this.getNonEmptyString(msg.type)?.toLowerCase();
+    const isPtt =
+      rawType === 'ptt' ||
+      this.isTrue(rawData.ptt) ||
+      this.isTrue(rawData.isPtt);
+    const isViewOnce = this.isTrue(
+      (msg as unknown as { isViewOnce?: unknown }).isViewOnce
+    );
     const result = await this.storageService.uploadFromBuffer(
       buffer,
       accountId,
@@ -321,9 +341,11 @@ export class WwebjsUpsertMediaEnricher {
         mimetype: media.mimetype ?? result.mimetype ?? null,
         extension: result.extension,
         size: result.size,
-        duration: null,
-        ptt: false,
-        view_once: false,
+        duration:
+          this.toNullableNumber(rawData.seconds) ??
+          this.toNullableNumber(rawData.duration),
+        ptt: isPtt,
+        view_once: isViewOnce,
         waveform: null,
       };
     }
