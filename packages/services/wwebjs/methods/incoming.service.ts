@@ -25,6 +25,8 @@ import {
 import { WwebjsUpsertMediaEnricher } from './upsertMediaEnricher.service';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
+import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
+import { EMessageType } from '@core/common/enums/EMessageType';
 
 const ACK_DEVICE = 2;
 const ACK_READ = 3;
@@ -824,11 +826,56 @@ export class WwebjsIncomingMessageService {
 
       const text = callAction.show_message_text?.trim();
       if (callAction.show_message_on_call && text) {
-        await client.sendMessage(jid, text);
+        const sentMessage = await client.sendMessage(jid, text);
+        const systemMessageUpsert = this.buildCallAutoReplySystemUpsert(
+          jid,
+          text,
+          getMessageIdSerialized(sentMessage),
+          sentMessage.timestamp
+        );
+        systemMessageUpsert.photo = photo ?? null;
+        await this.streamProducerService.send(topic, systemMessageUpsert);
       }
     } catch (error) {
       console.error('[wwebjs] resolveIncomingCallAction failed:', error);
     }
+  }
+
+  private buildCallAutoReplySystemUpsert(
+    jid: string,
+    messageText: string,
+    sentMessageId?: string,
+    sentTimestamp?: number
+  ): IUpsertMessage {
+    const normalizedJid = normalizeJid(jid) ?? jid;
+    const normalizedJidAlt = normalizedJid !== jid ? jid : undefined;
+    const timestamp =
+      typeof sentTimestamp === 'number' && sentTimestamp > 0
+        ? sentTimestamp > 1_000_000_000_000
+          ? Math.floor(sentTimestamp / 1000)
+          : Math.floor(sentTimestamp)
+        : Math.floor(Date.now() / 1000);
+    const keyId = `call_auto_system_${sentMessageId ?? Date.now().toString()}`;
+
+    return {
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      account_id: wwebjsEnvironment.wwebjsAccountId,
+      type: EMessageType.system,
+      message: {
+        key: {
+          id: keyId,
+          remoteJid: normalizedJid,
+          remoteJidAlt: normalizedJidAlt,
+          fromMe: true,
+        },
+        message: {
+          conversation: messageText,
+        },
+        messageTimestamp: timestamp,
+      },
+      has_quoted: false,
+      photo: null,
+    };
   }
 
   private mapAckToPatch(ack: number): MessageSummaryPatch | null {

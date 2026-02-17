@@ -656,8 +656,8 @@ export class BaileysIncomingMessageService {
       const callId = callEvent.id ?? Date.now().toString();
       const isVideo = (callEvent as { isVideo?: boolean }).isVideo === true;
       const callText = isVideo
-        ? 'Ligacao de video recebida'
-        : 'Ligacao recebida';
+        ? 'Ligacão de vídeo recebida'
+        : 'Ligacão recebida';
 
       const callUpsert: IUpsertMessage = {
         worker_id: baileysEnvironment.baileysWorkerId,
@@ -707,11 +707,54 @@ export class BaileysIncomingMessageService {
 
       const text = callAction.show_message_text?.trim();
       if (callAction.show_message_on_call && text) {
-        await socket.sendMessage(jid, { text });
+        const sentMessage = await socket.sendMessage(jid, { text });
+        const sentMessageId =
+          sentMessage && typeof sentMessage.key?.id === 'string'
+            ? sentMessage.key.id
+            : undefined;
+        const systemMessageUpsert = this.buildCallAutoReplySystemUpsert(
+          normalizedJid,
+          normalizedJidAlt,
+          text,
+          sentMessageId
+        );
+        systemMessageUpsert.photo = pendingItem.inputUpsert.photo ?? null;
+
+        const autoReplyKey = `${callKey}:auto_reply:${sentMessageId ?? Date.now().toString()}`;
+        this.enqueueMessage(systemMessageUpsert, autoReplyKey);
       }
     } catch (error) {
       console.error('[CRITICAL] Error processing call event:', error);
     }
+  }
+
+  private buildCallAutoReplySystemUpsert(
+    remoteJid: string,
+    remoteJidAlt: string | null,
+    messageText: string,
+    sentMessageId?: string
+  ): IUpsertMessage {
+    const keyId = `call_auto_system_${sentMessageId ?? Date.now().toString()}`;
+
+    return {
+      worker_id: baileysEnvironment.baileysWorkerId,
+      account_id: baileysEnvironment.baileysAccountId,
+      type: EMessageType.system,
+      message: {
+        key: {
+          id: keyId,
+          remoteJid,
+          remoteJidAlt: remoteJidAlt ?? undefined,
+          fromMe: true,
+        },
+        message: {
+          conversation: messageText,
+        },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      },
+      photo: null,
+      has_quoted: false,
+    };
   }
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
