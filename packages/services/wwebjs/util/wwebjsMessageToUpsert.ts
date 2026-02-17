@@ -906,8 +906,20 @@ export async function wwebjsMessageToUpsert(
   const remoteJid = resolvedJids?.remoteJid ?? fallbackRemoteJid;
   if (!remoteJid) return null;
   const remoteJidAlt = resolvedJids?.remoteJidAlt;
+  const normalizedRemoteJid = normalizeJid(remoteJid) ?? remoteJid;
+
+  if (
+    normalizedRemoteJid === 'status@broadcast' ||
+    normalizedRemoteJid.endsWith('@broadcast') ||
+    normalizedRemoteJid.endsWith('@g.us')
+  ) {
+    return null;
+  }
 
   const rawType = (msg.type ?? 'chat').toLowerCase();
+  if (rawType === 'notification_template') {
+    return null;
+  }
   const rawData = getRawMessageData(msg);
   const rawSubType = getNonEmptyString(rawData?.subtype)?.toLowerCase();
   const rawBody = typeof msg.body === 'string' ? msg.body : '';

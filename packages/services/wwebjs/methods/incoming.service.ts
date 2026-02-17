@@ -520,6 +520,25 @@ export class WwebjsIncomingMessageService {
     return jid.endsWith('@g.us') || jid.endsWith('@broadcast');
   }
 
+  private shouldSkipResolvedJids(resolvedJids: WwebjsResolvedJids): boolean {
+    const candidates = [
+      resolvedJids.remoteJid,
+      resolvedJids.remoteJidAlt,
+    ].filter((jid): jid is string => !!jid);
+
+    for (const candidate of candidates) {
+      const normalized = normalizeJid(candidate) ?? candidate;
+      if (
+        this.shouldSkipChat(normalized) ||
+        this.isGroupOrBroadcastJid(normalized)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private isLidJid(jid: string | undefined): boolean {
     return !!jid && jid.endsWith('@lid');
   }
@@ -608,6 +627,8 @@ export class WwebjsIncomingMessageService {
     try {
       const resolvedJids = await this.resolveRemoteJids(client, msg);
       if (!resolvedJids) return;
+      if (this.shouldSkipResolvedJids(resolvedJids)) return;
+      if (this.isUnsupportedSystemNotification(msg)) return;
 
       const [pushName, photo] = await Promise.all([
         this.resolvePushName(msg),
@@ -649,6 +670,7 @@ export class WwebjsIncomingMessageService {
 
     const resolvedJids = await this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
+    if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
     const [pushName, photo] = await Promise.all([
       this.resolvePushName(msg),
@@ -950,6 +972,7 @@ export class WwebjsIncomingMessageService {
 
     const resolvedJids = await this.resolveRemoteJids(client, after);
     if (!resolvedJids) return;
+    if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
     const upsert = buildDeleteMessageUpsert(after, before, resolvedJids);
     if (!upsert) return;
@@ -965,6 +988,7 @@ export class WwebjsIncomingMessageService {
 
     const resolvedJids = await this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
+    if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
     const upsert = buildRevokeMeUpsert(msg, resolvedJids);
     if (!upsert) return;
@@ -995,6 +1019,7 @@ export class WwebjsIncomingMessageService {
 
     const resolvedJids = await this.resolveRemoteJids(client, message);
     if (!resolvedJids) return;
+    if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
     const upsert = buildEditMessageUpsert(
       message,
@@ -1034,6 +1059,12 @@ export class WwebjsIncomingMessageService {
       return;
     }
     if (!remoteJid) return;
+    if (
+      this.shouldSkipChat(remoteJid) ||
+      this.isGroupOrBroadcastJid(remoteJid)
+    ) {
+      return;
+    }
 
     const reactionId = getReactionIdSerialized(reaction);
     const emoji = reaction.reaction ?? '';

@@ -2245,7 +2245,56 @@ export class MessageUpsertConsume {
     return `wa_${hash}`;
   }
 
+  private shouldDiscardByMessageKeyJid(data: IUpsertMessage): boolean {
+    const key = data.message?.key;
+    if (!key) return false;
+
+    const rawCandidates = [
+      remoteJid(key),
+      remoteJidAlt(key),
+      key.participant,
+      key.participantAlt,
+    ];
+
+    for (const candidate of rawCandidates) {
+      const raw = this.toNonEmptyString(candidate);
+      if (!raw) continue;
+
+      const normalized = normalizeJid(raw) ?? raw;
+      if (
+        normalized === 'status@broadcast' ||
+        normalized.endsWith('@broadcast') ||
+        normalized.endsWith('@g.us')
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private shouldDiscardEmptyInboundText(data: IUpsertMessage): boolean {
+    if (data.type !== EMessageType.text) {
+      return false;
+    }
+
+    const isFromMe = data.message?.key?.fromMe ?? false;
+    if (isFromMe) {
+      return false;
+    }
+
+    return this.isMessageEmpty(data);
+  }
+
   private shouldDiscardUpsert(data: IUpsertMessage): boolean {
+    if (this.shouldDiscardByMessageKeyJid(data)) {
+      return true;
+    }
+
+    if (this.shouldDiscardEmptyInboundText(data)) {
+      return true;
+    }
+
     if (data.type === EMessageType.set_disappearing_messages) {
       return false;
     }
