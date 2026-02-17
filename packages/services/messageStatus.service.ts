@@ -12,6 +12,9 @@ import Redis from 'ioredis';
 import { createHash } from 'node:crypto';
 import { logger } from '@core/plugins/telemetry/logger';
 import { captureException } from '@core/plugins/telemetry/sentry';
+import type { WAMessageKey } from '@whiskeysockets/baileys';
+import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
 
 export type MessageSummaryPatch = Partial<
   Pick<IChatMessage['summary'], 'is_sent' | 'is_delivered' | 'is_seen'>
@@ -19,6 +22,11 @@ export type MessageSummaryPatch = Partial<
 
 type ElasticHit<T> = {
   _source?: T;
+};
+
+type MessageKeyLike = WAMessageKey & {
+  remoteJidAlt?: string | null;
+  participantAlt?: string | null;
 };
 
 @injectable()
@@ -44,7 +52,8 @@ export class MessageStatusService {
   async updateSummaryByWhatsAppId(
     accountId: string,
     messageId: string,
-    patch: MessageSummaryPatch
+    patch: MessageSummaryPatch,
+    key?: MessageKeyLike
   ): Promise<IChatMessage | null> {
     const normalizedPatch = this.normalizePatch(patch);
     if (!messageId || !accountId || !this.hasPatch(normalizedPatch)) {
@@ -53,7 +62,8 @@ export class MessageStatusService {
 
     const message = await this.findMessageByWhatsAppIdCached(
       accountId,
-      messageId
+      messageId,
+      key
     );
     if (!message?.message_id) {
       return null;
@@ -178,6 +188,79 @@ export class MessageStatusService {
     return normalized;
   }
 
+  private toNonEmptyString(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private collectRemoteCandidatesFromKey(key?: MessageKeyLike): string[] {
+    if (!key) return [];
+
+    const rawCandidates = [
+      key.remoteJid,
+      key.remoteJidAlt,
+      key.participant,
+      key.participantAlt,
+    ];
+
+    const candidates = new Set<string>();
+    for (const candidate of rawCandidates) {
+      const raw = this.toNonEmptyString(candidate);
+      if (!raw) continue;
+
+      candidates.add(raw);
+
+      const normalized = normalizeJid(raw) ?? raw;
+      candidates.add(normalized);
+
+      if (normalized.endsWith('@s.whatsapp.net')) {
+        candidates.add(normalized.replace(/@s\.whatsapp\.net$/, '@c.us'));
+      }
+
+      if (normalized.endsWith('@c.us')) {
+        candidates.add(normalized.replace(/@c\.us$/, '@s.whatsapp.net'));
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
+  private buildMessageIdCandidates(
+    messageId: string,
+    key?: MessageKeyLike
+  ): string[] {
+    const normalizedMessageId = this.toNonEmptyString(messageId);
+    if (!normalizedMessageId) return [];
+
+    const candidates = new Set<string>([normalizedMessageId]);
+    const parsed = parseSerializedMessageId(normalizedMessageId);
+    const stanzaId = parsed?.stanzaId ?? normalizedMessageId;
+    candidates.add(stanzaId);
+
+    const remoteCandidates = new Set<string>([
+      ...this.collectRemoteCandidatesFromKey(key),
+      ...(parsed?.remoteJid ? [parsed.remoteJid] : []),
+    ]);
+
+    const keyFromMe = typeof key?.fromMe === 'boolean' ? key.fromMe : undefined;
+    const fromMeCandidates = new Set<boolean>(
+      keyFromMe === undefined ? [false, true] : [keyFromMe]
+    );
+
+    if (parsed) {
+      fromMeCandidates.add(parsed.fromMe);
+    }
+
+    for (const remoteCandidate of remoteCandidates) {
+      for (const fromMeCandidate of fromMeCandidates) {
+        candidates.add(`${fromMeCandidate}_${remoteCandidate}_${stanzaId}`);
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
   private mergeSummary(
     current: IChatMessage['summary'],
     patch: MessageSummaryPatch
@@ -257,13 +340,19 @@ export class MessageStatusService {
 
   private async findMessageByWhatsAppId(
     accountId: string,
-    messageId: string
+    messageId: string,
+    key?: MessageKeyLike
   ): Promise<IChatMessage | null> {
     if (this.isCircuitOpen()) {
       throw new Error('Elasticsearch circuit breaker is open');
     }
 
     try {
+      const idCandidates = this.buildMessageIdCandidates(messageId, key);
+      if (!idCandidates.length) {
+        return null;
+      }
+
       const queryElastic = {
         size: 1,
         query: {
@@ -281,7 +370,12 @@ export class MessageStatusService {
                 nested: {
                   path: 'message_key',
                   query: {
-                    term: { 'message_key.id': messageId },
+                    bool: {
+                      should: idCandidates.map((candidate) => ({
+                        term: { 'message_key.id': candidate },
+                      })),
+                      minimum_should_match: 1,
+                    },
                   },
                 },
               },
@@ -308,7 +402,8 @@ export class MessageStatusService {
 
   private async findMessageByWhatsAppIdCached(
     accountId: string,
-    messageId: string
+    messageId: string,
+    key?: MessageKeyLike
   ): Promise<IChatMessage | null> {
     const cacheKey = `${this.messageCachePrefix}${accountId}:${messageId}`;
 
@@ -321,7 +416,8 @@ export class MessageStatusService {
 
     const message = await this.findMessageByWhatsAppIdWithRetry(
       accountId,
-      messageId
+      messageId,
+      key
     );
 
     if (message) {
@@ -413,10 +509,15 @@ export class MessageStatusService {
   private async findMessageByWhatsAppIdWithRetry(
     accountId: string,
     messageId: string,
+    key?: MessageKeyLike,
     maxRetries = 5
   ): Promise<IChatMessage | null> {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const message = await this.findMessageByWhatsAppId(accountId, messageId);
+      const message = await this.findMessageByWhatsAppId(
+        accountId,
+        messageId,
+        key
+      );
       if (message?.message_id) {
         return message;
       }

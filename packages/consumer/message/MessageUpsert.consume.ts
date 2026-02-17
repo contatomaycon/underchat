@@ -72,6 +72,9 @@ import { withLock } from '@core/common/functions/withLock';
 import { delay } from '@core/common/functions/delay';
 import { extractReactionMessage } from '@core/common/functions/extractReactionMessage';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { IMessageKeyIdContext } from '@core/common/interfaces/IMessageKeyIdContext';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -367,12 +370,114 @@ export class MessageUpsertConsume {
     );
   }
 
+  private toNonEmptyString(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private collectRemoteIdCandidatesFromKey(
+    keyContext?: IMessageKeyIdContext
+  ): string[] {
+    if (!keyContext) return [];
+
+    const rawCandidates = [
+      keyContext.remoteJid,
+      keyContext.remoteJidAlt,
+      keyContext.participant,
+      keyContext.participantAlt,
+      keyContext.remote_jid,
+      keyContext.remote_jid_alt,
+      keyContext.participant_alt,
+    ];
+
+    const candidates = new Set<string>();
+
+    for (const candidate of rawCandidates) {
+      const raw = this.toNonEmptyString(candidate);
+      if (!raw) continue;
+
+      candidates.add(raw);
+
+      const normalized = normalizeJid(raw) ?? raw;
+      candidates.add(normalized);
+
+      if (normalized.endsWith('@s.whatsapp.net')) {
+        candidates.add(normalized.replace(/@s\.whatsapp\.net$/, '@c.us'));
+      }
+
+      if (normalized.endsWith('@c.us')) {
+        candidates.add(normalized.replace(/@c\.us$/, '@s.whatsapp.net'));
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
+  private collectFromMeCandidatesFromKey(
+    keyContext?: IMessageKeyIdContext
+  ): boolean[] {
+    if (!keyContext) {
+      return [false, true];
+    }
+
+    const fromMe = keyContext.fromMe ?? keyContext.from_me;
+    if (typeof fromMe === 'boolean') {
+      return [fromMe];
+    }
+
+    return [false, true];
+  }
+
+  private buildMessageKeyIdCandidates(
+    messageId: string,
+    keyContext?: IMessageKeyIdContext
+  ): string[] {
+    const normalizedId = this.toNonEmptyString(messageId);
+    if (!normalizedId) {
+      return [];
+    }
+
+    const candidates = new Set<string>([normalizedId]);
+    const parsed = parseSerializedMessageId(normalizedId);
+    const stanzaId = parsed?.stanzaId ?? normalizedId;
+
+    candidates.add(stanzaId);
+
+    const remoteCandidates = new Set<string>([
+      ...this.collectRemoteIdCandidatesFromKey(keyContext),
+      ...(parsed?.remoteJid ? [parsed.remoteJid] : []),
+    ]);
+
+    const fromMeCandidates = this.collectFromMeCandidatesFromKey(keyContext);
+    if (parsed && !fromMeCandidates.includes(parsed.fromMe)) {
+      fromMeCandidates.push(parsed.fromMe);
+    }
+
+    for (const remoteCandidate of remoteCandidates) {
+      for (const fromMe of fromMeCandidates) {
+        candidates.add(`${fromMe}_${remoteCandidate}_${stanzaId}`);
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
   private async findMessageByKeyId(
     accountId: string,
     chatId: string,
-    messageId: string
+    messageId: string,
+    keyContext?: IMessageKeyIdContext
   ): Promise<IChatMessage | null> {
     if (!messageId) return null;
+
+    const keyIdCandidates = this.buildMessageKeyIdCandidates(
+      messageId,
+      keyContext
+    );
+    if (!keyIdCandidates.length) {
+      return null;
+    }
 
     const must: Array<Record<string, unknown>> = [
       {
@@ -382,7 +487,12 @@ export class MessageUpsertConsume {
         nested: {
           path: 'message_key',
           query: {
-            term: { 'message_key.id': messageId },
+            bool: {
+              should: keyIdCandidates.map((candidate) => ({
+                term: { 'message_key.id': candidate },
+              })),
+              minimum_should_match: 1,
+            },
           },
         },
       },
@@ -421,10 +531,18 @@ export class MessageUpsertConsume {
 
   private async findMessageByKeyIdInAccount(
     accountId: string,
-    workerId: string,
-    messageId: string
+    messageId: string,
+    keyContext?: IMessageKeyIdContext
   ): Promise<IChatMessage | null> {
-    if (!accountId || !workerId || !messageId) {
+    if (!accountId || !messageId) {
+      return null;
+    }
+
+    const keyIdCandidates = this.buildMessageKeyIdCandidates(
+      messageId,
+      keyContext
+    );
+    if (!keyIdCandidates.length) {
       return null;
     }
 
@@ -445,15 +563,12 @@ export class MessageUpsertConsume {
               nested: {
                 path: 'message_key',
                 query: {
-                  term: { 'message_key.id': messageId },
-                },
-              },
-            },
-            {
-              nested: {
-                path: 'worker',
-                query: {
-                  term: { 'worker.id': workerId },
+                  bool: {
+                    should: keyIdCandidates.map((candidate) => ({
+                      term: { 'message_key.id': candidate },
+                    })),
+                    minimum_should_match: 1,
+                  },
                 },
               },
             },
@@ -494,7 +609,8 @@ export class MessageUpsertConsume {
     const targetMessage = await this.findMessageByKeyId(
       data.account_id,
       getChat.chat_id,
-      targetMessageId
+      targetMessageId,
+      data.message?.key
     );
 
     if (!targetMessage) {
@@ -578,7 +694,8 @@ export class MessageUpsertConsume {
     let targetMessage = await this.findMessageByKeyId(
       data.account_id,
       getChat.chat_id,
-      targetMessageId
+      targetMessageId,
+      data.message?.key
     );
 
     if (!targetMessage) {
@@ -589,8 +706,8 @@ export class MessageUpsertConsume {
       if (isWwebjsSerializedId) {
         targetMessage = await this.findMessageByKeyIdInAccount(
           data.account_id,
-          data.worker_id,
-          targetMessageId
+          targetMessageId,
+          data.message?.key
         );
       }
     }
@@ -660,7 +777,8 @@ export class MessageUpsertConsume {
     const targetMessage = await this.findMessageByKeyId(
       data.account_id,
       getChat.chat_id,
-      targetMessageId
+      targetMessageId,
+      data.message?.key
     );
 
     if (!targetMessage) {
@@ -723,7 +841,8 @@ export class MessageUpsertConsume {
     const targetMessage = await this.findMessageByKeyId(
       data.account_id,
       getChat.chat_id,
-      targetMessageId
+      targetMessageId,
+      data.message?.key
     );
 
     if (!targetMessage) {
@@ -2196,7 +2315,8 @@ export class MessageUpsertConsume {
       const originalMessage = await this.findMessageByKeyId(
         accountId,
         chatId,
-        messageQuotedId
+        messageQuotedId,
+        quoted.key
       );
 
       if (!originalMessage?.content) return;

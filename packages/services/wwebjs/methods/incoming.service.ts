@@ -816,6 +816,13 @@ export class WwebjsIncomingMessageService {
     const messageId = getMessageIdSerialized(msg);
     if (!messageId) return;
 
+    const remoteJidRaw =
+      getMessageRemoteFromId(msg) ||
+      (msg.fromMe ? msg.to || msg.from || '' : msg.from || msg.to || '');
+    const remoteJid = remoteJidRaw
+      ? (normalizeJid(remoteJidRaw) ?? remoteJidRaw)
+      : undefined;
+
     const patch = this.mapAckToPatch(ack);
     if (!patch) return;
 
@@ -823,6 +830,11 @@ export class WwebjsIncomingMessageService {
       account_id: wwebjsEnvironment.wwebjsAccountId,
       message_id: messageId,
       patch,
+      key: {
+        id: messageId,
+        remoteJid,
+        fromMe: true,
+      },
     };
 
     const topic = this.kafkaServiceQueueService.updateMessageStatus();

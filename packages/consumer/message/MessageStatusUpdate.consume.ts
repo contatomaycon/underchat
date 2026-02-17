@@ -344,7 +344,8 @@ export class MessageStatusUpdateConsume {
       await this.messageStatusService.updateSummaryByWhatsAppId(
         firstUpdate.account_id,
         firstUpdate.message_id,
-        mergedPatch
+        mergedPatch,
+        firstUpdate.key
       );
 
       await this.markAsProcessed({

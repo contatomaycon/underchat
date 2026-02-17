@@ -35,6 +35,7 @@ import { webcrypto } from 'node:crypto';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 
 @singleton()
 export class MessageSendConsume {
@@ -601,17 +602,53 @@ export class MessageSendConsume {
     }
   }
 
+  private normalizeMessageKeyIdForBaileys(id?: string | null): string {
+    if (!id) return '';
+    const trimmed = id.trim();
+    if (!trimmed) return '';
+
+    const parsed = parseSerializedMessageId(trimmed);
+    return parsed?.stanzaId ?? trimmed;
+  }
+
+  private buildBaileysMessageKey(
+    key:
+      | {
+          remote_jid?: string | null;
+          from_me?: boolean | null;
+          id?: string | null;
+          participant?: string | null;
+        }
+      | undefined,
+    fallbackRemoteJid = ''
+  ): {
+    remoteJid: string;
+    fromMe: boolean;
+    id: string;
+    participant?: string;
+  } | null {
+    const rawId = key?.id?.trim();
+    const parsed = parseSerializedMessageId(rawId);
+    const normalizedId = this.normalizeMessageKeyIdForBaileys(rawId);
+    if (!normalizedId) {
+      return null;
+    }
+
+    return {
+      remoteJid: key?.remote_jid ?? parsed?.remoteJid ?? fallbackRemoteJid,
+      fromMe: key?.from_me ?? parsed?.fromMe ?? false,
+      id: normalizedId,
+      participant: key?.participant || undefined,
+    };
+  }
+
   private async processDelete(jid: string, data: IChatMessage): Promise<void> {
     if (!data.message_key?.id) {
       return;
     }
 
-    const messageKey = {
-      remoteJid: data.message_key.remote_jid ?? '',
-      fromMe: data.message_key.from_me ?? false,
-      id: data.message_key.id,
-      participant: data.message_key.participant || undefined,
-    };
+    const messageKey = this.buildBaileysMessageKey(data.message_key, jid);
+    if (!messageKey) return;
 
     await this.baileysMessageEditDeleteService.deleteMessage(jid, messageKey);
   }
@@ -812,12 +849,8 @@ export class MessageSendConsume {
       return;
     }
 
-    const messageKey = {
-      remoteJid: jid,
-      fromMe: data.message_key.from_me ?? false,
-      id: data.message_key.id,
-      participant: data.message_key.participant || undefined,
-    };
+    const messageKey = this.buildBaileysMessageKey(data.message_key, jid);
+    if (!messageKey) return;
 
     const result = await this.baileysMessageReactionsInteractionsService.react(
       jid,
@@ -839,12 +872,8 @@ export class MessageSendConsume {
     const hasMessageKey = data.message_key?.id && data.message_key?.remote_jid;
 
     if (hasVersions && hasMessageKey && data.message_key && data.content) {
-      const messageKey = {
-        remoteJid: data.message_key.remote_jid ?? '',
-        fromMe: data.message_key.from_me ?? false,
-        id: data.message_key.id,
-        participant: data.message_key.participant || undefined,
-      };
+      const messageKey = this.buildBaileysMessageKey(data.message_key);
+      if (!messageKey) return;
 
       const latestVersion = data.content.version
         ? [...data.content.version].sort(
@@ -1354,11 +1383,16 @@ export class MessageSendConsume {
   private composeQuotedMessage(data: IChatMessage): WAMessage {
     const q = data.content?.quoted;
 
+    const rawQuotedId = q?.key.id?.trim();
+    const parsedQuotedId = parseSerializedMessageId(rawQuotedId);
+    const normalizedQuotedId =
+      this.normalizeMessageKeyIdForBaileys(rawQuotedId);
+
     const quoted: WAMessage = {
       key: {
-        remoteJid: q?.key.remote_jid ?? '',
-        fromMe: q?.key.from_me ?? false,
-        id: q?.key.id ?? '',
+        remoteJid: q?.key.remote_jid ?? parsedQuotedId?.remoteJid ?? '',
+        fromMe: q?.key.from_me ?? parsedQuotedId?.fromMe ?? false,
+        id: normalizedQuotedId,
         participant: q?.key.participant || undefined,
       },
       message: null,
