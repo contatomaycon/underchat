@@ -149,7 +149,10 @@ export class WwebjsIncomingMessageService {
   private rejectCallConfig = false;
   private readonly processedCalls = new Map<string, number>();
   private readonly processedPinMessages = new Map<string, number>();
+  private readonly processedIncomingMessages = new Map<string, number>();
   private readonly PIN_MESSAGE_CACHE_TTL_MS = 15000;
+  private readonly INCOMING_MESSAGE_CACHE_TTL_MS = 30000;
+  private readonly INCOMING_MESSAGE_CACHE_MAX_SIZE = 100000;
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
@@ -171,18 +174,25 @@ export class WwebjsIncomingMessageService {
   bindTo(client: Client): void {
     this.currentClient = client;
     client.on('message', (msg: Message) => {
+      if (this.shouldSkipIncomingMessage(msg)) {
+        return;
+      }
+
       console.log('Messages upsert');
       console.dir(msg, { depth: null, colors: true });
 
       void this.handleIncomingMessage(msg);
     });
     client.on('message_create', (msg: Message) => {
-      console.log('Messages upsert (fromMe external)');
-      console.dir(msg, { depth: null, colors: true });
-
       if (!this.shouldHandleFromMeCreatedMessage(msg)) {
         return;
       }
+      if (this.shouldSkipIncomingMessage(msg)) {
+        return;
+      }
+
+      console.log('Messages upsert (fromMe external)');
+      console.dir(msg, { depth: null, colors: true });
 
       void this.handleIncomingMessage(msg);
     });
@@ -272,18 +282,62 @@ export class WwebjsIncomingMessageService {
     return Array.from(unique);
   }
 
-  private getMessageDeviceType(msg: Message): string | undefined {
+  private getMessageAuthor(msg: Message): string | undefined {
     const raw = msg as unknown as {
-      deviceType?: unknown;
+      author?: unknown;
       _data?: {
-        deviceType?: unknown;
+        author?: unknown;
       };
     };
 
     return (
-      getNonEmptyString(raw.deviceType) ??
-      getNonEmptyString(raw._data?.deviceType)
+      getNonEmptyString(raw.author) ?? getNonEmptyString(raw._data?.author)
     );
+  }
+
+  private cleanupProcessedIncomingMessages(now: number): void {
+    for (const [key, timestamp] of this.processedIncomingMessages.entries()) {
+      if (now - timestamp > this.INCOMING_MESSAGE_CACHE_TTL_MS) {
+        this.processedIncomingMessages.delete(key);
+      }
+    }
+
+    if (
+      this.processedIncomingMessages.size <=
+      this.INCOMING_MESSAGE_CACHE_MAX_SIZE
+    ) {
+      return;
+    }
+
+    const excess =
+      this.processedIncomingMessages.size -
+      this.INCOMING_MESSAGE_CACHE_MAX_SIZE;
+    const iterator = this.processedIncomingMessages.keys();
+    for (let i = 0; i < excess; i++) {
+      const key = iterator.next().value;
+      if (!key) {
+        break;
+      }
+
+      this.processedIncomingMessages.delete(key);
+    }
+  }
+
+  private shouldSkipIncomingMessage(msg: Message): boolean {
+    const messageId = getMessageIdSerialized(msg);
+    if (!messageId) {
+      return false;
+    }
+
+    const now = Date.now();
+    this.cleanupProcessedIncomingMessages(now);
+
+    if (this.processedIncomingMessages.has(messageId)) {
+      return true;
+    }
+
+    this.processedIncomingMessages.set(messageId, now);
+    return false;
   }
 
   private shouldHandleFromMeCreatedMessage(msg: Message): boolean {
@@ -297,7 +351,7 @@ export class WwebjsIncomingMessageService {
       return false;
     }
 
-    return true;
+    return !!this.getMessageAuthor(msg);
   }
 
   private shouldSkipPinnedMessage(msg: Message): boolean {
@@ -1033,6 +1087,7 @@ export class WwebjsIncomingMessageService {
     this.currentClient = undefined;
     this.processedCalls.clear();
     this.processedPinMessages.clear();
+    this.processedIncomingMessages.clear();
   }
 
   async markRead(keys: IMessageKeyLike[]): Promise<void> {

@@ -2014,6 +2014,19 @@ export class MessageUpsertConsume {
         return false;
       }
 
+      const existingMessageByKey = await this.findMessageByKeyIdInAccount(
+        data.account_id,
+        messageId,
+        data.message?.key
+      );
+      if (existingMessageByKey?.message_id) {
+        await this.chatService.patchExistingMessageMissingFields(
+          existingMessageByKey.message_id,
+          inputChatMessage
+        );
+        return true;
+      }
+
       const createResult =
         await this.chatService.createMessageIdempotent(inputChatMessage);
 
