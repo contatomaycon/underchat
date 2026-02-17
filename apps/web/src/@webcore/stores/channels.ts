@@ -193,11 +193,8 @@ export const useChannelsStore = defineStore('channels', {
         this.loading = true;
 
         const response = await axios.patch<IApiResponse<boolean>>(
-          `/worker/${payload.worker_id}`,
-          {
-            name: payload.name,
-            worker_type: payload.worker_type,
-          }
+          `/worker/${payload.worker_id}/${payload.name}`,
+          { worker_type: payload.worker_type }
         );
 
         this.loading = false;

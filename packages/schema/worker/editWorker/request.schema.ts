@@ -3,10 +3,10 @@ import { Static, Type } from '@sinclair/typebox';
 
 export const editWorkerParamsSchema = Type.Object({
   worker_id: Type.String(),
+  name: Type.String(),
 });
 
 export const editWorkerBodySchema = Type.Object({
-  name: Type.String(),
   worker_type: Type.Optional(Type.String({ enum: Object.values(EWorkerType) })),
 });
 

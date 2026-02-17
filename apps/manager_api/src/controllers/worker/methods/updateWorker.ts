@@ -21,7 +21,7 @@ export const updateWorker = async (
 
   const input: EditWorkerParams & EditWorkerBody = {
     ...request.params,
-    ...request.body,
+    worker_type: request.body?.worker_type,
   };
 
   try {
