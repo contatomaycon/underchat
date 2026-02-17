@@ -24,6 +24,8 @@ import { balanceEnvironment } from '@core/config/environments';
 import { getErrorMessage } from '@core/common/functions/toError';
 import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotifyWorkerStatusRequestProto';
 import { currentTime } from '@core/common/functions/currentTime';
+import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
+import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -37,6 +39,12 @@ export class WorkerCommandHandlerService {
     string,
     StatusConnectionWorkerRequest
   >();
+  private readonly defaultCallAction: IResolveIncomingCallActionResponseProto =
+    {
+      reject_call: false,
+      show_message_on_call: false,
+      show_message_text: '',
+    };
 
   constructor(
     @inject(WorkerService)
@@ -190,6 +198,32 @@ export class WorkerCommandHandlerService {
       this.centrifugoPublish(payload),
       this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
     ]);
+  }
+
+  async resolveIncomingCallAction(
+    input: IResolveIncomingCallActionRequestProto
+  ): Promise<IResolveIncomingCallActionResponseProto> {
+    const workerId = input.worker_id?.trim();
+    const accountId = input.account_id?.trim();
+
+    if (!workerId || !accountId) {
+      return { ...this.defaultCallAction };
+    }
+
+    const worker = await this.workerService.viewWorker(accountId, workerId);
+    if (!worker) {
+      return { ...this.defaultCallAction };
+    }
+
+    const config =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(workerId);
+    const showMessageText = config?.show_message_on_call?.trim() ?? '';
+
+    return {
+      reject_call: Boolean(config?.reject_call),
+      show_message_on_call: showMessageText.length > 0,
+      show_message_text: showMessageText,
+    };
   }
 
   private async ensureContainerAndRequestConnection(

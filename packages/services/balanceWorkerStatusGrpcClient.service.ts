@@ -9,6 +9,8 @@ import {
 } from '@grpc/grpc-js';
 import { balanceEnvironment } from '@core/config/environments';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
+import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,12 +34,13 @@ const GRPC_DEADLINE_MS = 10000;
 
 @injectable()
 export class BalanceWorkerStatusGrpcClientService {
-  async notifyWorkerStatus(payload: IBaileysConnectionState): Promise<void> {
+  private createClient(): any {
     const address = `${balanceEnvironment.grpcHost}:${balanceEnvironment.grpcPort}`;
-    const client = new WorkerCommandClient(
-      address,
-      credentials.createInsecure()
-    );
+    return new WorkerCommandClient(address, credentials.createInsecure());
+  }
+
+  async notifyWorkerStatus(payload: IBaileysConnectionState): Promise<void> {
+    const client = this.createClient();
 
     const protoPayload = {
       worker_id: payload.worker_id,
@@ -63,5 +66,41 @@ export class BalanceWorkerStatusGrpcClientService {
         }
       );
     });
+  }
+
+  async resolveIncomingCallAction(
+    payload: IResolveIncomingCallActionRequestProto
+  ): Promise<IResolveIncomingCallActionResponseProto> {
+    const client = this.createClient();
+
+    const protoPayload = {
+      worker_id: payload.worker_id ?? '',
+      account_id: payload.account_id ?? '',
+      call_jid: payload.call_jid ?? '',
+      call_phone: payload.call_phone ?? '',
+      is_video: payload.is_video ?? false,
+    };
+
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+
+    return new Promise<IResolveIncomingCallActionResponseProto>(
+      (resolve, reject) => {
+        (client as any).ResolveIncomingCallAction(
+          protoPayload,
+          { deadline },
+          (
+            err: ServiceError | null,
+            response?: IResolveIncomingCallActionResponseProto
+          ) => {
+            client.close();
+            if (err) {
+              reject(err);
+              return;
+            }
+            resolve(response ?? {});
+          }
+        );
+      }
+    );
   }
 }

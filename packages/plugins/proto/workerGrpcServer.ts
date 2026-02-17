@@ -21,6 +21,8 @@ import {
 import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
 import { IChangeConnectionStatusRequestProto } from '@core/common/interfaces/IChangeConnectionStatusRequestProto';
 import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotifyWorkerStatusRequestProto';
+import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
+import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -146,6 +148,30 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleResolveIncomingCallAction = (
+    call: ServerUnaryCall<
+      IResolveIncomingCallActionRequestProto,
+      IResolveIncomingCallActionResponseProto
+    >,
+    callback: sendUnaryData<IResolveIncomingCallActionResponseProto>
+  ) => {
+    const req = call.request;
+
+    handler
+      .resolveIncomingCallAction(req)
+      .then((response) => {
+        callback(null, response);
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, workerId: req.worker_id },
+          'ResolveIncomingCallAction gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   grpcServer.addService(WorkerCommandService.service, {
     CreateWorker: (
       call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
@@ -161,6 +187,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     ) => handleUnary(call, cb, 'recreate'),
     ChangeConnectionStatus: handleChangeConnectionStatus,
     NotifyWorkerStatus: handleNotifyWorkerStatus,
+    ResolveIncomingCallAction: handleResolveIncomingCallAction,
   });
 
   const port = balanceEnvironment.grpcPort;

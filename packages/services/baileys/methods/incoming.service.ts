@@ -37,6 +37,7 @@ import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IBaileysPendingMessage } from '@core/common/interfaces/IBaileysPendingMessage';
 import { BaileysUpsertMediaEnricher } from './upsertMediaEnricher.service';
+import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 
 @singleton()
 export class BaileysIncomingMessageService {
@@ -75,7 +76,9 @@ export class BaileysIncomingMessageService {
     private readonly centrifugoService: CentrifugoService,
     @inject('Redis') private readonly redis: Redis,
     @inject(BaileysUpsertMediaEnricher)
-    private readonly upsertMediaEnricher: BaileysUpsertMediaEnricher
+    private readonly upsertMediaEnricher: BaileysUpsertMediaEnricher,
+    @inject(BalanceWorkerStatusGrpcClientService)
+    private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService
   ) {
     this.startCleanupInterval();
     this.startQueueProcessor();
@@ -372,7 +375,7 @@ export class BaileysIncomingMessageService {
       const eventsArray = Array.isArray(callEvents) ? callEvents : [callEvents];
 
       for (const callEvent of eventsArray) {
-        this.processCallEvent(socket, callEvent);
+        void this.processCallEvent(socket, callEvent);
       }
     });
   }
@@ -587,10 +590,33 @@ export class BaileysIncomingMessageService {
     return `${jid}:${callId}:${callEvent.status}`;
   }
 
-  private processCallEvent(
+  private getCallTimestampSeconds(callEvent: WACallEvent): number {
+    const rawDate = (callEvent as { date?: unknown }).date;
+
+    if (rawDate instanceof Date && Number.isFinite(rawDate.getTime())) {
+      return Math.floor(rawDate.getTime() / 1000);
+    }
+
+    if (typeof rawDate === 'number' && Number.isFinite(rawDate)) {
+      return rawDate > 1_000_000_000_000
+        ? Math.floor(rawDate / 1000)
+        : Math.floor(rawDate);
+    }
+
+    if (typeof rawDate === 'string') {
+      const parsed = Date.parse(rawDate);
+      if (!Number.isNaN(parsed)) {
+        return Math.floor(parsed / 1000);
+      }
+    }
+
+    return Math.floor(Date.now() / 1000);
+  }
+
+  private async processCallEvent(
     socket: WASocket,
     callEvent: WACallEvent | null
-  ): void {
+  ): Promise<void> {
     try {
       if (!callEvent) {
         return;
@@ -625,16 +651,37 @@ export class BaileysIncomingMessageService {
         return;
       }
 
+      const normalizedJid = normalizeJid(jid) ?? jid;
+      const normalizedJidAlt = normalizedJid !== jid ? jid : null;
+      const callId = callEvent.id ?? Date.now().toString();
+      const isVideo = (callEvent as { isVideo?: boolean }).isVideo === true;
+      const callText = isVideo
+        ? 'Ligacao de video recebida'
+        : 'Ligacao recebida';
+
       const callUpsert: IUpsertMessage = {
         worker_id: baileysEnvironment.baileysWorkerId,
         account_id: baileysEnvironment.baileysAccountId,
         type: EMessageType.system,
-        message: {} as IUpsertMessage['message'],
+        message: {
+          key: {
+            id: `call_${callId}`,
+            remoteJid: normalizedJid,
+            remoteJidAlt: normalizedJidAlt ?? undefined,
+            fromMe: false,
+          },
+          message: {
+            conversation: callText,
+          },
+          messageTimestamp: this.getCallTimestampSeconds(callEvent),
+          pushName: callEvent.callerPn ?? null,
+        },
         photo: null,
         has_quoted: false,
         is_call_event: true,
         call_phone: phone,
-        call_jid: jid,
+        call_jid: normalizedJid,
+        call_jid_alt: normalizedJidAlt,
         call_name: callEvent.callerPn ?? null,
       };
 
@@ -643,11 +690,24 @@ export class BaileysIncomingMessageService {
 
       this.fetchPhotoNonBlocking(socket, pendingItem, jid);
 
-      if (this.rejectCallConfig) {
-        const callId = callEvent.id;
-        if (callId && jid) {
-          socket.rejectCall(callId, jid).catch(() => {});
-        }
+      const callAction =
+        await this.balanceWorkerStatusGrpcClientService.resolveIncomingCallAction(
+          {
+            worker_id: baileysEnvironment.baileysWorkerId,
+            account_id: baileysEnvironment.baileysAccountId,
+            call_jid: jid,
+            call_phone: phone,
+            is_video: isVideo,
+          }
+        );
+
+      if (callAction.reject_call && callEvent.id) {
+        socket.rejectCall(callEvent.id, jid).catch(() => {});
+      }
+
+      const text = callAction.show_message_text?.trim();
+      if (callAction.show_message_on_call && text) {
+        await socket.sendMessage(jid, { text });
       }
     } catch (error) {
       console.error('[CRITICAL] Error processing call event:', error);

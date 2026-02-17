@@ -24,6 +24,7 @@ import {
 } from '../util/wwebjsUpsertBuilders';
 import { WwebjsUpsertMediaEnricher } from './upsertMediaEnricher.service';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 
 const ACK_DEVICE = 2;
 const ACK_READ = 3;
@@ -160,7 +161,9 @@ export class WwebjsIncomingMessageService {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject('Redis') private readonly redis: Redis,
     @inject(WwebjsUpsertMediaEnricher)
-    private readonly upsertMediaEnricher: WwebjsUpsertMediaEnricher
+    private readonly upsertMediaEnricher: WwebjsUpsertMediaEnricher,
+    @inject(BalanceWorkerStatusGrpcClientService)
+    private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService
   ) {}
 
   bindTo(client: Client): void {
@@ -201,6 +204,8 @@ export class WwebjsIncomingMessageService {
         id?: string;
         from?: string;
         fromMe?: boolean;
+        timestamp?: number;
+        isVideo?: boolean;
         reject?: () => Promise<void>;
       }) => {
         void this.handleCall(call);
@@ -770,6 +775,8 @@ export class WwebjsIncomingMessageService {
     id?: string;
     from?: string;
     fromMe?: boolean;
+    timestamp?: number;
+    isVideo?: boolean;
     reject?: () => Promise<void>;
   }): Promise<void> {
     const client = this.currentClient;
@@ -786,14 +793,41 @@ export class WwebjsIncomingMessageService {
     const phone = getPhoneFromJid(jid, null);
     if (!phone) return;
 
-    const upsert = buildCallUpsert(jid, null, phone);
+    const upsert = buildCallUpsert(
+      jid,
+      null,
+      phone,
+      call.id,
+      call.timestamp,
+      Boolean(call.isVideo)
+    );
     const photo = await this.resolvePhotoForCall(client, jid);
     upsert.photo = photo ?? null;
     const topic = this.kafkaServiceQueueService.upsertMessage();
     await this.streamProducerService.send(topic, upsert);
 
-    if (this.rejectCallConfig && call.reject) {
-      call.reject().catch(() => {});
+    try {
+      const callAction =
+        await this.balanceWorkerStatusGrpcClientService.resolveIncomingCallAction(
+          {
+            worker_id: wwebjsEnvironment.wwebjsWorkerId,
+            account_id: wwebjsEnvironment.wwebjsAccountId,
+            call_jid: jid,
+            call_phone: phone,
+            is_video: Boolean(call.isVideo),
+          }
+        );
+
+      if (callAction.reject_call && call.reject) {
+        call.reject().catch(() => {});
+      }
+
+      const text = callAction.show_message_text?.trim();
+      if (callAction.show_message_on_call && text) {
+        await client.sendMessage(jid, text);
+      }
+    } catch (error) {
+      console.error('[wwebjs] resolveIncomingCallAction failed:', error);
     }
   }
 

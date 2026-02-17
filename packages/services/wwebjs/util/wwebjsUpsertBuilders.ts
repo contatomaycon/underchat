@@ -242,17 +242,44 @@ export function buildReactionUpsert(
 export function buildCallUpsert(
   callJid: string,
   callName: string | null,
-  callPhone: string
+  callPhone: string,
+  callId?: string,
+  callTimestamp?: number,
+  isVideo: boolean = false
 ): IUpsertMessage {
+  const normalizedCallJid = normalizeJid(callJid) ?? callJid;
+  const callJidAlt = normalizedCallJid !== callJid ? callJid : undefined;
+  const messageTimestamp =
+    typeof callTimestamp === 'number' && callTimestamp > 0
+      ? callTimestamp > 1_000_000_000_000
+        ? Math.floor(callTimestamp / 1000)
+        : Math.floor(callTimestamp)
+      : Math.floor(Date.now() / 1000);
+  const messageId = callId ? `call_${callId}` : `call_${Date.now()}`;
+  const callText = isVideo ? 'Ligacao de video recebida' : 'Ligacao recebida';
+
   return {
     worker_id: wwebjsEnvironment.wwebjsWorkerId,
     account_id: wwebjsEnvironment.wwebjsAccountId,
     type: EMessageType.system,
-    message: {} as IUpsertMessage['message'],
+    message: {
+      key: {
+        id: messageId,
+        remoteJid: normalizedCallJid,
+        remoteJidAlt: callJidAlt,
+        fromMe: false,
+      },
+      message: {
+        conversation: callText,
+      },
+      messageTimestamp,
+      pushName: callName ?? null,
+    },
     has_quoted: false,
     is_call_event: true,
     call_phone: callPhone,
-    call_jid: callJid,
+    call_jid: normalizedCallJid,
+    call_jid_alt: callJidAlt,
     call_name: callName,
   };
 }

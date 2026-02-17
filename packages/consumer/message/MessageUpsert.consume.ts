@@ -57,9 +57,7 @@ import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 import { ContactService } from '@core/services/contact.service';
 import { TFunction } from 'i18next';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
-import { ChatMessageService } from '@core/services/chatMessage.service';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
-import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
@@ -113,8 +111,6 @@ export class MessageUpsertConsume {
     private readonly encryptService: EncryptService,
     @inject(ContactService)
     private readonly contactService: ContactService,
-    @inject(ChatMessageService)
-    private readonly chatMessageService: ChatMessageService,
     @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
     @inject(ChatbotFlowRunnerService)
@@ -197,11 +193,6 @@ export class MessageUpsertConsume {
 
     for (let attempt = 0; attempt < this.MAX_RETRIES; attempt++) {
       try {
-        if (data.is_call_event) {
-          await this.handleCallEvent(t, data);
-          return;
-        }
-
         await this.createOrUpdateChat(t, data, phone);
         return;
       } catch (error) {
@@ -1902,150 +1893,6 @@ export class MessageUpsertConsume {
     );
   }
 
-  private async handleCallEvent(
-    t: TFunction<'translation', undefined>,
-    data: IUpsertMessage
-  ): Promise<void> {
-    if (!data.call_phone || !data.is_call_event) {
-      return;
-    }
-
-    const workerConfig =
-      await this.workerService.viewWorkerConfigFieldsByWorkerId(data.worker_id);
-
-    if (!workerConfig?.show_message_on_call) {
-      return;
-    }
-
-    const normalizedPhone = this.normalizePhoneForLock(data.call_phone);
-    const lockKey = `chat-create:${data.account_id}:${data.worker_id}:${normalizedPhone}`;
-
-    await withLock(
-      this.redis,
-      lockKey,
-      async () => {
-        const callPhone = data.call_phone;
-        if (!callPhone) return;
-
-        let chat = await this.chatService.findChatByPhone(
-          data.account_id,
-          data.worker_id,
-          callPhone,
-          data.call_jid,
-          data.call_jid_alt
-        );
-
-        if (!chat) {
-          chat = await this.createChatFromCallEvent(data);
-
-          if (!chat) return;
-        }
-
-        if (chat) {
-          await this.updateChatPhotoIfNeeded(chat, data);
-        }
-
-        const message = replaceMessageTags({
-          message: workerConfig.show_message_on_call,
-          chat,
-          t,
-        });
-
-        await this.chatMessageService.sendMessage(t, {
-          chat,
-          accountId: data.account_id,
-          type: EMessageType.system,
-          message,
-          typeUser: ETypeUserChat.system,
-        });
-      },
-      { ttlMs: 60000, retryMs: 100, maxWaitMs: 90000 }
-    );
-  }
-
-  private async createChatFromCallEvent(
-    data: IUpsertMessage
-  ): Promise<IChat | null> {
-    const jid = data.call_jid;
-    const jidAlt = data.call_jid_alt ?? null;
-
-    if (!jid && !jidAlt) {
-      return null;
-    }
-
-    const phone = getPhoneFromJid(jid, jidAlt);
-    if (!phone) {
-      return null;
-    }
-
-    const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
-      this.accountService.viewAccountName(data.account_id),
-      this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
-    ]);
-
-    if (!viewAccountName || !viewWorkerNameAndId) {
-      return null;
-    }
-
-    const chatId = uuidv7();
-    const messageDate = new Date().toISOString();
-
-    const inputChatMessage: IChat = {
-      chat_id: chatId,
-      message_key: {
-        remote_jid: jid,
-        remote_jid_alt: jidAlt,
-      },
-      account: viewAccountName,
-      worker: viewWorkerNameAndId,
-      name: data.call_name ?? null,
-      phone,
-      status: EChatStatus.closed,
-      date: messageDate,
-      closed_at: messageDate,
-      summary: {
-        last_message: null,
-        last_date: messageDate,
-        unread_count: 0,
-      },
-    };
-
-    const phoneWithPlus = `+${phone}`;
-    const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
-
-    if (phoneAndDdi) {
-      const ignoreResult = await this.ensureContactForChat(
-        inputChatMessage,
-        data,
-        phoneAndDdi,
-        phone,
-        data.call_name ?? null
-      );
-
-      if (ignoreResult === 'ignore_totally') {
-        return null;
-      }
-
-      if (inputChatMessage.contact) {
-        inputChatMessage.name = inputChatMessage.contact.name;
-      }
-    }
-
-    if (data.photo) {
-      const photoResult = await this.storageService.uploadFromUrl(
-        data.photo,
-        data.account_id,
-        chatId
-      );
-      inputChatMessage.photo =
-        inputChatMessage.contact?.photo ?? photoResult?.url ?? null;
-    }
-
-    await this.saveChatWithCaches(inputChatMessage);
-
-    return inputChatMessage;
-  }
-
   private async updateChatSummaryWithRetry(
     chatId: string,
     messageText: string | null,
@@ -3085,7 +2932,7 @@ export class MessageUpsertConsume {
             const jid = remoteJid(data.message?.key);
             const jidAlt = remoteJidAlt(data.message?.key);
 
-            if (!jid && !jidAlt && !data.is_call_event) {
+            if (!jid && !jidAlt) {
               const dlqSent = await this.sendToDlq(
                 data,
                 new Error('Received message without remoteJid'),
@@ -3094,9 +2941,7 @@ export class MessageUpsertConsume {
               return dlqSent;
             }
 
-            const phone = data.is_call_event
-              ? data.call_phone
-              : getPhoneFromJid(jid, jidAlt);
+            const phone = getPhoneFromJid(jid, jidAlt);
 
             if (!phone) {
               const dlqSent = await this.sendToDlq(

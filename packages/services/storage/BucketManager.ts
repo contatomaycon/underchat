@@ -4,7 +4,11 @@ import {
   CreateBucketCommand,
   PutBucketPolicyCommand,
   DeletePublicAccessBlockCommand,
+  PutBucketLifecycleConfigurationCommand,
+  ExpirationStatus,
 } from '@aws-sdk/client-s3';
+
+const EXPIRATION_DAYS = 180; // 6 months
 
 @injectable()
 export class BucketManager {
@@ -191,6 +195,66 @@ export class BucketManager {
     }
   }
 
+  private isLifecycleNotSupportedError(error: any): boolean {
+    if (!error) return false;
+    const code = error.name ?? error.Code;
+    return (
+      code === 'NotImplemented' ||
+      code === 'MethodNotAllowed' ||
+      code === 'InvalidRequest'
+    );
+  }
+
+  private async setLifecyclePolicy(bucketId: string): Promise<void> {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 1000;
+
+    const lifecycleConfig = {
+      Rules: [
+        {
+          ID: 'ExpireAfter6Months',
+          Status: ExpirationStatus.Enabled,
+          Filter: {},
+          Expiration: {
+            Days: EXPIRATION_DAYS,
+          },
+        },
+      ],
+    };
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        await this.client.send(
+          new PutBucketLifecycleConfigurationCommand({
+            Bucket: bucketId,
+            LifecycleConfiguration: lifecycleConfig,
+          })
+        );
+        return;
+      } catch (error: any) {
+        if (this.isLifecycleNotSupportedError(error)) {
+          return;
+        }
+
+        if (this.isNoSuchBucketError(error)) {
+          return;
+        }
+
+        const shouldRetry =
+          attempt < MAX_RETRIES - 1 && this.isRetryableError(error);
+
+        if (shouldRetry) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1))
+          );
+          continue;
+        }
+
+        throw error;
+      }
+    }
+  }
+
   private async setPublicPolicy(bucketId: string): Promise<void> {
     const publicReadPolicy = {
       Id: 'PublicReadGetObject',
@@ -260,6 +324,7 @@ export class BucketManager {
     await this.createBucket(bucketId);
     await this.removePublicAccessBlock(bucketId);
     await this.setPublicPolicy(bucketId);
+    await this.setLifecyclePolicy(bucketId);
 
     this.verifiedBuckets.add(bucketId);
 

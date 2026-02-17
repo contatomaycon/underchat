@@ -8,6 +8,7 @@ service WorkerCommand {
   rpc RecreateWorker(WorkerPayload) returns (WorkerCommandResponse);
   rpc ChangeConnectionStatus(ChangeConnectionStatusRequest) returns (WorkerCommandResponse);
   rpc NotifyWorkerStatus(NotifyWorkerStatusRequest) returns (WorkerCommandResponse);
+  rpc ResolveIncomingCallAction(ResolveIncomingCallActionRequest) returns (ResolveIncomingCallActionResponse);
 }
 
 message WorkerPayload {
@@ -35,6 +36,20 @@ message NotifyWorkerStatusRequest {
   string worker_status_id = 3;
   string phone = 4;
   bool disconnected_user = 5;
+}
+
+message ResolveIncomingCallActionRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string call_jid = 3;
+  string call_phone = 4;
+  bool is_video = 5;
+}
+
+message ResolveIncomingCallActionResponse {
+  bool reject_call = 1;
+  bool show_message_on_call = 2;
+  string show_message_text = 3;
 }
 
 message WorkerCommandResponse {}
