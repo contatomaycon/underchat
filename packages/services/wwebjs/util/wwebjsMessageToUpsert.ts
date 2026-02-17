@@ -27,6 +27,12 @@ function getMessageId(msg: Message): string | undefined {
   return String(msg.id);
 }
 
+function getNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function mapWwebjsTypeToMessageType(
   type: string | undefined,
   rawData?: Record<string, unknown>
@@ -44,6 +50,7 @@ function mapWwebjsTypeToMessageType(
   if (t === 'chat') return EMessageType.text;
   if (t === 'image') return EMessageType.image;
   if (t === 'video') return EMessageType.video;
+  if (t === 'ptv') return EMessageType.video_note;
   if (t === 'ptt' || t === 'audio') return EMessageType.audio;
   if (t === 'sticker') return EMessageType.sticker;
   if (t === 'document') return EMessageType.document;
@@ -54,12 +61,6 @@ function mapWwebjsTypeToMessageType(
     return EMessageType.system;
   }
   return EMessageType.text;
-}
-
-function getNonEmptyString(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function getNumber(value: unknown): number | undefined {
@@ -129,6 +130,26 @@ function resolvePinType(
 
   if (rawType === 'pinned_message') {
     return 'PIN';
+  }
+
+  return undefined;
+}
+
+function getSerializedId(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') {
+    return getNonEmptyString(value);
+  }
+  if (typeof value !== 'object') return undefined;
+
+  const objectValue = value as Record<string, unknown>;
+  const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
+  for (const key of directKeys) {
+    const candidate = objectValue[key];
+    if (typeof candidate === 'string') {
+      const normalized = getNonEmptyString(candidate);
+      if (normalized) return normalized;
+    }
   }
 
   return undefined;
@@ -221,7 +242,10 @@ function buildDisappearingProtocolMessage(
   }
 
   const subType = getNonEmptyString(rawData?.subtype)?.toLowerCase();
-  if (subType !== 'ephemeral_setting' && subType !== 'ephemeral_sync_response') {
+  if (
+    subType !== 'ephemeral_setting' &&
+    subType !== 'ephemeral_sync_response'
+  ) {
     return undefined;
   }
 
@@ -487,6 +511,7 @@ function getContextInfoTargetKey(
   const keyByRawType: Record<string, string> = {
     image: 'imageMessage',
     video: 'videoMessage',
+    ptv: 'ptvMessage',
     ptt: 'audioMessage',
     audio: 'audioMessage',
     document: 'documentMessage',
@@ -545,26 +570,6 @@ function attachContextInfo(
       ...contextInfo,
     },
   };
-}
-
-function getSerializedId(value: unknown): string | undefined {
-  if (!value) return undefined;
-  if (typeof value === 'string') {
-    return getNonEmptyString(value);
-  }
-  if (typeof value !== 'object') return undefined;
-
-  const objectValue = value as Record<string, unknown>;
-  const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
-  for (const key of directKeys) {
-    const candidate = objectValue[key];
-    if (typeof candidate === 'string') {
-      const normalized = getNonEmptyString(candidate);
-      if (normalized) return normalized;
-    }
-  }
-
-  return undefined;
 }
 
 function getQuotedIdFromRaw(raw?: Record<string, unknown>): string | undefined {
@@ -682,6 +687,18 @@ function buildQuotedProtoMessage(
   if (rawType === 'video') {
     return {
       videoMessage: {
+        caption: body || undefined,
+        mimetype: getNonEmptyString(rawData?.mimetype),
+        seconds: getNumber(rawData?.seconds) ?? getNumber(rawData?.duration),
+        width: getNumber(rawData?.width),
+        height: getNumber(rawData?.height),
+      },
+    };
+  }
+
+  if (rawType === 'ptv') {
+    return {
+      ptvMessage: {
         caption: body || undefined,
         mimetype: getNonEmptyString(rawData?.mimetype),
         seconds: getNumber(rawData?.seconds) ?? getNumber(rawData?.duration),
