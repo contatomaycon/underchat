@@ -40,8 +40,10 @@ import { EncryptService } from './encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 import i18next from 'i18next';
 import { IChat } from '@core/common/interfaces/IChat';
-import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
-import { WAMessage } from '@whiskeysockets/baileys';
+import {
+  IUpsertMessage,
+  IUpsertMessageEnvelope,
+} from '@core/common/interfaces/IUpsertMessage';
 
 @injectable()
 export class ScheduleSendService {
@@ -819,11 +821,23 @@ export class ScheduleSendService {
     schedule: ISchedulePendingData,
     jid: string
   ): IUpsertMessage {
+    const bootstrapEnvelope: IUpsertMessageEnvelope = {
+      key: {
+        id: `schedule_bootstrap_${schedule.schedule_id}_${Date.now()}`,
+        remoteJid: jid,
+        fromMe: true,
+      },
+      message: {
+        conversation: '',
+      },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+    };
+
     return {
       account_id: schedule.account_id,
       worker_id: schedule.worker_id,
       type: EMessageType.text,
-      message: { key: { remoteJid: jid } } as WAMessage,
+      message: bootstrapEnvelope,
       has_quoted: false,
     };
   }
