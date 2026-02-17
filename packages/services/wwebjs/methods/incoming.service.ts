@@ -162,8 +162,6 @@ export class WwebjsIncomingMessageService {
   private readonly PIN_MESSAGE_CACHE_TTL_MS = 15000;
   private readonly INCOMING_MESSAGE_CACHE_TTL_MS = 30000;
   private readonly INCOMING_MESSAGE_CACHE_MAX_SIZE = 100000;
-  private readonly HISTORICAL_MESSAGE_GRACE_MS = 15000;
-  private readonly HISTORICAL_TIMESTAMP_DRIFT_SECONDS = 120;
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
