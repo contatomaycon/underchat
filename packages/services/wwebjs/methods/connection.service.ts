@@ -57,6 +57,7 @@ export class WwebjsConnectionService {
   private initialConnection = false;
   private connecting = false;
   private retryCount = 0;
+  private initializeRetryCount = 0;
   private currentPromise: Promise<IBaileysConnectionState> | undefined;
   private pendingResolve: ((s: IBaileysConnectionState) => void) | undefined;
   private lastPayload: string | null = null;
@@ -127,6 +128,10 @@ export class WwebjsConnectionService {
 
     if (requestedByUser) {
       this.userRequestedDisconnect = false;
+    }
+
+    if (requestedByUser || forceNew || !fromDisconnectRestart) {
+      this.initializeRetryCount = 0;
     }
 
     if (this.userRequestedDisconnect && !fromDisconnectRestart) {
@@ -334,16 +339,46 @@ export class WwebjsConnectionService {
   }
 
   private reconnectAfterProfileUnlock(): void {
-    if (this.retryCount >= MAX_RETRIES) {
+    if (this.initializeRetryCount >= MAX_RETRIES) {
       return;
     }
 
-    this.retryCount += 1;
+    this.initializeRetryCount += 1;
 
     setTimeout(() => {
       this.connect({
         initial_connection: this.initialConnection,
         force_new: true,
+        allow_restore: true,
+        type: this.typeConnection,
+        requested_by_user: false,
+        from_disconnect_restart: true,
+      }).catch(() => {});
+    }, RETRY_DELAY);
+  }
+
+  private isTransientInitializeError(message: string): boolean {
+    const normalizedMessage = message.toLowerCase();
+
+    return (
+      normalizedMessage.includes('execution context was destroyed') ||
+      normalizedMessage.includes('most likely because of a navigation') ||
+      normalizedMessage.includes('cannot find context with specified id') ||
+      normalizedMessage.includes('target closed')
+    );
+  }
+
+  private reconnectAfterTransientInitializeError(): void {
+    if (this.initializeRetryCount >= MAX_RETRIES) {
+      return;
+    }
+
+    this.initializeRetryCount += 1;
+
+    setTimeout(() => {
+      this.connect({
+        initial_connection: this.initialConnection,
+        force_new: false,
         allow_restore: true,
         type: this.typeConnection,
         requested_by_user: false,
@@ -366,6 +401,8 @@ export class WwebjsConnectionService {
     if (this.isChromiumProfileLockedError(message)) {
       this.clearChromiumProfileLock();
       this.reconnectAfterProfileUnlock();
+    } else if (this.isTransientInitializeError(message)) {
+      this.reconnectAfterTransientInitializeError();
     }
 
     this.saveLogWppConnection({
@@ -409,6 +446,7 @@ export class WwebjsConnectionService {
           dataPath: authPath,
         }),
         puppeteer: puppeteerOpts,
+        emitHistoricalEvents: false,
       });
 
       this.client = client;
@@ -457,6 +495,7 @@ export class WwebjsConnectionService {
       client.on('ready', () => {
         this.qrHash = undefined;
         this.retryCount = 0;
+        this.initializeRetryCount = 0;
         this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
         this.connectionEstablished = true;
         this.incomingMessageService.bindTo(client);
