@@ -18,6 +18,8 @@ export interface IUpsertMessageEnvelope {
   messageTimestamp?: number;
   pushName?: string | null;
   verifiedBizName?: string | null;
+  ack?: number;
+  status?: number;
 }
 
 export interface IUpsertMessage {

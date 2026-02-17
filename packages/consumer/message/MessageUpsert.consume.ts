@@ -367,6 +367,98 @@ export class MessageUpsertConsume {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
+  private isPhoneLikeName(value: string): boolean {
+    const normalized = value.trim();
+    if (!normalized) return false;
+
+    const digits = normalized.replace(/\D/g, '');
+    if (digits.length < 8) return false;
+
+    const nonPhoneChars = normalized.replace(/[0-9+\-().\s]/g, '');
+    return nonPhoneChars.length === 0;
+  }
+
+  private normalizeChatNameCandidate(value: unknown): string | null {
+    const name = this.toNonEmptyString(value);
+    if (!name) return null;
+    if (this.isPhoneLikeName(name)) return null;
+    return name;
+  }
+
+  private normalizeComparableName(
+    value: string | null | undefined
+  ): string | null {
+    const normalized = this.toNonEmptyString(value);
+    if (!normalized) return null;
+    return normalized.toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  private isLikelyOwnAccountName(
+    candidateName: string | null | undefined,
+    accountName: string | null | undefined
+  ): boolean {
+    const candidate = this.normalizeComparableName(candidateName);
+    const account = this.normalizeComparableName(accountName);
+    if (!candidate || !account) return false;
+    return candidate === account;
+  }
+
+  private parseNumericStatusCandidate(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  private getOutgoingStatusOrAck(data: IUpsertMessage): number | null {
+    const envelope = data.message as
+      | (IUpsertMessageEnvelope & {
+          ack?: unknown;
+          status?: unknown;
+          _data?: { ack?: unknown; status?: unknown };
+        })
+      | undefined;
+    if (!envelope) {
+      return null;
+    }
+
+    const candidates: unknown[] = [
+      envelope.ack,
+      envelope.status,
+      envelope._data?.ack,
+      envelope._data?.status,
+    ];
+
+    for (const candidate of candidates) {
+      const parsed = this.parseNumericStatusCandidate(candidate);
+      if (parsed !== null) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  private buildOutgoingSummary(data: IUpsertMessage): IChatMessage['summary'] {
+    const statusOrAck = this.getOutgoingStatusOrAck(data);
+    const isSeen = statusOrAck !== null && statusOrAck >= 3;
+
+    return {
+      is_sent: true,
+      is_delivered: true,
+      is_seen: isSeen,
+      is_sent_to_internal: true,
+    };
+  }
+
   private collectRemoteIdCandidatesFromKey(
     keyContext?: IMessageKeyIdContext
   ): string[] {
@@ -889,7 +981,8 @@ export class MessageUpsertConsume {
 
   private buildTypeUserAndSummary(
     messageType: EMessageType,
-    isFromMe: boolean
+    isFromMe: boolean,
+    data: IUpsertMessage
   ): {
     typeUser: ETypeUserChat;
     summary: IChatMessage['summary'];
@@ -912,12 +1005,7 @@ export class MessageUpsertConsume {
     if (isFromMe) {
       return {
         typeUser: ETypeUserChat.operator,
-        summary: {
-          is_sent: false,
-          is_delivered: false,
-          is_seen: false,
-          is_sent_to_internal: true,
-        },
+        summary: this.buildOutgoingSummary(data),
       };
     }
 
@@ -1007,11 +1095,19 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<void> {
-    if (getChat?.name || data.message?.key?.fromMe) {
+    if (getChat?.name) {
       return;
     }
 
-    const name = this.nameChat(data);
+    const contactName = this.normalizeChatNameCandidate(getChat?.contact?.name);
+    const messageNameRaw = this.nameChat(data);
+    const messageName = this.isLikelyOwnAccountName(
+      messageNameRaw,
+      getChat?.account?.name
+    )
+      ? null
+      : messageNameRaw;
+    const name = contactName ?? messageName;
     if (!name) {
       return;
     }
@@ -1980,7 +2076,8 @@ export class MessageUpsertConsume {
       const isFromMe = data.message?.key?.fromMe ?? false;
       const { typeUser, summary } = this.buildTypeUserAndSummary(
         data.type,
-        isFromMe
+        isFromMe,
+        data
       );
 
       const inputChatMessage: IChatMessage = {
@@ -2197,13 +2294,7 @@ export class MessageUpsertConsume {
   }
 
   private nameChat(data: IUpsertMessage) {
-    let name = null;
-
-    if (!data.message?.key?.fromMe) {
-      name = data?.message?.pushName ?? null;
-    }
-
-    return name;
+    return this.normalizeChatNameCandidate(data?.message?.pushName);
   }
 
   private getInnerMessage(
@@ -2514,10 +2605,15 @@ export class MessageUpsertConsume {
       throw new Error('Received message without valid phone');
     }
 
-    const chatId = uuidv7();
-    const name = this.nameChat(data);
-    const messageDate = new Date().toISOString();
     const isFromMe = data.message?.key?.fromMe ?? false;
+    const chatId = uuidv7();
+    const nameFromMessage = this.nameChat(data);
+    const name =
+      isFromMe &&
+      this.isLikelyOwnAccountName(nameFromMessage, viewAccountName?.name)
+        ? null
+        : nameFromMessage;
+    const messageDate = new Date().toISOString();
 
     const content = this.buildMessageContent(data);
     const messageText = extractMessageTextFromContent(content);
@@ -2557,6 +2653,15 @@ export class MessageUpsertConsume {
         inputChatMessage.status = EChatStatus.closed;
         inputChatMessage.closed_at = new Date().toISOString();
       }
+    }
+
+    const contactName = this.normalizeChatNameCandidate(
+      inputChatMessage.contact?.name
+    );
+    if (contactName) {
+      inputChatMessage.name = contactName;
+    } else if (!inputChatMessage.name) {
+      inputChatMessage.name = null;
     }
 
     if (data.photo) {

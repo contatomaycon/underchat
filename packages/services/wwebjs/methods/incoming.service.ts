@@ -605,7 +605,7 @@ export class WwebjsIncomingMessageService {
       if (this.isUnsupportedSystemNotification(msg)) return;
 
       const [pushName, photo] = await Promise.all([
-        this.resolvePushName(msg),
+        this.resolvePushName(client, msg, resolvedJids),
         this.resolvePhotoForMessage(client, msg, resolvedJids),
       ]);
 
@@ -647,7 +647,7 @@ export class WwebjsIncomingMessageService {
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
     const [pushName, photo] = await Promise.all([
-      this.resolvePushName(msg),
+      this.resolvePushName(client, msg, resolvedJids),
       this.resolvePhotoForMessage(client, msg, resolvedJids),
     ]);
 
@@ -664,7 +664,57 @@ export class WwebjsIncomingMessageService {
     await this.streamProducerService.send(topic, upsert);
   }
 
-  private async resolvePushName(msg: Message): Promise<string | undefined> {
+  private extractNameFromContact(contact: unknown): string | undefined {
+    const contactPushName = normalizeNameCandidate(
+      (contact as { pushname?: unknown } | undefined)?.pushname
+    );
+    if (contactPushName) {
+      return contactPushName;
+    }
+
+    const contactShortName = normalizeNameCandidate(
+      (contact as { shortName?: unknown } | undefined)?.shortName
+    );
+    if (contactShortName) {
+      return contactShortName;
+    }
+
+    return normalizeNameCandidate(
+      (contact as { name?: unknown } | undefined)?.name
+    );
+  }
+
+  private async getContactNameById(
+    getContactById: (contactId: string) => Promise<unknown>,
+    contactId: string
+  ): Promise<string | undefined> {
+    try {
+      const contact = await getContactById(contactId);
+      return this.extractNameFromContact(contact);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async resolveNameFromContactCandidates(
+    getContactById: (contactId: string) => Promise<unknown>,
+    candidates: string[]
+  ): Promise<string | undefined> {
+    for (const candidate of candidates) {
+      const name = await this.getContactNameById(getContactById, candidate);
+      if (name) {
+        return name;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async resolvePushName(
+    client: Client,
+    msg: Message,
+    resolvedJids: WwebjsResolvedJids
+  ): Promise<string | undefined> {
     const raw = msg as unknown as {
       _data?: {
         notifyName?: unknown;
@@ -672,29 +722,58 @@ export class WwebjsIncomingMessageService {
     };
 
     const rawNotifyName = normalizeNameCandidate(raw._data?.notifyName);
+
+    if (msg.fromMe) {
+      try {
+        const chat = await msg.getChat();
+        const chatName = normalizeNameCandidate(
+          (chat as { name?: unknown } | undefined)?.name
+        );
+        if (chatName) {
+          return chatName;
+        }
+      } catch {}
+
+      const contactCandidates = this.removeSelfPhotoCandidates(
+        client,
+        this.buildPhotoCandidates([
+          resolvedJids.remoteJid,
+          resolvedJids.remoteJidAlt,
+          msg.to,
+          getMessageRemoteFromId(msg),
+        ])
+      );
+
+      const getContactById = (
+        client as unknown as {
+          getContactById?: (contactId: string) => Promise<unknown>;
+        }
+      ).getContactById;
+
+      if (typeof getContactById === 'function') {
+        const contactName = await this.resolveNameFromContactCandidates(
+          (contactId) => getContactById.call(client, contactId),
+          contactCandidates
+        );
+        if (contactName) {
+          return contactName;
+        }
+      }
+
+      if (rawNotifyName) {
+        return rawNotifyName;
+      }
+
+      return undefined;
+    }
+
     if (rawNotifyName) {
       return rawNotifyName;
     }
 
     try {
       const contact = await msg.getContact();
-      const contactPushName = normalizeNameCandidate(
-        (contact as { pushname?: unknown } | undefined)?.pushname
-      );
-      if (contactPushName) {
-        return contactPushName;
-      }
-
-      const contactShortName = normalizeNameCandidate(
-        (contact as { shortName?: unknown } | undefined)?.shortName
-      );
-      if (contactShortName) {
-        return contactShortName;
-      }
-
-      const contactName = normalizeNameCandidate(
-        (contact as { name?: unknown } | undefined)?.name
-      );
+      const contactName = this.extractNameFromContact(contact);
       if (contactName) {
         return contactName;
       }
@@ -884,16 +963,18 @@ export class WwebjsIncomingMessageService {
       return cached;
     }
 
-    try {
-      const contact = await msg.getContact();
-      const photoFromContact = await this.withProfileTimeout(
-        contact.getProfilePicUrl()
-      );
-      if (photoFromContact) {
-        this.cachePhoto(candidates, photoFromContact);
-        return photoFromContact;
-      }
-    } catch {}
+    if (!msg.fromMe) {
+      try {
+        const contact = await msg.getContact();
+        const photoFromContact = await this.withProfileTimeout(
+          contact.getProfilePicUrl()
+        );
+        if (photoFromContact) {
+          this.cachePhoto(candidates, photoFromContact);
+          return photoFromContact;
+        }
+      } catch {}
+    }
 
     const photoFromClient = await this.fetchPhotoByCandidates(
       client,

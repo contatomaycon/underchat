@@ -1193,6 +1193,7 @@ export async function wwebjsMessageToUpsert(
     return null;
   }
   const rawData = getRawMessageData(msg);
+  const ack = getNumber(msg.ack) ?? getNumber(rawData?.ack);
   const rawSubType = getNonEmptyString(rawData?.subtype)?.toLowerCase();
   const rawBody = typeof msg.body === 'string' ? msg.body : '';
   const body = resolveMessageBody(rawType, rawBody, rawData);
@@ -1292,6 +1293,7 @@ export async function wwebjsMessageToUpsert(
     message: innerMessage,
     messageTimestamp: msg.timestamp,
     pushName: pushName ?? getNotifyNameFromMessage(msg),
+    ack,
   };
 
   return {

@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { Buffer } from 'node:buffer';
 import {
   AnyMessageContent,
+  Contact,
   MessageUserReceiptUpdate,
   proto,
   WACallEvent,
@@ -44,6 +45,7 @@ export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
   private readonly processedMessages = new Map<string, number>();
   private readonly processedCalls = new Map<string, number>();
+  private readonly contactNamesByJid = new Map<string, string>();
   private readonly MAX_SIZE = 100000;
   private readonly DEDUP_WINDOW_MS = 3000;
   private cleanupInterval?: NodeJS.Timeout;
@@ -96,6 +98,98 @@ export class BaileysIncomingMessageService {
     if (!jidToUse) return null;
 
     return `${jidToUse}:${id}:${fromMe}`;
+  }
+
+  private isPhoneLikeName(value: string): boolean {
+    const normalized = value.trim();
+    if (!normalized) return false;
+
+    const digits = normalized.replace(/\D/g, '');
+    if (digits.length < 8) return false;
+
+    const nonPhoneChars = normalized.replace(/[0-9+\-().\s]/g, '');
+    return nonPhoneChars.length === 0;
+  }
+
+  private normalizeNameCandidate(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (this.isPhoneLikeName(trimmed)) return null;
+    return trimmed;
+  }
+
+  private buildJidAliases(jid: string): string[] {
+    const aliases = new Set<string>();
+    const normalized = normalizeJid(jid) ?? jid;
+    aliases.add(normalized);
+
+    if (normalized.endsWith('@s.whatsapp.net')) {
+      aliases.add(normalized.replace(/@s\.whatsapp\.net$/, '@c.us'));
+    }
+
+    if (normalized.endsWith('@c.us')) {
+      aliases.add(normalized.replace(/@c\.us$/, '@s.whatsapp.net'));
+    }
+
+    return Array.from(aliases);
+  }
+
+  private cacheContactName(jid: string | undefined, name: string | null): void {
+    if (!jid || !name) return;
+    for (const alias of this.buildJidAliases(jid)) {
+      this.contactNamesByJid.set(alias, name);
+    }
+  }
+
+  private upsertContactNames(
+    contacts: Array<Contact | Partial<Contact>>
+  ): void {
+    for (const contact of contacts) {
+      const contactId =
+        normalizeJid(contact.id) ??
+        normalizeJid(contact.lid) ??
+        normalizeJid(contact.phoneNumber);
+      if (!contactId) continue;
+
+      const name =
+        this.normalizeNameCandidate(contact.name) ??
+        this.normalizeNameCandidate(contact.notify) ??
+        this.normalizeNameCandidate(contact.verifiedName);
+
+      if (!name) continue;
+      this.cacheContactName(contactId, name);
+    }
+  }
+
+  private resolveContactNameFromCache(jid: string | undefined): string | null {
+    if (!jid) return null;
+
+    for (const alias of this.buildJidAliases(jid)) {
+      const cached = this.contactNamesByJid.get(alias);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    return null;
+  }
+
+  private resolveMessagePushName(m: WAMessage): string | null {
+    const fromMe = m.key?.fromMe ?? false;
+    const peerJid =
+      normalizeJid(remoteJid(m.key)) ?? normalizeJid(remoteJidAlt(m.key));
+
+    if (fromMe) {
+      return this.resolveContactNameFromCache(peerJid);
+    }
+
+    const currentPushName = this.normalizeNameCandidate(m.pushName);
+    if (currentPushName) {
+      return currentPushName;
+    }
+
+    return this.resolveContactNameFromCache(peerJid);
   }
 
   private buildMessageCacheKey(key?: WAMessageKey | null): string | null {
@@ -357,6 +451,16 @@ export class BaileysIncomingMessageService {
       }
     });
 
+    socket.ev.on('contacts.upsert', (contacts) => {
+      if (!Array.isArray(contacts) || contacts.length === 0) return;
+      this.upsertContactNames(contacts);
+    });
+
+    socket.ev.on('contacts.update', (contacts) => {
+      if (!Array.isArray(contacts) || contacts.length === 0) return;
+      this.upsertContactNames(contacts as Array<Contact | Partial<Contact>>);
+    });
+
     socket.ev.on('messages.update', (events) => {
       void this.handleMessagesUpdate(events);
     });
@@ -432,6 +536,13 @@ export class BaileysIncomingMessageService {
       }
 
       const hasQuoted = messageHasQuoted(m);
+      const resolvedPushName = this.resolveMessagePushName(m);
+      if (m.key?.fromMe) {
+        (m as WAMessage & { pushName?: string }).pushName =
+          resolvedPushName ?? undefined;
+      } else if (resolvedPushName && !m.pushName) {
+        (m as WAMessage & { pushName?: string }).pushName = resolvedPushName;
+      }
 
       const inputUpsert: IUpsertMessage = {
         worker_id: baileysEnvironment.baileysWorkerId,
@@ -875,6 +986,8 @@ export class BaileysIncomingMessageService {
       this.currentSocket.ev.removeAllListeners('messages.upsert');
       this.currentSocket.ev.removeAllListeners('messages.update');
       this.currentSocket.ev.removeAllListeners('message-receipt.update');
+      this.currentSocket.ev.removeAllListeners('contacts.upsert');
+      this.currentSocket.ev.removeAllListeners('contacts.update');
       this.currentSocket.ev.removeAllListeners('presence.update');
       this.currentSocket.ev.removeAllListeners('call');
     } catch {}
