@@ -176,6 +176,16 @@ export class WwebjsIncomingMessageService {
 
       void this.handleIncomingMessage(msg);
     });
+    client.on('message_create', (msg: Message) => {
+      if (!this.shouldHandleFromMeCreatedMessage(msg)) {
+        return;
+      }
+
+      console.log('Messages upsert (fromMe external)');
+      console.dir(msg, { depth: null, colors: true });
+
+      void this.handleIncomingMessage(msg);
+    });
     client.on('message_revoke_everyone', (after: Message, before?: Message) => {
       void this.handleRevokeEveryone(after, before);
     });
@@ -226,6 +236,33 @@ export class WwebjsIncomingMessageService {
     if (remoteJid === 'status@broadcast') return true;
     if (remoteJid.endsWith('@broadcast')) return true;
     return false;
+  }
+
+  private getMessageDeviceType(msg: Message): string | undefined {
+    const raw = msg as unknown as {
+      deviceType?: unknown;
+      _data?: {
+        deviceType?: unknown;
+      };
+    };
+
+    return (
+      getNonEmptyString(raw.deviceType) ??
+      getNonEmptyString(raw._data?.deviceType)
+    );
+  }
+
+  private shouldHandleFromMeCreatedMessage(msg: Message): boolean {
+    if (!msg.fromMe) {
+      return false;
+    }
+
+    const deviceType = this.getMessageDeviceType(msg)?.toLowerCase();
+    if (!deviceType) {
+      return true;
+    }
+
+    return deviceType !== 'web';
   }
 
   private shouldSkipPinnedMessage(msg: Message): boolean {
