@@ -451,13 +451,20 @@ export class ScheduleMessageConsume {
     let error: string | null = null;
 
     try {
+      const isViewOnce = this.resolveViewOnceFlag(
+        data.message.message_key?.is_view_once,
+        audio.view_once
+      );
+      const isPtt = isViewOnce ? true : (audio.ptt ?? false);
+
       result = await this.baileysMessageMediaService.sendAudio(
         jid,
         { url: audio.url },
         {
-          ptt: audio.ptt ?? false,
+          ptt: isPtt,
           seconds: audio.duration ?? undefined,
           mimetype: audio.mimetype ?? undefined,
+          viewOnce: isViewOnce,
         }
       );
 
@@ -481,6 +488,32 @@ export class ScheduleMessageConsume {
       await this.sendSendLog(data, jid, null, error, false);
       throw err;
     }
+  }
+
+  private resolveViewOnceFlag(...values: unknown[]): boolean {
+    return values.some((value) => this.isTruthyViewOnce(value));
+  }
+
+  private isTruthyViewOnce(value: unknown): boolean {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'number') {
+      return value === 1;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return (
+        normalized === '1' ||
+        normalized === 'true' ||
+        normalized === 'yes' ||
+        normalized === 'on'
+      );
+    }
+
+    return false;
   }
 
   private async pushUpdate(input: IUpdateMessage): Promise<void> {

@@ -25,7 +25,7 @@ export class BaileysHelpersService {
   ): Promise<WAMessage | undefined> {
     const sock = this.socket();
 
-    const shouldSimulateTyping = !this.isReactionOrEdit(content);
+    const shouldSimulateTyping = this.shouldSimulateTyping(content);
 
     if (address.includes('@')) {
       if (shouldSimulateTyping) {
@@ -150,6 +150,15 @@ export class BaileysHelpersService {
 
   private isReactionOrEdit(content: AnyMessageContent): boolean {
     return !!(content as any)?.react || !!(content as any)?.edit;
+  }
+
+  private shouldSimulateTyping(content: AnyMessageContent): boolean {
+    if (this.isReactionOrEdit(content)) {
+      return false;
+    }
+
+    const text = (content as any)?.text;
+    return typeof text === 'string' && text.trim().length > 0;
   }
 
   private extractText(content: AnyMessageContent) {

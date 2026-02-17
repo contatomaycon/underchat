@@ -89,12 +89,15 @@ export class BaileysMessageMediaService {
     },
     options?: MiscMessageGenerationOptions
   ) {
+    const isViewOnce = args?.viewOnce === true;
+    const isPtt = isViewOnce ? true : !!args?.ptt;
+
     const content: AnyMessageContent = {
       audio: audio as WAMediaUpload,
-      ptt: !!args?.ptt,
+      ptt: isPtt,
       seconds: args?.seconds,
       mimetype: args?.mimetype,
-      viewOnce: args?.viewOnce,
+      viewOnce: isViewOnce ? true : undefined,
       waveform: args?.waveform,
     } as AnyMessageContent;
 

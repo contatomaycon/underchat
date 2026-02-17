@@ -611,6 +611,32 @@ export class MessageSendConsume {
     return parsed?.stanzaId ?? trimmed;
   }
 
+  private resolveViewOnceFlag(...values: unknown[]): boolean {
+    return values.some((value) => this.isTruthyViewOnce(value));
+  }
+
+  private isTruthyViewOnce(value: unknown): boolean {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'number') {
+      return value === 1;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return (
+        normalized === '1' ||
+        normalized === 'true' ||
+        normalized === 'yes' ||
+        normalized === 'on'
+      );
+    }
+
+    return false;
+  }
+
   private buildBaileysMessageKey(
     key:
       | {
@@ -726,7 +752,11 @@ export class MessageSendConsume {
       ? this.composeQuotedMessage(data)
       : undefined;
 
-    const isPtt = audio.ptt ?? true;
+    const isViewOnce = this.resolveViewOnceFlag(
+      data.message_key?.is_view_once,
+      audio.view_once
+    );
+    const isPtt = isViewOnce ? true : (audio.ptt ?? true);
 
     let waveform: Uint8Array | undefined;
     if (isPtt && audio.waveform) {
@@ -740,7 +770,7 @@ export class MessageSendConsume {
         ptt: isPtt,
         seconds: audio.duration ?? undefined,
         mimetype: audio.mimetype ?? undefined,
-        viewOnce: data.message_key?.is_view_once ?? audio.view_once ?? false,
+        viewOnce: isViewOnce,
         waveform,
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
