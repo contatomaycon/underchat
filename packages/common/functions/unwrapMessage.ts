@@ -42,5 +42,10 @@ export function unwrapMessage(
     | undefined;
   if (videoWithCaption) return unwrapMessage(videoWithCaption, opts);
 
+  const lottieSticker = (msg as any).lottieStickerMessage?.message as
+    | proto.IMessage
+    | undefined;
+  if (lottieSticker) return unwrapMessage(lottieSticker, opts);
+
   return msg;
 }

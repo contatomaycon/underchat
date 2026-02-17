@@ -16,6 +16,7 @@ const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000;
 const LOTTIE_STICKER_EXT = 'was';
 const LOTTIE_STICKER_MIME = 'application/was';
 const LOTTIE_ZIP_ENTRY_MARKER = Buffer.from('animation/animation.json');
+const LOTTIE_JSON_ENTRY_MARKER = Buffer.from('animation.json');
 
 @injectable()
 export class BaileysUpsertMediaEnricher {
@@ -327,10 +328,13 @@ export class BaileysUpsertMediaEnricher {
   ): boolean {
     const lottieFlag =
       (stickerMessage as unknown as { isLottie?: unknown }).isLottie === true;
+    const animatedFlag = stickerMessage.isAnimated === true;
+
     return (
       lottieFlag ||
       mimetype === 'application/was' ||
-      mimetype === 'application/x-tgsticker'
+      mimetype === 'application/x-tgsticker' ||
+      (animatedFlag && mimetype === undefined)
     );
   }
 
@@ -344,7 +348,7 @@ export class BaileysUpsertMediaEnricher {
 
   private normalizeMimetype(mimetype?: string | null): string | undefined {
     if (typeof mimetype !== 'string') return undefined;
-    const normalized = mimetype.trim().toLowerCase();
+    const normalized = mimetype.toLowerCase().split(';')[0]?.trim();
     if (!normalized) return undefined;
     return normalized;
   }
@@ -372,6 +376,10 @@ export class BaileysUpsertMediaEnricher {
     if (buffer.length < 4) return false;
     const hasZipHeader = buffer[0] === 0x50 && buffer[1] === 0x4b;
     if (!hasZipHeader) return false;
-    return buffer.includes(LOTTIE_ZIP_ENTRY_MARKER);
+    if (buffer.includes(LOTTIE_ZIP_ENTRY_MARKER)) return true;
+    if (buffer.includes(LOTTIE_JSON_ENTRY_MARKER)) return true;
+
+    // WhatsApp lottie stickers are zip payloads; some clients vary inner path names.
+    return true;
   }
 }
