@@ -135,6 +135,60 @@ export class BaileysIncomingMessageService {
     return Array.from(aliases);
   }
 
+  private buildSelfJidAliases(socket?: WASocket): Set<string> {
+    const aliases = new Set<string>();
+    const user = socket?.user;
+    if (!user) {
+      return aliases;
+    }
+
+    const rawCandidates = [user.id, user.lid, user.phoneNumber].filter(
+      (candidate): candidate is string => typeof candidate === 'string'
+    );
+
+    for (const rawCandidate of rawCandidates) {
+      const normalized = normalizeJid(rawCandidate) ?? rawCandidate;
+      for (const alias of this.buildJidAliases(normalized)) {
+        aliases.add(alias);
+      }
+    }
+
+    return aliases;
+  }
+
+  private resolvePeerJid(
+    key?: WAMessageKey | null,
+    socket?: WASocket,
+    preferredJid?: string
+  ): string | undefined {
+    const rawCandidates = [
+      preferredJid,
+      remoteJid(key),
+      remoteJidAlt(key),
+    ].filter((candidate): candidate is string => !!candidate);
+
+    if (!rawCandidates.length) {
+      return undefined;
+    }
+
+    const candidates = Array.from(
+      new Set(
+        rawCandidates.map((candidate) => normalizeJid(candidate) ?? candidate)
+      )
+    );
+    const selfAliases = this.buildSelfJidAliases(socket);
+
+    for (const candidate of candidates) {
+      const candidateAliases = this.buildJidAliases(candidate);
+      const isSelf = candidateAliases.some((alias) => selfAliases.has(alias));
+      if (!isSelf) {
+        return candidate;
+      }
+    }
+
+    return undefined;
+  }
+
   private cacheContactName(jid: string | undefined, name: string | null): void {
     if (!jid || !name) return;
     for (const alias of this.buildJidAliases(jid)) {
@@ -177,10 +231,10 @@ export class BaileysIncomingMessageService {
 
   private resolveMessagePushName(m: WAMessage): string | null {
     const fromMe = m.key?.fromMe ?? false;
-    const peerJid =
-      normalizeJid(remoteJid(m.key)) ?? normalizeJid(remoteJidAlt(m.key));
+    const peerJid = this.resolvePeerJid(m.key, this.currentSocket);
 
     if (fromMe) {
+      if (!peerJid) return null;
       return this.resolveContactNameFromCache(peerJid);
     }
 
@@ -567,10 +621,11 @@ export class BaileysIncomingMessageService {
     pendingItem: IBaileysPendingMessage,
     jid?: string
   ): void {
-    const resolvedJid =
-      jid ||
-      remoteJid(pendingItem.inputUpsert.message?.key) ||
-      remoteJidAlt(pendingItem.inputUpsert.message?.key);
+    const resolvedJid = this.resolvePeerJid(
+      pendingItem.inputUpsert.message?.key,
+      socket,
+      jid
+    );
 
     if (!resolvedJid) return;
 

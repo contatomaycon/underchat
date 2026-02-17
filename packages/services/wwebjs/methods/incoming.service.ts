@@ -518,7 +518,7 @@ export class WwebjsIncomingMessageService {
   }
 
   private resolveRemoteJids(
-    _client: Client,
+    client: Client,
     msg: Message
   ): WwebjsResolvedJids | null {
     const idValue =
@@ -553,14 +553,14 @@ export class WwebjsIncomingMessageService {
     const idRemote = normalizeCandidate(idValue?.remote);
     const serializedRemote = normalizeCandidate(getMessageRemoteFromId(msg));
 
-    const fallbackRaw = msg.fromMe
+    const preferredRaw = msg.fromMe
       ? msg.to || msg.from || ''
       : msg.from || msg.to || '';
-    const fallbackJid = normalizeCandidate(fallbackRaw);
+    const preferredJid = normalizeCandidate(preferredRaw);
 
     const orderedCandidates = [
+      preferredJid,
       idRemoteJid,
-      fallbackJid,
       idRemote,
       idRemoteJidAlt,
       serializedRemote,
@@ -570,11 +570,20 @@ export class WwebjsIncomingMessageService {
       return null;
     }
 
-    const uniqueCandidates = Array.from(new Set(orderedCandidates));
+    const uniqueCandidates = this.removeSelfPhotoCandidates(
+      client,
+      Array.from(new Set(orderedCandidates))
+    );
+    if (!uniqueCandidates.length) {
+      return null;
+    }
     const nonLidCandidate = uniqueCandidates.find(
       (candidate) => !this.isLidJid(candidate)
     );
-    const primaryJid = nonLidCandidate ?? uniqueCandidates[0];
+    const primaryJid =
+      preferredJid && uniqueCandidates.includes(preferredJid)
+        ? preferredJid
+        : (nonLidCandidate ?? uniqueCandidates[0]);
 
     if (this.isGroupOrBroadcastJid(primaryJid)) {
       return { remoteJid: primaryJid };
@@ -758,10 +767,6 @@ export class WwebjsIncomingMessageService {
         if (contactName) {
           return contactName;
         }
-      }
-
-      if (rawNotifyName) {
-        return rawNotifyName;
       }
 
       return undefined;
