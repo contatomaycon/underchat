@@ -8,6 +8,7 @@ import {
   ServiceError,
 } from '@grpc/grpc-js';
 import { balanceEnvironment } from '@core/config/environments';
+import { EAppEnvironment } from '@core/common/enums/EAppEnvironment';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
@@ -34,12 +35,19 @@ const GRPC_DEADLINE_MS = 10000;
 
 @injectable()
 export class BalanceWorkerStatusGrpcClientService {
+  private readonly isLocalEnvironment =
+    process.env.APP_ENVIRONMENT === EAppEnvironment.local;
+
   private createClient(): any {
     const address = `${balanceEnvironment.grpcHost}:${balanceEnvironment.grpcPort}`;
     return new WorkerCommandClient(address, credentials.createInsecure());
   }
 
   async notifyWorkerStatus(payload: IBaileysConnectionState): Promise<void> {
+    if (this.isLocalEnvironment) {
+      return;
+    }
+
     const client = this.createClient();
 
     const protoPayload = {
@@ -71,6 +79,10 @@ export class BalanceWorkerStatusGrpcClientService {
   async resolveIncomingCallAction(
     payload: IResolveIncomingCallActionRequestProto
   ): Promise<IResolveIncomingCallActionResponseProto> {
+    if (this.isLocalEnvironment) {
+      return {};
+    }
+
     const client = this.createClient();
 
     const protoPayload = {
