@@ -238,6 +238,34 @@ const resolvePreviewImage = (lp?: LinkPreview): string => {
   return '';
 };
 
+const resolveExternalAdImage = (thumbnailUrl?: string | null): string =>
+  thumbnailUrl &&
+  (thumbnailUrl.startsWith('http://') || thumbnailUrl.startsWith('https://'))
+    ? thumbnailUrl
+    : '';
+
+const resolveMessagePreviewImage = (
+  content?: {
+    link_preview?: LinkPreview | null;
+    context_info?: {
+      external_ad_reply?: {
+        thumbnail_url?: string | null;
+        original_image_url?: string | null;
+      } | null;
+    } | null;
+  } | null
+): string => {
+  const fromLinkPreview = resolvePreviewImage(
+    content?.link_preview ?? undefined
+  );
+  if (fromLinkPreview) return fromLinkPreview;
+
+  return resolveExternalAdImage(
+    content?.context_info?.external_ad_reply?.thumbnail_url ||
+      content?.context_info?.external_ad_reply?.original_image_url
+  );
+};
+
 const domainFromUrl = (u?: string | null): string => {
   if (!u) return '';
   try {
@@ -2849,16 +2877,12 @@ onUnmounted(() => {
                   >
                     <div class="lp-main d-flex">
                       <div
-                        v-if="
-                          resolvePreviewImage(item.message.content.link_preview)
-                        "
+                        v-if="resolveMessagePreviewImage(item.message.content)"
                       >
                         <div class="lp-thumb me-3">
                           <img
                             :src="
-                              resolvePreviewImage(
-                                item.message.content.link_preview
-                              )
+                              resolveMessagePreviewImage(item.message.content)
                             "
                             alt=""
                           />
@@ -2905,7 +2929,10 @@ onUnmounted(() => {
                   </div>
 
                   <div
-                    v-if="item.message.content?.context_info?.external_ad_reply"
+                    v-if="
+                      item.message.content?.context_info?.external_ad_reply &&
+                      !item.message.content?.link_preview?.title
+                    "
                     class="context-info-ad rounded mt-2"
                     :class="
                       !isTypeUser(item.message)
@@ -2924,16 +2951,24 @@ onUnmounted(() => {
                     <div class="d-flex">
                       <div
                         v-if="
-                          item.message.content.context_info.external_ad_reply
-                            .thumbnail_url
+                          resolveExternalAdImage(
+                            item.message.content.context_info.external_ad_reply
+                              .thumbnail_url ||
+                              item.message.content.context_info
+                                .external_ad_reply.original_image_url
+                          )
                         "
                         class="me-3"
                       >
                         <div class="context-ad-thumb">
                           <img
                             :src="
-                              item.message.content.context_info
-                                .external_ad_reply.thumbnail_url
+                              resolveExternalAdImage(
+                                item.message.content.context_info
+                                  .external_ad_reply.thumbnail_url ||
+                                  item.message.content.context_info
+                                    .external_ad_reply.original_image_url
+                              )
                             "
                             alt=""
                             style="
@@ -3013,8 +3048,10 @@ onUnmounted(() => {
                       }"
                     >
                       {{
-                        item.message.content.context_info.external_ad_reply
-                          .source_url
+                        domainFromUrl(
+                          item.message.content.context_info.external_ad_reply
+                            .source_url
+                        )
                       }}
                     </a>
                   </div>

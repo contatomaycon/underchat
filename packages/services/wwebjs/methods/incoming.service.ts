@@ -186,9 +186,6 @@ export class WwebjsIncomingMessageService {
     this.currentClient = client;
     this.boundAtMs = Date.now();
     client.on('message', (msg: Message) => {
-      if (this.shouldSkipHistoricalMessage(msg)) {
-        return;
-      }
       if (this.shouldSkipIncomingMessage(msg)) {
         return;
       }
@@ -202,9 +199,7 @@ export class WwebjsIncomingMessageService {
       if (!this.shouldHandleCiphertextMessage(msg)) {
         return;
       }
-      if (this.shouldSkipHistoricalMessage(msg)) {
-        return;
-      }
+
       if (this.shouldSkipIncomingMessage(msg)) {
         return;
       }
@@ -215,9 +210,7 @@ export class WwebjsIncomingMessageService {
       if (!this.shouldHandleFromMeCreatedMessage(msg)) {
         return;
       }
-      if (this.shouldSkipHistoricalMessage(msg)) {
-        return;
-      }
+
       if (this.shouldSkipIncomingMessage(msg)) {
         return;
       }
@@ -476,23 +469,6 @@ export class WwebjsIncomingMessageService {
     }
 
     return undefined;
-  }
-
-  private shouldSkipHistoricalMessage(msg: Message): boolean {
-    const cutoffMs = this.boundAtMs - this.HISTORICAL_MESSAGE_GRACE_MS;
-    const clientReceivedTsMillis = this.getMessageClientReceivedTsMillis(msg);
-    if (clientReceivedTsMillis !== undefined) {
-      return clientReceivedTsMillis < cutoffMs;
-    }
-
-    const timestampSeconds = this.getMessageTimestampSeconds(msg);
-    if (timestampSeconds === undefined) {
-      return false;
-    }
-
-    const cutoffSeconds =
-      Math.floor(cutoffMs / 1000) - this.HISTORICAL_TIMESTAMP_DRIFT_SECONDS;
-    return timestampSeconds < cutoffSeconds;
   }
 
   private shouldSkipPinnedMessage(msg: Message): boolean {

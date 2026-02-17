@@ -500,11 +500,6 @@ function buildForwardedContextInfo(
     (msg as unknown as { isForwarded?: unknown }).isForwarded
   );
   const rawIsForwarded = getBoolean(rawData?.isForwarded);
-  const isForwarded = topIsForwarded ?? rawIsForwarded;
-
-  if (isForwarded !== true) {
-    return undefined;
-  }
 
   const topForwardingScore = getNumber(
     (msg as unknown as { forwardingScore?: unknown }).forwardingScore
@@ -512,6 +507,13 @@ function buildForwardedContextInfo(
   const rawForwardingScore =
     getNumber(rawData?.forwardingScore) ?? getNumber(rawData?.forwardsCount);
   const forwardingScore = topForwardingScore ?? rawForwardingScore;
+  const inferredForwardedByScore =
+    forwardingScore !== undefined && forwardingScore > 0;
+  const isForwarded = topIsForwarded ?? rawIsForwarded;
+
+  if (isForwarded !== true && !inferredForwardedByScore) {
+    return undefined;
+  }
 
   const contextInfo: Record<string, unknown> = {
     isForwarded: true,
@@ -522,6 +524,276 @@ function buildForwardedContextInfo(
   }
 
   return contextInfo;
+}
+
+function getJsonString(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const normalized = getNonEmptyString(value);
+    return normalized;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  try {
+    const serialized = JSON.stringify(value);
+    return getNonEmptyString(serialized);
+  } catch {
+    return undefined;
+  }
+}
+
+function buildExternalAdReplyFromRawData(
+  rawData?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!rawData) return undefined;
+
+  const ctwaContext = getObjectRecord(rawData.ctwaContext);
+  const conversionData =
+    getObjectRecord(ctwaContext?.conversionData) ??
+    getObjectRecord(rawData.conversionData);
+
+  const externalAdReply: Record<string, unknown> = {};
+
+  const title =
+    getNonEmptyString(ctwaContext?.title) ?? getNonEmptyString(rawData.title);
+  if (title) externalAdReply.title = title;
+
+  const mediaType =
+    getNumber(ctwaContext?.mediaType) ??
+    getNumber(rawData.mediaType) ??
+    getNumber(rawData.richPreviewType);
+  if (mediaType !== undefined) externalAdReply.mediaType = mediaType;
+
+  const thumbnailUrl =
+    getNonEmptyString(ctwaContext?.originalImageUrl) ??
+    getNonEmptyString(rawData.originalImageUrl) ??
+    getNonEmptyString(ctwaContext?.thumbnailUrl) ??
+    getNonEmptyString(rawData.thumbnailUrl);
+  if (thumbnailUrl) externalAdReply.thumbnailUrl = thumbnailUrl;
+
+  const sourceType =
+    getNonEmptyString(ctwaContext?.sourceType) ??
+    getNonEmptyString(rawData.sourceType);
+  if (sourceType) externalAdReply.sourceType = sourceType;
+
+  const sourceId =
+    getNonEmptyString(ctwaContext?.sourceId) ??
+    getNonEmptyString(rawData.sourceId);
+  if (sourceId) externalAdReply.sourceId = sourceId;
+
+  const sourceUrl =
+    getNonEmptyString(ctwaContext?.sourceUrl) ??
+    getNonEmptyString(rawData.sourceUrl);
+  if (sourceUrl) externalAdReply.sourceUrl = sourceUrl;
+
+  const containsAutoReply =
+    getBoolean(ctwaContext?.containsAutoReply) ??
+    getBoolean(rawData.containsAutoReply);
+  if (containsAutoReply !== undefined) {
+    externalAdReply.containsAutoReply = containsAutoReply;
+  }
+
+  const renderLargerThumbnail =
+    getBoolean(ctwaContext?.renderLargerThumbnail) ??
+    getBoolean(rawData.renderLargerThumbnail);
+  if (renderLargerThumbnail !== undefined) {
+    externalAdReply.renderLargerThumbnail = renderLargerThumbnail;
+  }
+
+  const showAdAttribution =
+    getBoolean(ctwaContext?.showAdAttribution) ??
+    getBoolean(rawData.showAdAttribution);
+  if (showAdAttribution !== undefined) {
+    externalAdReply.showAdAttribution = showAdAttribution;
+  }
+
+  const ctwaClid =
+    getNonEmptyString(ctwaContext?.ctwaClid) ??
+    getNonEmptyString(rawData.ctwaClid) ??
+    getNonEmptyString(conversionData?.ctwaClid) ??
+    getNonEmptyString(conversionData?.ctwa_clid) ??
+    getNonEmptyString(conversionData?.clid);
+  if (ctwaClid) externalAdReply.ctwaClid = ctwaClid;
+
+  const clickToWhatsappCall =
+    getBoolean(ctwaContext?.clickToWhatsappCall) ??
+    getBoolean(rawData.clickToWhatsappCall);
+  if (clickToWhatsappCall !== undefined) {
+    externalAdReply.clickToWhatsappCall = clickToWhatsappCall;
+  }
+
+  const adContextPreviewDismissed =
+    getBoolean(ctwaContext?.adContextPreviewDismissed) ??
+    getBoolean(rawData.adContextPreviewDismissed);
+  if (adContextPreviewDismissed !== undefined) {
+    externalAdReply.adContextPreviewDismissed = adContextPreviewDismissed;
+  }
+
+  const sourceApp =
+    getNonEmptyString(ctwaContext?.sourceApp) ??
+    getNonEmptyString(rawData.sourceApp);
+  if (sourceApp) externalAdReply.sourceApp = sourceApp;
+
+  const automatedGreetingMessageShown =
+    getBoolean(ctwaContext?.automatedGreetingMessageShown) ??
+    getBoolean(rawData.automatedGreetingMessageShown);
+  if (automatedGreetingMessageShown !== undefined) {
+    externalAdReply.automatedGreetingMessageShown =
+      automatedGreetingMessageShown;
+  }
+
+  const greetingMessageBody =
+    getNonEmptyString(ctwaContext?.greetingMessageBody) ??
+    getNonEmptyString(rawData.greetingMessageBody) ??
+    getNonEmptyString(ctwaContext?.description) ??
+    getNonEmptyString(rawData.description);
+  if (greetingMessageBody) {
+    externalAdReply.greetingMessageBody = greetingMessageBody;
+  }
+
+  const disableNudge =
+    getBoolean(ctwaContext?.disableNudge) ?? getBoolean(rawData.disableNudge);
+  if (disableNudge !== undefined) externalAdReply.disableNudge = disableNudge;
+
+  const originalImageUrl =
+    getNonEmptyString(ctwaContext?.originalImageUrl) ??
+    getNonEmptyString(rawData.originalImageUrl);
+  if (originalImageUrl) externalAdReply.originalImageUrl = originalImageUrl;
+
+  const wtwaAdFormat =
+    getBoolean(ctwaContext?.wtwaAdFormat) ?? getBoolean(rawData.wtwaAdFormat);
+  if (wtwaAdFormat !== undefined) externalAdReply.wtwaAdFormat = wtwaAdFormat;
+
+  return Object.keys(externalAdReply).length > 0 ? externalAdReply : undefined;
+}
+
+function buildAdsContextInfoFromRawData(
+  rawData?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!rawData) return undefined;
+
+  const ctwaContext = getObjectRecord(rawData.ctwaContext);
+  const conversionData =
+    getObjectRecord(ctwaContext?.conversionData) ??
+    getObjectRecord(rawData.conversionData);
+
+  const contextInfo: Record<string, unknown> = {};
+
+  const conversionSource =
+    getNonEmptyString(ctwaContext?.conversionSource) ??
+    getNonEmptyString(rawData.conversionSource);
+  if (conversionSource) contextInfo.conversionSource = conversionSource;
+
+  const conversionDelaySeconds =
+    getNumber(ctwaContext?.conversionDelaySeconds) ??
+    getNumber(rawData.conversionDelaySeconds);
+  if (conversionDelaySeconds !== undefined) {
+    contextInfo.conversionDelaySeconds = conversionDelaySeconds;
+  }
+
+  const entryPointConversionSource =
+    getNonEmptyString(ctwaContext?.entryPointConversionSource) ??
+    getNonEmptyString(rawData.entryPointConversionSource);
+  if (entryPointConversionSource) {
+    contextInfo.entryPointConversionSource = entryPointConversionSource;
+  }
+
+  const entryPointConversionApp =
+    getNonEmptyString(ctwaContext?.entryPointConversionApp) ??
+    getNonEmptyString(rawData.entryPointConversionApp);
+  if (entryPointConversionApp) {
+    contextInfo.entryPointConversionApp = entryPointConversionApp;
+  }
+
+  const entryPointConversionDelaySeconds =
+    getNumber(ctwaContext?.entryPointConversionDelaySeconds) ??
+    getNumber(rawData.entryPointConversionDelaySeconds);
+  if (entryPointConversionDelaySeconds !== undefined) {
+    contextInfo.entryPointConversionDelaySeconds =
+      entryPointConversionDelaySeconds;
+  }
+
+  const trustBannerAction =
+    getNumber(ctwaContext?.trustBannerAction) ??
+    getNumber(rawData.trustBannerAction);
+  if (trustBannerAction !== undefined) {
+    contextInfo.trustBannerAction = trustBannerAction;
+  }
+
+  const ctwaSignals =
+    getNonEmptyString(ctwaContext?.ctwaSignals) ??
+    getNonEmptyString(rawData.ctwaSignals) ??
+    getJsonString(conversionData);
+  if (ctwaSignals) {
+    contextInfo.ctwaSignals = ctwaSignals;
+  }
+
+  const externalAdReply = buildExternalAdReplyFromRawData(rawData);
+  if (externalAdReply) {
+    contextInfo.externalAdReply = externalAdReply;
+  }
+
+  return Object.keys(contextInfo).length > 0 ? contextInfo : undefined;
+}
+
+function buildExtendedTextPreviewFromRawData(
+  rawData?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!rawData) return undefined;
+
+  const ctwaContext = getObjectRecord(rawData.ctwaContext);
+  const extendedTextPreview: Record<string, unknown> = {};
+
+  const matchedText =
+    getNonEmptyString(rawData.matchedText) ??
+    getNonEmptyString(ctwaContext?.sourceUrl) ??
+    getNonEmptyString(rawData.sourceUrl);
+  if (matchedText) {
+    extendedTextPreview.matchedText = matchedText;
+  }
+
+  const title =
+    getNonEmptyString(rawData.title) ?? getNonEmptyString(ctwaContext?.title);
+  if (title) {
+    extendedTextPreview.title = title;
+  }
+
+  const description =
+    getNonEmptyString(rawData.description) ??
+    getNonEmptyString(ctwaContext?.description);
+  if (description) {
+    extendedTextPreview.description = description;
+  }
+
+  const originalThumbnailUrl =
+    getNonEmptyString(ctwaContext?.originalImageUrl) ??
+    getNonEmptyString(rawData.originalImageUrl) ??
+    getNonEmptyString(ctwaContext?.thumbnailUrl) ??
+    getNonEmptyString(rawData.thumbnailUrl);
+  if (originalThumbnailUrl) {
+    extendedTextPreview.originalThumbnailUrl = originalThumbnailUrl;
+  }
+
+  if (!originalThumbnailUrl) {
+    const jpegThumbnail =
+      getNonEmptyString(rawData.thumbnail) ??
+      getNonEmptyString(ctwaContext?.thumbnail);
+    if (jpegThumbnail) {
+      extendedTextPreview.jpegThumbnail = jpegThumbnail;
+    }
+  }
+
+  const previewType =
+    getNumber(rawData.previewType) ?? getNumber(rawData.richPreviewType);
+  if (previewType !== undefined) {
+    extendedTextPreview.previewType = previewType;
+  }
+
+  return Object.keys(extendedTextPreview).length > 0
+    ? extendedTextPreview
+    : undefined;
 }
 
 function mergeContextInfo(
@@ -954,8 +1226,12 @@ export async function wwebjsMessageToUpsert(
 
   const innerMessage: Record<string, unknown> = {};
   if (messageType === EMessageType.text && body) {
+    const extendedTextPreview = buildExtendedTextPreviewFromRawData(rawData);
     innerMessage.conversation = body;
-    innerMessage.extendedTextMessage = { text: body };
+    innerMessage.extendedTextMessage = {
+      text: body,
+      ...(extendedTextPreview ?? {}),
+    };
   }
   if (rawType === 'document') {
     const caption = getDocumentCaption(msg);
@@ -982,7 +1258,11 @@ export async function wwebjsMessageToUpsert(
 
   const quotedContextInfo = await buildQuotedContextInfo(msg);
   const forwardedContextInfo = buildForwardedContextInfo(msg);
-  const contextInfo = mergeContextInfo(quotedContextInfo, forwardedContextInfo);
+  const adsContextInfo = buildAdsContextInfoFromRawData(rawData);
+  const contextInfo = mergeContextInfo(
+    mergeContextInfo(quotedContextInfo, forwardedContextInfo),
+    adsContextInfo
+  );
   if (contextInfo) {
     attachContextInfo(innerMessage, contextInfo, rawType, messageType);
   }

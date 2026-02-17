@@ -56,10 +56,12 @@ const fixedDateIndicatorLeft = ref(0);
 const fixedDateIndicatorWidth = ref(0);
 
 const shouldShowFixedDate = computed(() => {
-  return !props.loading &&
+  return (
+    !props.loading &&
     props.messages.length > 0 &&
     showScrollToBottom.value &&
-    !!fixedDateLabel.value;
+    !!fixedDateLabel.value
+  );
 });
 
 const getScrollParent = (el: HTMLElement | null): HTMLElement | null => {
@@ -318,9 +320,13 @@ const setupScrollListener = () => {
   });
 };
 
-watch(() => props.messages, () => {
-  setupScrollListener();
-}, { immediate: false });
+watch(
+  () => props.messages,
+  () => {
+    setupScrollListener();
+  },
+  { immediate: false }
+);
 
 onMounted(() => {
   setupScrollListener();
@@ -838,7 +844,7 @@ const handleScroll = (e: Event) => {
   const target = e.target as HTMLElement;
   if (!target) return;
   checkIfShouldShowScrollButton(target);
-  
+
   const messagesContainer = chatLogViewerRef.value;
   if (messagesContainer) {
     const rect = messagesContainer.getBoundingClientRect();
@@ -1282,11 +1288,54 @@ const resolvePreviewImage = (linkPreview?: {
   highQualityThumbnail?: string | null;
   originalThumbnailUrl?: string | null;
 }): string => {
-  return (
+  const candidate =
     linkPreview?.originalThumbnailUrl ||
     linkPreview?.highQualityThumbnail ||
     linkPreview?.jpegThumbnail ||
-    ''
+    '';
+  if (!candidate) return '';
+  if (candidate.startsWith('http://') || candidate.startsWith('https://')) {
+    return candidate;
+  }
+  if (candidate.startsWith('data:image/')) {
+    return candidate;
+  }
+  return `data:image/jpeg;base64,${candidate}`;
+};
+
+const resolveExternalAdImage = (thumbnailUrl?: string | null): string => {
+  if (!thumbnailUrl) return '';
+  const normalized = thumbnailUrl.trim();
+  if (!normalized) return '';
+  if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+    return normalized;
+  }
+  return '';
+};
+
+const resolveMessagePreviewImage = (
+  content?: {
+    link_preview?: {
+      jpegThumbnail?: string | null;
+      highQualityThumbnail?: string | null;
+      originalThumbnailUrl?: string | null;
+    } | null;
+    context_info?: {
+      external_ad_reply?: {
+        thumbnail_url?: string | null;
+        original_image_url?: string | null;
+      } | null;
+    } | null;
+  } | null
+): string => {
+  const fromLinkPreview = resolvePreviewImage(
+    content?.link_preview ?? undefined
+  );
+  if (fromLinkPreview) return fromLinkPreview;
+
+  return resolveExternalAdImage(
+    content?.context_info?.external_ad_reply?.thumbnail_url ||
+      content?.context_info?.external_ad_reply?.original_image_url
   );
 };
 
@@ -1338,7 +1387,9 @@ const getReactionsSummary = (
   });
 };
 
-const resolveFeedbackIcon = (message: ListMessageResult): FeedbackIcon | null => {
+const resolveFeedbackIcon = (
+  message: ListMessageResult
+): FeedbackIcon | null => {
   if (!isOutgoingMessage(message)) return null;
 
   if (message.content?.type === EMessageType.annotation)
@@ -1880,16 +1931,12 @@ const handleContactClick = (message: ListMessageResult) => {
                   >
                     <div class="lp-main d-flex">
                       <div
-                        v-if="
-                          resolvePreviewImage(item.message.content.link_preview)
-                        "
+                        v-if="resolveMessagePreviewImage(item.message.content)"
                       >
                         <div class="lp-thumb me-3">
                           <img
                             :src="
-                              resolvePreviewImage(
-                                item.message.content.link_preview
-                              )
+                              resolveMessagePreviewImage(item.message.content)
                             "
                             alt=""
                           />
@@ -1937,7 +1984,10 @@ const handleContactClick = (message: ListMessageResult) => {
                   </div>
 
                   <div
-                    v-if="item.message.content?.context_info?.external_ad_reply"
+                    v-if="
+                      item.message.content?.context_info?.external_ad_reply &&
+                      !item.message.content?.link_preview?.title
+                    "
                     class="context-info-ad rounded mt-2"
                     :class="
                       !isTypeUser(item.message)
@@ -1956,16 +2006,24 @@ const handleContactClick = (message: ListMessageResult) => {
                     <div class="d-flex">
                       <div
                         v-if="
-                          item.message.content.context_info.external_ad_reply
-                            .thumbnail_url
+                          resolveExternalAdImage(
+                            item.message.content.context_info.external_ad_reply
+                              .thumbnail_url ||
+                              item.message.content.context_info
+                                .external_ad_reply.original_image_url
+                          )
                         "
                         class="me-3"
                       >
                         <div class="context-ad-thumb">
                           <img
                             :src="
-                              item.message.content.context_info
-                                .external_ad_reply.thumbnail_url
+                              resolveExternalAdImage(
+                                item.message.content.context_info
+                                  .external_ad_reply.thumbnail_url ||
+                                  item.message.content.context_info
+                                    .external_ad_reply.original_image_url
+                              )
                             "
                             alt=""
                             style="
@@ -2045,8 +2103,10 @@ const handleContactClick = (message: ListMessageResult) => {
                       }"
                     >
                       {{
-                        item.message.content.context_info.external_ad_reply
-                          .source_url
+                        domainFromUrl(
+                          item.message.content.context_info.external_ad_reply
+                            .source_url || ''
+                        )
                       }}
                     </a>
                   </div>
