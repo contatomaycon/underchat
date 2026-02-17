@@ -27,7 +27,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { PresenceService } from '@core/services/presence.service';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
-import { WAMessage } from '@whiskeysockets/baileys';
+import { IUpsertMessageEnvelope } from '@core/common/interfaces/IUpsertMessage';
 
 @injectable()
 export class ChatStatusUpdaterUseCase {
@@ -572,6 +572,20 @@ export class ChatStatusUpdaterUseCase {
       );
 
       if (chatbotConfig.enabled && chatbotConfig.output_chatbot_id) {
+        const bootstrapEnvelope: IUpsertMessageEnvelope = {
+          key: {
+            id: `status_bootstrap_${chatWithProtocol.chat_id}_${Date.now()}`,
+            remoteJid: chatWithProtocol.message_key?.remote_jid ?? undefined,
+            remoteJidAlt:
+              chatWithProtocol.message_key?.remote_jid_alt ?? undefined,
+            fromMe: true,
+          },
+          message: {
+            conversation: '',
+          },
+          messageTimestamp: Math.floor(Date.now() / 1000),
+        };
+
         await this.chatbotFlowRunnerService.clearFlowCacheForChat(
           accountId,
           chat.worker.id,
@@ -584,7 +598,7 @@ export class ChatStatusUpdaterUseCase {
             account_id: accountId,
             worker_id: chat.worker.id,
             type: EMessageType.text,
-            message: {} as WAMessage,
+            message: bootstrapEnvelope,
             has_quoted: false,
             is_call_event: false,
           },
