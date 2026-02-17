@@ -177,12 +177,12 @@ export class WwebjsIncomingMessageService {
       void this.handleIncomingMessage(msg);
     });
     client.on('message_create', (msg: Message) => {
+      console.log('Messages upsert (fromMe external)');
+      console.dir(msg, { depth: null, colors: true });
+
       if (!this.shouldHandleFromMeCreatedMessage(msg)) {
         return;
       }
-
-      console.log('Messages upsert (fromMe external)');
-      console.dir(msg, { depth: null, colors: true });
 
       void this.handleIncomingMessage(msg);
     });
@@ -238,6 +238,40 @@ export class WwebjsIncomingMessageService {
     return false;
   }
 
+  private getOwnJid(client: Client): string | undefined {
+    const infoWidSerialized = (
+      client.info?.wid as { _serialized?: string } | undefined
+    )?._serialized;
+    const own = getNonEmptyString(infoWidSerialized);
+    return own ? (normalizeJid(own) ?? own) : undefined;
+  }
+
+  private expandUserIdsForLidLookup(
+    values: Array<string | undefined>
+  ): string[] {
+    const unique = new Set<string>();
+
+    for (const value of values) {
+      const normalized = value ? (normalizeJid(value) ?? value) : undefined;
+      const candidate = getNonEmptyString(normalized);
+      if (!candidate) {
+        continue;
+      }
+
+      unique.add(candidate);
+
+      const atIndex = candidate.indexOf('@');
+      if (atIndex > 0) {
+        const bare = candidate.slice(0, atIndex);
+        if (bare) {
+          unique.add(bare);
+        }
+      }
+    }
+
+    return Array.from(unique);
+  }
+
   private getMessageDeviceType(msg: Message): string | undefined {
     const raw = msg as unknown as {
       deviceType?: unknown;
@@ -257,12 +291,13 @@ export class WwebjsIncomingMessageService {
       return false;
     }
 
-    const deviceType = this.getMessageDeviceType(msg)?.toLowerCase();
-    if (!deviceType) {
-      return true;
+    const ackRaw =
+      msg.ack ?? (msg as unknown as { _data?: { ack?: number } })._data?.ack;
+    if (typeof ackRaw === 'number' && ackRaw < 1) {
+      return false;
     }
 
-    return deviceType !== 'web';
+    return true;
   }
 
   private shouldSkipPinnedMessage(msg: Message): boolean {
@@ -314,9 +349,10 @@ export class WwebjsIncomingMessageService {
       return { remoteJid: primaryJid };
     }
 
-    const userIds = Array.from(
-      new Set([primaryJid, messageIdRemote].filter(Boolean))
-    ) as string[];
+    const userIds = this.expandUserIdsForLidLookup([
+      primaryJid,
+      messageIdRemote,
+    ]);
 
     if (!userIds.length) {
       return { remoteJid: primaryJid };
@@ -324,7 +360,22 @@ export class WwebjsIncomingMessageService {
 
     try {
       const mappings = await client.getContactLidAndPhone(userIds);
-      const first = mappings.find((entry) => entry?.lid || entry?.pn);
+      const ownJid = this.getOwnJid(client);
+      const first = mappings.find((entry) => {
+        if (!entry?.lid && !entry?.pn) {
+          return false;
+        }
+
+        const normalizedPn = entry?.pn
+          ? (normalizeJid(entry.pn) ?? entry.pn)
+          : undefined;
+
+        if (normalizedPn && ownJid && normalizedPn === ownJid) {
+          return false;
+        }
+
+        return true;
+      });
       const lid = first?.lid
         ? (normalizeJid(first.lid) ?? first.lid)
         : undefined;
@@ -352,6 +403,13 @@ export class WwebjsIncomingMessageService {
       }
     } catch {}
 
+    if (messageIdRemote && messageIdRemote !== primaryJid) {
+      return {
+        remoteJid: primaryJid,
+        remoteJidAlt: messageIdRemote,
+      };
+    }
+
     return { remoteJid: primaryJid };
   }
 
@@ -361,22 +419,33 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, msg);
-    if (!resolvedJids) return;
+    try {
+      const resolvedJids = await this.resolveRemoteJids(client, msg);
+      if (!resolvedJids) return;
 
-    const [pushName, photo] = await Promise.all([
-      this.resolvePushName(msg),
-      this.resolvePhotoForMessage(client, msg, resolvedJids),
-    ]);
+      const [pushName, photo] = await Promise.all([
+        this.resolvePushName(msg),
+        this.resolvePhotoForMessage(client, msg, resolvedJids),
+      ]);
 
-    const upsert = await wwebjsMessageToUpsert(msg, resolvedJids, pushName);
-    if (!upsert) return;
-    upsert.photo = photo ?? null;
+      const upsert = await wwebjsMessageToUpsert(msg, resolvedJids, pushName);
+      if (!upsert) return;
+      upsert.photo = photo ?? null;
 
-    await this.upsertMediaEnricher.enrich(upsert, msg);
+      await this.upsertMediaEnricher.enrich(upsert, msg);
 
-    const topic = this.kafkaServiceQueueService.upsertMessage();
-    await this.streamProducerService.send(topic, upsert);
+      const topic = this.kafkaServiceQueueService.upsertMessage();
+      await this.streamProducerService.send(topic, upsert);
+    } catch (error) {
+      console.error('[wwebjs] handleIncomingMessage failed:', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async handlePinnedMessage(
