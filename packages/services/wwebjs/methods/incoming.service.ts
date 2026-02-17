@@ -321,6 +321,18 @@ export class WwebjsIncomingMessageService {
   }
 
   private shouldSkipIncomingMessage(msg: Message): boolean {
+    if (this.isUnsupportedSystemNotification(msg)) {
+      return true;
+    }
+
+    if (this.isGroupMessage(msg)) {
+      return true;
+    }
+
+    if (this.isStatusOrBroadcastMessage(msg)) {
+      return true;
+    }
+
     const messageId = getMessageIdSerialized(msg);
     if (!messageId) {
       return false;
@@ -335,6 +347,67 @@ export class WwebjsIncomingMessageService {
 
     this.processedIncomingMessages.set(messageId, now);
     return false;
+  }
+
+  private isUnsupportedSystemNotification(msg: Message): boolean {
+    const typeRaw =
+      getNonEmptyString(msg.type) ??
+      getNonEmptyString(
+        (msg as unknown as { _data?: { type?: unknown } })._data?.type
+      );
+    const type = typeRaw?.toLowerCase();
+
+    if (type === 'notification_template') {
+      return true;
+    }
+
+    return false;
+  }
+
+  private isStatusOrBroadcastMessage(msg: Message): boolean {
+    const rawCandidates = this.getMessageJidCandidates(msg);
+
+    for (const rawCandidate of rawCandidates) {
+      const normalized = normalizeJid(rawCandidate) ?? rawCandidate;
+      if (this.shouldSkipChat(normalized)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private isGroupMessage(msg: Message): boolean {
+    const rawCandidates = this.getMessageJidCandidates(msg);
+
+    for (const rawCandidate of rawCandidates) {
+      const normalized = normalizeJid(rawCandidate) ?? rawCandidate;
+      if (normalized.endsWith('@g.us')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private getMessageJidCandidates(msg: Message): string[] {
+    const idValue =
+      typeof msg.id === 'object' && msg.id !== null
+        ? (msg.id as {
+            remoteJid?: unknown;
+            remote_jid?: unknown;
+            remote?: unknown;
+          })
+        : undefined;
+
+    return [
+      msg.from,
+      msg.to,
+      getMessageRemoteFromId(msg),
+      getNonEmptyString(idValue?.remoteJid),
+      getNonEmptyString(idValue?.remote_jid),
+      getNonEmptyString(idValue?.remote),
+    ].filter((value): value is string => !!value);
   }
 
   private shouldHandleFromMeCreatedMessage(msg: Message): boolean {
