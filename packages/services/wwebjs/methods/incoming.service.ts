@@ -153,6 +153,8 @@ export class WwebjsIncomingMessageService {
   private readonly PIN_MESSAGE_CACHE_TTL_MS = 15000;
   private readonly INCOMING_MESSAGE_CACHE_TTL_MS = 30000;
   private readonly INCOMING_MESSAGE_CACHE_MAX_SIZE = 100000;
+  private readonly LID_PHONE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+  private readonly LID_PHONE_CACHE_PREFIX = 'wwebjs:lid-phone:';
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
@@ -379,6 +381,143 @@ export class WwebjsIncomingMessageService {
     return jid.endsWith('@g.us') || jid.endsWith('@broadcast');
   }
 
+  private isLidJid(jid: string | undefined): boolean {
+    return !!jid && jid.endsWith('@lid');
+  }
+
+  private getLidCacheKeys(lidJid: string): string[] {
+    const normalized = normalizeJid(lidJid) ?? lidJid;
+    const bare = normalized.includes('@')
+      ? normalized.slice(0, normalized.indexOf('@'))
+      : normalized;
+
+    const keys = new Set<string>();
+    keys.add(`${this.LID_PHONE_CACHE_PREFIX}${normalized}`);
+    if (bare) {
+      keys.add(`${this.LID_PHONE_CACHE_PREFIX}${bare}`);
+    }
+
+    return Array.from(keys);
+  }
+
+  private async cacheLidPhoneMapping(
+    lidJid: string,
+    phoneJid: string
+  ): Promise<void> {
+    if (!this.isLidJid(lidJid)) return;
+    if (!phoneJid || this.isLidJid(phoneJid)) return;
+
+    const normalizedPhone = normalizeJid(phoneJid) ?? phoneJid;
+    if (!normalizedPhone || this.isLidJid(normalizedPhone)) return;
+
+    const keys = this.getLidCacheKeys(lidJid);
+    await Promise.all(
+      keys.map((key) =>
+        this.redis
+          .set(key, normalizedPhone, 'EX', this.LID_PHONE_CACHE_TTL_SECONDS)
+          .catch(() => {})
+      )
+    );
+  }
+
+  private async getPhoneJidFromLidCache(
+    lidJid: string
+  ): Promise<string | undefined> {
+    if (!this.isLidJid(lidJid)) return undefined;
+
+    const keys = this.getLidCacheKeys(lidJid);
+    for (const key of keys) {
+      const cached = getNonEmptyString(
+        await this.redis.get(key).catch(() => '')
+      );
+      if (!cached) {
+        continue;
+      }
+
+      const normalized = normalizeJid(cached) ?? cached;
+      if (normalized && !this.isLidJid(normalized)) {
+        return normalized;
+      }
+    }
+
+    return undefined;
+  }
+
+  private extractPhoneJidCandidate(value: unknown): string | undefined {
+    const normalized = getNonEmptyString(value);
+    if (!normalized) return undefined;
+
+    const jid = normalizeJid(normalized) ?? normalized;
+    if (!jid || this.isGroupOrBroadcastJid(jid) || this.isLidJid(jid)) {
+      return undefined;
+    }
+
+    return jid;
+  }
+
+  private async resolvePhoneJidFromContactOrChat(
+    msg: Message,
+    ownJid?: string
+  ): Promise<string | undefined> {
+    const candidates = new Set<string>();
+
+    try {
+      const contact = (await msg.getContact()) as unknown as {
+        id?: { _serialized?: string; user?: string };
+        number?: string;
+        userid?: string;
+      };
+
+      const contactId = this.extractPhoneJidCandidate(contact?.id?._serialized);
+      if (contactId) candidates.add(contactId);
+
+      const contactUser = getNonEmptyString(contact?.id?.user);
+      if (contactUser) {
+        candidates.add(`${contactUser}@s.whatsapp.net`);
+      }
+
+      const contactNumber = getNonEmptyString(contact?.number);
+      if (contactNumber) {
+        const onlyDigits = contactNumber.replace(/\D/g, '');
+        if (onlyDigits) {
+          candidates.add(`${onlyDigits}@s.whatsapp.net`);
+        }
+      }
+
+      const userId = getNonEmptyString(contact?.userid);
+      if (userId) {
+        const onlyDigits = userId.replace(/\D/g, '');
+        if (onlyDigits) {
+          candidates.add(`${onlyDigits}@s.whatsapp.net`);
+        }
+      }
+    } catch {}
+
+    try {
+      const chat = (await msg.getChat()) as unknown as {
+        id?: { _serialized?: string; user?: string };
+      };
+      const chatId = this.extractPhoneJidCandidate(chat?.id?._serialized);
+      if (chatId) candidates.add(chatId);
+
+      const chatUser = getNonEmptyString(chat?.id?.user);
+      if (chatUser) {
+        candidates.add(`${chatUser}@s.whatsapp.net`);
+      }
+    } catch {}
+
+    for (const candidate of candidates) {
+      const normalized = normalizeJid(candidate) ?? candidate;
+      if (!normalized) continue;
+      if (ownJid && normalized === ownJid) continue;
+      if (this.isLidJid(normalized)) continue;
+      if (this.isGroupOrBroadcastJid(normalized)) continue;
+      return normalized;
+    }
+
+    return undefined;
+  }
+
   private async resolveRemoteJids(
     client: Client,
     msg: Message
@@ -415,27 +554,44 @@ export class WwebjsIncomingMessageService {
     try {
       const mappings = await client.getContactLidAndPhone(userIds);
       const ownJid = this.getOwnJid(client);
-      const first = mappings.find((entry) => {
-        if (!entry?.lid && !entry?.pn) {
+      const normalizedMappings = mappings
+        .map((entry) => {
+          const lid = entry?.lid ? (normalizeJid(entry.lid) ?? entry.lid) : '';
+          const pn = entry?.pn ? (normalizeJid(entry.pn) ?? entry.pn) : '';
+
+          return {
+            lid: getNonEmptyString(lid),
+            pn: getNonEmptyString(pn),
+          };
+        })
+        .filter((entry) => entry.lid || entry.pn)
+        .filter((entry) => !(entry.pn && ownJid && entry.pn === ownJid));
+
+      const preferredWithPhone = normalizedMappings.find((entry) => {
+        if (!entry.pn) {
           return false;
         }
 
-        const normalizedPn = entry?.pn
-          ? (normalizeJid(entry.pn) ?? entry.pn)
-          : undefined;
+        const lidMatchesPrimary = entry.lid && entry.lid === primaryJid;
+        const pnMatchesPrimary = entry.pn === primaryJid;
 
-        if (normalizedPn && ownJid && normalizedPn === ownJid) {
-          return false;
+        if (lidMatchesPrimary || pnMatchesPrimary) {
+          return true;
+        }
+
+        if (messageIdRemote) {
+          return entry.lid === messageIdRemote || entry.pn === messageIdRemote;
         }
 
         return true;
       });
-      const lid = first?.lid
-        ? (normalizeJid(first.lid) ?? first.lid)
-        : undefined;
-      const pn = first?.pn ? (normalizeJid(first.pn) ?? first.pn) : undefined;
+
+      const selected = preferredWithPhone ?? normalizedMappings[0];
+      const lid = selected?.lid;
+      const pn = selected?.pn;
 
       if (pn && lid && pn !== lid) {
+        await this.cacheLidPhoneMapping(lid, pn);
         return {
           remoteJid: pn,
           remoteJidAlt: lid,
@@ -443,6 +599,9 @@ export class WwebjsIncomingMessageService {
       }
 
       if (pn && pn !== primaryJid) {
+        if (this.isLidJid(primaryJid)) {
+          await this.cacheLidPhoneMapping(primaryJid, pn);
+        }
         return {
           remoteJid: pn,
           remoteJidAlt: primaryJid,
@@ -456,6 +615,29 @@ export class WwebjsIncomingMessageService {
         };
       }
     } catch {}
+
+    if (this.isLidJid(primaryJid)) {
+      const cachedPhoneJid = await this.getPhoneJidFromLidCache(primaryJid);
+      if (cachedPhoneJid) {
+        return {
+          remoteJid: cachedPhoneJid,
+          remoteJidAlt: primaryJid,
+        };
+      }
+
+      const ownJid = this.getOwnJid(client);
+      const contactPhoneJid = await this.resolvePhoneJidFromContactOrChat(
+        msg,
+        ownJid
+      );
+      if (contactPhoneJid && contactPhoneJid !== primaryJid) {
+        await this.cacheLidPhoneMapping(primaryJid, contactPhoneJid);
+        return {
+          remoteJid: contactPhoneJid,
+          remoteJidAlt: primaryJid,
+        };
+      }
+    }
 
     if (messageIdRemote && messageIdRemote !== primaryJid) {
       return {
