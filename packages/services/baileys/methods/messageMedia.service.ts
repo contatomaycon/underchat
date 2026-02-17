@@ -92,14 +92,19 @@ export class BaileysMessageMediaService {
     const isViewOnce = args?.viewOnce === true;
     const isPtt = isViewOnce ? true : !!args?.ptt;
 
-    const content: AnyMessageContent = {
-      audio: audio as WAMediaUpload,
-      ptt: isPtt,
-      seconds: args?.seconds,
-      mimetype: args?.mimetype,
-      viewOnce: isViewOnce ? true : undefined,
-      waveform: args?.waveform,
-    } as AnyMessageContent;
+    const content: AnyMessageContent = isViewOnce
+      ? ({
+          audio: audio as WAMediaUpload,
+          ptt: true,
+          viewOnce: true,
+        } as AnyMessageContent)
+      : ({
+          audio: audio as WAMediaUpload,
+          ptt: isPtt,
+          seconds: args?.seconds,
+          mimetype: args?.mimetype,
+          waveform: args?.waveform,
+        } as AnyMessageContent);
 
     return this.baileysHelpersService.send(jid, content, options);
   }

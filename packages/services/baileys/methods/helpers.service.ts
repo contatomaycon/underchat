@@ -2,7 +2,12 @@ import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
   WAMessage,
+  WAMediaUpload,
   WASocket,
+  generateMessageIDV2,
+  generateWAMessageContent,
+  generateWAMessageFromContent,
+  proto,
 } from '@whiskeysockets/baileys';
 import { injectable, inject } from 'tsyringe';
 import { BaileysConnectionService } from './connection.service';
@@ -24,31 +29,38 @@ export class BaileysHelpersService {
     options?: MiscMessageGenerationOptions
   ): Promise<WAMessage | undefined> {
     const sock = this.socket();
+    this.assertSocketReadyForSend(sock);
 
     const shouldSimulateTyping = this.shouldSimulateTyping(content);
+    let jid = address;
 
-    if (address.includes('@')) {
-      if (shouldSimulateTyping) {
-        await this.simulateHumanTyping(address, content);
+    if (!address.includes('@')) {
+      const resolved = await this.resolveJidFlexible(sock, address);
+      if (!resolved.exists || !resolved.jid) {
+        throw new Error(`Number not found on WhatsApp: ${address}`);
       }
-      const result = await sock.sendMessage(address, content, options);
-
-      if (!result) {
-        throw new Error(
-          `Failed to send message to ${address}: result is undefined`
-        );
-      }
-
-      return result;
-    }
-
-    const { exists, jid } = await this.resolveJidFlexible(sock, address);
-    if (!exists || !jid) {
-      throw new Error(`Number not found on WhatsApp: ${address}`);
+      jid = resolved.jid;
     }
 
     if (shouldSimulateTyping) {
       await this.simulateHumanTyping(jid, content);
+    }
+
+    if (this.isAudioViewOnceMessage(content)) {
+      const result = await this.sendAudioViewOnceMessage(
+        sock,
+        jid,
+        content,
+        options
+      );
+
+      if (!result) {
+        throw new Error(
+          `Failed to send message to ${jid}: result is undefined`
+        );
+      }
+
+      return result;
     }
 
     const result = await sock.sendMessage(jid, content, options);
@@ -106,6 +118,139 @@ export class BaileysHelpersService {
       throw new Error('Socket not connected');
     }
     return s;
+  }
+
+  private isAudioViewOnceMessage(
+    content: AnyMessageContent
+  ): content is AnyMessageContent & {
+    audio: WAMediaUpload;
+    viewOnce: true;
+  } {
+    const maybeAudio = (content as { audio?: unknown }).audio;
+    const maybeViewOnce = (content as { viewOnce?: unknown }).viewOnce;
+    return !!maybeAudio && maybeViewOnce === true;
+  }
+
+  private async sendAudioViewOnceMessage(
+    sock: WASocket,
+    jid: string,
+    content: AnyMessageContent & {
+      audio: WAMediaUpload;
+      viewOnce: true;
+    },
+    options?: MiscMessageGenerationOptions
+  ): Promise<WAMessage> {
+    const ownJid = sock.user?.id;
+    if (!ownJid) {
+      throw new Error(
+        'Baileys connection unavailable: auth state is not ready'
+      );
+    }
+
+    const rawSeconds = (content as { seconds?: unknown }).seconds;
+    const seconds = this.toPositiveNumber(rawSeconds);
+    const ptt = (content as { ptt?: unknown }).ptt === true;
+    const waveform = this.toWaveform(
+      ptt ? (content as { waveform?: unknown }).waveform : undefined
+    );
+    const mimetype = this.toNonEmptyString(
+      (content as { mimetype?: unknown }).mimetype
+    );
+
+    const mediaContent: AnyMessageContent = {
+      audio: content.audio,
+      ptt,
+      seconds,
+      waveform,
+      mimetype,
+    };
+
+    const generatedMediaMessage = await generateWAMessageContent(mediaContent, {
+      upload: sock.waUploadToServer,
+      mediaUploadTimeoutMs: options?.mediaUploadTimeoutMs,
+    });
+
+    const audioMessageWithViewOnce = proto.Message.AudioMessage.fromObject({
+      ...generatedMediaMessage.audioMessage,
+      viewOnce: true,
+    });
+
+    const wrappedMessage = proto.Message.fromObject({
+      viewOnceMessage: {
+        message: proto.Message.fromObject({
+          audioMessage: audioMessageWithViewOnce,
+        }),
+      },
+      messageContextInfo: generatedMediaMessage.messageContextInfo,
+    });
+
+    const fullMessage = generateWAMessageFromContent(jid, wrappedMessage, {
+      userJid: ownJid,
+      messageId: options?.messageId ?? generateMessageIDV2(ownJid),
+      timestamp: options?.timestamp,
+      quoted: options?.quoted,
+      ephemeralExpiration: options?.ephemeralExpiration,
+    });
+
+    if (!fullMessage.message) {
+      throw new Error(
+        'Failed to send view-once audio: message payload missing'
+      );
+    }
+
+    await sock.relayMessage(jid, fullMessage.message, {
+      messageId: fullMessage.key.id ?? undefined,
+      useCachedGroupMetadata: options?.useCachedGroupMetadata,
+      statusJidList: options?.statusJidList,
+    });
+
+    return fullMessage;
+  }
+
+  private toPositiveNumber(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  }
+
+  private toWaveform(value: unknown): Uint8Array | undefined {
+    if (value instanceof Uint8Array && value.length > 0) {
+      return value;
+    }
+    return undefined;
+  }
+
+  private toNonEmptyString(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private assertSocketReadyForSend(sock: WASocket): void {
+    if (!this.connection.connected) {
+      throw new Error(
+        'Baileys connection unavailable: socket is not connected yet'
+      );
+    }
+
+    const ownJid = sock.user?.id;
+    if (!ownJid) {
+      throw new Error(
+        'Baileys connection unavailable: auth state is not ready yet'
+      );
+    }
   }
 
   private async resolveJidFlexible(sock: WASocket, raw: string) {

@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import { Buffer } from 'node:buffer';
 import {
+  downloadContentFromMessage,
   downloadMediaMessage,
   proto,
   WAMessage,
@@ -75,6 +76,58 @@ export class BaileysUpsertMediaEnricher {
         )
       ),
     ]);
+  }
+
+  private async streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
+  private async downloadStickerWithFallback(
+    waMessage: WAMessage,
+    stickerMsg: proto.Message.IStickerMessage
+  ): Promise<Buffer> {
+    try {
+      return await this.downloadWithTimeout(waMessage);
+    } catch {
+      const hasMediaKey =
+        stickerMsg.mediaKey instanceof Uint8Array &&
+        stickerMsg.mediaKey.length > 0;
+      const hasPath =
+        typeof stickerMsg.directPath === 'string' &&
+        stickerMsg.directPath.length > 0;
+      const hasUrl =
+        typeof stickerMsg.url === 'string' && stickerMsg.url.length > 0;
+
+      if (!hasMediaKey || (!hasPath && !hasUrl)) {
+        throw new Error('Sticker message does not have download metadata');
+      }
+
+      return Promise.race([
+        (async () => {
+          const stream = await downloadContentFromMessage(
+            {
+              mediaKey: stickerMsg.mediaKey,
+              directPath: hasPath ? stickerMsg.directPath : undefined,
+              url: hasUrl ? stickerMsg.url : undefined,
+            },
+            'sticker',
+            { startByte: 0 }
+          );
+
+          return this.streamToBuffer(stream);
+        })(),
+        new Promise<Buffer>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Sticker download timeout')),
+            MEDIA_DOWNLOAD_TIMEOUT_MS
+          )
+        ),
+      ]);
+    }
   }
 
   private getImageMessage(
@@ -288,7 +341,10 @@ export class BaileysUpsertMediaEnricher {
 
     const stickerMsg = msg.stickerMessage;
     try {
-      const buffer = await this.downloadWithTimeout(waMessage);
+      const buffer = await this.downloadStickerWithFallback(
+        waMessage,
+        stickerMsg
+      );
       const sourceMimetype = this.normalizeMimetype(stickerMsg.mimetype);
       const payloadLooksLottie = this.isLottiePayload(buffer);
       const isLottie =
