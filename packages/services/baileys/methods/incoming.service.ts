@@ -403,10 +403,7 @@ export class BaileysIncomingMessageService {
       if (m.category === 'peer') return;
 
       const chatKind = getChatKind(m);
-      if (
-        chatKind !== EChatKind.user ||
-        (upsertType && upsertType !== EMessageUpsertType.notify)
-      ) {
+      if (chatKind !== EChatKind.user) {
         return;
       }
 
@@ -421,12 +418,20 @@ export class BaileysIncomingMessageService {
       }
 
       const type = mapIncomingToType(m);
-      const hasQuoted = messageHasQuoted(m);
-
       if (!type) {
         console.warn('[WARN] Unknown message type, skipping:', messageKey);
         return;
       }
+
+      if (
+        upsertType &&
+        upsertType !== EMessageUpsertType.notify &&
+        type !== EMessageType.view_once
+      ) {
+        return;
+      }
+
+      const hasQuoted = messageHasQuoted(m);
 
       const inputUpsert: IUpsertMessage = {
         worker_id: baileysEnvironment.baileysWorkerId,

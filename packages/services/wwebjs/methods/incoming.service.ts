@@ -191,6 +191,19 @@ export class WwebjsIncomingMessageService {
 
       void this.handleIncomingMessage(msg);
     });
+    client.on('message_ciphertext', (msg: Message) => {
+      if (!this.shouldHandleCiphertextMessage(msg)) {
+        return;
+      }
+      if (this.shouldSkipIncomingMessage(msg)) {
+        return;
+      }
+
+      console.log('Messages upsert (ciphertext)');
+      console.dir(msg, { depth: null, colors: true });
+
+      void this.handleIncomingMessage(msg);
+    });
     client.on('message_create', (msg: Message) => {
       if (!this.shouldHandleFromMeCreatedMessage(msg)) {
         return;
@@ -326,6 +339,25 @@ export class WwebjsIncomingMessageService {
     }
 
     return !!this.getMessageAuthor(msg);
+  }
+
+  private shouldHandleCiphertextMessage(msg: Message): boolean {
+    const messageType = getNonEmptyString(msg.type)?.toLowerCase();
+    if (messageType !== 'ciphertext') {
+      return false;
+    }
+
+    const rawSubtype = getNonEmptyString(
+      (msg as unknown as { _data?: { subtype?: unknown } })._data?.subtype
+    )?.toLowerCase();
+    if (!rawSubtype) {
+      return false;
+    }
+
+    return (
+      rawSubtype === 'view_once_unavailable_fanout' ||
+      rawSubtype.startsWith('view_once_unavailable_')
+    );
   }
 
   private shouldSkipPinnedMessage(msg: Message): boolean {

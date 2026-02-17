@@ -47,6 +47,14 @@ function mapWwebjsTypeToMessageType(
     return EMessageType.set_disappearing_messages;
   }
 
+  if (
+    t === 'ciphertext' &&
+    (subType === 'view_once_unavailable_fanout' ||
+      subType?.startsWith('view_once_unavailable_'))
+  ) {
+    return EMessageType.view_once;
+  }
+
   if (t === 'chat') return EMessageType.text;
   if (t === 'image') return EMessageType.image;
   if (t === 'video') return EMessageType.video;
@@ -901,6 +909,7 @@ export async function wwebjsMessageToUpsert(
 
   const rawType = (msg.type ?? 'chat').toLowerCase();
   const rawData = getRawMessageData(msg);
+  const rawSubType = getNonEmptyString(rawData?.subtype)?.toLowerCase();
   const rawBody = typeof msg.body === 'string' ? msg.body : '';
   const body = resolveMessageBody(rawType, rawBody, rawData);
   let messageType = mapWwebjsTypeToMessageType(rawType, rawData);
@@ -919,7 +928,14 @@ export async function wwebjsMessageToUpsert(
   if (disappearingProtocolMessage) {
     messageType = EMessageType.set_disappearing_messages;
   }
-  const isViewOnce = (msg as { isViewOnce?: boolean }).isViewOnce === true;
+  const isViewOnceUnavailableFanout =
+    rawType === 'ciphertext' &&
+    (rawSubType === 'view_once_unavailable_fanout' ||
+      rawSubType?.startsWith('view_once_unavailable_'));
+  const isViewOnce =
+    (msg as { isViewOnce?: boolean }).isViewOnce === true ||
+    isViewOnceUnavailableFanout ||
+    messageType === EMessageType.view_once;
   if (isViewOnce) {
     messageType = EMessageType.view_once;
   }

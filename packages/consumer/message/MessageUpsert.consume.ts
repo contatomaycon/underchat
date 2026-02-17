@@ -1994,7 +1994,9 @@ export class MessageUpsertConsume {
           participant: data.message?.key?.participant,
           participant_alt: data.message?.key?.participantAlt,
           addressing_mode: data.message?.key?.addressingMode,
-          is_view_once: data.message?.key?.isViewOnce ?? false,
+          is_view_once:
+            data.message?.key?.isViewOnce ??
+            data.type === EMessageType.view_once,
         },
         type_user: typeUser,
         account: getChat.account,

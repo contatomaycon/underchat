@@ -4,6 +4,25 @@ import { remoteJid } from './remoteJid';
 import { IMapCtx } from '../interfaces/IMapCtx';
 import { unwrapMessage } from './unwrapMessage';
 
+const VIEW_ONCE_UNAVAILABLE_TOKEN = 'view_once_unavailable';
+
+function hasViewOnceUnavailableStub(m: WAMessage): boolean {
+  if (m.messageStubType !== proto.WebMessageInfo.StubType.CIPHERTEXT) {
+    return false;
+  }
+
+  const params = m.messageStubParameters;
+  if (!Array.isArray(params) || !params.length) {
+    return false;
+  }
+
+  return params.some(
+    (value) =>
+      typeof value === 'string' &&
+      value.toLowerCase().includes(VIEW_ONCE_UNAVAILABLE_TOKEN)
+  );
+}
+
 function getText(msg: proto.IMessage): string {
   const base = unwrapMessage(msg, { keepViewOnce: true }) ?? msg;
 
@@ -117,6 +136,7 @@ function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
 }
 
 export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
+  if (hasViewOnceUnavailableStub(m)) return EMessageType.view_once;
   if (m.key?.isViewOnce === true) return EMessageType.view_once;
 
   const msg = m.message as proto.IMessage | undefined;
