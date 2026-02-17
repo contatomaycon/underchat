@@ -153,6 +153,60 @@ const cleanupMessageMedia = (message?: ListMessageResult) => {
   revokeIfBlob(message.content.document?.url ?? undefined);
 };
 
+const normalizeMessageDeliverySummary = (
+  summary?: ListMessageResult['summary'] | IChatMessage['summary'] | null
+): ListMessageResult['summary'] | null => {
+  if (!summary) {
+    return null;
+  }
+
+  const isSeen = summary.is_seen === true;
+  const isDelivered = summary.is_delivered === true || isSeen;
+  const isSent = summary.is_sent === true || isDelivered;
+
+  return {
+    is_sent: isSent,
+    is_delivered: isDelivered,
+    is_seen: isSeen,
+    is_sent_to_internal: summary.is_sent_to_internal === true,
+  };
+};
+
+const mergeMessageDeliverySummary = (
+  incoming?: ListMessageResult['summary'] | IChatMessage['summary'] | null,
+  existing?: ListMessageResult['summary'] | IChatMessage['summary'] | null
+): ListMessageResult['summary'] | null => {
+  const normalizedIncoming = normalizeMessageDeliverySummary(incoming);
+  const normalizedExisting = normalizeMessageDeliverySummary(existing);
+
+  if (!normalizedIncoming && !normalizedExisting) {
+    return null;
+  }
+  if (!normalizedIncoming) {
+    return normalizedExisting;
+  }
+  if (!normalizedExisting) {
+    return normalizedIncoming;
+  }
+
+  const isSeen = normalizedIncoming.is_seen || normalizedExisting.is_seen;
+  const isDelivered =
+    normalizedIncoming.is_delivered ||
+    normalizedExisting.is_delivered ||
+    isSeen;
+  const isSent =
+    normalizedIncoming.is_sent || normalizedExisting.is_sent || isDelivered;
+
+  return {
+    is_sent: isSent,
+    is_delivered: isDelivered,
+    is_seen: isSeen,
+    is_sent_to_internal:
+      normalizedIncoming.is_sent_to_internal ||
+      normalizedExisting.is_sent_to_internal,
+  };
+};
+
 export const useChatStore = defineStore('chat', {
   state: () => ({
     snackbar: {
@@ -272,7 +326,10 @@ export const useChatStore = defineStore('chat', {
     },
     upsertLocalMessage(message: ListMessageResult) {
       if (!message.hash) {
-        this.listMessages.push(message);
+        this.listMessages.push({
+          ...message,
+          summary: normalizeMessageDeliverySummary(message.summary),
+        });
         return;
       }
 
@@ -280,11 +337,22 @@ export const useChatStore = defineStore('chat', {
         (item) => item.hash === message.hash
       );
       if (idx !== -1) {
+        const existing = this.listMessages[idx];
+        const next: ListMessageResult = {
+          ...message,
+          summary: mergeMessageDeliverySummary(
+            message.summary,
+            existing.summary
+          ),
+        };
         cleanupMessageMedia(this.listMessages[idx]);
-        this.listMessages.splice(idx, 1, message);
+        this.listMessages.splice(idx, 1, next);
         return;
       }
-      this.listMessages.push(message);
+      this.listMessages.push({
+        ...message,
+        summary: normalizeMessageDeliverySummary(message.summary),
+      });
     },
     removeMessageByHash(hash: string) {
       if (!hash) {
@@ -305,7 +373,7 @@ export const useChatStore = defineStore('chat', {
         type_user: message.type_user,
         user: message.user,
         content: message.content as ContentMessageChat,
-        summary: message.summary,
+        summary: normalizeMessageDeliverySummary(message.summary),
         date: message.date,
         deleted: message.deleted ?? false,
         has_quoted: message.has_quoted ?? false,
@@ -326,7 +394,12 @@ export const useChatStore = defineStore('chat', {
       }
 
       if (existingIndex !== -1) {
-        const [removed] = this.listMessages.splice(existingIndex, 1, input);
+        const existing = this.listMessages[existingIndex];
+        const next: ListMessageResult = {
+          ...input,
+          summary: mergeMessageDeliverySummary(input.summary, existing.summary),
+        };
+        const [removed] = this.listMessages.splice(existingIndex, 1, next);
         cleanupMessageMedia(removed);
         if (message.hash) {
           this.clearLocalMessageState(message.hash);
@@ -2555,6 +2628,16 @@ export const useChatStore = defineStore('chat', {
 
     async getChatById(query: ListMessageChatsQuery): Promise<void> {
       try {
+        const existingSummaries = new Map<
+          string,
+          ListMessageResult['summary'] | null
+        >(
+          this.listMessages.map((message) => [
+            message.message_id,
+            normalizeMessageDeliverySummary(message.summary),
+          ])
+        );
+
         this.loading = true;
         this.listMessages = [];
         this.currentPage = 1;
@@ -2577,7 +2660,13 @@ export const useChatStore = defineStore('chat', {
 
         this.loading = false;
 
-        this.listMessages = [...data.data.results].reverse();
+        this.listMessages = [...data.data.results].reverse().map((message) => ({
+          ...message,
+          summary: mergeMessageDeliverySummary(
+            message.summary,
+            existingSummaries.get(message.message_id) ?? null
+          ),
+        }));
         this.currentPage = data.data.pagings.current_page;
         this.totalPages = data.data.pagings.total_pages;
       } catch (error) {

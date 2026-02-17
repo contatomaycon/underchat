@@ -412,15 +412,27 @@ export class MessageStatusUpdateConsume {
     const merged: MessageSummaryPatch = {};
 
     for (const patch of patches) {
+      if (patch.is_seen) {
+        merged.is_seen = true;
+        merged.is_delivered = true;
+        merged.is_sent = true;
+        continue;
+      }
+
       if (patch.is_sent) {
         merged.is_sent = true;
       }
       if (patch.is_delivered) {
         merged.is_delivered = true;
+        merged.is_sent = true;
       }
-      if (patch.is_seen) {
-        merged.is_seen = true;
-      }
+    }
+
+    if (merged.is_seen) {
+      merged.is_delivered = true;
+      merged.is_sent = true;
+    } else if (merged.is_delivered) {
+      merged.is_sent = true;
     }
 
     return merged;

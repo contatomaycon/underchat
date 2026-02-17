@@ -46,7 +46,8 @@ export class MessageStatusService {
     messageId: string,
     patch: MessageSummaryPatch
   ): Promise<IChatMessage | null> {
-    if (!messageId || !accountId || !this.hasPatch(patch)) {
+    const normalizedPatch = this.normalizePatch(patch);
+    if (!messageId || !accountId || !this.hasPatch(normalizedPatch)) {
       return null;
     }
 
@@ -58,29 +59,43 @@ export class MessageStatusService {
       return null;
     }
 
-    const updatedMessage: IChatMessage = {
+    const fallbackMessage: IChatMessage = {
       ...message,
-      summary: this.mergeSummary(message.summary, patch) ?? message.summary,
+      summary:
+        this.mergeSummary(message.summary, normalizedPatch) ??
+        this.normalizeSummaryState(message.summary),
     };
 
-    const channelAccountId = updatedMessage.account?.id ?? accountId;
+    const channelAccountId = message.account?.id ?? accountId;
 
-    const updated = await this.updateSummaryAtomicallyWithLock(
+    await this.updateSummaryAtomicallyWithLock(
       message.message_id,
       message.summary,
-      patch
+      normalizedPatch
     );
 
-    if (updated) {
-      await this.invalidateMessageCache(accountId, messageId);
+    await this.invalidateMessageCache(accountId, messageId);
+
+    const canonicalMessage = await this.findMessageByMessageIdWithRetry(
+      message.message_id
+    );
+    if (!canonicalMessage) {
+      return fallbackMessage;
     }
+
+    const publishedMessage: IChatMessage = {
+      ...canonicalMessage,
+      summary:
+        this.mergeSummary(canonicalMessage.summary, normalizedPatch) ??
+        this.normalizeSummaryState(canonicalMessage.summary),
+    };
 
     await this.publishCentrifugoImmediate(
       chatAccountCentrifugo(channelAccountId),
-      updatedMessage
+      publishedMessage
     );
 
-    return updatedMessage;
+    return publishedMessage;
   }
 
   /**
@@ -118,37 +133,72 @@ export class MessageStatusService {
   private hasPatch(patch: MessageSummaryPatch): boolean {
     return Boolean(
       patch &&
-      (patch.is_sent !== undefined ||
-        patch.is_delivered !== undefined ||
-        patch.is_seen !== undefined)
+      (patch.is_sent === true ||
+        patch.is_delivered === true ||
+        patch.is_seen === true)
     );
+  }
+
+  private normalizePatch(patch: MessageSummaryPatch): MessageSummaryPatch {
+    const hasSeen = patch.is_seen === true;
+    const hasDelivered = patch.is_delivered === true || hasSeen;
+    const hasSent = patch.is_sent === true || hasDelivered;
+
+    const normalized: MessageSummaryPatch = {};
+    if (hasSent) {
+      normalized.is_sent = true;
+    }
+    if (hasDelivered) {
+      normalized.is_delivered = true;
+    }
+    if (hasSeen) {
+      normalized.is_seen = true;
+    }
+
+    return normalized;
+  }
+
+  private normalizeSummaryState(
+    summary: IChatMessage['summary'] | null | undefined
+  ): IChatMessage['summary'] {
+    const normalized: IChatMessage['summary'] = {
+      is_sent: summary?.is_sent === true,
+      is_delivered: summary?.is_delivered === true,
+      is_seen: summary?.is_seen === true,
+      is_sent_to_internal: summary?.is_sent_to_internal ?? false,
+    };
+
+    if (normalized.is_seen) {
+      normalized.is_delivered = true;
+      normalized.is_sent = true;
+    } else if (normalized.is_delivered) {
+      normalized.is_sent = true;
+    }
+
+    return normalized;
   }
 
   private mergeSummary(
     current: IChatMessage['summary'],
     patch: MessageSummaryPatch
   ): IChatMessage['summary'] | null {
-    const baseline: IChatMessage['summary'] = {
-      is_sent: current?.is_sent ?? false,
-      is_delivered: current?.is_delivered ?? false,
-      is_seen: current?.is_seen ?? false,
-      is_sent_to_internal: current?.is_sent_to_internal ?? false,
-    };
+    const normalizedPatch = this.normalizePatch(patch);
+    const baseline = this.normalizeSummaryState(current);
 
     let changed = false;
     const next = { ...baseline };
 
-    if (patch.is_sent && !next.is_sent) {
+    if (normalizedPatch.is_sent && !next.is_sent) {
       next.is_sent = true;
       changed = true;
     }
 
-    if (patch.is_delivered && !next.is_delivered) {
+    if (normalizedPatch.is_delivered && !next.is_delivered) {
       next.is_delivered = true;
       changed = true;
     }
 
-    if (patch.is_seen && !next.is_seen) {
+    if (normalizedPatch.is_seen && !next.is_seen) {
       next.is_seen = true;
       changed = true;
     }
@@ -380,6 +430,25 @@ export class MessageStatusService {
     return null;
   }
 
+  private async findMessageByMessageIdWithRetry(
+    messageId: string,
+    maxRetries = 5
+  ): Promise<IChatMessage | null> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const message = await this.findMessageByMessageId(messageId);
+      if (message?.message_id) {
+        return message;
+      }
+
+      if (attempt < maxRetries - 1) {
+        const backoffMs = Math.min(100 * Math.pow(2, attempt), 1000);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
+    }
+
+    return null;
+  }
+
   private async updateSummaryAtomicallyWithRetry(
     messageId: string,
     currentSummary: IChatMessage['summary'],
@@ -468,12 +537,7 @@ export class MessageStatusService {
   private buildMessageSummaryBaseline(
     currentSummary: IChatMessage['summary'] | null | undefined
   ): MessageSummaryBaseline {
-    return {
-      is_sent: currentSummary?.is_sent ?? false,
-      is_delivered: currentSummary?.is_delivered ?? false,
-      is_seen: currentSummary?.is_seen ?? false,
-      is_sent_to_internal: currentSummary?.is_sent_to_internal ?? false,
-    };
+    return this.normalizeSummaryState(currentSummary);
   }
 
   private buildMessageSummaryScriptParams(
@@ -521,6 +585,25 @@ export class MessageStatusService {
           shouldUpdate = true;
         }
       }
+
+      if ((summary.containsKey('is_seen') && summary.is_seen) || params.patch_is_seen == true) {
+        if (!summary.containsKey('is_delivered') || !summary.is_delivered) {
+          summary.is_delivered = true;
+          changed = true;
+          shouldUpdate = true;
+        }
+        if (!summary.containsKey('is_sent') || !summary.is_sent) {
+          summary.is_sent = true;
+          changed = true;
+          shouldUpdate = true;
+        }
+      } else if ((summary.containsKey('is_delivered') && summary.is_delivered) || params.patch_is_delivered == true) {
+        if (!summary.containsKey('is_sent') || !summary.is_sent) {
+          summary.is_sent = true;
+          changed = true;
+          shouldUpdate = true;
+        }
+      }
       
       if (!summary.containsKey('is_sent_to_internal')) {
         summary.is_sent_to_internal = params.baseline.is_sent_to_internal;
@@ -543,7 +626,11 @@ export class MessageStatusService {
     }
 
     const baseline = this.buildMessageSummaryBaseline(currentSummary);
-    const scriptParams = this.buildMessageSummaryScriptParams(baseline, patch);
+    const normalizedPatch = this.normalizePatch(patch);
+    const scriptParams = this.buildMessageSummaryScriptParams(
+      baseline,
+      normalizedPatch
+    );
     const scriptSource = this.buildMessageSummaryScriptSource();
 
     try {
@@ -572,7 +659,22 @@ export class MessageStatusService {
   }
 
   static hashPatch(patch: MessageSummaryPatch): string {
-    const sorted = JSON.stringify(patch, Object.keys(patch).sort());
+    const hasSeen = patch.is_seen === true;
+    const hasDelivered = patch.is_delivered === true || hasSeen;
+    const hasSent = patch.is_sent === true || hasDelivered;
+
+    const normalized: MessageSummaryPatch = {};
+    if (hasSent) {
+      normalized.is_sent = true;
+    }
+    if (hasDelivered) {
+      normalized.is_delivered = true;
+    }
+    if (hasSeen) {
+      normalized.is_seen = true;
+    }
+
+    const sorted = JSON.stringify(normalized, Object.keys(normalized).sort());
     return createHash('sha256').update(sorted).digest('hex').substring(0, 16);
   }
 }

@@ -168,18 +168,19 @@ const createChatSocket = () => {
         isChatRoute() && chatStore.activeChat?.chat_id === chatId;
 
       if (isActiveChat) {
-        const latestByMessageId = new Map<string, IChatMessage>();
+        const touchedMessageIds = new Set<string>();
         for (const msg of chatMessages) {
-          latestByMessageId.set(msg.message_id, msg);
+          chatStore.addMessageActiveChat(msg);
+          touchedMessageIds.add(msg.message_id);
         }
 
-        for (const msg of latestByMessageId.values()) {
-          chatStore.addMessageActiveChat(msg);
-        }
+        const updatedMessages = chatStore.listMessages.filter((msg) =>
+          touchedMessageIds.has(msg.message_id)
+        );
 
         globalThis.dispatchEvent(
           new CustomEvent('chat-messages-batch', {
-            detail: { messages: Array.from(latestByMessageId.values()) },
+            detail: { messages: updatedMessages },
           })
         );
       } else {
