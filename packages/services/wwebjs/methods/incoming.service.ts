@@ -166,6 +166,10 @@ export class WwebjsIncomingMessageService {
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
   private readonly PHOTO_CACHE_NO_PHOTO = '__no_photo__';
+  private readonly NAME_CACHE_TTL = 86400;
+  private readonly NAME_CACHE_NO_NAME_TTL = 300;
+  private readonly NAME_CACHE_PREFIX = 'name:jid:';
+  private readonly NAME_CACHE_NO_NAME = '__no_name__';
   private readonly PROFILE_PIC_TIMEOUT_MS = 3000;
 
   constructor(
@@ -585,8 +589,9 @@ export class WwebjsIncomingMessageService {
     const nonLidCandidate = uniqueCandidates.find(
       (candidate) => !this.isLidJid(candidate)
     );
-    const primaryJid =
-      preferredJid && uniqueCandidates.includes(preferredJid)
+    const primaryJid = msg.fromMe
+      ? (nonLidCandidate ?? uniqueCandidates[0])
+      : preferredJid && uniqueCandidates.includes(preferredJid)
         ? preferredJid
         : (nonLidCandidate ?? uniqueCandidates[0]);
 
@@ -704,10 +709,45 @@ export class WwebjsIncomingMessageService {
   ): Promise<string | undefined> {
     try {
       const contact = await getContactById(contactId);
+      if (
+        typeof (contact as { isMe?: unknown } | undefined)?.isMe ===
+          'boolean' &&
+        (contact as { isMe?: boolean }).isMe
+      ) {
+        return undefined;
+      }
       return this.extractNameFromContact(contact);
     } catch {
       return undefined;
     }
+  }
+
+  private async removeSelfContactCandidates(
+    getContactById: (contactId: string) => Promise<unknown>,
+    candidates: string[]
+  ): Promise<string[]> {
+    if (!candidates.length) {
+      return candidates;
+    }
+
+    const filtered: string[] = [];
+
+    for (const candidate of candidates) {
+      try {
+        const contact = await getContactById(candidate);
+        const isMe =
+          typeof (contact as { isMe?: unknown } | undefined)?.isMe ===
+            'boolean' && (contact as { isMe?: boolean }).isMe;
+
+        if (isMe) {
+          continue;
+        }
+      } catch {}
+
+      filtered.push(candidate);
+    }
+
+    return filtered;
   }
 
   private async resolveNameFromContactCandidates(
@@ -724,6 +764,60 @@ export class WwebjsIncomingMessageService {
     return undefined;
   }
 
+  private async getCachedName(
+    candidates: string[]
+  ): Promise<string | null | undefined> {
+    let hasNoNameCache = false;
+
+    for (const candidate of candidates) {
+      try {
+        const cached = await this.redis.get(
+          `${this.NAME_CACHE_PREFIX}${candidate}`
+        );
+        if (!cached) {
+          continue;
+        }
+
+        if (cached === this.NAME_CACHE_NO_NAME) {
+          hasNoNameCache = true;
+          continue;
+        }
+
+        return cached;
+      } catch {}
+    }
+
+    return hasNoNameCache ? null : undefined;
+  }
+
+  private cacheName(candidates: string[], name: string): void {
+    const unique = new Set(candidates);
+    for (const candidate of unique) {
+      this.redis
+        .set(
+          `${this.NAME_CACHE_PREFIX}${candidate}`,
+          name,
+          'EX',
+          this.NAME_CACHE_TTL
+        )
+        .catch(() => {});
+    }
+  }
+
+  private cacheNoName(candidates: string[]): void {
+    const unique = new Set(candidates);
+    for (const candidate of unique) {
+      this.redis
+        .set(
+          `${this.NAME_CACHE_PREFIX}${candidate}`,
+          this.NAME_CACHE_NO_NAME,
+          'EX',
+          this.NAME_CACHE_NO_NAME_TTL
+        )
+        .catch(() => {});
+    }
+  }
+
   private async resolvePushName(
     client: Client,
     msg: Message,
@@ -738,25 +832,26 @@ export class WwebjsIncomingMessageService {
     const rawNotifyName = normalizeNameCandidate(raw._data?.notifyName);
 
     if (msg.fromMe) {
-      try {
-        const chat = await msg.getChat();
-        const chatName = normalizeNameCandidate(
-          (chat as { name?: unknown } | undefined)?.name
-        );
-        if (chatName) {
-          return chatName;
-        }
-      } catch {}
-
-      const contactCandidates = this.removeSelfPhotoCandidates(
+      let contactCandidates = this.removeSelfPhotoCandidates(
         client,
         this.buildPhotoCandidates([
+          msg.to,
           resolvedJids.remoteJid,
           resolvedJids.remoteJidAlt,
-          msg.to,
           getMessageRemoteFromId(msg),
         ])
       );
+      if (!contactCandidates.length) {
+        return undefined;
+      }
+
+      const cachedName = await this.getCachedName(contactCandidates);
+      if (cachedName === null) {
+        return undefined;
+      }
+      if (cachedName) {
+        return cachedName;
+      }
 
       const getContactById = (
         client as unknown as {
@@ -765,15 +860,28 @@ export class WwebjsIncomingMessageService {
       ).getContactById;
 
       if (typeof getContactById === 'function') {
+        contactCandidates = await this.removeSelfContactCandidates(
+          (contactId) => getContactById.call(client, contactId),
+          contactCandidates
+        );
+      }
+
+      if (!contactCandidates.length) {
+        return undefined;
+      }
+
+      if (typeof getContactById === 'function') {
         const contactName = await this.resolveNameFromContactCandidates(
           (contactId) => getContactById.call(client, contactId),
           contactCandidates
         );
         if (contactName) {
+          this.cacheName(contactCandidates, contactName);
           return contactName;
         }
       }
 
+      this.cacheNoName(contactCandidates);
       return undefined;
     }
 
@@ -952,7 +1060,7 @@ export class WwebjsIncomingMessageService {
     resolvedJids: WwebjsResolvedJids
   ): Promise<string | undefined> {
     const directPeerJid = msg.fromMe ? msg.to : msg.from;
-    const candidates = this.removeSelfPhotoCandidates(
+    let candidates = this.removeSelfPhotoCandidates(
       client,
       this.buildPhotoCandidates([
         resolvedJids.remoteJid,
@@ -961,6 +1069,21 @@ export class WwebjsIncomingMessageService {
         getMessageRemoteFromId(msg),
       ])
     );
+    if (msg.fromMe) {
+      const getContactById = (
+        client as unknown as {
+          getContactById?: (contactId: string) => Promise<unknown>;
+        }
+      ).getContactById;
+
+      if (typeof getContactById === 'function') {
+        candidates = await this.removeSelfContactCandidates(
+          (contactId) => getContactById.call(client, contactId),
+          candidates
+        );
+      }
+    }
+
     if (!candidates.length) {
       return undefined;
     }
