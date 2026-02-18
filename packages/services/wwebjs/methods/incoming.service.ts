@@ -722,7 +722,7 @@ export class WwebjsIncomingMessageService {
     }
 
     try {
-      const resolvedJids = await this.resolveRemoteJids(client, msg);
+      const resolvedJids = this.resolveRemoteJids(client, msg);
       if (!resolvedJids) return;
       if (this.shouldSkipResolvedJids(resolvedJids)) return;
       if (this.isUnsupportedSystemNotification(msg)) return;
@@ -767,7 +767,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, msg);
+    const resolvedJids = this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1264,7 +1264,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, after);
+    const resolvedJids = this.resolveRemoteJids(client, after);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1296,7 +1296,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, msg);
+    const resolvedJids = this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1327,7 +1327,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, message);
+    const resolvedJids = this.resolveRemoteJids(client, message);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1362,7 +1362,7 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
-      const resolvedJids = await this.resolveRemoteJids(client, parentMsg);
+      const resolvedJids = this.resolveRemoteJids(client, parentMsg);
       remoteJid = resolvedJids?.remoteJid ?? '';
       remoteJidAlt = resolvedJids?.remoteJidAlt;
     } catch {
