@@ -1329,6 +1329,9 @@ export async function wwebjsMessageToUpsert(
     innerMessage.conversation = body;
   }
 
+  const resolvedPushName =
+    pushName ?? (msg.fromMe ? undefined : getNotifyNameFromMessage(msg));
+
   const envelope: IUpsertMessage['message'] = {
     key: {
       id,
@@ -1340,7 +1343,7 @@ export async function wwebjsMessageToUpsert(
     },
     message: innerMessage,
     messageTimestamp: msg.timestamp,
-    pushName: pushName ?? getNotifyNameFromMessage(msg),
+    pushName: resolvedPushName,
     ack,
   };
 
