@@ -1280,6 +1280,22 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
+    const rawFromMe = (
+      msg as unknown as {
+        _data?: { id?: { fromMe?: unknown } };
+      }
+    )._data?.id?.fromMe;
+    const isFromMeMessage =
+      typeof msg.fromMe === 'boolean'
+        ? msg.fromMe
+        : typeof rawFromMe === 'boolean'
+          ? rawFromMe
+          : false;
+
+    if (isFromMeMessage) {
+      return;
+    }
+
     const resolvedJids = await this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
