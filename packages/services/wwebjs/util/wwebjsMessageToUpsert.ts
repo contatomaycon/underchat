@@ -1,19 +1,15 @@
 import type { Message } from '@wwebjs/whatsapp-web.js';
 import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
+import type { IWwebjsPinEventData } from '@core/common/interfaces/IWwebjsPinEventData';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { messageToWaLike } from './messageToWaLike';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 
-export interface WwebjsPinEventData {
-  pinType?: string | null;
-  isPinned?: boolean | null;
-  parentMessageId?: string | null;
-  senderId?: string | null;
-  chatId?: string | null;
-  messageType?: string | null;
-  source?: string;
-}
+const E2E_ENCRYPT_NOTIFICATION_TEXT =
+  'As mensagens e chamadas são protegidas com criptografia de ponta a ponta. Ninguém fora desta conversa, nem mesmo o WhatsApp, pode ler ou ouvi-las.';
+const CIPHERTEXT_FANOUT_NOTIFICATION_TEXT =
+  'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';
 
 function getMessageId(msg: Message): string | undefined {
   if (!msg?.id) return undefined;
@@ -55,6 +51,10 @@ function mapWwebjsTypeToMessageType(
     return EMessageType.view_once;
   }
 
+  if (t === 'ciphertext' && subType === 'fanout') {
+    return EMessageType.system;
+  }
+
   if (t === 'chat') return EMessageType.text;
   if (t === 'image') return EMessageType.image;
   if (t === 'video') return EMessageType.video;
@@ -68,7 +68,38 @@ function mapWwebjsTypeToMessageType(
   if (t === 'pin_message' || t === 'pinned_message') {
     return EMessageType.system;
   }
+  if (t === 'e2e_notification') return EMessageType.system;
   return EMessageType.text;
+}
+
+function resolveE2ENotificationBody(
+  rawType: string,
+  rawSubType?: string
+): string | undefined {
+  if (rawType !== 'e2e_notification') {
+    return undefined;
+  }
+
+  if (!rawSubType || rawSubType === 'encrypt') {
+    return E2E_ENCRYPT_NOTIFICATION_TEXT;
+  }
+
+  return undefined;
+}
+
+function resolveCiphertextFallbackBody(
+  rawType: string,
+  rawSubType?: string
+): string | undefined {
+  if (rawType !== 'ciphertext') {
+    return undefined;
+  }
+
+  if (rawSubType === 'fanout') {
+    return CIPHERTEXT_FANOUT_NOTIFICATION_TEXT;
+  }
+
+  return undefined;
 }
 
 function getNumber(value: unknown): number | undefined {
@@ -147,7 +178,7 @@ function getPinTypeValue(value: unknown): string | number | undefined {
 function resolvePinType(
   rawType: string,
   rawData?: Record<string, unknown>,
-  pinEventData?: WwebjsPinEventData
+  pinEventData?: IWwebjsPinEventData
 ): string | number | undefined {
   const candidates = [
     pinEventData?.pinType,
@@ -200,7 +231,7 @@ function getSerializedId(value: unknown): string | undefined {
 
 function resolvePinParentMessageId(
   rawData?: Record<string, unknown>,
-  pinEventData?: WwebjsPinEventData
+  pinEventData?: IWwebjsPinEventData
 ): string | undefined {
   const candidates: unknown[] = [
     pinEventData?.parentMessageId,
@@ -222,7 +253,7 @@ function resolvePinParentMessageId(
 function buildPinInChatMessage(
   rawType: string,
   rawData?: Record<string, unknown>,
-  pinEventData?: WwebjsPinEventData
+  pinEventData?: IWwebjsPinEventData
 ): Record<string, unknown> | undefined {
   const hasPinSignals =
     rawType === 'pin_message' ||
@@ -1162,7 +1193,7 @@ export async function wwebjsMessageToUpsert(
   msg: Message,
   resolvedJids?: WwebjsResolvedJids,
   pushName?: string,
-  pinEventData?: WwebjsPinEventData
+  pinEventData?: IWwebjsPinEventData
 ): Promise<IUpsertMessage | null> {
   const keyLike = messageToWaLike(msg);
   if (!keyLike?.key) return null;
@@ -1197,7 +1228,7 @@ export async function wwebjsMessageToUpsert(
   const ack = getNumber(msg.ack) ?? getNumber(rawData?.ack);
   const rawSubType = getNonEmptyString(rawData?.subtype)?.toLowerCase();
   const rawBody = typeof msg.body === 'string' ? msg.body : '';
-  const body = resolveMessageBody(rawType, rawBody, rawData);
+  let body = resolveMessageBody(rawType, rawBody, rawData);
   let messageType = mapWwebjsTypeToMessageType(rawType, rawData);
   const pinInChatMessage = buildPinInChatMessage(
     rawType,
@@ -1224,6 +1255,22 @@ export async function wwebjsMessageToUpsert(
     messageType === EMessageType.view_once;
   if (isViewOnce) {
     messageType = EMessageType.view_once;
+  }
+
+  if (!body) {
+    const e2eNotificationBody = resolveE2ENotificationBody(rawType, rawSubType);
+    if (e2eNotificationBody) {
+      body = e2eNotificationBody;
+    }
+  }
+  if (!body) {
+    const ciphertextFallbackBody = resolveCiphertextFallbackBody(
+      rawType,
+      rawSubType
+    );
+    if (ciphertextFallbackBody) {
+      body = ciphertextFallbackBody;
+    }
   }
 
   const innerMessage: Record<string, unknown> = {};

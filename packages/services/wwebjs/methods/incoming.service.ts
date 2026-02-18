@@ -11,10 +11,8 @@ import {
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
-import {
-  type WwebjsPinEventData,
-  wwebjsMessageToUpsert,
-} from '../util/wwebjsMessageToUpsert';
+import type { IWwebjsPinEventData } from '@core/common/interfaces/IWwebjsPinEventData';
+import { wwebjsMessageToUpsert } from '../util/wwebjsMessageToUpsert';
 import {
   buildCallUpsert,
   buildDeleteMessageUpsert,
@@ -171,6 +169,10 @@ export class WwebjsIncomingMessageService {
   private readonly NAME_CACHE_PREFIX = 'name:jid:';
   private readonly NAME_CACHE_NO_NAME = '__no_name__';
   private readonly PROFILE_PIC_TIMEOUT_MS = 3000;
+  private readonly E2E_NOTIFICATION_DEDUPE_PREFIX = 'wwebjs:e2e:';
+  private readonly E2E_NOTIFICATION_DEDUPE_TTL = 31536000;
+  private readonly CIPHERTEXT_FANOUT_DEDUPE_PREFIX = 'wwebjs:ciphertext:';
+  private readonly CIPHERTEXT_FANOUT_DEDUPE_TTL = 31536000;
 
   constructor(
     @inject(StreamProducerService)
@@ -346,18 +348,119 @@ export class WwebjsIncomingMessageService {
   }
 
   private isUnsupportedSystemNotification(msg: Message): boolean {
-    const typeRaw =
-      getNonEmptyString(msg.type) ??
-      getNonEmptyString(
-        (msg as unknown as { _data?: { type?: unknown } })._data?.type
-      );
-    const type = typeRaw?.toLowerCase();
+    const { type } = this.getMessageTypeAndSubtype(msg);
 
     if (type === 'notification_template') {
       return true;
     }
 
     return false;
+  }
+
+  private getMessageTypeAndSubtype(msg: Message): {
+    type?: string;
+    subtype?: string;
+  } {
+    const raw = msg as unknown as {
+      _data?: { type?: unknown; subtype?: unknown };
+    };
+
+    const type =
+      getNonEmptyString(msg.type)?.toLowerCase() ??
+      getNonEmptyString(raw._data?.type)?.toLowerCase();
+    const subtype = getNonEmptyString(raw._data?.subtype)?.toLowerCase();
+
+    return { type, subtype };
+  }
+
+  private isE2EEncryptNotification(msg: Message): boolean {
+    const { type, subtype } = this.getMessageTypeAndSubtype(msg);
+    if (type !== 'e2e_notification') {
+      return false;
+    }
+
+    return !subtype || subtype === 'encrypt';
+  }
+
+  private isCiphertextFanoutNotification(msg: Message): boolean {
+    const { type, subtype } = this.getMessageTypeAndSubtype(msg);
+    return type === 'ciphertext' && subtype === 'fanout';
+  }
+
+  private getE2ENotificationDedupeKey(
+    msg: Message,
+    resolvedJids: WwebjsResolvedJids
+  ): string | undefined {
+    const { subtype } = this.getMessageTypeAndSubtype(msg);
+    const chatJidRaw = resolvedJids.remoteJid || msg.from || msg.to || '';
+    const chatJid = normalizeJid(chatJidRaw) ?? chatJidRaw;
+    if (!chatJid) {
+      return undefined;
+    }
+
+    const normalizedSubtype = subtype || 'encrypt';
+    return `${this.E2E_NOTIFICATION_DEDUPE_PREFIX}${wwebjsEnvironment.wwebjsAccountId}:${chatJid}:${normalizedSubtype}`;
+  }
+
+  private async shouldSkipE2ENotification(
+    msg: Message,
+    resolvedJids: WwebjsResolvedJids
+  ): Promise<boolean> {
+    if (!this.isE2EEncryptNotification(msg)) {
+      return false;
+    }
+
+    const dedupeKey = this.getE2ENotificationDedupeKey(msg, resolvedJids);
+    if (!dedupeKey) {
+      return false;
+    }
+
+    try {
+      const inserted = await this.redis.set(
+        dedupeKey,
+        '1',
+        'EX',
+        this.E2E_NOTIFICATION_DEDUPE_TTL,
+        'NX'
+      );
+
+      return inserted !== 'OK';
+    } catch {
+      return false;
+    }
+  }
+
+  private getCiphertextFanoutDedupeKey(msg: Message): string | undefined {
+    const messageId = getMessageIdSerialized(msg);
+    if (!messageId) {
+      return undefined;
+    }
+
+    return `${this.CIPHERTEXT_FANOUT_DEDUPE_PREFIX}${wwebjsEnvironment.wwebjsAccountId}:${messageId}`;
+  }
+
+  private async shouldSkipCiphertextFanout(msg: Message): Promise<boolean> {
+    if (!this.isCiphertextFanoutNotification(msg)) {
+      return false;
+    }
+
+    const dedupeKey = this.getCiphertextFanoutDedupeKey(msg);
+    if (!dedupeKey) {
+      return false;
+    }
+
+    try {
+      const inserted = await this.redis.set(
+        dedupeKey,
+        '1',
+        'EX',
+        this.CIPHERTEXT_FANOUT_DEDUPE_TTL,
+        'NX'
+      );
+      return inserted !== 'OK';
+    } catch {
+      return false;
+    }
   }
 
   private isStatusOrBroadcastMessage(msg: Message): boolean {
@@ -434,6 +537,7 @@ export class WwebjsIncomingMessageService {
     }
 
     return (
+      rawSubtype === 'fanout' ||
       rawSubtype === 'view_once_unavailable_fanout' ||
       rawSubtype.startsWith('view_once_unavailable_')
     );
@@ -622,6 +726,8 @@ export class WwebjsIncomingMessageService {
       if (!resolvedJids) return;
       if (this.shouldSkipResolvedJids(resolvedJids)) return;
       if (this.isUnsupportedSystemNotification(msg)) return;
+      if (await this.shouldSkipE2ENotification(msg, resolvedJids)) return;
+      if (await this.shouldSkipCiphertextFanout(msg)) return;
 
       const [pushName, photo] = await Promise.all([
         this.resolvePushName(client, msg, resolvedJids),
@@ -650,7 +756,7 @@ export class WwebjsIncomingMessageService {
 
   private async handlePinnedMessage(
     msg: Message,
-    pinData?: WwebjsPinEventData
+    pinData?: IWwebjsPinEventData
   ): Promise<void> {
     const client = this.currentClient;
     if (!client) {
