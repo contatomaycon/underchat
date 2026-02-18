@@ -1,10 +1,9 @@
 import { injectable, inject } from 'tsyringe';
-import whatsappWeb from '@wwebjs/whatsapp-web.js';
+import whatsappWeb, { type Client } from '@wwebjs/whatsapp-web.js';
 import { WwebjsConnectionService } from './connection.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
-import type { Client } from '@wwebjs/whatsapp-web.js';
 import { webcrypto as nodeCrypto } from 'node:crypto';
 
 const { MessageMedia } = whatsappWeb;
@@ -33,7 +32,11 @@ export class WwebjsHelpersService {
     if (this.shouldSimulateTyping(content, options)) {
       await this.simulateHumanTyping(jid, content, options);
     }
-    return client.sendMessage(jid, content, options);
+    const sendOptions = {
+      ...(options ?? {}),
+      waitUntilMsgSent: true,
+    } as Parameters<Client['sendMessage']>[2];
+    return client.sendMessage(jid, content, sendOptions);
   }
 
   private async simulateHumanTyping(

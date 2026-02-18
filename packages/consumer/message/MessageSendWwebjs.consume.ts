@@ -30,11 +30,13 @@ import { convertWaveformBase64ToUint8Array } from '@core/common/functions/conver
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { webcrypto } from 'node:crypto';
 
 @singleton()
 export class MessageSendWwebjsConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
+  private readonly CHAT_QUEUE_TIMEOUT_MS = 120000;
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
     new Map();
 
@@ -281,7 +283,9 @@ export class MessageSendWwebjsConsume {
     chatId: string,
     task: () => Promise<void>
   ): Promise<void> {
-    await this.keyedSequencerService.enqueue(chatId, task);
+    await this.keyedSequencerService.enqueue(chatId, task, {
+      timeoutMs: this.CHAT_QUEUE_TIMEOUT_MS,
+    });
   }
 
   private isTransientError(error: unknown): boolean {
@@ -314,6 +318,23 @@ export class MessageSendWwebjsConsume {
     return false;
   }
 
+  private getRandomDelay(): number {
+    const array = new Uint32Array(1);
+    webcrypto.getRandomValues(array);
+    const randomValue = array[0] / (0xffffffff + 1);
+    return Math.floor(randomValue * (2000 - 500 + 1)) + 500;
+  }
+
+  private async applyDelayIfNeeded(
+    currentType: EMessageType | undefined,
+    lastType: EMessageType | undefined
+  ): Promise<void> {
+    if (currentType && currentType === lastType) {
+      const delay = this.getRandomDelay();
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
   private getQuotedKey(data: IChatMessage):
     | {
         key: {
@@ -344,6 +365,7 @@ export class MessageSendWwebjsConsume {
     const chatId = this.resolveChatId(data);
     if (!chatId) throw new Error('Received message without chatId');
     const currentType = data?.content?.type;
+    const lastType = this.lastMessageTypeByChatId.get(chatId);
     const hasQuoted = !!data.content?.quoted || data.has_quoted === true;
 
     if (
@@ -356,19 +378,38 @@ export class MessageSendWwebjsConsume {
       )
     )
       return;
-    if (await this.processImageMessage(data, jid, chatId, currentType)) return;
-    if (await this.processDocumentMessage(data, jid, chatId, currentType))
+    if (
+      await this.processImageMessage(data, jid, chatId, currentType, lastType)
+    )
       return;
-    if (await this.processAudioMessage(data, jid, chatId, currentType)) return;
-    if (await this.processVideoMessage(data, jid, chatId, currentType)) return;
-    if (await this.processStickerMessage(data, jid, chatId, currentType))
+    if (
+      await this.processDocumentMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        lastType
+      )
+    )
+      return;
+    if (
+      await this.processAudioMessage(data, jid, chatId, currentType, lastType)
+    )
+      return;
+    if (
+      await this.processVideoMessage(data, jid, chatId, currentType, lastType)
+    )
+      return;
+    if (
+      await this.processStickerMessage(data, jid, chatId, currentType, lastType)
+    )
       return;
     if (await this.processLocationMessage(data, jid, chatId, currentType))
       return;
     if (await this.processContactCardMessage(data, jid, chatId, currentType))
       return;
-    if (await this.processDeleteMessage(data, jid, currentType)) return;
-    await this.processReactMessage(data, jid, currentType);
+    if (await this.processDeleteMessage(data, jid, chatId, currentType)) return;
+    await this.processReactMessage(data, jid, chatId, currentType);
   }
 
   private async processTextOrSystemMessage(
@@ -455,10 +496,12 @@ export class MessageSendWwebjsConsume {
     data: IChatMessage,
     jid: string,
     chatId: string,
-    currentType: EMessageType | undefined
+    currentType: EMessageType | undefined,
+    lastType: EMessageType | undefined
   ): Promise<boolean> {
     if (currentType !== EMessageType.image || !data.content?.image?.url)
       return false;
+    await this.applyDelayIfNeeded(currentType, lastType);
     const result = await this.wwebjsMessageMediaService.sendImage(
       jid,
       { url: data.content.image.url },
@@ -474,10 +517,12 @@ export class MessageSendWwebjsConsume {
     data: IChatMessage,
     jid: string,
     chatId: string,
-    currentType: EMessageType | undefined
+    currentType: EMessageType | undefined,
+    lastType: EMessageType | undefined
   ): Promise<boolean> {
     if (currentType !== EMessageType.document || !data.content?.document?.url)
       return false;
+    await this.applyDelayIfNeeded(currentType, lastType);
     const result = await this.wwebjsMessageMediaService.sendDocument(
       jid,
       { url: data.content.document.url },
@@ -497,10 +542,12 @@ export class MessageSendWwebjsConsume {
     data: IChatMessage,
     jid: string,
     chatId: string,
-    currentType: EMessageType | undefined
+    currentType: EMessageType | undefined,
+    lastType: EMessageType | undefined
   ): Promise<boolean> {
     if (currentType !== EMessageType.audio || !data.content?.audio?.url)
       return false;
+    await this.applyDelayIfNeeded(currentType, lastType);
     const waveform =
       data.content.audio.ptt && data.content.audio.waveform
         ? convertWaveformBase64ToUint8Array(data.content.audio.waveform)
@@ -529,10 +576,12 @@ export class MessageSendWwebjsConsume {
     data: IChatMessage,
     jid: string,
     chatId: string,
-    currentType: EMessageType | undefined
+    currentType: EMessageType | undefined,
+    lastType: EMessageType | undefined
   ): Promise<boolean> {
     if (currentType !== EMessageType.video || !data.content?.video?.url)
       return false;
+    await this.applyDelayIfNeeded(currentType, lastType);
     const result = await this.wwebjsMessageMediaService.sendVideo(
       jid,
       { url: data.content.video.url },
@@ -552,10 +601,12 @@ export class MessageSendWwebjsConsume {
     data: IChatMessage,
     jid: string,
     chatId: string,
-    currentType: EMessageType | undefined
+    currentType: EMessageType | undefined,
+    lastType: EMessageType | undefined
   ): Promise<boolean> {
     if (currentType !== EMessageType.sticker || !data.content?.sticker?.url)
       return false;
+    await this.applyDelayIfNeeded(currentType, lastType);
     const result = await this.wwebjsMessageMediaService.sendSticker(
       jid,
       { url: data.content.sticker.url },
@@ -625,6 +676,7 @@ export class MessageSendWwebjsConsume {
   private async processDeleteMessage(
     data: IChatMessage,
     jid: string,
+    chatId: string,
     currentType: EMessageType | undefined
   ): Promise<boolean> {
     if (currentType !== EMessageType.delete_message || !data.message_key?.id) {
@@ -637,12 +689,14 @@ export class MessageSendWwebjsConsume {
       participant: data.message_key.participant ?? undefined,
     };
     await this.wwebjsMessageEditDeleteService.deleteMessage(key);
+    this.lastMessageTypeByChatId.set(chatId, EMessageType.delete_message);
     return true;
   }
 
   private async processReactMessage(
     data: IChatMessage,
     jid: string,
+    chatId: string,
     currentType: EMessageType | undefined
   ): Promise<void> {
     if (
@@ -664,6 +718,7 @@ export class MessageSendWwebjsConsume {
       key,
       lastReaction.emoji
     );
+    this.lastMessageTypeByChatId.set(chatId, EMessageType.react);
   }
 
   private async processProfileStatus(
