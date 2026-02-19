@@ -11,10 +11,8 @@ import {
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
-import {
-  type WwebjsPinEventData,
-  wwebjsMessageToUpsert,
-} from '../util/wwebjsMessageToUpsert';
+import type { IWwebjsPinEventData } from '@core/common/interfaces/IWwebjsPinEventData';
+import { wwebjsMessageToUpsert } from '../util/wwebjsMessageToUpsert';
 import {
   buildCallUpsert,
   buildDeleteMessageUpsert,
@@ -166,7 +164,15 @@ export class WwebjsIncomingMessageService {
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
   private readonly PHOTO_CACHE_NO_PHOTO = '__no_photo__';
+  private readonly NAME_CACHE_TTL = 86400;
+  private readonly NAME_CACHE_NO_NAME_TTL = 300;
+  private readonly NAME_CACHE_PREFIX = 'name:jid:';
+  private readonly NAME_CACHE_NO_NAME = '__no_name__';
   private readonly PROFILE_PIC_TIMEOUT_MS = 3000;
+  private readonly E2E_NOTIFICATION_DEDUPE_PREFIX = 'wwebjs:e2e:';
+  private readonly E2E_NOTIFICATION_DEDUPE_TTL = 31536000;
+  private readonly CIPHERTEXT_FANOUT_DEDUPE_PREFIX = 'wwebjs:ciphertext:';
+  private readonly CIPHERTEXT_FANOUT_DEDUPE_TTL = 31536000;
 
   constructor(
     @inject(StreamProducerService)
@@ -342,18 +348,119 @@ export class WwebjsIncomingMessageService {
   }
 
   private isUnsupportedSystemNotification(msg: Message): boolean {
-    const typeRaw =
-      getNonEmptyString(msg.type) ??
-      getNonEmptyString(
-        (msg as unknown as { _data?: { type?: unknown } })._data?.type
-      );
-    const type = typeRaw?.toLowerCase();
+    const { type } = this.getMessageTypeAndSubtype(msg);
 
     if (type === 'notification_template') {
       return true;
     }
 
     return false;
+  }
+
+  private getMessageTypeAndSubtype(msg: Message): {
+    type?: string;
+    subtype?: string;
+  } {
+    const raw = msg as unknown as {
+      _data?: { type?: unknown; subtype?: unknown };
+    };
+
+    const type =
+      getNonEmptyString(msg.type)?.toLowerCase() ??
+      getNonEmptyString(raw._data?.type)?.toLowerCase();
+    const subtype = getNonEmptyString(raw._data?.subtype)?.toLowerCase();
+
+    return { type, subtype };
+  }
+
+  private isE2EEncryptNotification(msg: Message): boolean {
+    const { type, subtype } = this.getMessageTypeAndSubtype(msg);
+    if (type !== 'e2e_notification') {
+      return false;
+    }
+
+    return !subtype || subtype === 'encrypt';
+  }
+
+  private isCiphertextFanoutNotification(msg: Message): boolean {
+    const { type, subtype } = this.getMessageTypeAndSubtype(msg);
+    return type === 'ciphertext' && subtype === 'fanout';
+  }
+
+  private getE2ENotificationDedupeKey(
+    msg: Message,
+    resolvedJids: WwebjsResolvedJids
+  ): string | undefined {
+    const { subtype } = this.getMessageTypeAndSubtype(msg);
+    const chatJidRaw = resolvedJids.remoteJid || msg.from || msg.to || '';
+    const chatJid = normalizeJid(chatJidRaw) ?? chatJidRaw;
+    if (!chatJid) {
+      return undefined;
+    }
+
+    const normalizedSubtype = subtype || 'encrypt';
+    return `${this.E2E_NOTIFICATION_DEDUPE_PREFIX}${wwebjsEnvironment.wwebjsAccountId}:${chatJid}:${normalizedSubtype}`;
+  }
+
+  private async shouldSkipE2ENotification(
+    msg: Message,
+    resolvedJids: WwebjsResolvedJids
+  ): Promise<boolean> {
+    if (!this.isE2EEncryptNotification(msg)) {
+      return false;
+    }
+
+    const dedupeKey = this.getE2ENotificationDedupeKey(msg, resolvedJids);
+    if (!dedupeKey) {
+      return false;
+    }
+
+    try {
+      const inserted = await this.redis.set(
+        dedupeKey,
+        '1',
+        'EX',
+        this.E2E_NOTIFICATION_DEDUPE_TTL,
+        'NX'
+      );
+
+      return inserted !== 'OK';
+    } catch {
+      return false;
+    }
+  }
+
+  private getCiphertextFanoutDedupeKey(msg: Message): string | undefined {
+    const messageId = getMessageIdSerialized(msg);
+    if (!messageId) {
+      return undefined;
+    }
+
+    return `${this.CIPHERTEXT_FANOUT_DEDUPE_PREFIX}${wwebjsEnvironment.wwebjsAccountId}:${messageId}`;
+  }
+
+  private async shouldSkipCiphertextFanout(msg: Message): Promise<boolean> {
+    if (!this.isCiphertextFanoutNotification(msg)) {
+      return false;
+    }
+
+    const dedupeKey = this.getCiphertextFanoutDedupeKey(msg);
+    if (!dedupeKey) {
+      return false;
+    }
+
+    try {
+      const inserted = await this.redis.set(
+        dedupeKey,
+        '1',
+        'EX',
+        this.CIPHERTEXT_FANOUT_DEDUPE_TTL,
+        'NX'
+      );
+      return inserted !== 'OK';
+    } catch {
+      return false;
+    }
   }
 
   private isStatusOrBroadcastMessage(msg: Message): boolean {
@@ -430,6 +537,7 @@ export class WwebjsIncomingMessageService {
     }
 
     return (
+      rawSubtype === 'fanout' ||
       rawSubtype === 'view_once_unavailable_fanout' ||
       rawSubtype.startsWith('view_once_unavailable_')
     );
@@ -585,8 +693,9 @@ export class WwebjsIncomingMessageService {
     const nonLidCandidate = uniqueCandidates.find(
       (candidate) => !this.isLidJid(candidate)
     );
-    const primaryJid =
-      preferredJid && uniqueCandidates.includes(preferredJid)
+    const primaryJid = msg.fromMe
+      ? (nonLidCandidate ?? uniqueCandidates[0])
+      : preferredJid && uniqueCandidates.includes(preferredJid)
         ? preferredJid
         : (nonLidCandidate ?? uniqueCandidates[0]);
 
@@ -613,10 +722,12 @@ export class WwebjsIncomingMessageService {
     }
 
     try {
-      const resolvedJids = await this.resolveRemoteJids(client, msg);
+      const resolvedJids = this.resolveRemoteJids(client, msg);
       if (!resolvedJids) return;
       if (this.shouldSkipResolvedJids(resolvedJids)) return;
       if (this.isUnsupportedSystemNotification(msg)) return;
+      if (await this.shouldSkipE2ENotification(msg, resolvedJids)) return;
+      if (await this.shouldSkipCiphertextFanout(msg)) return;
 
       const [pushName, photo] = await Promise.all([
         this.resolvePushName(client, msg, resolvedJids),
@@ -645,7 +756,7 @@ export class WwebjsIncomingMessageService {
 
   private async handlePinnedMessage(
     msg: Message,
-    pinData?: WwebjsPinEventData
+    pinData?: IWwebjsPinEventData
   ): Promise<void> {
     const client = this.currentClient;
     if (!client) {
@@ -656,7 +767,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, msg);
+    const resolvedJids = this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -704,10 +815,45 @@ export class WwebjsIncomingMessageService {
   ): Promise<string | undefined> {
     try {
       const contact = await getContactById(contactId);
+      if (
+        typeof (contact as { isMe?: unknown } | undefined)?.isMe ===
+          'boolean' &&
+        (contact as { isMe?: boolean }).isMe
+      ) {
+        return undefined;
+      }
       return this.extractNameFromContact(contact);
     } catch {
       return undefined;
     }
+  }
+
+  private async removeSelfContactCandidates(
+    getContactById: (contactId: string) => Promise<unknown>,
+    candidates: string[]
+  ): Promise<string[]> {
+    if (!candidates.length) {
+      return candidates;
+    }
+
+    const filtered: string[] = [];
+
+    for (const candidate of candidates) {
+      try {
+        const contact = await getContactById(candidate);
+        const isMe =
+          typeof (contact as { isMe?: unknown } | undefined)?.isMe ===
+            'boolean' && (contact as { isMe?: boolean }).isMe;
+
+        if (isMe) {
+          continue;
+        }
+      } catch {}
+
+      filtered.push(candidate);
+    }
+
+    return filtered;
   }
 
   private async resolveNameFromContactCandidates(
@@ -724,6 +870,60 @@ export class WwebjsIncomingMessageService {
     return undefined;
   }
 
+  private async getCachedName(
+    candidates: string[]
+  ): Promise<string | null | undefined> {
+    let hasNoNameCache = false;
+
+    for (const candidate of candidates) {
+      try {
+        const cached = await this.redis.get(
+          `${this.NAME_CACHE_PREFIX}${candidate}`
+        );
+        if (!cached) {
+          continue;
+        }
+
+        if (cached === this.NAME_CACHE_NO_NAME) {
+          hasNoNameCache = true;
+          continue;
+        }
+
+        return cached;
+      } catch {}
+    }
+
+    return hasNoNameCache ? null : undefined;
+  }
+
+  private cacheName(candidates: string[], name: string): void {
+    const unique = new Set(candidates);
+    for (const candidate of unique) {
+      this.redis
+        .set(
+          `${this.NAME_CACHE_PREFIX}${candidate}`,
+          name,
+          'EX',
+          this.NAME_CACHE_TTL
+        )
+        .catch(() => {});
+    }
+  }
+
+  private cacheNoName(candidates: string[]): void {
+    const unique = new Set(candidates);
+    for (const candidate of unique) {
+      this.redis
+        .set(
+          `${this.NAME_CACHE_PREFIX}${candidate}`,
+          this.NAME_CACHE_NO_NAME,
+          'EX',
+          this.NAME_CACHE_NO_NAME_TTL
+        )
+        .catch(() => {});
+    }
+  }
+
   private async resolvePushName(
     client: Client,
     msg: Message,
@@ -738,25 +938,26 @@ export class WwebjsIncomingMessageService {
     const rawNotifyName = normalizeNameCandidate(raw._data?.notifyName);
 
     if (msg.fromMe) {
-      try {
-        const chat = await msg.getChat();
-        const chatName = normalizeNameCandidate(
-          (chat as { name?: unknown } | undefined)?.name
-        );
-        if (chatName) {
-          return chatName;
-        }
-      } catch {}
-
-      const contactCandidates = this.removeSelfPhotoCandidates(
+      let contactCandidates = this.removeSelfPhotoCandidates(
         client,
         this.buildPhotoCandidates([
+          msg.to,
           resolvedJids.remoteJid,
           resolvedJids.remoteJidAlt,
-          msg.to,
           getMessageRemoteFromId(msg),
         ])
       );
+      if (!contactCandidates.length) {
+        return undefined;
+      }
+
+      const cachedName = await this.getCachedName(contactCandidates);
+      if (cachedName === null) {
+        return undefined;
+      }
+      if (cachedName) {
+        return cachedName;
+      }
 
       const getContactById = (
         client as unknown as {
@@ -765,15 +966,28 @@ export class WwebjsIncomingMessageService {
       ).getContactById;
 
       if (typeof getContactById === 'function') {
+        contactCandidates = await this.removeSelfContactCandidates(
+          (contactId) => getContactById.call(client, contactId),
+          contactCandidates
+        );
+      }
+
+      if (!contactCandidates.length) {
+        return undefined;
+      }
+
+      if (typeof getContactById === 'function') {
         const contactName = await this.resolveNameFromContactCandidates(
           (contactId) => getContactById.call(client, contactId),
           contactCandidates
         );
         if (contactName) {
+          this.cacheName(contactCandidates, contactName);
           return contactName;
         }
       }
 
+      this.cacheNoName(contactCandidates);
       return undefined;
     }
 
@@ -952,7 +1166,7 @@ export class WwebjsIncomingMessageService {
     resolvedJids: WwebjsResolvedJids
   ): Promise<string | undefined> {
     const directPeerJid = msg.fromMe ? msg.to : msg.from;
-    const candidates = this.removeSelfPhotoCandidates(
+    let candidates = this.removeSelfPhotoCandidates(
       client,
       this.buildPhotoCandidates([
         resolvedJids.remoteJid,
@@ -961,6 +1175,21 @@ export class WwebjsIncomingMessageService {
         getMessageRemoteFromId(msg),
       ])
     );
+    if (msg.fromMe) {
+      const getContactById = (
+        client as unknown as {
+          getContactById?: (contactId: string) => Promise<unknown>;
+        }
+      ).getContactById;
+
+      if (typeof getContactById === 'function') {
+        candidates = await this.removeSelfContactCandidates(
+          (contactId) => getContactById.call(client, contactId),
+          candidates
+        );
+      }
+    }
+
     if (!candidates.length) {
       return undefined;
     }
@@ -1035,7 +1264,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, after);
+    const resolvedJids = this.resolveRemoteJids(client, after);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1051,7 +1280,23 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, msg);
+    const rawFromMe = (
+      msg as unknown as {
+        _data?: { id?: { fromMe?: unknown } };
+      }
+    )._data?.id?.fromMe;
+    const isFromMeMessage =
+      typeof msg.fromMe === 'boolean'
+        ? msg.fromMe
+        : typeof rawFromMe === 'boolean'
+          ? rawFromMe
+          : false;
+
+    if (isFromMeMessage) {
+      return;
+    }
+
+    const resolvedJids = this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1082,7 +1327,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = await this.resolveRemoteJids(client, message);
+    const resolvedJids = this.resolveRemoteJids(client, message);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1117,7 +1362,7 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
-      const resolvedJids = await this.resolveRemoteJids(client, parentMsg);
+      const resolvedJids = this.resolveRemoteJids(client, parentMsg);
       remoteJid = resolvedJids?.remoteJid ?? '';
       remoteJidAlt = resolvedJids?.remoteJidAlt;
     } catch {

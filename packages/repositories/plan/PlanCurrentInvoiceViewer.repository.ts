@@ -1,13 +1,21 @@
 import * as schema from '@core/models';
-import { account } from '@core/models';
+import { account, accountPayment } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import { calculateBillingPeriodByDates } from '@core/common/functions/calculateBillingPeriodByDates';
+import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 
 @injectable()
 export class PlanCurrentInvoiceViewerRepository {
+  private readonly paidStatuses: string[] = [
+    EPaymentStatus.received,
+    EPaymentStatus.confirmed,
+    EPaymentStatus.received_in_cash,
+    EPaymentStatus.dunning_received,
+  ];
+
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
@@ -29,6 +37,7 @@ export class PlanCurrentInvoiceViewerRepository {
       planAccount.last_payment_date,
       planAccount.next_payment_date
     );
+    const lastPaidInvoiceValue = await this.findLastPaidInvoiceValue(accountId);
 
     return this.buildPlanInvoiceResponse({
       planData: planAccount.ppl,
@@ -38,6 +47,7 @@ export class PlanCurrentInvoiceViewerRepository {
       cancellationDate: planAccount.cancellation_date,
       billingPeriodValue,
       planAccountValue: planAccount.value,
+      lastPaidInvoiceValue,
       accountStatusId: accountResult?.account_status_id || null,
     });
   };
@@ -129,6 +139,26 @@ export class PlanCurrentInvoiceViewerRepository {
       : accountResult.apc[0];
   };
 
+  private readonly findLastPaidInvoiceValue = async (
+    accountId: string
+  ): Promise<string | null> => {
+    const payment = await this.dbRo.query.accountPayment.findFirst({
+      where: and(
+        eq(accountPayment.account_id, accountId),
+        inArray(accountPayment.payment_status_id, this.paidStatuses),
+        isNotNull(accountPayment.payment_date)
+      ),
+      columns: {
+        value: true,
+        payment_date: true,
+        created_at: true,
+      },
+      orderBy: (ap, { desc }) => [desc(ap.payment_date), desc(ap.created_at)],
+    });
+
+    return payment?.value || null;
+  };
+
   private readonly getBillingPeriod = (
     billingPeriodName: string | null | undefined,
     lastPaymentDate: string | null,
@@ -158,6 +188,7 @@ export class PlanCurrentInvoiceViewerRepository {
     cancellationDate: string | null;
     billingPeriodValue: string | null;
     planAccountValue: string | null;
+    lastPaidInvoiceValue: string | null;
     accountStatusId: string | null;
   }): ViewCurrentPlanInvoiceResponse => {
     return {
@@ -179,6 +210,9 @@ export class PlanCurrentInvoiceViewerRepository {
       plan_account_value: input.planAccountValue
         ? Number(input.planAccountValue)
         : null,
+      last_paid_invoice_value: input.lastPaidInvoiceValue
+        ? Number(input.lastPaidInvoiceValue)
+        : null,
       account_status_id: input.accountStatusId,
     };
   };
@@ -199,6 +233,7 @@ export class PlanCurrentInvoiceViewerRepository {
       cancellation_date: null,
       billing_period: null,
       plan_account_value: null,
+      last_paid_invoice_value: null,
       account_status_id: null,
     };
   };

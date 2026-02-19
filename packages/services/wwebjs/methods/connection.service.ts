@@ -447,6 +447,10 @@ export class WwebjsConnectionService {
         }),
         puppeteer: puppeteerOpts,
         emitHistoricalEvents: false,
+        resolveCiphertextMessages: true,
+        ciphertextResolutionDelaysMs: [
+          2000, 5000, 10000, 20000, 30000, 45000, 60000, 90000, 120000,
+        ],
       });
 
       this.client = client;

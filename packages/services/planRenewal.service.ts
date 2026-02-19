@@ -16,10 +16,12 @@ import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 import Redis from 'ioredis';
 import { withLock } from '@core/common/functions/withLock';
 import { createI18nInstance } from '@core/common/functions/createI18nInstance';
+import { CreditCardFeeService } from './creditCardFee.service';
 
 @injectable()
 export class PlanRenewalService {
   private readonly concurrency = 10;
+  private monthlyCreditCardFeeRate: number | null = null;
 
   constructor(
     @inject(PlanAccountRenewalListerRepository)
@@ -36,12 +38,16 @@ export class PlanRenewalService {
     private readonly planReleaseService: PlanReleaseService,
     @inject(AccountUpdaterRepository)
     private readonly accountUpdaterRepository: AccountUpdaterRepository,
+    @inject(CreditCardFeeService)
+    private readonly creditCardFeeService: CreditCardFeeService,
     @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
   processRenewals = async (): Promise<void> => {
+    this.monthlyCreditCardFeeRate = null;
+
     const planAccounts =
       await this.planAccountRenewalListerRepository.findPlanAccountsForRenewal();
 
@@ -68,16 +74,45 @@ export class PlanRenewalService {
     );
   };
 
-  private readonly calculatePaymentValue = (
-    planAccount: IPlanAccountRenewal
+  private readonly applyCreditCardFee = (
+    value: number,
+    feeRate: number
   ): number => {
+    if (!feeRate) {
+      return Math.round(value * 100) / 100;
+    }
+
+    const multiplier = 1 + feeRate / 100;
+    return Math.round(value * multiplier * 100) / 100;
+  };
+
+  private readonly getMonthlyCreditCardFeeRate = async (): Promise<number> => {
+    if (this.monthlyCreditCardFeeRate !== null) {
+      return this.monthlyCreditCardFeeRate;
+    }
+
+    const creditCardFee = await this.creditCardFeeService.viewCreditCardFee();
+    this.monthlyCreditCardFeeRate = creditCardFee?.installment_3_rate || 0;
+
+    return this.monthlyCreditCardFeeRate;
+  };
+
+  private readonly calculatePaymentValue = async (
+    planAccount: IPlanAccountRenewal
+  ): Promise<number> => {
     const planPrice = Number(planAccount.plan.price);
     const crossSellsTotal = planAccount.cross_sells.reduce(
       (total, crossSell) => total + Number(crossSell.price),
       0
     );
+    const baseAmount = planPrice + crossSellsTotal;
 
-    return planPrice + crossSellsTotal;
+    if (planAccount.billing_period_id !== EBillingPeriod.monthly) {
+      return baseAmount;
+    }
+
+    const feeRate = await this.getMonthlyCreditCardFeeRate();
+    return this.applyCreditCardFee(baseAmount, feeRate);
   };
 
   private readonly getBillingPeriod = (
@@ -182,7 +217,7 @@ export class PlanRenewalService {
       return;
     }
 
-    const paymentValue = this.calculatePaymentValue(planAccount);
+    const paymentValue = await this.calculatePaymentValue(planAccount);
 
     const paymentResult = await this.paymentService.createCreditCardPayment(
       planAccount.account_id,

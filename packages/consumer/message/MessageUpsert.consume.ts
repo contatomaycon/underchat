@@ -2294,6 +2294,11 @@ export class MessageUpsertConsume {
   }
 
   private nameChat(data: IUpsertMessage) {
+    const isFromMe = data?.message?.key?.fromMe ?? false;
+    if (isFromMe) {
+      return null;
+    }
+
     return this.normalizeChatNameCandidate(data?.message?.pushName);
   }
 

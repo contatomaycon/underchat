@@ -169,6 +169,8 @@ const applyCreditCardFee = (value: number, feeRate: number): number => {
   return Math.round(value * multiplier * 100) / 100;
 };
 
+const MONTHLY_CREDIT_CARD_FEE_INSTALLMENT = 3;
+
 const getCreditCardFeeRate = (installment: number): number => {
   if (!creditCardFee.value) return 0;
   const rates: Record<number, number> = {
@@ -776,14 +778,16 @@ const getCheckoutTotalBase = computed(() => {
 });
 
 const shouldApplyCreditCardFee = computed(() => {
-  return (
-    selectedPaymentMethod.value === 'credit_card' &&
-    billingPeriod.value === 'annual'
-  );
+  return selectedPaymentMethod.value === 'credit_card';
 });
 
 const selectedInstallmentFeeRate = computed(() => {
   if (!shouldApplyCreditCardFee.value) return 0;
+
+  if (billingPeriod.value === 'monthly') {
+    return getCreditCardFeeRate(MONTHLY_CREDIT_CARD_FEE_INSTALLMENT);
+  }
+
   return getCreditCardFeeRate(installments.value);
 });
 
@@ -792,6 +796,13 @@ const getCheckoutTotal = computed(() => {
   if (!shouldApplyCreditCardFee.value) return baseTotal;
   const feeRate = selectedInstallmentFeeRate.value;
   return applyCreditCardFee(baseTotal, feeRate);
+});
+
+const creditCardFeeAmount = computed(() => {
+  if (!shouldApplyCreditCardFee.value) return 0;
+
+  const feeAmount = getCheckoutTotal.value - getCheckoutTotalBase.value;
+  return Math.max(0, Math.round(feeAmount * 100) / 100);
 });
 
 const installmentOptions = computed(() => {
@@ -3067,6 +3078,18 @@ onMounted(async () => {
                           </div>
 
                           <div
+                            v-if="creditCardFeeAmount > 0"
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-2 text-medium-emphasis">
+                              {{ $t('credit_card_fee') }}:
+                            </span>
+                            <span class="text-body-2 font-weight-medium">
+                              {{ formatCurrency(creditCardFeeAmount) }}
+                            </span>
+                          </div>
+
+                          <div
                             v-if="
                               upgradeDiscount?.is_upgrade &&
                               upgradeDiscount.discount > 0
@@ -3397,6 +3420,18 @@ onMounted(async () => {
                                 {{ formatCurrency(0) }}
                               </span>
                             </div>
+                          </div>
+
+                          <div
+                            v-if="creditCardFeeAmount > 0"
+                            class="d-flex justify-space-between align-center mb-2"
+                          >
+                            <span class="text-body-2 text-medium-emphasis">
+                              {{ $t('credit_card_fee') }}:
+                            </span>
+                            <span class="text-body-2 font-weight-medium">
+                              {{ formatCurrency(creditCardFeeAmount) }}
+                            </span>
                           </div>
 
                           <div

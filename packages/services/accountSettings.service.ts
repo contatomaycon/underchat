@@ -116,7 +116,10 @@ export class AccountSettingsService {
     return this.planReleaseService.createInvoiceForPayment(
       accountPaymentId,
       paymentAsaasId,
-      t
+      t,
+      {
+        skipGenerateInvoiceCheck: isManual,
+      }
     );
   };
 }

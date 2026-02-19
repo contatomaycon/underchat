@@ -5,6 +5,14 @@ export class KeyedSequencerService {
   private readonly chains = new Map<string, Promise<void>>();
   private readonly TASK_TIMEOUT_MS = 15000;
 
+  private resolveTimeoutMs(timeoutMs?: number): number {
+    if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs)) {
+      return this.TASK_TIMEOUT_MS;
+    }
+
+    return timeoutMs > 0 ? timeoutMs : this.TASK_TIMEOUT_MS;
+  }
+
   private withTimeout<T>(
     promise: Promise<T>,
     timeoutMs: number,
@@ -22,12 +30,17 @@ export class KeyedSequencerService {
     ]);
   }
 
-  enqueue(key: string, task: () => Promise<void>): Promise<void> {
+  enqueue(
+    key: string,
+    task: () => Promise<void>,
+    options?: { timeoutMs?: number }
+  ): Promise<void> {
+    const timeoutMs = this.resolveTimeoutMs(options?.timeoutMs);
     const prev = this.chains.get(key) ?? Promise.resolve();
     const next = prev
       .catch(() => {})
       .then(() => {
-        return this.withTimeout(task(), this.TASK_TIMEOUT_MS, key);
+        return this.withTimeout(task(), timeoutMs, key);
       })
       .catch((error) => {
         throw error;

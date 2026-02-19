@@ -3,6 +3,7 @@ import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
+import AppChannelConnectionTypeInfo from './AppChannelConnectionTypeInfo.vue';
 
 const channelStore = useChannelsStore();
 const { t } = useI18n();
@@ -116,6 +117,10 @@ watch(
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
+            </VCol>
+
+            <VCol cols="12">
+              <AppChannelConnectionTypeInfo />
             </VCol>
           </VRow>
         </VCardText>

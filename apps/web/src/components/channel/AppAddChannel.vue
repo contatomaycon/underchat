@@ -1,14 +1,12 @@
 <script lang="ts" setup>
 import { nextTick } from 'vue';
 import { useChannelsStore } from '@/@webcore/stores/channels';
-import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 import { can } from '@layouts/plugins/casl';
 
 const channelStore = useChannelsStore();
-const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -26,13 +24,8 @@ const canChooseServer = computed(() =>
 );
 
 const name = ref<string | null>(null);
-const type = ref<EWorkerType | null>(EWorkerType.baileys);
 const serverId = ref<string | null>(null);
 
-const itemsType = ref([
-  { value: EWorkerType.baileys, title: t('unofficial_socket') },
-  { value: EWorkerType.wwebjs, title: t('unofficial_browser') },
-]);
 const serverItems = ref<Array<{ value: string; title: string }>>([]);
 const serversLoading = ref(false);
 
@@ -63,13 +56,12 @@ const addChannel = async () => {
   const validateForm = await refFormAddChannel?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!name.value || !type.value) {
+  if (!name.value) {
     return;
   }
 
   const payload: CreateWorkerRequest = {
     name: name.value,
-    worker_type: type.value,
   };
 
   if (canChooseServer.value && serverId.value) {
@@ -92,7 +84,6 @@ const addChannel = async () => {
 
 const resetForm = () => {
   name.value = null;
-  type.value = EWorkerType.baileys;
   serverId.value = null;
   refFormAddChannel.value?.resetValidation();
 };
@@ -123,18 +114,6 @@ onMounted(resetForm);
       <VCard :title="$t('add_channel')">
         <VCardText>
           <VRow>
-            <VCol cols="12" sm="6" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
-              <AppSelectSearch
-                v-model="type"
-                :items="itemsType"
-                :placeholder="$t('type')"
-                :clearable="true"
-                item-value="value"
-                item-title="title"
-              />
-            </VCol>
-
             <VCol cols="12" sm="6" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
