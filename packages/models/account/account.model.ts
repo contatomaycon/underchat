@@ -36,6 +36,7 @@ export const account = pgTable(
       .notNull(),
     name: varchar({ length: 10 }).notNull(),
     generate_invoice: boolean().default(false),
+    bucket_deleted: boolean().default(false),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,

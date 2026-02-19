@@ -7,6 +7,7 @@ import { planRenewalSchedule } from './schedule/planRenewal.schedule';
 import { planExpirationReminderSchedule } from './schedule/planExpirationReminder.schedule';
 import { workerMonitorSchedule } from './schedule/workerMonitor.schedule';
 import { scheduleSendSchedule } from './schedule/scheduleSend.schedule';
+import { accountBucketCleanupSchedule } from './schedule/accountBucketCleanup.schedule';
 import { profileStatusRenewalWorker } from './worker/profileStatusRenewal.worker';
 import { balanceMonitorWorker } from './worker/balanceMonitor.worker';
 import { chatbotInactivityWorker } from './worker/chatbotInactivity.worker';
@@ -15,6 +16,7 @@ import { planRenewalWorker } from './worker/planRenewal.worker';
 import { planExpirationReminderWorker } from './worker/planExpirationReminder.worker';
 import { workerMonitorWorker } from './worker/workerMonitor.worker';
 import { scheduleSendWorker } from './worker/scheduleSend.worker';
+import { accountBucketCleanupWorker } from './worker/accountBucketCleanup.worker';
 
 export function startTemporalSchedules(server: FastifyInstance): void {
   setImmediate(() => {
@@ -27,6 +29,7 @@ export function startTemporalSchedules(server: FastifyInstance): void {
       { name: 'planExpirationReminder', fn: planExpirationReminderSchedule },
       { name: 'workerMonitor', fn: workerMonitorSchedule },
       { name: 'scheduleSend', fn: scheduleSendSchedule },
+      { name: 'accountBucketCleanup', fn: accountBucketCleanupSchedule },
     ];
 
     for (const { name, fn } of schedules) {
@@ -48,6 +51,7 @@ export function startTemporalWorkers(server: FastifyInstance): void {
       { name: 'planExpirationReminder', fn: planExpirationReminderWorker },
       { name: 'workerMonitor', fn: workerMonitorWorker },
       { name: 'scheduleSend', fn: scheduleSendWorker },
+      { name: 'accountBucketCleanup', fn: accountBucketCleanupWorker },
     ];
 
     for (const { name, fn } of workers) {
