@@ -85,8 +85,9 @@ export class WorkerCreatorUseCase {
       serverId = viewWorkerServer.server_id;
     }
 
-    const workerType = input.worker_type as EWorkerType;
-    if (!workerType || !Object.values(EWorkerType).includes(workerType)) {
+    const workerType =
+      (input.worker_type as EWorkerType) ?? EWorkerType.baileys;
+    if (!Object.values(EWorkerType).includes(workerType)) {
       throw new Error(t('worker_type_invalid'));
     }
 

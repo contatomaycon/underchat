@@ -568,11 +568,27 @@ export class PlanReleaseService {
       .trim();
   };
 
+  private readonly canGenerateInvoiceForAccount = async (
+    accountId: string
+  ): Promise<boolean> => {
+    const accountGenerateInvoice =
+      await this.planReleaseRepository.findAccountGenerateInvoiceById(
+        accountId
+      );
+
+    return accountGenerateInvoice === true;
+  };
+
   createInvoiceForPayment = async (
     accountPaymentId: string,
     paymentAsaasId: string,
-    t?: TFunction<'translation', undefined>
+    t?: TFunction<'translation', undefined>,
+    options?: {
+      skipGenerateInvoiceCheck?: boolean;
+    }
   ): Promise<void> => {
+    const skipGenerateInvoiceCheck = options?.skipGenerateInvoiceCheck === true;
+
     const paymentData =
       await this.planReleaseRepository.findAccountPaymentById(accountPaymentId);
 
@@ -581,6 +597,19 @@ export class PlanReleaseService {
         throw new Error(t('account_payment_not_found'));
       }
       return;
+    }
+
+    if (!skipGenerateInvoiceCheck) {
+      const canGenerateInvoice = await this.canGenerateInvoiceForAccount(
+        paymentData.account_id
+      );
+
+      if (!canGenerateInvoice) {
+        if (t) {
+          throw new Error(t('account_generate_invoice_not_configured'));
+        }
+        return;
+      }
     }
 
     const planData = await this.planReleaseRepository.findPlanById(
