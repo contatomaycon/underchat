@@ -311,12 +311,19 @@ export class NotificationMessageService {
       ? new Date(planInvoice.next_payment_date).toLocaleDateString('pt-BR')
       : null;
 
-    const value = planInvoice.plan_account_value
-      ? new Intl.NumberFormat('pt-BR', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }).format(Number(planInvoice.plan_account_value))
-      : null;
+    const planValue =
+      planInvoice.last_paid_invoice_value ??
+      planInvoice.plan_account_value ??
+      planInvoice.plan_price ??
+      null;
+
+    const value =
+      planValue !== null
+        ? new Intl.NumberFormat('pt-BR', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }).format(Number(planValue))
+        : null;
 
     return {
       plan: planInvoice.plan_name || null,
