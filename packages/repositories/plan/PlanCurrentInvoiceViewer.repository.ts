@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { account, accountPayment } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import { calculateBillingPeriodByDates } from '@core/common/functions/calculateBillingPeriodByDates';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
@@ -37,11 +37,7 @@ export class PlanCurrentInvoiceViewerRepository {
       planAccount.last_payment_date,
       planAccount.next_payment_date
     );
-    const lastPaidInvoiceValue = await this.getLastPaidInvoiceValue({
-      accountId,
-      planAccountPaymentValue: planAccount.apy?.value,
-      planAccountPaymentStatusId: planAccount.apy?.payment_status_id,
-    });
+    const lastPaidInvoiceValue = await this.findLastPaidInvoiceValue(accountId);
 
     return this.buildPlanInvoiceResponse({
       planData: planAccount.ppl,
@@ -86,12 +82,6 @@ export class PlanCurrentInvoiceViewerRepository {
               columns: {
                 billing_period_id: true,
                 name: true,
-              },
-            },
-            apy: {
-              columns: {
-                value: true,
-                payment_status_id: true,
               },
             },
           },
@@ -149,23 +139,14 @@ export class PlanCurrentInvoiceViewerRepository {
       : accountResult.apc[0];
   };
 
-  private readonly isPaidStatus = (
-    statusId: string | null | undefined
-  ): boolean => {
-    if (!statusId) {
-      return false;
-    }
-
-    return this.paidStatuses.includes(statusId);
-  };
-
   private readonly findLastPaidInvoiceValue = async (
     accountId: string
   ): Promise<string | null> => {
     const payment = await this.dbRo.query.accountPayment.findFirst({
       where: and(
         eq(accountPayment.account_id, accountId),
-        inArray(accountPayment.payment_status_id, this.paidStatuses)
+        inArray(accountPayment.payment_status_id, this.paidStatuses),
+        isNotNull(accountPayment.payment_date)
       ),
       columns: {
         value: true,
@@ -176,21 +157,6 @@ export class PlanCurrentInvoiceViewerRepository {
     });
 
     return payment?.value || null;
-  };
-
-  private readonly getLastPaidInvoiceValue = async (input: {
-    accountId: string;
-    planAccountPaymentValue: string | null | undefined;
-    planAccountPaymentStatusId: string | null | undefined;
-  }): Promise<string | null> => {
-    if (
-      input.planAccountPaymentValue &&
-      this.isPaidStatus(input.planAccountPaymentStatusId)
-    ) {
-      return input.planAccountPaymentValue;
-    }
-
-    return this.findLastPaidInvoiceValue(input.accountId);
   };
 
   private readonly getBillingPeriod = (

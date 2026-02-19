@@ -95,6 +95,7 @@ const getPrice = computed(() => {
 
   return (
     planInvoice.value.last_paid_invoice_value ??
+    planInvoice.value.plan_account_value ??
     planInvoice.value.plan_price ??
     0
   );
