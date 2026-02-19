@@ -1978,6 +1978,7 @@
   "checkout": "Checkout",
   "selected_plan": "Selected Plan",
   "addons": "Add-ons",
+  "credit_card_fee": "Card fee",
   "addons_subtitle": "Pick the add-ons",
   "addons_description": "Choose extras for the selected plan",
   "subtotal": "Subtotal",

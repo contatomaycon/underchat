@@ -47,13 +47,12 @@ export class OrderPaymentCreatorUseCase {
     return Math.round(totalAmount * multiplier * 100) / 100;
   };
 
+  private readonly monthlyCreditCardFeeInstallment = 3;
+
   private readonly getCreditCardFeeRate = async (
     t: TFunction<'translation', undefined>,
-    installments?: number | null
+    installments: number
   ): Promise<number> => {
-    if (!installments) {
-      return 0;
-    }
     const creditCardFee = await this.creditCardFeeService.viewCreditCardFee();
     if (!creditCardFee) {
       throw new Error(t('credit_card_fee_not_found'));
@@ -73,6 +72,20 @@ export class OrderPaymentCreatorUseCase {
       12: creditCardFee.installment_12_rate,
     };
     return rates[installments] ?? 0;
+  };
+
+  private readonly getCreditCardFeeInstallment = (
+    input: CreateOrderPaymentRequest
+  ): number | null => {
+    if (input.payment_method !== 'credit_card') {
+      return null;
+    }
+
+    if (input.billing_period === 'monthly') {
+      return this.monthlyCreditCardFeeInstallment;
+    }
+
+    return input.installments ?? null;
   };
 
   private async processTestPlan(
@@ -168,13 +181,13 @@ export class OrderPaymentCreatorUseCase {
     const discountAmount = orderCalculation.discountAmount;
     let totalAmount = orderCalculation.totalAmount;
 
-    const shouldApplyCreditCardFee =
-      input.payment_method === 'credit_card' &&
-      input.billing_period === 'annual' &&
-      input.installments;
+    const creditCardFeeInstallment = this.getCreditCardFeeInstallment(input);
 
-    if (shouldApplyCreditCardFee) {
-      const feeRate = await this.getCreditCardFeeRate(t, input.installments);
+    if (creditCardFeeInstallment) {
+      const feeRate = await this.getCreditCardFeeRate(
+        t,
+        creditCardFeeInstallment
+      );
       totalAmount = this.applyCreditCardFee(totalAmount, feeRate);
     }
 
