@@ -1411,6 +1411,7 @@
   "search_by_protocol": "Buscar por protocolo",
   "search_by_client": "Buscar por cliente",
   "search_by_phone": "Buscar por teléfono",
+  "search_by_label": "Buscar por etiqueta",
   "search_by_cpf_cnpj": "Buscar por CPF/CNPJ",
   "date": "Fecha",
   "started_at": "Iniciado en",

@@ -13,6 +13,7 @@ export const listReportConversationHistoryRequestSchema = Type.Object({
       Type.Literal('protocol'),
       Type.Literal('client'),
       Type.Literal('phone'),
+      Type.Literal('label'),
     ])
   ),
   start_date: Type.Optional(
@@ -26,6 +27,9 @@ export const listReportConversationHistoryRequestSchema = Type.Object({
   protocol: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   client_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  label_template_id: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
 });
 
 export type ListReportConversationHistoryRequest = Static<
