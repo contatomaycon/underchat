@@ -17,45 +17,51 @@ export class AccountExpiredBucketCleanupRepository {
     IExpiredAccountBucket[]
   > => {
     const result = await this.dbRo.execute(sql`
-      WITH latest_plan_account AS (
-        SELECT DISTINCT ON (pa.account_id)
+      WITH ranked_plan_account AS (
+        SELECT
           pa.account_id,
           pa.plan_account_id,
           pa.plan_id,
           pa.next_payment_date,
-          p.is_test
+          p.is_test,
+          ROW_NUMBER() OVER (
+            PARTITION BY pa.account_id
+            ORDER BY
+              pa.next_payment_date DESC NULLS LAST,
+              pa.updated_at DESC NULLS LAST,
+              pa.created_at DESC NULLS LAST
+          ) AS row_num
         FROM "plan_account" pa
         INNER JOIN "plan" p
           ON p.plan_id = pa.plan_id
         WHERE pa.next_payment_date IS NOT NULL
-        ORDER BY
-          pa.account_id,
-          pa.updated_at DESC NULLS LAST,
-          pa.created_at DESC NULLS LAST
+      ),
+      current_plan_account AS (
+        SELECT
+          rpa.account_id,
+          rpa.plan_account_id,
+          rpa.plan_id,
+          rpa.next_payment_date,
+          rpa.is_test
+        FROM ranked_plan_account rpa
+        WHERE rpa.row_num = 1
       )
       SELECT
-        lpa.account_id,
-        lpa.plan_account_id,
-        lpa.plan_id,
-        lpa.is_test,
-        lpa.next_payment_date
-      FROM latest_plan_account lpa
+        cpa.account_id,
+        cpa.plan_account_id,
+        cpa.plan_id,
+        cpa.is_test,
+        cpa.next_payment_date
+      FROM current_plan_account cpa
       INNER JOIN "account" a
-        ON a.account_id = lpa.account_id
+        ON a.account_id = cpa.account_id
       WHERE
         a.deleted_at IS NULL
         AND COALESCE(a.bucket_deleted, false) = false
-        AND (
-          (
-            lpa.is_test = true
-            AND lpa.next_payment_date::timestamptz <= NOW() - INTERVAL '24 hours'
-          )
-          OR
-          (
-            lpa.is_test = false
-            AND lpa.next_payment_date::timestamptz <= NOW() - INTERVAL '7 days'
-          )
-        )
+        AND cpa.next_payment_date::timestamptz < CASE
+          WHEN cpa.is_test = true THEN NOW() - INTERVAL '24 hours'
+          ELSE NOW() - INTERVAL '7 days'
+        END
     `);
 
     return (result.rows ?? []) as unknown as IExpiredAccountBucket[];
