@@ -44,10 +44,7 @@ function ContactRow({
         {(() => {
           const uri = resolveImageUri(item.photo);
           return uri ? (
-            <Image
-              source={{ uri }}
-              style={styles.contactAvatarImage}
-            />
+            <Image source={{ uri }} style={styles.contactAvatarImage} />
           ) : (
             <Ionicons name="person" size={24} color={colors.grey500} />
           );

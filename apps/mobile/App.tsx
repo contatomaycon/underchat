@@ -3,19 +3,12 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LoginScreen } from './screens/LoginScreen';
-import {
-  getToken,
-  getPermissions,
-  getUser,
-} from './storage/authStorage';
+import { getToken, getPermissions, getUser } from './storage/authStorage';
 import { canViewChatbotTab as checkCanViewChatbotTab } from './constants/permissions';
 import { ChatFilterProvider } from './context/ChatFilterContext';
 import { RootNavigator } from './navigation/RootNavigator';
 import { addAuthUnauthorizedListener } from './utils/authEvents';
-import {
-  cleanupChatSocket,
-  initializeChatSocket,
-} from './socket/chatSocket';
+import { cleanupChatSocket, initializeChatSocket } from './socket/chatSocket';
 
 function getUserAccountId(user: unknown): string | null {
   if (!user || typeof user !== 'object') return null;

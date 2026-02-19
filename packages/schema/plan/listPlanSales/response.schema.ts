@@ -18,7 +18,7 @@ export const listPlanSalesResponseSchema = Type.Object({
   account_id: Type.String({ format: 'uuid' }),
   account_name: Type.String(),
   cross_sells: Type.Array(crossSellSchema),
-  created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  contracted_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   payment_billing_type_name: Type.Optional(
     Type.Union([Type.String(), Type.Null()])
   ),

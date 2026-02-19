@@ -26,6 +26,7 @@
   "ssh_ip": "SSH IP",
   "ssh_port": "SSH Puerto",
   "created_at": "Creado en",
+  "contracted_at": "Fecha de Contratación",
   "actions": "Acciones",
   "server_list_error": "Ocurrió un error al listar los servidores. Por favor, inténtalo de nuevo.",
   "server_list_success": "¡Lista de servidores recuperada exitosamente!",
