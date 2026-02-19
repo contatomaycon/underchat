@@ -6,6 +6,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 import { can } from '@layouts/plugins/casl';
+import AppChannelConnectionTypeInfo from './AppChannelConnectionTypeInfo.vue';
 
 const channelStore = useChannelsStore();
 const { t } = useI18n();
@@ -142,6 +143,10 @@ onMounted(resetForm);
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
+            </VCol>
+
+            <VCol cols="12">
+              <AppChannelConnectionTypeInfo />
             </VCol>
 
             <VCol v-if="canChooseServer" cols="12" sm="6" md="6">
