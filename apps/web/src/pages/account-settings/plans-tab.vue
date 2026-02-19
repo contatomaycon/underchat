@@ -94,7 +94,9 @@ const getPrice = computed(() => {
   if (!planInvoice.value) return 0;
 
   return (
-    planInvoice.value.plan_account_value || planInvoice.value.plan_price || 0
+    planInvoice.value.last_paid_invoice_value ??
+    planInvoice.value.plan_price ??
+    0
   );
 });
 
@@ -865,7 +867,12 @@ onMounted(() => {
                 class="mb-3"
               />
               <VSkeletonLoader type="text" width="100%" height="32" />
-              <VSkeletonLoader type="text" width="80%" height="32" class="mt-2" />
+              <VSkeletonLoader
+                type="text"
+                width="80%"
+                height="32"
+                class="mt-2"
+              />
             </div>
           </VCardText>
         </VCard>
@@ -942,10 +949,7 @@ onMounted(() => {
                 </div>
               </div>
 
-              <div
-                v-if="!isPlanCancelled && isCreditCardEnabled"
-                class="mb-3"
-              >
+              <div v-if="!isPlanCancelled && isCreditCardEnabled" class="mb-3">
                 <div class="d-flex align-center justify-space-between mb-1">
                   <span class="text-body-2 text-medium-emphasis">
                     {{ $t('recurring_payment') }}
