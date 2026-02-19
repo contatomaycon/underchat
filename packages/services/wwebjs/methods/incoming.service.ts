@@ -350,7 +350,7 @@ export class WwebjsIncomingMessageService {
   private isUnsupportedSystemNotification(msg: Message): boolean {
     const { type } = this.getMessageTypeAndSubtype(msg);
 
-    if (type === 'notification_template') {
+    if (type === 'notification_template' || type === 'e2e_notification') {
       return true;
     }
 
