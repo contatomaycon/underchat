@@ -527,11 +527,13 @@ function resolveDocumentDownloadName(
   return `documento.${ext}`;
 }
 
-function isRenderableSticker(sticker?: {
-  url?: string | null;
-  mimetype?: string | null;
-  extension?: string | null;
-} | null): boolean {
+function isRenderableSticker(
+  sticker?: {
+    url?: string | null;
+    mimetype?: string | null;
+    extension?: string | null;
+  } | null
+): boolean {
   if (!sticker?.url) return false;
 
   const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
@@ -2027,7 +2029,11 @@ function QuotedReplyPreview({
               color={colors.primary}
             />
           ) : quotedType === EMessageType.sticker ? (
-            <Ionicons name="pricetag-outline" size={18} color={colors.primary} />
+            <Ionicons
+              name="pricetag-outline"
+              size={18}
+              color={colors.primary}
+            />
           ) : quotedType === EMessageType.contact_card ||
             quotedType === EMessageType.contacts ? (
             quotedContactPhoto ? (
@@ -3388,7 +3394,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
       lastSocketSyncTimeRef.current = now;
 
-      const res = await listMessages(chatInfo.chat_id, 1, CHAT_SOCKET_SYNC_PER_PAGE);
+      const res = await listMessages(
+        chatInfo.chat_id,
+        1,
+        CHAT_SOCKET_SYNC_PER_PAGE
+      );
       if (!res) return;
 
       const latestMessages = [...res.results].reverse();
@@ -3789,12 +3799,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         'chatUpdate',
         handleSocketChatUpdate
       );
-      const offRecoveryFailed = addChatSocketListener(
-        'recoveryFailed',
-        () => {
-          void syncMessagesStatus(true);
-        }
-      );
+      const offRecoveryFailed = addChatSocketListener('recoveryFailed', () => {
+        void syncMessagesStatus(true);
+      });
 
       const runPeriodicSync = () => {
         void syncMessagesStatus();
@@ -4277,7 +4284,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           });
         }
 
-        const result = await createMessageWithFormData(chatInfo.chat_id, formData);
+        const result = await createMessageWithFormData(
+          chatInfo.chat_id,
+          formData
+        );
         if (!result.ok) return;
 
         pendingScrollToBottomRef.current = true;
@@ -4295,7 +4305,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         setSendingCapturedMedia(false);
       }
     },
-    [chatInfo.chat_id, scrollToBottomWithRetries, sendingCapturedMedia, syncLatestMessages]
+    [
+      chatInfo.chat_id,
+      scrollToBottomWithRetries,
+      sendingCapturedMedia,
+      syncLatestMessages,
+    ]
   );
 
   const launchCameraCapture = useCallback(
@@ -4807,10 +4822,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 ) : null}
 
                 {canShowIconActions ? (
-                  <View
-                    style={styles.micGestureWrap}
-                    collapsable={false}
-                  >
+                  <View style={styles.micGestureWrap} collapsable={false}>
                     {showRecordingHoldOverlay && !isRecordingCancelArmed ? (
                       <Animated.View
                         pointerEvents="none"

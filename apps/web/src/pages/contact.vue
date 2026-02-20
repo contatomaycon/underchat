@@ -1,5 +1,5 @@
 <script setup lang="ts">
-  import { ref, watch, computed } from 'vue';
+  import { ref, watch, computed, onMounted } from 'vue';
   import { refDebounced } from '@vueuse/core';
   import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
   import { useI18n } from 'vue-i18n';
@@ -127,7 +127,11 @@
   };
   
   const exportContactsToCsv = async () => {
-    const contacts = await contactStore.exportContacts();
+    const contactIdsToExport =
+      selectedContacts.value.length > 0
+        ? selectedContacts.value
+        : null;
+    const contacts = await contactStore.exportContacts(contactIdsToExport);
   
     if (!contacts.length) {
       return;
@@ -237,6 +241,7 @@
     { title: t('email'), key: 'email' },
     { title: t('phone'), key: 'phone_partial' },
     { title: t('label'), key: 'label_template' },
+    { title: t('responsible_attendant'), key: 'responsible_attendant' },
     { title: t('status'), key: 'status' },
     { title: t('registration_date'), key: 'created_at' },
     { title: t('actions'), key: 'actions', sortable: false },
@@ -248,6 +253,8 @@
     sortBy: [] as SortRequest[],
     search: null as string | null,
   });
+
+  const selectedUserId = ref<string | null>(null);
   
   const debouncedSearch = refDebounced(
     computed(() => options.value.search),
@@ -259,7 +266,23 @@
     per_page: options.value.itemsPerPage,
     sort_by: options.value.sortBy,
     search: debouncedSearch.value,
+    user_id: selectedUserId.value,
   }));
+
+  const users = ref<Array<{ id: string | null; text: string }>>([]);
+
+  onMounted(async () => {
+    const usersList = await contactStore.listContactUsers();
+    if (usersList) {
+      users.value = [
+        { id: null, text: t('all') },
+        ...usersList.map((u) => ({
+          id: u.user_id,
+          text: u.name || u.user_id,
+        })),
+      ];
+    }
+  });
   
   const handleTableChange = (o: {
     page: number;
@@ -462,6 +485,17 @@
             </div>
             <div class="d-flex align-center flex-wrap gap-4">
               <div class="invoice-list-filter">
+                <VLabel class="text-body-2 mb-1">{{ $t('responsible_attendant') }}:</VLabel>
+                <AppSelectSearch
+                  v-model="selectedUserId"
+                  :items="users as any"
+                  :placeholder="$t('select_responsible_attendant')"
+                  :clearable="true"
+                  item-value="id"
+                  item-title="text"
+                />
+              </div>
+              <div class="invoice-list-filter">
                 <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
                 <AppTextField
                   :placeholder="$t('search') + '...'"
@@ -618,6 +652,13 @@
                 <VChip v-else class="uc-chip uc-badge--muted" size="small"
                   >-</VChip
                 >
+              </template>
+
+              <template #item.responsible_attendant="{ item }">
+                <span v-if="item.responsible_attendant">
+                  {{ item.responsible_attendant.name }}
+                </span>
+                <span v-else class="text-medium-emphasis">-</span>
               </template>
   
               <template #item.status="{ item }">

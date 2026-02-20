@@ -89,6 +89,19 @@ export class ReportConversationHistoryListerUseCase {
       });
     }
 
+    if (query.label_template_id) {
+      filterClauses.push({
+        nested: {
+          path: 'label',
+          query: {
+            term: {
+              'label.label_template_id': query.label_template_id,
+            },
+          },
+        },
+      });
+    }
+
     if (query.protocol) {
       filterClauses.push({
         bool: {

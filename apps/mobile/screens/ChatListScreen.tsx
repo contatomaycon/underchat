@@ -256,15 +256,11 @@ function ChatListSkeleton() {
   return (
     <View style={styles.skeletonList}>
       <View style={styles.sectionHeader}>
-        <Animated.View
-          style={[styles.skeletonSectionTitle, { opacity }]}
-        />
+        <Animated.View style={[styles.skeletonSectionTitle, { opacity }]} />
       </View>
       {Array.from({ length: 8 }, (_, i) => (
         <View key={i} style={styles.chatRow}>
-          <Animated.View
-            style={[styles.skeletonAvatar, { opacity }]}
-          />
+          <Animated.View style={[styles.skeletonAvatar, { opacity }]} />
           <View style={styles.skeletonContent}>
             <View style={styles.skeletonRowTop}>
               <Animated.View
@@ -642,12 +638,12 @@ export function ChatListScreen({ route, navigation }: Props) {
                 resizeMode="cover"
               />
             ) : (
-            <Ionicons
-              name="person-circle-outline"
-              size={40}
-              color={colors.grey400}
-            />
-          );
+              <Ionicons
+                name="person-circle-outline"
+                size={40}
+                color={colors.grey400}
+              />
+            );
           })()}
         </Pressable>
         <TextInput
@@ -715,9 +711,7 @@ export function ChatListScreen({ route, navigation }: Props) {
               color={colors.grey400}
               style={styles.emptyIcon}
             />
-            <Text style={styles.emptyText}>
-              {pt.no_conversations_found}
-            </Text>
+            <Text style={styles.emptyText}>{pt.no_conversations_found}</Text>
           </View>
         </View>
       ) : (

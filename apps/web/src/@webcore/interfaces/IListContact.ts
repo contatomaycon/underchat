@@ -5,4 +5,5 @@ export interface IListContact {
   per_page?: number;
   sort_by: SortRequest[];
   search?: string | null;
+  user_id?: string | null;
 }

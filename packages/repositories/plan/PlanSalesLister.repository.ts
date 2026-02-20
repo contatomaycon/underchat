@@ -41,6 +41,8 @@ export class PlanSalesListerRepository {
       ])
     );
 
+    filters.push(eq(plan.is_test, false));
+
     if (query.plan_id) {
       filters.push(eq(accountPayment.plan_id, query.plan_id));
     }
@@ -105,7 +107,7 @@ export class PlanSalesListerRepository {
         account_id: account.account_id,
         account_name: account.name,
         payment_value: accountPayment.value,
-        created_at: accountPayment.created_at,
+        payment_date: accountPayment.payment_date,
       })
       .from(accountPayment)
       .innerJoin(plan, eq(accountPayment.plan_id, plan.plan_id))
@@ -120,7 +122,7 @@ export class PlanSalesListerRepository {
       .where(
         and(isNull(plan.deleted_at), isNull(account.deleted_at), ...filters)
       )
-      .orderBy(desc(accountPayment.created_at))
+      .orderBy(desc(accountPayment.payment_date))
       .execute();
   };
 
@@ -170,7 +172,7 @@ export class PlanSalesListerRepository {
       account_id: string;
       account_name: string;
       payment_value: string;
-      created_at: string | null;
+      payment_date: string | null;
     },
     crossSellsResult: Array<{
       plan_cross_sell_id: string;
@@ -204,7 +206,7 @@ export class PlanSalesListerRepository {
         quantity: cs.quantity,
         cross_sell_quantity: cs.cross_sell_quantity,
       })),
-      created_at: payment.created_at ?? null,
+      contracted_at: payment.payment_date ?? null,
       payment_billing_type_name: payment.payment_billing_type_name ?? null,
     };
   };

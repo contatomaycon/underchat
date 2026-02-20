@@ -43,7 +43,7 @@ const headers: DataTableHeader<ListPlanSalesResponse>[] = [
   { title: t('total_revenue'), key: 'total_revenue' },
   { title: t('payment_type'), key: 'payment_billing_type_name' },
   { title: t('cross_sells'), key: 'cross_sells' },
-  { title: t('created_at'), key: 'created_at' },
+  { title: t('contracted_at'), key: 'contracted_at' },
 ];
 
 const options = ref({
@@ -396,8 +396,8 @@ const getPaymentBillingTypeLabel = (
               </div>
             </template>
 
-            <template #item.created_at="{ item }">
-              <span>{{ formatDateTime(item.created_at ?? null) }}</span>
+            <template #item.contracted_at="{ item }">
+              <span>{{ formatDateTime(item.contracted_at ?? null) }}</span>
             </template>
 
             <template #no-data>

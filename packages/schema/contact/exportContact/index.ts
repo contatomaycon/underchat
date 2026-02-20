@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { exportContactResponseSchema } from './response.schema';
+import { exportContactRequestSchema } from './request.schema';
 
 export const exportContactSchema = {
   description: 'Exporta contatos com dados criptografados',
@@ -12,6 +13,7 @@ export const exportContactSchema = {
       authenticateJwt: [],
     },
   ],
+  querystring: exportContactRequestSchema,
   headers: Type.Object({
     'Accept-Language': Type.Optional(
       Type.String({

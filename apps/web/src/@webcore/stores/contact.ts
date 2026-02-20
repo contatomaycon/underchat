@@ -69,6 +69,7 @@ export const useContactStore = defineStore('contact', {
               per_page: input.per_page,
               sort_by: input.sort_by,
               search: input.search,
+              user_id: input.user_id,
             }
           : undefined;
 
@@ -778,14 +779,21 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
-    async exportContacts(): Promise<ExportContactResponse[]> {
+    async exportContacts(
+      contactIds?: string[] | null
+    ): Promise<ExportContactResponse[]> {
       try {
         this.loading = true;
 
-        const response =
-          await axios.get<IApiResponse<ExportContactResponse[]>>(
-            `/contact/export`
-          );
+        const params: { contact_ids?: string[] } = {};
+        if (contactIds && contactIds.length > 0) {
+          params.contact_ids = contactIds;
+        }
+
+        const response = await axios.get<IApiResponse<ExportContactResponse[]>>(
+          `/contact/export`,
+          { params }
+        );
 
         this.loading = false;
 

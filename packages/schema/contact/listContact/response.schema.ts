@@ -12,6 +12,11 @@ const accountSchema = Type.Object({
   name: Type.String(),
 });
 
+const responsibleAttendantSchema = Type.Object({
+  user_id: Type.String({ format: 'uuid' }),
+  name: Type.String(),
+});
+
 export const listContactResponseSchema = Type.Object({
   contact_id: Type.String({ format: 'uuid' }),
   account: accountSchema,
@@ -27,6 +32,9 @@ export const listContactResponseSchema = Type.Object({
   notes: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  responsible_attendant: Type.Optional(
+    Type.Union([responsibleAttendantSchema, Type.Null()])
+  ),
 });
 
 export const listContactFinalResponseSchema = Type.Object({

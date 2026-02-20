@@ -65,7 +65,9 @@ type SocketEventMap = {
 };
 
 type SocketEventName = keyof SocketEventMap;
-type SocketListener<K extends SocketEventName> = (data: SocketEventMap[K]) => void;
+type SocketListener<K extends SocketEventName> = (
+  data: SocketEventMap[K]
+) => void;
 
 let isInitialized = false;
 let initializingPromise: Promise<void> | null = null;
@@ -255,10 +257,7 @@ const parseIncomingPayload = (
 };
 
 const isTypingPayload = (
-  payload:
-    | SocketTypingPayload
-    | SocketMessagePayload
-    | SocketChatPayload
+  payload: SocketTypingPayload | SocketMessagePayload | SocketChatPayload
 ): payload is SocketTypingPayload => {
   return (
     (payload as { type?: unknown }).type === 'typing' &&
@@ -267,10 +266,7 @@ const isTypingPayload = (
 };
 
 const isMessagePayload = (
-  payload:
-    | SocketTypingPayload
-    | SocketMessagePayload
-    | SocketChatPayload
+  payload: SocketTypingPayload | SocketMessagePayload | SocketChatPayload
 ): payload is SocketMessagePayload => {
   return (
     typeof (payload as { message_id?: unknown }).message_id === 'string' &&
@@ -302,7 +298,9 @@ const cleanupUnsubscribe = async (): Promise<void> => {
   pendingChatUpdates.clear();
 };
 
-export const initializeChatSocket = async (accountId: string): Promise<void> => {
+export const initializeChatSocket = async (
+  accountId: string
+): Promise<void> => {
   if (!accountId) return;
   const normalizedAccountId = accountId.trim();
   if (!normalizedAccountId) return;

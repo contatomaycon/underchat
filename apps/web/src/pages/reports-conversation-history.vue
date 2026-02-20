@@ -9,6 +9,7 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
 import { useReportConversationHistoryStore } from '@/@webcore/stores/reportConversationHistory';
+import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import { ReportConversationHistoryResult } from '@core/schema/reportConversationHistory/listReportConversationHistory/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
@@ -44,6 +45,7 @@ definePage({
 
 const { t } = useI18n();
 const reportConversationHistoryStore = useReportConversationHistoryStore();
+const labelTemplateStore = useLabelTemplateStore();
 
 useSnackbarCleanup(reportConversationHistoryStore);
 
@@ -175,6 +177,7 @@ const searchByOptions = ref([
   { value: 'protocol', title: t('protocol') },
   { value: 'client', title: t('client') },
   { value: 'phone', title: t('phone') },
+  { value: 'label', title: t('label') },
 ]);
 
 const headers: DataTableHeader<ReportConversationHistoryResult>[] = [
@@ -195,7 +198,7 @@ const options = ref({
 });
 
 const searchBy = ref<
-  'date' | 'operator' | 'queue' | 'protocol' | 'client' | 'phone'
+  'date' | 'operator' | 'queue' | 'protocol' | 'client' | 'phone' | 'label'
 >('date');
 const startDate = ref<string | null>(null);
 const endDate = ref<string | null>(null);
@@ -204,6 +207,7 @@ const queueId = ref<string | null>(null);
 const protocol = ref<string | null>(null);
 const clientName = ref<string | null>(null);
 const phoneRaw = ref<string | null>(null);
+const labelTemplateId = ref<string | null>(null);
 
 const formatPhone = (value: string | null | undefined): string => {
   if (!value) return '';
@@ -250,11 +254,29 @@ const clientNameDebounced = refDebounced(clientName, 500);
 
 const sectors = ref<Array<{ id: string | null; text: string }>>([]);
 const operators = ref<Array<{ id: string | null; text: string }>>([]);
+const labelTemplates = ref<
+  Array<{ id: string | null; text: string; color: string }>
+>([]);
+
+const loadLabelTemplates = async () => {
+  const labels = await labelTemplateStore.listLabelTemplateAll();
+  if (!labels) return;
+  const items: Array<{ id: string | null; text: string; color: string }> = [];
+  for (const label of labels) {
+    items.push({
+      id: label.label_template_id,
+      text: label.label,
+      color: label.color,
+    });
+  }
+  labelTemplates.value = items;
+};
 
 onMounted(async () => {
   const [sectorsData, usersData] = await Promise.all([
     reportConversationHistoryStore.listReportConversationHistorySectors(),
     reportConversationHistoryStore.listReportConversationHistoryUsers(),
+    loadLabelTemplates(),
   ]);
 
   if (sectorsData) {
@@ -389,6 +411,9 @@ const query = computed(() => {
       break;
     case 'phone':
       baseQuery.phone = phoneDebounced.value || null;
+      break;
+    case 'label':
+      baseQuery.label_template_id = labelTemplateId.value;
       break;
   }
 
@@ -537,6 +562,7 @@ watch(searchBy, () => {
   protocol.value = null;
   clientName.value = null;
   phoneRaw.value = null;
+  labelTemplateId.value = null;
 });
 
 const getProtocolsList = (item: ReportConversationHistoryResult): string[] => {
@@ -705,6 +731,20 @@ const copyToClipboard = async (text: string) => {
               <AppTextField
                 v-model="phoneFormatted"
                 :placeholder="$t('search_by_phone')"
+              />
+            </div>
+
+            <div v-if="searchBy === 'label'" class="report-filters__field">
+              <VLabel class="text-body-2 mb-1">{{
+                $t('search_by_label')
+              }}</VLabel>
+              <AppSelectSearch
+                v-model="labelTemplateId"
+                :items="labelTemplates as any"
+                :placeholder="$t('search_by_label')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
               />
             </div>
           </VCardText>
