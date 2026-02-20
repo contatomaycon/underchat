@@ -66,12 +66,17 @@ export class ContactExporterRepository {
   };
 
   exportContacts = async (
-    accountId: string
+    accountId: string,
+    contactIds: string[] | null = null
   ): Promise<ExportContactResponse[]> => {
     const whereConditions = [
       eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
     ].filter(isDefinedFilter);
+
+    if (contactIds && contactIds.length > 0) {
+      whereConditions.push(inArray(contact.contact_id, contactIds));
+    }
 
     const result = await this.dbRo
       .select({
@@ -101,8 +106,9 @@ export class ContactExporterRepository {
       .orderBy(contact.created_at)
       .execute();
 
-    const contactIds = result.map((r) => r.contact_id);
-    const labelsByContactId = await this.findLabelsByContactIds(contactIds);
+    const resultContactIds = result.map((r) => r.contact_id);
+    const labelsByContactId =
+      await this.findLabelsByContactIds(resultContactIds);
 
     return result.map((item) => ({
       ...item,

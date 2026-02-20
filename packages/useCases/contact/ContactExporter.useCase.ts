@@ -15,10 +15,13 @@ export class ContactExporterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    accountId: string
+    accountId: string,
+    contactIds: string[] | null = null
   ): Promise<ExportContactResponse[]> {
-    const contacts =
-      await this.contactExporterRepository.exportContacts(accountId);
+    const contacts = await this.contactExporterRepository.exportContacts(
+      accountId,
+      contactIds
+    );
 
     return contacts.map((contact) => ({
       ...contact,

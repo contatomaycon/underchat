@@ -8,7 +8,9 @@ import { Client } from '@temporalio/client';
 import Redis from 'ioredis';
 import { withLock } from '@core/common/functions/withLock';
 
-export const accountBucketCleanupSchedule = async (fastify: FastifyInstance) => {
+export const accountBucketCleanupSchedule = async (
+  fastify: FastifyInstance
+) => {
   const clientTemporal = container.resolve<Client>('TemporalClient');
   const redis = container.resolve<Redis>('Redis');
   const scheduleId = 'account-bucket-cleanup-schedule';
@@ -57,7 +59,10 @@ export const accountBucketCleanupSchedule = async (fastify: FastifyInstance) => 
 
         fastify.log.info('Schedule "account-bucket-cleanup-schedule" created');
       } catch (err) {
-        fastify.log.error(err, 'Error creating account bucket cleanup schedule');
+        fastify.log.error(
+          err,
+          'Error creating account bucket cleanup schedule'
+        );
       }
     },
     {

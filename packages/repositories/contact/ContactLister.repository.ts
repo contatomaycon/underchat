@@ -4,6 +4,8 @@ import {
   labelTemplate,
   account,
   contactLabelTemplate,
+  user,
+  userInfo,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
@@ -58,6 +60,10 @@ export class ContactListerRepository {
     searchHashes: string | null
   ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
+
+    if (query.user_id) {
+      filters.push(eq(contact.user_id, query.user_id));
+    }
 
     const searchTerm = query.search;
     if (!searchTerm) return filters;
@@ -183,9 +189,15 @@ export class ContactListerRepository {
         created_at: contact.created_at,
         is_valided: contact.is_valided,
         photo: contact.photo,
+        user_id: user.user_id,
+        user_name: sql<
+          string | null
+        >`TRIM(CONCAT(COALESCE(${userInfo.name}, ''), ' ', COALESCE(${userInfo.last_name}, '')))`,
       })
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
+      .leftJoin(user, eq(contact.user_id, user.user_id))
+      .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
       .where(and(...whereConditions));
 
     if (orders.length) {
@@ -275,6 +287,8 @@ export class ContactListerRepository {
       created_at: string | null;
       is_valided: boolean | null;
       photo: string | null;
+      user_id: string | null;
+      user_name: string | null;
     }>,
     labelsByContactId: Map<
       string,
@@ -299,6 +313,13 @@ export class ContactListerRepository {
       notes: contactItem.notes ?? null,
       is_valided: contactItem.is_valided ?? null,
       photo: contactItem.photo ?? null,
+      responsible_attendant:
+        contactItem.user_id && contactItem.user_name
+          ? {
+              user_id: contactItem.user_id,
+              name: contactItem.user_name.trim(),
+            }
+          : null,
     })) as ListContactResponse[];
   };
 
