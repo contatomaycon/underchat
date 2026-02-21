@@ -558,6 +558,7 @@ export class WwebjsConnectionService {
         };
 
         this.publishSub(payload);
+        void this.notifyWorkerStatusSafely(payload, 'qr');
 
         if (!this.initialConnection) {
           this.saveLogWppConnection({
@@ -593,6 +594,7 @@ export class WwebjsConnectionService {
         };
 
         this.publishSub(payload);
+        void this.notifyWorkerStatusSafely(payload, 'ready');
         this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
         triggerConnectionEstablished();
         this.pendingResolve?.(this.state());
@@ -635,9 +637,7 @@ export class WwebjsConnectionService {
           date: new Date(),
         });
 
-        this.balanceWorkerStatusGrpcClientService
-          .notifyWorkerStatus(payload)
-          .catch(() => {});
+        void this.notifyWorkerStatusSafely(payload, 'disconnected');
 
         if (isMismatchedStatus) {
           this.updateWorkerMismatchedStatus();
@@ -658,9 +658,7 @@ export class WwebjsConnectionService {
           };
 
           this.publishSub(logoutPayload, true);
-          this.balanceWorkerStatusGrpcClientService
-            .notifyWorkerStatus(logoutPayload)
-            .catch(() => {});
+          void this.notifyWorkerStatusSafely(logoutPayload, 'logged_out');
         }
 
         this.pendingResolve?.(this.state());
@@ -692,6 +690,15 @@ export class WwebjsConnectionService {
 
       client.on('auth_failure', () => {
         this.setStatus(Status.disconnected, ECodeMessage.badSession);
+        const payload: IBaileysConnectionState = {
+          status: this.status,
+          worker_id: WORKER,
+          account_id: ACCOUNT,
+          code: this.code,
+          worker_status_id: EWorkerStatus.mismatched,
+        };
+        this.publishSub(payload, true);
+        void this.notifyWorkerStatusSafely(payload, 'auth_failure');
         this.pendingResolve?.(this.state());
         this.pendingResolve = undefined;
       });
@@ -880,6 +887,7 @@ export class WwebjsConnectionService {
       };
 
       this.publishSub(payload);
+      void this.notifyWorkerStatusSafely(payload, 'report_connected');
     }
 
     return this.state();
@@ -921,6 +929,27 @@ export class WwebjsConnectionService {
     void this.centrifugo.publishSub(CHANNEL, payload).catch((error) => {
       console.error('[WwebjsConnection] Publish failed', error);
     });
+  }
+
+  private async notifyWorkerStatusSafely(
+    payload: IBaileysConnectionState,
+    context: string
+  ): Promise<void> {
+    try {
+      await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
+        payload
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error('[WwebjsConnection] NotifyWorkerStatus failed', {
+        context,
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_status_id: payload.worker_status_id,
+        error: errorMessage,
+      });
+    }
   }
 
   private async updateWorkerMismatchedStatus(): Promise<void> {

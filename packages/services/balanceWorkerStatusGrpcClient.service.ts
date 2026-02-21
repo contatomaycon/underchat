@@ -41,11 +41,21 @@ export class BalanceWorkerStatusGrpcClientService {
 
   async notifyWorkerStatus(payload: IBaileysConnectionState): Promise<void> {
     const client = this.createClient();
+    const workerId = payload.worker_id?.trim();
+    const accountId = payload.account_id?.trim();
+    const workerStatusId = payload.worker_status_id;
+
+    if (!workerId || !accountId || !workerStatusId) {
+      client.close();
+      throw new Error(
+        'NotifyWorkerStatus requires worker_id, account_id and worker_status_id'
+      );
+    }
 
     const protoPayload = {
-      worker_id: payload.worker_id,
-      account_id: payload.account_id,
-      worker_status_id: payload.worker_status_id ?? '',
+      worker_id: workerId,
+      account_id: accountId,
+      worker_status_id: workerStatusId,
       phone: payload.phone ?? '',
       disconnected_user: payload.disconnected_user ?? false,
     };

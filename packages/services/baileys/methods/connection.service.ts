@@ -461,6 +461,7 @@ export class BaileysConnectionService {
       };
 
       this.publishSub(payload);
+      void this.notifyWorkerStatusSafely(payload, 'pairing_code');
     }
   }
 
@@ -536,14 +537,16 @@ export class BaileysConnectionService {
     await this.printQrInConsole(qr);
     const img = await QRCode.toDataURL(qr);
 
-    this.publishSub({
+    const payload: IBaileysConnectionState = {
       status: this.status,
       code: this.code,
       qrcode: img,
       worker_id: WORKER,
       account_id: ACCOUNT,
       worker_status_id: EWorkerStatus.disponible,
-    });
+    };
+    this.publishSub(payload);
+    void this.notifyWorkerStatusSafely(payload, 'qr');
 
     if (!this.initialConnection) {
       this.saveLogWppConnection({
@@ -597,6 +600,7 @@ export class BaileysConnectionService {
 
     this.publishSub(payload);
     this.lastStatusPayload = JSON.stringify(payload);
+    void this.notifyWorkerStatusSafely(payload, 'open');
 
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
 
@@ -671,12 +675,6 @@ export class BaileysConnectionService {
         this.publishSub(payload, true);
         this.lastStatusPayload = payloadStr;
 
-        try {
-          await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
-            payload
-          );
-        } catch {}
-
         this.saveLogWppConnection({
           worker_id: WORKER,
           status: this.status,
@@ -685,6 +683,8 @@ export class BaileysConnectionService {
           date: new Date(),
         });
       }
+
+      await this.notifyWorkerStatusSafely(payload, 'close');
     }
 
     if (isMismatchedStatus) {
@@ -707,11 +707,7 @@ export class BaileysConnectionService {
 
       this.publishSub(payload, true);
 
-      try {
-        await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
-          payload
-        );
-      } catch {}
+      await this.notifyWorkerStatusSafely(payload, 'logged_out');
     }
 
     resolve(this.state());
@@ -761,6 +757,7 @@ export class BaileysConnectionService {
     };
 
     this.centrifugo.publishSub(CHANNEL, payload);
+    void this.notifyWorkerStatusSafely(payload, 'new_login_attempt');
   }
 
   private canShowQr(): boolean {
@@ -819,6 +816,27 @@ export class BaileysConnectionService {
     void this.centrifugo.publishSub(CHANNEL, payload).catch((error) => {
       console.error('[BaileysConnection] publishSub - Failed', error);
     });
+  }
+
+  private async notifyWorkerStatusSafely(
+    payload: IBaileysConnectionState,
+    context: string
+  ): Promise<void> {
+    try {
+      await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
+        payload
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error('[BaileysConnection] NotifyWorkerStatus failed', {
+        context,
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_status_id: payload.worker_status_id,
+        error: errorMessage,
+      });
+    }
   }
 
   private async updateWorkerMismatchedStatus(): Promise<void> {
@@ -952,6 +970,7 @@ export class BaileysConnectionService {
       };
 
       this.publishSub(payload);
+      void this.notifyWorkerStatusSafely(payload, 'report_connected');
     }
 
     return this.state();

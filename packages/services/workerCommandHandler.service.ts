@@ -148,7 +148,9 @@ export class WorkerCommandHandlerService {
     const workerStatusId = input.worker_status_id as EWorkerStatus | undefined;
 
     if (!workerId || !accountId || !workerStatusId) {
-      return;
+      throw new Error(
+        'Missing required fields: worker_id, account_id, worker_status_id'
+      );
     }
 
     const isDisponibleWithDisconnectedUser =

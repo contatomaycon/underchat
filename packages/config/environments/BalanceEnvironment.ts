@@ -11,11 +11,22 @@ export class BalanceEnvironment {
   }
 
   public get grpcPort(): number {
-    return 50051;
+    const port = process.env.BALANCER_GRPC_PORT;
+    if (!port) {
+      return 50051;
+    }
+
+    const parsedPort = Number.parseInt(port, 10);
+    if (!Number.isFinite(parsedPort) || parsedPort <= 0) {
+      throw new InvalidConfigurationError('BALANCER_GRPC_PORT is not valid.');
+    }
+
+    return parsedPort;
   }
 
   public get grpcHost(): string {
-    return 'under-balance-api';
+    const host = process.env.BALANCER_GRPC_HOST?.trim();
+    return host || 'under-balance-api';
   }
 
   public get workerBaileysGrpcPort(): number {
