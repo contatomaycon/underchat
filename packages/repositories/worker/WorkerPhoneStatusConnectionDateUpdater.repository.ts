@@ -30,20 +30,9 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
   updateWorkerPhoneStatusConnectionDate = async (
     input: IUpdateWorkerPhoneStatusConnectionDate
   ): Promise<boolean> => {
-    console.log(
-      '[WorkerPhoneStatusConnectionDateUpdater] Input received:',
-      input
-    );
-
     const phoneNumber =
       input.status === EWorkerStatus.disponible ? null : input.number;
     const connectionDate = this.connectionDate(input);
-
-    console.log('[WorkerPhoneStatusConnectionDateUpdater] Computed values:', {
-      phoneNumber,
-      connectionDate,
-      isDisponible: input.status === EWorkerStatus.disponible,
-    });
 
     const updateData: Partial<typeof worker.$inferInsert> = {};
 
@@ -59,35 +48,17 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
       updateData.connection_date = connectionDate;
     }
 
-    console.log(
-      '[WorkerPhoneStatusConnectionDateUpdater] Update data before check:',
-      updateData
-    );
-
     if (Object.keys(updateData).length === 0) {
-      console.log(
-        '[WorkerPhoneStatusConnectionDateUpdater] No fields to update, returning false'
-      );
       return false;
     }
 
     updateData.updated_at = currentTime();
-
-    console.log('[WorkerPhoneStatusConnectionDateUpdater] Final update data:', {
-      updateData,
-      worker_id: input.worker_id,
-    });
 
     const result = await this.dbRw
       .update(worker)
       .set(updateData)
       .where(and(eq(worker.worker_id, input.worker_id)))
       .execute();
-
-    console.log('[WorkerPhoneStatusConnectionDateUpdater] Update result:', {
-      rowCount: result.rowCount,
-      success: result.rowCount === 1,
-    });
 
     return result.rowCount === 1;
   };
