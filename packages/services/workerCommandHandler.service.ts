@@ -183,7 +183,8 @@ export class WorkerCommandHandlerService {
     const view =
       await this.workerService.viewWorkerPhoneConnectionDate(workerId);
 
-    const phoneNumber = input.phone ?? view?.number ?? null;
+    const inputPhone = input.phone?.trim() || null;
+    const phoneNumber = inputPhone ?? view?.number ?? null;
 
     let connectionDate = view?.connection_date;
     if (workerStatusId === EWorkerStatus.online && phoneNumber) {
