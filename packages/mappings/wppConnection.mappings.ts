@@ -17,6 +17,12 @@ export const wppConnectionMappings = () => {
         date: {
           type: 'date',
         },
+        phone: {
+          type: 'keyword',
+        },
+        connected_at: {
+          type: 'date',
+        },
       },
     },
   };

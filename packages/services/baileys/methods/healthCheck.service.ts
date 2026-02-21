@@ -268,12 +268,16 @@ export class BaileysHealthCheckService {
       );
     }
 
+    const isConnected = result.detectedStatus === Status.connected;
+    const phone = getPhoneNumber(socket?.user?.id);
+
     await this.saveLogWppConnection({
       worker_id: WORKER,
       status: result.detectedStatus,
       code: payload.code?.toString(),
       message: result.reason ?? 'Health check status update',
       date: new Date(),
+      ...(isConnected && phone ? { phone, connected_at: new Date() } : {}),
     });
   }
 
