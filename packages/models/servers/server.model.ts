@@ -1,5 +1,6 @@
 import {
   pgTable,
+  boolean,
   integer,
   timestamp,
   varchar,
@@ -18,6 +19,11 @@ export const server = pgTable(
       .notNull(),
     name: varchar({ length: 200 }).notNull(),
     quantity_workers: integer().notNull(),
+    proxy_enabled: boolean('proxy_enabled').notNull().default(false),
+    proxy_host: varchar('proxy_host', { length: 255 }),
+    proxy_port: integer('proxy_port'),
+    proxy_username: varchar('proxy_username', { length: 1000 }),
+    proxy_password: varchar('proxy_password', { length: 1000 }),
     last_sync: timestamp('last_sync', {
       mode: 'string',
       withTimezone: true,

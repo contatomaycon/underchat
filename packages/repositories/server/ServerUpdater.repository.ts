@@ -26,12 +26,30 @@ export class ServerUpdaterRepository {
     >,
     input: IUpdateServerById
   ): Promise<boolean> => {
+    const updateServer: Partial<typeof server.$inferInsert> = {
+      name: input.name,
+      quantity_workers: input.quantity_workers,
+      proxy_enabled: input.proxy_enabled,
+      proxy_host: input.proxy_enabled ? (input.proxy_host ?? null) : null,
+      proxy_port: input.proxy_enabled ? (input.proxy_port ?? null) : null,
+    };
+
+    if (!input.proxy_enabled) {
+      updateServer.proxy_username = null;
+      updateServer.proxy_password = null;
+    }
+
+    if (input.proxy_enabled && input.proxy_username) {
+      updateServer.proxy_username = input.proxy_username;
+    }
+
+    if (input.proxy_enabled && input.proxy_password) {
+      updateServer.proxy_password = input.proxy_password;
+    }
+
     const result = await tx
       .update(server)
-      .set({
-        name: input.name,
-        quantity_workers: input.quantity_workers,
-      })
+      .set(updateServer)
       .where(eq(server.server_id, input.server_id))
       .execute();
 

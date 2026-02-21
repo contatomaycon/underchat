@@ -31,6 +31,11 @@ export class ServerViewerRepository {
           web_port: serverWeb.web_port,
           web_protocol: serverWeb.web_protocol,
         },
+        proxy: {
+          enabled: server.proxy_enabled,
+          host: server.proxy_host,
+          port: server.proxy_port,
+        },
         created_at: server.created_at,
         updated_at: server.updated_at,
       })

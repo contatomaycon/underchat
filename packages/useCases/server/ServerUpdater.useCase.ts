@@ -23,6 +23,13 @@ export class ServerUpdaterUseCase {
     serverId: string,
     input: EditServerRequest
   ): Promise<void> {
+    if (
+      input.proxy_enabled &&
+      (!input.proxy_host?.trim() || !input.proxy_port)
+    ) {
+      throw new Error('Proxy configuration is incomplete');
+    }
+
     const viewServerSshById =
       await this.serverService.viewServerSshById(serverId);
 

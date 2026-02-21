@@ -26,6 +26,16 @@ export class ServerCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: CreateServerRequest
   ): Promise<void> {
+    if (
+      input.proxy_enabled &&
+      (!input.proxy_host?.trim() ||
+        !input.proxy_port ||
+        !input.proxy_username?.trim() ||
+        !input.proxy_password?.trim())
+    ) {
+      throw new Error('Proxy configuration is incomplete');
+    }
+
     const serverExists = await this.serverService.existsServerByIp(
       input.ssh_ip
     );

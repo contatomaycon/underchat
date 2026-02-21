@@ -21,6 +21,11 @@ export class ServerSshViewerRepository {
         ssh_port: serverSsh.ssh_port,
         ssh_username: serverSsh.ssh_username,
         ssh_password: serverSsh.ssh_password,
+        proxy_enabled: server.proxy_enabled,
+        proxy_host: server.proxy_host,
+        proxy_port: server.proxy_port,
+        proxy_username: server.proxy_username,
+        proxy_password: server.proxy_password,
       })
       .from(serverSsh)
       .innerJoin(server, eq(server.server_id, serverSsh.server_id))

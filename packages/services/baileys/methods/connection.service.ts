@@ -11,6 +11,7 @@ import QRCode from 'qrcode';
 import P from 'pino';
 import fs from 'node:fs';
 import path from 'node:path';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { singleton, inject } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';
@@ -46,6 +47,24 @@ let cachedWaVersion: {
   version: [number, number, number];
   fetchedAt: number;
 } | null = null;
+
+function readProxyUrl(): string | null {
+  const host = process.env.PROXY_HOST?.trim();
+  const port = Number.parseInt(process.env.PROXY_PORT ?? '', 10);
+
+  if (!host || !Number.isFinite(port) || port <= 0) {
+    return null;
+  }
+
+  const username = process.env.PROXY_USERNAME?.trim();
+  const password = process.env.PROXY_PASSWORD?.trim();
+  const auth =
+    username && password
+      ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`
+      : '';
+
+  return `http://${auth}${host}:${port}`;
+}
 
 async function getCachedWaWebVersion(): Promise<[number, number, number]> {
   if (
@@ -387,6 +406,8 @@ export class BaileysConnectionService {
   private async createSocket() {
     const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
     const version = await getCachedWaWebVersion();
+    const proxyUrl = readProxyUrl();
+    const proxyAgent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
 
     const socket = makeWASocket({
       auth: state,
@@ -403,6 +424,12 @@ export class BaileysConnectionService {
       keepAliveIntervalMs: 15_000,
       defaultQueryTimeoutMs: 60_000,
       maxMsgRetryCount: 10,
+      ...(proxyAgent
+        ? {
+            agent: proxyAgent,
+            fetchAgent: proxyAgent,
+          }
+        : {}),
     });
 
     socket.ev.on('creds.update', saveCreds);

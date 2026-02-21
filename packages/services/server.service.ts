@@ -86,17 +86,31 @@ export class ServerService {
     t: TFunction<'translation', undefined>,
     input: CreateServerRequest
   ) => {
+    const proxyEnabled = input.proxy_enabled ?? false;
     const usernameEncrypted = this.passwordEncryptorService.encrypt(
       input.ssh_username
     );
     const passwordEncrypted = this.passwordEncryptorService.encrypt(
       input.ssh_password
     );
+    const proxyUsernameEncrypted =
+      proxyEnabled && input.proxy_username?.trim()
+        ? this.passwordEncryptorService.encrypt(input.proxy_username.trim())
+        : null;
+    const proxyPasswordEncrypted =
+      proxyEnabled && input.proxy_password?.trim()
+        ? this.passwordEncryptorService.encrypt(input.proxy_password.trim())
+        : null;
 
     const inputCreateServer: ICreateServer = {
       server_status_id: EServerStatus.new,
       name: input.name,
       quantity_workers: input.quantity_workers,
+      proxy_enabled: proxyEnabled,
+      proxy_host: proxyEnabled ? (input.proxy_host ?? null) : null,
+      proxy_port: proxyEnabled ? (input.proxy_port ?? null) : null,
+      proxy_username: proxyUsernameEncrypted,
+      proxy_password: proxyPasswordEncrypted,
     };
 
     const inputCreateServerSsh: ICreateServerSsh = {
@@ -180,12 +194,21 @@ export class ServerService {
     serverId: string,
     input: EditServerRequest
   ): Promise<boolean> => {
+    const proxyEnabled = input.proxy_enabled ?? false;
     const sshUsername = input.ssh_username
       ? this.passwordEncryptorService.encrypt(input.ssh_username)
       : null;
     const sshPassword = input.ssh_password
       ? this.passwordEncryptorService.encrypt(input.ssh_password)
       : null;
+    const proxyUsername =
+      proxyEnabled && input.proxy_username?.trim()
+        ? this.passwordEncryptorService.encrypt(input.proxy_username.trim())
+        : null;
+    const proxyPassword =
+      proxyEnabled && input.proxy_password?.trim()
+        ? this.passwordEncryptorService.encrypt(input.proxy_password.trim())
+        : null;
 
     const inputUpdateServerSsh: IUpdateServerSshById = {
       server_id: serverId,
@@ -199,6 +222,11 @@ export class ServerService {
       server_id: serverId,
       name: input.name,
       quantity_workers: input.quantity_workers,
+      proxy_enabled: proxyEnabled,
+      proxy_host: proxyEnabled ? (input.proxy_host ?? null) : null,
+      proxy_port: proxyEnabled ? (input.proxy_port ?? null) : null,
+      proxy_username: proxyUsername,
+      proxy_password: proxyPassword,
     };
 
     const inputUpdateServerWeb: IUpdateServerWebById = {
@@ -230,6 +258,28 @@ export class ServerService {
     serverId: string
   ): Promise<ViewServerResponse | null> => {
     return this.serverViewerRepository.viewServerById(serverId);
+  };
+
+  viewServerProxyById = async (serverId: string) => {
+    const server = await this.serverSshViewerRepository.viewServerSshById(
+      serverId
+    );
+
+    if (!server) {
+      return null;
+    }
+
+    return {
+      enabled: server.proxy_enabled,
+      host: server.proxy_host,
+      port: server.proxy_port,
+      username: server.proxy_username
+        ? this.passwordEncryptorService.decrypt(server.proxy_username)
+        : null,
+      password: server.proxy_password
+        ? this.passwordEncryptorService.decrypt(server.proxy_password)
+        : null,
+    };
   };
 
   listServers = async (

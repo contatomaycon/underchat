@@ -46,6 +46,30 @@ const CHROMIUM_LOCK_FILE_NAMES = [
 ] as const;
 const CHROMIUM_PROFILE_SUBDIRECTORIES = ['', 'Default'] as const;
 
+function readProxyConfig(): {
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+} | null {
+  const host = process.env.PROXY_HOST?.trim();
+  const port = Number.parseInt(process.env.PROXY_PORT ?? '', 10);
+
+  if (!host || !Number.isFinite(port) || port <= 0) {
+    return null;
+  }
+
+  const username = process.env.PROXY_USERNAME?.trim();
+  const password = process.env.PROXY_PASSWORD?.trim();
+
+  return {
+    host,
+    port,
+    username: username || undefined,
+    password: password || undefined,
+  };
+}
+
 const { Client: ClientCtor, LocalAuth } = whatsappWeb;
 type Client = InstanceType<typeof ClientCtor>;
 
@@ -453,6 +477,7 @@ export class WwebjsConnectionService {
       this.clearChromiumProfileLock();
 
       const authPath = path.join(FOLDER, `.wwebjs_auth`);
+      const proxy = readProxyConfig();
       const puppeteerOpts: {
         headless: boolean;
         args: string[];
@@ -467,12 +492,19 @@ export class WwebjsConnectionService {
           '--disable-gpu',
         ],
       };
+
+      if (proxy) {
+        puppeteerOpts.args.push(
+          `--proxy-server=http://${proxy.host}:${proxy.port}`
+        );
+      }
+
       const systemChrome = process.env.PUPPETEER_EXECUTABLE_PATH;
       if (systemChrome) {
         puppeteerOpts.executablePath = systemChrome;
       }
 
-      const client = new ClientCtor({
+      const clientOptions: ConstructorParameters<typeof ClientCtor>[0] = {
         authStrategy: new LocalAuth({
           clientId: WORKER,
           dataPath: authPath,
@@ -483,7 +515,16 @@ export class WwebjsConnectionService {
         ciphertextResolutionDelaysMs: [
           2000, 5000, 10000, 20000, 30000, 45000, 60000, 90000, 120000,
         ],
-      });
+      };
+
+      if (proxy?.username && proxy.password) {
+        clientOptions.proxyAuthentication = {
+          username: proxy.username,
+          password: proxy.password,
+        };
+      }
+
+      const client = new ClientCtor(clientOptions);
 
       this.client = client;
 

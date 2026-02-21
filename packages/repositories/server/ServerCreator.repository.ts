@@ -36,6 +36,15 @@ export class ServerCreatorRepository {
         server_status_id: input.server_status_id,
         name: input.name,
         quantity_workers: input.quantity_workers,
+        proxy_enabled: input.proxy_enabled,
+        proxy_host: input.proxy_enabled ? (input.proxy_host ?? null) : null,
+        proxy_port: input.proxy_enabled ? (input.proxy_port ?? null) : null,
+        proxy_username: input.proxy_enabled
+          ? (input.proxy_username ?? null)
+          : null,
+        proxy_password: input.proxy_enabled
+          ? (input.proxy_password ?? null)
+          : null,
       })
       .execute();
 

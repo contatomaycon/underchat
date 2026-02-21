@@ -31,6 +31,11 @@ const webPort = ref<number | null>(null);
 const webProtocol = ref<EServerWebProtocol.http | EServerWebProtocol.https>(
   EServerWebProtocol.http
 );
+const proxyEnabled = ref(false);
+const proxyHost = ref<string | null>(null);
+const proxyPort = ref<number | null>(null);
+const proxyUsername = ref<string | null>(null);
+const proxyPassword = ref<string | null>(null);
 
 const itemsWebProtocol = ref([
   { value: EServerWebProtocol.http, title: 'HTTP' },
@@ -52,7 +57,8 @@ const updateServer = async () => {
     !quantityWorkers.value ||
     !webDomain.value ||
     !webPort.value ||
-    !webProtocol.value
+    !webProtocol.value ||
+    (proxyEnabled.value && (!proxyHost.value || !proxyPort.value))
   ) {
     return;
   }
@@ -67,6 +73,11 @@ const updateServer = async () => {
     web_domain: webDomain.value,
     web_port: webPort.value,
     web_protocol: webProtocol.value,
+    proxy_enabled: proxyEnabled.value,
+    proxy_host: proxyEnabled.value ? proxyHost.value : null,
+    proxy_port: proxyEnabled.value ? proxyPort.value : null,
+    proxy_username: proxyEnabled.value ? proxyUsername.value : null,
+    proxy_password: proxyEnabled.value ? proxyPassword.value : null,
   };
 
   const result = await serverStore.updateServer(serverId.value, payload);
@@ -90,8 +101,13 @@ onMounted(async () => {
     webDomain.value = server.web.web_domain;
     webPort.value = server.web.web_port;
     webProtocol.value = server.web.web_protocol as EServerWebProtocol;
+    proxyEnabled.value = server.proxy.enabled;
+    proxyHost.value = server.proxy.host;
+    proxyPort.value = server.proxy.port;
     username.value = null;
     password.value = null;
+    proxyUsername.value = null;
+    proxyPassword.value = null;
   }
 });
 </script>
@@ -203,6 +219,58 @@ onMounted(async () => {
             <VCol cols="12" sm="6" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('password') }}:</VLabel>
               <AppTextField v-model="password" :placeholder="$t('password')" />
+            </VCol>
+
+            <VCol cols="12">
+              <VSwitch
+                v-model="proxyEnabled"
+                :label="$t('enable_proxy')"
+                color="primary"
+                hide-details
+              />
+            </VCol>
+
+            <VCol v-if="proxyEnabled" cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('proxy_host') }}:</VLabel>
+              <AppTextField
+                v-model="proxyHost"
+                :placeholder="$t('proxy_host_placeholder')"
+                :rules="[
+                  requiredValidator(proxyHost, $t('proxy_host_required')),
+                ]"
+              />
+            </VCol>
+
+            <VCol v-if="proxyEnabled" cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('proxy_port') }}:</VLabel>
+              <AppTextField
+                v-model="proxyPort"
+                :placeholder="$t('proxy_port')"
+                :rules="[
+                  requiredValidator(proxyPort, $t('proxy_port_required')),
+                ]"
+                type="number"
+              />
+            </VCol>
+
+            <VCol v-if="proxyEnabled" cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('proxy_username') }}:</VLabel
+              >
+              <AppTextField
+                v-model="proxyUsername"
+                :placeholder="$t('proxy_username')"
+              />
+            </VCol>
+
+            <VCol v-if="proxyEnabled" cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('proxy_password') }}:</VLabel
+              >
+              <AppTextField
+                v-model="proxyPassword"
+                :placeholder="$t('proxy_password')"
+              />
             </VCol>
           </VRow>
         </VCardText>

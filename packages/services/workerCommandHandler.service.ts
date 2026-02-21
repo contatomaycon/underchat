@@ -28,6 +28,7 @@ import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { ServerService } from '@core/services/server.service';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -58,7 +59,9 @@ export class WorkerCommandHandlerService {
     @inject(ContainerHealthService)
     private readonly containerHealthService: ContainerHealthService,
     @inject(WorkerBaileysGrpcClientService)
-    private readonly workerBaileysGrpcClientService: WorkerBaileysGrpcClientService
+    private readonly workerBaileysGrpcClientService: WorkerBaileysGrpcClientService,
+    @inject(ServerService)
+    private readonly serverService: ServerService
   ) {}
 
   private isTopicOrPartitionMissing(err: unknown): boolean {
@@ -454,6 +457,43 @@ export class WorkerCommandHandlerService {
     return undefined;
   }
 
+  private async resolveWorkerProxyConfig(serverId: string): Promise<
+    | {
+        host: string;
+        port: number;
+        username?: string | null;
+        password?: string | null;
+      }
+    | undefined
+  > {
+    try {
+      const proxy = await this.serverService.viewServerProxyById(serverId);
+
+      if (
+        !proxy?.enabled ||
+        !proxy.host ||
+        !proxy.port ||
+        !Number.isFinite(proxy.port)
+      ) {
+        return undefined;
+      }
+
+      return {
+        host: proxy.host,
+        port: proxy.port,
+        username: proxy.username,
+        password: proxy.password,
+      };
+    } catch (err) {
+      console.error('Failed to resolve server proxy config', {
+        serverId,
+        error: getErrorMessage(err),
+      });
+
+      return undefined;
+    }
+  }
+
   private centrifugoPublish(
     dataPublish: IBaileysConnectionState
   ): Promise<PublishResult> {
@@ -551,6 +591,8 @@ export class WorkerCommandHandlerService {
       });
     }
 
+    const proxy = await this.resolveWorkerProxyConfig(data.server_id);
+
     const containerId = await this.retryOperation(
       async () =>
         this.workerService.createContainerWorker(
@@ -559,7 +601,8 @@ export class WorkerCommandHandlerService {
           data.account_id,
           false,
           balanceEnvironment.grpcHost,
-          balanceEnvironment.grpcPort
+          balanceEnvironment.grpcPort,
+          proxy
         ),
       (r) => !r
     );
@@ -847,6 +890,8 @@ export class WorkerCommandHandlerService {
       });
     }
 
+    const proxy = await this.resolveWorkerProxyConfig(data.server_id);
+
     const containerId = await this.retryOperation(
       async () =>
         this.workerService.createContainerWorker(
@@ -855,7 +900,8 @@ export class WorkerCommandHandlerService {
           data.account_id,
           true,
           balanceEnvironment.grpcHost,
-          balanceEnvironment.grpcPort
+          balanceEnvironment.grpcPort,
+          proxy
         ),
       (r) => !r
     );

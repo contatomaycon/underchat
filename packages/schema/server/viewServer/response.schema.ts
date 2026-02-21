@@ -11,6 +11,12 @@ export const viewServerWebResponseSchema = Type.Object({
   web_protocol: Type.String(),
 });
 
+export const viewServerProxyResponseSchema = Type.Object({
+  enabled: Type.Boolean(),
+  host: Type.Union([Type.String(), Type.Null()]),
+  port: Type.Union([Type.Number(), Type.Null()]),
+});
+
 export const viewServerResponseSchema = Type.Object({
   name: Type.String(),
   quantity_workers: Type.Number(),
@@ -20,6 +26,7 @@ export const viewServerResponseSchema = Type.Object({
   }),
   ssh: viewServerSshResponseSchema,
   web: viewServerWebResponseSchema,
+  proxy: viewServerProxyResponseSchema,
   created_at: Type.String(),
   updated_at: Type.String(),
 });

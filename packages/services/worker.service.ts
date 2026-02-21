@@ -174,7 +174,13 @@ export class WorkerService {
     accountId: string,
     isCreateVolume: boolean = true,
     grpcHost?: string,
-    grpcPort?: number
+    grpcPort?: number,
+    proxy?: {
+      host: string;
+      port: number;
+      username?: string | null;
+      password?: string | null;
+    }
   ): Promise<string> {
     const existsContainerById = await this.existsContainerWorkerById(workerId);
     if (existsContainerById) {
@@ -194,6 +200,16 @@ export class WorkerService {
         `BALANCER_GRPC_HOST=${grpcHost}`,
         `BALANCER_GRPC_PORT=${grpcPort}`
       );
+    }
+
+    if (proxy?.host && Number.isFinite(proxy.port)) {
+      env.push(`PROXY_HOST=${proxy.host}`, `PROXY_PORT=${proxy.port}`);
+      if (proxy.username) {
+        env.push(`PROXY_USERNAME=${proxy.username}`);
+      }
+      if (proxy.password) {
+        env.push(`PROXY_PASSWORD=${proxy.password}`);
+      }
     }
 
     const container = await this.docker.createContainer({
