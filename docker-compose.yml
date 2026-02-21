@@ -78,69 +78,6 @@ services:
       - underchat
     restart: always
 
-  under-temporal-db:
-    image: postgres:latest
-    container_name: under-temporal-db
-    environment:
-      - POSTGRES_USER=temporal
-      - POSTGRES_PASSWORD=temporal
-      - POSTGRES_DB=temporal
-    networks:
-      - underchat
-    restart: always
-    volumes:
-      - temporal_postgresql:/var/lib/postgresql
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U temporal -d temporal']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  under-temporal:
-    image: temporalio/auto-setup:1.29.1
-    container_name: under-temporal
-    ports:
-      - '7233:7233'
-    restart: always
-    environment:
-      - TEMPORAL_CLI_ADDRESS=under-temporal:7233
-      - DB=postgres12
-      - POSTGRES_USER=temporal
-      - POSTGRES_PWD=temporal
-      - POSTGRES_SEEDS=under-temporal-db
-      - DB_PORT=5432
-    depends_on:
-      under-temporal-db:
-        condition: service_healthy
-    networks:
-      - underchat
-
-  under-temporal-admin-tools:
-    image: temporalio/admin-tools:latest
-    container_name: under-temporal-admin-tools
-    restart: always
-    environment:
-      - TEMPORAL_CLI_ADDRESS=under-temporal:7233
-    depends_on:
-      under-temporal:
-        condition: service_started
-    networks:
-      - underchat
-
-  under-temporal-web:
-    image: temporalio/ui:latest
-    container_name: under-temporal-web
-    restart: always
-    ports:
-      - '8088:8080'
-    environment:
-      - TEMPORAL_ADDRESS=under-temporal:7233
-    depends_on:
-      under-temporal:
-        condition: service_started
-    networks:
-      - underchat
-
   under-atlas-db:
     image: postgres:latest
     container_name: under-atlas-db
@@ -359,7 +296,6 @@ networks:
 
 volumes:
   postgresql:
-  temporal_postgresql:
   postgresql_data:
   db_postgresql:
   db_elastic_data:

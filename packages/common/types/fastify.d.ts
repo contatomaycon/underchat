@@ -1,8 +1,6 @@
 import * as schema from '@core/models';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { TFunction } from 'i18next';
-import { Connection, Client as ClientTemporal } from '@temporalio/client';
-import { NativeConnection, Worker } from '@temporalio/worker';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
@@ -43,12 +41,6 @@ declare module 'fastify' {
     verifyToken: (token: string) => Promise<null | string | object>;
     decodeToken: (token: string) => Promise<null | string | object>;
     i18n: TFunction<'translation', undefined>;
-    temporal: {
-      connection: Connection;
-      client: ClientTemporal;
-      nativeConnection: NativeConnection;
-      registerWorker: (worker: Worker) => void;
-    };
     baileysInitialized: Promise<void>;
     wwebjsInitialized: Promise<void>;
   }

@@ -1210,6 +1210,20 @@ export class ScheduleSendService {
     return EScheduleStatus.sent;
   }
 
+  private uniqueSchedulesById(
+    schedules: ISchedulePendingData[]
+  ): ISchedulePendingData[] {
+    const uniqueMap = new Map<string, ISchedulePendingData>();
+
+    for (const schedule of schedules) {
+      if (!uniqueMap.has(schedule.schedule_id)) {
+        uniqueMap.set(schedule.schedule_id, schedule);
+      }
+    }
+
+    return Array.from(uniqueMap.values());
+  }
+
   private async processSingleSchedule(
     schedule: ISchedulePendingData
   ): Promise<void> {
@@ -1266,6 +1280,8 @@ export class ScheduleSendService {
       {
         ttlMs: 300000,
         retryMs: 500,
+        preventDuplicate: true,
+        duplicateTtlSeconds: 300,
       }
     );
   }
@@ -1273,9 +1289,10 @@ export class ScheduleSendService {
   async processSchedules(): Promise<void> {
     const schedules =
       await this.schedulePendingListerRepository.listPendingSchedules();
+    const uniqueSchedules = this.uniqueSchedulesById(schedules);
 
     await Promise.all(
-      schedules.map((schedule) => this.processSingleSchedule(schedule))
+      uniqueSchedules.map((schedule) => this.processSingleSchedule(schedule))
     );
   }
 }

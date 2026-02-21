@@ -8,17 +8,17 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
-import { startTemporalWorkers, startTemporalSchedules } from './temporal';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
-import temporalPlugin from '@core/plugins/temporal';
 import redisPlugin from '@core/plugins/redis';
 import s3Plugin from '@core/plugins/s3';
+import schedulePlugin from '@core/plugins/schedule';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
 import { setupGracefulShutdown } from '@core/plugins/telemetry/errorHandlers';
+import startJobs from '@core/jobs';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -50,7 +50,7 @@ server.register(safePlugin(routes, 'routes', true), {
   prefix: EPrefixRoutes.v1,
 });
 server.register(safePlugin(fastifyQs, 'fastifyQs'));
-server.register(safePlugin(temporalPlugin, 'temporal'));
+server.register(safePlugin(schedulePlugin, 'schedule'));
 
 const start = async () => {
   try {
@@ -60,8 +60,7 @@ const start = async () => {
 
     setupGracefulShutdown(server);
 
-    startTemporalWorkers(server);
-    startTemporalSchedules(server);
+    startJobs(server);
   } catch (err) {
     console.log(err);
 
