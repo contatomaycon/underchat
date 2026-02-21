@@ -22,6 +22,10 @@ import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnect
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
+import { BaileysService } from '@core/services/baileys';
+import { WwebjsService } from '@core/services/wwebjs';
+import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
+import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,6 +73,10 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     module === ERouteModule.worker_wwebjs
       ? container.resolve(WorkerConnectionStatusWwebjsConsume)
       : container.resolve(WorkerConnectionStatusConsume);
+  const phoneValidationService =
+    module === ERouteModule.worker_wwebjs
+      ? container.resolve(WwebjsService)
+      : container.resolve(BaileysService);
   const grpcPort =
     module === ERouteModule.worker_wwebjs
       ? wwebjsEnvironment.grpcPort
@@ -100,8 +108,56 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     }
   };
 
+  const handleValidatePhone = (
+    call: ServerUnaryCall<IPhoneValidationRequest, IPhoneValidationResponse>,
+    callback: sendUnaryData<IPhoneValidationResponse>
+  ) => {
+    const req = call.request;
+
+    if (!req.phone || !req.phone_ddi) {
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message: 'Missing required fields: phone, phone_ddi',
+          details: 'Missing required fields: phone, phone_ddi',
+        },
+        null
+      );
+      return;
+    }
+
+    phoneValidationService
+      .validatePhone(req.phone_ddi, req.phone)
+      .then((result) => {
+        callback(null, {
+          request_id: req.request_id ?? '',
+          account_id: req.account_id ?? '',
+          worker_id: req.worker_id ?? '',
+          valid: result.valid,
+          jid: result.jid ?? '',
+          phone: result.phone ?? '',
+          error: '',
+        });
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err },
+          'Worker phone validation gRPC handler error'
+        );
+        callback(null, {
+          request_id: req.request_id ?? '',
+          account_id: req.account_id ?? '',
+          worker_id: req.worker_id ?? '',
+          valid: false,
+          error: msg,
+        });
+      });
+  };
+
   grpcServer.addService(WorkerConnectionService.service, {
     RequestConnection: handleRequestConnection,
+    ValidatePhone: handleValidatePhone,
   });
 
   const bind = `0.0.0.0:${grpcPort}`;

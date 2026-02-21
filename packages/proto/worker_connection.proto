@@ -4,6 +4,7 @@ package worker_connection;
 
 service WorkerConnection {
   rpc RequestConnection(StatusConnectionRequest) returns (WorkerConnectionResponse);
+  rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
 }
 
 message StatusConnectionRequest {
@@ -14,3 +15,21 @@ message StatusConnectionRequest {
 }
 
 message WorkerConnectionResponse {}
+
+message PhoneValidationRequest {
+  string request_id = 1;
+  string account_id = 2;
+  string worker_id = 3;
+  string phone = 4;
+  string phone_ddi = 5;
+}
+
+message PhoneValidationResponse {
+  string request_id = 1;
+  string account_id = 2;
+  string worker_id = 3;
+  bool valid = 4;
+  string jid = 5;
+  string phone = 6;
+  string error = 7;
+}

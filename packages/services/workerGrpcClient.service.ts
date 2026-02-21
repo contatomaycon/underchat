@@ -15,6 +15,8 @@ import {
 } from '@core/common/functions/workerCommandProtoMapper';
 import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
+import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
+import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +35,8 @@ const WorkerCommandClient = (protoDescriptor as any).worker_command
 if (!WorkerCommandClient) {
   throw new Error('WorkerCommand client not found in proto');
 }
+
+const GRPC_DEADLINE_MS = 10_000;
 
 @injectable()
 export class WorkerGrpcClientService {
@@ -107,6 +111,47 @@ export class WorkerGrpcClientService {
         }
         resolve();
       });
+    });
+  }
+
+  async validatePhone(
+    serverId: string,
+    payload: IPhoneValidationRequest,
+    timeoutMs: number = GRPC_DEADLINE_MS
+  ): Promise<IPhoneValidationResponse> {
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const address = `${host}:${port}`;
+    const client = new WorkerCommandClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + timeoutMs);
+
+    return new Promise<IPhoneValidationResponse>((resolve, reject) => {
+      (client as any).ValidatePhone(
+        payload,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IPhoneValidationResponse
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(
+            response ?? {
+              request_id: payload.request_id,
+              account_id: payload.account_id,
+              worker_id: payload.worker_id,
+              valid: false,
+              error: 'Empty gRPC response',
+            }
+          );
+        }
+      );
     });
   }
 }

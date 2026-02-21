@@ -1,13 +1,12 @@
 import { injectable, inject } from 'tsyringe';
 import { WorkerActiveByAccountViewerRepository } from '@core/repositories/worker/WorkerActiveByAccountViewer.repository';
 import { IWorkerActiveByAccount } from '@core/common/interfaces/IWorkerActiveByAccount';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import Redis from 'ioredis';
 import { v7 as uuidv7 } from 'uuid';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 
 @injectable()
 export class PhoneValidationService {
@@ -17,35 +16,10 @@ export class PhoneValidationService {
   constructor(
     @inject(WorkerActiveByAccountViewerRepository)
     private readonly workerActiveByAccountViewerRepository: WorkerActiveByAccountViewerRepository,
-    @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
-    @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService,
+    @inject(WorkerGrpcClientService)
+    private readonly workerGrpcClientService: WorkerGrpcClientService,
     @inject('Redis') private readonly redis: Redis
   ) {}
-
-  private async waitForResponse(
-    requestId: string,
-    timeout: number = this.defaultTimeout
-  ): Promise<IPhoneValidationResponse> {
-    const cacheKey = `phone_validation:${requestId}`;
-    const startTime = Date.now();
-    const pollInterval = 100;
-
-    while (Date.now() - startTime < timeout) {
-      const response = await this.redis.get(cacheKey);
-      if (response) {
-        const parsedResponse = JSON.parse(response) as IPhoneValidationResponse;
-
-        await this.redis.del(cacheKey);
-        return parsedResponse;
-      }
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-    }
-
-    await this.redis.del(cacheKey);
-    throw new Error('Phone validation timeout');
-  }
 
   private async validateWithWorker(
     worker: IWorkerActiveByAccount,
@@ -64,12 +38,11 @@ export class PhoneValidationService {
       phone_ddi: phoneDdi,
     };
 
-    const topic = this.kafkaBaileysQueueService.workerValidatePhone(
-      worker.worker_id
+    return this.workerGrpcClientService.validatePhone(
+      worker.server_id,
+      request,
+      timeout
     );
-    await this.streamProducerService.send(topic, request);
-
-    return this.waitForResponse(requestId, timeout);
   }
 
   private getCacheKey(
@@ -156,9 +129,11 @@ export class PhoneValidationService {
   private isRetryableError(error: Error): boolean {
     const retryableMessages = [
       'timeout',
+      'deadline exceeded',
       'No active worker',
       'disconnected',
       'connection',
+      'unavailable',
     ];
 
     return retryableMessages.some((msg) =>

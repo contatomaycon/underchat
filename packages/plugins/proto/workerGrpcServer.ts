@@ -23,6 +23,8 @@ import { IChangeConnectionStatusRequestProto } from '@core/common/interfaces/ICh
 import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotifyWorkerStatusRequestProto';
 import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
+import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
+import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -172,6 +174,41 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleValidatePhone = (
+    call: ServerUnaryCall<IPhoneValidationRequest, IPhoneValidationResponse>,
+    callback: sendUnaryData<IPhoneValidationResponse>
+  ) => {
+    const req = call.request;
+
+    if (!req.worker_id || !req.account_id || !req.phone || !req.phone_ddi) {
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message:
+            'Missing required fields: worker_id, account_id, phone, phone_ddi',
+          details:
+            'Missing required fields: worker_id, account_id, phone, phone_ddi',
+        },
+        null
+      );
+      return;
+    }
+
+    handler
+      .validatePhone(req)
+      .then((response) => {
+        callback(null, response);
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, workerId: req.worker_id },
+          'ValidatePhone gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   grpcServer.addService(WorkerCommandService.service, {
     CreateWorker: (
       call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
@@ -188,6 +225,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     ChangeConnectionStatus: handleChangeConnectionStatus,
     NotifyWorkerStatus: handleNotifyWorkerStatus,
     ResolveIncomingCallAction: handleResolveIncomingCallAction,
+    ValidatePhone: handleValidatePhone,
   });
 
   const port = balanceEnvironment.grpcPort;

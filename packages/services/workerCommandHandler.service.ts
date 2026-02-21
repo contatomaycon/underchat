@@ -26,6 +26,8 @@ import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotify
 import { currentTime } from '@core/common/functions/currentTime';
 import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
+import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
+import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -224,6 +226,40 @@ export class WorkerCommandHandlerService {
       show_message_on_call: showMessageText.length > 0,
       show_message_text: showMessageText,
     };
+  }
+
+  async validatePhone(
+    input: IPhoneValidationRequest
+  ): Promise<IPhoneValidationResponse> {
+    const workerId = input.worker_id?.trim();
+    const accountId = input.account_id?.trim();
+    const phone = input.phone?.trim();
+    const phoneDdi = input.phone_ddi?.trim();
+
+    if (!workerId || !accountId || !phone) {
+      throw new Error('Missing required fields: worker_id, account_id, phone');
+    }
+
+    if (!phoneDdi) {
+      throw new Error('Missing required field: phone_ddi');
+    }
+
+    const workerType = await this.resolveWorkerTypeForConnection(
+      workerId,
+      accountId
+    );
+
+    return this.workerBaileysGrpcClientService.validatePhone(
+      workerId,
+      {
+        ...input,
+        worker_id: workerId,
+        account_id: accountId,
+        phone,
+        phone_ddi: phoneDdi,
+      },
+      workerType
+    );
   }
 
   private async ensureContainerAndRequestConnection(

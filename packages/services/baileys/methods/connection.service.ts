@@ -55,15 +55,15 @@ async function getCachedWaWebVersion(): Promise<[number, number, number]> {
     return cachedWaVersion.version;
   }
 
-  const baileysResult = await fetchLatestBaileysVersion();
-  if (!('error' in baileysResult)) {
-    cachedWaVersion = { version: baileysResult.version, fetchedAt: Date.now() };
-    return baileysResult.version;
+  const waResult = await fetchLatestWaWebVersion();
+  if (!('error' in waResult)) {
+    cachedWaVersion = { version: waResult.version, fetchedAt: Date.now() };
+    return waResult.version;
   }
 
-  const waResult = await fetchLatestWaWebVersion();
-  cachedWaVersion = { version: waResult.version, fetchedAt: Date.now() };
-  return waResult.version;
+  const baileysResult = await fetchLatestBaileysVersion();
+  cachedWaVersion = { version: baileysResult.version, fetchedAt: Date.now() };
+  return baileysResult.version;
 }
 
 @singleton()
