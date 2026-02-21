@@ -102,6 +102,34 @@ export class WwebjsHealthCheckService {
     console.log('[WwebjsHealthCheck] Stopped');
   }
 
+  async notifyDisconnected(reason?: string): Promise<void> {
+    const result: HealthCheckResult = {
+      isHealthy: false,
+      reason: reason ?? 'Connection closed',
+      detectedStatus: Status.disconnected,
+      workerStatus: EWorkerStatus.offline,
+    };
+
+    if (
+      result.detectedStatus !== this.lastKnownStatus ||
+      result.workerStatus !== this.lastKnownWorkerStatus
+    ) {
+      console.log(
+        `[WwebjsHealthCheck] Status changed: ${this.lastKnownStatus} -> ${result.detectedStatus}, worker: ${this.lastKnownWorkerStatus} -> ${result.workerStatus}`
+      );
+
+      this.lastKnownStatus = result.detectedStatus;
+      this.lastKnownWorkerStatus = result.workerStatus;
+
+      await this.notifyStatusChange(undefined, result);
+    }
+  }
+
+  resetLastKnownStatus(): void {
+    this.lastKnownStatus = Status.initial;
+    this.lastKnownWorkerStatus = EWorkerStatus.disponible;
+  }
+
   async runHealthCheck(): Promise<HealthCheckResult> {
     if (!this.clientGetter || !this.statusGetter) {
       return {

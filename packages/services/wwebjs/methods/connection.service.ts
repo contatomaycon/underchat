@@ -227,6 +227,10 @@ export class WwebjsConnectionService {
 
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
+
+    await this.healthCheckService.notifyDisconnected(
+      disconnectedUser ? 'User requested disconnect' : 'Connection closed'
+    );
     this.healthCheckService.stop();
 
     if (disconnectedUser) {
@@ -597,8 +601,10 @@ export class WwebjsConnectionService {
 
       client.on('disconnected', (reason: string) => {
         this.connectionEstablished = false;
-        this.healthCheckService.stop();
         const statusCode = this.mapDisconnectReason(reason);
+
+        void this.healthCheckService.notifyDisconnected(reason);
+        this.healthCheckService.stop();
         this.setStatus(Status.disconnected, statusCode);
 
         const isMismatchedStatus =

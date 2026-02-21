@@ -345,6 +345,10 @@ export class BaileysConnectionService {
 
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
+
+    await this.healthCheckService.notifyDisconnected(
+      disconnectedUser ? 'User requested disconnect' : 'Connection closed'
+    );
     this.healthCheckService.stop();
 
     if (disconnectedUser) {
@@ -608,9 +612,13 @@ export class BaileysConnectionService {
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
     this.connectionEstablished = false;
-    this.healthCheckService.stop();
     const statusCode = this.extractStatusCode(last?.error);
     const statusMessage = this.extractStatusMessage(last?.error);
+
+    await this.healthCheckService.notifyDisconnected(
+      statusMessage ?? 'Connection closed'
+    );
+    this.healthCheckService.stop();
 
     if (statusCode === ECodeMessage.restartRequired) {
       this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
