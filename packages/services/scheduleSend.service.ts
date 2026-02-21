@@ -19,7 +19,10 @@ import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { scheduleMappings } from '@core/mappings/schedule.mappings';
 import Redis from 'ioredis';
-import { withLock } from '@core/common/functions/withLock';
+import {
+  LockAcquisitionTimeoutError,
+  withLock,
+} from '@core/common/functions/withLock';
 import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISchedulePendingData';
 import { IScheduleMessageResult } from '@core/common/interfaces/IScheduleMessageResult';
 import { IScheduleContactValidated } from '@core/common/interfaces/IScheduleContactValidated';
@@ -1227,63 +1230,72 @@ export class ScheduleSendService {
   private async processSingleSchedule(
     schedule: ISchedulePendingData
   ): Promise<void> {
-    await withLock(
-      this.redis,
-      `schedule:process:${schedule.schedule_id}`,
-      async () => {
-        try {
-          await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
-            schedule.schedule_id,
-            EScheduleStatus.processing
-          );
-
-          const contacts =
-            await this.scheduleContactsValidatedListerRepository.listValidatedContactsBySchedule(
+    try {
+      await withLock(
+        this.redis,
+        `schedule:process:${schedule.schedule_id}`,
+        async () => {
+          try {
+            await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
               schedule.schedule_id,
-              schedule.send_to,
-              schedule.account_id
+              EScheduleStatus.processing
             );
 
-          if (contacts.length === 0) {
+            const contacts =
+              await this.scheduleContactsValidatedListerRepository.listValidatedContactsBySchedule(
+                schedule.schedule_id,
+                schedule.send_to,
+                schedule.account_id
+              );
+
+            if (contacts.length === 0) {
+              await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
+                schedule.schedule_id,
+                EScheduleStatus.failed
+              );
+              return;
+            }
+
+            const results =
+              contacts.length <= this.BATCH_SIZE
+                ? await this.processContactsWithDelay(schedule, contacts)
+                : await this.processContactsInBatches(schedule, contacts);
+
+            const status = this.determineScheduleStatus(results);
+
+            await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
+              schedule.schedule_id,
+              status
+            );
+          } catch (error) {
+            console.error(
+              `Error processing schedule ${schedule.schedule_id}:`,
+              error
+            );
+
             await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
               schedule.schedule_id,
               EScheduleStatus.failed
             );
-            return;
+
+            throw error;
           }
-
-          const results =
-            contacts.length <= this.BATCH_SIZE
-              ? await this.processContactsWithDelay(schedule, contacts)
-              : await this.processContactsInBatches(schedule, contacts);
-
-          const status = this.determineScheduleStatus(results);
-
-          await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
-            schedule.schedule_id,
-            status
-          );
-        } catch (error) {
-          console.error(
-            `Error processing schedule ${schedule.schedule_id}:`,
-            error
-          );
-
-          await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
-            schedule.schedule_id,
-            EScheduleStatus.failed
-          );
-
-          throw error;
+        },
+        {
+          ttlMs: 300000,
+          retryMs: 500,
+          maxWaitMs: 1000,
+          preventDuplicate: true,
+          duplicateTtlSeconds: 300,
         }
-      },
-      {
-        ttlMs: 300000,
-        retryMs: 500,
-        preventDuplicate: true,
-        duplicateTtlSeconds: 300,
+      );
+    } catch (error) {
+      if (error instanceof LockAcquisitionTimeoutError) {
+        return;
       }
-    );
+
+      throw error;
+    }
   }
 
   async processSchedules(): Promise<void> {
@@ -1291,8 +1303,14 @@ export class ScheduleSendService {
       await this.schedulePendingListerRepository.listPendingSchedules();
     const uniqueSchedules = this.uniqueSchedulesById(schedules);
 
-    await Promise.all(
+    const results = await Promise.allSettled(
       uniqueSchedules.map((schedule) => this.processSingleSchedule(schedule))
     );
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.error('Error in schedule batch processing:', result.reason);
+      }
+    }
   }
 }

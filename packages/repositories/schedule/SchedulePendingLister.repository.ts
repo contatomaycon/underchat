@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { schedule, account, worker, chatbot } from '@core/models';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
-import { and, desc, eq, lte } from 'drizzle-orm';
+import { and, desc, eq, lte, or } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISchedulePendingData';
@@ -41,7 +41,10 @@ export class SchedulePendingListerRepository {
       .leftJoin(chatbot, eq(schedule.chatbot_id, chatbot.chatbot_id))
       .where(
         and(
-          eq(schedule.status, EScheduleStatus.pending),
+          or(
+            eq(schedule.status, EScheduleStatus.pending),
+            eq(schedule.status, EScheduleStatus.processing)
+          ),
           lte(schedule.send_date, now)
         )
       )

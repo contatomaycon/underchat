@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { AsyncTask, CronJob } from 'toad-scheduler';
 import { container } from 'tsyringe';
+import Redis from 'ioredis';
 import { ProfileStatusRenewalActivity } from '@core/jobs/activities/profileStatusRenewal.activities';
 import { BalanceMonitorActivity } from '@core/jobs/activities/balanceMonitor.activities';
 import { ChatbotInactivityActivity } from '@core/jobs/activities/chatbotInactivity.activities';
@@ -10,9 +11,15 @@ import { PlanExpirationReminderActivity } from '@core/jobs/activities/planExpira
 import { WorkerMonitorActivity } from '@core/jobs/activities/workerMonitor.activities';
 import { ScheduleSendActivity } from '@core/jobs/activities/scheduleSend.activities';
 import { AccountBucketCleanupActivity } from '@core/jobs/activities/accountBucketCleanup.activities';
+import {
+  LockAcquisitionTimeoutError,
+  withLock,
+} from '@core/common/functions/withLock';
 
 const JOB_TIMEZONE = 'America/Sao_Paulo';
 const WORKER_CREATION_CONCURRENCY = 10;
+const JOB_LOCK_TTL_MS = 60000;
+const JOB_LOCK_MAX_WAIT_MS = 500;
 
 const createAsyncTask = (
   server: FastifyInstance,
@@ -32,11 +39,13 @@ const createAsyncTask = (
 
 const createCronJob = (
   server: FastifyInstance,
+  redis: Redis,
   input: {
     jobId: string;
     cronExpression: string;
     handler: () => Promise<void>;
     preventOverrun?: boolean;
+    useDistributedLock?: boolean;
   }
 ): CronJob => {
   return new CronJob(
@@ -44,7 +53,31 @@ const createCronJob = (
       cronExpression: input.cronExpression,
       timezone: JOB_TIMEZONE,
     },
-    createAsyncTask(server, input.jobId, input.handler),
+    createAsyncTask(server, input.jobId, async () => {
+      if (input.useDistributedLock === false) {
+        await input.handler();
+        return;
+      }
+
+      try {
+        await withLock(
+          redis,
+          `job:cron:${input.jobId}`,
+          async () => input.handler(),
+          {
+            ttlMs: JOB_LOCK_TTL_MS,
+            retryMs: 100,
+            maxWaitMs: JOB_LOCK_MAX_WAIT_MS,
+          }
+        );
+      } catch (error) {
+        if (error instanceof LockAcquisitionTimeoutError) {
+          return;
+        }
+
+        throw error;
+      }
+    }),
     {
       id: input.jobId,
       preventOverrun: input.preventOverrun ?? true,
@@ -70,24 +103,25 @@ export function cronJobs(server: FastifyInstance): CronJob[] {
   const accountBucketCleanupActivity = container.resolve(
     AccountBucketCleanupActivity
   );
+  const redis = container.resolve<Redis>('Redis');
 
   return [
-    createCronJob(server, {
+    createCronJob(server, redis, {
       jobId: 'profile-status-renewal-schedule',
       cronExpression: '0 0 * * * *',
       handler: profileStatusRenewalActivity.renewPermanentStatuses,
     }),
-    createCronJob(server, {
+    createCronJob(server, redis, {
       jobId: 'balance-monitor-schedule',
       cronExpression: '0 * * * * *',
       handler: balanceMonitorActivity.monitor,
     }),
-    createCronJob(server, {
+    createCronJob(server, redis, {
       jobId: 'chatbot-inactivity-schedule',
       cronExpression: '*/30 * * * * *',
       handler: chatbotInactivityActivity.processScheduledInactivityChecks,
     }),
-    createCronJob(server, {
+    createCronJob(server, redis, {
       jobId: 'worker-creation-schedule',
       cronExpression: '0 * * * * *',
       handler: async () => {
@@ -116,28 +150,29 @@ export function cronJobs(server: FastifyInstance): CronJob[] {
         }
       },
     }),
-    createCronJob(server, {
+    createCronJob(server, redis, {
       jobId: 'plan-renewal-schedule',
       cronExpression: '0 0 * * * *',
       handler: planRenewalActivity.processPlanRenewals,
     }),
-    createCronJob(server, {
+    createCronJob(server, redis, {
       jobId: 'plan-expiration-reminder-schedule',
       cronExpression: '0 0 * * * *',
       handler: planExpirationReminderActivity.processPlanExpirationReminders,
     }),
-    createCronJob(server, {
+    createCronJob(server, redis, {
       jobId: 'worker-monitor-schedule',
       cronExpression: '0 */10 * * * *',
       handler: workerMonitorActivity.monitor,
     }),
-    createCronJob(server, {
+    createCronJob(server, redis, {
       jobId: 'schedule-send-schedule',
       cronExpression: '0 * * * * *',
       handler: scheduleSendActivity.processScheduleSends,
       preventOverrun: false,
+      useDistributedLock: false,
     }),
-    createCronJob(server, {
+    createCronJob(server, redis, {
       jobId: 'account-bucket-cleanup-schedule',
       cronExpression: '0 0 0 * * *',
       handler: accountBucketCleanupActivity.processExpiredAccountBuckets,
