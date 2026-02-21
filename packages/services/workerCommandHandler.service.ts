@@ -28,7 +28,8 @@ import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
-import { ServerService } from '@core/services/server.service';
+import { ServerSshViewerRepository } from '@core/repositories/server/ServerSshViewer.repository';
+import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -60,8 +61,10 @@ export class WorkerCommandHandlerService {
     private readonly containerHealthService: ContainerHealthService,
     @inject(WorkerBaileysGrpcClientService)
     private readonly workerBaileysGrpcClientService: WorkerBaileysGrpcClientService,
-    @inject(ServerService)
-    private readonly serverService: ServerService
+    @inject(ServerSshViewerRepository)
+    private readonly serverSshViewerRepository: ServerSshViewerRepository,
+    @inject(PasswordEncryptorService)
+    private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
 
   private isTopicOrPartitionMissing(err: unknown): boolean {
@@ -470,7 +473,23 @@ export class WorkerCommandHandlerService {
     | undefined
   > {
     try {
-      const proxy = await this.serverService.viewServerProxyById(serverId);
+      const server =
+        await this.serverSshViewerRepository.viewServerSshById(serverId);
+      if (!server) {
+        return undefined;
+      }
+
+      const proxy = {
+        enabled: server.proxy_enabled,
+        host: server.proxy_host,
+        port: server.proxy_port,
+        username: server.proxy_username
+          ? this.passwordEncryptorService.decrypt(server.proxy_username)
+          : null,
+        password: server.proxy_password
+          ? this.passwordEncryptorService.decrypt(server.proxy_password)
+          : null,
+      };
 
       if (
         !proxy?.enabled ||
