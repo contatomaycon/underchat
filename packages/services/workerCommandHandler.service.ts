@@ -143,11 +143,28 @@ export class WorkerCommandHandlerService {
   async notifyWorkerStatus(
     input: INotifyWorkerStatusRequestProto
   ): Promise<void> {
+    console.log('[NotifyWorkerStatus] Received input:', {
+      worker_id: input.worker_id,
+      account_id: input.account_id,
+      worker_status_id: input.worker_status_id,
+      phone: input.phone,
+      disconnected_user: input.disconnected_user,
+    });
+
     const workerId = input.worker_id;
     const accountId = input.account_id;
     const workerStatusId = input.worker_status_id as EWorkerStatus | undefined;
 
     if (!workerId || !accountId || !workerStatusId) {
+      console.log(
+        '[NotifyWorkerStatus] Missing required fields, returning early',
+        {
+          hasWorkerId: !!workerId,
+          hasAccountId: !!accountId,
+          hasWorkerStatusId: !!workerStatusId,
+          workerStatusIdValue: workerStatusId,
+        }
+      );
       return;
     }
 
@@ -186,20 +203,56 @@ export class WorkerCommandHandlerService {
     const view =
       await this.workerService.viewWorkerPhoneConnectionDate(workerId);
 
+    console.log('[NotifyWorkerStatus] View from DB:', {
+      workerId,
+      view,
+    });
+
     const inputPhone = input.phone?.trim() || null;
     const phoneNumber = inputPhone ?? view?.number ?? null;
+
+    console.log('[NotifyWorkerStatus] Phone resolution:', {
+      inputPhoneRaw: input.phone,
+      inputPhoneTrimmed: inputPhone,
+      viewNumber: view?.number,
+      finalPhoneNumber: phoneNumber,
+    });
 
     let connectionDate = view?.connection_date;
     if (workerStatusId === EWorkerStatus.online && phoneNumber) {
       connectionDate = currentTime();
+      console.log(
+        '[NotifyWorkerStatus] Setting new connection date:',
+        connectionDate
+      );
     }
 
-    await this.workerService.updateWorkerPhoneStatusConnectionDate({
+    const updatePayload = {
       worker_id: workerId,
       status: workerStatusId,
       number: phoneNumber,
       connection_date: connectionDate,
+    };
+
+    console.log(
+      '[NotifyWorkerStatus] Calling updateWorkerPhoneStatusConnectionDate with:',
+      updatePayload
+    );
+
+    const updateResult =
+      await this.workerService.updateWorkerPhoneStatusConnectionDate({
+        worker_id: workerId,
+        status: workerStatusId,
+        number: phoneNumber,
+        connection_date: connectionDate,
+      });
+
+    console.log('[NotifyWorkerStatus] Update result:', {
+      success: updateResult,
+      workerId,
+      workerStatusId,
     });
+
     await Promise.all([
       this.centrifugoPublish(payload),
       this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
