@@ -2,14 +2,19 @@ import type { WASocket } from '@whiskeysockets/baileys';
 import type WebSocket from 'ws';
 import { singleton, inject } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
+import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
+import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 
 const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
 const WORKER = baileysEnvironment.baileysWorkerId;
@@ -40,6 +45,8 @@ export class BaileysHealthCheckService {
   constructor(
     @inject(CentrifugoService)
     private readonly centrifugo: CentrifugoService,
+    @inject(ElasticDatabaseService)
+    private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(BalanceWorkerStatusGrpcClientService)
     private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService
   ) {}
@@ -260,6 +267,14 @@ export class BaileysHealthCheckService {
         error
       );
     }
+
+    await this.saveLogWppConnection({
+      worker_id: WORKER,
+      status: result.detectedStatus,
+      code: payload.code?.toString(),
+      message: result.reason ?? 'Health check status update',
+      date: new Date(),
+    });
   }
 
   private resolveWebSocket(socket: WASocket): WebSocket | undefined {
@@ -296,4 +311,33 @@ export class BaileysHealthCheckService {
 
     return undefined;
   }
+
+  private readonly saveLogWppConnection = async (
+    wppLog: EWppConnection
+  ): Promise<boolean> => {
+    const mappings = wppConnectionMappings();
+    const result = await this.elasticDatabaseService.indices(
+      EElasticIndex.wpp_connection,
+      mappings
+    );
+
+    if (!result || !wppLog) {
+      return false;
+    }
+
+    const documentId = buildWppConnectionDocumentId(ACCOUNT, wppLog.worker_id);
+
+    const updateResult = await this.elasticDatabaseService.updateWithOCC(
+      EElasticIndex.wpp_connection,
+      documentId,
+      wppLog as unknown as Record<string, unknown>,
+      { upsert: true, maxRetries: 5 }
+    );
+
+    return (
+      updateResult === 'updated' ||
+      updateResult === 'created' ||
+      updateResult === 'noop'
+    );
+  };
 }
