@@ -26,9 +26,11 @@ import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppCon
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { triggerConnectionEstablished } from '../callbacks';
 import { WwebjsIncomingMessageService } from './incoming.service';
+import { WwebjsHealthCheckService } from './healthCheck.service';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 
 const FOLDER = `/app/data/wwebjs/storage/${wwebjsEnvironment.wwebjsWorkerId}`;
+const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const CHANNEL = workerCentrifugoQueue(wwebjsEnvironment.wwebjsAccountId);
 const CHAT_CHANNEL = chatAccountCentrifugo(wwebjsEnvironment.wwebjsAccountId);
 const WORKER = wwebjsEnvironment.wwebjsWorkerId;
@@ -73,8 +75,36 @@ export class WwebjsConnectionService {
     @inject(BalanceWorkerStatusGrpcClientService)
     private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
     @inject(WwebjsIncomingMessageService)
-    private readonly incomingMessageService: WwebjsIncomingMessageService
-  ) {}
+    private readonly incomingMessageService: WwebjsIncomingMessageService,
+    @inject(WwebjsHealthCheckService)
+    private readonly healthCheckService: WwebjsHealthCheckService
+  ) {
+    this.configureHealthCheck();
+  }
+
+  private configureHealthCheck(): void {
+    this.healthCheckService.configure({
+      getClient: () => this.client,
+      getStatus: () => this.status,
+      onStatusMismatch: (detectedStatus) => {
+        this.handleHealthCheckMismatch(detectedStatus);
+      },
+    });
+  }
+
+  private handleHealthCheckMismatch(detectedStatus: Status): void {
+    if (detectedStatus === Status.disconnected && this.connectionEstablished) {
+      console.log(
+        '[WwebjsConnection] Health check detected disconnection, triggering reconnect'
+      );
+      this.connectionEstablished = false;
+      this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
+
+      if (!this.userRequestedDisconnect) {
+        this.reconnect({ initial_connection: this.initialConnection });
+      }
+    }
+  }
 
   get connected(): boolean {
     return this.connectionEstablished && this.status === Status.connected;
@@ -173,6 +203,7 @@ export class WwebjsConnectionService {
 
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
+    this.healthCheckService.stop();
 
     if (disconnectedUser) {
       this.userRequestedDisconnect = true;
@@ -238,6 +269,7 @@ export class WwebjsConnectionService {
     this.currentPromise = undefined;
     this.connecting = false;
     this.connectionEstablished = false;
+    this.healthCheckService.stop();
     this.incomingMessageService.unbind();
 
     if (this.client) {
@@ -516,6 +548,7 @@ export class WwebjsConnectionService {
         };
 
         this.publishSub(payload);
+        this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
         triggerConnectionEstablished();
         this.pendingResolve?.(this.state());
         this.pendingResolve = undefined;
@@ -523,6 +556,7 @@ export class WwebjsConnectionService {
 
       client.on('disconnected', (reason: string) => {
         this.connectionEstablished = false;
+        this.healthCheckService.stop();
         const statusCode = this.mapDisconnectReason(reason);
         this.setStatus(Status.disconnected, statusCode);
 

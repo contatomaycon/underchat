@@ -29,11 +29,13 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { BaileysIncomingMessageService } from './incoming.service';
+import { BaileysHealthCheckService } from './healthCheck.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { triggerConnectionEstablished } from '../callbacks';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
+const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
 const WORKER = baileysEnvironment.baileysWorkerId;
 const ACCOUNT = baileysEnvironment.baileysAccountId;
@@ -98,8 +100,36 @@ export class BaileysConnectionService {
     @inject(BalanceWorkerStatusGrpcClientService)
     private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
     @inject(BaileysIncomingMessageService)
-    private readonly baileysIncomingMessageService: BaileysIncomingMessageService
-  ) {}
+    private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
+    @inject(BaileysHealthCheckService)
+    private readonly healthCheckService: BaileysHealthCheckService
+  ) {
+    this.configureHealthCheck();
+  }
+
+  private configureHealthCheck(): void {
+    this.healthCheckService.configure({
+      getSocket: () => this.socket,
+      getStatus: () => this.status,
+      onStatusMismatch: (detectedStatus) => {
+        this.handleHealthCheckMismatch(detectedStatus);
+      },
+    });
+  }
+
+  private handleHealthCheckMismatch(detectedStatus: Status): void {
+    if (detectedStatus === Status.disconnected && this.connectionEstablished) {
+      console.log(
+        '[BaileysConnection] Health check detected disconnection, triggering reconnect'
+      );
+      this.connectionEstablished = false;
+      this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
+
+      if (!this.userRequestedDisconnect) {
+        this.reconnect({ initial_connection: this.initialConnection });
+      }
+    }
+  }
 
   get connected(): boolean {
     return this.connectionEstablished && this.status === Status.connected;
@@ -296,6 +326,7 @@ export class BaileysConnectionService {
 
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
+    this.healthCheckService.stop();
 
     if (disconnectedUser) {
       this.userRequestedDisconnect = true;
@@ -536,6 +567,8 @@ export class BaileysConnectionService {
     this.publishSub(payload);
     this.lastStatusPayload = JSON.stringify(payload);
 
+    this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
+
     triggerConnectionEstablished();
 
     resolve(this.state());
@@ -548,6 +581,7 @@ export class BaileysConnectionService {
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
     this.connectionEstablished = false;
+    this.healthCheckService.stop();
     const statusCode = this.extractStatusCode(last?.error);
     const statusMessage = this.extractStatusMessage(last?.error);
 
