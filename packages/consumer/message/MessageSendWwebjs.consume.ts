@@ -36,7 +36,6 @@ import { webcrypto } from 'node:crypto';
 export class MessageSendWwebjsConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
-  private readonly CHAT_QUEUE_TIMEOUT_MS = 120000;
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
     new Map();
 
@@ -283,9 +282,7 @@ export class MessageSendWwebjsConsume {
     chatId: string,
     task: () => Promise<void>
   ): Promise<void> {
-    await this.keyedSequencerService.enqueue(chatId, task, {
-      timeoutMs: this.CHAT_QUEUE_TIMEOUT_MS,
-    });
+    await this.keyedSequencerService.enqueue(chatId, task);
   }
 
   private isTransientError(error: unknown): boolean {
