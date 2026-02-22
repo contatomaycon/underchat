@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { UserService } from '@core/services/user.service';
 import { PermissionService } from '@core/services/permission.service';
 import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.schema';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 @injectable()
 export class UserRoleAssignerUseCase {
@@ -65,12 +66,29 @@ export class UserRoleAssignerUseCase {
     }
   }
 
+  private async validateProtectedUserRoleUpdate(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    currentUserId?: string
+  ): Promise<void> {
+    if (currentUserId && userId === currentUserId) {
+      throw new Error(t('cannot_change_own_access_group'));
+    }
+
+    const targetUserRoleId = await this.userService.getUserRole(userId);
+
+    if (targetUserRoleId === EPermissionRole.master) {
+      throw new Error(t('permission_denied'));
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
     accountId: string,
     input: AssignUserRoleRequest,
-    canOperateOnOthers: boolean
+    canOperateOnOthers: boolean,
+    currentUserId?: string
   ): Promise<boolean> {
     if (!canOperateOnOthers) {
       await this.validateUserExistsInAccount(t, userId, accountId);
@@ -84,6 +102,8 @@ export class UserRoleAssignerUseCase {
     const accountIdForValidation = canOperateOnOthers
       ? (userAccountId ?? accountId)
       : accountId;
+
+    await this.validateProtectedUserRoleUpdate(t, userId, currentUserId);
 
     await this.validatePermissionRoleExists(
       t,

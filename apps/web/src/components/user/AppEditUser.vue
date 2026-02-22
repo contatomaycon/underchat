@@ -19,6 +19,7 @@ import { requiredValidator } from '@/@webcore/utils/validators';
 import { usePasswordStrength } from '@/composables/usePasswordStrength';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import { can } from '@/@layouts/plugins/casl';
 import { getUser } from '@/@webcore/localStorage/user';
 
@@ -63,6 +64,15 @@ const initialChannelIds = ref<string[]>([]);
 const channelsOptions = ref<
   { channel_id: string; name: string; number: string | null }[]
 >([]);
+const isEditingMasterUser = computed(() => {
+  return (
+    permissionRoleId.value === EPermissionRole.master ||
+    initialPermissionRoleId.value === EPermissionRole.master
+  );
+});
+const canEditAccessGroup = computed(
+  () => !isEditingOwnUser.value && !isEditingMasterUser.value
+);
 
 const uniqueSectorsOptions = computed(() => {
   const seen = new Set<string>();
@@ -1806,7 +1816,7 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
   }
 
   if (
-    !isEditingOwnUser.value &&
+    canEditAccessGroup.value &&
     permissionRoleId.value !== initialPermissionRoleId.value
   ) {
     body.permission_role_id = {
@@ -2728,7 +2738,7 @@ watch(
             <VWindowItem value="permissions">
               <VForm class="mt-4" @submit.prevent>
                 <VRow class="mb-4">
-                  <VCol cols="12" md="6">
+                  <VCol v-if="canEditAccessGroup" cols="12" md="6">
                     <VLabel class="text-body-2 mb-1"
                       >{{ $t('access_group') }}:</VLabel
                     >
@@ -2773,9 +2783,7 @@ watch(
                       </template>
                     </AppSelectSearch>
                   </VCol>
-                </VRow>
-                <VRow class="mb-4">
-                  <VCol cols="12">
+                  <VCol cols="12" :md="canEditAccessGroup ? 12 : 6">
                     <AppSelectSearch
                       v-model="channelIds"
                       :items="uniqueChannelsOptions"

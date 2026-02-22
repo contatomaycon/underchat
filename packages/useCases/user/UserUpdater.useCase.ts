@@ -19,6 +19,7 @@ import { PermissionService } from '@core/services/permission.service';
 import { validatePassword } from '@core/common/utils/passwordValidator';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 @injectable()
 export class UserUpdaterUseCase {
@@ -1074,6 +1075,27 @@ export class UserUpdaterUseCase {
     }
   }
 
+  private async sanitizePermissionRoleUpdateForProtectedUsers(
+    userId: string,
+    body: UpdateUserRequest,
+    currentUserId?: string
+  ): Promise<void> {
+    if (body.permission_role_id === undefined) {
+      return;
+    }
+
+    if (currentUserId && userId === currentUserId) {
+      delete body.permission_role_id;
+      return;
+    }
+
+    const targetUserRoleId = await this.userService.getUserRole(userId);
+
+    if (targetUserRoleId === EPermissionRole.master) {
+      delete body.permission_role_id;
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
@@ -1085,14 +1107,6 @@ export class UserUpdaterUseCase {
     this.processSectorIdsFromMultipartFormData(body);
     this.processChannelIdsFromMultipartFormData(body);
 
-    if (
-      currentUserId &&
-      userId === currentUserId &&
-      body.permission_role_id !== undefined
-    ) {
-      throw new Error(t('cannot_change_own_access_group'));
-    }
-
     if (!canOperateOnOthers) {
       await this.validateUserExistsInAccount(t, userId, accountId);
     }
@@ -1100,6 +1114,12 @@ export class UserUpdaterUseCase {
     if (canOperateOnOthers) {
       await this.validateUserExists(t, userId);
     }
+
+    await this.sanitizePermissionRoleUpdateForProtectedUsers(
+      userId,
+      body,
+      currentUserId
+    );
 
     const updatePromises = await this.buildUpdatePromises(
       t,
