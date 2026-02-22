@@ -21,10 +21,12 @@ import { ScheduleMessagesListerRepository } from '@core/repositories/schedule/Sc
 import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleMessages/request.schema';
 import { ListScheduleMessagesResponse } from '@core/schema/schedule/listScheduleMessages/response.schema';
 import { IUpdateSchedule } from '@core/interfaces/repositories/schedule/IUpdateSchedule';
+import { ScheduleControlRepository } from '@core/repositories/schedule/ScheduleControl.repository';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { EncryptService } from '@core/services/encrypt.service';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 
 @injectable()
 export class ScheduleService {
@@ -51,6 +53,8 @@ export class ScheduleService {
     private readonly scheduleContactGroupsListerRepository: ScheduleContactGroupsListerRepository,
     @inject(ScheduleMessagesListerRepository)
     private readonly scheduleMessagesListerRepository: ScheduleMessagesListerRepository,
+    @inject(ScheduleControlRepository)
+    private readonly scheduleControlRepository: ScheduleControlRepository,
     @inject(EncryptService)
     private readonly encryptService: EncryptService
   ) {}
@@ -106,6 +110,39 @@ export class ScheduleService {
 
   deleteScheduleById = async (scheduleId: string): Promise<boolean> => {
     return this.scheduleDeleterRepository.deleteScheduleById(scheduleId);
+  };
+
+  findScheduleControlById = async (
+    scheduleId: string,
+    accountId: string
+  ): Promise<{
+    schedule_id: string;
+    account_id: string;
+    status: EScheduleStatus;
+    send_date: string;
+  } | null> => {
+    return this.scheduleControlRepository.findByIdAndAccount(
+      scheduleId,
+      accountId
+    );
+  };
+
+  getScheduleStatusById = async (
+    scheduleId: string
+  ): Promise<EScheduleStatus | null> => {
+    return this.scheduleControlRepository.getScheduleStatusById(scheduleId);
+  };
+
+  startScheduleNow = async (scheduleId: string): Promise<boolean> => {
+    return this.scheduleControlRepository.startScheduleNow(scheduleId);
+  };
+
+  pauseSchedule = async (scheduleId: string): Promise<boolean> => {
+    return this.scheduleControlRepository.pauseSchedule(scheduleId);
+  };
+
+  cancelSchedule = async (scheduleId: string): Promise<boolean> => {
+    return this.scheduleControlRepository.cancelSchedule(scheduleId);
   };
 
   updateScheduleById = async (

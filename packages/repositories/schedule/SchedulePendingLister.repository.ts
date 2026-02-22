@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { schedule, account, worker, chatbot } from '@core/models';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
-import { and, desc, eq, lte, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, lte } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISchedulePendingData';
@@ -9,13 +9,28 @@ import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISc
 @injectable()
 export class SchedulePendingListerRepository {
   constructor(
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
-  listPendingSchedules = async (): Promise<ISchedulePendingData[]> => {
-    const now = new Date().toISOString();
+  private buildBaseQuery(
+    db: NodePgDatabase<typeof schema>,
+    now: string,
+    scheduleId?: string
+  ) {
+    const statusCondition = inArray(schedule.status, [
+      EScheduleStatus.pending,
+      EScheduleStatus.processing,
+    ]);
+    const whereCondition = scheduleId
+      ? and(
+          statusCondition,
+          lte(schedule.send_date, now),
+          eq(schedule.schedule_id, scheduleId)
+        )
+      : and(statusCondition, lte(schedule.send_date, now));
 
-    const result = await this.dbRo
+    return db
       .select({
         schedule_id: schedule.schedule_id,
         account_id: schedule.account_id,
@@ -39,19 +54,30 @@ export class SchedulePendingListerRepository {
       .leftJoin(account, eq(schedule.account_id, account.account_id))
       .leftJoin(worker, eq(schedule.worker_id, worker.worker_id))
       .leftJoin(chatbot, eq(schedule.chatbot_id, chatbot.chatbot_id))
-      .where(
-        and(
-          or(
-            eq(schedule.status, EScheduleStatus.pending),
-            eq(schedule.status, EScheduleStatus.processing)
-          ),
-          lte(schedule.send_date, now)
-        )
-      )
-      .orderBy(desc(schedule.created_at))
-      .execute();
+      .where(whereCondition)
+      .orderBy(desc(schedule.created_at));
+  }
 
-    return result.map((item) => ({
+  private mapResultToPending(item: {
+    schedule_id: string;
+    account_id: string;
+    account_name: string | null;
+    worker_id: string;
+    worker_name: string | null;
+    type: string;
+    send_to: string;
+    send_speed: string | null;
+    chatbot_id: string | null;
+    chatbot_name: string | null;
+    message: string | null;
+    url: string | null;
+    mimetype: string | null;
+    duration: number | null;
+    width: number | null;
+    height: number | null;
+    send_date: string;
+  }): ISchedulePendingData {
+    return {
       schedule_id: item.schedule_id,
       account_id: item.account_id,
       account_name: item.account_name ?? '',
@@ -69,6 +95,30 @@ export class SchedulePendingListerRepository {
       width: item.width,
       height: item.height,
       send_date: item.send_date,
-    }));
+    };
+  }
+
+  listPendingSchedules = async (): Promise<ISchedulePendingData[]> => {
+    const now = new Date().toISOString();
+
+    const result = await this.buildBaseQuery(this.dbRo, now).execute();
+
+    return result.map((item) => this.mapResultToPending(item));
+  };
+
+  listPendingScheduleById = async (
+    scheduleId: string
+  ): Promise<ISchedulePendingData | null> => {
+    const now = new Date().toISOString();
+
+    const result = await this.buildBaseQuery(this.dbRw, now, scheduleId)
+      .limit(1)
+      .execute();
+
+    if (!result.length) {
+      return null;
+    }
+
+    return this.mapResultToPending(result[0]);
   };
 }

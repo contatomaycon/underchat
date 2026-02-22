@@ -35,12 +35,6 @@ const permissionsEdit = [
   ESchedulePermissions.schedule_group,
   ESchedulePermissions.schedule_update,
 ];
-const permissionsDelete = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  ESchedulePermissions.schedule_group,
-  ESchedulePermissions.schedule_delete,
-];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
@@ -263,6 +257,8 @@ const getSendToLabel = (sendTo: string): string => {
 const getStatusLabel = (status: string): string => {
   if (status === EScheduleStatus.pending) return t('pending');
   if (status === EScheduleStatus.processing) return t('processing');
+  if (status === EScheduleStatus.paused) return t('paused');
+  if (status === EScheduleStatus.canceled) return t('canceled');
   if (status === EScheduleStatus.sent) return t('sent');
   if (status === EScheduleStatus.failed) return t('failed');
   if (status === EScheduleStatus.limit_exhausted) return t('limit_exhausted');
@@ -273,6 +269,8 @@ const getStatusLabel = (status: string): string => {
 const getStatusColor = (status: string): string => {
   if (status === EScheduleStatus.pending) return 'warning';
   if (status === EScheduleStatus.processing) return 'info';
+  if (status === EScheduleStatus.paused) return 'secondary';
+  if (status === EScheduleStatus.canceled) return 'error';
   if (status === EScheduleStatus.sent) return 'success';
   if (status === EScheduleStatus.failed) return 'error';
   if (status === EScheduleStatus.limit_exhausted) return 'error';
@@ -280,8 +278,23 @@ const getStatusColor = (status: string): string => {
   return 'default';
 };
 
-const isDialogDeleterShow = ref(false);
-const scheduleToDelete = ref<string | null>(null);
+const canStartSchedule = (status: string): boolean => {
+  return (
+    status === EScheduleStatus.pending || status === EScheduleStatus.paused
+  );
+};
+
+const canPauseSchedule = (status: string): boolean => {
+  return status === EScheduleStatus.processing;
+};
+
+const canCancelSchedule = (status: string): boolean => {
+  return (
+    status === EScheduleStatus.pending ||
+    status === EScheduleStatus.processing ||
+    status === EScheduleStatus.paused
+  );
+};
 
 const isDialogEditScheduleShow = ref(false);
 const isAddScheduleVisible = ref(false);
@@ -335,23 +348,6 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
-const deleteSchedule = async (id: string) => {
-  scheduleToDelete.value = id;
-
-  isDialogDeleterShow.value = true;
-};
-
-const handleDelete = async () => {
-  if (!scheduleToDelete.value) return;
-
-  const result = await scheduleStore.deleteSchedule(scheduleToDelete.value);
-  if (result) {
-    await scheduleStore.listSchedule(query.value);
-  }
-
-  scheduleToDelete.value = null;
-};
-
 const openEditDialog = (id: string) => {
   scheduleToEdit.value = id;
 
@@ -361,6 +357,28 @@ const openEditDialog = (id: string) => {
 const openViewMessagesDialog = (id: string) => {
   scheduleToView.value = id;
   isViewMessagesDialogShow.value = true;
+};
+
+const startOrPauseSchedule = async (item: ListScheduleResponse) => {
+  if (!item.schedule_id) return;
+
+  const result = canPauseSchedule(item.status)
+    ? await scheduleStore.pauseSchedule(item.schedule_id)
+    : await scheduleStore.startSchedule(item.schedule_id);
+
+  if (result) {
+    await scheduleStore.listSchedule(query.value);
+  }
+};
+
+const cancelScheduleAction = async (item: ListScheduleResponse) => {
+  if (!item.schedule_id) return;
+
+  const result = await scheduleStore.cancelSchedule(item.schedule_id);
+
+  if (result) {
+    await scheduleStore.listSchedule(query.value);
+  }
 };
 
 watch(
@@ -537,6 +555,55 @@ watch(
                     @click="openEditDialog(item.schedule_id)"
                 /></IconBtn>
 
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) &&
+                    item.schedule_id &&
+                    (canStartSchedule(item.status) ||
+                      canPauseSchedule(item.status))
+                  "
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{
+                      canPauseSchedule(item.status)
+                        ? $t('pause_schedule')
+                        : $t('start_schedule')
+                    }}</span>
+                  </VTooltip>
+                  <VIcon
+                    :icon="
+                      canPauseSchedule(item.status)
+                        ? 'tabler-player-pause'
+                        : 'tabler-player-play'
+                    "
+                    @click="startOrPauseSchedule(item)"
+                  />
+                </IconBtn>
+
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) &&
+                    item.schedule_id &&
+                    canCancelSchedule(item.status)
+                  "
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('cancel_schedule') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-ban"
+                    @click="cancelScheduleAction(item)"
+                  />
+                </IconBtn>
+
                 <IconBtn v-if="item.schedule_id"
                   ><VTooltip
                     location="top"
@@ -547,19 +614,6 @@ watch(
                   ><VIcon
                     icon="tabler-eye"
                     @click="openViewMessagesDialog(item.schedule_id)"
-                /></IconBtn>
-
-                <IconBtn
-                  v-if="$canPermission(permissionsDelete) && item.schedule_id"
-                  ><VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('delete_schedule') }}</span> </VTooltip
-                  ><VIcon
-                    icon="tabler-trash"
-                    @click="deleteSchedule(item.schedule_id)"
                 /></IconBtn>
               </div>
             </template>
@@ -680,14 +734,6 @@ watch(
           </VCardText>
         </VCard>
       </VDialog>
-
-      <VDialogHandler
-        v-if="isDialogDeleterShow"
-        v-model="isDialogDeleterShow"
-        :title="$t('delete_schedule')"
-        :message="$t('delete_schedule_confirmation')"
-        @confirm="handleDelete"
-      />
 
       <AppEditSchedule
         v-if="isDialogEditScheduleShow"

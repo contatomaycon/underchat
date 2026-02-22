@@ -25,6 +25,7 @@ import { ListScheduleContactGroupsFinalResponse } from '@core/schema/schedule/li
 import { ListScheduleContactsRequest } from '@core/schema/schedule/listScheduleContacts/request.schema';
 import { ListScheduleMessagesResponse } from '@core/schema/schedule/listScheduleMessages/response.schema';
 import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleMessages/request.schema';
+import { EScheduleAction } from '@core/common/enums/EScheduleAction';
 
 export const useScheduleStore = defineStore('schedule', {
   state: () => ({
@@ -275,6 +276,62 @@ export const useScheduleStore = defineStore('schedule', {
 
         return false;
       }
+    },
+
+    async updateScheduleAction(
+      scheduleId: string,
+      action: EScheduleAction
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/schedule/${scheduleId}/action/${action}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('schedule_action_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data?.message ?? this.i18n.global.t('schedule_action_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('schedule_action_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async startSchedule(scheduleId: string): Promise<boolean> {
+      return this.updateScheduleAction(scheduleId, EScheduleAction.start);
+    },
+
+    async pauseSchedule(scheduleId: string): Promise<boolean> {
+      return this.updateScheduleAction(scheduleId, EScheduleAction.pause);
+    },
+
+    async cancelSchedule(scheduleId: string): Promise<boolean> {
+      return this.updateScheduleAction(scheduleId, EScheduleAction.cancel);
     },
 
     async listScheduleWorkers(): Promise<ListScheduleWorkersFinalResponse | null> {

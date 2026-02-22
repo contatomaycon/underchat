@@ -47,11 +47,12 @@ import {
   IUpsertMessage,
   IUpsertMessageEnvelope,
 } from '@core/common/interfaces/IUpsertMessage';
+import { ScheduleControlRepository } from '@core/repositories/schedule/ScheduleControl.repository';
 
 @injectable()
 export class ScheduleSendService {
-  private readonly BATCH_SIZE = 10;
   private readonly BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+  private readonly STATUS_POLL_INTERVAL_MS = 2000;
 
   constructor(
     @inject(SchedulePendingListerRepository)
@@ -76,6 +77,8 @@ export class ScheduleSendService {
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
     @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(ScheduleControlRepository)
+    private readonly scheduleControlRepository: ScheduleControlRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -112,6 +115,51 @@ export class ScheduleSendService {
 
   private getProtocol(): string {
     return generateProtocol();
+  }
+
+  private isExecutionAllowedStatus(status: EScheduleStatus | null): boolean {
+    return (
+      status === EScheduleStatus.pending ||
+      status === EScheduleStatus.processing
+    );
+  }
+
+  private async getCurrentScheduleStatus(
+    scheduleId: string
+  ): Promise<EScheduleStatus | null> {
+    return this.scheduleControlRepository.getScheduleStatusById(scheduleId);
+  }
+
+  private async canContinueScheduleProcessing(
+    scheduleId: string
+  ): Promise<boolean> {
+    const status = await this.getCurrentScheduleStatus(scheduleId);
+    return this.isExecutionAllowedStatus(status);
+  }
+
+  private async waitForDispatchWindow(
+    scheduleId: string,
+    sendSpeed: string | undefined
+  ): Promise<boolean> {
+    const totalDelayMs = this.getRandomDelayMs(sendSpeed);
+    if (totalDelayMs <= 0) {
+      return this.canContinueScheduleProcessing(scheduleId);
+    }
+
+    let elapsed = 0;
+    while (elapsed < totalDelayMs) {
+      const status = await this.getCurrentScheduleStatus(scheduleId);
+      if (!this.isExecutionAllowedStatus(status)) {
+        return false;
+      }
+
+      const remaining = totalDelayMs - elapsed;
+      const waitMs = Math.min(this.STATUS_POLL_INTERVAL_MS, remaining);
+      await delay(waitMs);
+      elapsed += waitMs;
+    }
+
+    return this.canContinueScheduleProcessing(scheduleId);
   }
 
   private async replaceTags(
@@ -328,7 +376,6 @@ export class ScheduleSendService {
   ): IChatMessage {
     const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
     const now = new Date().toISOString();
-    const delayMs = this.getRandomDelayMs(schedule.send_speed);
 
     return {
       message_id: uuidv7(),
@@ -360,7 +407,7 @@ export class ScheduleSendService {
       has_quoted: false,
       date: now,
       hash: null,
-      send_delay_ms: delayMs,
+      send_delay_ms: null,
     };
   }
 
@@ -974,8 +1021,6 @@ export class ScheduleSendService {
       this.redis,
       `schedule:send:${schedule.worker_id}`,
       async () => {
-        await delay(this.getRandomDelayMs(schedule.send_speed));
-
         const now = new Date().toISOString();
         const chat = this.buildScheduleChatbotChat(schedule, contact, jid, now);
 
@@ -1040,18 +1085,23 @@ export class ScheduleSendService {
 
   private async sendScheduleMessage(
     schedule: ISchedulePendingData,
-    contact: IScheduleContactValidated
+    contact: IScheduleContactValidated,
+    options?: {
+      skipAlreadySentCheck?: boolean;
+    }
   ): Promise<IScheduleMessageResult> {
-    const alreadySent = await this.checkMessageSent(
-      schedule.schedule_id,
-      contact.contact_id
-    );
+    if (!options?.skipAlreadySentCheck) {
+      const alreadySent = await this.checkMessageSent(
+        schedule.schedule_id,
+        contact.contact_id
+      );
 
-    if (alreadySent) {
-      return {
-        success: false,
-        contactId: contact.contact_id,
-      };
+      if (alreadySent) {
+        return {
+          success: false,
+          contactId: contact.contact_id,
+        };
+      }
     }
 
     const canSend = await this.checkAndSetDuplicate(
@@ -1168,37 +1218,125 @@ export class ScheduleSendService {
     }
   }
 
-  private async processContactsWithDelay(
+  private async processContactsWithControl(
     schedule: ISchedulePendingData,
     contacts: IScheduleContactValidated[]
-  ): Promise<IScheduleMessageResult[]> {
-    const results: IScheduleMessageResult[] = [];
-
-    for (const contact of contacts) {
-      const result = await this.sendScheduleMessage(schedule, contact);
-      results.push(result);
-    }
-
-    return results;
-  }
-
-  private async processContactsInBatches(
-    schedule: ISchedulePendingData,
-    contacts: IScheduleContactValidated[]
-  ): Promise<IScheduleMessageResult[]> {
+  ): Promise<{
+    results: IScheduleMessageResult[];
+    interrupted: boolean;
+  }> {
     const allResults: IScheduleMessageResult[] = [];
 
     for (const contact of contacts) {
-      const result = await this.sendScheduleMessage(schedule, contact);
+      const alreadySent = await this.checkMessageSent(
+        schedule.schedule_id,
+        contact.contact_id
+      );
+      if (alreadySent) {
+        continue;
+      }
+
+      const canContinue = await this.canContinueScheduleProcessing(
+        schedule.schedule_id
+      );
+      if (!canContinue) {
+        return {
+          results: allResults,
+          interrupted: true,
+        };
+      }
+
+      const canDispatch = await this.waitForDispatchWindow(
+        schedule.schedule_id,
+        schedule.send_speed
+      );
+      if (!canDispatch) {
+        return {
+          results: allResults,
+          interrupted: true,
+        };
+      }
+
+      const result = await this.sendScheduleMessage(schedule, contact, {
+        skipAlreadySentCheck: true,
+      });
       allResults.push(result);
+
+      const canContinueAfterSend = await this.canContinueScheduleProcessing(
+        schedule.schedule_id
+      );
+      if (!canContinueAfterSend) {
+        return {
+          results: allResults,
+          interrupted: true,
+        };
+      }
     }
 
-    return allResults;
+    return {
+      results: allResults,
+      interrupted: false,
+    };
   }
 
-  private determineScheduleStatus(
+  private async hasAnyQueuedMessageForSchedule(
+    scheduleId: string
+  ): Promise<boolean> {
+    await this.elasticDatabaseService.indices(
+      EElasticIndex.schedule,
+      scheduleMappings()
+    );
+
+    const query = {
+      size: 0,
+      query: {
+        bool: {
+          must: [
+            {
+              term: {
+                schedule_id: scheduleId,
+              },
+            },
+            {
+              terms: {
+                status: [EScheduleStatus.processing, EScheduleStatus.sent],
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<{
+      hits: { total: { value: number } | number };
+    }>(EElasticIndex.schedule, query);
+
+    if (!result) {
+      return false;
+    }
+
+    const total = result.hits.total as { value: number } | number;
+    if (typeof total === 'number') {
+      return total > 0;
+    }
+
+    return total.value > 0;
+  }
+
+  private async determineScheduleStatus(
+    scheduleId: string,
     results: IScheduleMessageResult[]
-  ): EScheduleStatus {
+  ): Promise<EScheduleStatus> {
+    if (results.some((result) => result.success)) {
+      return EScheduleStatus.sent;
+    }
+
+    const hasQueuedMessages =
+      await this.hasAnyQueuedMessageForSchedule(scheduleId);
+    if (hasQueuedMessages) {
+      return EScheduleStatus.sent;
+    }
+
     const allFailed = results.every((r) => !r.success);
     const allSuccess = results.every((r) => r.success);
 
@@ -1236,10 +1374,22 @@ export class ScheduleSendService {
         `schedule:process:${schedule.schedule_id}`,
         async () => {
           try {
-            await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
-              schedule.schedule_id,
-              EScheduleStatus.processing
+            const currentStatus = await this.getCurrentScheduleStatus(
+              schedule.schedule_id
             );
+            if (!this.isExecutionAllowedStatus(currentStatus)) {
+              return;
+            }
+
+            const movedToProcessing =
+              await this.scheduleStatusUpdaterRepository.updateScheduleStatusIfCurrent(
+                schedule.schedule_id,
+                EScheduleStatus.processing,
+                [EScheduleStatus.pending, EScheduleStatus.processing]
+              );
+            if (!movedToProcessing) {
+              return;
+            }
 
             const contacts =
               await this.scheduleContactsValidatedListerRepository.listValidatedContactsBySchedule(
@@ -1249,23 +1399,30 @@ export class ScheduleSendService {
               );
 
             if (contacts.length === 0) {
-              await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
+              await this.scheduleStatusUpdaterRepository.updateScheduleStatusIfCurrent(
                 schedule.schedule_id,
-                EScheduleStatus.failed
+                EScheduleStatus.failed,
+                [EScheduleStatus.processing]
               );
               return;
             }
 
-            const results =
-              contacts.length <= this.BATCH_SIZE
-                ? await this.processContactsWithDelay(schedule, contacts)
-                : await this.processContactsInBatches(schedule, contacts);
+            const { results, interrupted } =
+              await this.processContactsWithControl(schedule, contacts);
 
-            const status = this.determineScheduleStatus(results);
+            if (interrupted) {
+              return;
+            }
 
-            await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
+            const status = await this.determineScheduleStatus(
               schedule.schedule_id,
-              status
+              results
+            );
+
+            await this.scheduleStatusUpdaterRepository.updateScheduleStatusIfCurrent(
+              schedule.schedule_id,
+              status,
+              [EScheduleStatus.processing]
             );
           } catch (error) {
             console.error(
@@ -1273,9 +1430,10 @@ export class ScheduleSendService {
               error
             );
 
-            await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
+            await this.scheduleStatusUpdaterRepository.updateScheduleStatusIfCurrent(
               schedule.schedule_id,
-              EScheduleStatus.failed
+              EScheduleStatus.failed,
+              [EScheduleStatus.processing]
             );
 
             throw error;
@@ -1296,6 +1454,19 @@ export class ScheduleSendService {
 
       throw error;
     }
+  }
+
+  async processScheduleById(scheduleId: string): Promise<void> {
+    const schedule =
+      await this.schedulePendingListerRepository.listPendingScheduleById(
+        scheduleId
+      );
+
+    if (!schedule) {
+      return;
+    }
+
+    await this.processSingleSchedule(schedule);
   }
 
   async processSchedules(): Promise<void> {

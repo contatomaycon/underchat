@@ -11,7 +11,6 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { scheduleMappings } from '@core/mappings/schedule.mappings';
-import { ScheduleStatusUpdaterRepository } from '@core/repositories/schedule/ScheduleStatusUpdater.repository';
 import { IScheduleTracker } from '@core/common/interfaces/IScheduleTracker';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
@@ -32,9 +31,7 @@ export class ScheduleStatusUpdateConsume {
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(ElasticDatabaseService)
-    private readonly elasticDatabaseService: ElasticDatabaseService,
-    @inject(ScheduleStatusUpdaterRepository)
-    private readonly scheduleStatusUpdaterRepository: ScheduleStatusUpdaterRepository
+    private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -363,18 +360,6 @@ export class ScheduleStatusUpdateConsume {
       clearTimeout(tracker.timeoutTimer);
       tracker.timeoutTimer = null;
     }
-
-    const allFailedOrIgnored =
-      tracker.failedMessages.size + tracker.ignoredMessages.size ===
-      tracker.totalMessages;
-    const finalStatus = allFailedOrIgnored
-      ? EScheduleStatus.failed
-      : EScheduleStatus.sent;
-
-    await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
-      tracker.scheduleId,
-      finalStatus
-    );
 
     this.scheduleTrackers.delete(tracker.scheduleId);
   }
