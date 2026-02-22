@@ -11,6 +11,7 @@ import QRCode from 'qrcode';
 import P from 'pino';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Agent as HttpsAgent } from 'node:https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { singleton, inject } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -411,7 +412,10 @@ export class BaileysConnectionService {
     const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
     const version = await getCachedWaWebVersion();
     const proxyUrl = readProxyUrl();
-    const proxyAgent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
+
+    const proxyAgent = proxyUrl
+      ? (new HttpsProxyAgent(proxyUrl) as unknown as HttpsAgent)
+      : undefined;
 
     const socket = makeWASocket({
       auth: state,
