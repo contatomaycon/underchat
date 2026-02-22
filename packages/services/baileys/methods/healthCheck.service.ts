@@ -21,7 +21,6 @@ const WORKER = baileysEnvironment.baileysWorkerId;
 const ACCOUNT = baileysEnvironment.baileysAccountId;
 
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
-const PING_TIMEOUT_MS = 10_000;
 
 interface HealthCheckResult {
   isHealthy: boolean;
@@ -147,7 +146,7 @@ export class BaileysHealthCheckService {
 
     if (reportedStatus !== result.detectedStatus && this.onStatusMismatch) {
       console.log(
-        `[BaileysHealthCheck] Mismatch detected: reported=${reportedStatus}, actual=${result.detectedStatus}`
+        `[BaileysHealthCheck] Mismatch detected: reported=${reportedStatus}, actual=${result.detectedStatus}, reason=${result.reason ?? 'unknown'}`
       );
       this.onStatusMismatch(result.detectedStatus, result.workerStatus);
     }
@@ -190,77 +189,21 @@ export class BaileysHealthCheckService {
       };
     }
 
-    if (!socket.user) {
-      if (reportedStatus === Status.connecting) {
-        return {
-          isHealthy: true,
-          reason: 'Connecting (awaiting authentication)',
-          detectedStatus: Status.connecting,
-          workerStatus: EWorkerStatus.disponible,
-        };
-      }
-
+    if (reportedStatus === Status.connecting) {
       return {
-        isHealthy: false,
-        reason: 'No user info available',
-        detectedStatus: Status.disconnected,
-        workerStatus: EWorkerStatus.offline,
-      };
-    }
-
-    const pingResult = await this.performPingCheck(ws);
-    if (!pingResult.success) {
-      return {
-        isHealthy: false,
-        reason: pingResult.reason,
-        detectedStatus: Status.disconnected,
-        workerStatus: EWorkerStatus.offline,
+        isHealthy: true,
+        reason: 'WebSocket open (connecting)',
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
       };
     }
 
     return {
       isHealthy: true,
-      reason: 'Connection healthy',
+      reason: 'WebSocket open (connected)',
       detectedStatus: Status.connected,
       workerStatus: EWorkerStatus.online,
     };
-  }
-
-  private performPingCheck(
-    ws: WebSocket
-  ): Promise<{ success: boolean; reason?: string }> {
-    return new Promise((resolve) => {
-      let resolved = false;
-
-      const cleanup = () => {
-        if (!resolved) {
-          resolved = true;
-          ws.removeAllListeners('pong');
-        }
-      };
-
-      const timeout = setTimeout(() => {
-        cleanup();
-        resolve({ success: false, reason: 'Ping timeout' });
-      }, PING_TIMEOUT_MS);
-
-      try {
-        ws.once('pong', () => {
-          clearTimeout(timeout);
-          cleanup();
-          resolve({ success: true });
-        });
-
-        ws.ping();
-      } catch (error) {
-        clearTimeout(timeout);
-        cleanup();
-        resolve({
-          success: false,
-          reason: `Ping error: ${error instanceof Error ? error.message : String(error)}`,
-        });
-      }
-    });
   }
 
   private async notifyStatusChange(
