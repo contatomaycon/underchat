@@ -728,48 +728,54 @@ export class WwebjsConnectionService {
     const proxyLabel = proxy ? `${proxy.host}:${proxy.port}` : 'disabled';
 
     try {
-      const page = client.pupPage;
-      if (!page) {
-        console.log('[Wwebjs][LOCAL][IP] pupPage indisponivel', {
+      const browser = client.pupBrowser;
+      if (!browser) {
+        console.log('[Wwebjs][LOCAL][IP] pupBrowser indisponivel', {
           proxy: proxyLabel,
         });
         return;
       }
 
-      const response = await page.evaluate(async () => {
-        const endpoint = 'https://api.ipify.org?format=json';
+      const endpoint = 'https://api.ipify.org?format=json';
+      const probePage = await browser.newPage();
+
+      try {
+        if (proxy?.username && proxy.password) {
+          await probePage.authenticate({
+            username: proxy.username,
+            password: proxy.password,
+          });
+        }
+
+        const response = await probePage.goto(endpoint, {
+          waitUntil: 'domcontentloaded',
+          timeout: 15000,
+        });
+        const bodyText = response ? await response.text() : '';
+
+        let ip: string | undefined;
 
         try {
-          const result = await fetch(endpoint, { cache: 'no-store' });
-
-          if (!result.ok) {
-            return {
-              endpoint,
-              status: result.status,
-              error: `HTTP ${result.status}`,
-            };
+          const payload = JSON.parse(bodyText) as { ip?: string };
+          ip = typeof payload.ip === 'string' ? payload.ip : undefined;
+        } catch {
+          const trimmed = bodyText.trim();
+          if (trimmed) {
+            ip = trimmed;
           }
-
-          const data = (await result.json()) as { ip?: string };
-          return {
-            endpoint,
-            ip: typeof data.ip === 'string' ? data.ip : undefined,
-          };
-        } catch (error) {
-          return {
-            endpoint,
-            error: error instanceof Error ? error.message : String(error),
-          };
         }
-      });
 
-      console.log('[Wwebjs][LOCAL][IP] Resultado de rede', {
-        proxy: proxyLabel,
-        public_ip: response.ip ?? 'unknown',
-        endpoint: response.endpoint,
-        status: response.status,
-        error: response.error,
-      });
+        console.log('[Wwebjs][LOCAL][IP] Resultado de rede', {
+          proxy: proxyLabel,
+          public_ip: ip ?? 'unknown',
+          endpoint,
+          status: response?.status(),
+          error: ip ? undefined : 'Unable to parse IP response body',
+          method: 'browser.goto',
+        });
+      } finally {
+        await probePage.close().catch(() => {});
+      }
     } catch (error) {
       console.error('[Wwebjs][LOCAL][IP] Falha ao validar IP de conexao', {
         proxy: proxyLabel,
