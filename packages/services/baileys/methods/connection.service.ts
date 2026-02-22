@@ -11,7 +11,7 @@ import QRCode from 'qrcode';
 import P from 'pino';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Agent as HttpsAgent } from 'node:https';
+import { request as httpsRequest, type Agent as HttpsAgent } from 'node:https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { singleton, inject } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -43,6 +43,8 @@ const WORKER = baileysEnvironment.baileysWorkerId;
 const ACCOUNT = baileysEnvironment.baileysAccountId;
 const WA_VERSION_TTL_MS = 6 * 60 * 60 * 1000;
 const SHOULD_PRINT_QR_IN_TERMINAL =
+  process.env.APP_ENVIRONMENT === EAppEnvironment.local;
+const SHOULD_LOG_CONNECTION_IP =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 let cachedWaVersion: {
   version: [number, number, number];
@@ -111,6 +113,8 @@ export class BaileysConnectionService {
   private pendingResolve?: (s: IBaileysConnectionState) => void;
   private connectionEstablished = false;
   private userRequestedDisconnect = false;
+  private activeProxyUrl: string | null = null;
+  private activeProxyAgent?: HttpsAgent;
 
   constructor(
     @inject(CentrifugoService)
@@ -416,6 +420,8 @@ export class BaileysConnectionService {
     const proxyAgent = proxyUrl
       ? (new HttpsProxyAgent(proxyUrl) as unknown as HttpsAgent)
       : undefined;
+    this.activeProxyUrl = proxyUrl;
+    this.activeProxyAgent = proxyAgent;
 
     const socket = makeWASocket({
       auth: state,
@@ -605,6 +611,7 @@ export class BaileysConnectionService {
     this.publishSub(payload);
     this.lastStatusPayload = JSON.stringify(payload);
     void this.notifyWorkerStatusSafely(payload, 'open');
+    void this.logConnectionIpInLocal();
 
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
 
@@ -613,6 +620,95 @@ export class BaileysConnectionService {
     resolve(this.state());
 
     this.pendingResolve = undefined;
+  }
+
+  private async logConnectionIpInLocal(): Promise<void> {
+    if (!SHOULD_LOG_CONNECTION_IP) {
+      return;
+    }
+
+    const proxy = this.activeProxyUrl ?? 'disabled';
+    const publicIp = await this.resolvePublicIp(this.activeProxyAgent);
+    const ws = this.resolveWebSocket();
+    const rawSocket = (
+      ws as unknown as {
+        _socket?: { remoteAddress?: string; remotePort?: number };
+      }
+    )._socket;
+
+    console.log('[Baileys][LOCAL][IP] Resultado de rede', {
+      proxy,
+      public_ip: publicIp ?? 'unknown',
+      ws_remote_address: rawSocket?.remoteAddress ?? 'unknown',
+      ws_remote_port:
+        typeof rawSocket?.remotePort === 'number'
+          ? rawSocket.remotePort
+          : 'unknown',
+      ip_endpoint: 'https://api.ipify.org?format=json',
+    });
+  }
+
+  private async resolvePublicIp(agent?: HttpsAgent): Promise<string | null> {
+    return new Promise((resolve) => {
+      let resolved = false;
+      const settle = (value: string | null): void => {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
+        resolve(value);
+      };
+
+      const req = httpsRequest(
+        'https://api.ipify.org?format=json',
+        {
+          method: 'GET',
+          agent,
+          timeout: 8000,
+          headers: {
+            accept: 'application/json',
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+
+          res.on('data', (chunk: Buffer | string) => {
+            chunks.push(
+              typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk
+            );
+          });
+
+          res.on('end', () => {
+            if (res.statusCode && res.statusCode >= 400) {
+              settle(null);
+              return;
+            }
+
+            try {
+              const body = Buffer.concat(chunks).toString('utf8');
+              const payload = JSON.parse(body) as { ip?: string };
+              settle(typeof payload.ip === 'string' ? payload.ip : null);
+            } catch {
+              settle(null);
+            }
+          });
+        }
+      );
+
+      req.on('timeout', () => {
+        req.destroy(new Error('IP lookup timeout'));
+      });
+
+      req.on('error', (error) => {
+        console.error('[Baileys][LOCAL][IP] Falha ao consultar IP publico', {
+          proxy: this.activeProxyUrl ?? 'disabled',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        settle(null);
+      });
+
+      req.end();
+    });
   }
 
   private async onClose(

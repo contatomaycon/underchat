@@ -39,6 +39,8 @@ const RETRY_DELAY = 2000;
 const MAX_RETRIES = 5;
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
+const SHOULD_LOG_CONNECTION_IP =
+  process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 const CHROMIUM_LOCK_FILE_NAMES = [
   'SingletonLock',
   'SingletonSocket',
@@ -595,6 +597,7 @@ export class WwebjsConnectionService {
 
         this.publishSub(payload);
         void this.notifyWorkerStatusSafely(payload, 'ready');
+        void this.logConnectionIpInLocal(client, proxy);
         this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
         triggerConnectionEstablished();
         this.pendingResolve?.(this.state());
@@ -712,6 +715,67 @@ export class WwebjsConnectionService {
         this.handleInitializeError(msg);
       });
     });
+  }
+
+  private async logConnectionIpInLocal(
+    client: Client,
+    proxy: ReturnType<typeof readProxyConfig>
+  ): Promise<void> {
+    if (!SHOULD_LOG_CONNECTION_IP) {
+      return;
+    }
+
+    const proxyLabel = proxy ? `${proxy.host}:${proxy.port}` : 'disabled';
+
+    try {
+      const page = client.pupPage;
+      if (!page) {
+        console.log('[Wwebjs][LOCAL][IP] pupPage indisponivel', {
+          proxy: proxyLabel,
+        });
+        return;
+      }
+
+      const response = await page.evaluate(async () => {
+        const endpoint = 'https://api.ipify.org?format=json';
+
+        try {
+          const result = await fetch(endpoint, { cache: 'no-store' });
+
+          if (!result.ok) {
+            return {
+              endpoint,
+              status: result.status,
+              error: `HTTP ${result.status}`,
+            };
+          }
+
+          const data = (await result.json()) as { ip?: string };
+          return {
+            endpoint,
+            ip: typeof data.ip === 'string' ? data.ip : undefined,
+          };
+        } catch (error) {
+          return {
+            endpoint,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      });
+
+      console.log('[Wwebjs][LOCAL][IP] Resultado de rede', {
+        proxy: proxyLabel,
+        public_ip: response.ip ?? 'unknown',
+        endpoint: response.endpoint,
+        status: response.status,
+        error: response.error,
+      });
+    } catch (error) {
+      console.error('[Wwebjs][LOCAL][IP] Falha ao validar IP de conexao', {
+        proxy: proxyLabel,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private normalizeChatStateUsers(userIds: string[] | undefined): Set<string> {
