@@ -55,6 +55,8 @@ import { stripTextForTts } from '@core/common/functions/stripTextForTts';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
 import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMessages';
 import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
 import {
   HumanTransferMode,
   IPromptTransferDecision,
@@ -199,7 +201,9 @@ export class ChatbotFlowRunnerService {
     @inject(VoiceIaIntegrationService)
     private readonly voiceIaIntegrationService: VoiceIaIntegrationService,
     @inject(VoiceIaService)
-    private readonly voiceIaService: VoiceIaService
+    private readonly voiceIaService: VoiceIaService,
+    @inject(WorkerConfigViewerRepository)
+    private readonly workerConfigViewerRepository: WorkerConfigViewerRepository
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -7326,14 +7330,19 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
   private async getEligibleUsers(
     accountId: string,
-    sectorId?: string | null
+    sectorId?: string | null,
+    onlineOnly = false
   ): Promise<IChat['user'][]> {
     if (sectorId) {
       const sectorUsers = await this.sectorService.listSectorUsersForTransfer(
         accountId,
         sectorId
       );
-      return sectorUsers.map((user) => ({
+      const filteredUsers = onlineOnly
+        ? sectorUsers.filter((user) => user.status === EChatUserStatus.online)
+        : sectorUsers;
+
+      return filteredUsers.map((user) => ({
         id: user.id,
         name: user.name,
         photo: user.photo ?? null,
@@ -7341,7 +7350,11 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     }
 
     const users = await this.userService.listUsersForTransfer(accountId);
-    return users.map((user) => ({
+    const filteredUsers = onlineOnly
+      ? users.filter((user) => user.status === EChatUserStatus.online)
+      : users;
+
+    return filteredUsers.map((user) => ({
       id: user.id,
       name: user.name,
       photo: user.photo ?? null,
@@ -7351,9 +7364,14 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
   private async getSequentialUser(
     accountId: string,
     workerId: string,
-    sectorId?: string | null
+    sectorId?: string | null,
+    onlineOnly = false
   ): Promise<IChat['user'] | null> {
-    const eligibleUsers = await this.getEligibleUsers(accountId, sectorId);
+    const eligibleUsers = await this.getEligibleUsers(
+      accountId,
+      sectorId,
+      onlineOnly
+    );
 
     if (eligibleUsers.length === 0) {
       return null;
@@ -7379,10 +7397,15 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
   private async getLoadBasedUser(
     accountId: string,
-    sectorId?: string | null
+    sectorId?: string | null,
+    onlineOnly = false
   ): Promise<IChat['user'] | null> {
-    if (sectorId) {
-      const eligibleUsers = await this.getEligibleUsers(accountId, sectorId);
+    if (sectorId || onlineOnly) {
+      const eligibleUsers = await this.getEligibleUsers(
+        accountId,
+        sectorId,
+        onlineOnly
+      );
 
       if (eligibleUsers.length === 0) {
         return null;
@@ -7460,9 +7483,14 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
   private async getRandomUser(
     accountId: string,
-    sectorId?: string | null
+    sectorId?: string | null,
+    onlineOnly = false
   ): Promise<IChat['user'] | null> {
-    const eligibleUsers = await this.getEligibleUsers(accountId, sectorId);
+    const eligibleUsers = await this.getEligibleUsers(
+      accountId,
+      sectorId,
+      onlineOnly
+    );
 
     if (eligibleUsers.length === 0) {
       return null;
@@ -7470,6 +7498,26 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const randomIndex = Math.floor(Math.random() * eligibleUsers.length);
     return eligibleUsers[randomIndex];
+  }
+
+  private async shouldRestrictDistributionToOnlineUsers(
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse
+  ): Promise<boolean> {
+    const workerConfig =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        createChat.worker.id
+      );
+
+    if (!workerConfig?.allow_attendance_only_online) {
+      return false;
+    }
+
+    if (!workerConfig.chatbot_id) {
+      return false;
+    }
+
+    return workerConfig.chatbot_id === chatbotFlow.chatbot_id;
   }
 
   private async processDistributionNode(
@@ -7586,6 +7634,10 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       distributionHasSector === true && distributionSelectedSector
         ? distributionSelectedSector
         : null;
+    const onlineOnly = await this.shouldRestrictDistributionToOnlineUsers(
+      createChat,
+      chatbotFlow
+    );
 
     if (sectorId) {
       const sectorData = await this.sectorService.viewSectorById(
@@ -7606,15 +7658,21 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       selectedUser = await this.getSequentialUser(
         createChat.account.id,
         createChat.worker.id,
-        sectorId
+        sectorId,
+        onlineOnly
       );
     } else if (distributionType === 'load') {
       selectedUser = await this.getLoadBasedUser(
         createChat.account.id,
-        sectorId
+        sectorId,
+        onlineOnly
       );
     } else if (distributionType === 'random') {
-      selectedUser = await this.getRandomUser(createChat.account.id, sectorId);
+      selectedUser = await this.getRandomUser(
+        createChat.account.id,
+        sectorId,
+        onlineOnly
+      );
     }
 
     if (!selectedUser && !selectedSector) {
