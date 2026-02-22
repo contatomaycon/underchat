@@ -736,7 +736,13 @@ export class WwebjsConnectionService {
         return;
       }
 
-      const endpoint = 'https://api.ipify.org?format=json';
+      const endpoints = [
+        'https://api.ipify.org?format=json',
+        'https://api64.ipify.org?format=json',
+        'https://ifconfig.me/ip',
+        'https://ipv4.icanhazip.com',
+        'http://api.ipify.org',
+      ];
       const probePage = await browser.newPage();
 
       try {
@@ -747,31 +753,61 @@ export class WwebjsConnectionService {
           });
         }
 
-        const response = await probePage.goto(endpoint, {
-          waitUntil: 'domcontentloaded',
-          timeout: 15000,
-        });
-        const bodyText = response ? await response.text() : '';
+        const attempts: Array<{
+          endpoint: string;
+          status?: number;
+          error?: string;
+        }> = [];
 
-        let ip: string | undefined;
+        for (const endpoint of endpoints) {
+          const response = await probePage
+            .goto(endpoint, {
+              waitUntil: 'domcontentloaded',
+              timeout: 15000,
+            })
+            .catch((error) => {
+              attempts.push({
+                endpoint,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return null;
+            });
 
-        try {
-          const payload = JSON.parse(bodyText) as { ip?: string };
-          ip = typeof payload.ip === 'string' ? payload.ip : undefined;
-        } catch {
-          const trimmed = bodyText.trim();
-          if (trimmed) {
-            ip = trimmed;
+          if (!response) {
+            continue;
           }
+
+          const bodyText = await response.text().catch(() => '');
+          const ip = this.extractPublicIpFromBody(bodyText);
+
+          if (ip) {
+            console.log('[Wwebjs][LOCAL][IP] Resultado de rede', {
+              proxy: proxyLabel,
+              public_ip: ip,
+              endpoint,
+              status: response.status(),
+              method: 'browser.goto',
+            });
+            return;
+          }
+
+          attempts.push({
+            endpoint,
+            status: response.status(),
+            error: 'Unable to parse IP response body',
+          });
         }
 
-        console.log('[Wwebjs][LOCAL][IP] Resultado de rede', {
+        const tunnelBlocked = attempts.some((attempt) =>
+          attempt.error?.includes('ERR_TUNNEL_CONNECTION_FAILED')
+        );
+
+        console.error('[Wwebjs][LOCAL][IP] Falha ao validar IP de conexao', {
           proxy: proxyLabel,
-          public_ip: ip ?? 'unknown',
-          endpoint,
-          status: response?.status(),
-          error: ip ? undefined : 'Unable to parse IP response body',
-          method: 'browser.goto',
+          error: tunnelBlocked
+            ? 'Proxy bloqueou o tunel CONNECT para os endpoints de validacao'
+            : 'Nao foi possivel obter IP publico',
+          attempts,
         });
       } finally {
         await probePage.close().catch(() => {});
@@ -781,6 +817,27 @@ export class WwebjsConnectionService {
         proxy: proxyLabel,
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  private extractPublicIpFromBody(bodyText: string): string | undefined {
+    const trimmed = bodyText.trim();
+
+    if (!trimmed) {
+      return undefined;
+    }
+
+    if (!trimmed.startsWith('{')) {
+      return trimmed;
+    }
+
+    try {
+      const payload = JSON.parse(trimmed) as { ip?: string };
+      const ip = payload.ip?.trim();
+
+      return ip || undefined;
+    } catch {
+      return undefined;
     }
   }
 
