@@ -1643,6 +1643,11 @@ export class ChatbotFlowRunnerService {
       const isReturningToAiAgent =
         previousFlowId && previousFlowId === nextFlowId;
 
+      const userText = data
+        ? this.getTextFromUpsertMessage(data)?.trim()
+        : null;
+      const hasUserMessage = userText && userText.length > 0;
+
       if (!isReturningToAiAgent) {
         const selectedAiAgentId = nextFlowNode.data?.selectedAiAgent;
         if (selectedAiAgentId) {
@@ -1650,6 +1655,35 @@ export class ChatbotFlowRunnerService {
             selectedAiAgentId,
             createChat.account.id
           );
+
+          if (hasUserMessage && aiAgent && data) {
+            const bootstrapSummaryKey = `${cacheKey}:bootstrap-summary`;
+            await this.generateBootstrapSummaryForChat(
+              createChat,
+              aiAgent,
+              bootstrapSummaryKey
+            );
+            await this.resetAiAgentInteractionsCount(
+              createChat.account.id,
+              createChat.worker.id,
+              createChat.chat_id,
+              nextFlowId
+            );
+            await this.updateCache(createChat, nextFlowId);
+            await this.scheduleChatHistoryEmbedding(
+              createChat,
+              selectedAiAgentId
+            );
+            return this.processAiAgentNode(
+              t,
+              data,
+              createChat,
+              chatbotFlow,
+              nextFlowId,
+              customMessages
+            );
+          }
+
           if (aiAgent) {
             await this.generateAndSendAiWelcomeMessage(t, createChat, aiAgent);
           } else {
