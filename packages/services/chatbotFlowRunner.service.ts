@@ -1718,7 +1718,8 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         nextFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -1728,7 +1729,8 @@ export class ChatbotFlowRunnerService {
         createChat,
         nextFlowNode,
         chatbotFlow,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -1738,7 +1740,8 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         nextFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -1773,7 +1776,8 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         nextFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -1812,7 +1816,8 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     node: ListChatbotFlowResponse['nodes'][number],
     chatbotFlow: ListChatbotFlowResponse,
-    customMessages?: IChatbotCustomMessages
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
   ): Promise<boolean> {
     const continueType = node.data?.continueType;
 
@@ -1827,7 +1832,8 @@ export class ChatbotFlowRunnerService {
           createChat,
           chatbotFlow,
           nextFlowId,
-          customMessages
+          customMessages,
+          data
         );
       }
 
@@ -1986,7 +1992,8 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: IChatbotCustomMessages
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -2025,7 +2032,8 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       nextFlowId,
-      customMessages
+      customMessages,
+      data
     );
   }
 
@@ -2034,7 +2042,8 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: IChatbotCustomMessages
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -2057,7 +2066,8 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         nextFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -2089,7 +2099,8 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       nextFlowId,
-      customMessages
+      customMessages,
+      data
     );
   }
 
@@ -2805,7 +2816,8 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: IChatbotCustomMessages
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
     if (!currentNode) {
@@ -2857,7 +2869,8 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         nextFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -2877,7 +2890,8 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         nextFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -2905,7 +2919,8 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         nextFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
@@ -2942,7 +2957,8 @@ export class ChatbotFlowRunnerService {
       createChat,
       chatbotFlow,
       nextFlowId,
-      customMessages
+      customMessages,
+      data
     );
   }
 
