@@ -261,6 +261,13 @@ export class WorkerConfigViewerRepository {
         ? true
         : null,
       chatbot_id: chatbotId,
+      proxy_enabled: configMap.has(EWorkerConfigType.proxy_enabled)
+        ? true
+        : null,
+      proxy_host: configMap.get(EWorkerConfigType.proxy_host) || null,
+      proxy_port: this.parseNumber(configMap.get(EWorkerConfigType.proxy_port)),
+      proxy_username: configMap.get(EWorkerConfigType.proxy_username) || null,
+      proxy_password: configMap.get(EWorkerConfigType.proxy_password) || null,
       created_at: null,
       updated_at: null,
     };

@@ -12,6 +12,7 @@ import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { IWorkerConfigUpdateEvent } from '@core/common/interfaces/IWorkerConfigUpdateEvent';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
+import { PasswordEncryptorService } from './passwordEncryptor.service';
 
 @injectable()
 export class WorkerConfigService {
@@ -24,6 +25,8 @@ export class WorkerConfigService {
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(PasswordEncryptorService)
+    private readonly passwordEncryptorService: PasswordEncryptorService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -45,9 +48,11 @@ export class WorkerConfigService {
     workerId: string,
     input: IUpdateWorkerConfig
   ): Promise<WorkerConfig> {
+    const normalizedInput = this.normalizeWorkerConfigInput(input);
+
     await this.workerConfigUpserterRepository.upsertWorkerConfig(
       workerId,
-      input
+      normalizedInput
     );
 
     await this.invalidateWorkerConfigCache(workerId);
@@ -72,15 +77,20 @@ export class WorkerConfigService {
         reject_call: null,
         auto_save_contacts: null,
         chatbot_id: null,
+        proxy_enabled: null,
+        proxy_host: null,
+        proxy_port: null,
+        proxy_username: null,
+        proxy_password: null,
         created_at: null,
         updated_at: null,
       });
     }
 
-    if (input.reject_call !== undefined) {
+    if (normalizedInput.reject_call !== undefined) {
       const updateEvent: IWorkerConfigUpdateEvent = {
         worker_id: workerId,
-        reject_call: input.reject_call,
+        reject_call: normalizedInput.reject_call,
       };
 
       await this.streamProducerService.send(
@@ -109,9 +119,75 @@ export class WorkerConfigService {
       reject_call: result.reject_call ?? false,
       auto_save_contacts: result.auto_save_contacts ?? false,
       chatbot_id: result.chatbot_id ?? null,
+      proxy_enabled: result.proxy_enabled ?? false,
+      proxy_host: result.proxy_host ?? null,
+      proxy_port: result.proxy_port ?? null,
+      proxy_username: this.decryptProxyField(result.proxy_username),
+      proxy_password: this.decryptProxyField(result.proxy_password),
       created_at: result.created_at ?? null,
       updated_at: result.updated_at ?? null,
     };
+  }
+
+  private normalizeWorkerConfigInput(
+    input: IUpdateWorkerConfig
+  ): IUpdateWorkerConfig {
+    const normalizedInput: IUpdateWorkerConfig = {
+      ...input,
+    };
+
+    if (input.proxy_enabled === undefined) {
+      return normalizedInput;
+    }
+
+    if (!input.proxy_enabled) {
+      normalizedInput.proxy_host = null;
+      normalizedInput.proxy_port = null;
+      normalizedInput.proxy_username = null;
+      normalizedInput.proxy_password = null;
+      return normalizedInput;
+    }
+
+    if (
+      !input.proxy_host?.trim() ||
+      !input.proxy_port ||
+      !Number.isFinite(input.proxy_port)
+    ) {
+      throw new Error('Proxy configuration is incomplete');
+    }
+
+    normalizedInput.proxy_host = input.proxy_host?.trim() ?? null;
+    normalizedInput.proxy_port = input.proxy_port ?? null;
+
+    normalizedInput.proxy_username = this.encryptProxyField(input.proxy_username);
+    normalizedInput.proxy_password = this.encryptProxyField(input.proxy_password);
+
+    return normalizedInput;
+  }
+
+  private encryptProxyField(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    return this.passwordEncryptorService.encrypt(trimmed);
+  }
+
+  private decryptProxyField(value: string | null): string | null {
+    if (!value) {
+      return null;
+    }
+
+    try {
+      return this.passwordEncryptorService.decrypt(value);
+    } catch {
+      return value;
+    }
   }
 
   async updateTransferProtocolText(

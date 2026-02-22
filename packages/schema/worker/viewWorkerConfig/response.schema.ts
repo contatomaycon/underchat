@@ -14,6 +14,11 @@ export const workerConfigSchema = Type.Object({
   reject_call: Type.Boolean(),
   auto_save_contacts: Type.Boolean(),
   chatbot_id: Type.Union([Type.String(), Type.Null()]),
+  proxy_enabled: Type.Boolean(),
+  proxy_host: Type.Union([Type.String(), Type.Null()]),
+  proxy_port: Type.Union([Type.Integer(), Type.Null()]),
+  proxy_username: Type.Union([Type.String(), Type.Null()]),
+  proxy_password: Type.Union([Type.String(), Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
 });

@@ -4,4 +4,9 @@ export interface IUpdateWorkerConfig {
   allow_attendance_only_online?: boolean;
   reject_call?: boolean;
   auto_save_contacts?: boolean;
+  proxy_enabled?: boolean;
+  proxy_host?: string | null;
+  proxy_port?: number | null;
+  proxy_username?: string | null;
+  proxy_password?: string | null;
 }

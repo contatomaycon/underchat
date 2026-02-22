@@ -110,7 +110,7 @@ const isVisible = computed({
 });
 
 const channelId = toRef(props, 'channelId');
-const currentTab = ref<'general' | 'profile-status' | 'profile-info'>(
+const currentTab = ref<'general' | 'proxy' | 'profile-status' | 'profile-info'>(
   'general'
 );
 const isInitialLoad = ref(false);
@@ -223,7 +223,14 @@ const workerConfigForm = reactive<WorkerConfigForm>(
 );
 const isLoadingWorkerConfig = ref(false);
 const isSavingWorkerConfig = ref(false);
+const isSavingProxyConfig = ref(false);
 const workerConfigLoadedFor = ref<string | null>(null);
+const proxyEnabled = ref(false);
+const proxyHost = ref<string | null>(null);
+const proxyPort = ref<number | null>(null);
+const proxyUsername = ref<string | null>(null);
+const proxyPassword = ref<string | null>(null);
+const isProxyPasswordVisible = ref(false);
 const transferProtocolText = ref<string>('');
 const transferProtocolSectorText = ref<string>('');
 const transferProtocolSectorAndUserText = ref<string>('');
@@ -495,6 +502,12 @@ const extractUrlAndCaption = (
 const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
   const nextState = createDefaultWorkerConfig();
 
+  proxyEnabled.value = false;
+  proxyHost.value = null;
+  proxyPort.value = null;
+  proxyUsername.value = null;
+  proxyPassword.value = null;
+
   if (config) {
     nextState.show_attendee_name = config.show_attendee_name;
     nextState.show_worker_name = config.show_worker_name;
@@ -514,6 +527,11 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     nextState.reject_call = config.reject_call ?? false;
     nextState.auto_save_contacts = config.auto_save_contacts;
     nextState.chatbot = config.chatbot_id !== null && config.chatbot_id !== '';
+    proxyEnabled.value = config.proxy_enabled ?? false;
+    proxyHost.value = config.proxy_host ?? null;
+    proxyPort.value = config.proxy_port ?? null;
+    proxyUsername.value = config.proxy_username ?? null;
+    proxyPassword.value = config.proxy_password ?? null;
   }
 
   Object.assign(workerConfigForm, nextState);
@@ -662,6 +680,49 @@ const saveWorkerConfig = async () => {
     }
   } finally {
     isSavingWorkerConfig.value = false;
+  }
+};
+
+const saveProxyConfig = async () => {
+  if (!channelId.value) return;
+
+  const normalizedProxyHost = proxyHost.value?.trim() || null;
+  const normalizedProxyPort =
+    proxyPort.value !== null ? Number(proxyPort.value) : null;
+  const normalizedProxyUsername = proxyUsername.value?.trim() || null;
+  const normalizedProxyPassword = proxyPassword.value?.trim() || null;
+
+  if (proxyEnabled.value && !normalizedProxyHost) {
+    channelStore.showSnackbar(t('proxy_host_required'), EColor.warning);
+    return;
+  }
+
+  if (
+    proxyEnabled.value &&
+    (!normalizedProxyPort ||
+      !Number.isFinite(normalizedProxyPort) ||
+      normalizedProxyPort <= 0)
+  ) {
+    channelStore.showSnackbar(t('proxy_port_required'), EColor.warning);
+    return;
+  }
+
+  try {
+    isSavingProxyConfig.value = true;
+    const result = await channelStore.updateWorkerConfig(channelId.value, {
+      proxy_enabled: proxyEnabled.value,
+      proxy_host: proxyEnabled.value ? normalizedProxyHost : null,
+      proxy_port: proxyEnabled.value ? normalizedProxyPort : null,
+      proxy_username: proxyEnabled.value ? normalizedProxyUsername : null,
+      proxy_password: proxyEnabled.value ? normalizedProxyPassword : null,
+    });
+
+    if (result) {
+      applyWorkerConfig(result);
+      workerConfigLoadedFor.value = channelId.value;
+    }
+  } finally {
+    isSavingProxyConfig.value = false;
   }
 };
 
@@ -2765,6 +2826,7 @@ watch(isVisible, async (visible, oldVisible) => {
     closePreview();
     cancelCrop();
     resetWorkerConfigState();
+    isProxyPasswordVisible.value = false;
     isInitialLoad.value = false;
     return;
   }
@@ -2794,7 +2856,7 @@ watch(
 
     resetWorkerConfigState();
 
-    if (currentTab.value === 'general') {
+    if (currentTab.value === 'general' || currentTab.value === 'proxy') {
       await loadWorkerConfig(true);
     } else if (currentTab.value === 'profile-status') {
       await fetchProfileStatus();
@@ -2809,7 +2871,7 @@ watch(currentTab, async (newTab, oldTab) => {
   if (!isVisible.value || !channelId.value) return;
   if (newTab === oldTab) return;
 
-  if (newTab === 'general') {
+  if (newTab === 'general' || newTab === 'proxy') {
     await loadWorkerConfig(true);
   } else if (newTab === 'profile-status') {
     await fetchProfileStatus();
@@ -2866,6 +2928,7 @@ onMounted(async () => {
 
       <VTabs v-model="currentTab" grow>
         <VTab value="general">{{ $t('general_settings') }}</VTab>
+        <VTab value="proxy">{{ $t('proxy_tab') }}</VTab>
         <VTab v-if="canAccessProfileStatus" value="profile-status">{{
           $t('profile_status_tab')
         }}</VTab>
@@ -2953,6 +3016,95 @@ onMounted(async () => {
                   </VCard>
                 </VCol>
               </VRow>
+            </div>
+          </VWindowItem>
+
+          <VWindowItem value="proxy">
+            <div class="proxy-config-wrapper position-relative pa-4 d-flex flex-column gap-4">
+              <VOverlay
+                :model-value="isLoadingWorkerConfig"
+                contained
+                class="align-center justify-center general-config-overlay"
+              >
+                <VProgressCircular color="primary" indeterminate size="32" />
+              </VOverlay>
+
+              <div>
+                <h5 class="text-h6 mb-1">
+                  {{ $t('channel_proxy_config_title') }}
+                </h5>
+                <p class="text-body-2 text-medium-emphasis mb-0">
+                  {{ $t('channel_proxy_config_subtitle') }}
+                </p>
+              </div>
+
+              <VForm @submit.prevent="saveProxyConfig">
+                <VRow dense>
+                  <VCol cols="12">
+                    <VSwitch
+                      v-model="proxyEnabled"
+                      :label="$t('enable_proxy')"
+                      color="primary"
+                      hide-details
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('proxy_host') }}:</VLabel>
+                    <AppTextField
+                      v-model="proxyHost"
+                      :placeholder="$t('proxy_host_placeholder')"
+                      :disabled="!proxyEnabled"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('proxy_port') }}:</VLabel>
+                    <AppTextField
+                      v-model="proxyPort"
+                      :placeholder="$t('proxy_port')"
+                      type="number"
+                      :disabled="!proxyEnabled"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('proxy_username') }}:</VLabel>
+                    <AppTextField
+                      v-model="proxyUsername"
+                      :placeholder="$t('proxy_username')"
+                      :disabled="!proxyEnabled"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('proxy_password') }}:</VLabel>
+                    <AppTextField
+                      v-model="proxyPassword"
+                      :placeholder="$t('proxy_password')"
+                      :disabled="!proxyEnabled"
+                      :type="isProxyPasswordVisible ? 'text' : 'password'"
+                      :append-inner-icon="
+                        isProxyPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
+                      "
+                      @click:append-inner="
+                        isProxyPasswordVisible = !isProxyPasswordVisible
+                      "
+                    />
+                  </VCol>
+
+                  <VCol cols="12" class="d-flex justify-end">
+                    <VBtn
+                      color="primary"
+                      type="submit"
+                      :loading="isSavingProxyConfig"
+                      :disabled="isSavingProxyConfig || isLoadingWorkerConfig"
+                    >
+                      {{ $t('save') }}
+                    </VBtn>
+                  </VCol>
+                </VRow>
+              </VForm>
             </div>
           </VWindowItem>
 
@@ -4373,6 +4525,10 @@ onMounted(async () => {
 }
 
 .general-config-wrapper {
+  min-height: 320px;
+}
+
+.proxy-config-wrapper {
   min-height: 320px;
 }
 

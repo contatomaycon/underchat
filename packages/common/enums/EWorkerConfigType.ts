@@ -13,4 +13,9 @@ export enum EWorkerConfigType {
   auto_save_contacts = '019b89ac-697e-75cb-83a0-15f55c82806a',
   chatbot_id = '019b89ac-697e-75cb-83a0-17749e49888b',
   chatbot_output_id = '019b89ac-697e-75cb-83a0-37769e49888d',
+  proxy_enabled = '019c863c-d265-710f-bd69-f26730c157c2',
+  proxy_host = '019c863c-d267-754f-93a0-020245b3f973',
+  proxy_port = '019c863c-d267-754f-93a0-06cbbd3c7937',
+  proxy_username = '019c863c-d267-754f-93a0-09c55215f362',
+  proxy_password = '019c863c-d267-754f-93a0-0c5455ea887a',
 }

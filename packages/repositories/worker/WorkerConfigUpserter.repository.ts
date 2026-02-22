@@ -65,6 +65,10 @@ export class WorkerConfigUpserterRepository {
           input.auto_save_contacts
         );
       }
+
+      if (input.proxy_enabled !== undefined) {
+        await this.upsertProxyConfig(tx, workerId, input);
+      }
     });
   };
 
@@ -339,6 +343,56 @@ export class WorkerConfigUpserterRepository {
 
     const targetStatusId = isActive ? activeStatusId : inactiveStatusId;
     await this.createBooleanConfig(tx, workerId, targetStatusId, type);
+  }
+
+  private async upsertProxyConfig(
+    tx: Transaction,
+    workerId: string,
+    input: IUpdateWorkerConfig
+  ): Promise<void> {
+    const enabled = Boolean(input.proxy_enabled);
+    const targetStatusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    await this.upsertBooleanConfig(
+      tx,
+      workerId,
+      EWorkerConfigType.proxy_enabled,
+      enabled
+    );
+
+    await this.upsertConfigValue(
+      tx,
+      workerId,
+      targetStatusId,
+      EWorkerConfigType.proxy_host,
+      input.proxy_host?.trim() || null
+    );
+
+    await this.upsertConfigValue(
+      tx,
+      workerId,
+      targetStatusId,
+      EWorkerConfigType.proxy_port,
+      input.proxy_port ? input.proxy_port.toString() : null
+    );
+
+    await this.upsertConfigValue(
+      tx,
+      workerId,
+      targetStatusId,
+      EWorkerConfigType.proxy_username,
+      input.proxy_username?.trim() || null
+    );
+
+    await this.upsertConfigValue(
+      tx,
+      workerId,
+      targetStatusId,
+      EWorkerConfigType.proxy_password,
+      input.proxy_password?.trim() || null
+    );
   }
 
   private async updateConfigStatus(

@@ -12,6 +12,11 @@ export interface IWorkerConfigValue {
   reject_call: boolean | null;
   auto_save_contacts: boolean | null;
   chatbot_id: string | null;
+  proxy_enabled: boolean | null;
+  proxy_host: string | null;
+  proxy_port: number | null;
+  proxy_username: string | null;
+  proxy_password: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

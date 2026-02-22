@@ -30,6 +30,9 @@ import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidatio
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { ServerSshViewerRepository } from '@core/repositories/server/ServerSshViewer.repository';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
+import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
+import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
+import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -63,6 +66,8 @@ export class WorkerCommandHandlerService {
     private readonly workerBaileysGrpcClientService: WorkerBaileysGrpcClientService,
     @inject(ServerSshViewerRepository)
     private readonly serverSshViewerRepository: ServerSshViewerRepository,
+    @inject(WorkerConfigViewerRepository)
+    private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
@@ -463,7 +468,10 @@ export class WorkerCommandHandlerService {
     return undefined;
   }
 
-  private async resolveWorkerProxyConfig(serverId: string): Promise<
+  private async resolveWorkerProxyConfig(
+    workerId: string,
+    serverId: string
+  ): Promise<
     | {
         host: string;
         port: number;
@@ -473,39 +481,20 @@ export class WorkerCommandHandlerService {
     | undefined
   > {
     try {
-      const server =
-        await this.serverSshViewerRepository.viewServerSshById(serverId);
-      if (!server) {
-        return undefined;
+      const channelProxy = await this.resolveChannelProxyConfig(workerId);
+      if (channelProxy) {
+        return channelProxy;
       }
+    } catch (err) {
+      console.error('Failed to resolve channel proxy config. Falling back to server proxy.', {
+        workerId,
+        serverId,
+        error: getErrorMessage(err),
+      });
+    }
 
-      const proxy = {
-        enabled: server.proxy_enabled,
-        host: server.proxy_host,
-        port: server.proxy_port,
-        username: server.proxy_username
-          ? this.passwordEncryptorService.decrypt(server.proxy_username)
-          : null,
-        password: server.proxy_password
-          ? this.passwordEncryptorService.decrypt(server.proxy_password)
-          : null,
-      };
-
-      if (
-        !proxy?.enabled ||
-        !proxy.host ||
-        !proxy.port ||
-        !Number.isFinite(proxy.port)
-      ) {
-        return undefined;
-      }
-
-      return {
-        host: proxy.host,
-        port: proxy.port,
-        username: proxy.username,
-        password: proxy.password,
-      };
+    try {
+      return await this.resolveServerProxyConfig(serverId);
     } catch (err) {
       console.error('Failed to resolve server proxy config', {
         serverId,
@@ -513,6 +502,107 @@ export class WorkerCommandHandlerService {
       });
 
       return undefined;
+    }
+  }
+
+  private async resolveChannelProxyConfig(workerId: string): Promise<
+    | {
+        host: string;
+        port: number;
+        username?: string | null;
+        password?: string | null;
+      }
+    | undefined
+  > {
+    const [
+      proxyEnabled,
+      proxyHost,
+      proxyPort,
+      proxyUsername,
+      proxyPassword,
+    ] = await Promise.all([
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_enabled
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_host
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_port
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_username
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_password
+      ),
+    ]);
+
+    if (proxyEnabled.statusId !== EWorkerConfigStatus.active) {
+      return undefined;
+    }
+
+    const host = proxyHost.value?.trim();
+    const port = Number.parseInt(proxyPort.value ?? '', 10);
+    if (!host || !Number.isFinite(port) || port <= 0) {
+      return undefined;
+    }
+
+    return {
+      host,
+      port,
+      username: this.tryDecryptProxyValue(proxyUsername.value),
+      password: this.tryDecryptProxyValue(proxyPassword.value),
+    };
+  }
+
+  private async resolveServerProxyConfig(serverId: string): Promise<
+    | {
+        host: string;
+        port: number;
+        username?: string | null;
+        password?: string | null;
+      }
+    | undefined
+  > {
+    const server = await this.serverSshViewerRepository.viewServerSshById(
+      serverId
+    );
+    if (!server) {
+      return undefined;
+    }
+
+    if (
+      !server.proxy_enabled ||
+      !server.proxy_host ||
+      !server.proxy_port ||
+      !Number.isFinite(server.proxy_port)
+    ) {
+      return undefined;
+    }
+
+    return {
+      host: server.proxy_host,
+      port: server.proxy_port,
+      username: this.tryDecryptProxyValue(server.proxy_username),
+      password: this.tryDecryptProxyValue(server.proxy_password),
+    };
+  }
+
+  private tryDecryptProxyValue(value: string | null): string | null {
+    if (!value) {
+      return null;
+    }
+
+    try {
+      return this.passwordEncryptorService.decrypt(value);
+    } catch {
+      return value;
     }
   }
 
@@ -613,7 +703,10 @@ export class WorkerCommandHandlerService {
       });
     }
 
-    const proxy = await this.resolveWorkerProxyConfig(data.server_id);
+    const proxy = await this.resolveWorkerProxyConfig(
+      data.worker_id,
+      data.server_id
+    );
 
     const containerId = await this.retryOperation(
       async () =>
@@ -912,7 +1005,10 @@ export class WorkerCommandHandlerService {
       });
     }
 
-    const proxy = await this.resolveWorkerProxyConfig(data.server_id);
+    const proxy = await this.resolveWorkerProxyConfig(
+      data.worker_id,
+      data.server_id
+    );
 
     const containerId = await this.retryOperation(
       async () =>
