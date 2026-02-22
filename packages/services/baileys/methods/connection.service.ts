@@ -143,6 +143,19 @@ export class BaileysConnectionService {
 
   private handleHealthCheckMismatch(detectedStatus: Status): void {
     if (detectedStatus === Status.disconnected && this.connectionEstablished) {
+      const socketReference = this.socket as unknown as {
+        ws?: { isOpen?: boolean };
+      };
+      const wsClientIsOpen = socketReference.ws?.isOpen === true;
+      const wsReadyState = this.resolveWebSocket()?.readyState;
+
+      if (wsClientIsOpen || wsReadyState === 1) {
+        console.warn(
+          '[BaileysConnection] Health check mismatch ignored: socket still OPEN'
+        );
+        return;
+      }
+
       console.log(
         '[BaileysConnection] Health check detected disconnection, triggering reconnect'
       );

@@ -29,6 +29,8 @@ interface HealthCheckResult {
   workerStatus: EWorkerStatus;
 }
 
+type SocketStateName = 'open' | 'connecting' | 'closing' | 'closed' | 'unknown';
+
 @singleton()
 export class BaileysHealthCheckService {
   private intervalId: NodeJS.Timeout | undefined;
@@ -167,42 +169,58 @@ export class BaileysHealthCheckService {
       };
     }
 
-    const ws = this.resolveWebSocket(socket);
-    if (!ws) {
-      return {
-        isHealthy: false,
-        reason: 'WebSocket not available',
-        detectedStatus: Status.disconnected,
-        workerStatus: EWorkerStatus.offline,
-      };
-    }
+    const socketState = this.inspectSocketState(socket);
 
-    const readyState = ws.readyState;
+    if (socketState.state === 'open') {
+      if (reportedStatus === Status.connecting) {
+        return {
+          isHealthy: true,
+          reason: `Connecting (${socketState.reason})`,
+          detectedStatus: Status.connecting,
+          workerStatus: EWorkerStatus.disponible,
+        };
+      }
 
-    if (readyState !== 1) {
-      const stateNames = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
-      return {
-        isHealthy: false,
-        reason: `WebSocket state: ${stateNames[readyState] ?? readyState}`,
-        detectedStatus: Status.disconnected,
-        workerStatus: EWorkerStatus.offline,
-      };
-    }
-
-    if (reportedStatus === Status.connecting) {
       return {
         isHealthy: true,
-        reason: 'WebSocket open (connecting)',
+        reason: `Connection healthy (${socketState.reason})`,
+        detectedStatus: Status.connected,
+        workerStatus: EWorkerStatus.online,
+      };
+    }
+
+    if (
+      socketState.state === 'connecting' ||
+      reportedStatus === Status.connecting
+    ) {
+      return {
+        isHealthy: true,
+        reason:
+          socketState.state === 'connecting'
+            ? `Connecting (${socketState.reason})`
+            : 'Connecting (reported by service)',
         detectedStatus: Status.connecting,
         workerStatus: EWorkerStatus.disponible,
       };
     }
 
+    if (
+      socketState.state === 'unknown' &&
+      reportedStatus === Status.connected
+    ) {
+      return {
+        isHealthy: true,
+        reason: `Connected (reported by service, ${socketState.reason})`,
+        detectedStatus: Status.connected,
+        workerStatus: EWorkerStatus.online,
+      };
+    }
+
     return {
-      isHealthy: true,
-      reason: 'WebSocket open (connected)',
-      detectedStatus: Status.connected,
-      workerStatus: EWorkerStatus.online,
+      isHealthy: false,
+      reason: socketState.reason,
+      detectedStatus: Status.disconnected,
+      workerStatus: EWorkerStatus.offline,
     };
   }
 
@@ -285,6 +303,75 @@ export class BaileysHealthCheckService {
     }
 
     return undefined;
+  }
+
+  private inspectSocketState(socket: WASocket): {
+    state: SocketStateName;
+    reason: string;
+  } {
+    const reference = socket as unknown as {
+      ws?: {
+        isOpen?: boolean;
+        isClosed?: boolean;
+        isClosing?: boolean;
+        isConnecting?: boolean;
+        socket?: WebSocket | null;
+      };
+    };
+
+    const wsClient = reference.ws;
+    if (wsClient && typeof wsClient === 'object') {
+      if (wsClient.isOpen === true) {
+        return { state: 'open', reason: 'WebSocket client state: OPEN' };
+      }
+
+      if (wsClient.isConnecting === true) {
+        return {
+          state: 'connecting',
+          reason: 'WebSocket client state: CONNECTING',
+        };
+      }
+
+      if (wsClient.isClosing === true) {
+        return { state: 'closing', reason: 'WebSocket client state: CLOSING' };
+      }
+
+      if (wsClient.isClosed === true) {
+        return { state: 'closed', reason: 'WebSocket client state: CLOSED' };
+      }
+
+      if (wsClient.socket) {
+        return this.mapReadyState(
+          wsClient.socket.readyState,
+          'WebSocket raw state'
+        );
+      }
+    }
+
+    const rawWebSocket = this.resolveWebSocket(socket);
+    if (!rawWebSocket) {
+      return { state: 'unknown', reason: 'WebSocket state unavailable' };
+    }
+
+    return this.mapReadyState(rawWebSocket.readyState, 'WebSocket state');
+  }
+
+  private mapReadyState(
+    readyState: number,
+    label: string
+  ): { state: SocketStateName; reason: string } {
+    switch (readyState) {
+      case 0:
+        return { state: 'connecting', reason: `${label}: CONNECTING` };
+      case 1:
+        return { state: 'open', reason: `${label}: OPEN` };
+      case 2:
+        return { state: 'closing', reason: `${label}: CLOSING` };
+      case 3:
+        return { state: 'closed', reason: `${label}: CLOSED` };
+      default:
+        return { state: 'unknown', reason: `${label}: ${readyState}` };
+    }
   }
 
   private readonly saveLogWppConnection = async (

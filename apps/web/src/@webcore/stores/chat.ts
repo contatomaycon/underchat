@@ -1349,18 +1349,14 @@ export const useChatStore = defineStore('chat', {
         );
       }
 
-      const canViewChatbotMessages = permissions.some(
-        (perm: EPermissionsRoles) =>
-          perm === EGeneralPermissions.full_access ||
-          perm === EGeneralPermissions.full_access_group ||
-          perm === EChatPermissions.chat_group ||
-          perm === EChatPermissions.view_chatbot_messages
-      );
-
       const isOwnChat = chat.user?.id === this.user?.user_id;
 
       if (this.isChatbotStatus(chat.status)) {
-        return canViewChatbotMessages || isOwnChat;
+        if (hasPermissionToViewAll || isOwnChat) {
+          return true;
+        }
+
+        return canListAllChatsInSector && isChatInUserSectors;
       }
 
       return (

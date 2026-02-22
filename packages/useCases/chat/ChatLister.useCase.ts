@@ -111,6 +111,65 @@ export class ChatListerUseCase {
     } as unknown as IElasticsearchBoolClause;
   }
 
+  private isChatbotStatus(status: string): boolean {
+    return (
+      status === EChatStatus.ura ||
+      status === EChatStatus.ura_output ||
+      status === EChatStatus.ura_schedule ||
+      status === EChatStatus.ura_webhook
+    );
+  }
+
+  private buildInChatVisibilityIncludingNoSector(
+    userId: string,
+    userSectors: string[]
+  ): IElasticsearchBoolClause {
+    const inChatShould: unknown[] = [
+      {
+        nested: {
+          path: 'user',
+          query: {
+            term: {
+              'user.id': userId,
+            },
+          },
+        },
+      },
+      {
+        bool: {
+          must_not: {
+            nested: {
+              path: 'sector',
+              query: {
+                exists: {
+                  field: 'sector.id',
+                },
+              },
+            },
+          },
+        },
+      } as unknown as IElasticsearchBoolClause,
+    ];
+    if (userSectors.length > 0) {
+      inChatShould.push({
+        nested: {
+          path: 'sector',
+          query: {
+            terms: {
+              'sector.id': userSectors,
+            },
+          },
+        },
+      } as unknown as IElasticsearchBoolClause);
+    }
+    return {
+      bool: {
+        should: inChatShould,
+        minimum_should_match: 1,
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
   private async getUserSortPreferences(userId: string): Promise<{
     sortByChatOrder: string;
     sortInChatOrder: string;
@@ -633,65 +692,26 @@ export class ChatListerUseCase {
 
     const canViewInSector = this.canViewChatsInSector(actions);
 
-    if (!isMyChats && !canViewOthers && !canListAll) {
-      if (statusArray.includes(EChatStatus.in_chat)) {
-        if (canViewInSector) {
-          const inChatShould: unknown[] = [
-            {
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
-                  },
-                },
+    const hasInChatLikeStatus = statusArray.some(
+      (status) => status === EChatStatus.in_chat || this.isChatbotStatus(status)
+    );
+
+    if (!isMyChats && !canViewOthers && !canListAll && hasInChatLikeStatus) {
+      if (canViewInSector) {
+        filterClauses.push(
+          this.buildInChatVisibilityIncludingNoSector(userId, userSectors)
+        );
+      } else {
+        filterClauses.push({
+          nested: {
+            path: 'user',
+            query: {
+              term: {
+                'user.id': userId,
               },
             },
-            {
-              bool: {
-                must_not: {
-                  nested: {
-                    path: 'sector',
-                    query: {
-                      exists: {
-                        field: 'sector.id',
-                      },
-                    },
-                  },
-                },
-              },
-            } as unknown as IElasticsearchBoolClause,
-          ];
-          if (userSectors.length > 0) {
-            inChatShould.push({
-              nested: {
-                path: 'sector',
-                query: {
-                  terms: {
-                    'sector.id': userSectors,
-                  },
-                },
-              },
-            } as unknown as IElasticsearchBoolClause);
-          }
-          filterClauses.push({
-            bool: {
-              should: inChatShould,
-              minimum_should_match: 1,
-            },
-          } as unknown as IElasticsearchBoolClause);
-        } else {
-          filterClauses.push({
-            nested: {
-              path: 'user',
-              query: {
-                term: {
-                  'user.id': userId,
-                },
-              },
-            },
-          });
-        }
+          },
+        });
       }
     }
 
@@ -1032,82 +1052,44 @@ export class ChatListerUseCase {
       ];
     };
 
-    const buildInChatCountFilter = (): IElasticsearchBoolClause[] => {
+    const buildStatusFilter = (
+      statuses: EChatStatus[]
+    ): IElasticsearchBoolClause => {
+      if (statuses.length === 1) {
+        return {
+          term: {
+            status: statuses[0],
+          },
+        } as unknown as IElasticsearchBoolClause;
+      }
+
+      return {
+        terms: {
+          status: statuses,
+        },
+      } as unknown as IElasticsearchBoolClause;
+    };
+
+    const buildInChatLikeCountFilter = (
+      statuses: EChatStatus[]
+    ): IElasticsearchBoolClause[] => {
+      const statusFilter = buildStatusFilter(statuses);
+
       if (canViewOthers || canListAll) {
-        return [
-          ...baseFiltersForCounts,
-          {
-            term: {
-              status: EChatStatus.in_chat,
-            },
-          } as unknown as IElasticsearchBoolClause,
-        ];
+        return [...baseFiltersForCounts, statusFilter];
       }
 
       if (canViewInSector) {
-        const inChatSectorShould: unknown[] = [
-          {
-            nested: {
-              path: 'user',
-              query: {
-                term: {
-                  'user.id': userId,
-                },
-              },
-            },
-          },
-          {
-            bool: {
-              must_not: {
-                nested: {
-                  path: 'sector',
-                  query: {
-                    exists: {
-                      field: 'sector.id',
-                    },
-                  },
-                },
-              },
-            },
-          },
-        ];
-        if (userSectors.length > 0) {
-          inChatSectorShould.push({
-            nested: {
-              path: 'sector',
-              query: {
-                terms: {
-                  'sector.id': userSectors,
-                },
-              },
-            },
-          });
-        }
-        const inChatSectorVisibility = {
-          bool: {
-            should: inChatSectorShould,
-            minimum_should_match: 1,
-          },
-        } as unknown as IElasticsearchBoolClause;
-
         return [
           ...baseFiltersForCounts,
-          {
-            term: {
-              status: EChatStatus.in_chat,
-            },
-          } as unknown as IElasticsearchBoolClause,
-          inChatSectorVisibility,
+          statusFilter,
+          this.buildInChatVisibilityIncludingNoSector(userId, userSectors),
         ];
       }
 
       return [
         ...baseFiltersForCounts,
-        {
-          term: {
-            status: EChatStatus.in_chat,
-          },
-        } as unknown as IElasticsearchBoolClause,
+        statusFilter,
         {
           nested: {
             path: 'user',
@@ -1121,54 +1103,16 @@ export class ChatListerUseCase {
       ];
     };
 
-    const buildChatbotCountFilter = (): IElasticsearchBoolClause[] => {
-      const canViewChatbotMessages = hasRequiredPermission(actions, [
-        EGeneralPermissions.full_access,
-        EGeneralPermissions.full_access_group,
-        EChatPermissions.chat_group,
-        EChatPermissions.view_chatbot_messages,
+    const buildInChatCountFilter = (): IElasticsearchBoolClause[] =>
+      buildInChatLikeCountFilter([EChatStatus.in_chat]);
+
+    const buildChatbotCountFilter = (): IElasticsearchBoolClause[] =>
+      buildInChatLikeCountFilter([
+        EChatStatus.ura,
+        EChatStatus.ura_output,
+        EChatStatus.ura_schedule,
+        EChatStatus.ura_webhook,
       ]);
-
-      if (canViewChatbotMessages) {
-        return [
-          ...baseFiltersForCounts,
-          {
-            terms: {
-              status: [
-                EChatStatus.ura,
-                EChatStatus.ura_output,
-                EChatStatus.ura_schedule,
-                EChatStatus.ura_webhook,
-              ],
-            },
-          } as unknown as IElasticsearchBoolClause,
-        ];
-      }
-
-      return [
-        ...baseFiltersForCounts,
-        {
-          terms: {
-            status: [
-              EChatStatus.ura,
-              EChatStatus.ura_output,
-              EChatStatus.ura_schedule,
-              EChatStatus.ura_webhook,
-            ],
-          },
-        } as unknown as IElasticsearchBoolClause,
-        {
-          nested: {
-            path: 'user',
-            query: {
-              term: {
-                'user.id': userId,
-              },
-            },
-          },
-        } as unknown as IElasticsearchBoolClause,
-      ];
-    };
 
     const buildMyChatsCountFilter = (): IElasticsearchBoolClause[] => {
       const myChatsFilter: IElasticsearchBoolClause = {
