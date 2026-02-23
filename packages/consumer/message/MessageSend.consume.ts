@@ -41,6 +41,7 @@ import { parseSerializedMessageId } from '@core/common/functions/parseSerialized
 export class MessageSendConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
+  private readonly CHAT_QUEUE_TIMEOUT_MS = 10 * 60 * 1000;
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
     new Map();
 
@@ -287,7 +288,9 @@ export class MessageSendConsume {
     chatId: string,
     task: () => Promise<void>
   ): Promise<void> {
-    await this.keyedSequencerService.enqueue(chatId, task);
+    await this.keyedSequencerService.enqueue(chatId, task, {
+      timeoutMs: this.CHAT_QUEUE_TIMEOUT_MS,
+    });
   }
 
   private isTransientError(error: unknown): boolean {
