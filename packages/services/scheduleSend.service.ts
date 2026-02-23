@@ -117,6 +117,11 @@ export class ScheduleSendService {
     return generateProtocol();
   }
 
+  private normalizePhoneDdi(phoneDdi: string | null | undefined): string {
+    const digits = phoneDdi?.replaceAll(/\D/g, '') ?? '';
+    return digits || '55';
+  }
+
   private isExecutionAllowedStatus(status: EScheduleStatus | null): boolean {
     return (
       status === EScheduleStatus.pending ||
@@ -375,6 +380,7 @@ export class ScheduleSendService {
     jid: string
   ): IChatMessage {
     const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
+    const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
     const now = new Date().toISOString();
 
     return {
@@ -396,7 +402,7 @@ export class ScheduleSendService {
       },
       user: null,
       phone: phone ?? '',
-      phone_ddi: contact.phone_ddi ?? null,
+      phone_ddi: phoneDdi,
       summary: {
         is_sent: false,
         is_delivered: false,
@@ -707,7 +713,8 @@ export class ScheduleSendService {
       );
 
       const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
-      const jid = normalizePhoneToJid(phone, contact.phone_ddi);
+      const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
+      const jid = normalizePhoneToJid(phone, phoneDdi);
       const now = new Date().toISOString();
 
       const document: ScheduleDocument = {
@@ -720,7 +727,7 @@ export class ScheduleSendService {
           id: contact.contact_id,
           name: contact.name,
           phone: phone ?? null,
-          phone_ddi: contact.phone_ddi ?? null,
+          phone_ddi: phoneDdi,
           phone_partial: contact.phone_partial ?? null,
         },
         account: {
@@ -797,7 +804,8 @@ export class ScheduleSendService {
     const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
     if (!phone) return null;
 
-    const jid = normalizePhoneToJid(phone, contact.phone_ddi);
+    const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
+    const jid = normalizePhoneToJid(phone, phoneDdi);
     if (!jid) return null;
 
     return jid;
@@ -839,7 +847,7 @@ export class ScheduleSendService {
       this.contactService.getContactPhoneDecrypted(contact.phone) ??
       getPhoneFromJid(jid, null) ??
       '';
-    const phoneDdi = contact.phone_ddi ?? '';
+    const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
     const fullPhone = `${phoneDdi}${phone}`;
     const contactPhoneSanitized = phone
       ? this.encryptService.sanitize(phone, ETypeSanetize.phone)
@@ -854,7 +862,7 @@ export class ScheduleSendService {
         id: contact.contact_id,
         name: contact.name,
         phone: contactPhoneSanitized,
-        phone_ddi: contact.phone_ddi ?? null,
+        phone_ddi: phoneDdi,
         responsible_attendant: null,
         ignore: 'not_ignore',
       },
@@ -927,6 +935,8 @@ export class ScheduleSendService {
     jid: string,
     now: string
   ): IChatMessage {
+    const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
+
     return {
       message_id: uuidv7(),
       chat_id: `${schedule.account_id}:${jid}`,
@@ -940,7 +950,7 @@ export class ScheduleSendService {
       worker: { id: schedule.worker_id, name: schedule.worker_name },
       user: null,
       phone: this.contactService.getContactPhoneDecrypted(contact.phone) ?? '',
-      phone_ddi: contact.phone_ddi ?? null,
+      phone_ddi: phoneDdi,
       summary: {
         is_sent: false,
         is_delivered: false,
@@ -1002,7 +1012,7 @@ export class ScheduleSendService {
     const decrypted = this.contactService.getContactPhoneDecrypted(
       contact.phone
     );
-    const ddi = contact.phone_ddi ?? '';
+    const ddi = this.normalizePhoneDdi(contact.phone_ddi);
     const phoneFromContact = decrypted ? `${ddi}${decrypted}` : null;
     const phone = phoneFromJid ?? phoneFromContact;
     if (phone) {

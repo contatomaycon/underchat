@@ -6,7 +6,8 @@ export function normalizePhoneToJid(
 ): string | undefined {
   if (!phone) return undefined;
 
-  const ddi = phoneDdi ?? '55';
+  const ddiDigits = phoneDdi?.replaceAll(/\D/g, '') ?? '';
+  const ddi = ddiDigits || '55';
   const phoneNumber = phone.replaceAll(/\D/g, '');
 
   if (!phoneNumber) return undefined;
