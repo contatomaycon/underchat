@@ -202,9 +202,29 @@ const ensureConnectedInner = async (
   }
 
   const currentStatus = wwebjs.getStatus();
-  if (currentStatus === EBaileysConnectionStatus.connecting) {
-    const hasValidSession = wwebjs.hasSession();
+  const hasValidSession = wwebjs.hasSession();
 
+  if (
+    !hasValidSession &&
+    currentStatus !== EBaileysConnectionStatus.connecting
+  ) {
+    log.info(
+      { attempt },
+      'Wwebjs sem sessão restaurável. Aguardando solicitação do frontend para iniciar leitura de QR.'
+    );
+    QrCodeCounter.reset();
+    await notifyAndEnsureDelivery(
+      wwebjsEnvironment.wwebjsWorkerId,
+      wwebjsEnvironment.wwebjsAccountId,
+      EWorkerStatus.disponible,
+      log
+    );
+    fireOnReady(onReady);
+    ensureConnectedLock = false;
+    return;
+  }
+
+  if (currentStatus === EBaileysConnectionStatus.connecting) {
     if (hasValidSession && attempt <= MAX_RETRY_ATTEMPTS) {
       log.info(
         { attempt, maxRetries: MAX_RETRY_ATTEMPTS },

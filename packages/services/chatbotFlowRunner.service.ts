@@ -364,6 +364,7 @@ export class ChatbotFlowRunnerService {
       messages: string[];
       flowId: string;
       selectedAiAgentId: string;
+      lastMessageType?: EMessageType;
     }
   ): Promise<void> {
     const key = this.getAiAgentDebounceCacheKey(
@@ -385,6 +386,7 @@ export class ChatbotFlowRunnerService {
     messages: string[];
     flowId: string;
     selectedAiAgentId: string;
+    lastMessageType?: EMessageType;
   } | null> {
     const key = this.getAiAgentDebounceCacheKey(
       createChat.account.id,
@@ -454,7 +456,8 @@ export class ChatbotFlowRunnerService {
             bootstrapSummaryKey,
             conversationSummaryKey,
             chatbotFlow,
-            customMessages
+            customMessages,
+            debounceData.lastMessageType
           );
         } catch (error) {
           console.error(
@@ -5795,6 +5798,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       messages: mergedMessages,
       flowId: currentFlowId,
       selectedAiAgentId,
+      lastMessageType: data.type,
     });
 
     this.scheduleAiAgentDebouncedResponse(
@@ -5848,7 +5852,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     bootstrapSummaryKey: string,
     conversationSummaryKey: string,
     chatbotFlow: ListChatbotFlowResponse,
-    customMessages?: IChatbotCustomMessages
+    customMessages?: IChatbotCustomMessages,
+    inputMessageType?: EMessageType
   ): Promise<boolean> {
     const actionAfterInteractions =
       currentNode.data?.actionAfterInteractions === true;
@@ -5978,7 +5983,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       conversationSummaryKey,
       chatbotFlow,
       customMessages,
-      { suppressTransferMention, transferMode }
+      { suppressTransferMention, transferMode },
+      inputMessageType
     );
   }
 
@@ -5996,7 +6002,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     transferOptions?: {
       suppressTransferMention?: boolean;
       transferMode?: HumanTransferMode;
-    }
+    },
+    inputMessageType?: EMessageType
   ): Promise<boolean> {
     if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
       throw new InvalidConfigurationError(
@@ -6191,9 +6198,11 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         model,
         ai_agent_type_id: aiAgent.ai_agent_type_id,
         voice_ia_id: aiAgent.voice_ia_id,
+        voice_ia_output_mode: aiAgent.voice_ia_output_mode,
       },
       shouldStoreLastAgentResponse,
-      recentMessagesForSummary
+      recentMessagesForSummary,
+      inputMessageType
     );
 
     const actionAfterInteractions =

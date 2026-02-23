@@ -106,7 +106,7 @@ const maxAttemptDisplay = computed(() => {
 
 const showQrSkeleton = computed(() => {
   if (isConnected.value || qrcode.value) return false;
-  if (attempt.value > maxAttempts.value && !isPhoneNumber.value) return false;
+  if (attempt.value >= maxAttempts.value && !isPhoneNumber.value) return false;
   if (isPhoneNumber.value && !phoneSent.value) return false;
   if (statusCode.value === ECodeMessage.phoneNotAvailable) return false;
 
@@ -224,7 +224,7 @@ function startTimer() {
       }
 
       elapsedSeconds.value = 0;
-      if (attempt.value <= maxAttempts.value) {
+      if (attempt.value < maxAttempts.value) {
         attempt.value++;
         reconnectChannel();
         return;
@@ -343,6 +343,10 @@ onMounted(async () => {
             statusCode.value = incomingCode;
           }
 
+          if (incomingCode === ECodeMessage.awaitConnection && !data.qrcode) {
+            qrcode.value = null;
+          }
+
           if (incomingCode === ECodeMessage.loggedOut) {
             attempt.value = 0;
             removeInPhone.value = true;
@@ -357,7 +361,7 @@ onMounted(async () => {
         if (
           data.status === EBaileysConnectionStatus.connecting &&
           qrcode.value &&
-          attempt.value <= maxAttempts.value
+          attempt.value < maxAttempts.value
         ) {
           startTimer();
         }
@@ -513,7 +517,7 @@ onUnmounted(() => {
           </div>
 
           <div
-            v-else-if="attempt > maxAttempts && !isConnected && !isPhoneNumber"
+            v-else-if="attempt >= maxAttempts && !isConnected && !isPhoneNumber"
           >
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-mobiledata-off" size="150" />
@@ -701,7 +705,7 @@ onUnmounted(() => {
 
               <VBtn
                 :disabled="
-                  !(attempt > maxAttempts && !isConnected) &&
+                  !(attempt >= maxAttempts && !isConnected) &&
                   !(isDisconnected && removeInPhone)
                 "
                 color="warning"

@@ -486,11 +486,14 @@ export class WorkerCommandHandlerService {
         return channelProxy;
       }
     } catch (err) {
-      console.error('Failed to resolve channel proxy config. Falling back to server proxy.', {
-        workerId,
-        serverId,
-        error: getErrorMessage(err),
-      });
+      console.error(
+        'Failed to resolve channel proxy config. Falling back to server proxy.',
+        {
+          workerId,
+          serverId,
+          error: getErrorMessage(err),
+        }
+      );
     }
 
     try {
@@ -514,34 +517,29 @@ export class WorkerCommandHandlerService {
       }
     | undefined
   > {
-    const [
-      proxyEnabled,
-      proxyHost,
-      proxyPort,
-      proxyUsername,
-      proxyPassword,
-    ] = await Promise.all([
-      this.workerConfigViewerRepository.fetchConfigValueByType(
-        workerId,
-        EWorkerConfigType.proxy_enabled
-      ),
-      this.workerConfigViewerRepository.fetchConfigValueByType(
-        workerId,
-        EWorkerConfigType.proxy_host
-      ),
-      this.workerConfigViewerRepository.fetchConfigValueByType(
-        workerId,
-        EWorkerConfigType.proxy_port
-      ),
-      this.workerConfigViewerRepository.fetchConfigValueByType(
-        workerId,
-        EWorkerConfigType.proxy_username
-      ),
-      this.workerConfigViewerRepository.fetchConfigValueByType(
-        workerId,
-        EWorkerConfigType.proxy_password
-      ),
-    ]);
+    const [proxyEnabled, proxyHost, proxyPort, proxyUsername, proxyPassword] =
+      await Promise.all([
+        this.workerConfigViewerRepository.fetchConfigValueByType(
+          workerId,
+          EWorkerConfigType.proxy_enabled
+        ),
+        this.workerConfigViewerRepository.fetchConfigValueByType(
+          workerId,
+          EWorkerConfigType.proxy_host
+        ),
+        this.workerConfigViewerRepository.fetchConfigValueByType(
+          workerId,
+          EWorkerConfigType.proxy_port
+        ),
+        this.workerConfigViewerRepository.fetchConfigValueByType(
+          workerId,
+          EWorkerConfigType.proxy_username
+        ),
+        this.workerConfigViewerRepository.fetchConfigValueByType(
+          workerId,
+          EWorkerConfigType.proxy_password
+        ),
+      ]);
 
     if (proxyEnabled.statusId !== EWorkerConfigStatus.active) {
       return undefined;
@@ -570,9 +568,8 @@ export class WorkerCommandHandlerService {
       }
     | undefined
   > {
-    const server = await this.serverSshViewerRepository.viewServerSshById(
-      serverId
-    );
+    const server =
+      await this.serverSshViewerRepository.viewServerSshById(serverId);
     if (!server) {
       return undefined;
     }
@@ -1075,14 +1072,15 @@ export class WorkerCommandHandlerService {
     });
 
     if (
-      data.worker_type_id === EWorkerType.baileys ||
-      data.worker_type_id === EWorkerType.wwebjs
+      connectionRequest &&
+      (data.worker_type_id === EWorkerType.baileys ||
+        data.worker_type_id === EWorkerType.wwebjs)
     ) {
       const payload: StatusConnectionWorkerRequest = {
         worker_id: data.worker_id,
-        status: connectionRequest?.status ?? EWorkerStatus.online,
-        type: connectionRequest?.type ?? EBaileysConnectionType.qrcode,
-        ...(connectionRequest?.phone_connection
+        status: connectionRequest.status,
+        type: connectionRequest.type,
+        ...(connectionRequest.phone_connection
           ? { phone_connection: connectionRequest.phone_connection }
           : {}),
       };

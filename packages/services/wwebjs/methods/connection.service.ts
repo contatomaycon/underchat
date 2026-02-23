@@ -37,6 +37,7 @@ const WORKER = wwebjsEnvironment.wwebjsWorkerId;
 const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 const RETRY_DELAY = 2000;
 const MAX_RETRIES = 5;
+const MAX_QR_GENERATIONS = 5;
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 const SHOULD_LOG_CONNECTION_IP =
@@ -85,6 +86,9 @@ export class WwebjsConnectionService {
   private initialConnection = false;
   private connecting = false;
   private retryCount = 0;
+  private qrGenerationCount = 0;
+  private qrReadSessionActive = false;
+  private qrReadSessionLocked = false;
   private initializeRetryCount = 0;
   private currentPromise: Promise<IBaileysConnectionState> | undefined;
   private pendingResolve: ((s: IBaileysConnectionState) => void) | undefined;
@@ -196,6 +200,7 @@ export class WwebjsConnectionService {
 
     this.initialConnection = initialConnection;
     this.typeConnection = typeConnection;
+    this.trackQrReadSession(requestedByUser, typeConnection);
 
     if (forceNew) {
       this.cancelAttempt(false);
@@ -215,6 +220,15 @@ export class WwebjsConnectionService {
       this.hasSession()
     ) {
       return this.startConnection();
+    }
+
+    if (
+      this.typeConnection === EBaileysConnectionType.qrcode &&
+      !requestedByUser &&
+      (this.qrReadSessionLocked ||
+        (!this.qrReadSessionActive && !this.hasSession()))
+    ) {
+      return this.state();
     }
 
     return this.startConnection();
@@ -238,6 +252,8 @@ export class WwebjsConnectionService {
     if (disconnectedUser) {
       this.userRequestedDisconnect = true;
     }
+    this.resetQrReadSession();
+    this.qrReadSessionLocked = false;
 
     await this.safeDestroy();
     this.cancelAttempt(false);
@@ -294,6 +310,8 @@ export class WwebjsConnectionService {
   }
 
   async shutdown(): Promise<void> {
+    this.resetQrReadSession();
+    this.qrReadSessionLocked = false;
     this.pendingResolve?.(this.state());
     this.pendingResolve = undefined;
     this.currentPromise = undefined;
@@ -535,7 +553,11 @@ export class WwebjsConnectionService {
       this.client = client;
 
       client.on('qr', async (qr: string) => {
-        if (this.typeConnection !== EBaileysConnectionType.qrcode) {
+        if (
+          this.typeConnection !== EBaileysConnectionType.qrcode ||
+          !this.qrReadSessionActive ||
+          this.qrReadSessionLocked
+        ) {
           return;
         }
 
@@ -544,7 +566,13 @@ export class WwebjsConnectionService {
           return;
         }
 
+        if (this.qrGenerationCount >= MAX_QR_GENERATIONS) {
+          this.handleQrGenerationLimitReached();
+          return;
+        }
+
         this.qrHash = hash;
+        this.qrGenerationCount += 1;
         this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
 
         await this.printQrInConsole(qr);
@@ -577,6 +605,8 @@ export class WwebjsConnectionService {
       });
 
       client.on('ready', () => {
+        this.resetQrReadSession();
+        this.qrReadSessionLocked = false;
         this.qrHash = undefined;
         this.retryCount = 0;
         this.initializeRetryCount = 0;
@@ -670,7 +700,7 @@ export class WwebjsConnectionService {
         this.incomingMessageService.unbind();
         this.client = undefined;
 
-        if (this.retryCount < MAX_RETRIES) {
+        if (this.shouldScheduleRetryAfterDisconnect()) {
           this.retryCount++;
           const retryPayload: IBaileysConnectionState = {
             status: Status.connecting,
@@ -945,6 +975,71 @@ export class WwebjsConnectionService {
     };
 
     void this.centrifugo.publishSub(CHAT_CHANNEL, typingEvent).catch(() => {});
+  }
+
+  private trackQrReadSession(
+    requestedByUser: boolean,
+    typeConnection: EBaileysConnectionType
+  ): void {
+    if (typeConnection !== EBaileysConnectionType.qrcode) {
+      this.resetQrReadSession();
+      this.qrReadSessionLocked = false;
+      return;
+    }
+
+    if (requestedByUser) {
+      this.qrReadSessionActive = true;
+      this.qrReadSessionLocked = false;
+      this.qrGenerationCount = 0;
+      this.qrHash = undefined;
+    }
+  }
+
+  private resetQrReadSession(): void {
+    this.qrReadSessionActive = false;
+    this.qrGenerationCount = 0;
+  }
+
+  private shouldScheduleRetryAfterDisconnect(): boolean {
+    if (this.retryCount >= MAX_RETRIES) {
+      return false;
+    }
+
+    if (this.typeConnection !== EBaileysConnectionType.qrcode) {
+      return true;
+    }
+
+    if (this.qrReadSessionLocked) {
+      return false;
+    }
+
+    if (this.qrReadSessionActive) {
+      return true;
+    }
+
+    return this.hasSession();
+  }
+
+  private handleQrGenerationLimitReached(): void {
+    this.qrReadSessionActive = false;
+    this.qrReadSessionLocked = true;
+    this.retryCount = MAX_RETRIES;
+    this.qrHash = undefined;
+    this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      code: this.code,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      attempt: MAX_QR_GENERATIONS + 1,
+      max_attempts: MAX_QR_GENERATIONS,
+      worker_status_id: EWorkerStatus.disponible,
+    };
+
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, 'qr_limit_reached');
+    this.cancelAttempt(false);
   }
 
   private mapDisconnectReason(reason: string): ECodeMessage {

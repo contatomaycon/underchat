@@ -92,6 +92,7 @@ async function getCachedWaWebVersion(): Promise<[number, number, number]> {
 export class BaileysConnectionService {
   private readonly retryDelay = 2000;
   private readonly maxRetries = 5;
+  private readonly maxQrGenerations = 5;
 
   private socket?: WASocket;
   private status: Status = Status.initial;
@@ -109,6 +110,9 @@ export class BaileysConnectionService {
 
   private connecting = false;
   private retryCount = 0;
+  private qrGenerationCount = 0;
+  private qrReadSessionActive = false;
+  private qrReadSessionLocked = false;
   private currentPromise?: Promise<IBaileysConnectionState>;
   private pendingResolve?: (s: IBaileysConnectionState) => void;
   private connectionEstablished = false;
@@ -298,6 +302,7 @@ export class BaileysConnectionService {
     this.initialConnection = initialConnection;
     this.typeConnection = typeConnection;
     this.phoneConnection = phoneConnection;
+    this.trackQrReadSession(requestedByUser, typeConnection);
 
     if (forceNew) {
       this.cancelAttempt(false);
@@ -332,6 +337,15 @@ export class BaileysConnectionService {
     const connectingState = this.handleConnectingWithRestore(allowRestore);
     if (connectingState) {
       return connectingState;
+    }
+
+    if (
+      this.typeConnection === EBaileysConnectionType.qrcode &&
+      !requestedByUser &&
+      (this.qrReadSessionLocked ||
+        (!this.qrReadSessionActive && !this.hasSession()))
+    ) {
+      return this.state();
     }
 
     this.prepareFolder();
@@ -372,6 +386,8 @@ export class BaileysConnectionService {
     if (disconnectedUser) {
       this.userRequestedDisconnect = true;
     }
+    this.resetQrReadSession();
+    this.qrReadSessionLocked = false;
 
     await this.safeLogout(true);
     this.cancelAttempt(false);
@@ -554,7 +570,13 @@ export class BaileysConnectionService {
       return;
     }
 
+    if (this.qrGenerationCount >= this.maxQrGenerations) {
+      await this.handleQrGenerationLimitReached();
+      return;
+    }
+
     this.qrHash = qr.slice(-20);
+    this.qrGenerationCount += 1;
     this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
 
     await this.printQrInConsole(qr);
@@ -608,6 +630,8 @@ export class BaileysConnectionService {
   private async onOpen(
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
+    this.resetQrReadSession();
+    this.qrReadSessionLocked = false;
     this.qrHash = undefined;
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
     this.connectionEstablished = true;
@@ -826,7 +850,7 @@ export class BaileysConnectionService {
     resolve(this.state());
     this.pendingResolve = undefined;
 
-    if (this.retryCount < this.maxRetries) {
+    if (this.shouldScheduleRetryAfterClose()) {
       const retryPayload: IBaileysConnectionState = {
         status: Status.connecting,
         worker_id: WORKER,
@@ -874,7 +898,77 @@ export class BaileysConnectionService {
   }
 
   private canShowQr(): boolean {
-    return this.initialConnection && !this.connected;
+    return (
+      this.initialConnection &&
+      !this.connected &&
+      this.qrReadSessionActive &&
+      !this.qrReadSessionLocked
+    );
+  }
+
+  private trackQrReadSession(
+    requestedByUser: boolean,
+    typeConnection: EBaileysConnectionType
+  ): void {
+    if (typeConnection !== EBaileysConnectionType.qrcode) {
+      this.resetQrReadSession();
+      this.qrReadSessionLocked = false;
+      return;
+    }
+
+    if (requestedByUser) {
+      this.qrReadSessionActive = true;
+      this.qrReadSessionLocked = false;
+      this.qrGenerationCount = 0;
+      this.qrHash = undefined;
+    }
+  }
+
+  private resetQrReadSession(): void {
+    this.qrReadSessionActive = false;
+    this.qrGenerationCount = 0;
+  }
+
+  private shouldScheduleRetryAfterClose(): boolean {
+    if (this.retryCount + 1 >= this.maxRetries) {
+      return false;
+    }
+
+    if (this.typeConnection !== EBaileysConnectionType.qrcode) {
+      return true;
+    }
+
+    if (this.qrReadSessionLocked) {
+      return false;
+    }
+
+    if (this.qrReadSessionActive) {
+      return true;
+    }
+
+    return this.hasSession();
+  }
+
+  private async handleQrGenerationLimitReached(): Promise<void> {
+    this.qrReadSessionActive = false;
+    this.qrReadSessionLocked = true;
+    this.retryCount = this.maxRetries;
+    this.qrHash = undefined;
+    this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      code: this.code,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      attempt: this.maxQrGenerations + 1,
+      max_attempts: this.maxQrGenerations,
+      worker_status_id: EWorkerStatus.disponible,
+    };
+
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, 'qr_limit_reached');
+    this.cancelAttempt(false);
   }
 
   hasSession(): boolean {
