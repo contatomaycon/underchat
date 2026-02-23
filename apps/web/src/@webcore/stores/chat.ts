@@ -218,7 +218,6 @@ export const useChatStore = defineStore('chat', {
     loading: false,
     loadingChats: false,
     skipChatStatusEventsUntil: {} as Record<string, number>,
-    countsOptimisticUntil: 0,
     loadingMoreMessages: false,
     pendingStatusUpdateChatId: null as string | null,
     activeChat: null as ListChatsResult | null,
@@ -1132,17 +1131,6 @@ export const useChatStore = defineStore('chat', {
         return;
       }
       delete this.skipChatStatusEventsUntil[chatId];
-    },
-
-    markCountsOptimistic(timeoutMs = 5000): void {
-      const next = Date.now() + timeoutMs;
-      if (next > this.countsOptimisticUntil) {
-        this.countsOptimisticUntil = next;
-      }
-    },
-
-    isCountsOptimisticActive(): boolean {
-      return this.countsOptimisticUntil > Date.now();
     },
 
     replaceOrPushInList(
@@ -2382,20 +2370,46 @@ export const useChatStore = defineStore('chat', {
 
         this.updateListsByStatus(statusArray, data.data.results, append);
 
+        const counts = data.data.counts;
+        const isMultiStatus = statusArray.length > 1;
+
         if (statusArray.includes(EChatStatus.queue)) {
-          this.queuePagings = { ...data.data.pagings };
+          this.queuePagings = {
+            ...data.data.pagings,
+            total:
+              isMultiStatus && counts ? counts.queue : data.data.pagings.total,
+          };
         }
         if (statusArray.includes(EChatStatus.in_chat)) {
-          this.inChatPagings = { ...data.data.pagings };
+          this.inChatPagings = {
+            ...data.data.pagings,
+            total:
+              isMultiStatus && counts
+                ? counts.in_chat
+                : data.data.pagings.total,
+          };
         }
         if (statusArray.some((s) => this.isChatbotStatus(s))) {
-          this.chatbotPagings = { ...data.data.pagings };
+          this.chatbotPagings = {
+            ...data.data.pagings,
+            total:
+              isMultiStatus && counts
+                ? counts.chatbot
+                : data.data.pagings.total,
+          };
         }
         if (statusArray.includes(EChatStatus.closed)) {
-          this.closedPagings = { ...data.data.pagings };
+          const closedCount = (counts as { closed?: number })?.closed;
+          this.closedPagings = {
+            ...data.data.pagings,
+            total:
+              isMultiStatus && closedCount !== undefined
+                ? closedCount
+                : data.data.pagings.total,
+          };
         }
 
-        return { results: data.data.results, counts: data.data.counts };
+        return { results: data.data.results, counts };
       } catch {
         this.loading = false;
         return { results: [], counts: null };
@@ -4527,7 +4541,6 @@ export const useChatStore = defineStore('chat', {
         }
 
         this.addChat(data.data);
-        this.markCountsOptimistic();
 
         return data.data;
       } catch (error) {
