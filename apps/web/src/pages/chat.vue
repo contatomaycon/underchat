@@ -117,6 +117,7 @@ const chatLogPS = ref();
 const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
 const msg = ref('');
+const messageDraftByChatId = ref<Record<string, string>>({});
 const quickMessageTemplates = ref<
   import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse[]
 >([]);
@@ -179,6 +180,26 @@ const selectedLocation = ref<{
   name?: string | null;
   address?: string | null;
 } | null>(null);
+
+const persistMessageDraft = (
+  chatId: string | null | undefined,
+  messageValue: string | null | undefined
+) => {
+  if (!chatId) return;
+
+  const nextMessage = messageValue ?? '';
+  if (nextMessage.length === 0) {
+    delete messageDraftByChatId.value[chatId];
+    return;
+  }
+
+  messageDraftByChatId.value[chatId] = nextMessage;
+};
+
+const getMessageDraft = (chatId: string | null | undefined): string => {
+  if (!chatId) return '';
+  return messageDraftByChatId.value[chatId] ?? '';
+};
 
 const isRecordingAudio = ref(false);
 const isRecordingPaused = ref(false);
@@ -3763,13 +3784,22 @@ watch(debouncedMsg, async (val) => {
 
 watch(
   () => chatStore.activeChat?.chat_id,
-  () => {
+  (newChatId, oldChatId) => {
+    persistMessageDraft(oldChatId, msg.value);
+
+    const nextDraft = getMessageDraft(newChatId);
+    if (msg.value !== nextDraft) {
+      msg.value = nextDraft;
+    }
+
     linkPreview.value = null;
     isLoadingLinkPreview.value = false;
   }
 );
 
 watch(msg, async (val) => {
+  persistMessageDraft(chatStore.activeChat?.chat_id, val);
+
   if (typeof val === 'string' && val.startsWith('/')) {
     const searchTerm = val.slice(1).trim();
     quickMessageSearch.value = searchTerm;
@@ -4384,7 +4414,9 @@ const onRetryMessage = async (e: Event) => {
 
 const TYPING_TIMEOUT_MS = 5000;
 
-const resolveTypingMode = (typingData: IChatTyping): RemoteActivityMode | null => {
+const resolveTypingMode = (
+  typingData: IChatTyping
+): RemoteActivityMode | null => {
   if (
     typingData.typing_state === 'typing' ||
     typingData.typing_state === 'recording'
