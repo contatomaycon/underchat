@@ -45,7 +45,6 @@ const speed = ref('1');
 const stability = ref('0.5');
 const similarityBoost = ref('0.75');
 const styleExaggeration = ref('0');
-const enableTranscription = ref(true);
 const status = ref<EVoiceIaStatus>(EVoiceIaStatus.active);
 
 const isGpt = computed(() => voiceIaType.value === EVoiceIaType.gpt);
@@ -93,7 +92,6 @@ const handleCreate = async () => {
       voice_ia_type: voiceIaType.value,
       voice_id: voiceId.value,
       model_id: modelId.value,
-      enable_transcription: enableTranscription.value,
       status: status.value,
     };
     if (isElevenLabs.value) {
@@ -126,7 +124,6 @@ const resetForm = () => {
   stability.value = '0.5';
   similarityBoost.value = '0.75';
   styleExaggeration.value = '0';
-  enableTranscription.value = true;
   status.value = EVoiceIaStatus.active;
   refForm.value?.resetValidation();
 };
@@ -323,21 +320,6 @@ watch(isVisible, (newValue) => {
                 />
               </VCol>
             </template>
-            <VCol cols="12">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('voice_ia_enable_transcription') }}:</VLabel
-              >
-              <AppSelect
-                v-model="enableTranscription"
-                :items="[
-                  { title: $t('yes'), value: true },
-                  { title: $t('no'), value: false },
-                ]"
-                item-title="title"
-                item-value="value"
-                :disabled="isCreating"
-              />
-            </VCol>
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
               <AppSelect

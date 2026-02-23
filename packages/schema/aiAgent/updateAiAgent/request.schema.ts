@@ -1,5 +1,7 @@
 import { Static, Type } from '@sinclair/typebox';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { EAiAgentVoiceInputMode } from '@core/common/enums/EAiAgentVoiceInputMode';
+import { EAiAgentVoiceOutputMode } from '@core/common/enums/EAiAgentVoiceOutputMode';
 
 export const updateAiAgentParamsSchema = Type.Object({
   ai_agent_id: Type.String({ format: 'uuid' }),
@@ -34,6 +36,22 @@ export const updateAiAgentBodySchema = Type.Object({
   enable_human_transfer: Type.Optional(Type.Boolean()),
   voice_ia_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
+  voice_ia_input_mode: Type.Optional(
+    Type.Union([
+      Type.Literal(EAiAgentVoiceInputMode.text),
+      Type.Literal(EAiAgentVoiceInputMode.audio),
+      Type.Literal(EAiAgentVoiceInputMode.audio_and_text),
+      Type.Null(),
+    ])
+  ),
+  voice_ia_output_mode: Type.Optional(
+    Type.Union([
+      Type.Literal(EAiAgentVoiceOutputMode.text),
+      Type.Literal(EAiAgentVoiceOutputMode.audio),
+      Type.Literal(EAiAgentVoiceOutputMode.match_input),
+      Type.Null(),
+    ])
   ),
 });
 

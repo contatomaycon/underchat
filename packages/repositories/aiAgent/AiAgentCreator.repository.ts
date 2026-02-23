@@ -6,6 +6,8 @@ import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { EAiAgentVoiceInputMode } from '@core/common/enums/EAiAgentVoiceInputMode';
+import { EAiAgentVoiceOutputMode } from '@core/common/enums/EAiAgentVoiceOutputMode';
 
 @injectable()
 export class AiAgentCreatorRepository {
@@ -61,6 +63,12 @@ export class AiAgentCreatorRepository {
         chunk_overlap: input.chunk_overlap ?? '100',
         status: input.status ?? EAiAgentStatus.active,
         voice_ia_id: input.voice_ia_id ?? null,
+        voice_ia_input_mode: input.voice_ia_id
+          ? (input.voice_ia_input_mode ?? EAiAgentVoiceInputMode.audio_and_text)
+          : null,
+        voice_ia_output_mode: input.voice_ia_id
+          ? (input.voice_ia_output_mode ?? EAiAgentVoiceOutputMode.audio)
+          : null,
         system_prompt: input.system_prompt ?? null,
         enable_human_transfer: input.enable_human_transfer ?? false,
       })

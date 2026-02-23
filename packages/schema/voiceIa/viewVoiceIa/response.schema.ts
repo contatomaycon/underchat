@@ -17,7 +17,6 @@ export const viewVoiceIaResponseSchema = Type.Object({
   stability: Type.String(),
   similarity_boost: Type.String(),
   style_exaggeration: Type.String(),
-  enable_transcription: Type.Boolean(),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
 });

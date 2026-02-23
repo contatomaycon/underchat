@@ -26,7 +26,6 @@ export const createVoiceIaRequestSchema = Type.Object({
       Type.Literal(EVoiceIaStatus.inactive),
     ])
   ),
-  enable_transcription: Type.Optional(Type.Boolean()),
 });
 
 export type CreateVoiceIaRequest = Static<typeof createVoiceIaRequestSchema>;

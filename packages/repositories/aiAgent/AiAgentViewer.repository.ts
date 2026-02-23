@@ -33,6 +33,8 @@ export class AiAgentViewerRepository {
         openai_vector_store_id: true,
         status: true,
         voice_ia_id: true,
+        voice_ia_input_mode: true,
+        voice_ia_output_mode: true,
         system_prompt: true,
         enable_human_transfer: true,
         enable_human_transfer_by_prompt: true,
@@ -66,6 +68,8 @@ export class AiAgentViewerRepository {
       openai_vector_store_id: result.openai_vector_store_id ?? null,
       status: result.status,
       voice_ia_id: result.voice_ia_id ?? null,
+      voice_ia_input_mode: result.voice_ia_input_mode ?? null,
+      voice_ia_output_mode: result.voice_ia_output_mode ?? null,
       system_prompt: result.system_prompt ?? null,
       enable_human_transfer: result.enable_human_transfer ?? false,
       enable_human_transfer_by_prompt:

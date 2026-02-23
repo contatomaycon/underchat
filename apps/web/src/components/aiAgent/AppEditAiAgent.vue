@@ -7,6 +7,8 @@ import { requiredValidator } from '@/@webcore/utils/validators';
 import { VForm } from 'vuetify/components/VForm';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { EAiAgentVoiceInputMode } from '@core/common/enums/EAiAgentVoiceInputMode';
+import { EAiAgentVoiceOutputMode } from '@core/common/enums/EAiAgentVoiceOutputMode';
 import { ListAiAgentTypeResponse } from '@core/schema/aiAgent/listAiAgentType/response.schema';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 
@@ -41,6 +43,8 @@ const chunkOverlap = ref('');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
 const systemPrompt = ref('');
 const voiceIaId = ref<string | null>(null);
+const voiceIaInputMode = ref<EAiAgentVoiceInputMode | null>(null);
+const voiceIaOutputMode = ref<EAiAgentVoiceOutputMode | null>(null);
 const isUpdating = ref(false);
 const isLoading = ref(false);
 const isApiKeyVisible = ref(false);
@@ -142,6 +146,38 @@ const deepseekChatModels = [
   { title: 'deepseek-coder', value: 'deepseek-coder' },
 ];
 
+const hasVoiceIaSelected = computed(() => !!voiceIaId.value);
+
+const voiceInputModeItems = computed(() => [
+  {
+    title: t('voice_input_mode_text'),
+    value: EAiAgentVoiceInputMode.text,
+  },
+  {
+    title: t('voice_input_mode_audio'),
+    value: EAiAgentVoiceInputMode.audio,
+  },
+  {
+    title: t('voice_input_mode_audio_and_text'),
+    value: EAiAgentVoiceInputMode.audio_and_text,
+  },
+]);
+
+const voiceOutputModeItems = computed(() => [
+  {
+    title: t('voice_output_mode_text'),
+    value: EAiAgentVoiceOutputMode.text,
+  },
+  {
+    title: t('voice_output_mode_audio'),
+    value: EAiAgentVoiceOutputMode.audio,
+  },
+  {
+    title: t('voice_output_mode_match_input'),
+    value: EAiAgentVoiceOutputMode.match_input,
+  },
+]);
+
 const availableChatModels = computed(() => {
   if (isGeminiSelected.value) {
     return geminiChatModels;
@@ -228,6 +264,8 @@ const loadAiAgent = async () => {
     status.value = result.status;
     systemPrompt.value = result.system_prompt ?? '';
     voiceIaId.value = result.voice_ia_id || null;
+    voiceIaInputMode.value = result.voice_ia_input_mode ?? null;
+    voiceIaOutputMode.value = result.voice_ia_output_mode ?? null;
   }
 };
 
@@ -341,12 +379,28 @@ watch(
       status.value = EAiAgentStatus.active;
       systemPrompt.value = '';
       voiceIaId.value = null;
+      voiceIaInputMode.value = null;
+      voiceIaOutputMode.value = null;
       refForm.value?.resetValidation();
       isApiKeyVisible.value = false;
     }
   },
   { immediate: true }
 );
+
+watch(voiceIaId, (newValue, oldValue) => {
+  if (newValue && !oldValue) {
+    if (!voiceIaInputMode.value) {
+      voiceIaInputMode.value = EAiAgentVoiceInputMode.audio_and_text;
+    }
+    if (!voiceIaOutputMode.value) {
+      voiceIaOutputMode.value = EAiAgentVoiceOutputMode.audio;
+    }
+  } else if (!newValue) {
+    voiceIaInputMode.value = null;
+    voiceIaOutputMode.value = null;
+  }
+});
 
 watch(aiAgentId, async (newId, oldId) => {
   if (isVisible.value && newId && newId !== oldId) {
@@ -386,6 +440,8 @@ const handleUpdateAiAgent = async () => {
       system_prompt: systemPrompt.value.trim() || null,
       voice_ia_id:
         voiceIaId.value === null ? null : voiceIaId.value || undefined,
+      voice_ia_input_mode: voiceIaId.value ? voiceIaInputMode.value : null,
+      voice_ia_output_mode: voiceIaId.value ? voiceIaOutputMode.value : null,
     });
 
     if (result) {
@@ -481,6 +537,44 @@ const handleUpdateAiAgent = async () => {
                 clearable
               />
             </VCol>
+            <template v-if="hasVoiceIaSelected">
+              <VCol cols="6">
+                <div class="d-flex align-center gap-1 mb-1">
+                  <VLabel class="text-body-2"
+                    >{{ $t('voice_input_mode') }}:</VLabel
+                  >
+                  <AppInfoTooltip
+                    :text="$t('voice_input_mode_info')"
+                    :title="$t('voice_input_mode')"
+                  />
+                </div>
+                <AppSelect
+                  v-model="voiceIaInputMode"
+                  :items="voiceInputModeItems"
+                  item-title="title"
+                  item-value="value"
+                  :disabled="isUpdating || isLoading"
+                />
+              </VCol>
+              <VCol cols="6">
+                <div class="d-flex align-center gap-1 mb-1">
+                  <VLabel class="text-body-2"
+                    >{{ $t('voice_output_mode') }}:</VLabel
+                  >
+                  <AppInfoTooltip
+                    :text="$t('voice_output_mode_info')"
+                    :title="$t('voice_output_mode')"
+                  />
+                </div>
+                <AppSelect
+                  v-model="voiceIaOutputMode"
+                  :items="voiceOutputModeItems"
+                  item-title="title"
+                  item-value="value"
+                  :disabled="isUpdating || isLoading"
+                />
+              </VCol>
+            </template>
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1"
                 >{{ $t('system_prompt') }}:</VLabel

@@ -51,6 +51,8 @@ import { AiAgentUsageCreatorRepository } from '@core/repositories/aiAgent/AiAgen
 import { VoiceIaIntegrationService } from './voiceIaIntegration.service';
 import { VoiceIaService } from './voiceIa.service';
 import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
+import { EAiAgentVoiceInputMode } from '@core/common/enums/EAiAgentVoiceInputMode';
+import { EAiAgentVoiceOutputMode } from '@core/common/enums/EAiAgentVoiceOutputMode';
 import { stripTextForTts } from '@core/common/functions/stripTextForTts';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
 import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMessages';
@@ -946,15 +948,38 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     aiAgent: ViewAiAgentResponse | null
   ): Promise<string | null> {
+    const inputMode =
+      aiAgent?.voice_ia_input_mode ?? EAiAgentVoiceInputMode.audio_and_text;
     const text = this.getTextFromUpsertMessage(data)?.trim();
+    const isAudioMessage = data.type === EMessageType.audio;
+
+    if (inputMode === EAiAgentVoiceInputMode.text) {
+      return text || null;
+    }
+
+    if (inputMode === EAiAgentVoiceInputMode.audio) {
+      if (!isAudioMessage) {
+        return null;
+      }
+      return this.transcribeAudioMessage(data, createChat, aiAgent);
+    }
+
     if (text) {
       return text;
     }
 
-    if (data.type !== EMessageType.audio) {
+    if (!isAudioMessage) {
       return null;
     }
 
+    return this.transcribeAudioMessage(data, createChat, aiAgent);
+  }
+
+  private async transcribeAudioMessage(
+    data: IUpsertMessage,
+    createChat: IChat,
+    aiAgent: ViewAiAgentResponse | null
+  ): Promise<string | null> {
     const audioUrl = data.content?.audio?.url;
     if (!audioUrl) {
       return null;
@@ -971,7 +996,6 @@ export class ChatbotFlowRunnerService {
 
     if (
       !voiceIaConfig ||
-      !voiceIaConfig.enable_transcription ||
       voiceIaConfig.status !== EVoiceIaStatus.active ||
       !voiceIaConfig.api_key?.trim()
     ) {
@@ -994,11 +1018,29 @@ export class ChatbotFlowRunnerService {
       return result?.text?.trim() ?? null;
     } catch (error) {
       console.error(
-        '[ChatbotFlow] getTextOrTranscribedForAiAgent transcription failed',
+        '[ChatbotFlow] transcribeAudioMessage transcription failed',
         error
       );
       return null;
     }
+  }
+
+  private shouldRespondWithAudio(
+    aiAgent: ViewAiAgentResponse,
+    inputMessageType: EMessageType
+  ): boolean {
+    const outputMode =
+      aiAgent.voice_ia_output_mode ?? EAiAgentVoiceOutputMode.audio;
+
+    if (outputMode === EAiAgentVoiceOutputMode.text) {
+      return false;
+    }
+
+    if (outputMode === EAiAgentVoiceOutputMode.audio) {
+      return true;
+    }
+
+    return inputMessageType === EMessageType.audio;
   }
 
   private async sendTextOptionInvalidMessage(
@@ -6912,16 +6954,29 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       model: string;
       ai_agent_type_id: string;
       voice_ia_id: string | null;
+      voice_ia_output_mode?: string | null;
     },
     shouldStoreLastAgentResponse: boolean,
     recentMessagesForSummary?: Array<{
       role: 'user' | 'assistant';
       content: string;
-    }>
+    }>,
+    inputMessageType?: EMessageType
   ): Promise<void> {
     let messageSent = false;
 
-    if (aiAgent.voice_ia_id && aiResponse.trim().length > 0) {
+    const outputMode =
+      (aiAgent.voice_ia_output_mode as EAiAgentVoiceOutputMode) ??
+      EAiAgentVoiceOutputMode.audio;
+
+    const shouldSendAudio =
+      aiAgent.voice_ia_id &&
+      aiResponse.trim().length > 0 &&
+      (outputMode === EAiAgentVoiceOutputMode.audio ||
+        (outputMode === EAiAgentVoiceOutputMode.match_input &&
+          inputMessageType === EMessageType.audio));
+
+    if (shouldSendAudio && aiAgent.voice_ia_id) {
       try {
         const voiceIaConfig = await this.voiceIaService.viewVoiceIa(
           aiAgent.voice_ia_id,

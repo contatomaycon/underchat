@@ -13,6 +13,8 @@ import { aiAgentType } from './aiAgentType.model';
 import { aiAgentUsage } from './aiAgentUsage.model';
 import { voiceIa } from '@core/models/voiceIa/voiceIa.model';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { EAiAgentVoiceInputMode } from '@core/common/enums/EAiAgentVoiceInputMode';
+import { EAiAgentVoiceOutputMode } from '@core/common/enums/EAiAgentVoiceOutputMode';
 
 export const aiAgent = pgTable(
   'ai_agent',
@@ -45,6 +47,12 @@ export const aiAgent = pgTable(
     voice_ia_id: uuid().references(() => voiceIa.voice_ia_id, {
       onDelete: 'set null',
     }),
+    voice_ia_input_mode: varchar('voice_ia_input_mode', { length: 20 })
+      .$type<EAiAgentVoiceInputMode>()
+      .default(EAiAgentVoiceInputMode.audio_and_text),
+    voice_ia_output_mode: varchar('voice_ia_output_mode', { length: 20 })
+      .$type<EAiAgentVoiceOutputMode>()
+      .default(EAiAgentVoiceOutputMode.audio),
     created_at: timestamp('created_at', {
       mode: 'string',
       withTimezone: true,

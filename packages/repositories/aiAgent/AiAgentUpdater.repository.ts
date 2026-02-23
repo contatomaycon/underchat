@@ -52,6 +52,15 @@ export class AiAgentUpdaterRepository {
       inputUpdate.voice_ia_id = input.voice_ia_id;
     }
 
+    if (input.voice_ia_input_mode !== undefined) {
+      inputUpdate.voice_ia_input_mode = input.voice_ia_input_mode ?? undefined;
+    }
+
+    if (input.voice_ia_output_mode !== undefined) {
+      inputUpdate.voice_ia_output_mode =
+        input.voice_ia_output_mode ?? undefined;
+    }
+
     if (input.system_prompt !== undefined) {
       inputUpdate.system_prompt = input.system_prompt;
     }
