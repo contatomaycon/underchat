@@ -1101,18 +1101,22 @@ export const useChatStore = defineStore('chat', {
       this.removeFromList(this.kanbanClosed, chatId);
       if (this.isChatbotStatus(chat.status)) {
         this.kanbanChatbot.push(chat);
+        this.sortChatList(this.kanbanChatbot, EChatStatus.ura);
         return;
       }
       if (chat.status === EChatStatus.queue) {
         this.kanbanQueue.push(chat);
+        this.sortChatList(this.kanbanQueue, EChatStatus.queue);
         return;
       }
       if (chat.status === EChatStatus.in_chat) {
         this.kanbanInChat.push(chat);
+        this.sortChatList(this.kanbanInChat, EChatStatus.in_chat);
         return;
       }
       if (chat.status === EChatStatus.closed) {
         this.kanbanClosed.push(chat);
+        this.sortChatList(this.kanbanClosed, EChatStatus.closed);
       }
     },
 
@@ -1388,6 +1392,14 @@ export const useChatStore = defineStore('chat', {
 
       // "Em Atendimento" individual - usa preferências de "Todos"
       if (status === EChatStatus.in_chat) {
+        return {
+          sortBy: chatUser.sort_by_chat_order ?? fallbackSort.sortBy,
+          sortOrder: chatUser.sort_in_chat_order ?? fallbackSort.sortOrder,
+        };
+      }
+
+      // "Fechado" segue as mesmas preferências de "Todos" no backend
+      if (status === EChatStatus.closed) {
         return {
           sortBy: chatUser.sort_by_chat_order ?? fallbackSort.sortBy,
           sortOrder: chatUser.sort_in_chat_order ?? fallbackSort.sortOrder,
