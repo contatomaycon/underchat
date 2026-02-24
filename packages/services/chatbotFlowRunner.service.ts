@@ -58,8 +58,6 @@ import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.s
 import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMessages';
 import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
-import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
-import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import {
   HumanTransferMode,
   IPromptTransferDecision,
@@ -204,11 +202,7 @@ export class ChatbotFlowRunnerService {
     @inject(VoiceIaIntegrationService)
     private readonly voiceIaIntegrationService: VoiceIaIntegrationService,
     @inject(VoiceIaService)
-    private readonly voiceIaService: VoiceIaService,
-    @inject(WorkerConfigViewerRepository)
-    private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
-    @inject(ChatUserViewerRepository)
-    private readonly chatUserViewerRepository: ChatUserViewerRepository
+    private readonly voiceIaService: VoiceIaService
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -7456,7 +7450,16 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         sectorId
       );
       const filteredUsers = onlineOnly
-        ? sectorUsers.filter((user) => user.status === EChatUserStatus.online)
+        ? (
+            await Promise.all(
+              sectorUsers.map(async (user) => ({
+                user,
+                isOnline: await this.isUserOnline(user.id),
+              }))
+            )
+          )
+            .filter((entry) => entry.isOnline)
+            .map((entry) => entry.user)
         : sectorUsers;
 
       return filteredUsers.map((user) => ({
@@ -7468,7 +7471,16 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const users = await this.userService.listUsersForTransfer(accountId);
     const filteredUsers = onlineOnly
-      ? users.filter((user) => user.status === EChatUserStatus.online)
+      ? (
+          await Promise.all(
+            users.map(async (user) => ({
+              user,
+              isOnline: await this.isUserOnline(user.id),
+            }))
+          )
+        )
+          .filter((entry) => entry.isOnline)
+          .map((entry) => entry.user)
       : users;
 
     return filteredUsers.map((user) => ({
@@ -7618,21 +7630,9 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
   }
 
   private async isUserOnline(userId: string): Promise<boolean> {
-    const status =
-      await this.chatUserViewerRepository.findStatusByUserId(userId);
+    const status = await this.redis.get(`presence:user:${userId}`);
 
     return status === EChatUserStatus.online;
-  }
-
-  private async shouldRestrictDistributionToOnlineUsers(
-    createChat: IChat
-  ): Promise<boolean> {
-    const workerConfig =
-      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
-        createChat.worker.id
-      );
-
-    return workerConfig?.allow_attendance_only_online === true;
   }
 
   private async processDistributionNode(
@@ -7656,8 +7656,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const flowTransferMessages = configurations?.configurations?.messages;
 
-    const onlineOnly =
-      await this.shouldRestrictDistributionToOnlineUsers(createChat);
+    const onlineOnly = true;
     const responsibleAttendant = createChat.contact?.responsible_attendant;
 
     if (responsibleAttendant) {
@@ -7793,15 +7792,24 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     }
 
     if (!selectedUser && !selectedSector) {
+      const updatedChat = await this.updateAndPublishChat(
+        t,
+        createChat,
+        null,
+        null
+      );
+
+      await this.cancelInactivityCheck(updatedChat);
+
       const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
       if (!nextFlowId) {
         return true;
       }
 
-      await this.updateCache(createChat, nextFlowId);
+      await this.updateCache(updatedChat, nextFlowId);
       return this.processNextNode(
         t,
-        createChat,
+        updatedChat,
         chatbotFlow,
         nextFlowId,
         customMessages
