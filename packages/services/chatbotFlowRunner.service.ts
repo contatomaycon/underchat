@@ -58,6 +58,7 @@ import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.s
 import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMessages';
 import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
 import {
   HumanTransferMode,
   IPromptTransferDecision,
@@ -202,7 +203,9 @@ export class ChatbotFlowRunnerService {
     @inject(VoiceIaIntegrationService)
     private readonly voiceIaIntegrationService: VoiceIaIntegrationService,
     @inject(VoiceIaService)
-    private readonly voiceIaService: VoiceIaService
+    private readonly voiceIaService: VoiceIaService,
+    @inject(WorkerConfigViewerRepository)
+    private readonly workerConfigViewerRepository: WorkerConfigViewerRepository
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -7635,6 +7638,17 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     return status === EChatUserStatus.online;
   }
 
+  private async shouldRestrictDistributionToOnlineUsers(
+    createChat: IChat
+  ): Promise<boolean> {
+    const workerConfig =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        createChat.worker.id
+      );
+
+    return workerConfig?.allow_attendance_only_online === true;
+  }
+
   private async processDistributionNode(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -7656,7 +7670,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const flowTransferMessages = configurations?.configurations?.messages;
 
-    const onlineOnly = true;
+    const onlineOnly =
+      await this.shouldRestrictDistributionToOnlineUsers(createChat);
     const responsibleAttendant = createChat.contact?.responsible_attendant;
 
     if (responsibleAttendant) {
