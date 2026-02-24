@@ -45,8 +45,9 @@ const createChatSocket = () => {
   const route = useRoute();
   const { handleNewMessage } = useChatNotifications();
 
-  const isChatRoute = () => {
-    return route.name === 'chat';
+  const isChatOrKanbanRoute = () => {
+    const name = route.name as string | undefined;
+    return name === 'chat' || name === 'kanban';
   };
 
   const processPendingMessages = async (chatId: string) => {
@@ -73,7 +74,7 @@ const createChatSocket = () => {
   };
 
   const refreshActiveChat = async () => {
-    if (!isChatRoute() || !chatStore.activeChat?.chat_id) {
+    if (!isChatOrKanbanRoute() || !chatStore.activeChat?.chat_id) {
       return;
     }
 
@@ -165,7 +166,7 @@ const createChatSocket = () => {
 
     for (const [chatId, chatMessages] of messagesByChat) {
       const isActiveChat =
-        isChatRoute() && chatStore.activeChat?.chat_id === chatId;
+        isChatOrKanbanRoute() && chatStore.activeChat?.chat_id === chatId;
 
       if (isActiveChat) {
         const touchedMessageIds = new Set<string>();
@@ -209,7 +210,8 @@ const createChatSocket = () => {
 
     for (const chatData of latestByChatId.values()) {
       const isActiveChat =
-        isChatRoute() && chatStore.activeChat?.chat_id === chatData.chat_id;
+        isChatOrKanbanRoute() &&
+        chatStore.activeChat?.chat_id === chatData.chat_id;
 
       chatStore.addChat(chatData);
 
@@ -222,7 +224,7 @@ const createChatSocket = () => {
       }
 
       if (
-        isChatRoute() &&
+        isChatOrKanbanRoute() &&
         (chatData as any)._active &&
         chatData.user?.id === chatStore.user?.user_id
       ) {
@@ -361,7 +363,8 @@ const createChatSocket = () => {
           chatQueueAccountCentrifugo(accountId),
           (data: IChat) => {
             const isActiveChat =
-              isChatRoute() && chatStore.activeChat?.chat_id === data.chat_id;
+              isChatOrKanbanRoute() &&
+              chatStore.activeChat?.chat_id === data.chat_id;
 
             chatStore.addChat(data);
 

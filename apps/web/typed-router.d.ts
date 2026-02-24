@@ -227,6 +227,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'kanban': RouteRecordInfo<
+      'kanban',
+      '/kanban',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'label': RouteRecordInfo<
       'label',
       '/label',
@@ -577,6 +584,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/integration.vue': {
       routes:
         | 'integration'
+      views:
+        | never
+    }
+    'src/pages/kanban.vue': {
+      routes:
+        | 'kanban'
       views:
         | never
     }

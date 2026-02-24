@@ -187,6 +187,7 @@
   "user_role_viewed_successfully": "Grupo de acesso do usuário visualizado com sucesso!",
   "user_role_view_error": "Erro ao visualizar grupo de acesso do usuário!",
   "chat_list_success": "Lista de chats obtida com sucesso!",
+  "kanban_list_success": "Kanban de chats obtido com sucesso!",
   "chat_list_not_found": "Lista de chats não encontrada!",
   "chat_list_user_success": "Lista de chats do usuário obtida com sucesso!",
   "chat_list_user_not_found": "Lista de chats do usuário não encontrada!",

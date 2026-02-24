@@ -382,6 +382,31 @@ export class ChatListerUseCase {
     return [{ [field]: { order: sortOrder } }];
   }
 
+  private getHitsTotal(
+    total:
+      | {
+          value?: number;
+        }
+      | number
+      | null
+      | undefined
+  ): number {
+    if (typeof total === 'number' && Number.isFinite(total)) {
+      return total;
+    }
+
+    if (
+      total &&
+      typeof total === 'object' &&
+      typeof total.value === 'number' &&
+      Number.isFinite(total.value)
+    ) {
+      return total.value;
+    }
+
+    return 0;
+  }
+
   async execute(
     accountId: string,
     query: ListChatsQuery,
@@ -916,6 +941,7 @@ export class ChatListerUseCase {
     const queryElastic = {
       from: (currentPage - 1) * perPage,
       size: perPage,
+      track_total_hits: true,
       sort,
       query: {
         bool: {
@@ -1143,6 +1169,7 @@ export class ChatListerUseCase {
 
     const queueCountQuery: any = {
       size: 0,
+      track_total_hits: true,
       query: {
         bool: {
           must: mustClauses,
@@ -1153,6 +1180,7 @@ export class ChatListerUseCase {
 
     const inChatCountQuery: any = {
       size: 0,
+      track_total_hits: true,
       query: {
         bool: {
           must: mustClauses,
@@ -1163,6 +1191,7 @@ export class ChatListerUseCase {
 
     const chatbotCountQuery: any = {
       size: 0,
+      track_total_hits: true,
       query: {
         bool: {
           must: mustClauses,
@@ -1173,6 +1202,7 @@ export class ChatListerUseCase {
 
     const myChatsCountQuery: any = {
       size: 0,
+      track_total_hits: true,
       query: {
         bool: {
           must: mustClauses,
@@ -1221,23 +1251,19 @@ export class ChatListerUseCase {
       }
       return source;
     }) as ListChatsResult[];
-    const total = result.hits.total as { value: number; relation: string };
+    const total = this.getHitsTotal(result.hits.total);
 
     const pagings = setPaginationData(
       chats.length,
-      total.value,
+      total,
       perPage,
       currentPage
     );
 
-    const queueTotal =
-      (queueCountResult?.hits?.total as { value: number })?.value || 0;
-    const inChatTotal =
-      (inChatCountResult?.hits?.total as { value: number })?.value || 0;
-    const chatbotTotal =
-      (chatbotCountResult?.hits?.total as { value: number })?.value || 0;
-    const myChatsTotal =
-      (myChatsCountResult?.hits?.total as { value: number })?.value || 0;
+    const queueTotal = this.getHitsTotal(queueCountResult?.hits?.total);
+    const inChatTotal = this.getHitsTotal(inChatCountResult?.hits?.total);
+    const chatbotTotal = this.getHitsTotal(chatbotCountResult?.hits?.total);
+    const myChatsTotal = this.getHitsTotal(myChatsCountResult?.hits?.total);
     const totalCount = queueTotal + inChatTotal;
 
     return {

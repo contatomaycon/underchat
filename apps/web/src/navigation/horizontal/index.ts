@@ -40,6 +40,17 @@ export default [
     ],
   },
   {
+    title: 'kanban',
+    icon: { icon: 'tabler-layout-kanban' },
+    to: { name: 'kanban' as keyof RouteNamedMap },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.chat_kanban,
+    ],
+  },
+  {
     title: 'notifications',
     icon: { icon: 'tabler-bell' },
     to: { name: 'release' as keyof RouteNamedMap },

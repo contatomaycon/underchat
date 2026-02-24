@@ -21,3 +21,10 @@ export const generateMessageWithAiPermissions = [
   EChatPermissions.chat_group,
   EChatPermissions.generate_message_with_ai,
 ];
+
+export const kanbanPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EChatPermissions.chat_group,
+  EChatPermissions.chat_kanban,
+];

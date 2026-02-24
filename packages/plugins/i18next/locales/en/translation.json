@@ -188,6 +188,7 @@
   "user_document_type_not_found": "User document type not found",
   "country_not_found": "Country not found",
   "chat_list_success": "Chat list retrieved successfully!",
+  "kanban_list_success": "Chat kanban retrieved successfully!",
   "chat_list_not_found": "No chats found!",
   "chat_list_user_success": "User chat list retrieved successfully!",
   "chat_list_user_not_found": "No user chats found!",

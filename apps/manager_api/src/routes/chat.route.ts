@@ -1,12 +1,14 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { listChatsSchema } from '@core/schema/chat/listChats';
+import { listKanbanSchema } from '@core/schema/chat/listKanban';
 import ChatController from '@/controllers/chat';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 import {
   chatPermissions,
   forwardToOutputChatbotPermissions,
+  kanbanPermissions,
 } from '@/permissions';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
@@ -57,6 +59,17 @@ export default function chatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chat/kanban', {
+    schema: listKanbanSchema,
+    handler: chatController.listKanban,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, kanbanPermissions),
       planGuard,
       planStatus,
     ],

@@ -67,6 +67,8 @@ import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/re
 import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
 import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptions/response.schema';
 import { ListChatContactChannelsResponse } from '@core/schema/chat/listContactChannels/response.schema';
+import { ListKanbanResponse } from '@core/schema/chat/listKanban/response.schema';
+import { ListKanbanQuery } from '@core/schema/chat/listKanban/request.schema';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
@@ -262,6 +264,40 @@ export const useChatStore = defineStore('chat', {
     localMessageState: {} as Record<string, LocalMessageState>,
     chatContacts: {} as Record<string, ViewChatContactResponse | null>,
     loadingChatContacts: {} as Record<string, boolean>,
+    kanbanChatbot: [] as ListChatsResult[],
+    kanbanQueue: [] as ListChatsResult[],
+    kanbanInChat: [] as ListChatsResult[],
+    kanbanClosed: [] as ListChatsResult[],
+    kanbanChatbotPagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 50,
+      count: 0,
+      total: 0,
+    },
+    kanbanQueuePagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 50,
+      count: 0,
+      total: 0,
+    },
+    kanbanInChatPagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 50,
+      count: 0,
+      total: 0,
+    },
+    kanbanClosedPagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 50,
+      count: 0,
+      total: 0,
+    },
+    loadingKanban: false,
+    loadingKanbanColumn: null as string | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -281,6 +317,153 @@ export const useChatStore = defineStore('chat', {
     },
     clearUser() {
       this.user = null;
+    },
+    async loadKanbanInitial(filters?: Partial<ChatFilters>): Promise<void> {
+      if (this.loadingKanban) return;
+
+      this.loadingKanban = true;
+      try {
+        const params: ListKanbanQuery = {
+          chatbot_page: 1,
+          queue_page: 1,
+          in_chat_page: 1,
+          closed_page: 1,
+          per_page: 50,
+        };
+
+        if (filters) {
+          if (
+            filters.filter_label_template_id !== undefined &&
+            filters.filter_label_template_id !== null
+          )
+            params.filter_label_template_id = filters.filter_label_template_id;
+          if (
+            filters.filter_worker_id !== undefined &&
+            filters.filter_worker_id !== null
+          )
+            params.filter_worker_id = filters.filter_worker_id;
+          if (
+            filters.filter_sector_id !== undefined &&
+            filters.filter_sector_id !== null
+          )
+            params.filter_sector_id = filters.filter_sector_id;
+          if (filters.filter_name !== undefined && filters.filter_name !== null)
+            params.filter_name = filters.filter_name;
+          if (
+            filters.filter_phone !== undefined &&
+            filters.filter_phone !== null
+          )
+            params.filter_phone = filters.filter_phone;
+          if (
+            filters.filter_protocol !== undefined &&
+            filters.filter_protocol !== null
+          )
+            params.filter_protocol = filters.filter_protocol;
+          if (
+            filters.filter_date_start !== undefined &&
+            filters.filter_date_start !== null
+          )
+            params.filter_date_start = filters.filter_date_start;
+          if (
+            filters.filter_date_end !== undefined &&
+            filters.filter_date_end !== null
+          )
+            params.filter_date_end = filters.filter_date_end;
+        }
+
+        const response = await axios.get<IApiResponse<ListKanbanResponse>>(
+          '/chat/kanban',
+          { params }
+        );
+
+        const data = response?.data;
+        if (!data?.status || !data?.data) {
+          this.loadingKanban = false;
+          return;
+        }
+
+        const d = data.data;
+
+        this.kanbanChatbot = d.chatbot.results;
+        this.kanbanQueue = d.queue.results;
+        this.kanbanInChat = d.in_chat.results;
+        this.kanbanClosed = d.closed.results;
+        this.kanbanChatbotPagings = { ...d.chatbot.pagings };
+        this.kanbanQueuePagings = { ...d.queue.pagings };
+        this.kanbanInChatPagings = { ...d.in_chat.pagings };
+        this.kanbanClosedPagings = { ...d.closed.pagings };
+      } catch {
+        this.showSnackbar(
+          this.i18n.global.t('chat_list_not_found'),
+          EColor.error
+        );
+      } finally {
+        this.loadingKanban = false;
+      }
+    },
+    async loadMoreKanbanColumn(
+      column: 'chatbot' | 'queue' | 'in_chat' | 'closed'
+    ): Promise<void> {
+      if (this.loadingKanbanColumn) return;
+      const columnToKey: Record<
+        'chatbot' | 'queue' | 'in_chat' | 'closed',
+        {
+          list:
+            | 'kanbanChatbot'
+            | 'kanbanQueue'
+            | 'kanbanInChat'
+            | 'kanbanClosed';
+          pagings:
+            | 'kanbanChatbotPagings'
+            | 'kanbanQueuePagings'
+            | 'kanbanInChatPagings'
+            | 'kanbanClosedPagings';
+        }
+      > = {
+        chatbot: { list: 'kanbanChatbot', pagings: 'kanbanChatbotPagings' },
+        queue: { list: 'kanbanQueue', pagings: 'kanbanQueuePagings' },
+        in_chat: { list: 'kanbanInChat', pagings: 'kanbanInChatPagings' },
+        closed: { list: 'kanbanClosed', pagings: 'kanbanClosedPagings' },
+      };
+      const { list: listKey, pagings: pagingsKey } = columnToKey[column];
+      const pagings = this[pagingsKey];
+      if (pagings.current_page >= pagings.total_pages) return;
+      this.loadingKanbanColumn = column;
+      const nextPage = pagings.current_page + 1;
+
+      try {
+        const params: ListKanbanQuery = {
+          chatbot_page: column === 'chatbot' ? nextPage : 1,
+          queue_page: column === 'queue' ? nextPage : 1,
+          in_chat_page: column === 'in_chat' ? nextPage : 1,
+          closed_page: column === 'closed' ? nextPage : 1,
+          per_page: 50,
+        };
+        const response = await axios.get<IApiResponse<ListKanbanResponse>>(
+          '/chat/kanban',
+          { params }
+        );
+        const data = response?.data;
+        if (!data?.status || !data?.data) {
+          this.loadingKanbanColumn = null;
+          return;
+        }
+        const d = data.data;
+        const col = d[column];
+        const existingIds = new Set(
+          (this[listKey] as ListChatsResult[]).map((c) => c.chat_id)
+        );
+        const newItems = col.results.filter((c) => !existingIds.has(c.chat_id));
+        (this[listKey] as ListChatsResult[]).push(...newItems);
+        this[pagingsKey] = { ...col.pagings };
+      } catch {
+        this.showSnackbar(
+          this.i18n.global.t('chat_list_not_found'),
+          EColor.error
+        );
+      } finally {
+        this.loadingKanbanColumn = null;
+      }
     },
     initializeLocalMessageState(hash: string) {
       if (!hash) {
@@ -824,6 +1007,8 @@ export const useChatStore = defineStore('chat', {
         );
       }
 
+      this.syncChatToKanbanLists(input);
+
       this.updateMyChatsTotalFromTransition(
         previousStatus,
         previousUserId,
@@ -905,6 +1090,29 @@ export const useChatStore = defineStore('chat', {
       const idx = arr.findIndex((c) => c.chat_id === chatId);
       if (idx !== -1) {
         arr.splice(idx, 1);
+      }
+    },
+
+    syncChatToKanbanLists(chat: ListChatsResult): void {
+      const chatId = chat.chat_id;
+      this.removeFromList(this.kanbanChatbot, chatId);
+      this.removeFromList(this.kanbanQueue, chatId);
+      this.removeFromList(this.kanbanInChat, chatId);
+      this.removeFromList(this.kanbanClosed, chatId);
+      if (this.isChatbotStatus(chat.status)) {
+        this.kanbanChatbot.push(chat);
+        return;
+      }
+      if (chat.status === EChatStatus.queue) {
+        this.kanbanQueue.push(chat);
+        return;
+      }
+      if (chat.status === EChatStatus.in_chat) {
+        this.kanbanInChat.push(chat);
+        return;
+      }
+      if (chat.status === EChatStatus.closed) {
+        this.kanbanClosed.push(chat);
       }
     },
 

@@ -1,5 +1,6 @@
 import { injectable } from 'tsyringe';
 import { listChats } from './methods/listChats';
+import { listKanban } from './methods/listKanban';
 import { updateChatsUser } from './methods/updateChatsUser';
 import { listMessageChats } from './methods/listMessageChats';
 import { createMessageChats } from './methods/createMessageChats';
@@ -43,6 +44,7 @@ import { viewChatContactChannelsByContactId } from './methods/viewContactChannel
 @injectable()
 class ChatController {
   public listChats = listChats;
+  public listKanban = listKanban;
   public listMessageChats = listMessageChats;
   public updateChatsUser = updateChatsUser;
   public createMessageChats = createMessageChats;

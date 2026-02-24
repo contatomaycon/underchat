@@ -11,4 +11,5 @@ export enum EChatPermissions {
   attendance_history = 'attendance_history',
   forward_to_output_chatbot = 'forward_to_output_chatbot',
   generate_message_with_ai = 'generate_message_with_ai',
+  chat_kanban = 'chat_kanban',
 }

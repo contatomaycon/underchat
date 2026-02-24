@@ -1,0 +1,1 @@
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES ('019b0123-c6f7-7374-86aa-ff85c442daa8', '019a930d-c6f6-766d-9c83-914b7faa4337', '019a930d-c6f6-766d-9c83-b9db2f0d1aae', 'chat_kanban', 'Kanban de Chat', 'Permite visualizar o kanban de chats por status');
