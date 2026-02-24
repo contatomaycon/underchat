@@ -137,11 +137,17 @@ const syncApiFullscreenState = () => {
 };
 
 const syncOnlyKanbanBodyClass = () => {
-  document.body.classList.toggle(ONLY_KANBAN_MODE_CLASS, isOnlyKanbanMode.value);
+  document.body.classList.toggle(
+    ONLY_KANBAN_MODE_CLASS,
+    isOnlyKanbanMode.value
+  );
 };
 
 const requestFullscreen = async () => {
-  if (!document.documentElement.requestFullscreen || document.fullscreenElement) {
+  if (
+    !document.documentElement.requestFullscreen ||
+    document.fullscreenElement
+  ) {
     return;
   }
   try {
@@ -201,9 +207,22 @@ const handleWindowResize = () => {
 };
 
 const handleWindowKeydown = (event: KeyboardEvent) => {
-  if (event.key !== 'F11') return;
-  event.preventDefault();
-  void toggleOnlyKanbanMode(false);
+  if (event.key === 'F11') {
+    // Keep native browser fullscreen behavior and sync Kanban mode to it.
+    isManualOnlyKanbanMode.value = false;
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    // Fallback for manual mode when fullscreen API/browser fullscreen isn't active.
+    if (
+      isManualOnlyKanbanMode.value &&
+      !isApiFullscreen.value &&
+      !isBrowserFullscreen.value
+    ) {
+      isManualOnlyKanbanMode.value = false;
+    }
+  }
 };
 
 watch(isOnlyKanbanMode, () => {
@@ -246,9 +265,7 @@ onUnmounted(() => {
         density="comfortable"
         class="kanban-fullscreen-btn"
         :title="
-          isOnlyKanbanMode
-            ? 'Sair do modo maximizado'
-            : 'Maximizar Kanban'
+          isOnlyKanbanMode ? 'Sair do modo maximizado' : 'Maximizar Kanban'
         "
         @click="toggleOnlyKanbanMode()"
       >
@@ -388,38 +405,34 @@ onUnmounted(() => {
 }
 
 :global(
-    body.kanban-only-mode
-      .layout-wrapper.layout-nav-type-vertical
-      .vertical-nav-wrapper
-  ),
+  body.kanban-only-mode
+    .layout-wrapper.layout-nav-type-vertical
+    .vertical-nav-wrapper
+),
 :global(
-    body.kanban-only-mode
-      .layout-wrapper.layout-nav-type-vertical
-      .layout-navbar
-  ),
+  body.kanban-only-mode .layout-wrapper.layout-nav-type-vertical .layout-navbar
+),
 :global(
-    body.kanban-only-mode
-      .layout-wrapper.layout-nav-type-vertical
-      .layout-footer
-  ),
+  body.kanban-only-mode .layout-wrapper.layout-nav-type-vertical .layout-footer
+),
 :global(
-    body.kanban-only-mode
-      .layout-wrapper.layout-nav-type-horizontal
-      .layout-navbar-and-nav-container
-  ),
+  body.kanban-only-mode
+    .layout-wrapper.layout-nav-type-horizontal
+    .layout-navbar-and-nav-container
+),
 :global(
-    body.kanban-only-mode
-      .layout-wrapper.layout-nav-type-horizontal
-      .layout-footer
-  ) {
+  body.kanban-only-mode
+    .layout-wrapper.layout-nav-type-horizontal
+    .layout-footer
+) {
   display: none !important;
 }
 
 :global(
-    body.kanban-only-mode
-      .layout-wrapper.layout-nav-type-vertical
-      .layout-content-wrapper
-  ) {
+  body.kanban-only-mode
+    .layout-wrapper.layout-nav-type-vertical
+    .layout-content-wrapper
+) {
   padding-inline-start: 0 !important;
   min-block-size: 100dvh !important;
 }
