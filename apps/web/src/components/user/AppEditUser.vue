@@ -64,14 +64,11 @@ const initialChannelIds = ref<string[]>([]);
 const channelsOptions = ref<
   { channel_id: string; name: string; number: string | null }[]
 >([]);
-const isEditingMasterUser = computed(() => {
-  return (
-    permissionRoleId.value === EPermissionRole.master ||
-    initialPermissionRoleId.value === EPermissionRole.master
-  );
-});
+const isEditingInitialMasterUser = computed(
+  () => initialPermissionRoleId.value === EPermissionRole.master
+);
 const canEditAccessGroup = computed(
-  () => !isEditingOwnUser.value && !isEditingMasterUser.value
+  () => !isEditingOwnUser.value && !isEditingInitialMasterUser.value
 );
 
 const uniqueSectorsOptions = computed(() => {
