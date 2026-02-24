@@ -233,12 +233,19 @@ export class MessageUpsertConsume {
   private centrifugoChatQueuePublish(
     dataPublish: IChat
   ): Promise<PublishResult> {
-    const promise = this.centrifugoService.publishSub(
-      chatQueueAccountCentrifugo(dataPublish.account.id),
-      dataPublish
-    );
+    const accountChannel = chatAccountCentrifugo(dataPublish.account.id);
+    const queueChannel = chatQueueAccountCentrifugo(dataPublish.account.id);
 
-    return promise;
+    return Promise.allSettled([
+      this.centrifugoService.publishSub(accountChannel, dataPublish),
+      this.centrifugoService.publishSub(queueChannel, dataPublish),
+    ]).then(([, queueResult]) => {
+      if (queueResult.status === 'rejected') {
+        throw queueResult.reason;
+      }
+
+      return queueResult.value;
+    });
   }
 
   private async handleNewChatMessageAndPublish(

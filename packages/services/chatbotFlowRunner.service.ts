@@ -59,6 +59,7 @@ import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMe
 import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
+import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import {
   HumanTransferMode,
   IPromptTransferDecision,
@@ -205,7 +206,9 @@ export class ChatbotFlowRunnerService {
     @inject(VoiceIaService)
     private readonly voiceIaService: VoiceIaService,
     @inject(WorkerConfigViewerRepository)
-    private readonly workerConfigViewerRepository: WorkerConfigViewerRepository
+    private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
+    @inject(ChatUserViewerRepository)
+    private readonly chatUserViewerRepository: ChatUserViewerRepository
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -7614,24 +7617,22 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     return eligibleUsers[randomIndex];
   }
 
+  private async isUserOnline(userId: string): Promise<boolean> {
+    const status =
+      await this.chatUserViewerRepository.findStatusByUserId(userId);
+
+    return status === EChatUserStatus.online;
+  }
+
   private async shouldRestrictDistributionToOnlineUsers(
-    createChat: IChat,
-    chatbotFlow: ListChatbotFlowResponse
+    createChat: IChat
   ): Promise<boolean> {
     const workerConfig =
       await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
         createChat.worker.id
       );
 
-    if (!workerConfig?.allow_attendance_only_online) {
-      return false;
-    }
-
-    if (!workerConfig.chatbot_id) {
-      return false;
-    }
-
-    return workerConfig.chatbot_id === chatbotFlow.chatbot_id;
+    return workerConfig?.allow_attendance_only_online === true;
   }
 
   private async processDistributionNode(
@@ -7655,60 +7656,67 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const flowTransferMessages = configurations?.configurations?.messages;
 
+    const onlineOnly =
+      await this.shouldRestrictDistributionToOnlineUsers(createChat);
     const responsibleAttendant = createChat.contact?.responsible_attendant;
 
     if (responsibleAttendant) {
-      const user: IChat['user'] = {
-        id: responsibleAttendant.id,
-        name: responsibleAttendant.name,
-        photo: responsibleAttendant.photo ?? null,
-      };
+      const canAssignResponsibleAttendant =
+        !onlineOnly || (await this.isUserOnline(responsibleAttendant.id));
 
-      const updatedChat = await this.updateAndPublishChat(
-        t,
-        createChat,
-        user,
-        undefined
-      );
+      if (canAssignResponsibleAttendant) {
+        const user: IChat['user'] = {
+          id: responsibleAttendant.id,
+          name: responsibleAttendant.name,
+          photo: responsibleAttendant.photo ?? null,
+        };
 
-      await this.cancelInactivityCheck(updatedChat);
-
-      const rawTransferMessage =
-        flowTransferMessages?.transfer_message_user ||
-        t('chatbot_transfer_message_user_default');
-      const enabled =
-        flowTransferMessages?.transfer_message_user_enabled !== false;
-
-      if (rawTransferMessage && enabled !== false) {
-        const transferMessage = await this.replaceVariables(
+        const updatedChat = await this.updateAndPublishChat(
           t,
-          rawTransferMessage,
-          updatedChat,
+          createChat,
           user,
           undefined
         );
-        await this.chatMessageService.sendMessage(t, {
-          chat: updatedChat,
-          accountId: updatedChat.account.id,
-          type: EMessageType.system,
-          message: transferMessage,
-          typeUser: ETypeUserChat.bot,
-        });
+
+        await this.cancelInactivityCheck(updatedChat);
+
+        const rawTransferMessage =
+          flowTransferMessages?.transfer_message_user ||
+          t('chatbot_transfer_message_user_default');
+        const enabled =
+          flowTransferMessages?.transfer_message_user_enabled !== false;
+
+        if (rawTransferMessage && enabled !== false) {
+          const transferMessage = await this.replaceVariables(
+            t,
+            rawTransferMessage,
+            updatedChat,
+            user,
+            undefined
+          );
+          await this.chatMessageService.sendMessage(t, {
+            chat: updatedChat,
+            accountId: updatedChat.account.id,
+            type: EMessageType.system,
+            message: transferMessage,
+            typeUser: ETypeUserChat.bot,
+          });
+        }
+
+        const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+
+        if (!nextFlowId) {
+          return true;
+        }
+
+        return this.processNextNode(
+          t,
+          updatedChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages
+        );
       }
-
-      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
-
-      if (!nextFlowId) {
-        return true;
-      }
-
-      return this.processNextNode(
-        t,
-        updatedChat,
-        chatbotFlow,
-        nextFlowId,
-        customMessages
-      );
     }
 
     const distributionType = currentNode.data?.distributionType as
@@ -7748,11 +7756,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       distributionHasSector === true && distributionSelectedSector
         ? distributionSelectedSector
         : null;
-    const onlineOnly = await this.shouldRestrictDistributionToOnlineUsers(
-      createChat,
-      chatbotFlow
-    );
-
     if (sectorId) {
       const sectorData = await this.sectorService.viewSectorById(
         sectorId,

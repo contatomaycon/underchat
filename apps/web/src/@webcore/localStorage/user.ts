@@ -4,6 +4,7 @@ import {
   AccountInfoResponse,
 } from '@core/schema/auth/login/response.schema';
 import { IUserChannel } from '@core/common/interfaces/ITokenJwtData';
+import { normalizeUserChannels } from '@core/common/functions/extractUserChannelIds';
 
 const PLAN_STATUS_KEY = 'plan_is_active';
 
@@ -17,12 +18,24 @@ export const getSectors = (): string[] => {
 };
 
 export const setChannels = (channels: IUserChannel[]): void => {
-  localStorage.setItem('channels', JSON.stringify(channels));
+  localStorage.setItem(
+    'channels',
+    JSON.stringify(normalizeUserChannels(channels))
+  );
 };
 
 export const getChannels = (): IUserChannel[] => {
   const channels = localStorage.getItem('channels');
-  return channels ? JSON.parse(channels) : [];
+  if (!channels) {
+    return [];
+  }
+
+  try {
+    const parsedChannels = JSON.parse(channels) as IUserChannel[];
+    return normalizeUserChannels(parsedChannels);
+  } catch {
+    return [];
+  }
 };
 
 export const setToken = (token: string): void => {

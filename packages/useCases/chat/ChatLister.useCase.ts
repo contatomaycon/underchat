@@ -17,6 +17,7 @@ import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermiss
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
 import { ChatUserService } from '@core/services/chatUser.service';
+import { extractUserChannelIds } from '@core/common/functions/extractUserChannelIds';
 
 @injectable()
 export class ChatListerUseCase {
@@ -408,8 +409,8 @@ export class ChatListerUseCase {
     const filterClauses: IElasticsearchBoolClause[] = [];
     const baseFiltersForCounts: IElasticsearchBoolClause[] = [];
 
-    if (userChannels.length > 0) {
-      const channelIds = userChannels.map((c) => c.id);
+    const channelIds = extractUserChannelIds(userChannels);
+    if (channelIds.length > 0) {
       const channelFilter: IElasticsearchBoolClause = {
         nested: {
           path: 'worker',
