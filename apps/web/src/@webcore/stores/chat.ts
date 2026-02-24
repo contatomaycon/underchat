@@ -2857,8 +2857,17 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async getChatById(query: ListMessageChatsQuery): Promise<void> {
+    async getChatById(
+      query: ListMessageChatsQuery,
+      chatId?: string
+    ): Promise<void> {
       try {
+        const targetChatId = chatId ?? this.activeChat?.chat_id;
+        if (!targetChatId) {
+          this.listMessages = [];
+          return;
+        }
+
         const existingSummaries = new Map<
           string,
           ListMessageResult['summary'] | null
@@ -2874,7 +2883,7 @@ export const useChatStore = defineStore('chat', {
         this.currentPage = 1;
 
         const response = await axios.get<IApiResponse<ListMessageResponse>>(
-          `/chat/${this.activeChat?.chat_id}`,
+          `/chat/${targetChatId}`,
           {
             params: query,
           }
@@ -3522,13 +3531,20 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    setActiveChat(chatId: string): void {
+    setActiveChat(chatId: string, fallbackChat?: ListChatsResult): void {
       if (this.activeChat?.chat_id === chatId) return;
 
-      const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
+      const chat = ((fallbackChat?.chat_id === chatId ? fallbackChat : null) ??
+        this.listQueue.find((c) => c.chat_id === chatId) ??
         this.listInChat.find((c) => c.chat_id === chatId) ??
         this.listChatbot.find((c) => c.chat_id === chatId) ??
-        this.listClosed.find((c) => c.chat_id === chatId)) as ListChatsResult;
+        this.listClosed.find((c) => c.chat_id === chatId) ??
+        this.kanbanQueue.find((c) => c.chat_id === chatId) ??
+        this.kanbanInChat.find((c) => c.chat_id === chatId) ??
+        this.kanbanChatbot.find((c) => c.chat_id === chatId) ??
+        this.kanbanClosed.find((c) => c.chat_id === chatId)) as
+        | ListChatsResult
+        | undefined;
 
       if (!chat?.chat_id) {
         this.activeChat = null;

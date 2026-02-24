@@ -120,9 +120,12 @@ const handleColumnScroll = (column: KanbanColumnKey, event: Event) => {
   }
 };
 
-const openChat = (chatId: ListChatsResult['chat_id']) => {
-  chatStore.setActiveChat(chatId);
-  router.push({ name: 'chat' });
+const openChat = (chat: ListChatsResult) => {
+  chatStore.setActiveChat(chat.chat_id, chat);
+  router.push({
+    name: 'chat',
+    query: { chat_id: chat.chat_id },
+  });
 };
 
 const detectBrowserFullscreen = () => {
@@ -335,7 +338,7 @@ onUnmounted(() => {
                 :key="`${col.key}-${chat.chat_id}`"
                 :user="chat"
                 :show-chatbot-type-indicator="col.key === 'chatbot'"
-                @click="openChat(chat.chat_id)"
+                @click="openChat(chat)"
               />
               <li
                 v-if="!chatStore[col.listKey].length && !showInitialSkeleton"

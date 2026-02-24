@@ -397,6 +397,29 @@ watch(
   }
 );
 
+watch(
+  () => route.query.chat_id,
+  async (nextChatId, previousChatId) => {
+    if (route.name !== 'chat') {
+      return;
+    }
+
+    const nextValue = Array.isArray(nextChatId) ? nextChatId[0] : nextChatId;
+    const previousValue = Array.isArray(previousChatId)
+      ? previousChatId[0]
+      : previousChatId;
+
+    if (!nextValue || nextValue === previousValue) {
+      return;
+    }
+
+    await openChat(nextValue, {
+      skipClearSummary: true,
+      forceReload: true,
+    });
+  }
+);
+
 const isAttendReopenLoading = ref(false);
 
 const handleAttendChat = async () => {
@@ -2066,13 +2089,29 @@ const sendMessage = async () => {
 
 type OpenChatOptions = {
   skipClearSummary?: boolean;
+  forceReload?: boolean;
+};
+
+const resolveRouteChatId = (): string | null => {
+  const value = route.query.chat_id;
+
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value;
+  }
+
+  return null;
 };
 
 const openChat = async (
   chatId: ListChatsResult['chat_id'],
   options?: OpenChatOptions
 ) => {
-  if (chatStore.activeChat?.chat_id === chatId) return;
+  const isSameChat = chatStore.activeChat?.chat_id === chatId;
+  if (isSameChat && !options?.forceReload) return;
 
   linkPreview.value = null;
   isLoadingLinkPreview.value = false;
@@ -2084,14 +2123,20 @@ const openChat = async (
     }
   }
 
-  chatStore.setActiveChat(chatId);
+  if (!isSameChat || !chatStore.activeChat) {
+    chatStore.setActiveChat(chatId);
+  }
+
+  if (chatStore.activeChat?.chat_id !== chatId) {
+    return;
+  }
 
   const requestQueue: ListMessageChatsQuery = {
     current_page: currentPage.value,
     per_page: perPage.value,
   };
 
-  await chatStore.getChatById(requestQueue);
+  await chatStore.getChatById(requestQueue, chatId);
 
   if (
     chatStore.activeChat?.status === EChatStatus.in_chat &&
@@ -4679,7 +4724,15 @@ const handleGlobalChatUpdate = async (e: Event) => {
 };
 
 onMounted(async () => {
-  await chatSocket.refreshActiveChat();
+  const routeChatId = resolveRouteChatId();
+  if (routeChatId) {
+    await openChat(routeChatId, {
+      skipClearSummary: true,
+      forceReload: true,
+    });
+  } else {
+    await chatSocket.refreshActiveChat();
+  }
 
   globalThis.addEventListener('chat-message', handleGlobalMessage);
   globalThis.addEventListener('chat-typing', handleGlobalTyping);
