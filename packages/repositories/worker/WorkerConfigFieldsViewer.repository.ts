@@ -81,6 +81,10 @@ export class WorkerConfigFieldsViewerRepository {
       send_message_on_finish_attendance:
         configMap.get(EWorkerConfigType.send_message_on_finish_attendance) ||
         null,
+      attendance_hours:
+        configMap.get(EWorkerConfigType.attendance_hours) || null,
+      outside_hours_message:
+        configMap.get(EWorkerConfigType.outside_hours_message) || null,
       reject_call: configMap.has(EWorkerConfigType.reject_call) ? true : null,
       auto_save_contacts: configMap.has(EWorkerConfigType.auto_save_contacts)
         ? true

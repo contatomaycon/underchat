@@ -8,6 +8,8 @@ export interface IWorkerConfigFields {
   generate_protocol_at_transfer_sector_and_user: string | null;
   show_message_on_call: string | null;
   send_message_on_finish_attendance: string | null;
+  attendance_hours: string | null;
+  outside_hours_message: string | null;
   reject_call: boolean | null;
   auto_save_contacts: boolean | null;
   simultaneous_attendance: number | null;

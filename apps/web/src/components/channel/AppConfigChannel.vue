@@ -13,6 +13,8 @@ import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listConta
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
+import { ViewAttendanceHoursResponse } from '@core/schema/worker/viewAttendanceHours/response.schema';
+import { UpdateAttendanceHoursRequest } from '@core/schema/worker/updateAttendanceHours/request.schema';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 import AppSelectSearch from '@/components/AppSelectSearch.vue';
 
@@ -202,6 +204,7 @@ type WorkerConfigForm = {
   reject_call: boolean;
   auto_save_contacts: boolean;
   chatbot: boolean;
+  attendance_hours: boolean;
 };
 
 const createDefaultWorkerConfig = (): WorkerConfigForm => ({
@@ -216,6 +219,62 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   reject_call: false,
   auto_save_contacts: false,
   chatbot: false,
+  attendance_hours: false,
+});
+
+type AttendanceWeekday = keyof UpdateAttendanceHoursRequest['days'];
+type AttendanceDayConfig =
+  UpdateAttendanceHoursRequest['days'][AttendanceWeekday];
+
+const ATTENDANCE_TIMEZONE = 'America/Sao_Paulo';
+const ATTENDANCE_DEFAULT_START = '09:00';
+const ATTENDANCE_DEFAULT_END = '18:00';
+
+const attendanceWeekdays: AttendanceWeekday[] = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+];
+
+const createDefaultAttendanceDay = (): AttendanceDayConfig => ({
+  enabled: false,
+  start_time: ATTENDANCE_DEFAULT_START,
+  end_time: ATTENDANCE_DEFAULT_END,
+});
+
+const createDefaultAttendanceDays =
+  (): UpdateAttendanceHoursRequest['days'] => ({
+    monday: createDefaultAttendanceDay(),
+    tuesday: createDefaultAttendanceDay(),
+    wednesday: createDefaultAttendanceDay(),
+    thursday: createDefaultAttendanceDay(),
+    friday: createDefaultAttendanceDay(),
+    saturday: createDefaultAttendanceDay(),
+    sunday: createDefaultAttendanceDay(),
+  });
+
+const normalizeAttendanceDay = (
+  day: AttendanceDayConfig | undefined
+): AttendanceDayConfig => ({
+  enabled: day?.enabled === true,
+  start_time: day?.start_time ?? ATTENDANCE_DEFAULT_START,
+  end_time: day?.end_time ?? ATTENDANCE_DEFAULT_END,
+});
+
+const normalizeAttendanceDays = (
+  days: UpdateAttendanceHoursRequest['days'] | undefined
+): UpdateAttendanceHoursRequest['days'] => ({
+  monday: normalizeAttendanceDay(days?.monday),
+  tuesday: normalizeAttendanceDay(days?.tuesday),
+  wednesday: normalizeAttendanceDay(days?.wednesday),
+  thursday: normalizeAttendanceDay(days?.thursday),
+  friday: normalizeAttendanceDay(days?.friday),
+  saturday: normalizeAttendanceDay(days?.saturday),
+  sunday: normalizeAttendanceDay(days?.sunday),
 });
 
 const workerConfigForm = reactive<WorkerConfigForm>(
@@ -250,6 +309,31 @@ const defaultTransferMessageSectorUser = computed(() =>
     sector: '{{ sector }}',
   })
 );
+const defaultAttendanceOutsideHoursMessage = computed(() =>
+  t('attendance_hours_default_message', {
+    name: '{{ name }}',
+  })
+);
+const attendanceOutsideHoursActionOptions = computed(() => [
+  {
+    value: 'continue_flow' as const,
+    title: t('attendance_hours_action_continue_flow'),
+  },
+  {
+    value: 'message_only' as const,
+    title: t('attendance_hours_action_message_only'),
+  },
+]);
+const attendanceMessageOnlyDestinationOptions = computed(() => [
+  {
+    value: 'queue' as const,
+    title: t('attendance_hours_destination_queue'),
+  },
+  {
+    value: 'closed' as const,
+    title: t('attendance_hours_destination_closed'),
+  },
+]);
 
 watch(transferProtocolText, (newValue) => {
   if (!newValue || !newValue.trim()) {
@@ -342,6 +426,21 @@ const isSavingChatbot = ref(false);
 const selectedInputChatbotId = ref<string | null>(null);
 const selectedOutputChatbotId = ref<string | null>(null);
 const chatbotEnabledInModal = ref<boolean>(false);
+const attendanceHoursModalOpen = ref(false);
+const isSavingAttendanceHours = ref(false);
+const attendanceHoursEnabledInModal = ref<boolean>(false);
+const attendanceDaysInModal = reactive<UpdateAttendanceHoursRequest['days']>(
+  createDefaultAttendanceDays()
+);
+const attendanceOutsideHoursMessage = ref<string>('');
+const attendanceOutsideHoursAction =
+  ref<UpdateAttendanceHoursRequest['outside_hours_action']>('message_only');
+const attendanceMessageOnlyDestinationStatus =
+  ref<UpdateAttendanceHoursRequest['message_only_destination_status']>('queue');
+const attendanceMessageOnlyQueueSectorId = ref<string | null>(null);
+const attendanceAvailableSectors = ref<
+  ViewAttendanceHoursResponse['available_sectors']
+>([]);
 
 const statusTypeOptions = computed(() => [
   {
@@ -372,6 +471,50 @@ const statusVisibilityOptions = computed(() => [
   { value: 'contact_groups', title: t('status_visibility_contact_groups') },
   { value: 'contacts', title: t('status_visibility_contacts') },
 ]);
+
+const attendanceHasAtLeastOneDayEnabled = computed(() =>
+  attendanceWeekdays.some((weekday) => attendanceDaysInModal[weekday].enabled)
+);
+
+const attendanceFirstInvalidWeekday = computed<AttendanceWeekday | null>(() => {
+  for (const weekday of attendanceWeekdays) {
+    const day = attendanceDaysInModal[weekday];
+    if (!day.enabled) continue;
+
+    const start = day.start_time || '';
+    const end = day.end_time || '';
+    if (!start || !end || start >= end) {
+      return weekday;
+    }
+  }
+
+  return null;
+});
+
+const attendanceRequiresQueueSector = computed(
+  () =>
+    attendanceOutsideHoursAction.value === 'message_only' &&
+    attendanceMessageOnlyDestinationStatus.value === 'queue'
+);
+
+const attendanceConfigReadyToEnable = computed(() => {
+  if (!attendanceHasAtLeastOneDayEnabled.value) {
+    return false;
+  }
+
+  if (attendanceFirstInvalidWeekday.value) {
+    return false;
+  }
+
+  if (
+    attendanceRequiresQueueSector.value &&
+    !attendanceMessageOnlyQueueSectorId.value
+  ) {
+    return false;
+  }
+
+  return true;
+});
 
 const filteredContactGroups = computed(() => {
   if (!contactGroupSearch.value) {
@@ -539,8 +682,84 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
 
 const resetWorkerConfigState = () => {
   applyWorkerConfig();
+  applyAttendanceHoursState();
   workerConfigLoadedFor.value = null;
 };
+
+function applyAttendanceHoursState(
+  config?: ViewAttendanceHoursResponse | null
+): void {
+  attendanceAvailableSectors.value = config?.available_sectors ?? [];
+
+  const normalizedDays = normalizeAttendanceDays(
+    config?.attendance_hours?.days
+  );
+  Object.assign(attendanceDaysInModal, normalizedDays);
+
+  attendanceOutsideHoursAction.value =
+    config?.attendance_hours?.outside_hours_action ?? 'message_only';
+  attendanceMessageOnlyDestinationStatus.value =
+    config?.attendance_hours?.message_only_destination_status ?? 'queue';
+  attendanceMessageOnlyQueueSectorId.value =
+    config?.attendance_hours?.message_only_queue_sector_id ?? null;
+
+  attendanceHoursEnabledInModal.value = config?.enabled ?? false;
+  workerConfigForm.attendance_hours = config?.enabled ?? false;
+  attendanceOutsideHoursMessage.value =
+    config?.outside_hours_message?.trim() ||
+    defaultAttendanceOutsideHoursMessage.value;
+}
+
+const validateAttendanceHoursForm = (enabled: boolean): boolean => {
+  if (
+    attendanceRequiresQueueSector.value &&
+    !attendanceMessageOnlyQueueSectorId.value
+  ) {
+    channelStore.showSnackbar(
+      t('attendance_hours_validation_queue_sector_required'),
+      EColor.warning
+    );
+    return false;
+  }
+
+  if (!enabled) {
+    return true;
+  }
+
+  if (!attendanceHasAtLeastOneDayEnabled.value) {
+    channelStore.showSnackbar(
+      t('attendance_hours_validation_at_least_one_day'),
+      EColor.warning
+    );
+    return false;
+  }
+
+  if (attendanceFirstInvalidWeekday.value) {
+    channelStore.showSnackbar(
+      t('attendance_hours_validation_invalid_day', {
+        day: t(attendanceFirstInvalidWeekday.value),
+      }),
+      EColor.warning
+    );
+    return false;
+  }
+
+  return true;
+};
+
+const buildAttendanceHoursPayload = (
+  enabled: boolean
+): UpdateAttendanceHoursRequest => ({
+  enabled,
+  timezone: ATTENDANCE_TIMEZONE,
+  outside_hours_action: attendanceOutsideHoursAction.value,
+  message_only_destination_status: attendanceMessageOnlyDestinationStatus.value,
+  message_only_queue_sector_id: attendanceRequiresQueueSector.value
+    ? attendanceMessageOnlyQueueSectorId.value
+    : null,
+  days: normalizeAttendanceDays(attendanceDaysInModal),
+  text: attendanceOutsideHoursMessage.value.trim(),
+});
 
 const loadWorkerConfig = async (force = false) => {
   if (!channelId.value) return;
@@ -562,6 +781,7 @@ const loadWorkerConfig = async (force = false) => {
       showMessageOnCallData,
       sendMessageOnFinishAttendanceData,
       chatbotData,
+      attendanceHoursData,
     ] = await Promise.all([
       channelStore.fetchTransferProtocolText(channelId.value),
       channelStore.fetchTransferProtocolSectorText(channelId.value),
@@ -571,6 +791,7 @@ const loadWorkerConfig = async (force = false) => {
       channelStore.fetchShowMessageOnCall(channelId.value),
       channelStore.fetchSendMessageOnFinishAttendance(channelId.value),
       channelStore.fetchChatbot(channelId.value),
+      channelStore.fetchAttendanceHours(channelId.value),
     ]);
 
     if (protocolTransferData) {
@@ -656,6 +877,8 @@ const loadWorkerConfig = async (force = false) => {
       selectedOutputChatbotId.value = null;
       workerConfigForm.chatbot = false;
     }
+
+    applyAttendanceHoursState(attendanceHoursData);
   } finally {
     isLoadingWorkerConfig.value = false;
   }
@@ -666,9 +889,7 @@ const saveWorkerConfig = async () => {
 
   try {
     isSavingWorkerConfig.value = true;
-    const payload: WorkerConfigForm = {
-      ...workerConfigForm,
-    };
+    const { attendance_hours: _attendanceHours, ...payload } = workerConfigForm;
     const result = await channelStore.updateWorkerConfig(
       channelId.value,
       payload
@@ -1370,7 +1591,8 @@ const toggleChatbotStatus = async () => {
   try {
     isSavingChatbot.value = true;
 
-    const chatbotIdValue = chatbotId.value || selectedInputChatbotId.value || null;
+    const chatbotIdValue =
+      chatbotId.value || selectedInputChatbotId.value || null;
     const outputChatbotIdValue = selectedOutputChatbotId.value || null;
 
     const result = await channelStore.updateChatbot(
@@ -1420,6 +1642,77 @@ const saveChatbot = async () => {
     closeChatbotModal();
   } finally {
     isSavingChatbot.value = false;
+  }
+};
+
+const openAttendanceHoursModal = async () => {
+  if (!channelId.value) return;
+
+  const data = await channelStore.fetchAttendanceHours(channelId.value);
+  applyAttendanceHoursState(data);
+  attendanceHoursModalOpen.value = true;
+};
+
+const closeAttendanceHoursModal = () => {
+  attendanceHoursModalOpen.value = false;
+};
+
+const toggleAttendanceHoursStatus = async () => {
+  if (!channelId.value) return;
+
+  const newEnabled = !workerConfigForm.attendance_hours;
+
+  if (!validateAttendanceHoursForm(newEnabled)) {
+    return;
+  }
+
+  try {
+    isSavingAttendanceHours.value = true;
+
+    const result = await channelStore.updateAttendanceHours(
+      channelId.value,
+      buildAttendanceHoursPayload(newEnabled)
+    );
+
+    if (result) {
+      applyAttendanceHoursState({
+        ...result,
+        available_sectors: attendanceAvailableSectors.value,
+      });
+    }
+  } finally {
+    isSavingAttendanceHours.value = false;
+  }
+};
+
+const toggleAttendanceHoursStatusInModal = () => {
+  attendanceHoursEnabledInModal.value = !attendanceHoursEnabledInModal.value;
+};
+
+const saveAttendanceHours = async () => {
+  if (!channelId.value) return;
+
+  if (!validateAttendanceHoursForm(attendanceHoursEnabledInModal.value)) {
+    return;
+  }
+
+  try {
+    isSavingAttendanceHours.value = true;
+
+    const result = await channelStore.updateAttendanceHours(
+      channelId.value,
+      buildAttendanceHoursPayload(attendanceHoursEnabledInModal.value)
+    );
+
+    if (result) {
+      applyAttendanceHoursState({
+        ...result,
+        available_sectors: attendanceAvailableSectors.value,
+      });
+      closeAttendanceHoursModal();
+    }
+  } finally {
+    isSavingAttendanceHours.value = false;
   }
 };
 
@@ -1480,6 +1773,11 @@ const workerConfigOptions = computed(() => [
     description: t('channel_general_config_auto_save_contacts_description'),
   },
   {
+    key: 'attendance_hours' as WorkerConfigField,
+    title: t('channel_general_config_attendance_hours_title'),
+    description: t('channel_general_config_attendance_hours_description'),
+  },
+  {
     key: 'chatbot' as WorkerConfigField,
     title: t('channel_general_config_chatbot_title'),
     description: t('channel_general_config_chatbot_description'),
@@ -1493,6 +1791,7 @@ const hasModal = (key: WorkerConfigField): boolean => {
     key === 'simultaneous_attendance' ||
     key === 'show_message_on_call' ||
     key === 'send_message_on_finish_attendance' ||
+    key === 'attendance_hours' ||
     key === 'chatbot'
   );
 };
@@ -1580,6 +1879,19 @@ const getToggleDisabled = (key: WorkerConfigField): boolean => {
     return false;
   }
 
+  if (key === 'attendance_hours') {
+    if (isSavingWorkerConfig.value || isSavingAttendanceHours.value) {
+      return true;
+    }
+
+    const isEnabled = workerConfigForm.attendance_hours;
+    if (!isEnabled && !attendanceConfigReadyToEnable.value) {
+      return true;
+    }
+
+    return false;
+  }
+
   if (key === 'chatbot') {
     return isSavingWorkerConfig.value || isSavingChatbot.value;
   }
@@ -1614,6 +1926,12 @@ const handleToggleClick = (key: WorkerConfigField): void => {
 
   if (key === 'send_message_on_finish_attendance') {
     toggleSendMessageOnFinishAttendanceStatus();
+
+    return;
+  }
+
+  if (key === 'attendance_hours') {
+    toggleAttendanceHoursStatus();
 
     return;
   }
@@ -1654,6 +1972,12 @@ const handleCardClick = (key: WorkerConfigField): void => {
 
   if (key === 'send_message_on_finish_attendance') {
     openSendMessageOnFinishAttendanceModal();
+
+    return;
+  }
+
+  if (key === 'attendance_hours') {
+    openAttendanceHoursModal();
 
     return;
   }
@@ -1749,6 +2073,31 @@ const getToggleTooltip = (key: WorkerConfigField): string | undefined => {
 
     if (!hasValue) {
       return t('toggle_disabled_show_message_on_call_tooltip');
+    }
+
+    return undefined;
+  }
+
+  if (key === 'attendance_hours') {
+    if (isSavingAttendanceHours.value) {
+      return undefined;
+    }
+
+    if (!attendanceHasAtLeastOneDayEnabled.value) {
+      return t('toggle_disabled_attendance_hours_tooltip');
+    }
+
+    if (attendanceFirstInvalidWeekday.value) {
+      return t('attendance_hours_validation_invalid_day', {
+        day: t(attendanceFirstInvalidWeekday.value),
+      });
+    }
+
+    if (
+      attendanceRequiresQueueSector.value &&
+      !attendanceMessageOnlyQueueSectorId.value
+    ) {
+      return t('attendance_hours_validation_queue_sector_required');
     }
 
     return undefined;
@@ -3020,7 +3369,9 @@ onMounted(async () => {
           </VWindowItem>
 
           <VWindowItem value="proxy">
-            <div class="proxy-config-wrapper position-relative pa-4 d-flex flex-column gap-4">
+            <div
+              class="proxy-config-wrapper position-relative pa-4 d-flex flex-column gap-4"
+            >
               <VOverlay
                 :model-value="isLoadingWorkerConfig"
                 contained
@@ -3050,7 +3401,9 @@ onMounted(async () => {
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <VLabel class="text-body-2 mb-1">{{ $t('proxy_host') }}:</VLabel>
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('proxy_host') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="proxyHost"
                       :placeholder="$t('proxy_host_placeholder')"
@@ -3059,7 +3412,9 @@ onMounted(async () => {
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <VLabel class="text-body-2 mb-1">{{ $t('proxy_port') }}:</VLabel>
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('proxy_port') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="proxyPort"
                       :placeholder="$t('proxy_port')"
@@ -3069,7 +3424,9 @@ onMounted(async () => {
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <VLabel class="text-body-2 mb-1">{{ $t('proxy_username') }}:</VLabel>
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('proxy_username') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="proxyUsername"
                       :placeholder="$t('proxy_username')"
@@ -3078,7 +3435,9 @@ onMounted(async () => {
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <VLabel class="text-body-2 mb-1">{{ $t('proxy_password') }}:</VLabel>
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('proxy_password') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="proxyPassword"
                       :placeholder="$t('proxy_password')"
@@ -4312,6 +4671,191 @@ onMounted(async () => {
           :loading="isSavingSendMessageOnFinishAttendance"
           :disabled="isSavingSendMessageOnFinishAttendance"
           @click="saveSendMessageOnFinishAttendanceText"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="attendanceHoursModalOpen" max-width="760" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{ $t('channel_general_config_attendance_hours_title') }}</span>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="attendanceHoursEnabledInModal"
+            color="primary"
+            :disabled="isSavingAttendanceHours"
+            @click="toggleAttendanceHoursStatusInModal"
+          />
+          <IconBtn @click="closeAttendanceHoursModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
+      </VCardTitle>
+
+      <VCardText>
+        <div class="text-caption text-medium-emphasis mb-4">
+          {{
+            $t('attendance_hours_timezone_hint', {
+              timezone: ATTENDANCE_TIMEZONE,
+            })
+          }}
+        </div>
+
+        <VRow dense class="mb-2">
+          <VCol
+            v-for="weekday in attendanceWeekdays"
+            :key="weekday"
+            cols="12"
+            class="mb-2"
+          >
+            <VRow dense class="align-center">
+              <VCol cols="12" md="4">
+                <VSwitch
+                  v-model="attendanceDaysInModal[weekday].enabled"
+                  :label="t(weekday)"
+                  color="primary"
+                  hide-details
+                  :disabled="!attendanceHoursEnabledInModal"
+                />
+              </VCol>
+              <VCol cols="6" md="4">
+                <VTextField
+                  v-model="attendanceDaysInModal[weekday].start_time"
+                  type="time"
+                  :label="$t('attendance_hours_start_time')"
+                  density="comfortable"
+                  hide-details
+                  :disabled="
+                    !attendanceHoursEnabledInModal ||
+                    !attendanceDaysInModal[weekday].enabled
+                  "
+                />
+              </VCol>
+              <VCol cols="6" md="4">
+                <VTextField
+                  v-model="attendanceDaysInModal[weekday].end_time"
+                  type="time"
+                  :label="$t('attendance_hours_end_time')"
+                  density="comfortable"
+                  hide-details
+                  :disabled="
+                    !attendanceHoursEnabledInModal ||
+                    !attendanceDaysInModal[weekday].enabled
+                  "
+                />
+              </VCol>
+            </VRow>
+          </VCol>
+        </VRow>
+
+        <VDivider class="my-4" />
+
+        <VLabel class="text-body-2 mb-1">
+          {{ $t('attendance_hours_action_label') }}:
+        </VLabel>
+        <VSelect
+          v-model="attendanceOutsideHoursAction"
+          :items="attendanceOutsideHoursActionOptions"
+          item-title="title"
+          item-value="value"
+          :disabled="!attendanceHoursEnabledInModal"
+          class="mb-4"
+        />
+
+        <div
+          v-if="attendanceOutsideHoursAction === 'message_only'"
+          class="mb-4"
+        >
+          <VLabel class="text-body-2 mb-1">
+            {{ $t('attendance_hours_destination_label') }}:
+          </VLabel>
+          <VSelect
+            v-model="attendanceMessageOnlyDestinationStatus"
+            :items="attendanceMessageOnlyDestinationOptions"
+            item-title="title"
+            item-value="value"
+            :disabled="!attendanceHoursEnabledInModal"
+          />
+        </div>
+
+        <div v-if="attendanceRequiresQueueSector" class="mb-4">
+          <VLabel class="text-body-2 mb-1">
+            {{ $t('attendance_hours_sector_label') }}:
+          </VLabel>
+          <AppSelectSearch
+            v-model="attendanceMessageOnlyQueueSectorId"
+            :items="attendanceAvailableSectors"
+            item-title="name"
+            item-value="id"
+            :placeholder="$t('attendance_hours_sector_placeholder')"
+            clearable
+            :disabled="!attendanceHoursEnabledInModal"
+          />
+          <div class="text-caption text-medium-emphasis mt-2">
+            {{ $t('attendance_hours_sector_hint') }}
+          </div>
+        </div>
+
+        <VLabel class="text-body-2 mb-1">
+          {{ $t('attendance_hours_message_label') }}:
+        </VLabel>
+        <VTextarea
+          v-model="attendanceOutsideHoursMessage"
+          :placeholder="defaultAttendanceOutsideHoursMessage"
+          :maxlength="2000"
+          rows="6"
+          counter
+          auto-grow
+          :disabled="!attendanceHoursEnabledInModal"
+        />
+
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('attendance_hours_message_hint') }}
+        </div>
+
+        <VExpansionPanels variant="accordion" class="mt-2">
+          <VExpansionPanel>
+            <VExpansionPanelTitle>
+              <span class="text-caption">{{ $t('available_tags') }}</span>
+            </VExpansionPanelTitle>
+            <VExpansionPanelText>
+              <div class="d-flex flex-column gap-1">
+                <div
+                  v-for="tag in availableTags"
+                  :key="tag.tag"
+                  class="text-caption"
+                >
+                  <code>{{ tag.tag }}</code
+                  >: {{ tag.description }}
+                </div>
+              </div>
+            </VExpansionPanelText>
+          </VExpansionPanel>
+        </VExpansionPanels>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingAttendanceHours"
+          @click="closeAttendanceHoursModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingAttendanceHours"
+          :disabled="
+            isSavingAttendanceHours ||
+            (attendanceHoursEnabledInModal && !attendanceConfigReadyToEnable) ||
+            (attendanceRequiresQueueSector &&
+              !attendanceMessageOnlyQueueSectorId)
+          "
+          @click="saveAttendanceHours"
         >
           {{ $t('save') }}
         </VBtn>

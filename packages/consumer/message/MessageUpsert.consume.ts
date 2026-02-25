@@ -73,6 +73,14 @@ import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { IMessageKeyIdContext } from '@core/common/interfaces/IMessageKeyIdContext';
+import { ChatMessageService } from '@core/services/chatMessage.service';
+import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
+import {
+  isAttendanceHoursConfigEnabledValid,
+  isNowWithinAttendanceHours,
+  parseAttendanceHoursConfig,
+} from '@core/common/functions/attendanceHoursConfig';
+import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -83,6 +91,9 @@ export class MessageUpsertConsume {
   private readonly RETRY_DELAYS = [100, 500, 2000];
   private readonly MESSAGE_PROCESSING_TIMEOUT_MS = 120000;
   private readonly MAX_CONSECUTIVE_FAILURES = 10;
+  private readonly OUTSIDE_HOURS_DEBOUNCE_SECONDS = 5;
+  private readonly OUTSIDE_HOURS_DEFAULT_MESSAGE =
+    'Olá {{ name }}, nosso horário de atendimento está encerrado no momento. Retornaremos assim que estivermos disponíveis.';
 
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING = 3;
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE = 4;
@@ -101,6 +112,8 @@ export class MessageUpsertConsume {
     private readonly workerService: WorkerService,
     @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(ChatMessageService)
+    private readonly chatMessageService: ChatMessageService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(StorageService)
@@ -2742,7 +2755,10 @@ export class MessageUpsertConsume {
     t: TFunction<'translation', undefined>,
     getChat: IChat | null,
     data: IUpsertMessage,
-    chatbotId: string
+    chatbotId: string,
+    options?: {
+      beforeExecute?: (chat: IChat) => Promise<void>;
+    }
   ) {
     const jid = remoteJid(data.message?.key);
     const jidAlt = remoteJidAlt(data.message?.key);
@@ -2759,6 +2775,10 @@ export class MessageUpsertConsume {
     const chat = await this.ensureChatAndHandleMessage(data, getChat);
     if (!chat) {
       return;
+    }
+
+    if (options?.beforeExecute) {
+      await options.beforeExecute(chat);
     }
 
     if (
@@ -2970,6 +2990,202 @@ export class MessageUpsertConsume {
     return inputChatbotId;
   }
 
+  private shouldEvaluateAttendanceHours(data: IUpsertMessage): boolean {
+    const isFromMe = data.message?.key?.fromMe ?? false;
+
+    return !isFromMe && !data.from_history_sync && !data.webhook_message_type;
+  }
+
+  private resolveOutsideHoursContext(
+    data: IUpsertMessage,
+    workerConfigFields: Awaited<
+      ReturnType<WorkerService['viewWorkerConfigFieldsByWorkerId']>
+    >
+  ): {
+    attendance_hours: IAttendanceHoursConfig;
+    outside_hours_message: string;
+  } | null {
+    if (!this.shouldEvaluateAttendanceHours(data)) {
+      return null;
+    }
+
+    const rawAttendanceConfig = workerConfigFields?.attendance_hours;
+    if (!rawAttendanceConfig) {
+      return null;
+    }
+
+    const attendanceConfig = parseAttendanceHoursConfig(rawAttendanceConfig);
+    if (!isAttendanceHoursConfigEnabledValid(attendanceConfig)) {
+      console.warn(
+        `[MessageUpsert] Invalid attendance_hours config for worker ${data.worker_id}. Skipping outside-hours gate.`
+      );
+      return null;
+    }
+
+    if (isNowWithinAttendanceHours(attendanceConfig)) {
+      return null;
+    }
+
+    const configuredMessage = workerConfigFields?.outside_hours_message?.trim();
+
+    return {
+      attendance_hours: attendanceConfig,
+      outside_hours_message:
+        configuredMessage || this.OUTSIDE_HOURS_DEFAULT_MESSAGE,
+    };
+  }
+
+  private getOutsideHoursDebounceKey(
+    accountId: string,
+    chatId: string
+  ): string {
+    return `underchat:attendance-hours:debounce:${accountId}:${chatId}`;
+  }
+
+  private async sendOutsideHoursMessageWithDebounce(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    chat: IChat,
+    message: string
+  ): Promise<void> {
+    if (
+      chat.contact?.ignore === EContactIgnore.ignore_automation ||
+      chat.contact?.ignore === EContactIgnore.ignore_totally
+    ) {
+      return;
+    }
+
+    const formattedMessage = replaceMessageTags({
+      message,
+      chat,
+      t,
+    }).trim();
+
+    if (!formattedMessage) {
+      return;
+    }
+
+    const debounceKey = this.getOutsideHoursDebounceKey(
+      data.account_id,
+      chat.chat_id
+    );
+
+    const lock = await this.redis.set(
+      debounceKey,
+      '1',
+      'EX',
+      this.OUTSIDE_HOURS_DEBOUNCE_SECONDS,
+      'NX'
+    );
+
+    if (lock !== 'OK') {
+      return;
+    }
+
+    await this.chatMessageService.sendMessage(t, {
+      chat,
+      accountId: data.account_id,
+      type: EMessageType.text,
+      message: formattedMessage,
+      typeUser: ETypeUserChat.system,
+    });
+  }
+
+  private async handleOutsideHoursMessageOnly(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    getChat: IChat | null,
+    phone: string,
+    jid: string | null | undefined,
+    jidAlt: string | null | undefined,
+    outsideHoursContext: {
+      attendance_hours: IAttendanceHoursConfig;
+      outside_hours_message: string;
+    }
+  ): Promise<void> {
+    await this.createOrUpdateChatQueue(t, getChat, data);
+
+    const currentChat =
+      getChat ||
+      (await this.chatService.findChatByPhone(
+        data.account_id,
+        data.worker_id,
+        phone,
+        jid,
+        jidAlt
+      ));
+
+    if (!currentChat) {
+      return;
+    }
+
+    await this.sendOutsideHoursMessageWithDebounce(
+      t,
+      data,
+      currentChat,
+      outsideHoursContext.outside_hours_message
+    );
+
+    if (
+      outsideHoursContext.attendance_hours.message_only_destination_status ===
+      'closed'
+    ) {
+      await this.chatService.updateChatStatus(
+        currentChat.chat_id,
+        EChatStatus.closed,
+        undefined,
+        undefined,
+        new Date().toISOString()
+      );
+    } else {
+      let outsideHoursSector: IChat['sector'] | null = null;
+      const outsideHoursSectorId =
+        outsideHoursContext.attendance_hours.message_only_queue_sector_id;
+
+      if (outsideHoursSectorId) {
+        const sector = await this.sectorService.viewSectorById(
+          outsideHoursSectorId,
+          data.account_id
+        );
+
+        if (sector) {
+          outsideHoursSector = {
+            id: sector.sector_id,
+            name: sector.name,
+            color: sector.color ?? null,
+          };
+        } else {
+          console.warn(
+            `[MessageUpsert] Outside-hours sector ${outsideHoursSectorId} not found for account ${data.account_id}. Keeping chat in queue without sector.`
+          );
+        }
+      }
+
+      await this.chatService.updateChatStatus(
+        currentChat.chat_id,
+        EChatStatus.queue,
+        null,
+        undefined,
+        null
+      );
+
+      await this.chatService.updateChatUserAndSector(
+        currentChat.chat_id,
+        null,
+        outsideHoursSector
+      );
+    }
+
+    const updatedChat = await this.chatService.findChatByChatId(
+      data.account_id,
+      currentChat.chat_id
+    );
+
+    if (updatedChat) {
+      await this.centrifugoChatQueuePublish(updatedChat);
+    }
+  }
+
   private async createOrUpdateChat(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -2989,16 +3205,24 @@ export class MessageUpsertConsume {
         const jid = remoteJid(data.message?.key);
         const jidAlt = remoteJidAlt(data.message?.key);
 
-        const [chatbotsConfig, getChat] = await Promise.all([
-          this.workerConfigService.viewChatbots(data.worker_id),
-          this.chatService.findChatByPhone(
-            data.account_id,
-            data.worker_id,
-            phone,
-            jid,
-            jidAlt
-          ),
-        ]);
+        const [chatbotsConfig, getChat, workerConfigFields] = await Promise.all(
+          [
+            this.workerConfigService.viewChatbots(data.worker_id),
+            this.chatService.findChatByPhone(
+              data.account_id,
+              data.worker_id,
+              phone,
+              jid,
+              jidAlt
+            ),
+            this.workerService.viewWorkerConfigFieldsByWorkerId(data.worker_id),
+          ]
+        );
+
+        const outsideHoursContext = this.resolveOutsideHoursContext(
+          data,
+          workerConfigFields
+        );
 
         const inputChatbotId =
           chatbotsConfig.enabled && chatbotsConfig.chatbot_id
@@ -3011,6 +3235,27 @@ export class MessageUpsertConsume {
             : null;
 
         const isFromMe = data.message?.key?.fromMe ?? false;
+
+        if (
+          outsideHoursContext &&
+          outsideHoursContext.attendance_hours.outside_hours_action ===
+            'message_only'
+        ) {
+          await this.handleOutsideHoursMessageOnly(
+            t,
+            data,
+            getChat,
+            phone,
+            jid,
+            jidAlt,
+            outsideHoursContext
+          );
+          return;
+        }
+
+        const shouldSendOutsideHoursAndContinue =
+          outsideHoursContext?.attendance_hours.outside_hours_action ===
+          'continue_flow';
 
         if (data.from_history_sync) {
           await this.createOrUpdateChatQueue(t, getChat, data);
@@ -3030,7 +3275,19 @@ export class MessageUpsertConsume {
             t,
             getChat,
             data,
-            data.webhook_chatbot_id
+            data.webhook_chatbot_id,
+            shouldSendOutsideHoursAndContinue && outsideHoursContext
+              ? {
+                  beforeExecute: async (chat) => {
+                    await this.sendOutsideHoursMessageWithDebounce(
+                      t,
+                      data,
+                      chat,
+                      outsideHoursContext.outside_hours_message
+                    );
+                  },
+                }
+              : undefined
           );
 
           return;
@@ -3046,7 +3303,19 @@ export class MessageUpsertConsume {
             t,
             getChat,
             data,
-            outputChatbotId
+            outputChatbotId,
+            shouldSendOutsideHoursAndContinue && outsideHoursContext
+              ? {
+                  beforeExecute: async (chat) => {
+                    await this.sendOutsideHoursMessageWithDebounce(
+                      t,
+                      data,
+                      chat,
+                      outsideHoursContext.outside_hours_message
+                    );
+                  },
+                }
+              : undefined
           );
 
           return;
@@ -3069,13 +3338,46 @@ export class MessageUpsertConsume {
             t,
             getChat,
             data,
-            effectiveInputChatbotId
+            effectiveInputChatbotId,
+            shouldSendOutsideHoursAndContinue && outsideHoursContext
+              ? {
+                  beforeExecute: async (chat) => {
+                    await this.sendOutsideHoursMessageWithDebounce(
+                      t,
+                      data,
+                      chat,
+                      outsideHoursContext.outside_hours_message
+                    );
+                  },
+                }
+              : undefined
           );
 
           return;
         }
 
         await this.createOrUpdateChatQueue(t, getChat, data);
+
+        if (shouldSendOutsideHoursAndContinue && outsideHoursContext) {
+          const currentChat =
+            getChat ||
+            (await this.chatService.findChatByPhone(
+              data.account_id,
+              data.worker_id,
+              phone,
+              jid,
+              jidAlt
+            ));
+
+          if (currentChat) {
+            await this.sendOutsideHoursMessageWithDebounce(
+              t,
+              data,
+              currentChat,
+              outsideHoursContext.outside_hours_message
+            );
+          }
+        }
       },
       { ttlMs: 60000, retryMs: 100, maxWaitMs: 90000 }
     );

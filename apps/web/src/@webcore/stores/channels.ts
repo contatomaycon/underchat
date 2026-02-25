@@ -31,6 +31,9 @@ import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.sc
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
+import { ViewAttendanceHoursResponse } from '@core/schema/worker/viewAttendanceHours/response.schema';
+import { UpdateAttendanceHoursRequest } from '@core/schema/worker/updateAttendanceHours/request.schema';
+import { UpdateAttendanceHoursResponse } from '@core/schema/worker/updateAttendanceHours/response.schema';
 
 const workerConfigForChatPendingModule: Record<
   string,
@@ -1614,6 +1617,68 @@ export const useChannelsStore = defineStore('channels', {
         let message = this.i18n.global.t(
           'send_message_on_finish_attendance_update_error'
         );
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
+    async fetchAttendanceHours(
+      workerId: string
+    ): Promise<ViewAttendanceHoursResponse | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewAttendanceHoursResponse>
+        >(`/worker/${workerId}/config/attendance-hours`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateAttendanceHours(
+      workerId: string,
+      body: UpdateAttendanceHoursRequest
+    ): Promise<UpdateAttendanceHoursResponse | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.patch<
+          IApiResponse<UpdateAttendanceHoursResponse>
+        >(`/worker/${workerId}/config/attendance-hours`, body);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('attendance_hours_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('attendance_hours_update_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t('attendance_hours_update_error');
         if (error instanceof AxiosError) {
           message = error?.response?.data?.message ?? message;
         }

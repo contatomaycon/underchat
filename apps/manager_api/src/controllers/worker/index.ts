@@ -32,6 +32,8 @@ import { updateSendMessageOnFinishAttendance } from './methods/updateSendMessage
 import { viewSendMessageOnFinishAttendance } from './methods/viewSendMessageOnFinishAttendance';
 import { updateChatbot } from './methods/updateChatbot';
 import { viewChatbot } from './methods/viewChatbot';
+import { viewAttendanceHours } from './methods/viewAttendanceHours';
+import { updateAttendanceHours } from './methods/updateAttendanceHours';
 
 @injectable()
 class WorkerController {
@@ -71,6 +73,8 @@ class WorkerController {
   public viewSendMessageOnFinishAttendance = viewSendMessageOnFinishAttendance;
   public updateChatbot = updateChatbot;
   public viewChatbot = viewChatbot;
+  public viewAttendanceHours = viewAttendanceHours;
+  public updateAttendanceHours = updateAttendanceHours;
 }
 
 export default WorkerController;

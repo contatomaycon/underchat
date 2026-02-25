@@ -13,6 +13,8 @@ import { IWorkerConfigUpdateEvent } from '@core/common/interfaces/IWorkerConfigU
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
+import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
+import { parseAttendanceHoursConfig } from '@core/common/functions/attendanceHoursConfig';
 
 @injectable()
 export class WorkerConfigService {
@@ -159,8 +161,12 @@ export class WorkerConfigService {
     normalizedInput.proxy_host = input.proxy_host?.trim() ?? null;
     normalizedInput.proxy_port = input.proxy_port ?? null;
 
-    normalizedInput.proxy_username = this.encryptProxyField(input.proxy_username);
-    normalizedInput.proxy_password = this.encryptProxyField(input.proxy_password);
+    normalizedInput.proxy_username = this.encryptProxyField(
+      input.proxy_username
+    );
+    normalizedInput.proxy_password = this.encryptProxyField(
+      input.proxy_password
+    );
 
     return normalizedInput;
   }
@@ -675,6 +681,69 @@ export class WorkerConfigService {
     return {
       chatbot_id: chatbotId,
       output_chatbot_id: outputChatbotId,
+      enabled,
+    };
+  }
+
+  async updateAttendanceHours(
+    workerId: string,
+    attendanceHours: IAttendanceHoursConfig,
+    text: string | null,
+    enabled: boolean
+  ): Promise<{
+    attendance_hours: IAttendanceHoursConfig;
+    outside_hours_message: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig = await this.viewAttendanceHours(workerId);
+    const textToSave =
+      text !== null ? text : currentConfig.outside_hours_message;
+    const attendanceHoursToSave = JSON.stringify(attendanceHours);
+
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateAttendanceHours(
+        workerId,
+        attendanceHoursToSave,
+        textToSave,
+        statusId
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return {
+      attendance_hours: parseAttendanceHoursConfig(result.attendance_hours),
+      outside_hours_message: result.outside_hours_message || null,
+      enabled,
+    };
+  }
+
+  async viewAttendanceHours(workerId: string): Promise<{
+    attendance_hours: IAttendanceHoursConfig;
+    outside_hours_message: string | null;
+    enabled: boolean;
+  }> {
+    const [attendanceHoursConfig, outsideHoursMessageConfig] =
+      await Promise.all([
+        this.workerConfigViewerRepository.fetchConfigValueByType(
+          workerId,
+          EWorkerConfigType.attendance_hours
+        ),
+        this.workerConfigViewerRepository.fetchConfigValueByType(
+          workerId,
+          EWorkerConfigType.outside_hours_message
+        ),
+      ]);
+
+    const enabled =
+      attendanceHoursConfig.statusId === EWorkerConfigStatus.active;
+
+    return {
+      attendance_hours: parseAttendanceHoursConfig(attendanceHoursConfig.value),
+      outside_hours_message: outsideHoursMessageConfig.value || null,
       enabled,
     };
   }

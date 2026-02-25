@@ -221,6 +221,44 @@ export class WorkerConfigUpserterRepository {
     );
   };
 
+  updateAttendanceHours = async (
+    workerId: string,
+    attendanceHoursConfig: string | null,
+    outsideHoursMessage: string | null,
+    statusId: string
+  ): Promise<{
+    attendance_hours: string | null;
+    outside_hours_message: string | null;
+  }> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.attendance_hours,
+        attendanceHoursConfig
+      );
+
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.outside_hours_message,
+        outsideHoursMessage
+      );
+    });
+
+    const [attendanceHours, outsideHours] = await Promise.all([
+      this.getConfigValue(workerId, EWorkerConfigType.attendance_hours),
+      this.getConfigValue(workerId, EWorkerConfigType.outside_hours_message),
+    ]);
+
+    return {
+      attendance_hours: attendanceHours,
+      outside_hours_message: outsideHours,
+    };
+  };
+
   updateChatbot = async (
     workerId: string,
     chatbotId: string | null,
