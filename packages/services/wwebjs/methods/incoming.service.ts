@@ -29,6 +29,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 const ACK_DEVICE = 2;
 const ACK_READ = 3;
 const ACK_PLAYED = 4;
+const SYSTEM_MESSAGE_JID = '0@c.us';
 
 interface WwebjsResolvedJids {
   remoteJid: string;
@@ -271,6 +272,7 @@ export class WwebjsIncomingMessageService {
 
   private shouldSkipChat(remoteJid: string): boolean {
     if (!remoteJid) return true;
+    if (remoteJid === SYSTEM_MESSAGE_JID) return true;
     if (remoteJid === 'status@broadcast') return true;
     if (remoteJid.endsWith('@broadcast')) return true;
     if (remoteJid.endsWith('@newsletter')) return true;
