@@ -290,6 +290,20 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'random-message': RouteRecordInfo<
+      'random-message',
+      '/random-message',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'random-message-random_message_id-messages': RouteRecordInfo<
+      'random-message-random_message_id-messages',
+      '/random-message/:random_message_id/messages',
+      { random_message_id: ParamValue<true> },
+      { random_message_id: ParamValue<false> },
+      | never
+    >,
     'register': RouteRecordInfo<
       'register',
       '/register',
@@ -638,6 +652,18 @@ declare module 'vue-router/auto-routes' {
     'src/pages/plans-checkout.vue': {
       routes:
         | 'plans-checkout'
+      views:
+        | never
+    }
+    'src/pages/random-message/index.vue': {
+      routes:
+        | 'random-message'
+      views:
+        | never
+    }
+    'src/pages/random-message/[random_message_id]/messages.vue': {
+      routes:
+        | 'random-message-random_message_id-messages'
       views:
         | never
     }

@@ -20,3 +20,4 @@ export * from './clients.permissions';
 export * from './masterSession.permissions';
 export * from './aiAgent.permissions';
 export * from './release.permissions';
+export * from './randomMessage.permissions';

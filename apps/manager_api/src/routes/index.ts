@@ -37,6 +37,7 @@ import voiceIaRoutes from './voiceIa.route';
 import pushRoutes from './push.route';
 import releaseRoutes from './release.route';
 import integrationRoutes from './integration.route';
+import randomMessageRoutes from './randomMessage.route';
 
 export default function registerRoutes(server: FastifyInstance) {
   server.register(authRoutes);
@@ -76,5 +77,6 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(pushRoutes);
   server.register(releaseRoutes);
   server.register(integrationRoutes);
+  server.register(randomMessageRoutes);
   server.register(regRoutes);
 }

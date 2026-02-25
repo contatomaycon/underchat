@@ -152,6 +152,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.release,
           description: 'End-points relacionados à releases',
         },
+        {
+          name: ETagSwagger.randomMessage,
+          description: 'End-points relacionados a mensagens aleatórias',
+        },
       ],
     },
   });

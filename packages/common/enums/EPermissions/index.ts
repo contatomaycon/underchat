@@ -25,6 +25,7 @@ import { EAiAgentPermissions } from './aiAgent';
 import { EReleasePermissions } from './release';
 import { EIntegrationPermissions } from './integration';
 import { EWebhookPermissions } from './webhook';
+import { ERandomMessagePermissions } from './randomMessage';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -53,4 +54,5 @@ export type EPermissionsRoles =
   | EAiAgentPermissions
   | EReleasePermissions
   | EIntegrationPermissions
-  | EWebhookPermissions;
+  | EWebhookPermissions
+  | ERandomMessagePermissions;

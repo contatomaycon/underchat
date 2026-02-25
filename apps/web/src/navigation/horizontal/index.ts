@@ -20,6 +20,7 @@ import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermi
 import { EReportAttendancePermissions } from '@core/common/enums/EPermissions/reportAttendance';
 import { EReleasePermissions } from '@core/common/enums/EPermissions/release';
 import { EIntegrationPermissions } from '@core/common/enums/EPermissions/integration';
+import { ERandomMessagePermissions } from '@core/common/enums/EPermissions/randomMessage';
 
 export default [
   {
@@ -116,6 +117,20 @@ export default [
           EMessageTemplatePermissions.message_create,
           EMessageTemplatePermissions.message_update,
           EMessageTemplatePermissions.message_delete,
+        ],
+      },
+      {
+        title: 'random_messages',
+        to: { name: 'random-message' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-messages' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          ERandomMessagePermissions.random_message_group,
+          ERandomMessagePermissions.random_message_view,
+          ERandomMessagePermissions.random_message_create,
+          ERandomMessagePermissions.random_message_update,
+          ERandomMessagePermissions.random_message_delete,
         ],
       },
       {

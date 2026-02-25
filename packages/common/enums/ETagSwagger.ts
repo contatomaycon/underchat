@@ -35,4 +35,5 @@ export enum ETagSwagger {
   aiAgent = 'Agente de IA',
   release = 'Informativos',
   integration = 'Integração',
+  randomMessage = 'Mensagens Aleatórias',
 }
