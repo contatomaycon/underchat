@@ -125,6 +125,10 @@ const showFileInput = computed(() => {
   );
 });
 
+const showMediaMessageInput = computed(() => {
+  return showFileInput.value && selectedType.value !== EMessageType.audio;
+});
+
 const acceptedFileTypes = computed(() => {
   if (selectedType.value === EMessageType.image) {
     return ACCEPTED_IMAGE_TYPES;
@@ -313,7 +317,9 @@ const addMessageTemplate = async () => {
 
   try {
     const form = new FormData();
-    form.append('message', message.value ?? '');
+    const normalizedMessage =
+      selectedType.value === EMessageType.audio ? '' : (message.value ?? '');
+    form.append('message', normalizedMessage);
     form.append('command', command.value ?? '');
     form.append('message_status_id', message_status_id.value ?? '');
     form.append('type', selectedType.value);
@@ -407,6 +413,11 @@ watch(selectedType, () => {
   filePreview.value = null;
   fileInputKey.value++;
   if (selectedType.value === EMessageType.text) {
+    message.value = '';
+    return;
+  }
+
+  if (selectedType.value === EMessageType.audio) {
     message.value = '';
   }
 });
@@ -536,7 +547,7 @@ onBeforeUnmount(() => {
                   </template>
                 </small>
               </VCol>
-              <VCol cols="12">
+              <VCol v-if="showMediaMessageInput" cols="12">
                 <label class="text-body-2 mb-1" for="message-caption">
                   {{ $t('message') }}:
                 </label>

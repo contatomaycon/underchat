@@ -1615,10 +1615,13 @@ export class ChatbotFlowRunnerService {
       height: number | null;
     }
   ): Promise<boolean> {
+    const messageText =
+      item.type === EMessageType.audio ? '' : (item.message ?? '');
+
     const nodeLike = {
       data: {
         messageType: item.type,
-        text: item.message ?? '',
+        text: messageText,
         attachmentUrl: item.attachment_url,
         attachmentMimetype: item.mimetype,
         attachmentDuration: item.duration,

@@ -67,13 +67,22 @@ export class MessageTemplateUpdaterUseCase {
     body: UpdateMessageTemplateRequest,
     accountId: string
   ): Promise<boolean> {
-    await this.ensureMessageTemplateExists(t, messageTemplateId);
+    const currentTemplate = await this.ensureMessageTemplateExists(
+      t,
+      messageTemplateId
+    );
     await this.ensureMessageStatusIsValid(t, body);
+
+    const effectiveMessageType = this.resolveMessageType(
+      body.type?.value,
+      currentTemplate.type
+    );
 
     const attachment = await this.processAttachmentIfPresent(
       t,
       body,
-      accountId
+      accountId,
+      effectiveMessageType
     );
 
     const { resolvedAttachmentUrl, mimetype, duration, width, height } =
@@ -81,7 +90,8 @@ export class MessageTemplateUpdaterUseCase {
 
     const inputWithAttachment: IUpdateMessageTemplate = {
       message_template_id: messageTemplateId,
-      message: body.message?.value,
+      message:
+        effectiveMessageType === EMessageType.audio ? '' : body.message?.value,
       command: body.command?.value,
       attachment_url: resolvedAttachmentUrl,
       message_status_id: body.message_status_id?.value,
@@ -122,18 +132,33 @@ export class MessageTemplateUpdaterUseCase {
     return undefined;
   }
 
+  private resolveMessageType(
+    inputType: string | null | undefined,
+    currentType?: string | null
+  ): EMessageType {
+    const resolved = inputType ?? currentType ?? EMessageType.text;
+
+    if (Object.values(EMessageType).includes(resolved as EMessageType)) {
+      return resolved as EMessageType;
+    }
+
+    return EMessageType.text;
+  }
+
   private async ensureMessageTemplateExists(
     t: TFunction<'translation', undefined>,
     messageTemplateId: string
-  ): Promise<void> {
-    const messageTemplateExists =
-      await this.messageTemplateService.existsMessageTemplateById(
+  ): Promise<{ type: string }> {
+    const messageTemplate =
+      await this.messageTemplateService.viewMessageTemplateById(
         messageTemplateId
       );
 
-    if (!messageTemplateExists) {
+    if (!messageTemplate) {
       throw new Error(t('message_template_not_found'));
     }
+
+    return messageTemplate;
   }
 
   private async ensureMessageStatusIsValid(
@@ -156,7 +181,8 @@ export class MessageTemplateUpdaterUseCase {
   private async processAttachmentIfPresent(
     t: TFunction<'translation', undefined>,
     body: UpdateMessageTemplateRequest,
-    accountId: string
+    accountId: string,
+    messageType: EMessageType
   ): Promise<
     | (UploadFileResponse & {
         mimetype?: string | null;
@@ -170,7 +196,6 @@ export class MessageTemplateUpdaterUseCase {
     if (!file?.filename) return null;
 
     await this.validateAttachment(file, t);
-    const messageType = (body.type?.value || 'text') as EMessageType;
 
     if (messageType === EMessageType.image) {
       return this.uploadImageAttachment(file, accountId);

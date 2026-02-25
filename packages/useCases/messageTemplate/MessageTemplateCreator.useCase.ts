@@ -288,6 +288,8 @@ export class MessageTemplateCreatorUseCase {
     let duration: number | null = null;
     let width: number | null = null;
     let height: number | null = null;
+    const normalizedMessage =
+      messageType === EMessageType.audio ? '' : input.message.value;
 
     if (input.attachment_url?.filename) {
       await this.validateAttachment(input.attachment_url, t);
@@ -308,7 +310,7 @@ export class MessageTemplateCreatorUseCase {
 
     const inputWithAttachment: ICreateMessageTemplate = {
       account_id: accountId,
-      message: input.message.value,
+      message: normalizedMessage,
       command: input.command.value,
       attachment_url: attachmentUrl ? attachmentUrl.url : null,
       message_status_id: input.message_status_id.value,

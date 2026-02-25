@@ -127,17 +127,23 @@ export class RandomMessageItemUpdaterUseCase {
     body: UpdateRandomMessageItemRequest
   ): Promise<boolean> {
     await this.ensureRandomMessageExists(t, randomMessageId, accountId);
-    await this.ensureRandomMessageItemExists(
+    const currentRandomMessageItem = await this.ensureRandomMessageItemExists(
       t,
       randomMessageItemId,
       randomMessageId,
       accountId
     );
 
+    const effectiveMessageType = this.resolveMessageType(
+      body.type?.value ?? currentRandomMessageItem.type,
+      body.attachment_url?.filename
+    );
+
     const attachment = await this.processAttachmentIfPresent(
       t,
       body,
-      accountId
+      accountId,
+      effectiveMessageType
     );
 
     const { resolvedAttachmentUrl, mimetype, duration, width, height } =
@@ -148,7 +154,10 @@ export class RandomMessageItemUpdaterUseCase {
         random_message_item_id: randomMessageItemId,
         random_message_id: randomMessageId,
         account_id: accountId,
-        message: body.message?.value,
+        message:
+          effectiveMessageType === EMessageType.audio
+            ? ''
+            : body.message?.value,
         status: body.status?.value,
         type: body.type?.value,
         attachment_url: resolvedAttachmentUrl,
@@ -186,7 +195,7 @@ export class RandomMessageItemUpdaterUseCase {
     randomMessageItemId: string,
     randomMessageId: string,
     accountId: string
-  ): Promise<void> {
+  ): Promise<{ type: string }> {
     const randomMessageItem =
       await this.randomMessageService.viewRandomMessageItemById(
         randomMessageItemId,
@@ -197,12 +206,15 @@ export class RandomMessageItemUpdaterUseCase {
     if (!randomMessageItem) {
       throw new Error(t('random_message_item_not_found'));
     }
+
+    return randomMessageItem;
   }
 
   private async processAttachmentIfPresent(
     t: TFunction<'translation', undefined>,
     body: UpdateRandomMessageItemRequest,
-    accountId: string
+    accountId: string,
+    messageType: EMessageType
   ): Promise<
     | (UploadFileResponse & {
         mimetype?: string | null;
@@ -216,11 +228,6 @@ export class RandomMessageItemUpdaterUseCase {
     if (!file?.filename) return null;
 
     await this.validateAttachment(file, t);
-
-    const messageType = this.resolveMessageType(
-      body.type?.value,
-      file.filename
-    );
 
     if (messageType === EMessageType.image) {
       return this.uploadImageAttachment(file, accountId);

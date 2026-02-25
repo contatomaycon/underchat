@@ -776,12 +776,17 @@ export class ChatMessageCreatorUseCase {
     if (audioData.audios.length === 0 && !audioData.isQuickMessage) {
       throw new Error(messageContext.t('audio_required'));
     }
+
+    const shouldDropCaptionAndQuote = audioData.isQuickMessage;
+
     return this.chatMessageService.sendMessage(messageContext.t, {
       chat,
       accountId,
       type: EMessageType.audio,
-      message: messageData.message,
-      messageQuotedId: messageData.messageQuotedId,
+      message: shouldDropCaptionAndQuote ? null : messageData.message,
+      messageQuotedId: shouldDropCaptionAndQuote
+        ? null
+        : messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,

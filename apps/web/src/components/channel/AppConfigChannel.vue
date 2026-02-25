@@ -140,7 +140,6 @@ const selectedType = ref<EWorkerProfileStatusType>(
 );
 const isPermanent = ref<string>('false');
 const textContent = ref('');
-const caption = ref('');
 const audioPreviewRef = ref<HTMLAudioElement | null>(null);
 const isAudioPlaying = ref(false);
 const audioProgress = ref(0);
@@ -580,18 +579,6 @@ const showFileInput = computed(() => {
 
 const showTextInput = computed(() => {
   return selectedType.value === EWorkerProfileStatusType.text;
-});
-
-const showCaptionInput = computed(() => {
-  if (selectedType.value === EWorkerProfileStatusType.text) {
-    return false;
-  }
-
-  return [
-    EWorkerProfileStatusType.image,
-    EWorkerProfileStatusType.video,
-    EWorkerProfileStatusType.audio,
-  ].includes(selectedType.value);
 });
 
 const uploadHelperMessage = computed(() => {
@@ -2148,7 +2135,6 @@ const resetPendingSelections = () => {
   }
   selectedStatusPreviews.value = [];
   textContent.value = '';
-  caption.value = '';
   isPermanent.value = 'false';
   fileInputKey.value += 1;
   statusVisibilityType.value = 'all';
@@ -2358,17 +2344,6 @@ const validateStatusPreviews = (): boolean => {
   return true;
 };
 
-const validateCaption = (): boolean => {
-  if (caption.value.length > MAX_TEXT_LENGTH) {
-    channelStore.showSnackbar(
-      t('profile_status_caption_too_long', { max: MAX_TEXT_LENGTH }),
-      EColor.warning
-    );
-    return false;
-  }
-  return true;
-};
-
 const validateVisibility = (): boolean => {
   if (!statusVisibilityType.value) {
     channelStore.showSnackbar(
@@ -2436,7 +2411,6 @@ const saveProfileStatus = async () => {
     return;
   }
 
-  if (!validateCaption()) return;
   if (!validateVisibility()) return;
 
   try {
@@ -2452,7 +2426,7 @@ const saveProfileStatus = async () => {
       selectedType.value === EWorkerProfileStatusType.text
         ? textContent.value
         : undefined,
-      showCaptionInput.value ? caption.value : undefined,
+      undefined,
       isPermanent.value,
       visibilityData
     );
@@ -2472,14 +2446,14 @@ const saveProfileStatus = async () => {
 
 const openPreview = (
   src: string,
-  caption?: string,
+  _caption?: string,
   text?: string,
   type?: EWorkerProfileStatusType
 ) => {
   previewDialog.value = {
     open: true,
     src: text ? null : src,
-    caption: caption && caption.trim() ? caption.trim() : null,
+    caption: null,
     text: text && text.trim() ? text.trim() : null,
     type: type || null,
   };
@@ -3567,18 +3541,6 @@ onMounted(async () => {
                   />
                 </div>
 
-                <div v-if="showCaptionInput" class="mb-4">
-                  <VLabel class="text-body-2 mb-1"
-                    >{{ $t('profile_status_caption') }}:</VLabel
-                  >
-                  <VTextarea
-                    v-model="caption"
-                    :counter="MAX_TEXT_LENGTH"
-                    :maxlength="MAX_TEXT_LENGTH"
-                    rows="2"
-                  />
-                </div>
-
                 <VLabel class="text-body-2 mb-1"
                   >{{ $t('is_permanent') }}:</VLabel
                 >
@@ -3681,7 +3643,7 @@ onMounted(async () => {
                         @click="
                           openPreview(
                             preview.src,
-                            caption && caption.trim() ? caption : undefined,
+                            undefined,
                             undefined,
                             EWorkerProfileStatusType.image
                           )
@@ -3700,7 +3662,7 @@ onMounted(async () => {
                         @click="
                           openPreview(
                             preview.src,
-                            caption && caption.trim() ? caption : undefined,
+                            undefined,
                             undefined,
                             EWorkerProfileStatusType.video
                           )
@@ -3753,7 +3715,7 @@ onMounted(async () => {
                         @click="
                           openPreview(
                             preview.src,
-                            caption && caption.trim() ? caption : undefined,
+                            undefined,
                             undefined,
                             EWorkerProfileStatusType.audio
                           )

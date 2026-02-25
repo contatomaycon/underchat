@@ -257,6 +257,8 @@ export class RandomMessageItemCreatorUseCase {
     let duration: number | null = null;
     let width: number | null = null;
     let height: number | null = null;
+    const normalizedMessage =
+      messageType === EMessageType.audio ? '' : input.message.value;
 
     if (input.attachment_url?.filename) {
       await this.validateAttachment(input.attachment_url, t);
@@ -279,7 +281,7 @@ export class RandomMessageItemCreatorUseCase {
       await this.randomMessageService.createRandomMessageItem({
         random_message_id: randomMessageId,
         account_id: accountId,
-        message: input.message.value,
+        message: normalizedMessage,
         status: input.status?.value ?? ERandomMessageStatus.active,
         type: messageType,
         attachment_url: attachmentUrl ? attachmentUrl.url : null,

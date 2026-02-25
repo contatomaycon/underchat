@@ -113,6 +113,10 @@ const showFileInput = computed(() =>
   )
 );
 
+const showMediaMessageInput = computed(() => {
+  return showFileInput.value && selectedType.value !== EMessageType.audio;
+});
+
 const acceptedFileTypes = computed(() => {
   if (selectedType.value === EMessageType.image) {
     return ACCEPTED_IMAGE_TYPES;
@@ -276,8 +280,10 @@ const updateRandomMessageItem = async () => {
     };
 
     const form = new FormData();
+    const normalizedMessage =
+      selectedType.value === EMessageType.audio ? '' : (message.value ?? '');
 
-    form.append('message', message.value ?? '');
+    form.append('message', normalizedMessage);
     form.append('status', status.value);
     form.append('type', selectedType.value);
 
@@ -342,6 +348,10 @@ watch(selectedType, () => {
     filePreview.value = null;
     hasNewFile.value = false;
     fileInputKey.value += 1;
+  }
+
+  if (selectedType.value === EMessageType.audio) {
+    message.value = '';
   }
 });
 
@@ -479,7 +489,7 @@ onBeforeUnmount(() => {
                 </div>
               </VCol>
 
-              <VCol cols="12">
+              <VCol v-if="showMediaMessageInput" cols="12">
                 <label
                   class="text-body-2 mb-1"
                   for="random-message-item-caption"

@@ -196,8 +196,7 @@ export class WorkerProfileStatusService {
       if (
         caption &&
         (typeId === EWorkerProfileStatusType.image ||
-          typeId === EWorkerProfileStatusType.video ||
-          typeId === EWorkerProfileStatusType.audio)
+          typeId === EWorkerProfileStatusType.video)
       ) {
         value = `${uploadResult.url}|${caption}`;
       }

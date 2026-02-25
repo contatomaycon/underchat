@@ -880,6 +880,7 @@ const hasAttachmentsOrContent = computed(
     selectedContacts.value.length > 0 ||
     isRecordingAudio.value
 );
+const hasSelectedAudios = computed(() => selectedAudios.value.length > 0);
 
 const createMessageHash = () => crypto.randomUUID();
 
@@ -1321,8 +1322,6 @@ const createAudioFormData = (
     fileName: string;
     mimeType: string;
   },
-  messageValue: string | null,
-  quotedId: string | null,
   viewOnce: boolean,
   duration: number | null,
   hash: string,
@@ -1330,13 +1329,6 @@ const createAudioFormData = (
 ): FormData => {
   const formData = new FormData();
   formData.append('type', EMessageType.audio);
-  if (messageValue) {
-    formData.append('message', messageValue);
-  }
-
-  if (quotedId) {
-    formData.append('message_quoted_id', quotedId);
-  }
 
   formData.append('audios', audio.blob, audio.fileName);
   if (typeof duration === 'number' && !Number.isNaN(duration)) {
@@ -1543,8 +1535,8 @@ const sendAudioMessage = async (
   mimeType: string,
   duration: number | null,
   viewOnce: boolean,
-  messageText?: string | null,
-  replyMessage?: ListMessageResult | null
+  _messageText?: string | null,
+  _replyMessage?: ListMessageResult | null
 ): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
 
@@ -1553,10 +1545,6 @@ const sendAudioMessage = async (
     return;
   }
 
-  const replyId =
-    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent(replyMessage || null);
-  const messageValue = messageText ?? getComposerMessage();
   const hash = createMessageHash();
 
   let extensionFromMime =
@@ -1580,9 +1568,7 @@ const sendAudioMessage = async (
 
   const content: ContentMessageChat = {
     type: EMessageType.audio,
-    message: messageValue,
-    message_quoted_id: replyId ?? undefined,
-    quoted: quotedPayload,
+    message: null,
     audio: {
       url: localUrl,
       name: fileName,
@@ -1598,8 +1584,6 @@ const sendAudioMessage = async (
 
   const formData = createAudioFormData(
     { blob, fileName, mimeType },
-    messageValue,
-    replyId,
     viewOnce,
     duration,
     hash,
@@ -1622,17 +1606,12 @@ const sendAudioMessage = async (
 
 const sendAudioFilesMessage = async (
   audiosToSend?: ISelectedAudioPreview[],
-  messageText?: string | null,
-  replyMessage?: ListMessageResult | null
+  _messageText?: string | null,
+  _replyMessage?: ListMessageResult | null
 ): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
   const audios = audiosToSend ?? [...selectedAudios.value];
   if (audios.length === 0) return;
-
-  const replyId =
-    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
-  const quotedPayload = getQuotedContent(replyMessage || null);
-  const messageValue = messageText ?? getComposerMessage();
 
   const messagesWithHashes = await Promise.all(
     audios.map(async (audio) => {
@@ -1640,9 +1619,7 @@ const sendAudioFilesMessage = async (
       const extension = (audio.name.split('.').pop() || '').toLowerCase();
       const content: ContentMessageChat = {
         type: EMessageType.audio,
-        message: messageValue,
-        message_quoted_id: replyId ?? undefined,
-        quoted: quotedPayload,
+        message: null,
         audio: {
           url: audio.preview,
           mimetype: audio.type,
@@ -1666,8 +1643,6 @@ const sendAudioFilesMessage = async (
           fileName: audio.name,
           mimeType: audio.type,
         },
-        messageValue,
-        replyId,
         false,
         audio.duration,
         hash,
@@ -3716,6 +3691,8 @@ const downloadViewerMedia = () => {
 };
 
 const onEmojiSelect = (e: any) => {
+  if (hasSelectedAudios.value) return;
+
   const ch = e?.native || e?.skins?.[0]?.native || '';
 
   if (ch) {
@@ -3861,6 +3838,30 @@ watch(msg, async (val) => {
     quickMessageSearch.value = '';
   }
 });
+
+watch(
+  () => selectedAudios.value.length,
+  (audioCount) => {
+    if (audioCount <= 0) {
+      return;
+    }
+
+    if (msg.value) {
+      msg.value = '';
+    }
+
+    linkPreview.value = null;
+    isLoadingLinkPreview.value = false;
+    showQuickMessageList.value = false;
+    quickMessageTemplates.value = [];
+    quickMessageSearch.value = '';
+    isEmojiOpen.value = false;
+
+    if (chatStore.messageReply) {
+      chatStore.clearMessageReply();
+    }
+  }
+);
 
 const getGreeting = (): string => {
   const hour = new Date().getHours();
@@ -4304,14 +4305,12 @@ const retryAudioMessage = async (
       mimeType: content.audio!.mimetype || 'audio/ogg',
     };
 
-    const replyId = content.message_quoted_id ?? null;
     const formData = createAudioFormData(
       audioData,
-      content.message ?? null,
-      replyId,
       content.audio!.view_once ?? false,
       content.audio!.duration ?? null,
-      hash
+      hash,
+      content.audio!.ptt ?? false
     );
 
     chatStore.updateLocalMessageProgress(hash, 0);
@@ -5756,6 +5755,7 @@ onBeforeUnmount(() => {
               rows="1"
               :max-rows="8"
               :disabled="isQueueStatus || isUraStatus || !!selectedQuickMessage"
+              :readonly="hasSelectedAudios"
               @keydown.enter.exact.prevent="onSendText"
               @paste="handlePaste"
             >
@@ -5857,14 +5857,14 @@ onBeforeUnmount(() => {
                   location="top start"
                   :close-on-content-click="false"
                   offset="8"
-                  :disabled="!!selectedQuickMessage"
+                  :disabled="!!selectedQuickMessage || hasSelectedAudios"
                 >
                   <template #activator="{ props }">
                     <IconBtn
                       v-bind="props"
                       class="composer-btn"
                       aria-label="Emoji"
-                      :disabled="!!selectedQuickMessage"
+                      :disabled="!!selectedQuickMessage || hasSelectedAudios"
                     >
                       <VIcon size="22">tabler-mood-smile</VIcon>
                     </IconBtn>
