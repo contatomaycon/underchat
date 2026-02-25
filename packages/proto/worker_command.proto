@@ -29,6 +29,7 @@ message ChangeConnectionStatusRequest {
   string status = 3;
   string type = 4;
   string phone_connection = 5;
+  bool remove_session = 6;
 }
 
 message NotifyWorkerStatusRequest {

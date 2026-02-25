@@ -140,6 +140,7 @@ export class WorkerCommandHandlerService {
       status: input.status,
       type: input.type,
       phone_connection: input.phone_connection,
+      remove_session: input.remove_session,
     };
 
     if (payload.status === EWorkerStatus.online) {
@@ -1022,6 +1023,7 @@ export class WorkerCommandHandlerService {
       worker_id: data.worker_id,
       status: EWorkerStatus.disponible,
       type: EBaileysConnectionType.qrcode,
+      remove_session: true,
     };
 
     try {
@@ -1232,6 +1234,9 @@ export class WorkerCommandHandlerService {
         type: connectionRequest.type,
         ...(connectionRequest.phone_connection
           ? { phone_connection: connectionRequest.phone_connection }
+          : {}),
+        ...(connectionRequest.remove_session === true
+          ? { remove_session: true }
           : {}),
       };
 

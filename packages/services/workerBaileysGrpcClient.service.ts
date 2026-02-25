@@ -46,6 +46,7 @@ export class WorkerBaileysGrpcClientService {
     status: string;
     type: string;
     phone_connection?: string;
+    remove_session?: boolean;
   } {
     const protoPayload = {
       worker_id: payload.worker_id,
@@ -55,6 +56,9 @@ export class WorkerBaileysGrpcClientService {
     if (payload.phone_connection) {
       (protoPayload as Record<string, string>).phone_connection =
         payload.phone_connection;
+    }
+    if (payload.remove_session === true) {
+      (protoPayload as { remove_session?: boolean }).remove_session = true;
     }
 
     return protoPayload;
@@ -100,6 +104,7 @@ export class WorkerBaileysGrpcClientService {
       status: string;
       type: string;
       phone_connection?: string;
+      remove_session?: boolean;
     }
   ): Promise<void> {
     const client = new WorkerConnectionClient(

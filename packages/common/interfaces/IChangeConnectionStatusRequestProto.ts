@@ -4,4 +4,5 @@ export interface IChangeConnectionStatusRequestProto {
   status?: string;
   type?: string;
   phone_connection?: string;
+  remove_session?: boolean;
 }

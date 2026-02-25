@@ -80,6 +80,9 @@ export function protoToStatusConnectionRequest(
   if (proto.phone_connection !== undefined && proto.phone_connection !== '') {
     payload.phone_connection = proto.phone_connection;
   }
+  if (proto.remove_session === true) {
+    payload.remove_session = true;
+  }
 
   return payload;
 }
@@ -95,6 +98,9 @@ export function statusConnectionRequestToProto(
   };
   if (payload.phone_connection) {
     proto.phone_connection = payload.phone_connection;
+  }
+  if (payload.remove_session === true) {
+    proto.remove_session = true;
   }
   if (accountId) {
     proto.account_id = accountId;

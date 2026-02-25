@@ -7,6 +7,7 @@ export const statusConnectionWorkerRequestSchema = Type.Object({
   status: Type.String({ enum: Object.values(EWorkerStatus) }),
   type: Type.String({ enum: Object.values(EBaileysConnectionType) }),
   phone_connection: Type.Optional(Type.String()),
+  remove_session: Type.Optional(Type.Boolean()),
 });
 
 export type StatusConnectionWorkerRequest = Static<

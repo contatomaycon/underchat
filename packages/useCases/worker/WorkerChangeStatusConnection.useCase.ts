@@ -182,6 +182,7 @@ export class WorkerChangeStatusConnectionUseCase {
       status: input.status,
       type: input.type,
       phone_connection: cleanPhone,
+      remove_session: input.remove_session,
     };
 
     try {

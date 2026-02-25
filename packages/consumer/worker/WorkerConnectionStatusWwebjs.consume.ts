@@ -52,7 +52,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     }
 
     if (data.status === EWorkerStatus.disponible) {
-      await this.handleDisponible();
+      await this.handleDisponible(data);
     }
   }
 
@@ -100,12 +100,16 @@ export class WorkerConnectionStatusWwebjsConsume {
     this.wwebjsService.reconnect({ initial_connection: true });
   }
 
-  private async handleDisponible(): Promise<void> {
+  private async handleDisponible(
+    data: StatusConnectionWorkerRequest
+  ): Promise<void> {
+    const removeSession = data.remove_session === true;
+
     this.stopConnectionRetry();
     await this.wwebjsService.disconnect({
       initial_connection: true,
       disconnected_user: true,
-      preserve_session: true,
+      preserve_session: !removeSession,
     });
 
     const workerId = wwebjsEnvironment.wwebjsWorkerId;
@@ -122,15 +126,17 @@ export class WorkerConnectionStatusWwebjsConsume {
 
     await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
 
-    const defaultConnectionRequest: StatusConnectionWorkerRequest = {
-      worker_id: workerId,
-      status: EWorkerStatus.online,
-      type: EBaileysConnectionType.qrcode,
-    };
+    if (!removeSession) {
+      const defaultConnectionRequest: StatusConnectionWorkerRequest = {
+        worker_id: workerId,
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      };
 
-    this.startConnectionRetry(defaultConnectionRequest, {
-      fromDisconnectRestart: true,
-    });
+      this.startConnectionRetry(defaultConnectionRequest, {
+        fromDisconnectRestart: true,
+      });
+    }
   }
 
   private startConnectionRetry(
@@ -160,6 +166,12 @@ export class WorkerConnectionStatusWwebjsConsume {
     this.connectionRetryTimer = setTimeout(() => {
       this.runConnectionAttempt();
     }, this.connectionRetryIntervalMs);
+  }
+
+  private handoffToServiceReconnect(): void {
+    this.stopConnectionRetry();
+    this.wwebjsService.clearUserRequestedDisconnect();
+    this.wwebjsService.reconnect({ initial_connection: true });
   }
 
   private publishConnectionAttempt(attempt: number): void {
@@ -228,16 +240,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     this.publishConnectionAttempt(this.connectionRetryAttempt);
 
     if (this.connectionRetryAttempt > this.connectionRetryMinAttempts) {
-      this.stopConnectionRetry();
-      void this.wwebjsService
-        .disconnect({
-          initial_connection: true,
-          disconnected_user: true,
-          preserve_session: true,
-        })
-        .catch((error) => {
-          console.error('Error disconnecting Wwebjs after retries:', error);
-        });
+      this.handoffToServiceReconnect();
       return;
     }
 
@@ -292,16 +295,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     } else {
       this.connectionRetryTimer = setTimeout(() => {
         if (this.activeConnectionRequest && !this.wwebjsService.isConnected()) {
-          this.stopConnectionRetry();
-          void this.wwebjsService
-            .disconnect({
-              initial_connection: true,
-              disconnected_user: true,
-              preserve_session: true,
-            })
-            .catch((error) => {
-              console.error('Error disconnecting Wwebjs after retries:', error);
-            });
+          this.handoffToServiceReconnect();
         }
       }, this.connectionRetryIntervalMs);
     }

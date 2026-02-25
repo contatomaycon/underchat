@@ -12,6 +12,7 @@ message StatusConnectionRequest {
   string status = 2;
   string type = 3;
   string phone_connection = 4;
+  bool remove_session = 5;
 }
 
 message WorkerConnectionResponse {}

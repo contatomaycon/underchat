@@ -59,6 +59,7 @@ interface IStatusConnectionRequestProto {
   status?: string;
   type?: string;
   phone_connection?: string;
+  remove_session?: boolean;
 }
 
 interface WorkerConnectionGrpcOptions {
@@ -96,6 +97,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     };
     if (req.phone_connection) {
       payload.phone_connection = req.phone_connection;
+    }
+    if (req.remove_session === true) {
+      payload.remove_session = true;
     }
 
     try {

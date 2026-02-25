@@ -150,7 +150,7 @@ async function disponibleChannel() {
   if (!channelId.value) return;
 
   await channelStore.updateConnectionChannel(
-    buildRequest(EWorkerStatus.disponible)
+    buildRequest(EWorkerStatus.disponible, true)
   );
 }
 
@@ -247,13 +247,22 @@ function resetPairingCodes() {
   pairingCodeSecondary.value = '';
 }
 
-function buildRequest(status: EWorkerStatus): StatusConnectionWorkerRequest {
-  return {
+function buildRequest(
+  status: EWorkerStatus,
+  removeSession = false
+): StatusConnectionWorkerRequest {
+  const payload: StatusConnectionWorkerRequest = {
     worker_id: channelId.value!,
     status,
     type: connectionType.value,
     phone_connection: phoneConnection.value,
   };
+
+  if (removeSession) {
+    payload.remove_session = true;
+  }
+
+  return payload;
 }
 
 function startNextAttemptCountdown() {

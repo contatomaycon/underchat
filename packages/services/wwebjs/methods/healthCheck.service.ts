@@ -22,10 +22,6 @@ const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
 const STATE_CHECK_TIMEOUT_MS = 10_000;
-const CONNECT_TIMEOUT_MS = 60_000;
-const BOOTSTRAP_RETRY_DELAY_MS = 10_000;
-const BOOTSTRAP_RECONNECT_CHECK_DELAY_MS = 2_000;
-const MAX_BOOTSTRAP_ATTEMPTS = 5;
 
 type WAState =
   | 'CONFLICT'
@@ -53,7 +49,6 @@ interface WwebjsHealthCheckConfig {
   getClient: () => Client | undefined;
   getStatus: () => Status;
   getCode: () => ECodeMessage;
-  connect: (input: IBaileysConnection) => Promise<IBaileysConnectionState>;
   reconnect: (input: IBaileysConnection) => void;
   isConnected: () => boolean;
   hasSession: () => boolean;
@@ -69,9 +64,6 @@ export class WwebjsHealthCheckService {
   private clientGetter: (() => Client | undefined) | undefined;
   private statusGetter: (() => Status) | undefined;
   private codeGetter: (() => ECodeMessage) | undefined;
-  private connectAction:
-    | ((input: IBaileysConnection) => Promise<IBaileysConnectionState>)
-    | undefined;
   private reconnectAction: ((input: IBaileysConnection) => void) | undefined;
   private isConnectedAction: (() => boolean) | undefined;
   private hasSessionAction: (() => boolean) | undefined;
@@ -80,8 +72,6 @@ export class WwebjsHealthCheckService {
     | undefined;
   private bootstrapPromise: Promise<void> | undefined;
   private bootstrapLock = false;
-  private bootstrapTimer: NodeJS.Timeout | undefined;
-  private bootstrapAttempt = 0;
 
   constructor(
     @inject(CentrifugoService)
@@ -96,7 +86,6 @@ export class WwebjsHealthCheckService {
     this.clientGetter = options.getClient;
     this.statusGetter = options.getStatus;
     this.codeGetter = options.getCode;
-    this.connectAction = options.connect;
     this.reconnectAction = options.reconnect;
     this.isConnectedAction = options.isConnected;
     this.hasSessionAction = options.hasSession;
@@ -127,7 +116,6 @@ export class WwebjsHealthCheckService {
     }
 
     this.isRunning = false;
-    this.clearBootstrapTimer();
     console.log('[WwebjsHealthCheck] Stopped');
   }
 
@@ -144,8 +132,6 @@ export class WwebjsHealthCheckService {
     this.bootstrapPromise = this.runBootstrapConnection().finally(() => {
       this.bootstrapLock = false;
       this.bootstrapPromise = undefined;
-      this.bootstrapAttempt = 0;
-      this.clearBootstrapTimer();
     });
 
     return this.bootstrapPromise;
@@ -226,19 +212,19 @@ export class WwebjsHealthCheckService {
       return;
     }
 
-    const connectAction = this.connectAction;
-    if (!connectAction) {
-      return;
-    }
-
     if (this.isConnectedAction?.()) {
       return;
     }
 
-    const initialStatus = this.statusGetter?.() ?? Status.initial;
     const hasInitialSession = this.hasSessionAction?.() ?? false;
+    const currentStatus = this.statusGetter?.() ?? Status.initial;
+    const currentCode = this.codeGetter?.() ?? ECodeMessage.awaitConnection;
+    const awaitingUserAction =
+      currentCode === ECodeMessage.awaitingReadQrCode ||
+      currentCode === ECodeMessage.awaitingPairingCode ||
+      currentCode === ECodeMessage.newLoginAttempt;
 
-    if (!hasInitialSession && initialStatus !== Status.connecting) {
+    if (!hasInitialSession) {
       console.log(
         '[WwebjsHealthCheck] No restorable session found. Waiting for user QR request.'
       );
@@ -246,127 +232,34 @@ export class WwebjsHealthCheckService {
       return;
     }
 
-    for (let attempt = 1; attempt <= MAX_BOOTSTRAP_ATTEMPTS; attempt += 1) {
-      this.bootstrapAttempt = attempt;
-
-      if (this.isConnectedAction?.()) {
-        return;
-      }
-
-      const currentStatus = this.statusGetter?.() ?? Status.initial;
-      const hasValidSession = this.hasSessionAction?.() ?? false;
-      const currentCode = this.codeGetter?.() ?? ECodeMessage.awaitConnection;
-      const awaitingUserAction =
-        currentCode === ECodeMessage.awaitingReadQrCode ||
-        currentCode === ECodeMessage.awaitingPairingCode ||
-        currentCode === ECodeMessage.newLoginAttempt;
-
-      if (currentStatus === Status.connecting) {
-        if (!hasValidSession || awaitingUserAction) {
-          console.log(
-            '[WwebjsHealthCheck] Bootstrap resolved while awaiting pairing/user action.'
-          );
-          return;
-        }
-
-        console.log(
-          `[WwebjsHealthCheck] Worker is connecting with session. Waiting before next check (attempt ${attempt}/${MAX_BOOTSTRAP_ATTEMPTS}).`
-        );
-        await this.waitBootstrapDelay(BOOTSTRAP_RECONNECT_CHECK_DELAY_MS);
-        continue;
-      }
-
+    if (currentStatus === Status.connecting && awaitingUserAction) {
       console.log(
-        `[WwebjsHealthCheck] Bootstrap connection attempt ${attempt}/${MAX_BOOTSTRAP_ATTEMPTS}`
+        '[WwebjsHealthCheck] Bootstrap resolved while awaiting pairing/user action.'
       );
-
-      try {
-        const state = await this.withConnectTimeout(
-          connectAction({ initial_connection: true }),
-          CONNECT_TIMEOUT_MS
-        );
-
-        if (state.status === Status.connected && this.isConnectedAction?.()) {
-          return;
-        }
-
-        const delay =
-          state.status === Status.connecting
-            ? BOOTSTRAP_RECONNECT_CHECK_DELAY_MS
-            : BOOTSTRAP_RETRY_DELAY_MS;
-        await this.waitBootstrapDelay(delay);
-      } catch (error) {
-        console.error(
-          '[WwebjsHealthCheck] Bootstrap connection attempt failed',
-          {
-            attempt,
-            maxAttempts: MAX_BOOTSTRAP_ATTEMPTS,
-            error: error instanceof Error ? error.message : String(error),
-          }
-        );
-
-        if (this.hasSessionAction?.() && attempt < MAX_BOOTSTRAP_ATTEMPTS) {
-          this.reconnectAction?.({ initial_connection: true });
-        }
-
-        if (attempt < MAX_BOOTSTRAP_ATTEMPTS) {
-          await this.waitBootstrapDelay(BOOTSTRAP_RETRY_DELAY_MS);
-        }
-      }
+      return;
     }
 
-    await this.notifyDisponibleStatus(
-      `Bootstrap max attempts reached (${this.bootstrapAttempt}/${MAX_BOOTSTRAP_ATTEMPTS})`
-    );
+    try {
+      this.reconnectAction?.({
+        initial_connection: true,
+        requested_by_user: false,
+        from_disconnect_restart: true,
+      });
+    } catch (error) {
+      console.error('[WwebjsHealthCheck] Bootstrap reconnect trigger failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private hasBootstrapConfig(): boolean {
     return Boolean(
       this.statusGetter &&
       this.codeGetter &&
-      this.connectAction &&
       this.reconnectAction &&
       this.isConnectedAction &&
       this.hasSessionAction
     );
-  }
-
-  private withConnectTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error(`Wwebjs connect timeout after ${ms}ms`));
-      }, ms);
-
-      promise
-        .then((result) => {
-          clearTimeout(timeoutId);
-          resolve(result);
-        })
-        .catch((error) => {
-          clearTimeout(timeoutId);
-          reject(error);
-        });
-    });
-  }
-
-  private waitBootstrapDelay(ms: number): Promise<void> {
-    this.clearBootstrapTimer();
-
-    return new Promise((resolve) => {
-      this.bootstrapTimer = setTimeout(() => {
-        this.bootstrapTimer = undefined;
-        resolve();
-      }, ms);
-    });
-  }
-
-  private clearBootstrapTimer(): void {
-    if (!this.bootstrapTimer) {
-      return;
-    }
-
-    clearTimeout(this.bootstrapTimer);
-    this.bootstrapTimer = undefined;
   }
 
   private async notifyDisponibleStatus(reason: string): Promise<void> {
