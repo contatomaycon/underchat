@@ -7,6 +7,7 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { CentrifugoService } from '@core/services/centrifugo.service';
+import { ChatService } from '@core/services/chat.service';
 import { PublishResult } from 'centrifuge';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { ContainerHealthService } from '@core/services/containerHealth.service';
@@ -33,6 +34,12 @@ import { PasswordEncryptorService } from '@core/services/passwordEncryptor.servi
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
+import { IChat } from '@core/common/interfaces/IChat';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
+import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -58,6 +65,8 @@ export class WorkerCommandHandlerService {
     private readonly workerService: WorkerService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(ChatService)
+    private readonly chatService: ChatService,
     @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     @inject(ContainerHealthService)
@@ -234,13 +243,124 @@ export class WorkerCommandHandlerService {
 
     const config =
       await this.workerService.viewWorkerConfigFieldsByWorkerId(workerId);
-    const showMessageText = config?.show_message_on_call?.trim() ?? '';
+    const showMessageTemplate = config?.show_message_on_call?.trim() ?? '';
+    const callJid = input.call_jid?.trim() || null;
+    const callPhone = input.call_phone?.trim() || null;
+    let showMessageText = showMessageTemplate;
+
+    if (showMessageTemplate.length > 0) {
+      try {
+        showMessageText = await this.buildIncomingCallMessageText(
+          accountId,
+          workerId,
+          worker,
+          showMessageTemplate,
+          callJid,
+          callPhone
+        );
+      } catch (error) {
+        console.error(
+          `[WorkerCommandHandler] Error building incoming call message for worker ${workerId}:`,
+          error
+        );
+      }
+    }
 
     return {
       reject_call: Boolean(config?.reject_call),
-      show_message_on_call: showMessageText.length > 0,
+      show_message_on_call: showMessageText.trim().length > 0,
       show_message_text: showMessageText,
     };
+  }
+
+  private buildFallbackChatForIncomingCall(
+    accountId: string,
+    worker: Awaited<ReturnType<WorkerService['viewWorker']>>,
+    workerId: string,
+    phone: string
+  ): IChat {
+    return {
+      chat_id: `incoming_call:${workerId}:${phone || 'unknown'}`,
+      account: {
+        id: worker?.account?.id ?? accountId,
+        name: worker?.account?.name ?? '',
+      },
+      worker: {
+        id: worker?.id ?? workerId,
+        name: worker?.name ?? '',
+      },
+      name: null,
+      phone,
+      status: EChatStatus.queue,
+      date: new Date().toISOString(),
+      user: null,
+      sector: null,
+      contact: null,
+    };
+  }
+
+  private async buildIncomingCallMessageText(
+    accountId: string,
+    workerId: string,
+    worker: Awaited<ReturnType<WorkerService['viewWorker']>>,
+    template: string,
+    callJid: string | null,
+    callPhone: string | null
+  ): Promise<string> {
+    const normalizedPhone =
+      callPhone?.replaceAll(/\D/g, '') || getPhoneFromJid(callJid, null) || '';
+
+    let chat: IChat | null = null;
+    if (normalizedPhone) {
+      chat = await this.chatService.findChatByPhone(
+        accountId,
+        workerId,
+        normalizedPhone,
+        callJid,
+        null
+      );
+    }
+
+    let protocol: string | null = null;
+    if (hasProtocolTag(template)) {
+      protocol = generateProtocol();
+
+      if (chat) {
+        try {
+          const persisted = await this.chatService.updateChatProtocol(
+            chat.chat_id,
+            'protocol_start',
+            protocol
+          );
+
+          if (!persisted) {
+            console.warn(
+              `[WorkerCommandHandler] Failed to persist call protocol for chat ${chat.chat_id}`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `[WorkerCommandHandler] Error persisting call protocol for chat ${chat.chat_id}:`,
+            error
+          );
+        }
+      }
+    }
+
+    const replacementChat =
+      chat ??
+      this.buildFallbackChatForIncomingCall(
+        accountId,
+        worker,
+        workerId,
+        normalizedPhone
+      );
+
+    return replaceMessageTags({
+      message: template,
+      chat: replacementChat,
+      protocol,
+    });
   }
 
   async validatePhone(

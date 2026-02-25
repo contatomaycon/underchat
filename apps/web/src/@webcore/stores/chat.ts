@@ -966,6 +966,9 @@ export const useChatStore = defineStore('chat', {
         date: resolvedChat.date,
         started_at: resolvedChat.started_at,
         closed_at: resolvedChat.closed_at,
+        protocol_ura: resolvedChat.protocol_ura ?? null,
+        protocol_start: resolvedChat.protocol_start ?? null,
+        protocol_transfer: resolvedChat.protocol_transfer ?? null,
         label: resolvedChat.label ?? null,
         forward_to_output_chatbot: resolvedChat.forward_to_output_chatbot,
       };
@@ -1081,6 +1084,9 @@ export const useChatStore = defineStore('chat', {
         started_at: input.started_at,
         label: input.label,
         closed_at: input.closed_at,
+        protocol_ura: input.protocol_ura ?? null,
+        protocol_start: input.protocol_start ?? null,
+        protocol_transfer: input.protocol_transfer ?? null,
         forward_to_output_chatbot: input.forward_to_output_chatbot,
       };
       return result;
@@ -3088,6 +3094,9 @@ export const useChatStore = defineStore('chat', {
               date: data.data.date,
               started_at: data.data.started_at,
               closed_at: data.data.closed_at,
+              protocol_ura: data.data.protocol_ura ?? null,
+              protocol_start: data.data.protocol_start ?? null,
+              protocol_transfer: data.data.protocol_transfer ?? null,
               label: data.data.label ?? null,
             };
 
@@ -3564,6 +3573,11 @@ export const useChatStore = defineStore('chat', {
         phone: chat.phone,
         status: chat.status,
         date: chat.date,
+        started_at: chat.started_at,
+        closed_at: chat.closed_at,
+        protocol_ura: chat.protocol_ura ?? null,
+        protocol_start: chat.protocol_start ?? null,
+        protocol_transfer: chat.protocol_transfer ?? null,
         label: chat.label ?? null,
         forward_to_output_chatbot: chat.forward_to_output_chatbot,
       };
@@ -4903,7 +4917,12 @@ export const useChatStore = defineStore('chat', {
               date: this.activeChat.date,
               started_at: this.activeChat.started_at,
               closed_at: this.activeChat.closed_at,
+              protocol_ura: this.activeChat.protocol_ura ?? null,
+              protocol_start: this.activeChat.protocol_start ?? null,
+              protocol_transfer: this.activeChat.protocol_transfer ?? null,
               label: normalizedLabel,
+              forward_to_output_chatbot:
+                this.activeChat.forward_to_output_chatbot,
             };
             this.activeChat = updated;
           }

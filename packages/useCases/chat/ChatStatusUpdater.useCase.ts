@@ -22,12 +22,18 @@ import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { PresenceService } from '@core/services/presence.service';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
 import { IUpsertMessageEnvelope } from '@core/common/interfaces/IUpsertMessage';
+
+interface IClosedStatusProtocolResult {
+  protocol: string | null;
+  persisted: boolean;
+}
 
 @injectable()
 export class ChatStatusUpdaterUseCase {
@@ -146,23 +152,57 @@ export class ChatStatusUpdaterUseCase {
     accountId: string,
     chatId: string,
     chat: IChat
-  ): Promise<void> {
+  ): Promise<IClosedStatusProtocolResult> {
     const workerConfigFields =
       await this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id);
 
     if (!workerConfigFields?.send_message_on_finish_attendance) {
-      return;
+      return {
+        protocol: null,
+        persisted: false,
+      };
     }
 
     const chatData = await this.chatService.findChatByChatId(accountId, chatId);
     if (!chatData) {
-      return;
+      return {
+        protocol: null,
+        persisted: false,
+      };
+    }
+
+    const templateMessage =
+      workerConfigFields.send_message_on_finish_attendance;
+    let generatedProtocol: string | null = null;
+    let protocolPersisted = false;
+
+    if (hasProtocolTag(templateMessage)) {
+      generatedProtocol = generateProtocol();
+      try {
+        protocolPersisted = await this.chatService.updateChatProtocol(
+          chatId,
+          'protocol_start',
+          generatedProtocol
+        );
+
+        if (!protocolPersisted) {
+          console.warn(
+            `[ChatStatusUpdater] Failed to persist finish protocol for chat ${chatId}`
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[ChatStatusUpdater] Error persisting finish protocol for chat ${chatId}:`,
+          error
+        );
+      }
     }
 
     const message = replaceMessageTags({
-      message: workerConfigFields.send_message_on_finish_attendance,
+      message: templateMessage,
       chat: chatData,
       t,
+      protocol: generatedProtocol,
     });
 
     await this.chatMessageService.sendMessage(t, {
@@ -172,6 +212,11 @@ export class ChatStatusUpdaterUseCase {
       message,
       typeUser: ETypeUserChat.system,
     });
+
+    return {
+      protocol: generatedProtocol,
+      persisted: protocolPersisted,
+    };
   }
 
   private async handleUraOutputStatus(
@@ -553,7 +598,7 @@ export class ChatStatusUpdaterUseCase {
       await this.chatService.invalidateChatCache(updatedChat);
     }
 
-    const chatWithProtocol = await this.buildChatWithProtocol(
+    let chatWithProtocol = await this.buildChatWithProtocol(
       updatedChat,
       finalStatus,
       t,
@@ -563,7 +608,26 @@ export class ChatStatusUpdaterUseCase {
     );
 
     if (finalStatus === EChatStatus.closed) {
-      await this.handleClosedStatus(t, accountId, params.chat_id, chat);
+      const closedStatusResult = await this.handleClosedStatus(
+        t,
+        accountId,
+        params.chat_id,
+        updatedChat
+      );
+
+      if (closedStatusResult.protocol && closedStatusResult.persisted) {
+        const existingProtocols = chatWithProtocol.protocol_start ?? [];
+        const hasProtocol = existingProtocols.includes(
+          closedStatusResult.protocol
+        );
+
+        chatWithProtocol = {
+          ...chatWithProtocol,
+          protocol_start: hasProtocol
+            ? existingProtocols
+            : [...existingProtocols, closedStatusResult.protocol],
+        };
+      }
     }
 
     if (finalStatus === EChatStatus.ura_output) {

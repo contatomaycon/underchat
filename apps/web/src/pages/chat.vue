@@ -26,6 +26,7 @@ import ChatLocationPicker from '@/components/chat/ChatLocationPicker.vue';
 import ChatContactViewModal from '@/components/chat/ChatContactViewModal.vue';
 import ChatLabelModal from '@/components/chat/ChatLabelModal.vue';
 import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
+import ChatProtocolBadgeDialog from '@/components/chat/ChatProtocolBadgeDialog.vue';
 import ChatQueueStatusBanner from '@/components/chat/ChatQueueStatusBanner.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
@@ -5049,6 +5050,25 @@ onBeforeUnmount(() => {
               </p>
             </div>
           </div>
+
+          <ChatProtocolBadgeDialog
+            :chat="chatStore.activeChat"
+            :contact-name="
+              chatStore.activeChat.contact?.name ??
+              chatStore.activeChat.name ??
+              ''
+            "
+            @copied="
+              chatStore.showSnackbar(t('protocol_copied'), EColor.success)
+            "
+            @copy-error="
+              (msg) =>
+                chatStore.showSnackbar(
+                  msg || t('error_copying_protocol'),
+                  EColor.error
+                )
+            "
+          />
 
           <VSpacer />
 
