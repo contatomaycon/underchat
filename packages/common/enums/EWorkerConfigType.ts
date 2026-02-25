@@ -18,6 +18,7 @@ export enum EWorkerConfigType {
   proxy_port = '019c863c-d267-754f-93a0-06cbbd3c7937',
   proxy_username = '019c863c-d267-754f-93a0-09c55215f362',
   proxy_password = '019c863c-d267-754f-93a0-0c5455ea887a',
+  proxy_protocol = '019c92b7-8d5f-779f-a51e-63b132be0dcb',
   attendance_hours = '019c923a-00fd-7490-9495-e9e72b652713',
   outside_hours_message = '019c923a-00ff-72ac-84f5-0a78aa1e864c',
 }

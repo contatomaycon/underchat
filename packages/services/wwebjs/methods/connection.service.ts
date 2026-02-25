@@ -28,6 +28,7 @@ import { triggerConnectionEstablished } from '../callbacks';
 import { WwebjsIncomingMessageService } from './incoming.service';
 import { WwebjsHealthCheckService } from './healthCheck.service';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 
 const FOLDER = `/app/data/wwebjs/storage/${wwebjsEnvironment.wwebjsWorkerId}`;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
@@ -50,6 +51,7 @@ const CHROMIUM_LOCK_FILE_NAMES = [
 const CHROMIUM_PROFILE_SUBDIRECTORIES = ['', 'Default'] as const;
 
 function readProxyConfig(): {
+  protocol: EProxyProtocol;
   host: string;
   port: number;
   username?: string;
@@ -62,10 +64,18 @@ function readProxyConfig(): {
     return null;
   }
 
+  const rawProtocol = process.env.PROXY_PROTOCOL?.trim();
+  const protocol = Object.values(EProxyProtocol).includes(
+    rawProtocol as EProxyProtocol
+  )
+    ? (rawProtocol as EProxyProtocol)
+    : EProxyProtocol.http;
+
   const username = process.env.PROXY_USERNAME?.trim();
   const password = process.env.PROXY_PASSWORD?.trim();
 
   return {
+    protocol,
     host,
     port,
     username: username || undefined,
@@ -519,7 +529,7 @@ export class WwebjsConnectionService {
 
       if (proxy) {
         puppeteerOpts.args.push(
-          `--proxy-server=http://${proxy.host}:${proxy.port}`
+          `--proxy-server=${proxy.protocol}://${proxy.host}:${proxy.port}`
         );
       }
 
@@ -755,7 +765,9 @@ export class WwebjsConnectionService {
       return;
     }
 
-    const proxyLabel = proxy ? `${proxy.host}:${proxy.port}` : 'disabled';
+    const proxyLabel = proxy
+      ? `${proxy.protocol}://${proxy.host}:${proxy.port}`
+      : 'disabled';
 
     try {
       const browser = client.pupBrowser;

@@ -34,6 +34,7 @@ import { ICreateServerWeb } from '@core/common/interfaces/ICreateServerWeb';
 import { ServerCreatorRepository } from '@core/repositories/server/ServerCreator.repository';
 import { IUpdateServerWebById } from '@core/common/interfaces/IUpdateServerWebById';
 import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { ServerWebDeleterRepository } from '@core/repositories/server/ServerWebDeleter.repository';
 import { ServerWebViewerRepository } from '@core/repositories/server/ServerWebViewer.repository';
 import { ServerSshListerRepository } from '@core/repositories/server/ServerSshLister.repository';
@@ -82,6 +83,18 @@ export class ServerService {
     private readonly serverBalanceMonitorViewerRepository: ServerBalanceMonitorViewerRepository
   ) {}
 
+  private normalizeProxyProtocol(protocol?: string | null): EProxyProtocol {
+    if (!protocol) {
+      return EProxyProtocol.http;
+    }
+
+    if (Object.values(EProxyProtocol).includes(protocol as EProxyProtocol)) {
+      return protocol as EProxyProtocol;
+    }
+
+    return EProxyProtocol.http;
+  }
+
   createServer = async (
     t: TFunction<'translation', undefined>,
     input: CreateServerRequest
@@ -107,6 +120,7 @@ export class ServerService {
       name: input.name,
       quantity_workers: input.quantity_workers,
       proxy_enabled: proxyEnabled,
+      proxy_protocol: this.normalizeProxyProtocol(input.proxy_protocol),
       proxy_host: proxyEnabled ? (input.proxy_host ?? null) : null,
       proxy_port: proxyEnabled ? (input.proxy_port ?? null) : null,
       proxy_username: proxyUsernameEncrypted,
@@ -223,6 +237,7 @@ export class ServerService {
       name: input.name,
       quantity_workers: input.quantity_workers,
       proxy_enabled: proxyEnabled,
+      proxy_protocol: this.normalizeProxyProtocol(input.proxy_protocol),
       proxy_host: proxyEnabled ? (input.proxy_host ?? null) : null,
       proxy_port: proxyEnabled ? (input.proxy_port ?? null) : null,
       proxy_username: proxyUsername,
@@ -257,13 +272,22 @@ export class ServerService {
   viewServerById = async (
     serverId: string
   ): Promise<ViewServerResponse | null> => {
-    return this.serverViewerRepository.viewServerById(serverId);
+    const result = await this.serverViewerRepository.viewServerById(serverId);
+
+    if (!result) {
+      return null;
+    }
+
+    if (!result.proxy?.protocol) {
+      result.proxy.protocol = EProxyProtocol.http;
+    }
+
+    return result;
   };
 
   viewServerProxyById = async (serverId: string) => {
-    const server = await this.serverSshViewerRepository.viewServerSshById(
-      serverId
-    );
+    const server =
+      await this.serverSshViewerRepository.viewServerSshById(serverId);
 
     if (!server) {
       return null;
@@ -271,6 +295,7 @@ export class ServerService {
 
     return {
       enabled: server.proxy_enabled,
+      protocol: this.normalizeProxyProtocol(server.proxy_protocol),
       host: server.proxy_host,
       port: server.proxy_port,
       username: server.proxy_username

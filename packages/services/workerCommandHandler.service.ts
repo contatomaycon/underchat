@@ -40,6 +40,7 @@ import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -88,6 +89,20 @@ export class WorkerCommandHandlerService {
       msg.includes('unknown topic') ||
       msg.includes('topic or partition')
     );
+  }
+
+  private normalizeProxyProtocol(
+    protocol: string | null | undefined
+  ): EProxyProtocol {
+    if (!protocol) {
+      return EProxyProtocol.http;
+    }
+
+    if (Object.values(EProxyProtocol).includes(protocol as EProxyProtocol)) {
+      return protocol as EProxyProtocol;
+    }
+
+    return EProxyProtocol.http;
   }
 
   async handle(data: IWorkerPayload): Promise<void> {
@@ -593,6 +608,7 @@ export class WorkerCommandHandlerService {
     serverId: string
   ): Promise<
     | {
+        protocol: EProxyProtocol;
         host: string;
         port: number;
         username?: string | null;
@@ -630,6 +646,7 @@ export class WorkerCommandHandlerService {
 
   private async resolveChannelProxyConfig(workerId: string): Promise<
     | {
+        protocol: EProxyProtocol;
         host: string;
         port: number;
         username?: string | null;
@@ -637,29 +654,39 @@ export class WorkerCommandHandlerService {
       }
     | undefined
   > {
-    const [proxyEnabled, proxyHost, proxyPort, proxyUsername, proxyPassword] =
-      await Promise.all([
-        this.workerConfigViewerRepository.fetchConfigValueByType(
-          workerId,
-          EWorkerConfigType.proxy_enabled
-        ),
-        this.workerConfigViewerRepository.fetchConfigValueByType(
-          workerId,
-          EWorkerConfigType.proxy_host
-        ),
-        this.workerConfigViewerRepository.fetchConfigValueByType(
-          workerId,
-          EWorkerConfigType.proxy_port
-        ),
-        this.workerConfigViewerRepository.fetchConfigValueByType(
-          workerId,
-          EWorkerConfigType.proxy_username
-        ),
-        this.workerConfigViewerRepository.fetchConfigValueByType(
-          workerId,
-          EWorkerConfigType.proxy_password
-        ),
-      ]);
+    const [
+      proxyEnabled,
+      proxyProtocol,
+      proxyHost,
+      proxyPort,
+      proxyUsername,
+      proxyPassword,
+    ] = await Promise.all([
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_enabled
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_protocol
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_host
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_port
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_username
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.proxy_password
+      ),
+    ]);
 
     if (proxyEnabled.statusId !== EWorkerConfigStatus.active) {
       return undefined;
@@ -672,6 +699,7 @@ export class WorkerCommandHandlerService {
     }
 
     return {
+      protocol: this.normalizeProxyProtocol(proxyProtocol.value),
       host,
       port,
       username: this.tryDecryptProxyValue(proxyUsername.value),
@@ -681,6 +709,7 @@ export class WorkerCommandHandlerService {
 
   private async resolveServerProxyConfig(serverId: string): Promise<
     | {
+        protocol: EProxyProtocol;
         host: string;
         port: number;
         username?: string | null;
@@ -704,6 +733,7 @@ export class WorkerCommandHandlerService {
     }
 
     return {
+      protocol: this.normalizeProxyProtocol(server.proxy_protocol),
       host: server.proxy_host,
       port: server.proxy_port,
       username: this.tryDecryptProxyValue(server.proxy_username),

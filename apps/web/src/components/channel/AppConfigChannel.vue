@@ -7,6 +7,7 @@ import { EColor } from '@core/common/enums/EColor';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 import { can } from '@layouts/plugins/casl';
 import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listContactGroupAll/response.schema';
@@ -285,11 +286,24 @@ const isSavingWorkerConfig = ref(false);
 const isSavingProxyConfig = ref(false);
 const workerConfigLoadedFor = ref<string | null>(null);
 const proxyEnabled = ref(false);
+const proxyProtocol = ref<EProxyProtocol>(EProxyProtocol.http);
 const proxyHost = ref<string | null>(null);
 const proxyPort = ref<number | null>(null);
 const proxyUsername = ref<string | null>(null);
 const proxyPassword = ref<string | null>(null);
 const isProxyPasswordVisible = ref(false);
+const proxyProtocolOptions = [
+  { value: EProxyProtocol.http, title: 'HTTP' },
+  { value: EProxyProtocol.https, title: 'HTTPS' },
+  { value: EProxyProtocol.socks4, title: 'SOCKS4' },
+  { value: EProxyProtocol.socks5, title: 'SOCKS5' },
+];
+const normalizeProxyProtocol = (
+  value: string | null | undefined
+): EProxyProtocol =>
+  Object.values(EProxyProtocol).includes(value as EProxyProtocol)
+    ? (value as EProxyProtocol)
+    : EProxyProtocol.http;
 const transferProtocolText = ref<string>('');
 const transferProtocolSectorText = ref<string>('');
 const transferProtocolSectorAndUserText = ref<string>('');
@@ -646,6 +660,7 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
   const nextState = createDefaultWorkerConfig();
 
   proxyEnabled.value = false;
+  proxyProtocol.value = EProxyProtocol.http;
   proxyHost.value = null;
   proxyPort.value = null;
   proxyUsername.value = null;
@@ -671,6 +686,7 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     nextState.auto_save_contacts = config.auto_save_contacts;
     nextState.chatbot = config.chatbot_id !== null && config.chatbot_id !== '';
     proxyEnabled.value = config.proxy_enabled ?? false;
+    proxyProtocol.value = normalizeProxyProtocol(config.proxy_protocol);
     proxyHost.value = config.proxy_host ?? null;
     proxyPort.value = config.proxy_port ?? null;
     proxyUsername.value = config.proxy_username ?? null;
@@ -910,6 +926,7 @@ const saveProxyConfig = async () => {
   const normalizedProxyHost = proxyHost.value?.trim() || null;
   const normalizedProxyPort =
     proxyPort.value !== null ? Number(proxyPort.value) : null;
+  const normalizedProxyProtocol = proxyProtocol.value ?? EProxyProtocol.http;
   const normalizedProxyUsername = proxyUsername.value?.trim() || null;
   const normalizedProxyPassword = proxyPassword.value?.trim() || null;
 
@@ -928,10 +945,16 @@ const saveProxyConfig = async () => {
     return;
   }
 
+  if (proxyEnabled.value && !normalizedProxyProtocol) {
+    channelStore.showSnackbar(t('proxy_protocol_required'), EColor.warning);
+    return;
+  }
+
   try {
     isSavingProxyConfig.value = true;
     const result = await channelStore.updateWorkerConfig(channelId.value, {
       proxy_enabled: proxyEnabled.value,
+      proxy_protocol: proxyEnabled.value ? normalizedProxyProtocol : null,
       proxy_host: proxyEnabled.value ? normalizedProxyHost : null,
       proxy_port: proxyEnabled.value ? normalizedProxyPort : null,
       proxy_username: proxyEnabled.value ? normalizedProxyUsername : null,
@@ -3397,6 +3420,21 @@ onMounted(async () => {
                       :label="$t('enable_proxy')"
                       color="primary"
                       hide-details
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('proxy_protocol') }}:</VLabel
+                    >
+                    <AppSelectSearch
+                      v-model="proxyProtocol"
+                      :items="proxyProtocolOptions"
+                      :placeholder="$t('proxy_protocol')"
+                      :clearable="false"
+                      item-title="title"
+                      item-value="value"
+                      :disabled="!proxyEnabled"
                     />
                   </VCol>
 

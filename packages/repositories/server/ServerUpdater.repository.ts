@@ -11,6 +11,7 @@ import { IUpdateServerSshById } from '@core/common/interfaces/IUpdateServerSshBy
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { TFunction } from 'i18next';
 import { IUpdateServerWebById } from '@core/common/interfaces/IUpdateServerWebById';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 
 @injectable()
 export class ServerUpdaterRepository {
@@ -30,6 +31,7 @@ export class ServerUpdaterRepository {
       name: input.name,
       quantity_workers: input.quantity_workers,
       proxy_enabled: input.proxy_enabled,
+      proxy_protocol: input.proxy_protocol ?? EProxyProtocol.http,
       proxy_host: input.proxy_enabled ? (input.proxy_host ?? null) : null,
       proxy_port: input.proxy_enabled ? (input.proxy_port ?? null) : null,
     };

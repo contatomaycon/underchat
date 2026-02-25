@@ -1,3 +1,4 @@
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { Static, Type } from '@sinclair/typebox';
 
 export const workerConfigSchema = Type.Object({
@@ -15,6 +16,7 @@ export const workerConfigSchema = Type.Object({
   auto_save_contacts: Type.Boolean(),
   chatbot_id: Type.Union([Type.String(), Type.Null()]),
   proxy_enabled: Type.Boolean(),
+  proxy_protocol: Type.String({ enum: Object.values(EProxyProtocol) }),
   proxy_host: Type.Union([Type.String(), Type.Null()]),
   proxy_port: Type.Union([Type.Integer(), Type.Null()]),
   proxy_username: Type.Union([Type.String(), Type.Null()]),

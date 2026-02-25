@@ -7,6 +7,7 @@ import { IWorkerConfigValue } from '@core/common/interfaces/IWorkerConfigValue';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 
 @injectable()
 export class WorkerConfigViewerRepository {
@@ -264,6 +265,9 @@ export class WorkerConfigViewerRepository {
       proxy_enabled: configMap.has(EWorkerConfigType.proxy_enabled)
         ? true
         : null,
+      proxy_protocol: this.parseProxyProtocol(
+        configMap.get(EWorkerConfigType.proxy_protocol)
+      ),
       proxy_host: configMap.get(EWorkerConfigType.proxy_host) || null,
       proxy_port: this.parseNumber(configMap.get(EWorkerConfigType.proxy_port)),
       proxy_username: configMap.get(EWorkerConfigType.proxy_username) || null,
@@ -279,5 +283,19 @@ export class WorkerConfigViewerRepository {
     }
     const parsed = parseInt(value, 10);
     return isNaN(parsed) ? null : parsed;
+  }
+
+  private parseProxyProtocol(
+    value: string | null | undefined
+  ): EProxyProtocol | null {
+    if (!value) {
+      return null;
+    }
+
+    if (Object.values(EProxyProtocol).includes(value as EProxyProtocol)) {
+      return value as EProxyProtocol;
+    }
+
+    return null;
   }
 }

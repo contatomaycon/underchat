@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { useServerStore } from '@/@webcore/stores/server';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
 import { CreateServerRequest } from '@core/schema/server/createServer/request.schema';
 import { VForm } from 'vuetify/components/VForm';
@@ -29,6 +30,7 @@ const webProtocol = ref<EServerWebProtocol.http | EServerWebProtocol.https>(
   EServerWebProtocol.http
 );
 const proxyEnabled = ref(false);
+const proxyProtocol = ref<EProxyProtocol>(EProxyProtocol.http);
 const proxyHost = ref<string | null>(null);
 const proxyPort = ref<number | null>(null);
 const proxyUsername = ref<string | null>(null);
@@ -37,6 +39,12 @@ const proxyPassword = ref<string | null>(null);
 const itemsWebProtocol = ref([
   { value: EServerWebProtocol.http, title: 'HTTP' },
   { value: EServerWebProtocol.https, title: 'HTTPS' },
+]);
+const itemsProxyProtocol = ref([
+  { value: EProxyProtocol.http, title: 'HTTP' },
+  { value: EProxyProtocol.https, title: 'HTTPS' },
+  { value: EProxyProtocol.socks4, title: 'SOCKS4' },
+  { value: EProxyProtocol.socks5, title: 'SOCKS5' },
 ]);
 
 const refFormAddServer = ref<VForm>();
@@ -56,10 +64,7 @@ const addServer = async () => {
     !webPort.value ||
     !webProtocol.value ||
     (proxyEnabled.value &&
-      (!proxyHost.value ||
-        !proxyPort.value ||
-        !proxyUsername.value ||
-        !proxyPassword.value))
+      (!proxyHost.value || !proxyPort.value || !proxyProtocol.value))
   ) {
     return;
   }
@@ -75,6 +80,7 @@ const addServer = async () => {
     web_port: webPort.value,
     web_protocol: webProtocol.value,
     proxy_enabled: proxyEnabled.value,
+    proxy_protocol: proxyEnabled.value ? proxyProtocol.value : null,
     proxy_host: proxyEnabled.value ? proxyHost.value : null,
     proxy_port: proxyEnabled.value ? proxyPort.value : null,
     proxy_username: proxyEnabled.value ? proxyUsername.value : null,
@@ -101,6 +107,7 @@ const resetForm = () => {
   webPort.value = null;
   webProtocol.value = EServerWebProtocol.http;
   proxyEnabled.value = false;
+  proxyProtocol.value = EProxyProtocol.http;
   proxyHost.value = null;
   proxyPort.value = null;
   proxyUsername.value = null;
@@ -243,11 +250,27 @@ onMounted(resetForm);
             </VCol>
 
             <VCol v-if="proxyEnabled" cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('proxy_protocol') }}:</VLabel
+              >
+              <AppSelectSearch
+                v-model="proxyProtocol"
+                :items="itemsProxyProtocol"
+                :placeholder="$t('proxy_protocol')"
+                :clearable="false"
+                item-value="value"
+                item-title="title"
+              />
+            </VCol>
+
+            <VCol v-if="proxyEnabled" cols="12" sm="6" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('proxy_host') }}:</VLabel>
               <AppTextField
                 v-model="proxyHost"
                 :placeholder="$t('proxy_host_placeholder')"
-                :rules="[requiredValidator(proxyHost, $t('proxy_host_required'))]"
+                :rules="[
+                  requiredValidator(proxyHost, $t('proxy_host_required')),
+                ]"
               />
             </VCol>
 
@@ -256,7 +279,9 @@ onMounted(resetForm);
               <AppTextField
                 v-model="proxyPort"
                 :placeholder="$t('proxy_port')"
-                :rules="[requiredValidator(proxyPort, $t('proxy_port_required'))]"
+                :rules="[
+                  requiredValidator(proxyPort, $t('proxy_port_required')),
+                ]"
                 type="number"
               />
             </VCol>
@@ -268,9 +293,6 @@ onMounted(resetForm);
               <AppTextField
                 v-model="proxyUsername"
                 :placeholder="$t('proxy_username')"
-                :rules="[
-                  requiredValidator(proxyUsername, $t('proxy_username_required')),
-                ]"
               />
             </VCol>
 
@@ -281,9 +303,6 @@ onMounted(resetForm);
               <AppTextField
                 v-model="proxyPassword"
                 :placeholder="$t('proxy_password')"
-                :rules="[
-                  requiredValidator(proxyPassword, $t('proxy_password_required')),
-                ]"
               />
             </VCol>
           </VRow>

@@ -15,6 +15,7 @@ import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
 import { parseAttendanceHoursConfig } from '@core/common/functions/attendanceHoursConfig';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 
 @injectable()
 export class WorkerConfigService {
@@ -31,6 +32,20 @@ export class WorkerConfigService {
     private readonly passwordEncryptorService: PasswordEncryptorService,
     @inject('Redis') private readonly redis: Redis
   ) {}
+
+  private normalizeProxyProtocol(
+    protocol: string | null | undefined
+  ): EProxyProtocol {
+    if (!protocol) {
+      return EProxyProtocol.http;
+    }
+
+    if (Object.values(EProxyProtocol).includes(protocol as EProxyProtocol)) {
+      return protocol as EProxyProtocol;
+    }
+
+    return EProxyProtocol.http;
+  }
 
   async viewWorkerConfig(workerId: string): Promise<ViewWorkerConfigResponse> {
     const result =
@@ -80,6 +95,7 @@ export class WorkerConfigService {
         auto_save_contacts: null,
         chatbot_id: null,
         proxy_enabled: null,
+        proxy_protocol: null,
         proxy_host: null,
         proxy_port: null,
         proxy_username: null,
@@ -122,6 +138,7 @@ export class WorkerConfigService {
       auto_save_contacts: result.auto_save_contacts ?? false,
       chatbot_id: result.chatbot_id ?? null,
       proxy_enabled: result.proxy_enabled ?? false,
+      proxy_protocol: this.normalizeProxyProtocol(result.proxy_protocol),
       proxy_host: result.proxy_host ?? null,
       proxy_port: result.proxy_port ?? null,
       proxy_username: this.decryptProxyField(result.proxy_username),
@@ -143,6 +160,7 @@ export class WorkerConfigService {
     }
 
     if (!input.proxy_enabled) {
+      normalizedInput.proxy_protocol = null;
       normalizedInput.proxy_host = null;
       normalizedInput.proxy_port = null;
       normalizedInput.proxy_username = null;
@@ -153,11 +171,15 @@ export class WorkerConfigService {
     if (
       !input.proxy_host?.trim() ||
       !input.proxy_port ||
-      !Number.isFinite(input.proxy_port)
+      !Number.isFinite(input.proxy_port) ||
+      input.proxy_port <= 0
     ) {
       throw new Error('Proxy configuration is incomplete');
     }
 
+    normalizedInput.proxy_protocol = this.normalizeProxyProtocol(
+      input.proxy_protocol
+    );
     normalizedInput.proxy_host = input.proxy_host?.trim() ?? null;
     normalizedInput.proxy_port = input.proxy_port ?? null;
 

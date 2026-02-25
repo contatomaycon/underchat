@@ -22,6 +22,7 @@ export class ServerSshViewerRepository {
         ssh_username: serverSsh.ssh_username,
         ssh_password: serverSsh.ssh_password,
         proxy_enabled: server.proxy_enabled,
+        proxy_protocol: server.proxy_protocol,
         proxy_host: server.proxy_host,
         proxy_port: server.proxy_port,
         proxy_username: server.proxy_username,

@@ -404,6 +404,14 @@ export class WorkerConfigUpserterRepository {
       tx,
       workerId,
       targetStatusId,
+      EWorkerConfigType.proxy_protocol,
+      input.proxy_protocol?.toString().trim() || null
+    );
+
+    await this.upsertConfigValue(
+      tx,
+      workerId,
+      targetStatusId,
       EWorkerConfigType.proxy_host,
       input.proxy_host?.trim() || null
     );

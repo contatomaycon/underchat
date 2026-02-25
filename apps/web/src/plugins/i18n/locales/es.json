@@ -102,6 +102,8 @@
   "web_domain_required": "Se requiere el dominio web",
   "web_port_required": "Se requiere el puerto web",
   "enable_proxy": "Usar proxy",
+  "proxy_protocol": "Protocolo del Proxy",
+  "proxy_protocol_required": "El Protocolo del Proxy es obligatorio",
   "proxy_host": "IP/Dominio del Proxy",
   "proxy_host_placeholder": "proxy.proxyads.com",
   "proxy_host_required": "IP/Dominio del Proxy es obligatorio",

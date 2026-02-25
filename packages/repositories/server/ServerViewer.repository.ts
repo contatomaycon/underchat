@@ -33,6 +33,7 @@ export class ServerViewerRepository {
         },
         proxy: {
           enabled: server.proxy_enabled,
+          protocol: server.proxy_protocol,
           host: server.proxy_host,
           port: server.proxy_port,
         },

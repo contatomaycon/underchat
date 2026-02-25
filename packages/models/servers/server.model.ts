@@ -9,6 +9,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { serverStatus, serverSsh, serverWeb, worker } from '@core/models';
 import { relations } from 'drizzle-orm';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 
 export const server = pgTable(
   'server',
@@ -20,6 +21,10 @@ export const server = pgTable(
     name: varchar({ length: 200 }).notNull(),
     quantity_workers: integer().notNull(),
     proxy_enabled: boolean('proxy_enabled').notNull().default(false),
+    proxy_protocol: varchar('proxy_protocol', { length: 20 })
+      .$type<EProxyProtocol>()
+      .notNull()
+      .default(EProxyProtocol.http),
     proxy_host: varchar('proxy_host', { length: 255 }),
     proxy_port: integer('proxy_port'),
     proxy_username: varchar('proxy_username', { length: 1000 }),

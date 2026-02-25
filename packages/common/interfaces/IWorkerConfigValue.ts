@@ -1,3 +1,5 @@
+import { EProxyProtocol } from '../enums/EProxyProtocol';
+
 export interface IWorkerConfigValue {
   worker_config_id: string;
   worker_id: string;
@@ -13,6 +15,7 @@ export interface IWorkerConfigValue {
   auto_save_contacts: boolean | null;
   chatbot_id: string | null;
   proxy_enabled: boolean | null;
+  proxy_protocol: EProxyProtocol | null;
   proxy_host: string | null;
   proxy_port: number | null;
   proxy_username: string | null;

@@ -48,6 +48,7 @@ import { TransferWorker } from '@core/schema/chat/listTransferOptions/response.s
 import { WorkerUpdatedAtUpdaterRepository } from '@core/repositories/worker/WorkerUpdatedAtUpdater.repository';
 import { WorkerLastConnectionCheckUpdaterRepository } from '@core/repositories/worker/WorkerLastConnectionCheckUpdater.repository';
 import Redis from 'ioredis';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 
 @injectable()
 export class WorkerService {
@@ -176,6 +177,7 @@ export class WorkerService {
     grpcHost?: string,
     grpcPort?: number,
     proxy?: {
+      protocol?: EProxyProtocol;
       host: string;
       port: number;
       username?: string | null;
@@ -204,6 +206,7 @@ export class WorkerService {
 
     if (proxy?.host && Number.isFinite(proxy.port)) {
       env.push(`PROXY_HOST=${proxy.host}`, `PROXY_PORT=${proxy.port}`);
+      env.push(`PROXY_PROTOCOL=${proxy.protocol ?? EProxyProtocol.http}`);
       if (proxy.username) {
         env.push(`PROXY_USERNAME=${proxy.username}`);
       }

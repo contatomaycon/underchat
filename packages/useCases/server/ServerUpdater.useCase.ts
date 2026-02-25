@@ -25,7 +25,11 @@ export class ServerUpdaterUseCase {
   ): Promise<void> {
     if (
       input.proxy_enabled &&
-      (!input.proxy_host?.trim() || !input.proxy_port)
+      (!input.proxy_host?.trim() ||
+        !input.proxy_port ||
+        !Number.isFinite(input.proxy_port) ||
+        input.proxy_port <= 0 ||
+        !input.proxy_protocol)
     ) {
       throw new Error('Proxy configuration is incomplete');
     }

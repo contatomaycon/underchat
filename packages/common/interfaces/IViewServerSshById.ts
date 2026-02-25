@@ -1,3 +1,5 @@
+import { EProxyProtocol } from '../enums/EProxyProtocol';
+
 export interface IViewServerSshById {
   server_status_id: string;
   ssh_ip: string;
@@ -5,6 +7,7 @@ export interface IViewServerSshById {
   ssh_username: string;
   ssh_password: string;
   proxy_enabled: boolean;
+  proxy_protocol: EProxyProtocol | null;
   proxy_host: string | null;
   proxy_port: number | null;
   proxy_username: string | null;

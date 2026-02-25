@@ -1,4 +1,5 @@
 import { EServerWebProtocol } from '@core/common/enums/EServerWebProtocol';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { Static, Type } from '@sinclair/typebox';
 
 export const editServerRequestSchema = Type.Object({
@@ -12,6 +13,12 @@ export const editServerRequestSchema = Type.Object({
   web_port: Type.Number(),
   web_protocol: Type.String({ enum: Object.values(EServerWebProtocol) }),
   proxy_enabled: Type.Optional(Type.Boolean()),
+  proxy_protocol: Type.Optional(
+    Type.Union([
+      Type.String({ enum: Object.values(EProxyProtocol) }),
+      Type.Null(),
+    ])
+  ),
   proxy_host: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   proxy_port: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   proxy_username: Type.Optional(Type.Union([Type.String(), Type.Null()])),

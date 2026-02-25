@@ -1,3 +1,4 @@
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { Static, Type } from '@sinclair/typebox';
 
 export const viewServerSshResponseSchema = Type.Object({
@@ -13,6 +14,7 @@ export const viewServerWebResponseSchema = Type.Object({
 
 export const viewServerProxyResponseSchema = Type.Object({
   enabled: Type.Boolean(),
+  protocol: Type.String({ enum: Object.values(EProxyProtocol) }),
   host: Type.Union([Type.String(), Type.Null()]),
   port: Type.Union([Type.Number(), Type.Null()]),
 });

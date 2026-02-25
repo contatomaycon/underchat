@@ -219,6 +219,9 @@ importers:
       socket.io:
         specifier: ^4.8.3
         version: 4.8.3
+      socks-proxy-agent:
+        specifier: ^8.0.5
+        version: 8.0.5
       ssh2:
         specifier: ^1.17.0
         version: 1.17.0

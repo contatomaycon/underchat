@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { request as httpsRequest, type Agent as HttpsAgent } from 'node:https';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 import { singleton, inject } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';
@@ -35,6 +36,7 @@ import { BaileysHealthCheckService } from './healthCheck.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { triggerConnectionEstablished } from '../callbacks';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
@@ -51,13 +53,23 @@ let cachedWaVersion: {
   fetchedAt: number;
 } | null = null;
 
-function readProxyUrl(): string | null {
+function readProxyConfig(): {
+  protocol: EProxyProtocol;
+  url: string;
+} | null {
   const host = process.env.PROXY_HOST?.trim();
   const port = Number.parseInt(process.env.PROXY_PORT ?? '', 10);
 
   if (!host || !Number.isFinite(port) || port <= 0) {
     return null;
   }
+
+  const rawProtocol = process.env.PROXY_PROTOCOL?.trim();
+  const protocol = Object.values(EProxyProtocol).includes(
+    rawProtocol as EProxyProtocol
+  )
+    ? (rawProtocol as EProxyProtocol)
+    : EProxyProtocol.http;
 
   const username = process.env.PROXY_USERNAME?.trim();
   const password = process.env.PROXY_PASSWORD?.trim();
@@ -66,7 +78,24 @@ function readProxyUrl(): string | null {
       ? `${encodeURIComponent(username)}:${encodeURIComponent(password)}@`
       : '';
 
-  return `http://${auth}${host}:${port}`;
+  return {
+    protocol,
+    url: `${protocol}://${auth}${host}:${port}`,
+  };
+}
+
+function createProxyAgent(config: {
+  protocol: EProxyProtocol;
+  url: string;
+}): HttpsAgent {
+  if (
+    config.protocol === EProxyProtocol.socks4 ||
+    config.protocol === EProxyProtocol.socks5
+  ) {
+    return new SocksProxyAgent(config.url) as unknown as HttpsAgent;
+  }
+
+  return new HttpsProxyAgent(config.url) as unknown as HttpsAgent;
 }
 
 async function getCachedWaWebVersion(): Promise<[number, number, number]> {
@@ -444,12 +473,10 @@ export class BaileysConnectionService {
   private async createSocket() {
     const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
     const version = await getCachedWaWebVersion();
-    const proxyUrl = readProxyUrl();
+    const proxyConfig = readProxyConfig();
 
-    const proxyAgent = proxyUrl
-      ? (new HttpsProxyAgent(proxyUrl) as unknown as HttpsAgent)
-      : undefined;
-    this.activeProxyUrl = proxyUrl;
+    const proxyAgent = proxyConfig ? createProxyAgent(proxyConfig) : undefined;
+    this.activeProxyUrl = proxyConfig?.url ?? null;
     this.activeProxyAgent = proxyAgent;
 
     const socket = makeWASocket({
