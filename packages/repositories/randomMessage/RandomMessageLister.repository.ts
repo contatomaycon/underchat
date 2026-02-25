@@ -5,6 +5,7 @@ import { inject, injectable } from 'tsyringe';
 import { and, asc, count, desc, eq, ilike, SQL, SQLWrapper } from 'drizzle-orm';
 import { ListRandomMessageRequest } from '@core/schema/randomMessage/listRandomMessage/request.schema';
 import { ListRandomMessageResponse } from '@core/schema/randomMessage/listRandomMessage/response.schema';
+import { ERandomMessageStatus } from '@core/common/enums/ERandomMessageStatus';
 
 @injectable()
 export class RandomMessageListerRepository {
@@ -119,5 +120,30 @@ export class RandomMessageListerRepository {
       .execute();
 
     return result[0]?.count ?? 0;
+  };
+
+  listActiveRandomMessagesForChatbot = async (
+    accountId: string
+  ): Promise<Array<{ random_message_id: string; name: string }>> => {
+    const result = await this.dbRo
+      .select({
+        random_message_id: randomMessage.random_message_id,
+        name: randomMessage.name,
+      })
+      .from(randomMessage)
+      .where(
+        and(
+          eq(randomMessage.account_id, accountId),
+          eq(randomMessage.status, ERandomMessageStatus.active)
+        )
+      )
+      .orderBy(asc(randomMessage.name))
+      .execute();
+
+    if (!result?.length) {
+      return [];
+    }
+
+    return result as Array<{ random_message_id: string; name: string }>;
   };
 }

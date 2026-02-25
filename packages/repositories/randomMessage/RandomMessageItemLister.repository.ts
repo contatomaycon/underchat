@@ -5,6 +5,7 @@ import { inject, injectable } from 'tsyringe';
 import { and, asc, count, desc, eq, ilike, SQL, SQLWrapper } from 'drizzle-orm';
 import { ListRandomMessageItemQueryRequest } from '@core/schema/randomMessage/listRandomMessageItem/request.schema';
 import { ListRandomMessageItemResponse } from '@core/schema/randomMessage/listRandomMessageItem/response.schema';
+import { ERandomMessageStatus } from '@core/common/enums/ERandomMessageStatus';
 
 @injectable()
 export class RandomMessageItemListerRepository {
@@ -132,5 +133,58 @@ export class RandomMessageItemListerRepository {
       .execute();
 
     return result[0]?.count ?? 0;
+  };
+
+  listActiveRandomMessageItemsForRunner = async (
+    randomMessageId: string,
+    accountId: string
+  ): Promise<
+    Array<{
+      random_message_item_id: string;
+      message: string;
+      type: string;
+      attachment_url: string | null;
+      mimetype: string | null;
+      duration: number | null;
+      width: number | null;
+      height: number | null;
+    }>
+  > => {
+    const result = await this.dbRo
+      .select({
+        random_message_item_id: randomMessageItem.random_message_item_id,
+        message: randomMessageItem.message,
+        type: randomMessageItem.type,
+        attachment_url: randomMessageItem.attachment_url,
+        mimetype: randomMessageItem.mimetype,
+        duration: randomMessageItem.duration,
+        width: randomMessageItem.width,
+        height: randomMessageItem.height,
+      })
+      .from(randomMessageItem)
+      .where(
+        and(
+          eq(randomMessageItem.random_message_id, randomMessageId),
+          eq(randomMessageItem.account_id, accountId),
+          eq(randomMessageItem.status, ERandomMessageStatus.active)
+        )
+      )
+      .orderBy(asc(randomMessageItem.created_at))
+      .execute();
+
+    if (!result?.length) {
+      return [];
+    }
+
+    return result as Array<{
+      random_message_item_id: string;
+      message: string;
+      type: string;
+      attachment_url: string | null;
+      mimetype: string | null;
+      duration: number | null;
+      width: number | null;
+      height: number | null;
+    }>;
   };
 }

@@ -183,4 +183,33 @@ export class RandomMessageService {
       accountId
     );
   };
+
+  listActiveRandomMessagesForChatbot = async (
+    accountId: string
+  ): Promise<Array<{ random_message_id: string; name: string }>> => {
+    return this.randomMessageListerRepository.listActiveRandomMessagesForChatbot(
+      accountId
+    );
+  };
+
+  listActiveRandomMessageItemsForRunner = async (
+    randomMessageId: string,
+    accountId: string
+  ): Promise<
+    Array<{
+      random_message_item_id: string;
+      message: string;
+      type: string;
+      attachment_url: string | null;
+      mimetype: string | null;
+      duration: number | null;
+      width: number | null;
+      height: number | null;
+    }>
+  > => {
+    return this.randomMessageItemListerRepository.listActiveRandomMessageItemsForRunner(
+      randomMessageId,
+      accountId
+    );
+  };
 }

@@ -65,6 +65,8 @@ import {
   ITransferSectorOption,
   ITransferUserOption,
 } from '@core/common/interfaces/IChatbotHumanTransfer';
+import { RandomMessageService } from './randomMessage.service';
+import { ERandomMessageStatus } from '@core/common/enums/ERandomMessageStatus';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -75,6 +77,7 @@ export class ChatbotFlowRunnerService {
   private readonly CONVERSATION_SUMMARY_UPDATE_INTERVAL = 5;
   private readonly AI_AGENT_API_RETRY_ATTEMPTS = 3;
   private readonly AI_AGENT_API_RETRY_BASE_DELAY_MS = 500;
+  private readonly RANDOM_MESSAGE_CYCLE_TTL_SECONDS = 28800;
   private static readonly MIN_PREFIX_MATCH_LENGTH = 8;
 
   private static readonly STOP_WORDS = new Set<string>([
@@ -190,6 +193,8 @@ export class ChatbotFlowRunnerService {
     private readonly ragService: RagService,
     @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
+    @inject(RandomMessageService)
+    private readonly randomMessageService: RandomMessageService,
     @inject(OpenAIAssistantService)
     private readonly openAIAssistantService: OpenAIAssistantService,
     @inject(ElasticDatabaseService)
@@ -277,6 +282,79 @@ export class ChatbotFlowRunnerService {
   ): string {
     const questionHash = this.hashText(normalizedQuestion);
     return `chatbot:ai-agent:rag:${accountId}:${chatId}:${aiAgentId}:${questionHash}:${promptsHash}`;
+  }
+
+  private getRandomMessageCycleCacheKey(
+    accountId: string,
+    randomMessageId: string
+  ): string {
+    return `underchat:chatbot-random-message-cycle:${accountId}:${randomMessageId}`;
+  }
+
+  private shuffleArray<T>(items: T[]): T[] {
+    const shuffled = [...items];
+
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    return shuffled;
+  }
+
+  private async pickNonRepeatedRandomMessageItemId(
+    accountId: string,
+    randomMessageId: string,
+    itemIds: string[]
+  ): Promise<string | null> {
+    if (!itemIds.length) {
+      return null;
+    }
+
+    const cacheKey = this.getRandomMessageCycleCacheKey(
+      accountId,
+      randomMessageId
+    );
+    const shuffledItemIds = this.shuffleArray(itemIds);
+
+    const selectionLuaScript = `
+      local key = KEYS[1]
+      local ttl = tonumber(ARGV[1])
+
+      for i = 2, #ARGV do
+        local candidate = ARGV[i]
+        if redis.call('SISMEMBER', key, candidate) == 0 then
+          redis.call('SADD', key, candidate)
+          redis.call('EXPIRE', key, ttl)
+          return candidate
+        end
+      end
+
+      redis.call('DEL', key)
+
+      if #ARGV >= 2 then
+        local candidate = ARGV[2]
+        redis.call('SADD', key, candidate)
+        redis.call('EXPIRE', key, ttl)
+        return candidate
+      end
+
+      return ''
+    `;
+
+    const selectedItemId = await this.redis.eval(
+      selectionLuaScript,
+      1,
+      cacheKey,
+      this.RANDOM_MESSAGE_CYCLE_TTL_SECONDS.toString(),
+      ...shuffledItemIds
+    );
+
+    if (typeof selectedItemId !== 'string' || !selectedItemId) {
+      return null;
+    }
+
+    return selectedItemId;
   }
 
   private resolveHumanTransferMode(
@@ -1464,6 +1542,157 @@ export class ChatbotFlowRunnerService {
     });
   }
 
+  private async resolveRandomMessageItemForNode(
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    accountId: string
+  ): Promise<{
+    message: string;
+    type: string;
+    attachment_url: string | null;
+    mimetype: string | null;
+    duration: number | null;
+    width: number | null;
+    height: number | null;
+  } | null> {
+    const randomMessageId = currentNode.data?.selectedRandomMessage as
+      | string
+      | null
+      | undefined;
+
+    if (!randomMessageId || randomMessageId.trim().length === 0) {
+      return null;
+    }
+
+    const randomMessage = await this.randomMessageService.viewRandomMessageById(
+      randomMessageId,
+      accountId
+    );
+
+    if (
+      !randomMessage ||
+      randomMessage.status !== ERandomMessageStatus.active
+    ) {
+      return null;
+    }
+
+    const randomMessageItems =
+      await this.randomMessageService.listActiveRandomMessageItemsForRunner(
+        randomMessageId,
+        accountId
+      );
+
+    if (!randomMessageItems.length) {
+      return null;
+    }
+
+    const selectedItemId = await this.pickNonRepeatedRandomMessageItemId(
+      accountId,
+      randomMessageId,
+      randomMessageItems.map((item) => item.random_message_item_id)
+    );
+
+    if (!selectedItemId) {
+      return null;
+    }
+
+    const selectedItem = randomMessageItems.find(
+      (item) => item.random_message_item_id === selectedItemId
+    );
+
+    return selectedItem ?? null;
+  }
+
+  private async sendRandomMessageItem(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    item: {
+      message: string;
+      type: string;
+      attachment_url: string | null;
+      mimetype: string | null;
+      duration: number | null;
+      width: number | null;
+      height: number | null;
+    }
+  ): Promise<boolean> {
+    const nodeLike = {
+      data: {
+        messageType: item.type,
+        text: item.message ?? '',
+        attachmentUrl: item.attachment_url,
+        attachmentMimetype: item.mimetype,
+        attachmentDuration: item.duration,
+        attachmentWidth: item.width,
+        attachmentHeight: item.height,
+      },
+    } as ListChatbotFlowResponse['nodes'][number];
+
+    return this.sendMessage(t, createChat, nodeLike);
+  }
+
+  private async processRandomMessageNodeType(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    currentFlowId: string,
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
+  ): Promise<boolean> {
+    const continueType = currentNode.data?.continueType as
+      | 'automatic'
+      | 'after_response'
+      | null
+      | undefined;
+
+    const randomMessageItem = await this.resolveRandomMessageItemForNode(
+      currentNode,
+      createChat.account.id
+    );
+
+    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+
+    if (!randomMessageItem) {
+      if (!nextFlowId) {
+        return true;
+      }
+
+      await this.updateCache(createChat, nextFlowId);
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages,
+        data
+      );
+    }
+
+    await this.sendRandomMessageItem(t, createChat, randomMessageItem);
+
+    if (continueType === 'after_response') {
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+      }
+
+      return true;
+    }
+
+    if (!nextFlowId) {
+      return true;
+    }
+
+    await this.updateCache(createChat, nextFlowId);
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages,
+      data
+    );
+  }
+
   private async sendBuildMenuMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -1774,6 +2003,18 @@ export class ChatbotFlowRunnerService {
         createChat,
         nextFlowNode,
         chatbotFlow,
+        customMessages,
+        data
+      );
+    }
+
+    if (nextFlowNode.type === 'randomMessage') {
+      return this.processRandomMessageNodeType(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowNode,
+        nextFlowId,
         customMessages,
         data
       );
@@ -7182,6 +7423,17 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     if (currentNode.type === 'message') {
       return this.processMessageNodeType(
+        t,
+        createChat,
+        chatbotFlow,
+        currentNode,
+        currentFlowId,
+        customMessages
+      );
+    }
+
+    if (currentNode.type === 'randomMessage') {
+      return this.processRandomMessageNodeType(
         t,
         createChat,
         chatbotFlow,

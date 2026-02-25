@@ -18,6 +18,7 @@ import { ListChatbotUsersResponse } from '@core/schema/chatbot/listUsers/respons
 import { ListChatbotSectorsResponse } from '@core/schema/chatbot/listSectors/response.schema';
 import { ChatbotSectorUserResponse } from '@core/schema/chatbot/listSectorUsers/response.schema';
 import { ListChatbotAiAgentsResponse } from '@core/schema/chatbot/listAiAgents/response.schema';
+import { ListChatbotRandomMessagesResponse } from '@core/schema/chatbot/listRandomMessages/response.schema';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { chatbotFlowMappings } from '@core/mappings/chatbotFlow.mappings';
@@ -25,6 +26,7 @@ import { SaveChatbotFlowRequestData } from '@core/schema/chatbot/saveChatbotFlow
 import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
 import { SaveChatbotFlowConfigurationsRequest } from '@core/schema/chatbot/saveChatbotFlowConfigurations/request.schema';
 import { ListChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/listChatbotFlowConfigurations/response.schema';
+import { RandomMessageService } from '@core/services/randomMessage.service';
 import { v7 as uuidv7 } from 'uuid';
 
 type ElasticHit<T> = {
@@ -52,6 +54,8 @@ export class ChatbotService {
     private readonly sectorService: SectorService,
     @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
+    @inject(RandomMessageService)
+    private readonly randomMessageService: RandomMessageService,
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
@@ -115,6 +119,14 @@ export class ChatbotService {
     accountId: string
   ): Promise<ListChatbotAiAgentsResponse> => {
     return this.aiAgentService.listActiveAiAgentsForChatbot(accountId);
+  };
+
+  listChatbotRandomMessages = async (
+    accountId: string
+  ): Promise<ListChatbotRandomMessagesResponse> => {
+    return this.randomMessageService.listActiveRandomMessagesForChatbot(
+      accountId
+    );
   };
 
   saveChatbotFlow = async (

@@ -8,6 +8,7 @@ import { listSectors } from './methods/listSectors';
 import { listSectorUsers } from './methods/listSectorUsers';
 import { listChatTags } from './methods/listChatTags';
 import { listAiAgents } from './methods/listAiAgents';
+import { listRandomMessages } from './methods/listRandomMessages';
 import { saveChatbotFlow } from './methods/saveChatbotFlow';
 import { listChatbotFlow } from './methods/listChatbotFlow';
 import { saveChatbotFlowConfigurations } from './methods/saveChatbotFlowConfigurations';
@@ -27,6 +28,7 @@ class ChatbotController {
   public listSectorUsers = listSectorUsers;
   public listChatTags = listChatTags;
   public listAiAgents = listAiAgents;
+  public listRandomMessages = listRandomMessages;
   public saveChatbotFlow = saveChatbotFlow;
   public listChatbotFlow = listChatbotFlow;
   public saveChatbotFlowConfigurations = saveChatbotFlowConfigurations;

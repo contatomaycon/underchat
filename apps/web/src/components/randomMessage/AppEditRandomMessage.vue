@@ -110,8 +110,8 @@ watch(
     <VForm ref="refFormEditRandomMessage" @submit.prevent>
       <VCard :title="$t('edit_random_message')">
         <VCardText>
-          <VRow>
-            <VCol cols="12">
+          <VRow no-gutters>
+            <VCol cols="12" class="mb-3">
               <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"

@@ -256,6 +256,9 @@ export const chatbotFlowMappings = () => {
                 distributionSelectedSector: {
                   type: 'keyword',
                 },
+                selectedRandomMessage: {
+                  type: 'keyword',
+                },
                 annotation: {
                   type: 'text',
                 },

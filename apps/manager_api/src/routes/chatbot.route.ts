@@ -10,6 +10,7 @@ import { listChatbotSectorsSchema } from '@core/schema/chatbot/listSectors';
 import { listChatbotSectorUsersSchema } from '@core/schema/chatbot/listSectorUsers';
 import { listChatbotChatTagsSchema } from '@core/schema/chatbot/listChatTags';
 import { listChatbotAiAgentsSchema } from '@core/schema/chatbot/listAiAgents';
+import { listChatbotRandomMessagesSchema } from '@core/schema/chatbot/listRandomMessages';
 import { saveChatbotFlowSchema } from '@core/schema/chatbot/saveChatbotFlow';
 import { listChatbotFlowSchema } from '@core/schema/chatbot/listChatbotFlow';
 import { saveChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/saveChatbotFlowConfigurations';
@@ -125,6 +126,17 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.get('/chatbot/ai-agents', {
     schema: listChatbotAiAgentsSchema,
     handler: chatbotController.listAiAgents,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chatbot/random-messages', {
+    schema: listChatbotRandomMessagesSchema,
+    handler: chatbotController.listRandomMessages,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),

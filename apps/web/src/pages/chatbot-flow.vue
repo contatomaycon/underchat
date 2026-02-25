@@ -28,6 +28,7 @@ import ChatbotAiAgentNode from '@/components/chatbot/ChatbotAiAgentNode.vue';
 import ChatbotAnnotationNode from '@/components/chatbot/ChatbotAnnotationNode.vue';
 import ChatbotDistributionNode from '@/components/chatbot/ChatbotDistributionNode.vue';
 import ChatbotConditionalNode from '@/components/chatbot/ChatbotConditionalNode.vue';
+import ChatbotRandomMessageNode from '@/components/chatbot/ChatbotRandomMessageNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -60,6 +61,7 @@ const nodeTypes = {
   annotation: markRaw(ChatbotAnnotationNode),
   distribution: markRaw(ChatbotDistributionNode),
   conditional: markRaw(ChatbotConditionalNode),
+  randomMessage: markRaw(ChatbotRandomMessageNode),
 };
 
 const { t } = useI18n();
@@ -876,6 +878,24 @@ const addMessageNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode);
 };
 
+const addRandomMessageNode = (position?: { x: number; y: number }) => {
+  const nodeId = `randomMessage-${nodeIdCounter++}`;
+  const newNode: Node = {
+    id: nodeId,
+    type: 'randomMessage',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      selectedRandomMessage: null,
+      continueType: null,
+      onRemove: () => removeNode(nodeId),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const addDataNode = (position?: { x: number; y: number }) => {
   const nodeId = `data-${nodeIdCounter++}`;
   const newNode: Node = {
@@ -1229,6 +1249,9 @@ const onDrop = (event: DragEvent) => {
     case 'message':
       addMessageNode(position);
       break;
+    case 'randomMessage':
+      addRandomMessageNode(position);
+      break;
     case 'data':
       addDataNode(position);
       break;
@@ -1581,6 +1604,12 @@ const processMessageNodeData = (nodeData: any): void => {
   if (nodeData.continueType === undefined) nodeData.continueType = null;
 };
 
+const processRandomMessageNodeData = (nodeData: any): void => {
+  if (nodeData.selectedRandomMessage === undefined)
+    nodeData.selectedRandomMessage = null;
+  if (nodeData.continueType === undefined) nodeData.continueType = null;
+};
+
 const processDataNodeData = (nodeData: any): void => {
   if (nodeData.firstName === undefined)
     nodeData.firstName = t('chatbot_data_default_name_question');
@@ -1631,6 +1660,9 @@ const processNodeDataByType = (node: Node): void => {
       break;
     case 'message':
       processMessageNodeData(node.data);
+      break;
+    case 'randomMessage':
+      processRandomMessageNodeData(node.data);
       break;
     case 'data':
       processDataNodeData(node.data);
@@ -2266,6 +2298,26 @@ onUnmounted(() => {
                 >
                   <VIcon icon="tabler-message" class="me-2" />
                   {{ t('chatbot_message') }}
+                </VBtn>
+                <VBtn
+                  color="randomMessage"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'randomMessage';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-message-2" class="me-2" />
+                  {{ t('chatbot_random_message') }}
                 </VBtn>
                 <VBtn
                   color="info"

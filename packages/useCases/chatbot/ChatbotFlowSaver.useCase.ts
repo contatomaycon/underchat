@@ -184,6 +184,10 @@ export class ChatbotFlowSaverUseCase {
       return t('chatbot_distribution');
     }
 
+    if (node.type === 'randomMessage') {
+      return t('chatbot_random_message');
+    }
+
     if (node.type === 'finish') {
       return t('chatbot_finish');
     }
@@ -483,6 +487,39 @@ export class ChatbotFlowSaverUseCase {
       errors.push(
         t('chatbot_flow_validation_data_type_required', {
           nodeLabel: data.title || node.label || node.id,
+        })
+      );
+    }
+  }
+
+  private validateRandomMessageNode(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    errors: string[]
+  ): void {
+    if (node.type !== 'randomMessage') {
+      return;
+    }
+
+    const data = node.data;
+    const nodeLabel = this.getNodeLabel(t, node);
+
+    if (
+      !data?.selectedRandomMessage ||
+      (typeof data.selectedRandomMessage === 'string' &&
+        data.selectedRandomMessage.trim().length === 0)
+    ) {
+      errors.push(
+        t('chatbot_flow_validation_random_message_required', {
+          nodeLabel,
+        })
+      );
+    }
+
+    if (!data?.continueType) {
+      errors.push(
+        t('chatbot_flow_validation_continue_type_required', {
+          nodeLabel,
         })
       );
     }
@@ -904,6 +941,7 @@ export class ChatbotFlowSaverUseCase {
       this.validateTagNode(t, node, errors);
       this.validateAnnotationNode(t, node, errors);
       this.validateAiAgentNode(t, node, errors);
+      this.validateRandomMessageNode(t, node, errors);
       this.validateMenuOrSatisfactionNode(t, node, errors);
       this.validateDistributionNode(t, node, errors);
       this.validateConditionalNode(t, node, errors);
