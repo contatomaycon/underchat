@@ -200,7 +200,7 @@
   "toggle_disabled_show_message_on_call_tooltip": "Configure o texto da mensagem em \"Configurar\" para ativar esta opção.",
   "toggle_disabled_chatbot_tooltip": "Selecione um chatbot em \"Configurar\" para ativar esta opção.",
   "toggle_disabled_attendance_hours_tooltip": "Configure ao menos um dia com horário válido em \"Configurar\" para ativar esta opção.",
-  "attendance_hours_default_message": "Olá {{ name }}, nosso horário de atendimento está encerrado no momento. Retornaremos assim que estivermos disponíveis.",
+  "attendance_hours_default_message": "Olá { name }, nosso horário de atendimento está encerrado no momento. Retornaremos assim que estivermos disponíveis.",
   "attendance_hours_timezone_hint": "Fuso horário aplicado: {timezone}.",
   "attendance_hours_start_time": "Início",
   "attendance_hours_end_time": "Fim",

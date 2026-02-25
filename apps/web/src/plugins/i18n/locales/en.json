@@ -200,7 +200,7 @@
   "toggle_disabled_show_message_on_call_tooltip": "Configure the message text in \"Configure\" to activate this option.",
   "toggle_disabled_chatbot_tooltip": "Select a chatbot in \"Configure\" to activate this option.",
   "toggle_disabled_attendance_hours_tooltip": "Set at least one day with a valid time range in \"Configure\" to activate this option.",
-  "attendance_hours_default_message": "Hello {{ name }}, we are currently outside our service hours. We will get back to you as soon as we are available.",
+  "attendance_hours_default_message": "Hello { name }, we are currently outside our service hours. We will get back to you as soon as we are available.",
   "attendance_hours_timezone_hint": "Applied timezone: {timezone}.",
   "attendance_hours_start_time": "Start",
   "attendance_hours_end_time": "End",
