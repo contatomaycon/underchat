@@ -17,11 +17,11 @@ import { IUpdateProfileStatusExternalId } from '@core/common/interfaces/IUpdateP
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
+import { IWorkerSendMessageDlq } from '@core/common/interfaces/IWorkerSendMessageDlq';
 import { Buffer } from 'node:buffer';
 import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
@@ -32,13 +32,42 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { webcrypto } from 'node:crypto';
 
+interface IPartitionCommitState {
+  nextContiguousOffset: number | null;
+  pendingOffsets: Set<number>;
+  completedOffsets: Set<number>;
+}
+
+interface IQueuedEnvelope {
+  topic: string;
+  dlqTopic: string;
+  partition: number;
+  offset: number;
+  payload: unknown;
+  rawPayload: string | null;
+  queueKey: string;
+  chatId: string | null;
+}
+
 @singleton()
 export class MessageSendWwebjsConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
   private readonly CHAT_QUEUE_TIMEOUT_MS = 10 * 60 * 1000;
+  private readonly MAX_PROCESS_ATTEMPTS = 5;
+  private readonly RETRY_BASE_MS = 500;
+  private readonly RETRY_MAX_MS = 8000;
+  private readonly DLQ_PUBLISH_RETRY_DELAY_MS = 5000;
+  private readonly SYSTEM_QUEUE_KEY = 'system';
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
     new Map();
+  private readonly inFlightTasks = new Set<Promise<void>>();
+  private readonly partitionCommitStates = new Map<
+    number,
+    IPartitionCommitState
+  >();
+  private readonly partitionCommitChains = new Map<number, Promise<void>>();
+  private topic: string | null = null;
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -80,87 +109,46 @@ export class MessageSendWwebjsConsume {
     const topic = this.kafkaBaileysQueueService.workerSendMessage(
       wwebjsEnvironment.wwebjsWorkerId
     );
-
-    await ensureKafkaTopic(
-      this.kafka,
-      topic,
-      this.kafkaBaileysQueueService.getNumPartitions(),
-      this.kafkaBaileysQueueService.getReplicationFactor()
+    const dlqTopic = this.kafkaBaileysQueueService.workerSendMessageDlq(
+      wwebjsEnvironment.wwebjsWorkerId
     );
+
+    await Promise.all([
+      ensureKafkaTopic(
+        this.kafka,
+        topic,
+        this.kafkaBaileysQueueService.getNumPartitions(),
+        this.kafkaBaileysQueueService.getReplicationFactor()
+      ),
+      ensureKafkaTopic(
+        this.kafka,
+        dlqTopic,
+        this.kafkaBaileysQueueService.getNumPartitions(),
+        this.kafkaBaileysQueueService.getReplicationFactor()
+      ),
+    ]);
+
+    this.topic = topic;
 
     this.consumer = createConsumer(
       this.kafka,
       `group-underchat-wwebjs-send-${wwebjsEnvironment.wwebjsWorkerId}`
     );
 
-    this.consumer.on('data', async (message) => {
-      const payload = this.parseRawMessage(message.value);
-
-      if (!payload) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      let shouldCommit = true;
-
-      try {
-        if (this.isDeleteStatusMessage(payload)) {
-          await this.processDeleteStatus(payload);
-          stop();
-          await this.commitNext(topic, message.partition, message.offset);
-          return;
-        }
-
-        if (this.isStatusMessage(payload)) {
-          await this.processProfileStatus(payload);
-          stop();
-          await this.commitNext(topic, message.partition, message.offset);
-          return;
-        }
-
-        if (this.isProfileInfoMessage(payload)) {
-          await this.processProfileInfo(payload);
-          stop();
-          await this.commitNext(topic, message.partition, message.offset);
-          return;
-        }
-
-        const isSend = this.isSendMessage(payload);
-
-        if (!isSend) {
-          stop();
-          await this.commitNext(topic, message.partition, message.offset);
-          return;
-        }
-
-        const chatId = this.resolveChatId(payload);
-
-        if (!chatId) {
-          stop();
-          await this.commitNext(topic, message.partition, message.offset);
-          return;
-        }
-
-        await this.enqueueByChatId(chatId, async () => {
-          await this.processMessage(payload);
+    this.consumer.on('data', (message) => {
+      const task = this.handleMessageEvent(topic, dlqTopic, message)
+        .catch((error) => {
+          console.error('[MessageSendWwebjs] Failed to dispatch message', {
+            partition: message.partition,
+            offset: message.offset,
+            error: this.errorMessage(error),
+          });
+        })
+        .finally(() => {
+          this.inFlightTasks.delete(task);
         });
-      } catch (error) {
-        shouldCommit = this.isTransientError(error);
 
-        if (!shouldCommit) {
-          throw error;
-        }
-      } finally {
-        stop();
-        if (shouldCommit) {
-          await this.commitNext(topic, message.partition, message.offset);
-        }
-      }
+      this.inFlightTasks.add(task);
     });
 
     this.consumer.on('event.error', (err) => {
@@ -178,25 +166,38 @@ export class MessageSendWwebjsConsume {
   }
 
   public async close(): Promise<void> {
-    await this.keyedSequencerService.drain();
-
     if (!this.consumer) {
       return;
     }
 
     try {
       this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
+      const consumer = this.consumer;
+      const topic = this.topic;
+
+      try {
         consumer.unsubscribe();
+      } catch {}
+
+      await Promise.allSettled(Array.from(this.inFlightTasks));
+      await this.keyedSequencerService.drain();
+
+      if (topic) {
+        await this.flushAllPartitionCommits(topic);
+      }
+
+      await Promise.allSettled(Array.from(this.partitionCommitChains.values()));
+
+      await new Promise<void>((resolve) => {
         consumer.disconnect(resolve);
       });
     } finally {
       this.consumer = null;
+      this.topic = null;
+      this.inFlightTasks.clear();
+      this.partitionCommitStates.clear();
+      this.partitionCommitChains.clear();
+      this.lastMessageTypeByChatId.clear();
     }
   }
 
@@ -208,7 +209,7 @@ export class MessageSendWwebjsConsume {
     await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
-  private parseRawMessage(value: Buffer | null): unknown {
+  private extractRawMessage(value: Buffer | null): string | null {
     if (!value) {
       return null;
     }
@@ -218,10 +219,79 @@ export class MessageSendWwebjsConsume {
       return null;
     }
 
+    return raw;
+  }
+
+  private parseRawMessage(raw: string | null): unknown {
+    if (!raw) {
+      return null;
+    }
+
     try {
       return JSON.parse(raw);
     } catch {
       return null;
+    }
+  }
+
+  private async handleMessageEvent(
+    topic: string,
+    dlqTopic: string,
+    message: {
+      value: Buffer | null;
+      partition: number;
+      offset: number;
+    }
+  ): Promise<void> {
+    const rawPayload = this.extractRawMessage(message.value);
+    const payload = this.parseRawMessage(rawPayload);
+
+    this.registerPendingOffset(message.partition, message.offset);
+
+    if (!payload) {
+      await this.completeOffset(topic, message.partition, message.offset);
+      return;
+    }
+
+    const { queueKey, chatId } = this.resolveQueueContext(payload);
+    const envelope: IQueuedEnvelope = {
+      topic,
+      dlqTopic,
+      partition: message.partition,
+      offset: message.offset,
+      payload,
+      rawPayload,
+      queueKey,
+      chatId,
+    };
+
+    let shouldCompleteOffset = false;
+
+    try {
+      await this.enqueueByQueueKey(queueKey, async () => {
+        await this.processEnvelopeWithRetry(envelope);
+      });
+      shouldCompleteOffset = true;
+    } catch (error) {
+      console.error('[MessageSendWwebjs] Queue processing failed', {
+        chat_id: chatId,
+        queue_key: queueKey,
+        partition: message.partition,
+        offset: message.offset,
+        result: 'enqueue_error',
+        error: this.errorMessage(error),
+      });
+
+      await this.publishDlqWithRetry(
+        envelope,
+        error,
+        this.MAX_PROCESS_ATTEMPTS
+      );
+      shouldCompleteOffset = true;
+    } finally {
+      if (shouldCompleteOffset) {
+        await this.completeOffset(topic, message.partition, message.offset);
+      }
     }
   }
 
@@ -279,43 +349,317 @@ export class MessageSendWwebjsConsume {
     return String(chatId);
   }
 
-  private async enqueueByChatId(
-    chatId: string,
+  private resolveQueueContext(payload: unknown): {
+    queueKey: string;
+    chatId: string | null;
+  } {
+    if (this.isSendMessage(payload)) {
+      const chatId = this.resolveChatId(payload);
+      if (chatId) {
+        return {
+          queueKey: `chat:${chatId}`,
+          chatId,
+        };
+      }
+    }
+
+    return {
+      queueKey: this.SYSTEM_QUEUE_KEY,
+      chatId: null,
+    };
+  }
+
+  private async enqueueByQueueKey(
+    queueKey: string,
     task: () => Promise<void>
   ): Promise<void> {
-    await this.keyedSequencerService.enqueue(chatId, task, {
+    await this.keyedSequencerService.enqueue(queueKey, task, {
       timeoutMs: this.CHAT_QUEUE_TIMEOUT_MS,
     });
   }
 
-  private isTransientError(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
+  private async processEnvelopeWithRetry(
+    envelope: IQueuedEnvelope
+  ): Promise<void> {
+    let lastError: unknown = null;
 
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const lowerMessage = errorMessage.toLowerCase();
+    for (let attempt = 1; attempt <= this.MAX_PROCESS_ATTEMPTS; attempt++) {
+      const startedAt = Date.now();
+      try {
+        await this.processPayload(envelope.payload);
+        console.info('[MessageSendWwebjs] Message processed', {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          attempt,
+          result: 'success',
+          duration_ms: Date.now() - startedAt,
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+        const isLastAttempt = attempt === this.MAX_PROCESS_ATTEMPTS;
 
-    const transientPatterns = [
-      'timeout',
-      'timed out',
-      'network',
-      'connection',
-      'temporary',
-      'retry',
-      'unavailable',
-      'service unavailable',
-      'too many requests',
-      'rate limit',
-    ];
+        console.warn('[MessageSendWwebjs] Message processing failed', {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          attempt,
+          result: isLastAttempt ? 'failed' : 'retrying',
+          error: this.errorMessage(error),
+        });
 
-    for (const pattern of transientPatterns) {
-      if (lowerMessage.includes(pattern)) {
-        return true;
+        if (!isLastAttempt) {
+          await this.delay(this.calculateRetryDelayMs(attempt));
+        }
       }
     }
 
-    return false;
+    await this.publishDlqWithRetry(
+      envelope,
+      lastError,
+      this.MAX_PROCESS_ATTEMPTS
+    );
+  }
+
+  private async processPayload(payload: unknown): Promise<void> {
+    if (this.isDeleteStatusMessage(payload)) {
+      await this.processDeleteStatus(payload);
+      return;
+    }
+
+    if (this.isStatusMessage(payload)) {
+      await this.processProfileStatus(payload);
+      return;
+    }
+
+    if (this.isProfileInfoMessage(payload)) {
+      await this.processProfileInfo(payload);
+      return;
+    }
+
+    if (this.isSendMessage(payload)) {
+      const chatId = this.resolveChatId(payload);
+      if (!chatId) {
+        console.warn(
+          '[MessageSendWwebjs] Send payload without chatId. Message skipped.'
+        );
+        return;
+      }
+
+      await this.processMessage(payload);
+      return;
+    }
+
+    console.warn(
+      '[MessageSendWwebjs] Unsupported payload type. Message skipped.'
+    );
+  }
+
+  private getPartitionCommitState(partition: number): IPartitionCommitState {
+    const existingState = this.partitionCommitStates.get(partition);
+    if (existingState) {
+      return existingState;
+    }
+
+    const newState: IPartitionCommitState = {
+      nextContiguousOffset: null,
+      pendingOffsets: new Set<number>(),
+      completedOffsets: new Set<number>(),
+    };
+
+    this.partitionCommitStates.set(partition, newState);
+    return newState;
+  }
+
+  private registerPendingOffset(partition: number, offset: number): void {
+    const state = this.getPartitionCommitState(partition);
+    state.pendingOffsets.add(offset);
+
+    if (
+      state.nextContiguousOffset === null ||
+      offset < state.nextContiguousOffset
+    ) {
+      state.nextContiguousOffset = offset;
+    }
+  }
+
+  private async completeOffset(
+    topic: string,
+    partition: number,
+    offset: number
+  ): Promise<void> {
+    await this.enqueuePartitionCommitOperation(partition, async () => {
+      const state = this.partitionCommitStates.get(partition);
+      if (!state || !state.pendingOffsets.has(offset)) {
+        return;
+      }
+
+      state.completedOffsets.add(offset);
+      await this.flushContiguousOffsets(topic, partition, state);
+    });
+  }
+
+  private enqueuePartitionCommitOperation(
+    partition: number,
+    operation: () => Promise<void>
+  ): Promise<void> {
+    const previousChain =
+      this.partitionCommitChains.get(partition) ?? Promise.resolve();
+
+    const nextChain = previousChain
+      .catch(() => {})
+      .then(operation)
+      .catch((error) => {
+        console.error('[MessageSendWwebjs] Commit coordination error', {
+          partition,
+          error: this.errorMessage(error),
+        });
+      });
+
+    this.partitionCommitChains.set(partition, nextChain);
+
+    return nextChain.finally(() => {
+      if (this.partitionCommitChains.get(partition) === nextChain) {
+        this.partitionCommitChains.delete(partition);
+      }
+    });
+  }
+
+  private async flushContiguousOffsets(
+    topic: string,
+    partition: number,
+    state: IPartitionCommitState
+  ): Promise<void> {
+    if (state.nextContiguousOffset === null) {
+      return;
+    }
+
+    const startOffset = state.nextContiguousOffset;
+    let endOffset = startOffset;
+
+    while (state.completedOffsets.has(endOffset)) {
+      endOffset += 1;
+    }
+
+    const commitUpTo = endOffset - 1;
+    if (commitUpTo < startOffset) {
+      return;
+    }
+
+    await this.commitNext(topic, partition, commitUpTo);
+
+    for (
+      let currentOffset = startOffset;
+      currentOffset <= commitUpTo;
+      currentOffset += 1
+    ) {
+      state.completedOffsets.delete(currentOffset);
+      state.pendingOffsets.delete(currentOffset);
+    }
+
+    state.nextContiguousOffset = commitUpTo + 1;
+
+    if (state.pendingOffsets.size === 0 && state.completedOffsets.size === 0) {
+      state.nextContiguousOffset = null;
+      this.partitionCommitStates.delete(partition);
+    }
+  }
+
+  private async flushAllPartitionCommits(topic: string): Promise<void> {
+    const partitions = Array.from(this.partitionCommitStates.keys());
+
+    for (const partition of partitions) {
+      await this.enqueuePartitionCommitOperation(partition, async () => {
+        const state = this.partitionCommitStates.get(partition);
+        if (!state) {
+          return;
+        }
+
+        await this.flushContiguousOffsets(topic, partition, state);
+      });
+    }
+  }
+
+  private calculateRetryDelayMs(attempt: number): number {
+    const exponentialDelay = Math.min(
+      this.RETRY_MAX_MS,
+      this.RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1)
+    );
+    const jitter = Math.floor(exponentialDelay * 0.2 * this.randomFraction());
+    return exponentialDelay + jitter;
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private randomFraction(): number {
+    const array = new Uint32Array(1);
+    webcrypto.getRandomValues(array);
+    return array[0] / (0xffffffff + 1);
+  }
+
+  private async publishDlqWithRetry(
+    envelope: IQueuedEnvelope,
+    error: unknown,
+    attempts: number
+  ): Promise<void> {
+    const dlqPayload: IWorkerSendMessageDlq = {
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      topic: envelope.topic,
+      partition: envelope.partition,
+      offset: envelope.offset,
+      chat_id: envelope.chatId,
+      queue_key: envelope.queueKey,
+      attempts,
+      error: this.errorMessage(error),
+      payload: envelope.payload,
+      raw_payload: envelope.rawPayload,
+      failed_at: new Date().toISOString(),
+    };
+
+    while (true) {
+      try {
+        await this.streamProducerService.send(
+          envelope.dlqTopic,
+          dlqPayload,
+          envelope.chatId ?? `${envelope.partition}:${envelope.offset}`
+        );
+
+        console.error('[MessageSendWwebjs] Message sent to DLQ', {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          result: 'dlq',
+          error: this.errorMessage(error),
+        });
+        return;
+      } catch (publishError) {
+        console.error(
+          '[MessageSendWwebjs] Failed to publish message to DLQ. Retrying.',
+          {
+            chat_id: envelope.chatId,
+            queue_key: envelope.queueKey,
+            partition: envelope.partition,
+            offset: envelope.offset,
+            error: this.errorMessage(publishError),
+          }
+        );
+        await this.delay(this.DLQ_PUBLISH_RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  private errorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
   }
 
   private getRandomDelay(): number {
