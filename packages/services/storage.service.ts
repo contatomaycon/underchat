@@ -44,13 +44,8 @@ export class StorageService {
     useBackup: boolean = false
   ): string {
     const base = this.getBaseUrl(useBackup);
-    const bucketPrefix = this.getBucketPrefix(accountId, useBackup);
-
-    if (this.hasPathPrefix(path)) {
-      return this.buildUrlWithPathPrefix(base, bucketPrefix, path);
-    }
-
-    return this.buildUrlWithoutPathPrefix(base, bucketPrefix, accountId, path);
+    const normalizedPath = this.normalizePath(path);
+    return `${base}/${accountId}/${normalizedPath}`;
   }
 
   private getBaseUrl(useBackup: boolean): string {
@@ -60,38 +55,8 @@ export class StorageService {
     return endpoint.replace(/\/$/, '');
   }
 
-  private getBucketPrefix(accountId: string, useBackup: boolean): string {
-    if (useBackup) {
-      return s3Environment.s3BucketPrefixBackup ?? accountId;
-    }
-    return s3Environment.s3BucketPrefix ?? accountId;
-  }
-
-  private hasPathPrefix(path: string): boolean {
-    return path.indexOf('/') > 0;
-  }
-
-  private buildUrlWithPathPrefix(
-    base: string,
-    bucketPrefix: string,
-    path: string
-  ): string {
-    const slashIndex = path.indexOf('/');
-    const prefix = path.slice(0, slashIndex);
-    const rest = path.slice(slashIndex + 1);
-    return `${base}/${bucketPrefix}:${prefix}/${rest}`;
-  }
-
-  private buildUrlWithoutPathPrefix(
-    base: string,
-    bucketPrefix: string,
-    accountId: string,
-    path: string
-  ): string {
-    if (bucketPrefix !== accountId) {
-      return `${base}/${bucketPrefix}:${accountId}/${path}`;
-    }
-    return `${base}/${accountId}/${path}`;
+  private normalizePath(path: string): string {
+    return path.replace(/^\/+/, '');
   }
 
   public async uploadImage(

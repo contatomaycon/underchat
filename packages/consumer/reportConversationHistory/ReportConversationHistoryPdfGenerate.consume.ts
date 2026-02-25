@@ -157,7 +157,18 @@ export class ReportConversationHistoryPdfGenerateConsume {
     );
 
     if (data.old_url_pdf) {
-      await this.pdfService.deletePdf(data.old_url_pdf);
+      try {
+        await this.pdfService.deletePdf(data.old_url_pdf);
+      } catch (error) {
+        console.warn(
+          'Failed to delete previous conversation history PDF, continuing generation:',
+          {
+            pdf_record_id: data.pdf_record_id,
+            old_url_pdf: data.old_url_pdf,
+            error,
+          }
+        );
+      }
     }
 
     const t = await createI18nInstance(data.language || 'pt');

@@ -52,19 +52,10 @@ export class S3UrlParser {
         .split('/')
         .filter((part) => part !== '' && part.trim() !== '');
 
-      if (pathParts.length >= 2) {
-        const accountId = pathParts[0].trim();
-        const key = pathParts.slice(1).join('/').trim();
-
-        if (accountId && key && accountId.length > 0 && key.length > 0) {
-          return { accountId, key };
-        }
-      }
+      return this.parsePathParts(pathParts);
     } catch {
       return null;
     }
-
-    return null;
   }
 
   private parseFromPath(urlToParse: string): ParsedS3Url | null {
@@ -76,21 +67,79 @@ export class S3UrlParser {
       .split('/')
       .filter((part) => part !== '' && part.trim() !== '');
 
+    return this.parsePathParts(pathParts);
+  }
+
+  private parsePathParts(pathParts: string[]): ParsedS3Url | null {
     if (pathParts.length < 2) {
       return null;
     }
 
-    const accountId = pathParts[0].trim();
-    const key = pathParts.slice(1).join('/').trim();
+    const firstSegment = pathParts[0].trim();
+    const remainingKeyParts = pathParts
+      .slice(1)
+      .map((part) => part.trim())
+      .filter((part) => part !== '');
 
-    if (!accountId || !key || accountId.length === 0 || key.length === 0) {
+    if (!firstSegment || remainingKeyParts.length === 0) {
       return null;
     }
 
-    if (accountId.includes(':') || accountId.includes('.')) {
+    if (firstSegment.includes(':')) {
+      return this.parseLegacyFormat(firstSegment, remainingKeyParts);
+    }
+
+    return this.buildParsedS3Url(firstSegment, remainingKeyParts);
+  }
+
+  private parseLegacyFormat(
+    firstSegment: string,
+    remainingKeyParts: string[]
+  ): ParsedS3Url | null {
+    const colonIndex = firstSegment.indexOf(':');
+    if (colonIndex <= 0 || colonIndex >= firstSegment.length - 1) {
       return null;
     }
 
-    return { accountId, key };
+    const accountId = firstSegment.slice(0, colonIndex).trim();
+    const legacyKeyPrefix = firstSegment.slice(colonIndex + 1).trim();
+
+    if (!accountId || !legacyKeyPrefix) {
+      return null;
+    }
+
+    return this.buildParsedS3Url(accountId, [
+      legacyKeyPrefix,
+      ...remainingKeyParts,
+    ]);
+  }
+
+  private buildParsedS3Url(
+    accountId: string,
+    keyParts: string[]
+  ): ParsedS3Url | null {
+    const normalizedAccountId = accountId.trim();
+    const normalizedKey = keyParts.join('/').trim();
+
+    if (
+      !normalizedAccountId ||
+      !normalizedKey ||
+      normalizedAccountId.length === 0 ||
+      normalizedKey.length === 0
+    ) {
+      return null;
+    }
+
+    if (
+      normalizedAccountId.includes(':') ||
+      normalizedAccountId.includes('.')
+    ) {
+      return null;
+    }
+
+    return {
+      accountId: normalizedAccountId,
+      key: normalizedKey,
+    };
   }
 }
