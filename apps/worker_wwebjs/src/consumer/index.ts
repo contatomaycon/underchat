@@ -8,6 +8,9 @@ import { startScheduleMessageWwebjsConsume } from './scheduleMessage.consume';
 import { startWorkerConfigUpdateWwebjsConsume } from './workerConfigUpdate.consume';
 import { startWebhookIntegrationWwebjsConsume } from './webhookIntegration.consume';
 import fp from 'fastify-plugin';
+import { container } from 'tsyringe';
+import { WwebjsHealthCheckService } from '@core/services/wwebjs/methods/healthCheck.service';
+import { WwebjsService } from '@core/services/wwebjs';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
@@ -47,14 +50,29 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
 
 const wwebjsConsumersOnListenHook = fp(async (fastify) => {
   fastify.addHook('onListen', () => {
+    try {
+      const healthCheckService = container.resolve(WwebjsHealthCheckService);
+
+      fastify.wwebjsInitialized = healthCheckService.bootstrapConnection();
+    } catch (err) {
+      fastify.log.error(
+        { err },
+        'Wwebjs: falha ao iniciar bootstrap de conexão'
+      );
+      fastify.wwebjsInitialized = Promise.resolve();
+    }
+
     startConsumers(fastify).catch((err) => {
       fastify.log.error({ err }, 'Wwebjs: falha ao iniciar consumidores');
     });
   });
 
   fastify.addHook('onClose', async () => {
+    const wwebjsService = container.resolve(WwebjsService);
     await Promise.allSettled(
-      consumers.map((consumer) => consumer?.close?.() ?? Promise.resolve())
+      consumers
+        .map((consumer) => consumer?.close?.() ?? Promise.resolve())
+        .concat(wwebjsService.shutdown())
     );
   });
 });

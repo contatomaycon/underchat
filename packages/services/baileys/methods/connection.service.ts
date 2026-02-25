@@ -35,7 +35,6 @@ import { BaileysIncomingMessageService } from './incoming.service';
 import { BaileysHealthCheckService } from './healthCheck.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
-import { triggerConnectionEstablished } from '../callbacks';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
@@ -148,6 +147,7 @@ export class BaileysConnectionService {
   private userRequestedDisconnect = false;
   private activeProxyUrl: string | null = null;
   private activeProxyAgent?: HttpsAgent;
+  private reconnectRetryTimer: NodeJS.Timeout | undefined;
 
   constructor(
     @inject(CentrifugoService)
@@ -168,6 +168,11 @@ export class BaileysConnectionService {
     this.healthCheckService.configure({
       getSocket: () => this.socket,
       getStatus: () => this.status,
+      getCode: () => this.code,
+      connect: (input) => this.connect(input),
+      reconnect: (input) => this.reconnect(input),
+      isConnected: () => this.connected,
+      hasSession: () => this.hasSession(),
       onStatusMismatch: (detectedStatus) => {
         this.handleHealthCheckMismatch(detectedStatus);
       },
@@ -236,20 +241,31 @@ export class BaileysConnectionService {
     }
   }
 
-  private handleInitialConnectionState(
-    initialConnection: boolean
-  ): Promise<IBaileysConnectionState> | null {
-    if (!this.connecting) return null;
-
-    if (initialConnection) {
-      this.cancelAttempt();
+  private clearReconnectRetryTimer(): void {
+    if (!this.reconnectRetryTimer) {
+      return;
     }
 
-    if (this.currentPromise) {
-      return this.currentPromise;
-    }
+    clearTimeout(this.reconnectRetryTimer);
+    this.reconnectRetryTimer = undefined;
+  }
 
-    return null;
+  private scheduleReconnect(delayMs = this.retryDelay): void {
+    this.clearReconnectRetryTimer();
+    this.reconnectRetryTimer = setTimeout(() => {
+      this.reconnectRetryTimer = undefined;
+      this.connect({
+        initial_connection: this.initialConnection,
+      }).catch(() => {
+        this.saveLogWppConnection({
+          worker_id: WORKER,
+          status: this.status ?? Status.disconnected,
+          code: this.code ?? ECodeMessage.connectionLost,
+          message: `Reconnect failed after ${delayMs}ms retry`,
+          date: new Date(),
+        });
+      });
+    }, delayMs);
   }
 
   private canRestoreSession(allowRestore: boolean): boolean {
@@ -333,17 +349,16 @@ export class BaileysConnectionService {
     this.phoneConnection = phoneConnection;
     this.trackQrReadSession(requestedByUser, typeConnection);
 
-    if (forceNew) {
-      this.cancelAttempt(false);
-    }
-
     if (this.connected) {
       return this.reportConnected();
     }
 
-    const initialState = this.handleInitialConnectionState(initialConnection);
-    if (initialState) {
-      return initialState;
+    if (this.connecting && this.currentPromise) {
+      return this.currentPromise;
+    }
+
+    if (forceNew && (!this.connecting || fromDisconnectRestart)) {
+      this.cancelAttempt(false);
     }
 
     if (this.canRestoreSession(allowRestore)) {
@@ -377,6 +392,7 @@ export class BaileysConnectionService {
       return this.state();
     }
 
+    this.clearReconnectRetryTimer();
     this.prepareFolder();
     this.connecting = true;
     this.retryCount = 0;
@@ -402,6 +418,7 @@ export class BaileysConnectionService {
     const {
       initial_connection: initialConnection = false,
       disconnected_user: disconnectedUser = false,
+      preserve_session: preserveSession = false,
     } = input;
 
     this.initialConnection = initialConnection;
@@ -411,6 +428,7 @@ export class BaileysConnectionService {
       disconnectedUser ? 'User requested disconnect' : 'Connection closed'
     );
     this.healthCheckService.stop();
+    this.clearReconnectRetryTimer();
 
     if (disconnectedUser) {
       this.userRequestedDisconnect = true;
@@ -420,7 +438,9 @@ export class BaileysConnectionService {
 
     await this.safeLogout(true);
     this.cancelAttempt(false);
-    this.clearFolder();
+    if (!preserveSession) {
+      this.clearFolder();
+    }
 
     this.saveLogWppConnection({
       worker_id: WORKER,
@@ -468,6 +488,21 @@ export class BaileysConnectionService {
         date: new Date(),
       });
     });
+  }
+
+  async shutdown(): Promise<void> {
+    this.resetQrReadSession();
+    this.qrReadSessionLocked = false;
+    this.pendingResolve?.(this.state());
+    this.pendingResolve = undefined;
+    this.currentPromise = undefined;
+    this.connecting = false;
+    this.awaitingNewLogin = false;
+    this.connectionEstablished = false;
+    this.healthCheckService.stop();
+    this.clearReconnectRetryTimer();
+    this.baileysIncomingMessageService.unbind();
+    this.cancelAttempt(false);
   }
 
   private async createSocket() {
@@ -566,7 +601,7 @@ export class BaileysConnectionService {
           this.typeConnection === EBaileysConnectionType.qrcode
         ) {
           this.awaitingNewLogin = false;
-          return this.onQr(qr, resolve);
+          return this.onQr(qr, resolve, id);
         }
 
         if (isNewLogin) {
@@ -577,11 +612,11 @@ export class BaileysConnectionService {
           opened = true;
           this.retryCount = 0;
 
-          return void this.onOpen(resolve);
+          return void this.onOpen(resolve, id);
         }
 
         if (connection === 'close') {
-          return this.onClose(lastDisconnect, resolve);
+          return this.onClose(lastDisconnect, resolve, id);
         }
 
         this.awaitingNewLogin = false;
@@ -591,8 +626,13 @@ export class BaileysConnectionService {
 
   private async onQr(
     qr: string,
-    resolve: (s: IBaileysConnectionState) => void
+    resolve: (s: IBaileysConnectionState) => void,
+    id: number
   ): Promise<void> {
+    if (id !== this.socketId) {
+      return;
+    }
+
     if (qr.slice(-20) === this.qrHash) {
       return;
     }
@@ -608,6 +648,9 @@ export class BaileysConnectionService {
 
     await this.printQrInConsole(qr);
     const img = await QRCode.toDataURL(qr);
+    if (id !== this.socketId) {
+      return;
+    }
 
     const payload: IBaileysConnectionState = {
       status: this.status,
@@ -655,11 +698,17 @@ export class BaileysConnectionService {
   }
 
   private async onOpen(
-    resolve: (s: IBaileysConnectionState) => void
+    resolve: (s: IBaileysConnectionState) => void,
+    id: number
   ): Promise<void> {
+    if (id !== this.socketId) {
+      return;
+    }
+
     this.resetQrReadSession();
     this.qrReadSessionLocked = false;
     this.qrHash = undefined;
+    this.clearReconnectRetryTimer();
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
     this.connectionEstablished = true;
 
@@ -678,8 +727,6 @@ export class BaileysConnectionService {
     void this.logConnectionIpInLocal();
 
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
-
-    triggerConnectionEstablished();
 
     resolve(this.state());
 
@@ -777,8 +824,13 @@ export class BaileysConnectionService {
 
   private async onClose(
     last: IBaileysUpdateEvent['lastDisconnect'],
-    resolve: (s: IBaileysConnectionState) => void
+    resolve: (s: IBaileysConnectionState) => void,
+    id: number
   ): Promise<void> {
+    if (id !== this.socketId) {
+      return;
+    }
+
     this.connectionEstablished = false;
     const statusCode = this.extractStatusCode(last?.error);
     const statusMessage = this.extractStatusMessage(last?.error);
@@ -787,25 +839,14 @@ export class BaileysConnectionService {
       statusMessage ?? 'Connection closed'
     );
     this.healthCheckService.stop();
+    this.clearReconnectRetryTimer();
 
     if (statusCode === ECodeMessage.restartRequired) {
       this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
       resolve(this.state());
       this.pendingResolve = undefined;
 
-      setTimeout(() => {
-        this.connect({
-          initial_connection: this.initialConnection,
-        }).catch(() => {
-          this.saveLogWppConnection({
-            worker_id: WORKER,
-            status: this.status ?? Status.disconnected,
-            code: this.code ?? ECodeMessage.connectionLost,
-            message: 'Reconnect failed after restartRequired',
-            date: new Date(),
-          });
-        });
-      }, 0);
+      this.scheduleReconnect(0);
 
       return;
     }
@@ -889,21 +930,8 @@ export class BaileysConnectionService {
       };
       this.publishSub(retryPayload, true);
 
-      setTimeout(() => {
-        this.retryCount++;
-
-        this.connect({
-          initial_connection: this.initialConnection,
-        }).catch(() => {
-          this.saveLogWppConnection({
-            worker_id: WORKER,
-            status: this.status ?? Status.disconnected,
-            code: this.code ?? ECodeMessage.connectionLost,
-            message: 'Retry failed',
-            date: new Date(),
-          });
-        });
-      }, this.retryDelay);
+      this.retryCount++;
+      this.scheduleReconnect(this.retryDelay);
     }
   }
 
@@ -1088,6 +1116,8 @@ export class BaileysConnectionService {
   }
 
   private async safeLogout(forceLogout = false): Promise<void> {
+    this.clearReconnectRetryTimer();
+
     if (forceLogout && this.socket?.user) {
       try {
         await this.socket.logout();
@@ -1141,6 +1171,8 @@ export class BaileysConnectionService {
   }
 
   private cancelAttempt(skipWebSocketClose = false) {
+    this.clearReconnectRetryTimer();
+
     try {
       this.socket?.ev.removeAllListeners('connection.update');
     } catch {
@@ -1219,6 +1251,10 @@ export class BaileysConnectionService {
   }
 
   private clearFolder() {
+    if (!fs.existsSync(FOLDER)) {
+      return;
+    }
+
     for (const f of fs.readdirSync(FOLDER)) {
       fs.rmSync(path.join(FOLDER, f), {
         recursive: true,

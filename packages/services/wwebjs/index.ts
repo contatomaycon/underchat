@@ -7,14 +7,6 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { WwebjsPhoneValidationService } from './methods/phoneValidation.service';
 import { IPhoneValidationResult } from '@core/common/interfaces/IPhoneValidationResult';
-import { triggerQrCodeReset } from './callbacks';
-
-export {
-  setQrCodeResetCallback,
-  setConnectionEstablishedCallback,
-  triggerQrCodeReset,
-  triggerConnectionEstablished,
-} from './callbacks';
 
 @singleton()
 export class WwebjsService {
@@ -55,10 +47,6 @@ export class WwebjsService {
 
   get socket(): Client | undefined {
     return this.connection.getSocket();
-  }
-
-  resetQrCodeCounter(): void {
-    triggerQrCodeReset();
   }
 
   clearUserRequestedDisconnect(): void {

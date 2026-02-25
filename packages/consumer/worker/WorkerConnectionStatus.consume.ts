@@ -95,7 +95,6 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
-    this.baileysService.resetQrCodeCounter();
     this.startConnectionRetry(data);
   }
 
@@ -108,6 +107,7 @@ export class WorkerConnectionStatusConsume {
     await this.baileysService.disconnect({
       initial_connection: true,
       disconnected_user: true,
+      preserve_session: true,
     });
 
     const workerId = baileysEnvironment.baileysWorkerId;
@@ -235,6 +235,7 @@ export class WorkerConnectionStatusConsume {
         .disconnect({
           initial_connection: true,
           disconnected_user: true,
+          preserve_session: true,
         })
         .catch((error) => {
           console.error('Error disconnecting Baileys after retries:', error);
@@ -251,10 +252,24 @@ export class WorkerConnectionStatusConsume {
       this.baileysService.clearUserRequestedDisconnect();
     }
 
+    const status = this.baileysService.getStatus();
+    const hasActiveSocket = Boolean(this.baileysService.socket);
+
+    if (
+      status === EBaileysConnectionStatus.connecting &&
+      hasActiveSocket &&
+      !fromDisconnectRestart
+    ) {
+      if (this.connectionRetryAttempt < this.connectionRetryMinAttempts) {
+        this.scheduleNextAttempt();
+      }
+      return;
+    }
+
     const connectPromise = this.baileysService
       .connect({
         initial_connection: true,
-        force_new: true,
+        force_new: fromDisconnectRestart,
         requested_by_user: !fromDisconnectRestart,
         from_disconnect_restart: fromDisconnectRestart,
         type: request.type as EBaileysConnectionType,
@@ -287,6 +302,7 @@ export class WorkerConnectionStatusConsume {
             .disconnect({
               initial_connection: true,
               disconnected_user: true,
+              preserve_session: true,
             })
             .catch((error) => {
               console.error(

@@ -93,7 +93,6 @@ export class WorkerConnectionStatusWwebjsConsume {
       return;
     }
 
-    this.wwebjsService.resetQrCodeCounter();
     this.startConnectionRetry(data);
   }
 
@@ -251,10 +250,24 @@ export class WorkerConnectionStatusWwebjsConsume {
       this.wwebjsService.clearUserRequestedDisconnect();
     }
 
+    const status = this.wwebjsService.getStatus();
+    const hasActiveSocket = Boolean(this.wwebjsService.socket);
+
+    if (
+      status === EBaileysConnectionStatus.connecting &&
+      hasActiveSocket &&
+      !fromDisconnectRestart
+    ) {
+      if (this.connectionRetryAttempt < this.connectionRetryMinAttempts) {
+        this.scheduleNextAttempt();
+      }
+      return;
+    }
+
     const connectPromise = this.wwebjsService
       .connect({
         initial_connection: true,
-        force_new: true,
+        force_new: fromDisconnectRestart,
         requested_by_user: !fromDisconnectRestart,
         from_disconnect_restart: fromDisconnectRestart,
         type: request.type as EBaileysConnectionType,

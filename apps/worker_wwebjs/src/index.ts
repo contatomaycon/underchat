@@ -14,7 +14,6 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
-import wwebjsOnListenHook from './hooks/wwebjsOnListen.hook';
 import redisPlugin from '@core/plugins/redis';
 import s3Plugin from '@core/plugins/s3';
 import workerConnectionGrpcServerPlugin from '@core/plugins/proto/workerConnectionGrpcServer';
@@ -29,6 +28,7 @@ const server = fastify({
 });
 
 server.decorateRequest('module', ERouteModule.worker_wwebjs);
+server.decorate('wwebjsInitialized', Promise.resolve());
 
 server.register(safePlugin(corsPlugin, 'cors'));
 server.register(safePlugin(swaggerPlugin, 'swagger'));
@@ -52,7 +52,6 @@ server.register(
   { module: ERouteModule.worker_wwebjs }
 );
 
-server.register(safePlugin(wwebjsOnListenHook, 'wwebjsOnListen'));
 server.register(
   safePlugin(wwebjsConsumersOnListenHook, 'wwebjsConsumersOnListen')
 );

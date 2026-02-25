@@ -24,7 +24,6 @@ import {
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
-import { triggerConnectionEstablished } from '../callbacks';
 import { WwebjsIncomingMessageService } from './incoming.service';
 import { WwebjsHealthCheckService } from './healthCheck.service';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
@@ -39,6 +38,7 @@ const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 const RETRY_DELAY = 2000;
 const MAX_RETRIES = 5;
 const MAX_QR_GENERATIONS = 5;
+const DEFAULT_PUPPETEER_PROTOCOL_TIMEOUT_MS = 300_000;
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 const SHOULD_LOG_CONNECTION_IP =
@@ -49,6 +49,17 @@ const CHROMIUM_LOCK_FILE_NAMES = [
   'SingletonCookie',
 ] as const;
 const CHROMIUM_PROFILE_SUBDIRECTORIES = ['', 'Default'] as const;
+const PUPPETEER_PROTOCOL_TIMEOUT_MS = (() => {
+  const parsed = Number.parseInt(
+    process.env.WWEBJS_PROTOCOL_TIMEOUT_MS ?? '',
+    10
+  );
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  return DEFAULT_PUPPETEER_PROTOCOL_TIMEOUT_MS;
+})();
 
 function readProxyConfig(): {
   protocol: EProxyProtocol;
@@ -100,6 +111,8 @@ export class WwebjsConnectionService {
   private qrReadSessionActive = false;
   private qrReadSessionLocked = false;
   private initializeRetryCount = 0;
+  private initializeRetryTimer: NodeJS.Timeout | undefined;
+  private disconnectRetryTimer: NodeJS.Timeout | undefined;
   private currentPromise: Promise<IBaileysConnectionState> | undefined;
   private pendingResolve: ((s: IBaileysConnectionState) => void) | undefined;
   private lastPayload: string | null = null;
@@ -126,6 +139,11 @@ export class WwebjsConnectionService {
     this.healthCheckService.configure({
       getClient: () => this.client,
       getStatus: () => this.status,
+      getCode: () => this.code,
+      connect: (input) => this.connect(input),
+      reconnect: (input) => this.reconnect(input),
+      isConnected: () => this.connected,
+      hasSession: () => this.hasSession(),
       onStatusMismatch: (detectedStatus) => {
         this.handleHealthCheckMismatch(detectedStatus);
       },
@@ -212,16 +230,16 @@ export class WwebjsConnectionService {
     this.typeConnection = typeConnection;
     this.trackQrReadSession(requestedByUser, typeConnection);
 
-    if (forceNew) {
-      this.cancelAttempt(false);
-    }
-
     if (this.connected) {
       return this.reportConnected();
     }
 
     if (this.connecting && this.currentPromise) {
       return this.currentPromise;
+    }
+
+    if (forceNew && (!this.connecting || fromDisconnectRestart)) {
+      this.cancelAttempt(false);
     }
 
     if (
@@ -258,6 +276,8 @@ export class WwebjsConnectionService {
       disconnectedUser ? 'User requested disconnect' : 'Connection closed'
     );
     this.healthCheckService.stop();
+    this.clearDisconnectRetryTimer();
+    this.clearInitializeRetryTimer();
 
     if (disconnectedUser) {
       this.userRequestedDisconnect = true;
@@ -328,6 +348,8 @@ export class WwebjsConnectionService {
     this.connecting = false;
     this.connectionEstablished = false;
     this.healthCheckService.stop();
+    this.clearDisconnectRetryTimer();
+    this.clearInitializeRetryTimer();
     this.incomingMessageService.unbind();
 
     if (this.client) {
@@ -342,6 +364,7 @@ export class WwebjsConnectionService {
 
   private startConnection(): Promise<IBaileysConnectionState> {
     this.prepareFolder();
+    this.clearDisconnectRetryTimer();
     this.connecting = true;
     this.retryCount = 0;
     this.currentPromise = this.createAndWaitClient().finally(() => {
@@ -397,6 +420,59 @@ export class WwebjsConnectionService {
     }
   }
 
+  private clearInitializeRetryTimer(): void {
+    if (!this.initializeRetryTimer) {
+      return;
+    }
+
+    clearTimeout(this.initializeRetryTimer);
+    this.initializeRetryTimer = undefined;
+  }
+
+  private clearDisconnectRetryTimer(): void {
+    if (!this.disconnectRetryTimer) {
+      return;
+    }
+
+    clearTimeout(this.disconnectRetryTimer);
+    this.disconnectRetryTimer = undefined;
+  }
+
+  private scheduleInitializeRetry(forceNew: boolean): void {
+    if (this.initializeRetryCount >= MAX_RETRIES) {
+      return;
+    }
+
+    this.initializeRetryCount += 1;
+    this.clearInitializeRetryTimer();
+
+    this.initializeRetryTimer = setTimeout(() => {
+      this.initializeRetryTimer = undefined;
+      this.connect({
+        initial_connection: this.initialConnection,
+        force_new: forceNew,
+        allow_restore: true,
+        type: this.typeConnection,
+        requested_by_user: false,
+        from_disconnect_restart: true,
+      }).catch(() => {});
+    }, RETRY_DELAY);
+  }
+
+  private scheduleReconnectAfterDisconnect(): void {
+    this.clearDisconnectRetryTimer();
+    this.disconnectRetryTimer = setTimeout(() => {
+      this.disconnectRetryTimer = undefined;
+      this.connect({
+        initial_connection: this.initialConnection,
+      }).catch(() => {});
+    }, RETRY_DELAY);
+  }
+
+  private isActiveClient(client: Client): boolean {
+    return this.client === client;
+  }
+
   private async printQrInConsole(qr: string): Promise<void> {
     if (!SHOULD_PRINT_QR_IN_TERMINAL) {
       return;
@@ -429,22 +505,7 @@ export class WwebjsConnectionService {
   }
 
   private reconnectAfterProfileUnlock(): void {
-    if (this.initializeRetryCount >= MAX_RETRIES) {
-      return;
-    }
-
-    this.initializeRetryCount += 1;
-
-    setTimeout(() => {
-      this.connect({
-        initial_connection: this.initialConnection,
-        force_new: true,
-        allow_restore: true,
-        type: this.typeConnection,
-        requested_by_user: false,
-        from_disconnect_restart: true,
-      }).catch(() => {});
-    }, RETRY_DELAY);
+    this.scheduleInitializeRetry(true);
   }
 
   private isTransientInitializeError(message: string): boolean {
@@ -454,34 +515,30 @@ export class WwebjsConnectionService {
       normalizedMessage.includes('execution context was destroyed') ||
       normalizedMessage.includes('most likely because of a navigation') ||
       normalizedMessage.includes('cannot find context with specified id') ||
-      normalizedMessage.includes('target closed')
+      normalizedMessage.includes('target closed') ||
+      normalizedMessage.includes('attempted to use detached frame') ||
+      normalizedMessage.includes('runtime.callfunctionon timed out') ||
+      normalizedMessage.includes('protocol error (runtime.callfunctionon)')
     );
   }
 
   private reconnectAfterTransientInitializeError(): void {
-    if (this.initializeRetryCount >= MAX_RETRIES) {
+    this.scheduleInitializeRetry(false);
+  }
+
+  private handleInitializeError(message: string, client: Client): void {
+    if (!this.isActiveClient(client)) {
+      console.warn('[Wwebjs] Ignoring initialize error from stale client:', {
+        message,
+      });
       return;
     }
 
-    this.initializeRetryCount += 1;
-
-    setTimeout(() => {
-      this.connect({
-        initial_connection: this.initialConnection,
-        force_new: false,
-        allow_restore: true,
-        type: this.typeConnection,
-        requested_by_user: false,
-        from_disconnect_restart: true,
-      }).catch(() => {});
-    }, RETRY_DELAY);
-  }
-
-  private handleInitializeError(message: string): void {
     console.error('[Wwebjs] client.initialize() failed:', message);
     this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
     this.pendingResolve?.(this.state());
     this.pendingResolve = undefined;
+    this.clearDisconnectRetryTimer();
 
     if (this.client) {
       this.client.destroy().catch(() => {});
@@ -516,8 +573,10 @@ export class WwebjsConnectionService {
         headless: boolean;
         args: string[];
         executablePath?: string;
+        protocolTimeout?: number;
       } = {
         headless: true,
+        protocolTimeout: PUPPETEER_PROTOCOL_TIMEOUT_MS,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -563,6 +622,10 @@ export class WwebjsConnectionService {
       this.client = client;
 
       client.on('qr', async (qr: string) => {
+        if (!this.isActiveClient(client)) {
+          return;
+        }
+
         if (
           this.typeConnection !== EBaileysConnectionType.qrcode ||
           !this.qrReadSessionActive ||
@@ -587,6 +650,9 @@ export class WwebjsConnectionService {
 
         await this.printQrInConsole(qr);
         const img = await QRCode.toDataURL(qr);
+        if (!this.isActiveClient(client)) {
+          return;
+        }
 
         const payload: IBaileysConnectionState = {
           status: this.status,
@@ -615,16 +681,22 @@ export class WwebjsConnectionService {
       });
 
       client.on('ready', () => {
+        if (!this.isActiveClient(client)) {
+          return;
+        }
+
         this.resetQrReadSession();
         this.qrReadSessionLocked = false;
         this.qrHash = undefined;
         this.retryCount = 0;
         this.initializeRetryCount = 0;
+        this.clearInitializeRetryTimer();
+        this.clearDisconnectRetryTimer();
         this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
         this.connectionEstablished = true;
         this.incomingMessageService.bindTo(client);
 
-        const phone = getPhoneNumber(this.client?.info?.wid?._serialized);
+        const phone = getPhoneNumber(client.info?.wid?._serialized);
 
         const payload: IBaileysConnectionState = {
           status: this.status,
@@ -639,13 +711,17 @@ export class WwebjsConnectionService {
         void this.notifyWorkerStatusSafely(payload, 'ready');
         void this.logConnectionIpInLocal(client, proxy);
         this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
-        triggerConnectionEstablished();
         this.pendingResolve?.(this.state());
         this.pendingResolve = undefined;
       });
 
       client.on('disconnected', (reason: string) => {
+        if (!this.isActiveClient(client)) {
+          return;
+        }
+
         this.connectionEstablished = false;
+        this.clearInitializeRetryTimer();
         const statusCode = this.mapDisconnectReason(reason);
 
         void this.healthCheckService.notifyDisconnected(reason);
@@ -723,15 +799,15 @@ export class WwebjsConnectionService {
           };
           this.publishSub(retryPayload, true);
 
-          setTimeout(() => {
-            this.connect({
-              initial_connection: this.initialConnection,
-            }).catch(() => {});
-          }, RETRY_DELAY);
+          this.scheduleReconnectAfterDisconnect();
         }
       });
 
       client.on('auth_failure', () => {
+        if (!this.isActiveClient(client)) {
+          return;
+        }
+
         this.setStatus(Status.disconnected, ECodeMessage.badSession);
         const payload: IBaileysConnectionState = {
           status: this.status,
@@ -747,12 +823,16 @@ export class WwebjsConnectionService {
       });
 
       client.on('chat_state', (state) => {
+        if (!this.isActiveClient(client)) {
+          return;
+        }
+
         this.handleChatState(state);
       });
 
       client.initialize().catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
-        this.handleInitializeError(msg);
+        this.handleInitializeError(msg, client);
       });
     });
   }
@@ -1077,6 +1157,8 @@ export class WwebjsConnectionService {
     this.currentPromise = undefined;
     this.connecting = false;
     this.connectionEstablished = false;
+    this.clearDisconnectRetryTimer();
+    this.clearInitializeRetryTimer();
     this.incomingMessageService.unbind();
 
     if (!skipDestroy && this.client) {
@@ -1086,6 +1168,9 @@ export class WwebjsConnectionService {
   }
 
   private async safeDestroy(): Promise<void> {
+    this.clearDisconnectRetryTimer();
+    this.clearInitializeRetryTimer();
+
     if (!this.client) {
       return;
     }

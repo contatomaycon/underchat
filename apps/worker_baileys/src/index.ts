@@ -14,7 +14,6 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
-import baileysOnListenHook from './hooks/baileysOnListen.hook';
 import redisPlugin from '@core/plugins/redis';
 import s3Plugin from '@core/plugins/s3';
 import workerConnectionGrpcServerPlugin from '@core/plugins/proto/workerConnectionGrpcServer';
@@ -29,6 +28,7 @@ const server = fastify({
 });
 
 server.decorateRequest('module', ERouteModule.worker_baileys);
+server.decorate('baileysInitialized', Promise.resolve());
 
 server.register(safePlugin(corsPlugin, 'cors'));
 server.register(safePlugin(swaggerPlugin, 'swagger'));
@@ -51,7 +51,6 @@ server.register(
   safePlugin(workerConnectionGrpcServerPlugin, 'workerConnectionGrpcServer')
 );
 
-server.register(safePlugin(baileysOnListenHook, 'baileysOnListen'));
 server.register(
   safePlugin(baileysConsumersOnListenHook, 'baileysConsumersOnListen')
 );
@@ -67,3 +66,35 @@ const start = async () => {
 };
 
 start();
+
+let shuttingDown = false;
+
+const shutdown = async (signal: string) => {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+
+  try {
+    server.log.info(
+      { signal },
+      'Iniciando shutdown gracioso do worker_baileys'
+    );
+    await server.close();
+    process.exit(0);
+  } catch (err) {
+    server.log.error(
+      { err, signal },
+      'Erro durante shutdown gracioso do worker_baileys'
+    );
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => {
+  void shutdown('SIGTERM');
+});
+
+process.on('SIGINT', () => {
+  void shutdown('SIGINT');
+});

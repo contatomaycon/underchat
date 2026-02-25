@@ -7,14 +7,6 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { BaileysPhoneValidationService } from './methods/phoneValidation.service';
 import { IPhoneValidationResult } from '@core/common/interfaces/IPhoneValidationResult';
-import { triggerQrCodeReset } from './callbacks';
-
-export {
-  setQrCodeResetCallback,
-  setConnectionEstablishedCallback,
-  triggerQrCodeReset,
-  triggerConnectionEstablished,
-} from './callbacks';
 
 @singleton()
 export class BaileysService {
@@ -57,16 +49,16 @@ export class BaileysService {
     return this.connection.getSocket();
   }
 
-  resetQrCodeCounter(): void {
-    triggerQrCodeReset();
-  }
-
   clearUserRequestedDisconnect(): void {
     this.connection.clearUserRequestedDisconnect();
   }
 
   republishLastState(): void {
     this.connection.republishLastState();
+  }
+
+  shutdown(): Promise<void> {
+    return this.connection.shutdown();
   }
 
   validatePhone(ddi: string, number: string): Promise<IPhoneValidationResult> {
