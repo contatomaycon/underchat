@@ -400,6 +400,22 @@ export class MessageUpsertConsume {
     return nonPhoneChars.length === 0;
   }
 
+  private isJidLikeName(value: string): boolean {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return false;
+
+    const jidSuffixes = [
+      '@s.whatsapp.net',
+      '@c.us',
+      '@lid',
+      '@g.us',
+      '@broadcast',
+      '@newsletter',
+    ];
+
+    return jidSuffixes.some((suffix) => normalized.endsWith(suffix));
+  }
+
   private normalizeChatNameCandidate(value: unknown): string | null {
     const name = this.toNonEmptyString(value);
     if (!name) return null;
@@ -2318,6 +2334,22 @@ export class MessageUpsertConsume {
   private nameChat(data: IUpsertMessage) {
     const isFromMe = data?.message?.key?.fromMe ?? false;
     if (isFromMe) {
+      return null;
+    }
+
+    if (data.is_call_event) {
+      const callCandidates: unknown[] = [
+        data.call_name,
+        data?.message?.pushName,
+      ];
+
+      for (const candidate of callCandidates) {
+        const name = this.normalizeChatNameCandidate(candidate);
+        if (!name) continue;
+        if (this.isJidLikeName(name)) continue;
+        return name;
+      }
+
       return null;
     }
 
