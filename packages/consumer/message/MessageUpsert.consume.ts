@@ -383,6 +383,22 @@ export class MessageUpsertConsume {
     );
   }
 
+  private async shouldMarkAsRead(workerId: string): Promise<boolean> {
+    const cacheKey = `worker:${workerId}:mark_as_read`;
+    const cached = await this.redis.get(cacheKey);
+
+    if (cached !== null) {
+      return cached === 'true';
+    }
+
+    const config = await this.workerConfigService.viewWorkerConfig(workerId);
+    const value = config?.mark_as_read ?? false;
+
+    await this.redis.set(cacheKey, String(value), 'EX', 60 * 60 * 24);
+
+    return value;
+  }
+
   private toNonEmptyString(value: unknown): string | undefined {
     if (typeof value !== 'string') return undefined;
     const trimmed = value.trim();
@@ -2183,11 +2199,15 @@ export class MessageUpsertConsume {
       await this.centrifugoChatPublish(inputChatMessage);
 
       if (!data.message?.key?.fromMe && data.message?.key) {
-        await this.markIncomingMessageAsRead(
-          data.account_id,
-          data.worker_id,
-          data.message.key
-        );
+        const markAsRead = await this.shouldMarkAsRead(data.worker_id);
+
+        if (markAsRead) {
+          await this.markIncomingMessageAsRead(
+            data.account_id,
+            data.worker_id,
+            data.message.key
+          );
+        }
       }
 
       const messageText = extractMessageTextFromContent(content);

@@ -261,6 +261,7 @@ export class WorkerConfigViewerRepository {
       auto_save_contacts: configMap.has(EWorkerConfigType.auto_save_contacts)
         ? true
         : null,
+      mark_as_read: configMap.has(EWorkerConfigType.mark_as_read) ? true : null,
       chatbot_id: chatbotId,
       proxy_enabled: configMap.has(EWorkerConfigType.proxy_enabled)
         ? true

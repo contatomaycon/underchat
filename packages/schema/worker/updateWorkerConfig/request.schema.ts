@@ -11,6 +11,7 @@ export const updateWorkerConfigRequestSchema = Type.Object({
   allow_attendance_only_online: Type.Optional(Type.Boolean()),
   reject_call: Type.Optional(Type.Boolean()),
   auto_save_contacts: Type.Optional(Type.Boolean()),
+  mark_as_read: Type.Optional(Type.Boolean()),
   proxy_enabled: Type.Optional(Type.Boolean()),
   proxy_protocol: Type.Optional(
     Type.Union([

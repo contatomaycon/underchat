@@ -188,6 +188,8 @@
   "channel_general_config_reject_call_description": "Recusa automaticamente as chamadas recebidas.",
   "channel_general_config_auto_save_contacts_title": "Salvar contatos automaticamente",
   "channel_general_config_auto_save_contacts_description": "Salva automaticamente os contatos que interagem com o canal.",
+  "channel_general_config_mark_as_read_title": "Marcar mensagem recebida como lida",
+  "channel_general_config_mark_as_read_description": "Quando ativado, mensagens recebidas são automaticamente marcadas como lidas no WhatsApp.",
   "channel_general_config_attendance_hours_title": "Horário de atendimento",
   "channel_general_config_attendance_hours_description": "Define os dias e horários de funcionamento do canal e a ação quando a mensagem chegar fora do horário.",
   "channel_general_config_chatbot_title": "Ativar chatbot no canal",

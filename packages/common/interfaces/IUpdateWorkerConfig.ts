@@ -6,6 +6,7 @@ export interface IUpdateWorkerConfig {
   allow_attendance_only_online?: boolean;
   reject_call?: boolean;
   auto_save_contacts?: boolean;
+  mark_as_read?: boolean;
   proxy_enabled?: boolean;
   proxy_protocol?: EProxyProtocol | null;
   proxy_host?: string | null;

@@ -21,4 +21,5 @@ export enum EWorkerConfigType {
   proxy_protocol = '019c92b7-8d5f-779f-a51e-63b132be0dcb',
   attendance_hours = '019c923a-00fd-7490-9495-e9e72b652713',
   outside_hours_message = '019c923a-00ff-72ac-84f5-0a78aa1e864c',
+  mark_as_read = '019e1f3a-1a2b-7c3d-8e4f-5a6b7c8d9e0f',
 }

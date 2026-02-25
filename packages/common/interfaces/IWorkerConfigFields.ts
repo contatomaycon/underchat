@@ -13,4 +13,5 @@ export interface IWorkerConfigFields {
   reject_call: boolean | null;
   auto_save_contacts: boolean | null;
   simultaneous_attendance: number | null;
+  mark_as_read: boolean | null;
 }

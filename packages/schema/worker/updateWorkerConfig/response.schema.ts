@@ -14,6 +14,7 @@ export const workerConfigSchema = Type.Object({
   send_message_on_finish_attendance: Type.Union([Type.String(), Type.Null()]),
   reject_call: Type.Boolean(),
   auto_save_contacts: Type.Boolean(),
+  mark_as_read: Type.Boolean(),
   chatbot_id: Type.Union([Type.String(), Type.Null()]),
   proxy_enabled: Type.Boolean(),
   proxy_protocol: Type.String({ enum: Object.values(EProxyProtocol) }),

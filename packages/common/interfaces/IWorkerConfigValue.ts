@@ -13,6 +13,7 @@ export interface IWorkerConfigValue {
   send_message_on_finish_attendance: string | null;
   reject_call: boolean | null;
   auto_save_contacts: boolean | null;
+  mark_as_read: boolean | null;
   chatbot_id: string | null;
   proxy_enabled: boolean | null;
   proxy_protocol: EProxyProtocol | null;

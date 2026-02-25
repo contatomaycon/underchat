@@ -93,6 +93,7 @@ export class WorkerConfigService {
         send_message_on_finish_attendance: null,
         reject_call: null,
         auto_save_contacts: null,
+        mark_as_read: null,
         chatbot_id: null,
         proxy_enabled: null,
         proxy_protocol: null,
@@ -136,6 +137,7 @@ export class WorkerConfigService {
         result.send_message_on_finish_attendance,
       reject_call: result.reject_call ?? false,
       auto_save_contacts: result.auto_save_contacts ?? false,
+      mark_as_read: result.mark_as_read ?? false,
       chatbot_id: result.chatbot_id ?? null,
       proxy_enabled: result.proxy_enabled ?? false,
       proxy_protocol: this.normalizeProxyProtocol(result.proxy_protocol),
@@ -790,6 +792,9 @@ export class WorkerConfigService {
   }
 
   private async invalidateWorkerConfigCache(workerId: string): Promise<void> {
-    await this.redis.del(`worker:${workerId}:config_fields`);
+    await Promise.all([
+      this.redis.del(`worker:${workerId}:config_fields`),
+      this.redis.del(`worker:${workerId}:mark_as_read`),
+    ]);
   }
 }

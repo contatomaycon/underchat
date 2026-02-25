@@ -66,6 +66,15 @@ export class WorkerConfigUpserterRepository {
         );
       }
 
+      if (input.mark_as_read !== undefined) {
+        await this.upsertBooleanConfig(
+          tx,
+          workerId,
+          EWorkerConfigType.mark_as_read,
+          input.mark_as_read
+        );
+      }
+
       if (input.proxy_enabled !== undefined) {
         await this.upsertProxyConfig(tx, workerId, input);
       }

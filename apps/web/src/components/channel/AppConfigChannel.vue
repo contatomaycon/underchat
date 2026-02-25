@@ -203,6 +203,7 @@ type WorkerConfigForm = {
   send_message_on_finish_attendance: boolean;
   reject_call: boolean;
   auto_save_contacts: boolean;
+  mark_as_read: boolean;
   chatbot: boolean;
   attendance_hours: boolean;
 };
@@ -218,6 +219,7 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   send_message_on_finish_attendance: false,
   reject_call: false,
   auto_save_contacts: false,
+  mark_as_read: false,
   chatbot: false,
   attendance_hours: false,
 });
@@ -671,6 +673,7 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     );
     nextState.reject_call = config.reject_call ?? false;
     nextState.auto_save_contacts = config.auto_save_contacts;
+    nextState.mark_as_read = config.mark_as_read ?? false;
     nextState.chatbot = config.chatbot_id !== null && config.chatbot_id !== '';
     proxyEnabled.value = config.proxy_enabled ?? false;
     proxyProtocol.value = normalizeProxyProtocol(config.proxy_protocol);
@@ -967,6 +970,7 @@ const onWorkerConfigCheckboxChange = async (
     'allow_attendance_only_online',
     'reject_call',
     'auto_save_contacts',
+    'mark_as_read',
   ];
 
   if (!fieldsToUpdateViaConfigEndpoint.includes(field)) {
@@ -1781,6 +1785,11 @@ const workerConfigOptions = computed(() => [
     key: 'auto_save_contacts' as WorkerConfigField,
     title: t('channel_general_config_auto_save_contacts_title'),
     description: t('channel_general_config_auto_save_contacts_description'),
+  },
+  {
+    key: 'mark_as_read' as WorkerConfigField,
+    title: t('channel_general_config_mark_as_read_title'),
+    description: t('channel_general_config_mark_as_read_description'),
   },
   {
     key: 'attendance_hours' as WorkerConfigField,

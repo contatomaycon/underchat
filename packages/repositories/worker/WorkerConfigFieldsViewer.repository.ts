@@ -89,6 +89,7 @@ export class WorkerConfigFieldsViewerRepository {
       auto_save_contacts: configMap.has(EWorkerConfigType.auto_save_contacts)
         ? true
         : null,
+      mark_as_read: configMap.has(EWorkerConfigType.mark_as_read) ? true : null,
       simultaneous_attendance: this.parseNumber(
         configMap.get(EWorkerConfigType.simultaneous_attendance)
       ),
