@@ -82,6 +82,10 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     module === ERouteModule.worker_wwebjs
       ? wwebjsEnvironment.grpcPort
       : baileysEnvironment.grpcPort;
+  const accountId =
+    module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.wwebjsAccountId
+      : baileysEnvironment.baileysAccountId;
   const grpcServer = new Server();
 
   const handleRequestConnection = (
@@ -102,12 +106,55 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       payload.remove_session = true;
     }
 
+    fastify.log.info(
+      {
+        module,
+        component: 'worker_connection_grpc_server',
+        type: 'connection_status',
+        event: 'worker_connection_request_received',
+        worker_id: payload.worker_id,
+        account_id: accountId,
+        status: payload.status,
+        connection_type: payload.type,
+        remove_session: payload.remove_session === true,
+      },
+      'Worker connection request received'
+    );
+
     try {
       connectionConsume.requestConnection(payload);
+      fastify.log.info(
+        {
+          module,
+          component: 'worker_connection_grpc_server',
+          type: 'connection_status',
+          event: 'worker_connection_request_dispatched',
+          worker_id: payload.worker_id,
+          account_id: accountId,
+          status: payload.status,
+          connection_type: payload.type,
+          remove_session: payload.remove_session === true,
+        },
+        'Worker connection request dispatched'
+      );
       callback(null, {});
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      fastify.log.error({ err }, 'WorkerConnection gRPC handler error');
+      fastify.log.error(
+        {
+          err,
+          module,
+          component: 'worker_connection_grpc_server',
+          type: 'connection_status',
+          event: 'worker_connection_request_error',
+          worker_id: payload.worker_id,
+          account_id: accountId,
+          status: payload.status,
+          connection_type: payload.type,
+          remove_session: payload.remove_session === true,
+        },
+        'WorkerConnection gRPC handler error'
+      );
       callback({ code: status.INTERNAL, message: msg, details: msg }, null);
     }
   };

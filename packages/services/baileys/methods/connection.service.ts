@@ -36,6 +36,7 @@ import { BaileysHealthCheckService } from './healthCheck.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
+import { logger } from '@core/plugins/telemetry/logger';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
@@ -254,6 +255,13 @@ export class BaileysConnectionService {
     this.clearReconnectRetryTimer();
     this.reconnectRetryTimer = setTimeout(() => {
       this.reconnectRetryTimer = undefined;
+      this.logConnectionEvent('reconnect_triggered', {
+        delay_ms: delayMs,
+        attempt: this.retryCount,
+        max_attempts: this.maxRetries,
+        connection_type: this.typeConnection,
+        from_disconnect_restart: true,
+      });
       this.connect({
         initial_connection: this.initialConnection,
         from_disconnect_restart: true,
@@ -261,6 +269,16 @@ export class BaileysConnectionService {
         type: this.typeConnection,
         phone_connection: this.phoneConnection,
       }).catch(() => {
+        this.logConnectionEvent(
+          'connection_connect_error',
+          {
+            reason: `Reconnect failed after ${delayMs}ms retry`,
+            delay_ms: delayMs,
+            attempt: this.retryCount,
+            max_attempts: this.maxRetries,
+          },
+          'error'
+        );
         this.saveLogWppConnection({
           worker_id: WORKER,
           status: this.status ?? Status.disconnected,
@@ -313,6 +331,15 @@ export class BaileysConnectionService {
     const delayMs = nextAttempt === 1 ? 0 : this.retryDelay;
 
     this.retryCount = nextAttempt;
+    this.logConnectionEvent('reconnect_scheduled', {
+      attempt: nextAttempt,
+      max_attempts: this.maxRetries,
+      delay_ms: delayMs,
+      connection_type: this.typeConnection,
+      has_phone_connection: Boolean(this.phoneConnection),
+      requested_by_user: false,
+      from_disconnect_restart: true,
+    });
     this.publishReconnectAttempt(nextAttempt, delayMs);
     this.scheduleReconnect(delayMs);
   }
@@ -385,11 +412,27 @@ export class BaileysConnectionService {
       from_disconnect_restart: fromDisconnectRestart = false,
     } = input;
 
+    this.logConnectionEvent('connect_requested', {
+      requested_by_user: requestedByUser,
+      from_disconnect_restart: fromDisconnectRestart,
+      force_new: forceNew,
+      allow_restore: allowRestore,
+      connection_type: typeConnection,
+      has_phone_connection: Boolean(phoneConnection),
+      has_session: this.hasSession(),
+      has_active_socket: Boolean(this.socket),
+    });
+
     if (requestedByUser) {
       this.userRequestedDisconnect = false;
     }
 
     if (this.userRequestedDisconnect && !fromDisconnectRestart) {
+      this.logConnectionEvent('connect_short_circuit', {
+        reason: 'user_requested_disconnect_guard',
+        requested_by_user: requestedByUser,
+        from_disconnect_restart: fromDisconnectRestart,
+      });
       return this.state();
     }
 
@@ -399,10 +442,16 @@ export class BaileysConnectionService {
     this.trackQrReadSession(requestedByUser, typeConnection);
 
     if (this.connected) {
+      this.logConnectionEvent('connect_short_circuit', {
+        reason: 'already_connected',
+      });
       return this.reportConnected();
     }
 
     if (this.connecting && this.currentPromise) {
+      this.logConnectionEvent('connect_short_circuit', {
+        reason: 'already_connecting',
+      });
       return this.currentPromise;
     }
 
@@ -413,22 +462,37 @@ export class BaileysConnectionService {
     if (this.canRestoreSession(allowRestore)) {
       const restoreState = this.handleRestoreSession();
       if (restoreState) {
+        this.logConnectionEvent('connect_short_circuit', {
+          reason: 'restore_session',
+          allow_restore: allowRestore,
+        });
         return restoreState;
       }
     }
 
     const existingState = this.handleExistingConnection();
     if (existingState) {
+      this.logConnectionEvent('connect_short_circuit', {
+        reason: 'existing_connection_state',
+      });
       return existingState;
     }
 
     const disconnectedState = this.handleDisconnectedWithRestore(allowRestore);
     if (disconnectedState) {
+      this.logConnectionEvent('connect_short_circuit', {
+        reason: 'disconnected_with_restore',
+        allow_restore: allowRestore,
+      });
       return disconnectedState;
     }
 
     const connectingState = this.handleConnectingWithRestore(allowRestore);
     if (connectingState) {
+      this.logConnectionEvent('connect_short_circuit', {
+        reason: 'connecting_with_restore',
+        allow_restore: allowRestore,
+      });
       return connectingState;
     }
 
@@ -438,6 +502,11 @@ export class BaileysConnectionService {
       (this.qrReadSessionLocked ||
         (!this.qrReadSessionActive && !this.hasSession()))
     ) {
+      this.logConnectionEvent('connect_short_circuit', {
+        reason: 'qr_session_locked_or_inactive',
+        connection_type: this.typeConnection,
+        requested_by_user: requestedByUser,
+      });
       return this.state();
     }
 
@@ -473,6 +542,14 @@ export class BaileysConnectionService {
       remove_session: removeSession = false,
     } = input;
     const shouldRemoveSession = removeSession || !preserveSession;
+
+    this.logConnectionEvent('disconnect_requested', {
+      requested_by_user: disconnectedUser,
+      preserve_session: preserveSession,
+      remove_session: removeSession,
+      should_remove_session: shouldRemoveSession,
+      initial_connection: initialConnection,
+    });
 
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
@@ -555,6 +632,10 @@ export class BaileysConnectionService {
   }
 
   async shutdown(): Promise<void> {
+    this.logConnectionEvent('shutdown', {
+      has_active_socket: Boolean(this.socket),
+      has_session: this.hasSession(),
+    });
     this.resetQrReadSession();
     this.qrReadSessionLocked = false;
     this.pendingResolve?.(this.state());
@@ -710,6 +791,11 @@ export class BaileysConnectionService {
     this.qrHash = qr.slice(-20);
     this.qrGenerationCount += 1;
     this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
+    this.logConnectionEvent('qr_generated', {
+      attempt: this.qrGenerationCount,
+      max_attempts: this.maxQrGenerations,
+      connection_type: this.typeConnection,
+    });
 
     await this.printQrInConsole(qr);
     const img = await QRCode.toDataURL(qr);
@@ -790,6 +876,10 @@ export class BaileysConnectionService {
     this.lastStatusPayload = JSON.stringify(payload);
     void this.notifyWorkerStatusSafely(payload, 'open');
     void this.logConnectionIpInLocal();
+    this.logConnectionEvent('connected_ready', {
+      worker_status_id: payload.worker_status_id,
+      has_phone: Boolean(payload.phone),
+    });
 
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
 
@@ -920,6 +1010,11 @@ export class BaileysConnectionService {
       statusCode ?? this.code ?? ECodeMessage.connectionLost;
 
     this.setStatus(Status.disconnected, disconnectionCode);
+    this.logConnectionEvent('disconnected', {
+      reason: statusMessage ?? 'Connection closed',
+      mapped_code: disconnectionCode,
+      from_disconnect_restart: false,
+    });
 
     const isMismatchedStatus =
       statusCode === ECodeMessage.loggedOut ||
@@ -1296,10 +1391,23 @@ export class BaileysConnectionService {
   }
 
   private setStatus(s: Status, c?: ECodeMessage) {
+    const previousStatus = this.status;
+    const previousCode = this.code;
+    const nextCode = c ?? this.code;
+
     this.status = s;
 
     if (c) {
       this.code = c;
+    }
+
+    if (previousStatus !== s || previousCode !== nextCode) {
+      this.logConnectionEvent('connection_status_transition', {
+        previous_status: previousStatus,
+        previous_code: previousCode,
+        status: this.status,
+        code: this.code,
+      });
     }
   }
 
@@ -1397,6 +1505,36 @@ export class BaileysConnectionService {
     }
 
     return undefined;
+  }
+
+  private logConnectionEvent(
+    event: string,
+    details: Record<string, unknown> = {},
+    level: 'info' | 'warn' | 'error' = 'info'
+  ): void {
+    const payload = {
+      module: 'worker_baileys',
+      component: 'baileys_connection_service',
+      type: 'connection_status',
+      event,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      status: this.status,
+      code: this.code,
+      ...details,
+    };
+
+    if (level === 'error') {
+      logger.error(payload, 'Baileys connection event');
+      return;
+    }
+
+    if (level === 'warn') {
+      logger.warn(payload, 'Baileys connection event');
+      return;
+    }
+
+    logger.info(payload, 'Baileys connection event');
   }
 
   private readonly saveLogWppConnection = async (

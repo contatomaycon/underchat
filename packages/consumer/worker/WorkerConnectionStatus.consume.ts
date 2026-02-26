@@ -11,6 +11,7 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
+import { logger } from '@core/plugins/telemetry/logger';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -31,6 +32,12 @@ export class WorkerConnectionStatusConsume {
   ) {}
 
   requestConnection(payload: StatusConnectionWorkerRequest): void {
+    this.logConnectionEvent('connection_request_received', {
+      status: payload.status,
+      connection_type: payload.type,
+      remove_session: payload.remove_session === true,
+      has_phone_connection: Boolean(payload.phone_connection),
+    });
     void this.handleConnectionStatus(payload);
   }
 
@@ -149,10 +156,22 @@ export class WorkerConnectionStatusConsume {
     this.activeConnectionRequest = data;
     this.connectionRetryAttempt = 0;
     this.restartAfterDisconnect = options?.fromDisconnectRestart ?? false;
+    this.logConnectionEvent('connection_retry_started', {
+      status: data.status,
+      connection_type: data.type,
+      from_disconnect_restart: this.restartAfterDisconnect,
+      remove_session: data.remove_session === true,
+      has_phone_connection: Boolean(data.phone_connection),
+    });
     this.runConnectionAttempt();
   }
 
   private stopConnectionRetry(): void {
+    const hadActiveRetry =
+      Boolean(this.connectionRetryTimer) ||
+      Boolean(this.activeConnectionRequest) ||
+      this.connectionRetryAttempt > 0;
+
     if (this.connectionRetryTimer) {
       clearTimeout(this.connectionRetryTimer);
       this.connectionRetryTimer = null;
@@ -160,10 +179,20 @@ export class WorkerConnectionStatusConsume {
     this.activeConnectionRequest = null;
     this.connectionRetryAttempt = 0;
     this.restartAfterDisconnect = false;
+
+    if (hadActiveRetry) {
+      this.logConnectionEvent('connection_retry_stopped');
+    }
   }
 
   private scheduleNextAttempt(): void {
     if (!this.activeConnectionRequest) return;
+
+    this.logConnectionEvent('connection_retry_scheduled', {
+      attempt: this.connectionRetryAttempt,
+      max_attempts: this.connectionRetryMinAttempts,
+      delay_ms: this.connectionRetryIntervalMs,
+    });
 
     this.connectionRetryTimer = setTimeout(() => {
       this.runConnectionAttempt();
@@ -171,6 +200,10 @@ export class WorkerConnectionStatusConsume {
   }
 
   private handoffToServiceReconnect(): void {
+    this.logConnectionEvent('connection_retry_handoff', {
+      attempt: this.connectionRetryAttempt,
+      max_attempts: this.connectionRetryMinAttempts,
+    });
     this.stopConnectionRetry();
     this.baileysService.clearUserRequestedDisconnect();
     this.baileysService.reconnect({ initial_connection: true });
@@ -207,11 +240,25 @@ export class WorkerConnectionStatusConsume {
     await this.centrifugoService
       .publishSub(workerCentrifugoQueue(accountId), payload)
       .catch((error) => {
-        console.error(
-          '[WorkerConnectionStatus] publishConnectedStatus - Failed',
-          error
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logConnectionEvent(
+          'connection_connect_error',
+          {
+            reason: errorMessage,
+            status: payload.status,
+            code: payload.code,
+          },
+          'error'
         );
       });
+
+    this.logConnectionEvent('connection_connect_result', {
+      status: payload.status,
+      code: payload.code,
+      has_phone: Boolean(payload.phone),
+      worker_status_id: payload.worker_status_id,
+    });
   }
 
   private async waitForReconnection(
@@ -239,6 +286,10 @@ export class WorkerConnectionStatusConsume {
     }
 
     this.connectionRetryAttempt += 1;
+    this.logConnectionEvent('connection_retry_attempt', {
+      attempt: this.connectionRetryAttempt,
+      max_attempts: this.connectionRetryMinAttempts,
+    });
     this.publishConnectionAttempt(this.connectionRetryAttempt);
 
     if (this.connectionRetryAttempt > this.connectionRetryMinAttempts) {
@@ -257,6 +308,16 @@ export class WorkerConnectionStatusConsume {
 
     const status = this.baileysService.getStatus();
     const hasActiveSocket = Boolean(this.baileysService.socket);
+    this.logConnectionEvent('connection_connect_invoked', {
+      attempt: this.connectionRetryAttempt,
+      max_attempts: this.connectionRetryMinAttempts,
+      status,
+      has_active_socket: hasActiveSocket,
+      from_disconnect_restart: fromDisconnectRestart,
+      requested_by_user: !fromDisconnectRestart,
+      connection_type: request.type,
+      has_phone_connection: Boolean(request.phone_connection),
+    });
 
     if (
       status === EBaileysConnectionStatus.connecting &&
@@ -279,6 +340,13 @@ export class WorkerConnectionStatusConsume {
         phone_connection: request.phone_connection,
       })
       .then((state) => {
+        this.logConnectionEvent('connection_connect_result', {
+          attempt: this.connectionRetryAttempt,
+          max_attempts: this.connectionRetryMinAttempts,
+          status: state?.status,
+          code: state?.code,
+          has_qr: Boolean(state?.qrcode),
+        });
         if (
           state?.qrcode ||
           state?.status === EBaileysConnectionStatus.connected
@@ -287,7 +355,17 @@ export class WorkerConnectionStatusConsume {
         }
       })
       .catch((error) => {
-        console.error('Error initiating Baileys connection:', error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logConnectionEvent(
+          'connection_connect_error',
+          {
+            attempt: this.connectionRetryAttempt,
+            max_attempts: this.connectionRetryMinAttempts,
+            reason: errorMessage,
+          },
+          'error'
+        );
       });
 
     void connectPromise;
@@ -304,5 +382,33 @@ export class WorkerConnectionStatusConsume {
         }
       }, this.connectionRetryIntervalMs);
     }
+  }
+
+  private logConnectionEvent(
+    event: string,
+    details: Record<string, unknown> = {},
+    level: 'info' | 'warn' | 'error' = 'info'
+  ): void {
+    const payload = {
+      module: 'worker_baileys',
+      component: 'worker_connection_status_consume',
+      type: 'connection_status',
+      event,
+      worker_id: baileysEnvironment.baileysWorkerId,
+      account_id: baileysEnvironment.baileysAccountId,
+      ...details,
+    };
+
+    if (level === 'error') {
+      logger.error(payload, 'Baileys worker connection status event');
+      return;
+    }
+
+    if (level === 'warn') {
+      logger.warn(payload, 'Baileys worker connection status event');
+      return;
+    }
+
+    logger.info(payload, 'Baileys worker connection status event');
   }
 }
