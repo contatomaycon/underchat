@@ -36,6 +36,7 @@ const itemsType = ref([
 
 const refFormEditChannel = ref<VForm>();
 const isInitializingModal = ref(false);
+const isSaving = ref(false);
 
 const loadServerOptions = async () => {
   const result = await settingsStore.getChannelServers();
@@ -92,11 +93,17 @@ const updateChannel = async () => {
     server_id: serverId.value,
   };
 
-  const result = await settingsStore.updateChannel(payload);
-  if (!result) return;
+  isSaving.value = true;
+  try {
+    const result = await settingsStore.updateChannel(payload);
+    if (!result) return;
 
-  isVisible.value = false;
-  emit('updated');
+    isVisible.value = false;
+    await nextTick();
+    emit('updated');
+  } finally {
+    isSaving.value = false;
+  }
 };
 
 watch(
@@ -132,7 +139,7 @@ watch(
     <VForm ref="refFormEditChannel" @submit.prevent>
       <VCard :title="$t('edit_channel')" class="position-relative">
         <VOverlay
-          :model-value="isInitializingModal || settingsStore.loading"
+          :model-value="isInitializingModal || isSaving"
           class="align-center justify-center"
           contained
         >
