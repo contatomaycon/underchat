@@ -14,6 +14,7 @@ import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpda
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageStatusService } from '@core/services/messageStatus.service';
+import Redis from 'ioredis';
 
 @singleton()
 export class MessageMarkReadWwebjsConsume {
@@ -28,7 +29,8 @@ export class MessageMarkReadWwebjsConsume {
     @inject(WwebjsIncomingMessageService)
     private readonly wwebjsIncomingMessageService: WwebjsIncomingMessageService,
     @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -100,6 +102,11 @@ export class MessageMarkReadWwebjsConsume {
         const stop = startHeartbeat(heartbeat);
 
         try {
+          const isEnabled = await this.isMarkAsReadEnabled(data.worker_id);
+          if (!isEnabled) {
+            return;
+          }
+
           await this.wwebjsIncomingMessageService.markRead(
             data.keys as Array<{
               remoteJid?: string | null;
@@ -179,6 +186,16 @@ export class MessageMarkReadWwebjsConsume {
     } finally {
       this.consumer = null;
       this.partitionChains.clear();
+    }
+  }
+
+  private async isMarkAsReadEnabled(workerId: string): Promise<boolean> {
+    try {
+      const cacheKey = `worker:${workerId}:mark_as_read`;
+      const cached = await this.redis.get(cacheKey);
+      return cached === 'true';
+    } catch {
+      return false;
     }
   }
 
