@@ -3298,10 +3298,10 @@ export class MessageUpsertConsume {
           ]
         );
 
-        const outsideHoursContext = this.resolveOutsideHoursContext(
-          data,
-          workerConfigFields
-        );
+        const outsideHoursContext =
+          getChat?.status === EChatStatus.in_chat
+            ? null
+            : this.resolveOutsideHoursContext(data, workerConfigFields);
 
         const inputChatbotId =
           chatbotsConfig.enabled && chatbotsConfig.chatbot_id
