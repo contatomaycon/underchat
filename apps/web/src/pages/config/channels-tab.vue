@@ -197,6 +197,8 @@ watch(
 const channelToDelete = ref<string | null>(null);
 const isDialogDeleterShow = ref(false);
 const openConversationsCount = ref<number | null>(null);
+const channelToEdit = ref<ListChannelsResponse | null>(null);
+const isDialogEditChannelShow = ref(false);
 
 watch(isDialogDeleterShow, (isOpen) => {
   if (!isOpen) {
@@ -204,6 +206,13 @@ watch(isDialogDeleterShow, (isOpen) => {
     channelToDelete.value = null;
   }
 });
+
+watch(isDialogEditChannelShow, (isOpen) => {
+  if (!isOpen) {
+    channelToEdit.value = null;
+  }
+});
+
 const channelToRecreate = ref<string | null>(null);
 const isDialogRecreatorShow = ref(false);
 const isDialogRecreateAllShow = ref(false);
@@ -228,6 +237,11 @@ const recreateChannel = (id: string) => {
   isDialogRecreatorShow.value = true;
 };
 
+const openEditDialog = (channel: ListChannelsResponse) => {
+  channelToEdit.value = channel;
+  isDialogEditChannelShow.value = true;
+};
+
 const handleRecreate = async () => {
   if (!channelToRecreate.value) return;
 
@@ -248,6 +262,11 @@ const handleRecreateAll = async () => {
     await loadStatistics();
     await loadChannels();
   }
+};
+
+const handleChannelUpdated = async () => {
+  await loadStatistics();
+  await loadChannels();
 };
 
 const deleteChannel = async (id: string) => {
@@ -717,6 +736,17 @@ onUnmounted(async () => {
                     transition="scale-transition"
                     activator="parent"
                   >
+                    <span>{{ $t('edit_channel') }}</span>
+                  </VTooltip>
+                  <VIcon icon="tabler-edit" @click="openEditDialog(item)" />
+                </IconBtn>
+
+                <IconBtn>
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
                     <span>{{ $t('recreate') }}</span>
                   </VTooltip>
                   <VIcon
@@ -788,6 +818,13 @@ onUnmounted(async () => {
       :title="$t('recreate_all')"
       :message="$t('recreate_all_channels_confirmation')"
       @confirm="handleRecreateAll"
+    />
+
+    <AppEditConfigChannel
+      v-if="isDialogEditChannelShow"
+      v-model="isDialogEditChannelShow"
+      :channel="channelToEdit"
+      @updated="handleChannelUpdated"
     />
   </div>
 </template>

@@ -26,6 +26,10 @@ export class WorkerUpdaterRepository {
       inputUpdate.worker_type_id = input.worker_type_id;
     }
 
+    if (input.server_id) {
+      inputUpdate.server_id = input.server_id;
+    }
+
     if (input.name) {
       inputUpdate.name = input.name;
     }

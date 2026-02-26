@@ -9,6 +9,7 @@ import { listNfseSchema } from '@core/schema/config/listNfse';
 import { updateNfseSchema } from '@core/schema/config/updateNfse';
 import { listChannelsSchema } from '@core/schema/config/listChannels';
 import { listAccountsSchema } from '@core/schema/config/listAccounts';
+import { listChannelServersSchema } from '@core/schema/config/listChannelServers';
 import { recreateChannelSchema } from '@core/schema/config/recreateChannel';
 import { deleteChannelSchema } from '@core/schema/config/deleteChannel';
 import { recreateChannelsAllSchema } from '@core/schema/config/recreateChannelsAll';
@@ -18,6 +19,7 @@ import { updateCreditCardFeeSchema } from '@core/schema/config/updateCreditCardF
 import { checkChannelOpenConversationsSchema } from '@core/schema/config/checkChannelOpenConversations';
 import { listMethodPaymentsSchema } from '@core/schema/config/listMethodPayments';
 import { updateMethodPaymentSchema } from '@core/schema/config/updateMethodPayment';
+import { updateChannelSchema } from '@core/schema/config/updateChannel';
 import { configPermissions } from '@/permissions';
 
 export default async function configRoutes(server: FastifyInstance) {
@@ -131,6 +133,15 @@ export default async function configRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.get('/config/channels/servers', {
+    schema: listChannelServersSchema,
+    handler: configController.listChannelServers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
   server.patch('/config/channels/:channel_id/recreate', {
     schema: recreateChannelSchema,
     handler: configController.recreateChannel,
@@ -161,6 +172,15 @@ export default async function configRoutes(server: FastifyInstance) {
   server.patch('/config/channels/recreate-all', {
     schema: recreateChannelsAllSchema,
     handler: configController.recreateChannelsAll,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.patch('/config/channels/:channel_id', {
+    schema: updateChannelSchema,
+    handler: configController.updateChannel,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),

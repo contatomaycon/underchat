@@ -14,6 +14,8 @@ import { UpdateNfseRequest } from '@core/schema/config/updateNfse/request.schema
 import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.schema';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/response.schema';
+import { ListChannelServersResponse } from '@core/schema/config/listChannelServers/response.schema';
+import { UpdateChannelRequest } from '@core/schema/config/updateChannel/request.schema';
 import { ChannelsStatisticsResponse } from '@core/schema/config/channelsStatistics/response.schema';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
@@ -408,6 +410,74 @@ export const useSettingsStore = defineStore('settings', {
       } catch {
         this.loading = false;
         return null;
+      }
+    },
+    async getChannelServers(): Promise<
+      ListChannelServersResponse['results'] | null
+    > {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListChannelServersResponse>
+        >('/config/channels/servers');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.results;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async updateChannel(input: UpdateChannelRequest): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<null>>(
+          `/config/channels/${input.channel_id}`,
+          {
+            name: input.name,
+            worker_type: input.worker_type,
+            server_id: input.server_id,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const message =
+            data?.message ?? this.i18n.global.t('channel_edit_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('channel_edit_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('channel_edit_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
       }
     },
 

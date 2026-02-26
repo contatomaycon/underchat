@@ -7,6 +7,7 @@ import { listNfse } from './methods/listNfse';
 import { updateNfse } from './methods/updateNfse';
 import { listChannels } from './methods/listChannels';
 import { listAccounts } from './methods/listAccounts';
+import { listChannelServers } from './methods/listChannelServers';
 import { recreateChannel } from './methods/recreateChannel';
 import { deleteChannel } from './methods/deleteChannel';
 import { recreateChannelsAll } from './methods/recreateChannelsAll';
@@ -16,6 +17,7 @@ import { updateCreditCardFee } from './methods/updateCreditCardFee';
 import { checkChannelOpenConversations } from './methods/checkChannelOpenConversations';
 import { listMethodPayments } from './methods/listMethodPayments';
 import { updateMethodPayment } from './methods/updateMethodPayment';
+import { updateChannel } from './methods/updateChannel';
 
 @injectable()
 class ConfigController {
@@ -27,10 +29,12 @@ class ConfigController {
   public updateNfse = updateNfse;
   public listChannels = listChannels;
   public listAccounts = listAccounts;
+  public listChannelServers = listChannelServers;
   public recreateChannel = recreateChannel;
   public deleteChannel = deleteChannel;
   public recreateChannelsAll = recreateChannelsAll;
   public channelsStatistics = channelsStatistics;
+  public updateChannel = updateChannel;
   public listCreditCardFee = listCreditCardFee;
   public updateCreditCardFee = updateCreditCardFee;
   public checkChannelOpenConversations = checkChannelOpenConversations;

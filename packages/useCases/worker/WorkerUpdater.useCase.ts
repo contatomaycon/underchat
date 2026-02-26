@@ -78,6 +78,27 @@ export class WorkerUpdaterUseCase {
     }
   }
 
+  private async validateServerEligibility(
+    t: TFunction<'translation', undefined>,
+    nextServerId: string,
+    currentServerId?: string
+  ): Promise<boolean> {
+    if (currentServerId && nextServerId === currentServerId) {
+      return false;
+    }
+
+    const eligibleServers = await this.workerService.listWorkerServers();
+    const serverEligible = eligibleServers.some(
+      (server) => server.server_id === nextServerId
+    );
+
+    if (!serverEligible) {
+      throw new Error(t('worker_server_not_disponible'));
+    }
+
+    return true;
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -94,12 +115,15 @@ export class WorkerUpdaterUseCase {
       | EWorkerType
       | undefined;
 
-    const shouldRecreateWorker = this.shouldRecreateWorkerOnTypeChange(
+    const shouldRecreateOnTypeChange = this.shouldRecreateWorkerOnTypeChange(
       currentType,
       nextWorkerType
     );
 
-    if (shouldRecreateWorker) {
+    let currentServerId: string | undefined;
+    let shouldRecreateOnServerChange = false;
+
+    if (shouldRecreateOnTypeChange || input.server_id) {
       const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
         accountId,
         input.worker_id
@@ -109,11 +133,23 @@ export class WorkerUpdaterUseCase {
         throw new Error(t('worker_not_found'));
       }
 
+      currentServerId = viewWorkerBalancer.server_id;
+
+      if (input.server_id) {
+        shouldRecreateOnServerChange = await this.validateServerEligibility(
+          t,
+          input.server_id,
+          currentServerId
+        );
+      }
+    }
+
+    if (shouldRecreateOnTypeChange && currentServerId) {
       await this.disconnectCurrentWorker(
         t,
         accountId,
         input.worker_id,
-        viewWorkerBalancer.server_id
+        currentServerId
       );
     }
 
@@ -126,6 +162,10 @@ export class WorkerUpdaterUseCase {
       inputUpdate.worker_type_id = input.worker_type as EWorkerType;
     }
 
+    if (input.server_id && shouldRecreateOnServerChange) {
+      inputUpdate.server_id = input.server_id;
+    }
+
     const updateWorkerById = await this.workerService.updateWorkerById(
       accountId,
       inputUpdate
@@ -134,6 +174,9 @@ export class WorkerUpdaterUseCase {
     if (!updateWorkerById) {
       throw new Error(t('error_updating_worker'));
     }
+
+    const shouldRecreateWorker =
+      shouldRecreateOnTypeChange || shouldRecreateOnServerChange;
 
     if (shouldRecreateWorker) {
       await this.workerRecreatorUseCase.execute(t, accountId, input.worker_id);

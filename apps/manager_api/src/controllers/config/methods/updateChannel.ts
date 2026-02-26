@@ -3,34 +3,29 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { WorkerUpdaterUseCase } from '@core/useCases/worker/WorkerUpdater.useCase';
+import { ChannelUpdaterUseCase } from '@core/useCases/config/ChannelUpdater.useCase';
 import {
-  EditWorkerParams,
-  EditWorkerBody,
-} from '@core/schema/worker/editWorker/request.schema';
+  UpdateChannelBody,
+  UpdateChannelParams,
+} from '@core/schema/config/updateChannel/request.schema';
 
-export const updateWorker = async (
+export const updateChannel = async (
   request: FastifyRequest<{
-    Params: EditWorkerParams;
-    Body: EditWorkerBody;
+    Params: UpdateChannelParams;
+    Body: UpdateChannelBody;
   }>,
   reply: FastifyReply
 ) => {
-  const workerUpdaterUseCase = container.resolve(WorkerUpdaterUseCase);
-  const { t, tokenJwtData } = request;
-
-  const input: EditWorkerParams & EditWorkerBody = {
-    ...request.params,
-    worker_type: request.body?.worker_type,
-    server_id: request.body?.server_id,
-  };
+  const channelUpdaterUseCase = container.resolve(ChannelUpdaterUseCase);
+  const { t } = request;
 
   try {
-    const response = await workerUpdaterUseCase.execute(
-      t,
-      tokenJwtData.account_id,
-      input
-    );
+    const response = await channelUpdaterUseCase.execute(t, {
+      channel_id: request.params.channel_id,
+      name: request.body.name,
+      worker_type: request.body.worker_type,
+      server_id: request.body.server_id,
+    });
 
     if (response) {
       return sendResponse(reply, {
