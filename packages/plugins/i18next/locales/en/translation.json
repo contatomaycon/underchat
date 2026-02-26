@@ -563,6 +563,8 @@
   "chatbot_update_error": "An error occurred while updating the chatbot. Please try again.",
   "chatbot_update_success": "Chatbot updated successfully!",
   "chatbot_view_success": "Chatbot retrieved successfully!",
+  "chatbot_working_hours_invalid_time_range": "Invalid time range for {{day}}. Enter an interval where start is before end.",
+  "chatbot_working_hours_rule_conflict": "There is a schedule conflict on {{day}}. Adjust the ranges so they do not overlap or touch.",
   "chatbot_config_view_success": "Chatbot configuration viewed successfully!",
   "chatbot_not_found": "Chatbot not found!",
   "chatbot_flow_node_not_found": "Chatbot flow node not found!",

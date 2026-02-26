@@ -8,6 +8,7 @@ import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { Transaction } from '@core/common/types/Transaction.type';
+import { IChatbotWorkingHoursRule } from '@core/common/interfaces/IChatbotWorkingHours';
 
 @injectable()
 export class WorkerConfigUpserterRepository {
@@ -600,7 +601,12 @@ export class WorkerConfigUpserterRepository {
     workerId: string,
     chatbotId: string | null,
     outputChatbotId: string | null,
-    statusId: string
+    statusId: string,
+    workingHours: {
+      enabled: boolean;
+      timezone: string;
+      rules: IChatbotWorkingHoursRule[];
+    }
   ): Promise<{
     chatbot_id: string | null;
     output_chatbot_id: string | null;
@@ -619,6 +625,17 @@ export class WorkerConfigUpserterRepository {
         workerId,
         outputChatbotId,
         outputStatus
+      );
+      await this.upsertChatbotWorkingHoursEnabled(
+        tx,
+        workerId,
+        workingHours.enabled,
+        workingHours.timezone
+      );
+      await this.replaceChatbotWorkingHoursRules(
+        tx,
+        workerId,
+        workingHours.rules
       );
     });
 
@@ -693,6 +710,63 @@ export class WorkerConfigUpserterRepository {
       statusId,
       EWorkerConfigType.chatbot_output_id,
       outputChatbotId
+    );
+  }
+
+  private async upsertChatbotWorkingHoursEnabled(
+    tx: Transaction,
+    workerId: string,
+    enabled: boolean,
+    timezone: string
+  ): Promise<void> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    await this.upsertConfigValue(
+      tx,
+      workerId,
+      statusId,
+      EWorkerConfigType.chatbot_working_hours_enabled,
+      JSON.stringify({ timezone })
+    );
+  }
+
+  private async replaceChatbotWorkingHoursRules(
+    tx: Transaction,
+    workerId: string,
+    rules: IChatbotWorkingHoursRule[]
+  ): Promise<void> {
+    await tx
+      .delete(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(
+            workerConfig.worker_config_type_id,
+            EWorkerConfigType.chatbot_working_hours_rule
+          )
+        )
+      )
+      .execute();
+
+    if (rules.length === 0) {
+      return;
+    }
+
+    await tx.insert(workerConfig).values(
+      rules.map((rule) => ({
+        worker_config_id: uuidv7(),
+        worker_id: workerId,
+        worker_config_status_id: EWorkerConfigStatus.active,
+        worker_config_type_id: EWorkerConfigType.chatbot_working_hours_rule,
+        chatbot_id: rule.chatbot_id,
+        value: JSON.stringify({
+          weekday: rule.weekday,
+          start_time: rule.start_time,
+          end_time: rule.end_time,
+        }),
+      }))
     );
   }
 

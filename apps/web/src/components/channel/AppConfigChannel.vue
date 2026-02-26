@@ -208,6 +208,22 @@ type WorkerConfigForm = {
   attendance_hours: boolean;
 };
 
+type ChatbotWorkingHoursRulePayload = {
+  weekday: ChatbotWorkingHoursWeekday;
+  start_time: string;
+  end_time: string;
+  chatbot_id: string;
+};
+
+type ChatbotConfigResponse = {
+  chatbot_id: string | null;
+  output_chatbot_id: string | null;
+  chatbot_working_hours_enabled: boolean;
+  chatbot_working_hours_timezone: string;
+  chatbot_working_hours_rules: ChatbotWorkingHoursRulePayload[];
+  enabled: boolean;
+};
+
 const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   show_attendee_name: false,
   show_worker_name: false,
@@ -227,10 +243,22 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
 type AttendanceWeekday = keyof UpdateAttendanceHoursRequest['days'];
 type AttendanceDayConfig =
   UpdateAttendanceHoursRequest['days'][AttendanceWeekday];
+type ChatbotWorkingHoursWeekday = AttendanceWeekday;
+
+interface ChatbotWorkingHoursRuleForm {
+  id: string;
+  weekday: ChatbotWorkingHoursWeekday | null;
+  start_time: string;
+  end_time: string;
+  chatbot_id: string | null;
+}
 
 const ATTENDANCE_TIMEZONE = 'America/Sao_Paulo';
 const ATTENDANCE_DEFAULT_START = '09:00';
 const ATTENDANCE_DEFAULT_END = '18:00';
+const CHATBOT_WORKING_HOURS_TIMEZONE = 'America/Sao_Paulo';
+const CHATBOT_WORKING_HOURS_DEFAULT_START = '09:00';
+const CHATBOT_WORKING_HOURS_DEFAULT_END = '18:00';
 
 const attendanceWeekdays: AttendanceWeekday[] = [
   'monday',
@@ -241,6 +269,7 @@ const attendanceWeekdays: AttendanceWeekday[] = [
   'saturday',
   'sunday',
 ];
+const chatbotWorkingHoursWeekdays = attendanceWeekdays;
 
 const createDefaultAttendanceDay = (): AttendanceDayConfig => ({
   enabled: false,
@@ -441,6 +470,17 @@ const isSavingChatbot = ref(false);
 const selectedInputChatbotId = ref<string | null>(null);
 const selectedOutputChatbotId = ref<string | null>(null);
 const chatbotEnabledInModal = ref<boolean>(false);
+const chatbotWorkingHoursModalOpen = ref(false);
+const chatbotWorkingHoursEnabledInModal = ref(false);
+const chatbotWorkingHoursTimezoneInModal = ref(CHATBOT_WORKING_HOURS_TIMEZONE);
+const chatbotWorkingHoursRulesInModal = ref<ChatbotWorkingHoursRuleForm[]>([]);
+const chatbotWorkingHoursLastSavedEnabled = ref(false);
+const chatbotWorkingHoursLastSavedTimezone = ref(
+  CHATBOT_WORKING_HOURS_TIMEZONE
+);
+const chatbotWorkingHoursLastSavedRules = ref<ChatbotWorkingHoursRuleForm[]>(
+  []
+);
 const attendanceHoursModalOpen = ref(false);
 const isSavingAttendanceHours = ref(false);
 const attendanceHoursEnabledInModal = ref<boolean>(false);
@@ -487,6 +527,21 @@ const statusVisibilityOptions = computed(() => [
   { value: 'contacts', title: t('status_visibility_contacts') },
 ]);
 
+const inputChatbotOptions = computed(() =>
+  chatbotStore.list.filter((c) => c.type === 'input')
+);
+
+const outputChatbotOptions = computed(() =>
+  chatbotStore.list.filter((c) => c.type === 'output')
+);
+
+const chatbotWorkingHoursWeekdayOptions = computed(() =>
+  chatbotWorkingHoursWeekdays.map((weekday) => ({
+    title: t(weekday),
+    value: weekday,
+  }))
+);
+
 const attendanceHasAtLeastOneDayEnabled = computed(() =>
   attendanceWeekdays.some((weekday) => attendanceDaysInModal[weekday].enabled)
 );
@@ -530,6 +585,181 @@ const attendanceConfigReadyToEnable = computed(() => {
 
   return true;
 });
+
+const createChatbotWorkingHoursRuleId = (): string =>
+  `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const weekdayOrderMap = chatbotWorkingHoursWeekdays.reduce<
+  Record<ChatbotWorkingHoursWeekday, number>
+>(
+  (acc, weekday, index) => {
+    acc[weekday] = index;
+    return acc;
+  },
+  {} as Record<ChatbotWorkingHoursWeekday, number>
+);
+
+const createDefaultChatbotWorkingHoursRule = (
+  rule?: Partial<{
+    weekday: ChatbotWorkingHoursWeekday;
+    start_time: string;
+    end_time: string;
+    chatbot_id: string;
+  }>
+): ChatbotWorkingHoursRuleForm => ({
+  id: createChatbotWorkingHoursRuleId(),
+  weekday: rule?.weekday ?? 'monday',
+  start_time: rule?.start_time ?? CHATBOT_WORKING_HOURS_DEFAULT_START,
+  end_time: rule?.end_time ?? CHATBOT_WORKING_HOURS_DEFAULT_END,
+  chatbot_id: rule?.chatbot_id ?? null,
+});
+
+const normalizeChatbotWorkingHoursRules = (
+  rules:
+    | Array<{
+        weekday:
+          | 'monday'
+          | 'tuesday'
+          | 'wednesday'
+          | 'thursday'
+          | 'friday'
+          | 'saturday'
+          | 'sunday';
+        start_time: string;
+        end_time: string;
+        chatbot_id: string;
+      }>
+    | undefined
+): ChatbotWorkingHoursRuleForm[] => {
+  if (!rules || rules.length === 0) {
+    return [];
+  }
+
+  return rules
+    .map((rule) =>
+      createDefaultChatbotWorkingHoursRule({
+        weekday: rule.weekday,
+        start_time: rule.start_time,
+        end_time: rule.end_time,
+        chatbot_id: rule.chatbot_id,
+      })
+    )
+    .sort((a, b) => {
+      const weekdayA = a.weekday ? weekdayOrderMap[a.weekday] : 999;
+      const weekdayB = b.weekday ? weekdayOrderMap[b.weekday] : 999;
+      if (weekdayA !== weekdayB) {
+        return weekdayA - weekdayB;
+      }
+
+      return (a.start_time || '').localeCompare(b.start_time || '');
+    });
+};
+
+const cloneChatbotWorkingHoursRules = (
+  rules: ChatbotWorkingHoursRuleForm[]
+): ChatbotWorkingHoursRuleForm[] =>
+  rules.map((rule) => ({
+    id: createChatbotWorkingHoursRuleId(),
+    weekday: rule.weekday,
+    start_time: rule.start_time,
+    end_time: rule.end_time,
+    chatbot_id: rule.chatbot_id,
+  }));
+
+const restoreChatbotWorkingHoursFromLastSaved = (
+  enabledOverride?: boolean
+): void => {
+  chatbotWorkingHoursEnabledInModal.value =
+    enabledOverride ?? chatbotWorkingHoursLastSavedEnabled.value;
+  chatbotWorkingHoursTimezoneInModal.value =
+    chatbotWorkingHoursLastSavedTimezone.value;
+  chatbotWorkingHoursRulesInModal.value = cloneChatbotWorkingHoursRules(
+    chatbotWorkingHoursLastSavedRules.value
+  );
+};
+
+const toChatbotWorkingHoursMinutes = (time: string): number | null => {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number.parseInt(match[1], 10);
+  const minutes = Number.parseInt(match[2], 10);
+
+  return hours * 60 + minutes;
+};
+
+const validateChatbotWorkingHoursRules = (): boolean => {
+  for (const rule of chatbotWorkingHoursRulesInModal.value) {
+    if (
+      !rule.weekday ||
+      !rule.start_time ||
+      !rule.end_time ||
+      !rule.chatbot_id ||
+      !rule.chatbot_id.trim()
+    ) {
+      channelStore.showSnackbar(
+        t('chatbot_working_hours_validation_required_fields'),
+        EColor.warning
+      );
+      return false;
+    }
+
+    const start = toChatbotWorkingHoursMinutes(rule.start_time);
+    const end = toChatbotWorkingHoursMinutes(rule.end_time);
+    if (start === null || end === null || start >= end) {
+      channelStore.showSnackbar(
+        t('chatbot_working_hours_validation_invalid_time_range', {
+          day: t(rule.weekday),
+        }),
+        EColor.warning
+      );
+      return false;
+    }
+  }
+
+  for (let i = 0; i < chatbotWorkingHoursRulesInModal.value.length; i++) {
+    const first = chatbotWorkingHoursRulesInModal.value[i];
+    if (!first.weekday) continue;
+    const firstStart = toChatbotWorkingHoursMinutes(first.start_time);
+    const firstEnd = toChatbotWorkingHoursMinutes(first.end_time);
+    if (firstStart === null || firstEnd === null) continue;
+
+    for (let j = i + 1; j < chatbotWorkingHoursRulesInModal.value.length; j++) {
+      const second = chatbotWorkingHoursRulesInModal.value[j];
+      if (!second.weekday || first.weekday !== second.weekday) continue;
+
+      const secondStart = toChatbotWorkingHoursMinutes(second.start_time);
+      const secondEnd = toChatbotWorkingHoursMinutes(second.end_time);
+      if (secondStart === null || secondEnd === null) continue;
+
+      const hasConflict = firstStart <= secondEnd && secondStart <= firstEnd;
+      if (hasConflict) {
+        channelStore.showSnackbar(
+          t('chatbot_working_hours_validation_conflict', {
+            day: t(first.weekday),
+          }),
+          EColor.warning
+        );
+        return false;
+      }
+    }
+  }
+
+  return true;
+};
+
+const buildChatbotWorkingHoursRulesPayload =
+  (): ChatbotWorkingHoursRulePayload[] =>
+    chatbotWorkingHoursRulesInModal.value
+      .filter((rule) => rule.weekday && rule.chatbot_id)
+      .map((rule) => ({
+        weekday: rule.weekday as ChatbotWorkingHoursWeekday,
+        start_time: rule.start_time,
+        end_time: rule.end_time,
+        chatbot_id: (rule.chatbot_id || '').trim(),
+      }));
 
 const filteredContactGroups = computed(() => {
   if (!contactGroupSearch.value) {
@@ -716,6 +946,28 @@ function applyAttendanceHoursState(
     defaultAttendanceOutsideHoursMessage.value;
 }
 
+const applyChatbotState = (config?: ChatbotConfigResponse | null): void => {
+  chatbotId.value = config?.chatbot_id ?? null;
+  selectedInputChatbotId.value = config?.chatbot_id ?? null;
+  selectedOutputChatbotId.value = config?.output_chatbot_id ?? null;
+  chatbotEnabledInModal.value = config?.enabled ?? false;
+  workerConfigForm.chatbot = config?.enabled ?? false;
+
+  const normalizedRules = normalizeChatbotWorkingHoursRules(
+    config?.chatbot_working_hours_rules
+  );
+
+  chatbotWorkingHoursLastSavedEnabled.value =
+    config?.chatbot_working_hours_enabled ?? false;
+  chatbotWorkingHoursLastSavedTimezone.value =
+    config?.chatbot_working_hours_timezone?.trim() ||
+    CHATBOT_WORKING_HOURS_TIMEZONE;
+  chatbotWorkingHoursLastSavedRules.value =
+    cloneChatbotWorkingHoursRules(normalizedRules);
+
+  restoreChatbotWorkingHoursFromLastSaved();
+};
+
 const validateAttendanceHoursForm = (enabled: boolean): boolean => {
   if (
     attendanceRequiresQueueSector.value &&
@@ -872,17 +1124,7 @@ const loadWorkerConfig = async (force = false) => {
       workerConfigForm.send_message_on_finish_attendance = false;
     }
 
-    if (chatbotData) {
-      chatbotId.value = chatbotData.chatbot_id;
-      selectedInputChatbotId.value = chatbotData.chatbot_id;
-      selectedOutputChatbotId.value = chatbotData.output_chatbot_id;
-      workerConfigForm.chatbot = chatbotData.enabled;
-    } else {
-      chatbotId.value = null;
-      selectedInputChatbotId.value = null;
-      selectedOutputChatbotId.value = null;
-      workerConfigForm.chatbot = false;
-    }
+    applyChatbotState(chatbotData as ChatbotConfigResponse | null);
 
     applyAttendanceHoursState(attendanceHoursData);
   } finally {
@@ -1577,22 +1819,13 @@ const openChatbotModal = async () => {
 
   await chatbotStore.listChatbots();
   const data = await channelStore.fetchChatbot(channelId.value);
-
-  if (data) {
-    chatbotId.value = data.chatbot_id;
-    selectedInputChatbotId.value = data.chatbot_id;
-    selectedOutputChatbotId.value = data.output_chatbot_id;
-    chatbotEnabledInModal.value = data.enabled;
-  } else {
-    chatbotId.value = null;
-    selectedInputChatbotId.value = null;
-    selectedOutputChatbotId.value = null;
-    chatbotEnabledInModal.value = false;
-  }
+  applyChatbotState(data as ChatbotConfigResponse | null);
   chatbotModalOpen.value = true;
 };
 
 const closeChatbotModal = () => {
+  restoreChatbotWorkingHoursFromLastSaved();
+  chatbotWorkingHoursModalOpen.value = false;
   chatbotModalOpen.value = false;
 };
 
@@ -1613,14 +1846,14 @@ const toggleChatbotStatus = async () => {
       channelId.value,
       chatbotIdValue,
       outputChatbotIdValue,
-      newEnabled
+      newEnabled,
+      chatbotWorkingHoursEnabledInModal.value,
+      chatbotWorkingHoursTimezoneInModal.value,
+      buildChatbotWorkingHoursRulesPayload()
     );
 
     if (result) {
-      workerConfigForm.chatbot = result.enabled;
-      chatbotId.value = result.chatbot_id;
-      selectedInputChatbotId.value = result.chatbot_id;
-      selectedOutputChatbotId.value = result.output_chatbot_id;
+      applyChatbotState(result as ChatbotConfigResponse);
     }
   } finally {
     isSavingChatbot.value = false;
@@ -1631,8 +1864,71 @@ const toggleChatbotStatusInModal = () => {
   chatbotEnabledInModal.value = !chatbotEnabledInModal.value;
 };
 
+const toggleChatbotWorkingHoursStatusInModal = () => {
+  const nextEnabled = !chatbotWorkingHoursEnabledInModal.value;
+  chatbotWorkingHoursEnabledInModal.value = nextEnabled;
+
+  if (nextEnabled) {
+    openChatbotWorkingHoursModal(true);
+  }
+};
+
+const openChatbotWorkingHoursModal = (enabledOverride?: boolean) => {
+  restoreChatbotWorkingHoursFromLastSaved(enabledOverride);
+  chatbotWorkingHoursModalOpen.value = true;
+};
+
+const closeChatbotWorkingHoursModal = () => {
+  restoreChatbotWorkingHoursFromLastSaved();
+  chatbotWorkingHoursModalOpen.value = false;
+};
+
+const addChatbotWorkingHoursRule = () => {
+  chatbotWorkingHoursRulesInModal.value.push(
+    createDefaultChatbotWorkingHoursRule()
+  );
+};
+
+const removeChatbotWorkingHoursRule = (ruleId: string) => {
+  chatbotWorkingHoursRulesInModal.value =
+    chatbotWorkingHoursRulesInModal.value.filter((rule) => rule.id !== ruleId);
+};
+
+const saveChatbotWorkingHours = async () => {
+  if (!channelId.value) return;
+
+  if (!validateChatbotWorkingHoursRules()) {
+    return;
+  }
+
+  try {
+    isSavingChatbot.value = true;
+
+    const result = await channelStore.updateChatbot(
+      channelId.value,
+      selectedInputChatbotId.value || null,
+      selectedOutputChatbotId.value || null,
+      chatbotEnabledInModal.value,
+      chatbotWorkingHoursEnabledInModal.value,
+      chatbotWorkingHoursTimezoneInModal.value,
+      buildChatbotWorkingHoursRulesPayload()
+    );
+
+    if (result) {
+      applyChatbotState(result as ChatbotConfigResponse);
+      closeChatbotWorkingHoursModal();
+    }
+  } finally {
+    isSavingChatbot.value = false;
+  }
+};
+
 const saveChatbot = async () => {
   if (!channelId.value) return;
+
+  if (!validateChatbotWorkingHoursRules()) {
+    return;
+  }
 
   try {
     isSavingChatbot.value = true;
@@ -1643,14 +1939,14 @@ const saveChatbot = async () => {
       channelId.value,
       chatbotIdValue,
       outputChatbotIdValue,
-      chatbotEnabledInModal.value
+      chatbotEnabledInModal.value,
+      chatbotWorkingHoursEnabledInModal.value,
+      chatbotWorkingHoursTimezoneInModal.value,
+      buildChatbotWorkingHoursRulesPayload()
     );
 
     if (result) {
-      chatbotId.value = result.chatbot_id;
-      selectedInputChatbotId.value = result.chatbot_id;
-      selectedOutputChatbotId.value = result.output_chatbot_id;
-      workerConfigForm.chatbot = result.enabled;
+      applyChatbotState(result as ChatbotConfigResponse);
     }
 
     closeChatbotModal();
@@ -4898,7 +5194,7 @@ onMounted(async () => {
           </div>
           <AppSelectSearch
             v-model="selectedInputChatbotId"
-            :items="chatbotStore.list.filter((c) => c.type === 'input')"
+            :items="inputChatbotOptions"
             item-value="chatbot_id"
             item-title="name"
             :placeholder="$t('chatbot_input_select_placeholder')"
@@ -4918,7 +5214,7 @@ onMounted(async () => {
           </div>
           <AppSelectSearch
             v-model="selectedOutputChatbotId"
-            :items="chatbotStore.list.filter((c) => c.type === 'output')"
+            :items="outputChatbotOptions"
             item-value="chatbot_id"
             item-title="name"
             :placeholder="$t('chatbot_output_select_placeholder')"
@@ -4928,6 +5224,45 @@ onMounted(async () => {
           <div class="text-caption text-medium-emphasis mt-2">
             {{ $t('chatbot_output_select_hint') }}
           </div>
+        </div>
+
+        <VDivider class="my-4" />
+
+        <div>
+          <div class="d-flex align-center justify-space-between mb-2">
+            <div class="d-flex align-center gap-2">
+              <VLabel class="text-body-2">
+                {{ $t('chatbot_working_hours_section_label') }}
+              </VLabel>
+              <AppInfoTooltip
+                :text="$t('chatbot_working_hours_section_info')"
+              />
+            </div>
+            <VSwitch
+              :model-value="chatbotWorkingHoursEnabledInModal"
+              color="primary"
+              :disabled="isSavingChatbot || !chatbotEnabledInModal"
+              @click="toggleChatbotWorkingHoursStatusInModal"
+            />
+          </div>
+          <div class="text-caption text-medium-emphasis mb-3">
+            {{
+              $t('chatbot_working_hours_section_hint', {
+                timezone: chatbotWorkingHoursTimezoneInModal,
+              })
+            }}
+          </div>
+          <VBtn
+            variant="tonal"
+            color="primary"
+            size="small"
+            :disabled="isSavingChatbot || !chatbotEnabledInModal"
+            @click="
+              openChatbotWorkingHoursModal(chatbotWorkingHoursEnabledInModal)
+            "
+          >
+            {{ $t('configure') }}
+          </VBtn>
         </div>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">
@@ -4944,6 +5279,134 @@ onMounted(async () => {
           :loading="isSavingChatbot"
           :disabled="isSavingChatbot"
           @click="saveChatbot"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="chatbotWorkingHoursModalOpen" max-width="900" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{ $t('chatbot_working_hours_modal_title') }}</span>
+        <IconBtn @click="closeChatbotWorkingHoursModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+
+      <VCardText>
+        <div class="text-caption text-medium-emphasis mb-4">
+          {{
+            $t('chatbot_working_hours_timezone_hint', {
+              timezone: chatbotWorkingHoursTimezoneInModal,
+            })
+          }}
+        </div>
+
+        <div
+          class="d-flex justify-space-between align-center mb-4 flex-wrap gap-2"
+        >
+          <VSwitch
+            :model-value="chatbotWorkingHoursEnabledInModal"
+            :label="$t('chatbot_working_hours_enabled_label')"
+            color="primary"
+            :disabled="isSavingChatbot"
+            @click="toggleChatbotWorkingHoursStatusInModal"
+          />
+          <VBtn
+            color="primary"
+            variant="tonal"
+            :disabled="isSavingChatbot"
+            @click="addChatbotWorkingHoursRule"
+          >
+            {{ $t('chatbot_working_hours_add_rule') }}
+          </VBtn>
+        </div>
+
+        <VAlert
+          v-if="chatbotWorkingHoursRulesInModal.length === 0"
+          type="info"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ $t('chatbot_working_hours_empty_state') }}
+        </VAlert>
+
+        <VRow
+          v-for="rule in chatbotWorkingHoursRulesInModal"
+          :key="rule.id"
+          dense
+          class="mb-2 align-center"
+        >
+          <VCol cols="12" md="3">
+            <VSelect
+              v-model="rule.weekday"
+              :items="chatbotWorkingHoursWeekdayOptions"
+              item-title="title"
+              item-value="value"
+              :label="$t('chatbot_working_hours_day_label')"
+              density="comfortable"
+              hide-details
+              :disabled="isSavingChatbot"
+            />
+          </VCol>
+          <VCol cols="6" md="2">
+            <VTextField
+              v-model="rule.start_time"
+              type="time"
+              :label="$t('chatbot_working_hours_start_label')"
+              density="comfortable"
+              hide-details
+              :disabled="isSavingChatbot"
+            />
+          </VCol>
+          <VCol cols="6" md="2">
+            <VTextField
+              v-model="rule.end_time"
+              type="time"
+              :label="$t('chatbot_working_hours_end_label')"
+              density="comfortable"
+              hide-details
+              :disabled="isSavingChatbot"
+            />
+          </VCol>
+          <VCol cols="10" md="4">
+            <AppSelectSearch
+              v-model="rule.chatbot_id"
+              :items="inputChatbotOptions"
+              item-value="chatbot_id"
+              item-title="name"
+              :placeholder="$t('chatbot_working_hours_chatbot_placeholder')"
+              clearable
+              :disabled="isSavingChatbot"
+            />
+          </VCol>
+          <VCol cols="2" md="1" class="d-flex justify-end">
+            <IconBtn
+              :disabled="isSavingChatbot"
+              @click="removeChatbotWorkingHoursRule(rule.id)"
+            >
+              <VIcon icon="tabler-trash" />
+            </IconBtn>
+          </VCol>
+        </VRow>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingChatbot"
+          @click="closeChatbotWorkingHoursModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingChatbot"
+          :disabled="isSavingChatbot"
+          @click="saveChatbotWorkingHours"
         >
           {{ $t('save') }}
         </VBtn>

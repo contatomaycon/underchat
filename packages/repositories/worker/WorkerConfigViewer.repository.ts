@@ -2,12 +2,19 @@ import * as schema from '@core/models';
 import { workerConfig, worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, asc } from 'drizzle-orm';
 import { IWorkerConfigValue } from '@core/common/interfaces/IWorkerConfigValue';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
+import {
+  CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
+  isChatbotWorkingHoursWeekday,
+  isChatbotWorkingHoursRuleWindowValid,
+  normalizeChatbotWorkingHoursTimezone,
+} from '@core/common/functions/chatbotWorkingHours';
+import { IChatbotWorkingHoursRule } from '@core/common/interfaces/IChatbotWorkingHours';
 
 @injectable()
 export class WorkerConfigViewerRepository {
@@ -100,8 +107,16 @@ export class WorkerConfigViewerRepository {
     inputChatbotId: string | null;
     outputChatbotId: string | null;
     statusId: string | null;
+    chatbotWorkingHoursEnabled: boolean;
+    chatbotWorkingHoursTimezone: string;
+    chatbotWorkingHoursRules: IChatbotWorkingHoursRule[];
   }> {
-    const [inputResult, outputResult] = await Promise.all([
+    const [
+      inputResult,
+      outputResult,
+      workingHoursEnabledResult,
+      workingHoursRulesResult,
+    ] = await Promise.all([
       this.dbRo
         .select({
           chatbot_id: workerConfig.chatbot_id,
@@ -133,17 +148,130 @@ export class WorkerConfigViewerRepository {
         )
         .limit(1)
         .execute(),
+      this.dbRo
+        .select({
+          value: workerConfig.value,
+          worker_config_status_id: workerConfig.worker_config_status_id,
+        })
+        .from(workerConfig)
+        .where(
+          and(
+            eq(workerConfig.worker_id, workerId),
+            eq(
+              workerConfig.worker_config_type_id,
+              EWorkerConfigType.chatbot_working_hours_enabled
+            )
+          )
+        )
+        .limit(1)
+        .execute(),
+      this.dbRo
+        .select({
+          value: workerConfig.value,
+          chatbot_id: workerConfig.chatbot_id,
+        })
+        .from(workerConfig)
+        .where(
+          and(
+            eq(workerConfig.worker_id, workerId),
+            eq(
+              workerConfig.worker_config_type_id,
+              EWorkerConfigType.chatbot_working_hours_rule
+            ),
+            eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.active)
+          )
+        )
+        .orderBy(asc(workerConfig.created_at))
+        .execute(),
     ]);
 
     const inputStatusId = inputResult[0]?.worker_config_status_id || null;
     const outputStatusId = outputResult[0]?.worker_config_status_id || null;
     const statusId = inputStatusId || outputStatusId;
+    const workingHoursEnabledConfig = workingHoursEnabledResult[0];
+    const parsedWorkingHoursEnabledConfig =
+      this.parseChatbotWorkingHoursEnabledConfig(
+        workingHoursEnabledConfig?.value || null
+      );
+    const chatbotWorkingHoursEnabled =
+      workingHoursEnabledConfig?.worker_config_status_id ===
+      EWorkerConfigStatus.active;
+
+    const chatbotWorkingHoursRules = workingHoursRulesResult
+      .map((row) => {
+        if (!row.chatbot_id) {
+          return null;
+        }
+
+        if (!row.value) {
+          return null;
+        }
+
+        try {
+          const parsed = JSON.parse(row.value) as {
+            weekday?: unknown;
+            start_time?: unknown;
+            end_time?: unknown;
+          };
+
+          if (
+            !isChatbotWorkingHoursWeekday(parsed.weekday) ||
+            typeof parsed.start_time !== 'string' ||
+            typeof parsed.end_time !== 'string'
+          ) {
+            return null;
+          }
+
+          const rule: IChatbotWorkingHoursRule = {
+            weekday: parsed.weekday,
+            start_time: parsed.start_time,
+            end_time: parsed.end_time,
+            chatbot_id: row.chatbot_id,
+          };
+
+          if (!isChatbotWorkingHoursRuleWindowValid(rule)) {
+            return null;
+          }
+
+          return rule;
+        } catch {
+          return null;
+        }
+      })
+      .filter((rule): rule is IChatbotWorkingHoursRule => rule !== null);
 
     return {
       inputChatbotId: inputResult[0]?.chatbot_id || null,
       outputChatbotId: outputResult[0]?.chatbot_id || null,
       statusId,
+      chatbotWorkingHoursEnabled,
+      chatbotWorkingHoursTimezone: parsedWorkingHoursEnabledConfig.timezone,
+      chatbotWorkingHoursRules,
     };
+  }
+
+  private parseChatbotWorkingHoursEnabledConfig(value: string | null): {
+    timezone: string;
+  } {
+    if (!value) {
+      return {
+        timezone: CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
+      };
+    }
+
+    try {
+      const parsed = JSON.parse(value) as {
+        timezone?: string | null;
+      };
+
+      return {
+        timezone: normalizeChatbotWorkingHoursTimezone(parsed.timezone),
+      };
+    } catch {
+      return {
+        timezone: CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
+      };
+    }
   }
 
   async fetchSimultaneousAttendanceValue(

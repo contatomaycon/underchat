@@ -19,6 +19,21 @@ export class ViewChatbotUseCase {
   ): Promise<{
     chatbot_id: string | null;
     output_chatbot_id: string | null;
+    chatbot_working_hours_enabled: boolean;
+    chatbot_working_hours_timezone: string;
+    chatbot_working_hours_rules: Array<{
+      weekday:
+        | 'monday'
+        | 'tuesday'
+        | 'wednesday'
+        | 'thursday'
+        | 'friday'
+        | 'saturday'
+        | 'sunday';
+      start_time: string;
+      end_time: string;
+      chatbot_id: string;
+    }>;
     enabled: boolean;
   }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
@@ -30,15 +45,15 @@ export class ViewChatbotUseCase {
       throw new Error(t('worker_not_found'));
     }
 
-    const [oldResult, newResult] = await Promise.all([
-      this.workerConfigService.viewChatbot(workerId),
-      this.workerConfigService.viewChatbots(workerId),
-    ]);
+    const result = await this.workerConfigService.viewChatbots(workerId);
 
     return {
-      chatbot_id: oldResult.chatbot_id,
-      output_chatbot_id: newResult.output_chatbot_id,
-      enabled: newResult.enabled || oldResult.enabled,
+      chatbot_id: result.chatbot_id,
+      output_chatbot_id: result.output_chatbot_id,
+      chatbot_working_hours_enabled: result.chatbot_working_hours_enabled,
+      chatbot_working_hours_timezone: result.chatbot_working_hours_timezone,
+      chatbot_working_hours_rules: result.chatbot_working_hours_rules,
+      enabled: result.enabled,
     };
   }
 }

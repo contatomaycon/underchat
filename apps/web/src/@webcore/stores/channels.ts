@@ -1255,6 +1255,21 @@ export const useChannelsStore = defineStore('channels', {
     async fetchChatbot(workerId: string): Promise<{
       chatbot_id: string | null;
       output_chatbot_id: string | null;
+      chatbot_working_hours_enabled: boolean;
+      chatbot_working_hours_timezone: string;
+      chatbot_working_hours_rules: Array<{
+        weekday:
+          | 'monday'
+          | 'tuesday'
+          | 'wednesday'
+          | 'thursday'
+          | 'friday'
+          | 'saturday'
+          | 'sunday';
+        start_time: string;
+        end_time: string;
+        chatbot_id: string;
+      }>;
       enabled: boolean;
     } | null> {
       if (!workerId) return null;
@@ -1264,6 +1279,21 @@ export const useChannelsStore = defineStore('channels', {
           IApiResponse<{
             chatbot_id: string | null;
             output_chatbot_id: string | null;
+            chatbot_working_hours_enabled: boolean;
+            chatbot_working_hours_timezone: string;
+            chatbot_working_hours_rules: Array<{
+              weekday:
+                | 'monday'
+                | 'tuesday'
+                | 'wednesday'
+                | 'thursday'
+                | 'friday'
+                | 'saturday'
+                | 'sunday';
+              start_time: string;
+              end_time: string;
+              chatbot_id: string;
+            }>;
             enabled: boolean;
           }>
         >(`/worker/${workerId}/config/chatbot`);
@@ -1284,10 +1314,40 @@ export const useChannelsStore = defineStore('channels', {
       workerId: string,
       chatbotId: string | null,
       outputChatbotId: string | null,
-      enabled: boolean
+      enabled: boolean,
+      chatbotWorkingHoursEnabled: boolean,
+      chatbotWorkingHoursTimezone: string,
+      chatbotWorkingHoursRules: Array<{
+        weekday:
+          | 'monday'
+          | 'tuesday'
+          | 'wednesday'
+          | 'thursday'
+          | 'friday'
+          | 'saturday'
+          | 'sunday';
+        start_time: string;
+        end_time: string;
+        chatbot_id: string;
+      }>
     ): Promise<{
       chatbot_id: string | null;
       output_chatbot_id: string | null;
+      chatbot_working_hours_enabled: boolean;
+      chatbot_working_hours_timezone: string;
+      chatbot_working_hours_rules: Array<{
+        weekday:
+          | 'monday'
+          | 'tuesday'
+          | 'wednesday'
+          | 'thursday'
+          | 'friday'
+          | 'saturday'
+          | 'sunday';
+        start_time: string;
+        end_time: string;
+        chatbot_id: string;
+      }>;
       enabled: boolean;
     } | null> {
       if (!workerId) return null;
@@ -1296,17 +1356,50 @@ export const useChannelsStore = defineStore('channels', {
         const body: {
           chatbot_id?: string | null;
           output_chatbot_id?: string | null;
+          chatbot_working_hours_enabled?: boolean;
+          chatbot_working_hours_timezone?: string;
+          chatbot_working_hours_rules?: Array<{
+            weekday:
+              | 'monday'
+              | 'tuesday'
+              | 'wednesday'
+              | 'thursday'
+              | 'friday'
+              | 'saturday'
+              | 'sunday';
+            start_time: string;
+            end_time: string;
+            chatbot_id: string;
+          }>;
           enabled: boolean;
         } = {
           enabled,
           chatbot_id: chatbotId,
           output_chatbot_id: outputChatbotId,
+          chatbot_working_hours_enabled: chatbotWorkingHoursEnabled,
+          chatbot_working_hours_timezone: chatbotWorkingHoursTimezone,
+          chatbot_working_hours_rules: chatbotWorkingHoursRules,
         };
 
         const response = await axios.patch<
           IApiResponse<{
             chatbot_id: string | null;
             output_chatbot_id: string | null;
+            chatbot_working_hours_enabled: boolean;
+            chatbot_working_hours_timezone: string;
+            chatbot_working_hours_rules: Array<{
+              weekday:
+                | 'monday'
+                | 'tuesday'
+                | 'wednesday'
+                | 'thursday'
+                | 'friday'
+                | 'saturday'
+                | 'sunday';
+              start_time: string;
+              end_time: string;
+              chatbot_id: string;
+            }>;
             enabled: boolean;
           }>
         >(`/worker/${workerId}/config/chatbot`, body);

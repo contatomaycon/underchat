@@ -562,6 +562,8 @@
   "chatbot_update_error": "Ocorreu um erro ao atualizar o chatbot. Por favor, tente novamente.",
   "chatbot_update_success": "Chatbot atualizado com sucesso!",
   "chatbot_view_success": "Chatbot obtido com sucesso!",
+  "chatbot_working_hours_invalid_time_range": "Faixa de horário inválida para {{day}}. Informe um intervalo com início menor que o fim.",
+  "chatbot_working_hours_rule_conflict": "Existe conflito de horários no dia {{day}}. Ajuste as faixas para não sobrepor ou encostar.",
   "chatbot_config_view_success": "Configuração do chatbot visualizada com sucesso!",
   "chatbot_not_found": "Chatbot não encontrado!",
   "chatbot_flow_node_not_found": "Nó do fluxo do chatbot não encontrado!",

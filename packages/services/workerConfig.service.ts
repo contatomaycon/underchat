@@ -16,6 +16,11 @@ import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
 import { parseAttendanceHoursConfig } from '@core/common/functions/attendanceHoursConfig';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
+import {
+  CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
+  normalizeChatbotWorkingHoursTimezone,
+} from '@core/common/functions/chatbotWorkingHours';
+import { IChatbotWorkingHoursRule } from '@core/common/interfaces/IChatbotWorkingHours';
 
 @injectable()
 export class WorkerConfigService {
@@ -662,22 +667,37 @@ export class WorkerConfigService {
     workerId: string,
     chatbotId: string | null,
     outputChatbotId: string | null,
-    enabled: boolean
+    enabled: boolean,
+    chatbotWorkingHoursEnabled: boolean,
+    chatbotWorkingHoursTimezone: string,
+    chatbotWorkingHoursRules: IChatbotWorkingHoursRule[]
   ): Promise<{
     chatbot_id: string | null;
     output_chatbot_id: string | null;
+    chatbot_working_hours_enabled: boolean;
+    chatbot_working_hours_timezone: string;
+    chatbot_working_hours_rules: IChatbotWorkingHoursRule[];
     enabled: boolean;
   }> {
     const statusId = enabled
       ? EWorkerConfigStatus.active
       : EWorkerConfigStatus.inactive;
 
+    const normalizedTimezone = normalizeChatbotWorkingHoursTimezone(
+      chatbotWorkingHoursTimezone || CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE
+    );
+
     const [result] = await Promise.all([
       this.workerConfigUpserterRepository.updateChatbots(
         workerId,
         chatbotId,
         outputChatbotId,
-        statusId
+        statusId,
+        {
+          enabled: chatbotWorkingHoursEnabled,
+          timezone: normalizedTimezone,
+          rules: chatbotWorkingHoursRules,
+        }
       ),
       this.invalidateWorkerConfigCache(workerId),
     ]);
@@ -685,6 +705,9 @@ export class WorkerConfigService {
     return {
       chatbot_id: result.chatbot_id,
       output_chatbot_id: result.output_chatbot_id,
+      chatbot_working_hours_enabled: chatbotWorkingHoursEnabled,
+      chatbot_working_hours_timezone: normalizedTimezone,
+      chatbot_working_hours_rules: chatbotWorkingHoursRules,
       enabled,
     };
   }
@@ -692,6 +715,9 @@ export class WorkerConfigService {
   async viewChatbots(workerId: string): Promise<{
     chatbot_id: string | null;
     output_chatbot_id: string | null;
+    chatbot_working_hours_enabled: boolean;
+    chatbot_working_hours_timezone: string;
+    chatbot_working_hours_rules: IChatbotWorkingHoursRule[];
     enabled: boolean;
   }> {
     const config =
@@ -705,6 +731,9 @@ export class WorkerConfigService {
     return {
       chatbot_id: chatbotId,
       output_chatbot_id: outputChatbotId,
+      chatbot_working_hours_enabled: config.chatbotWorkingHoursEnabled,
+      chatbot_working_hours_timezone: config.chatbotWorkingHoursTimezone,
+      chatbot_working_hours_rules: config.chatbotWorkingHoursRules,
       enabled,
     };
   }

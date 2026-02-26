@@ -83,6 +83,7 @@ import {
   parseAttendanceHoursConfig,
 } from '@core/common/functions/attendanceHoursConfig';
 import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
+import { getActiveChatbotWorkingHoursRule } from '@core/common/functions/chatbotWorkingHours';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -3044,6 +3045,26 @@ export class MessageUpsertConsume {
     return inputChatbotId;
   }
 
+  private resolveInputChatbotIdByWorkingHours(
+    chatbotsConfig: Awaited<ReturnType<WorkerConfigService['viewChatbots']>>,
+    defaultInputChatbotId: string | null
+  ): string | null {
+    if (!chatbotsConfig.enabled) {
+      return null;
+    }
+
+    if (!chatbotsConfig.chatbot_working_hours_enabled) {
+      return defaultInputChatbotId;
+    }
+
+    const activeRule = getActiveChatbotWorkingHoursRule(
+      chatbotsConfig.chatbot_working_hours_rules,
+      chatbotsConfig.chatbot_working_hours_timezone
+    );
+
+    return activeRule?.chatbot_id || defaultInputChatbotId;
+  }
+
   private shouldEvaluateAttendanceHours(data: IUpsertMessage): boolean {
     const isFromMe = data.message?.key?.fromMe ?? false;
 
@@ -3303,10 +3324,14 @@ export class MessageUpsertConsume {
             ? null
             : this.resolveOutsideHoursContext(data, workerConfigFields);
 
-        const inputChatbotId =
+        const defaultInputChatbotId =
           chatbotsConfig.enabled && chatbotsConfig.chatbot_id
             ? chatbotsConfig.chatbot_id
             : null;
+        const inputChatbotId = this.resolveInputChatbotIdByWorkingHours(
+          chatbotsConfig,
+          defaultInputChatbotId
+        );
 
         const outputChatbotId =
           chatbotsConfig.enabled && chatbotsConfig.output_chatbot_id
