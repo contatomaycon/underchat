@@ -5228,7 +5228,7 @@ onMounted(async () => {
 
         <VDivider class="my-4" />
 
-        <div>
+        <div class="chatbot-working-hours-highlight">
           <div class="d-flex align-center justify-space-between mb-2">
             <div class="d-flex align-center gap-2">
               <VLabel class="text-body-2">
@@ -5594,6 +5594,13 @@ onMounted(async () => {
 
 .general-config-grid {
   row-gap: 16px;
+}
+
+.chatbot-working-hours-highlight {
+  background-color: rgba(var(--v-theme-on-surface), 0.04);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 10px;
+  padding: 12px;
 }
 
 .status-type-wrapper {
