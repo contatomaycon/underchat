@@ -15,6 +15,7 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import type { WAMessageKey } from '@whiskeysockets/baileys';
+import Redis from 'ioredis';
 
 @singleton()
 export class MessageMarkReadConsume {
@@ -29,7 +30,8 @@ export class MessageMarkReadConsume {
     @inject(BaileysIncomingMessageService)
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
     @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -102,6 +104,11 @@ export class MessageMarkReadConsume {
         const stop = startHeartbeat(heartbeat);
 
         try {
+          const isEnabled = await this.isMarkAsReadEnabled(data.worker_id);
+          if (!isEnabled) {
+            return;
+          }
+
           await this.baileysIncomingMessageService.markRead(
             data.keys as WAMessageKey[]
           );
@@ -177,6 +184,16 @@ export class MessageMarkReadConsume {
     } finally {
       this.consumer = null;
       this.partitionChains.clear();
+    }
+  }
+
+  private async isMarkAsReadEnabled(workerId: string): Promise<boolean> {
+    try {
+      const cacheKey = `worker:${workerId}:mark_as_read`;
+      const cached = await this.redis.get(cacheKey);
+      return cached === 'true';
+    } catch {
+      return false;
     }
   }
 
