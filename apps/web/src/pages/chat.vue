@@ -951,6 +951,21 @@ const createLocalMessageSummary = () => ({
   is_sent_to_internal: false,
 });
 
+const formatLocalMessageWithAttendeeName = (
+  text: string | null | undefined
+): string | null | undefined => {
+  if (!text) return text;
+  if (!workerConfigForChat.value?.show_attendee_name) return text;
+
+  const attendeeName = chatStore.user?.info?.name?.trim();
+  if (!attendeeName) return text;
+
+  const prefix = `*${attendeeName}*:\n\n`;
+  if (text.startsWith(prefix)) return text;
+
+  return `${prefix}${text}`;
+};
+
 const createLocalMessageEntry = (
   content: ContentMessageChat,
   hash: string
@@ -1436,14 +1451,16 @@ const sendImageMessage = async (
     photos.map(async (photo) => {
       const hash = createMessageHash();
       const extension = (photo.file.name.split('.').pop() || '').toLowerCase();
+      const formattedMessage =
+        formatLocalMessageWithAttendeeName(messageValue) ?? messageValue;
       const content: ContentMessageChat = {
         type: EMessageType.image,
-        message: messageValue,
+        message: formattedMessage,
         message_quoted_id: replyId ?? undefined,
         quoted: quotedPayload,
         image: {
           url: photo.preview,
-          caption: messageValue,
+          caption: formattedMessage,
           mimetype: photo.file.type,
           size: photo.file.size,
           extension: extension || null,
@@ -1491,14 +1508,16 @@ const sendVideoMessage = async (
     videos.map(async (video) => {
       const hash = createMessageHash();
       const extension = (video.name.split('.').pop() || '').toLowerCase();
+      const formattedMessage =
+        formatLocalMessageWithAttendeeName(messageValue) ?? messageValue;
       const content: ContentMessageChat = {
         type: EMessageType.video,
-        message: messageValue,
+        message: formattedMessage,
         message_quoted_id: replyId ?? undefined,
         quoted: quotedPayload,
         video: {
           url: video.preview,
-          caption: messageValue,
+          caption: formattedMessage,
           mimetype: video.type,
           size: video.size,
           duration: video.duration ?? null,
@@ -1683,7 +1702,8 @@ const sendDocumentMessage = async (
       const localUrl = URL.createObjectURL(doc.file);
       const content: ContentMessageChat = {
         type: EMessageType.document,
-        message: messageValue,
+        message:
+          formatLocalMessageWithAttendeeName(messageValue) ?? messageValue,
         message_quoted_id: replyId ?? undefined,
         quoted: quotedPayload,
         document: {
@@ -1737,7 +1757,8 @@ const sendContactsMessage = async (
       const hash = createMessageHash();
       const content: ContentMessageChat = {
         type: EMessageType.contact_card,
-        message: messageValue,
+        message:
+          formatLocalMessageWithAttendeeName(messageValue) ?? messageValue,
         message_quoted_id: replyId ?? undefined,
         quoted: quotedPayload,
         contact: {
@@ -1800,7 +1821,7 @@ const sendLocationMessage = async (
 
   const content: ContentMessageChat = {
     type: EMessageType.location,
-    message: messageValue,
+    message: formatLocalMessageWithAttendeeName(messageValue) ?? messageValue,
     message_quoted_id: replyId ?? undefined,
     quoted: quotedPayload,
     location: {
@@ -1867,7 +1888,7 @@ const sendTextMessage = async (
 
   const content: ContentMessageChat = {
     type: EMessageType.text,
-    message: messageValue,
+    message: formatLocalMessageWithAttendeeName(messageValue) ?? messageValue,
     message_quoted_id: replyId ?? undefined,
     quoted: quotedPayload,
     link_preview: preview,
