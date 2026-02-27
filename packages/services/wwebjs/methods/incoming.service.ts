@@ -122,10 +122,6 @@ function getStanzaIdFromMessageId(
   return normalized;
 }
 
-function getMessageStanzaId(msg: Message): string | undefined {
-  return getStanzaIdFromMessageId(getMessageIdSerialized(msg));
-}
-
 function getMessageRemoteFromId(msg: Message): string | undefined {
   if (!msg?.id) {
     return undefined;
@@ -169,6 +165,32 @@ function getMessageRemoteFromId(msg: Message): string | undefined {
   }
 
   return undefined;
+}
+
+function buildScopedStanzaDedupeKey(msg: Message): string | undefined {
+  const serializedMessageId = getMessageIdSerialized(msg);
+  const parsedSerializedMessageId = serializedMessageId
+    ? parseSerializedMessageId(serializedMessageId)
+    : null;
+  const stanzaId =
+    parsedSerializedMessageId?.stanzaId ??
+    getStanzaIdFromMessageId(serializedMessageId);
+  if (!stanzaId) {
+    return undefined;
+  }
+
+  const fromMe =
+    parsedSerializedMessageId?.fromMe ??
+    (msg.fromMe === true ||
+      (msg as unknown as { id?: { fromMe?: unknown } }).id?.fromMe === true);
+  const fromMeTag = fromMe ? '1' : '0';
+
+  const remoteJid =
+    parsedSerializedMessageId?.remoteJid ??
+    getMessageRemoteFromId(msg) ??
+    'unknown';
+
+  return `stanza:${fromMeTag}:${remoteJid}:${stanzaId}`;
 }
 
 @singleton()
@@ -355,8 +377,8 @@ export class WwebjsIncomingMessageService {
     }
 
     const messageId = getMessageIdSerialized(msg);
-    const messageStanzaId = getMessageStanzaId(msg);
-    if (!messageId && !messageStanzaId) {
+    const scopedStanzaDedupeKey = buildScopedStanzaDedupeKey(msg);
+    if (!messageId && !scopedStanzaDedupeKey) {
       return false;
     }
 
@@ -365,7 +387,7 @@ export class WwebjsIncomingMessageService {
 
     const dedupeKeys = [
       getNonEmptyString(messageId),
-      messageStanzaId ? `stanza:${messageStanzaId}` : undefined,
+      scopedStanzaDedupeKey,
     ].filter((key): key is string => !!key);
 
     for (const dedupeKey of dedupeKeys) {
