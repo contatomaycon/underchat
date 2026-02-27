@@ -4939,7 +4939,7 @@ onBeforeUnmount(() => {
         <div
           class="active-chat-header d-flex align-center text-medium-emphasis bg-surface"
         >
-          <IconBtn class="d-md-none me-3" @click="isLeftSidebarOpen = true">
+          <IconBtn class="d-md-none me-1" @click="isLeftSidebarOpen = true">
             <VIcon icon="tabler-menu-2" />
           </IconBtn>
 
@@ -4955,7 +4955,7 @@ onBeforeUnmount(() => {
           </IconBtn>
 
           <div
-            class="d-flex align-center cursor-pointer"
+            class="d-flex align-center cursor-pointer active-chat-contact-info"
             @click="handleActiveChatHeaderClick"
           >
             <VAvatar
@@ -4997,9 +4997,9 @@ onBeforeUnmount(() => {
               />
             </VAvatar>
 
-            <div class="flex-grow-1 ms-4 overflow-hidden">
-              <div class="d-flex align-center gap-2 mb-0">
-                <div class="text-h6 mb-0 font-weight-regular">
+            <div class="flex-grow-1 ms-4 overflow-hidden active-chat-details">
+              <div class="d-flex align-center gap-2 mb-0 active-chat-name-row">
+                <div class="text-h6 mb-0 font-weight-regular text-truncate">
                   {{
                     chatStore.activeChat.contact?.name ??
                     chatStore.activeChat.name
@@ -5010,13 +5010,13 @@ onBeforeUnmount(() => {
                   size="x-small"
                   variant="tonal"
                   color="primary"
-                  class="contact-label"
+                  class="contact-label d-none d-sm-inline-flex"
                 >
                   {{ $t('contact_label') }}
                 </VChip>
                 <div
                   v-if="activeContactLabelTemplate"
-                  class="d-flex align-center contact-labels-group"
+                  class="d-none d-sm-flex align-center contact-labels-group"
                 >
                   <VChip
                     size="x-small"
@@ -5068,10 +5068,33 @@ onBeforeUnmount(() => {
                     : formatPhoneBR(chatStore.activeChat.phone)
                 }}
               </p>
+              <!-- Protocol badge inline (mobile only) -->
+              <ChatProtocolBadgeDialog
+                class="d-sm-none active-chat-protocol-mobile"
+                @click.stop
+                :chat="chatStore.activeChat"
+                :contact-name="
+                  chatStore.activeChat.contact?.name ??
+                  chatStore.activeChat.name ??
+                  ''
+                "
+                @copied="
+                  chatStore.showSnackbar(t('protocol_copied'), EColor.success)
+                "
+                @copy-error="
+                  (msg) =>
+                    chatStore.showSnackbar(
+                      msg || t('error_copying_protocol'),
+                      EColor.error
+                    )
+                "
+              />
             </div>
           </div>
 
+          <!-- Protocol badge (desktop/tablet) -->
           <ChatProtocolBadgeDialog
+            class="d-none d-sm-flex"
             :chat="chatStore.activeChat"
             :contact-name="
               chatStore.activeChat.contact?.name ??
@@ -7252,5 +7275,35 @@ $chat-app-header-height: 76px;
   border-top-right-radius: 4px !important;
   border-bottom-right-radius: 4px !important;
   margin-left: 0 !important;
+}
+
+// Mobile responsive header
+@media (max-width: 600px) {
+  .chat-app-layout {
+    .active-chat-header {
+      padding-inline: 0.75rem;
+      min-block-size: 86px;
+    }
+  }
+
+  .active-chat-contact-info {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .active-chat-name-row {
+    overflow: hidden;
+    flex-wrap: nowrap;
+  }
+
+  .active-chat-details {
+    margin-inline-start: 0.625rem !important;
+  }
+
+  .active-chat-protocol-mobile {
+    margin-block-start: 0.125rem;
+    margin-inline: 0;
+  }
 }
 </style>

@@ -335,15 +335,18 @@ watch(showTrigger, (visible) => {
 
 @media (max-width: 600px) {
   .chat-protocol {
-    margin-inline: 0.25rem;
+    margin-inline: 0.125rem;
+    flex-shrink: 0;
   }
 
   .chat-protocol__trigger {
-    max-width: 160px;
+    max-width: 120px;
+    padding-inline: 0.375rem;
+    font-size: 0.6875rem;
   }
 
   .chat-protocol__value {
-    max-width: 84px;
+    max-width: 64px;
   }
 }
 </style>
