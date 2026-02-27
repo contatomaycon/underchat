@@ -165,6 +165,9 @@ const isViewEmailDecrypted = ref(false);
 const isViewPhoneDecrypted = ref(false);
 const isLoadingViewEmail = ref(false);
 const isLoadingViewPhone = ref(false);
+const headerPhoneDecrypted = ref<string | null>(null);
+const isHeaderPhoneDecrypted = ref(false);
+const isHeaderPhoneLoading = ref(false);
 type RemoteActivityMode = 'typing' | 'recording';
 const typingStates = ref(
   new Map<string, { mode: RemoteActivityMode; timestamp: number }>()
@@ -487,6 +490,58 @@ const handleActiveChatHeaderClick = () => {
   isActiveChatUserProfileSidebarOpen.value = true;
 };
 
+const resetHeaderPhoneVisibility = () => {
+  headerPhoneDecrypted.value = null;
+  isHeaderPhoneDecrypted.value = false;
+  isHeaderPhoneLoading.value = false;
+};
+
+const activeChatHeaderPhoneMasked = computed(() => {
+  const activeChat = chatStore.activeChat;
+  if (!activeChat) {
+    return '';
+  }
+
+  if (activeChat.contact?.name && activeChat.contact?.phone) {
+    if (activeChat.contact.phone_ddi) {
+      return `+${activeChat.contact.phone_ddi} ${activeChat.contact.phone}`;
+    }
+    return activeChat.contact.phone;
+  }
+
+  return formatPhoneBR(activeChat.phone);
+});
+
+const activeChatHeaderPhone = computed(() => {
+  if (!isHeaderPhoneDecrypted.value || !headerPhoneDecrypted.value) {
+    return activeChatHeaderPhoneMasked.value;
+  }
+
+  return formatPhone(headerPhoneDecrypted.value);
+});
+
+const toggleHeaderPhoneVisibility = async () => {
+  const contactId = chatStore.activeChat?.contact?.id;
+  if (!contactId) {
+    return;
+  }
+
+  if (isHeaderPhoneDecrypted.value) {
+    resetHeaderPhoneVisibility();
+    return;
+  }
+
+  isHeaderPhoneLoading.value = true;
+  const decryptedPhone =
+    await chatStore.getChatContactPhoneDecrypted(contactId);
+  isHeaderPhoneLoading.value = false;
+
+  if (decryptedPhone) {
+    headerPhoneDecrypted.value = decryptedPhone.replaceAll(/\D/g, '');
+    isHeaderPhoneDecrypted.value = true;
+  }
+};
+
 const isTransferModalOpen = ref(false);
 const transferType = ref<'user' | 'sector'>('user');
 const selectedTransferUser = ref<string | null>(null);
@@ -583,6 +638,13 @@ watch(
     }
   },
   { immediate: true }
+);
+
+watch(
+  () => chatStore.activeChat?.chat_id,
+  () => {
+    resetHeaderPhoneVisibility();
+  }
 );
 
 const loadTransferUsers = async () => {
@@ -5062,16 +5124,20 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
               </div>
-              <p class="text-truncate mb-0 text-body-2">
-                {{
-                  chatStore.activeChat.contact?.name &&
-                  chatStore.activeChat.contact?.phone
-                    ? chatStore.activeChat.contact.phone_ddi
-                      ? `+${chatStore.activeChat.contact.phone_ddi} ${chatStore.activeChat.contact.phone}`
-                      : chatStore.activeChat.contact.phone
-                    : formatPhoneBR(chatStore.activeChat.phone)
-                }}
-              </p>
+              <div class="d-flex align-center gap-2">
+                <p class="text-truncate mb-0 text-body-2">
+                  {{ activeChatHeaderPhone }}
+                </p>
+                <VIcon
+                  v-if="chatStore.activeChat.contact?.id"
+                  :icon="
+                    isHeaderPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                  "
+                  class="cursor-pointer flex-shrink-0"
+                  :class="{ 'opacity-50': isHeaderPhoneLoading }"
+                  @click.stop="toggleHeaderPhoneVisibility"
+                />
+              </div>
               <!-- Protocol badge inline (mobile only) -->
               <ChatProtocolBadgeDialog
                 v-if="showProtocolInChat"
