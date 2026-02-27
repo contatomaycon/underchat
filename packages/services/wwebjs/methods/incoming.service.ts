@@ -25,6 +25,7 @@ import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 
 const ACK_DEVICE = 2;
 const ACK_READ = 3;
@@ -103,6 +104,26 @@ function getRemoteFromSerializedMessageId(
   }
 
   return serializedMessageId.slice(firstSeparator + 1, lastSeparator);
+}
+
+function getStanzaIdFromMessageId(
+  messageId: string | undefined
+): string | undefined {
+  const normalized = getNonEmptyString(messageId);
+  if (!normalized) {
+    return undefined;
+  }
+
+  const parsed = parseSerializedMessageId(normalized);
+  if (parsed?.stanzaId) {
+    return parsed.stanzaId;
+  }
+
+  return normalized;
+}
+
+function getMessageStanzaId(msg: Message): string | undefined {
+  return getStanzaIdFromMessageId(getMessageIdSerialized(msg));
 }
 
 function getMessageRemoteFromId(msg: Message): string | undefined {
@@ -334,18 +355,29 @@ export class WwebjsIncomingMessageService {
     }
 
     const messageId = getMessageIdSerialized(msg);
-    if (!messageId) {
+    const messageStanzaId = getMessageStanzaId(msg);
+    if (!messageId && !messageStanzaId) {
       return false;
     }
 
     const now = Date.now();
     this.cleanupProcessedIncomingMessages(now);
 
-    if (this.processedIncomingMessages.has(messageId)) {
-      return true;
+    const dedupeKeys = [
+      getNonEmptyString(messageId),
+      messageStanzaId ? `stanza:${messageStanzaId}` : undefined,
+    ].filter((key): key is string => !!key);
+
+    for (const dedupeKey of dedupeKeys) {
+      if (this.processedIncomingMessages.has(dedupeKey)) {
+        return true;
+      }
     }
 
-    this.processedIncomingMessages.set(messageId, now);
+    for (const dedupeKey of dedupeKeys) {
+      this.processedIncomingMessages.set(dedupeKey, now);
+    }
+
     return false;
   }
 
@@ -513,6 +545,24 @@ export class WwebjsIncomingMessageService {
 
   private shouldHandleFromMeCreatedMessage(msg: Message): boolean {
     if (!msg.fromMe) {
+      return false;
+    }
+
+    const rawData = (
+      msg as unknown as {
+        _data?: {
+          associationType?: unknown;
+          viewMode?: unknown;
+        };
+      }
+    )._data;
+    const associationType = getNonEmptyString(rawData?.associationType)
+      ?.toUpperCase()
+      ?.trim();
+    const viewMode = getNonEmptyString(rawData?.viewMode)
+      ?.toUpperCase()
+      ?.trim();
+    if (associationType === 'MEDIA_ALBUM' || viewMode === 'MEDIA_ALBUM') {
       return false;
     }
 

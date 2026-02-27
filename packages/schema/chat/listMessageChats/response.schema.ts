@@ -231,6 +231,16 @@ export const ephemeralMessageSchema = Type.Object({
   user_phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
+export const albumMessageSchema = Type.Object({
+  id: Type.String(),
+  parent_message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  item_index: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  association_type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  source: Type.Optional(
+    Type.Union([Type.Literal('baileys'), Type.Literal('wwebjs'), Type.Null()])
+  ),
+});
+
 export const contentSchema = Type.Object(
   {
     type: Type.String({ enum: Object.values(EMessageType) }),
@@ -260,6 +270,7 @@ export const contentSchema = Type.Object(
     template: Type.Optional(Type.Union([templateMessageSchema, Type.Null()])),
     pin: Type.Optional(Type.Union([pinMessageSchema, Type.Null()])),
     ephemeral: Type.Optional(Type.Union([ephemeralMessageSchema, Type.Null()])),
+    album: Type.Optional(Type.Union([albumMessageSchema, Type.Null()])),
   },
   { additionalProperties: true }
 );
@@ -287,6 +298,7 @@ export type ListMessageResult = Static<typeof listMessageResultSchema>;
 export type LinkPreview = Static<typeof viewLinkPreviewResponseSchema>;
 export type ContentMessageChat = Static<typeof contentSchema>;
 export type MessageVersion = Static<typeof messageVersionSchema>;
+export type AlbumMessageChat = Static<typeof albumMessageSchema>;
 export type ImageMessageChat = Static<typeof imageSchema>;
 export type VideoMessageChat = Static<typeof videoSchema>;
 export type AudioMessageChat = Static<typeof audioSchema>;

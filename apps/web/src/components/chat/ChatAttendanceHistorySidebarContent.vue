@@ -351,9 +351,15 @@ const scrollToBottom = (retries = 5) => {
 };
 
 const imageViewerOpen = ref(false);
-const imageViewerSrc = ref('');
-const imageViewerCaption = ref('');
-const imageViewerKind = ref<'image' | 'video'>('image');
+type ViewerMediaItem = {
+  src: string;
+  caption?: string;
+  downloadName?: string;
+  kind: 'image' | 'video';
+};
+
+const imageViewerItems = ref<ViewerMediaItem[]>([]);
+const imageViewerInitialIndex = ref(0);
 const locationModalOpen = ref(false);
 const locationData = ref<{
   latitude: number;
@@ -364,17 +370,12 @@ const locationData = ref<{
 const contactModalOpen = ref(false);
 const selectedContact = ref<ViewChatContactResponse | null>(null);
 
-const handleOpenImage = (src: string, caption?: string) => {
-  imageViewerSrc.value = src;
-  imageViewerCaption.value = caption || '';
-  imageViewerKind.value = 'image';
-  imageViewerOpen.value = true;
-};
-
-const handleOpenVideo = (src: string, caption?: string) => {
-  imageViewerSrc.value = src;
-  imageViewerCaption.value = caption || '';
-  imageViewerKind.value = 'video';
+const handleOpenMedia = (payload: {
+  items: ViewerMediaItem[];
+  initialIndex: number;
+}) => {
+  imageViewerItems.value = payload.items;
+  imageViewerInitialIndex.value = payload.initialIndex;
   imageViewerOpen.value = true;
 };
 
@@ -590,8 +591,7 @@ onUnmounted(() => {
               selectedChat?.contact?.photo ?? selectedChat?.photo ?? null
             "
             :loading="loadingMessages"
-            @open-image="handleOpenImage"
-            @open-video="handleOpenVideo"
+            @open-media="handleOpenMedia"
             @open-location="handleOpenLocation"
             @open-contact="handleOpenContact"
           />
@@ -602,9 +602,8 @@ onUnmounted(() => {
 
   <ChatMediaViewer
     v-model="imageViewerOpen"
-    :src="imageViewerSrc"
-    :caption="imageViewerCaption"
-    :kind="imageViewerKind"
+    :items="imageViewerItems"
+    :initial-index="imageViewerInitialIndex"
   />
 
   <ChatContactViewModal v-model="contactModalOpen" :contact="selectedContact" />

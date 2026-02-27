@@ -858,6 +858,26 @@ export const mensageMappings = () => {
                 },
               },
             },
+            album: {
+              type: 'nested',
+              properties: {
+                id: {
+                  type: 'keyword',
+                },
+                parent_message_id: {
+                  type: 'keyword',
+                },
+                item_index: {
+                  type: 'integer',
+                },
+                association_type: {
+                  type: 'keyword',
+                },
+                source: {
+                  type: 'keyword',
+                },
+              },
+            },
           },
         },
         summary: {

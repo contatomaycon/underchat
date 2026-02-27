@@ -37,6 +37,14 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import LottieSticker from '@/components/chat/LottieSticker.vue';
+import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
+import {
+  buildImageGalleryLookup,
+  isGhostEmptyTextMessage,
+  isGhostPinMessage,
+  isValidPinAction,
+  type GalleryImageItem,
+} from '@/components/chat/chatMediaGrouping';
 
 const { t } = useI18n();
 const { global } = useTheme();
@@ -61,11 +69,16 @@ const fixedDateIndicatorTop = ref(0);
 const fixedDateIndicatorLeft = ref(0);
 const fixedDateIndicatorWidth = ref(0);
 
+type ViewerMediaItem = {
+  src: string;
+  caption?: string;
+  downloadName?: string;
+  kind: 'image' | 'video';
+};
+
 const viewerOpen = ref(false);
-const viewerSrc = ref<string>('');
-const viewerCaption = ref<string>('');
-const viewerDownloadName = ref<string>('');
-const viewerKind = ref<'image' | 'video'>('image');
+const viewerItems = ref<ViewerMediaItem[]>([]);
+const viewerInitialIndex = ref(0);
 
 const locationModalOpen = ref(false);
 const locationData = ref<{
@@ -744,10 +757,11 @@ const getPinMessageText = (message: ListMessageResult): string | null => {
   if (!message.content?.pin) return null;
 
   const pin = message.content.pin;
-  const hasPinData = pin.pin_action || pin.pin_user_name || pin.pin_user_phone;
-  if (!hasPinData) return null;
+  if (!isValidPinAction(pin.pin_action ?? null)) {
+    return null;
+  }
 
-  const pinAction = pin.pin_action;
+  const pinAction = (pin.pin_action ?? '').toUpperCase();
   const isUnpin =
     pinAction === '2' || pinAction === 'UNPIN_FOR_ALL' || pinAction === 'UNPIN';
 
@@ -1005,7 +1019,12 @@ const downloadMessage = (message: ListMessageResult) => {
   if (imageUrl) {
     downloadImage(
       imageUrl,
-      viewerDownloadName.value || message.content?.image?.caption
+      documentDownloadName({
+        url: imageUrl,
+        name: message.content?.image?.caption ?? undefined,
+        mimetype: message.content?.image?.mimetype ?? undefined,
+        extension: message.content?.image?.extension ?? undefined,
+      } as DocumentMessageChat)
     );
   }
 };
@@ -1684,8 +1703,98 @@ const goToQuoted = (m: ListMessageResult) => {
   );
 };
 
+const visibleMessages = computed(() => {
+  return chatStore.listMessages.filter(
+    (message) =>
+      !isGhostPinMessage(message) && !isGhostEmptyTextMessage(message)
+  );
+});
+
+const imageGalleryLookup = computed(() => {
+  return buildImageGalleryLookup(visibleMessages.value);
+});
+
+const getImageGalleryMembership = (message: ListMessageResult) => {
+  return (
+    imageGalleryLookup.value.membershipByMessageId[message.message_id] ?? null
+  );
+};
+
+const getImageGalleryGroup = (message: ListMessageResult) => {
+  const membership = getImageGalleryMembership(message);
+  if (!membership) return null;
+  return imageGalleryLookup.value.groupsById[membership.groupId] ?? null;
+};
+
+const hasImageGallery = (message: ListMessageResult): boolean => {
+  const membership = getImageGalleryMembership(message);
+  if (!membership?.isHead) return false;
+  return !!getImageGalleryGroup(message);
+};
+
+const shouldRenderMessage = (message: ListMessageResult): boolean => {
+  const membership = getImageGalleryMembership(message);
+  if (!membership) return true;
+  return membership.isHead;
+};
+
+const getImageGalleryPreviewItems = (
+  message: ListMessageResult
+): GalleryImageItem[] => {
+  const group = getImageGalleryGroup(message);
+  if (!group) return [];
+  return group.items.slice(0, 4);
+};
+
+const getImageGalleryRemainingCount = (message: ListMessageResult): number => {
+  const group = getImageGalleryGroup(message);
+  if (!group) return 0;
+  return Math.max(0, group.items.length - 4);
+};
+
+const getImageGalleryGridClass = (message: ListMessageResult): string => {
+  const previewCount = getImageGalleryPreviewItems(message).length;
+  const normalizedCount = Math.max(1, Math.min(previewCount, 4));
+  return `image-gallery-grid--${normalizedCount}`;
+};
+
+const openViewerWithItems = (items: ViewerMediaItem[], initialIndex = 0) => {
+  if (!items.length) return;
+
+  viewerItems.value = items;
+  viewerInitialIndex.value = Math.max(
+    0,
+    Math.min(initialIndex, items.length - 1)
+  );
+  viewerOpen.value = true;
+};
+
+const openImageGallery = (message: ListMessageResult, index = 0) => {
+  const group = getImageGalleryGroup(message);
+  if (!group) {
+    openImage(message);
+    return;
+  }
+
+  const viewerGalleryItems: ViewerMediaItem[] = group.items.map(
+    (galleryItem) => ({
+      src: galleryItem.src,
+      caption: galleryItem.caption,
+      downloadName: galleryItem.downloadName,
+      kind: 'image',
+    })
+  );
+
+  openViewerWithItems(viewerGalleryItems, index);
+};
+
 const openImage = (m: ListMessageResult) => {
-  viewerKind.value = 'image';
+  const galleryMembership = getImageGalleryMembership(m);
+  if (galleryMembership) {
+    openImageGallery(m, galleryMembership.index);
+    return;
+  }
+
   const sticker = m.content?.sticker;
   if (sticker?.url) {
     if (isLottieSticker(sticker)) return;
@@ -1695,33 +1804,47 @@ const openImage = (m: ListMessageResult) => {
       return;
     }
 
-    viewerSrc.value = sticker.url;
-    viewerCaption.value = '';
-    viewerDownloadName.value = stickerDownloadName(sticker);
-    viewerOpen.value = true;
+    openViewerWithItems([
+      {
+        src: sticker.url,
+        caption: '',
+        downloadName: stickerDownloadName(sticker),
+        kind: 'image',
+      },
+    ]);
     return;
   }
 
-  viewerSrc.value = m.content?.image?.url || '';
-  viewerCaption.value = m.content?.image?.caption || '';
-  viewerDownloadName.value = documentDownloadName({
-    url: viewerSrc.value,
-    name: m.content?.image?.caption ?? undefined,
-    mimetype: m.content?.image?.mimetype ?? undefined,
-    extension: m.content?.image?.extension ?? undefined,
-  } as DocumentMessageChat);
-  viewerOpen.value = true;
+  const imageUrl = m.content?.image?.url || '';
+  if (!imageUrl) return;
+
+  openViewerWithItems([
+    {
+      src: imageUrl,
+      caption: m.content?.image?.caption || '',
+      downloadName: documentDownloadName({
+        url: imageUrl,
+        name: m.content?.image?.caption ?? undefined,
+        mimetype: m.content?.image?.mimetype ?? undefined,
+        extension: m.content?.image?.extension ?? undefined,
+      } as DocumentMessageChat),
+      kind: 'image',
+    },
+  ]);
 };
 
 const openVideo = (m: ListMessageResult) => {
   const video = m.content?.video;
   if (!video?.url) return;
 
-  viewerKind.value = 'video';
-  viewerSrc.value = video.url;
-  viewerCaption.value = video.caption || m.content?.message || '';
-  viewerDownloadName.value = videoDownloadName(video);
-  viewerOpen.value = true;
+  openViewerWithItems([
+    {
+      src: video.url,
+      caption: video.caption || m.content?.message || '',
+      downloadName: videoDownloadName(video),
+      kind: 'video',
+    },
+  ]);
 };
 
 const openLocation = (m: ListMessageResult) => {
@@ -1833,13 +1956,18 @@ const downloadAudio = async (
   }
 };
 
-const downloadViewerMedia = () => {
-  if (!viewerSrc.value) return;
-  if (viewerKind.value === 'video') {
-    downloadVideo(viewerSrc.value, viewerDownloadName.value);
+const downloadViewerMedia = (payload?: {
+  item?: ViewerMediaItem;
+  index?: number;
+}) => {
+  const item = payload?.item ?? viewerItems.value[viewerInitialIndex.value];
+  if (!item?.src) return;
+
+  if (item.kind === 'video') {
+    downloadVideo(item.src, item.downloadName ?? 'video.mp4');
     return;
   }
-  downloadImage(viewerSrc.value, viewerDownloadName.value);
+  downloadImage(item.src, item.downloadName ?? 'image.jpg');
 };
 
 const checkIfShouldShowScrollButton = (target: HTMLElement): boolean => {
@@ -2110,7 +2238,7 @@ type MessageWithSeparator = {
 };
 
 const messagesWithSeparators = computed<MessageWithSeparator[]>(() => {
-  const messages = chatStore.listMessages;
+  const messages = visibleMessages.value;
   if (messages.length === 0) return [];
 
   const result: MessageWithSeparator[] = [];
@@ -2307,7 +2435,11 @@ onUnmounted(() => {
           ></div>
         </div>
         <div
-          v-else-if="item.type === 'message' && item.message"
+          v-else-if="
+            item.type === 'message' &&
+            item.message &&
+            shouldRenderMessage(item.message)
+          "
           :id="`msg-${item.message.message_id}`"
           :data-message-id="item.message.message_id"
           class="chat-group d-flex align-start position-relative"
@@ -3074,7 +3206,52 @@ onUnmounted(() => {
                   </div>
 
                   <div
-                    v-if="
+                    v-if="hasImageGallery(item.message)"
+                    :class="[
+                      'image-gallery-bubble',
+                      !isTypeUser(item.message)
+                        ? 'image-gallery-bubble--right'
+                        : 'image-gallery-bubble--left',
+                      { 'is-deleted': item.message.deleted },
+                    ]"
+                    @click="openImageGallery(item.message, 0)"
+                  >
+                    <div
+                      :class="[
+                        'image-gallery-grid',
+                        getImageGalleryGridClass(item.message),
+                      ]"
+                    >
+                      <div
+                        v-for="(
+                          galleryItem, galleryIndex
+                        ) in getImageGalleryPreviewItems(item.message)"
+                        :key="`${galleryItem.message.message_id}-${galleryIndex}`"
+                        class="image-gallery-tile"
+                        @click.stop="
+                          openImageGallery(item.message, galleryIndex)
+                        "
+                      >
+                        <VImg
+                          :src="galleryItem.src"
+                          class="image-gallery-thumb"
+                          cover
+                        />
+                        <div
+                          v-if="
+                            galleryIndex === 3 &&
+                            getImageGalleryRemainingCount(item.message) > 0
+                          "
+                          class="image-gallery-more"
+                        >
+                          +{{ getImageGalleryRemainingCount(item.message) }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    v-else-if="
                       item.message.content?.type === EMessageType.image &&
                       item.message.content?.image?.url
                     "
@@ -4196,62 +4373,12 @@ onUnmounted(() => {
     </VBtn>
   </Transition>
 
-  <VDialog
+  <ChatMediaViewer
     v-model="viewerOpen"
-    fullscreen
-    scrim="rgba(0,0,0,.9)"
-    :scrollable="false"
-  >
-    <div class="viewer-wrap" @click="viewerOpen = false">
-      <div class="viewer-box" @click.stop>
-        <div class="viewer-media-container">
-          <img
-            v-if="viewerKind === 'image'"
-            :src="viewerSrc"
-            alt=""
-            class="viewer-img"
-            loading="eager"
-            decoding="async"
-          />
-          <video
-            v-if="viewerKind === 'video'"
-            :src="viewerSrc"
-            class="viewer-video"
-            controls
-            playsinline
-          >
-            <track kind="captions" />
-          </video>
-
-          <div class="viewer-actions">
-            <VBtn
-              v-if="viewerSrc"
-              class="viewer-download"
-              icon
-              size="36"
-              variant="text"
-              @click.stop="downloadViewerMedia"
-            >
-              <VIcon size="20">tabler-download</VIcon>
-            </VBtn>
-            <VBtn
-              class="viewer-close"
-              icon
-              size="36"
-              variant="text"
-              @click="viewerOpen = false"
-            >
-              <VIcon size="20">tabler-x</VIcon>
-            </VBtn>
-          </div>
-        </div>
-
-        <div v-if="viewerCaption" class="viewer-caption">
-          {{ viewerCaption }}
-        </div>
-      </div>
-    </div>
-  </VDialog>
+    :items="viewerItems"
+    :initial-index="viewerInitialIndex"
+    @download="downloadViewerMedia"
+  />
 
   <VDialog v-model="editMessageModalOpen" max-width="600" :scrollable="false">
     <VCard>
@@ -5135,6 +5262,76 @@ onUnmounted(() => {
           word-break: break-all;
           text-decoration: none;
         }
+      }
+
+      .image-gallery-bubble {
+        max-inline-size: 180px;
+        inline-size: min(180px, 72vw);
+        cursor: zoom-in;
+
+        &.is-deleted {
+          cursor: default;
+          pointer-events: none;
+          filter: grayscale(0.85);
+          opacity: 0.6;
+        }
+      }
+
+      .image-gallery-grid {
+        display: grid;
+        gap: 2px;
+        border-radius: 8px;
+        overflow: hidden;
+        inline-size: 100%;
+        aspect-ratio: 1 / 1;
+        background: rgba(var(--v-theme-on-surface), 0.08);
+      }
+
+      .image-gallery-grid--1 {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr;
+      }
+
+      .image-gallery-grid--2 {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: 1fr;
+      }
+
+      .image-gallery-grid--3 {
+        grid-template-columns: 1.3fr 1fr;
+        grid-template-rows: repeat(2, 1fr);
+
+        .image-gallery-tile:first-child {
+          grid-row: span 2;
+        }
+      }
+
+      .image-gallery-grid--4 {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+      }
+
+      .image-gallery-tile {
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .image-gallery-thumb {
+        inline-size: 100%;
+        block-size: 100%;
+      }
+
+      .image-gallery-more {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.45);
+        color: white;
+        font-size: 1.35rem;
+        font-weight: 600;
       }
 
       .image-bubble {
@@ -6191,80 +6388,6 @@ onUnmounted(() => {
     min-width: 200px;
     max-width: 400px;
   }
-}
-
-.viewer-wrap {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: transparent;
-  padding: 16px;
-  overflow: hidden;
-}
-
-.viewer-box {
-  margin: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  max-width: 90vw;
-  max-height: 90vh;
-}
-
-.viewer-media-container {
-  position: relative;
-  display: inline-block;
-  max-width: 100%;
-  max-height: 100%;
-}
-
-.viewer-img {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: 90vw;
-  max-height: 85vh;
-  object-fit: contain;
-  border-radius: 12px;
-}
-
-.viewer-video {
-  display: block;
-  max-width: 90vw;
-  max-height: 85vh;
-  border-radius: 12px;
-  background: #000;
-}
-
-.viewer-actions {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 10;
-}
-
-.viewer-close,
-.viewer-download {
-  color: white !important;
-  background: rgba(0, 0, 0, 0.5) !important;
-  border-radius: 50%;
-  min-width: 36px;
-  height: 36px;
-
-  &:hover {
-    background: rgba(0, 0, 0, 0.7) !important;
-  }
-}
-
-.viewer-caption {
-  color: white;
-  text-align: center;
-  margin: 12px;
 }
 
 .spin {

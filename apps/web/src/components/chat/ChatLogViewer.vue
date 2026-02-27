@@ -22,6 +22,13 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import LottieSticker from '@/components/chat/LottieSticker.vue';
+import {
+  buildImageGalleryLookup,
+  isGhostEmptyTextMessage,
+  isGhostPinMessage,
+  isValidPinAction,
+  type GalleryImageItem,
+} from '@/components/chat/chatMediaGrouping';
 
 interface Props {
   messages: ListMessageResult[];
@@ -447,10 +454,9 @@ const getPinMessageText = (message: ListMessageResult): string | null => {
   if (!message.content?.pin) return null;
 
   const pin = message.content.pin;
-  const hasPinData = pin.pin_action || pin.pin_user_name || pin.pin_user_phone;
-  if (!hasPinData) return null;
+  if (!isValidPinAction(pin.pin_action ?? null)) return null;
 
-  const pinAction = pin.pin_action;
+  const pinAction = (pin.pin_action ?? '').toUpperCase();
   const isUnpin =
     pinAction === '2' || pinAction === 'UNPIN_FOR_ALL' || pinAction === 'UNPIN';
 
@@ -744,6 +750,61 @@ const isSameDay = (date1: string, date2: string): boolean => {
   );
 };
 
+const visibleMessages = computed(() => {
+  return props.messages.filter(
+    (message) =>
+      !isGhostPinMessage(message) && !isGhostEmptyTextMessage(message)
+  );
+});
+
+const imageGalleryLookup = computed(() => {
+  return buildImageGalleryLookup(visibleMessages.value);
+});
+
+const getImageGalleryMembership = (message: ListMessageResult) => {
+  return (
+    imageGalleryLookup.value.membershipByMessageId[message.message_id] ?? null
+  );
+};
+
+const getImageGalleryGroup = (message: ListMessageResult) => {
+  const membership = getImageGalleryMembership(message);
+  if (!membership) return null;
+  return imageGalleryLookup.value.groupsById[membership.groupId] ?? null;
+};
+
+const hasImageGallery = (message: ListMessageResult): boolean => {
+  const membership = getImageGalleryMembership(message);
+  if (!membership?.isHead) return false;
+  return !!getImageGalleryGroup(message);
+};
+
+const shouldRenderMessage = (message: ListMessageResult): boolean => {
+  const membership = getImageGalleryMembership(message);
+  if (!membership) return true;
+  return membership.isHead;
+};
+
+const getImageGalleryPreviewItems = (
+  message: ListMessageResult
+): GalleryImageItem[] => {
+  const group = getImageGalleryGroup(message);
+  if (!group) return [];
+  return group.items.slice(0, 4);
+};
+
+const getImageGalleryRemainingCount = (message: ListMessageResult): number => {
+  const group = getImageGalleryGroup(message);
+  if (!group) return 0;
+  return Math.max(0, group.items.length - 4);
+};
+
+const getImageGalleryGridClass = (message: ListMessageResult): string => {
+  const previewCount = getImageGalleryPreviewItems(message).length;
+  const normalizedCount = Math.max(1, Math.min(previewCount, 4));
+  return `image-gallery-grid--${normalizedCount}`;
+};
+
 type MessageWithSeparator = {
   type: 'message' | 'separator';
   message?: ListMessageResult;
@@ -752,7 +813,7 @@ type MessageWithSeparator = {
 };
 
 const messagesWithSeparators = computed<MessageWithSeparator[]>(() => {
-  const messages = props.messages;
+  const messages = visibleMessages.value;
 
   if (messages.length === 0) return [];
 
@@ -1405,9 +1466,36 @@ const resolveFeedbackIcon = (
   return { icon: 'tabler-check', color: undefined };
 };
 
+type ViewerMediaItem = {
+  src: string;
+  caption?: string;
+  downloadName?: string;
+  kind: 'image' | 'video';
+};
+
+type OpenMediaPayload = {
+  items: ViewerMediaItem[];
+  initialIndex: number;
+};
+
+const imageDownloadName = (message: ListMessageResult): string => {
+  const extension = message.content?.image?.extension?.trim();
+  if (extension) {
+    return `image.${extension.replace(/^\\./, '')}`;
+  }
+  return 'image.jpg';
+};
+
+const videoDownloadName = (message: ListMessageResult): string => {
+  const extension = message.content?.video?.extension?.trim();
+  if (extension) {
+    return `video.${extension.replace(/^\\./, '')}`;
+  }
+  return 'video.mp4';
+};
+
 const emit = defineEmits<{
-  openImage: [src: string, caption?: string];
-  openVideo: [src: string, caption?: string];
+  openMedia: [payload: OpenMediaPayload];
   openLocation: [
     data: {
       latitude: number;
@@ -1419,7 +1507,36 @@ const emit = defineEmits<{
   openContact: [contactId: string];
 }>();
 
+const emitOpenMedia = (items: ViewerMediaItem[], initialIndex = 0) => {
+  if (!items.length) return;
+
+  emit('openMedia', {
+    items,
+    initialIndex: Math.max(0, Math.min(initialIndex, items.length - 1)),
+  });
+};
+
+const handleOpenImageGallery = (message: ListMessageResult, index = 0) => {
+  const group = getImageGalleryGroup(message);
+  if (!group) return;
+
+  const items: ViewerMediaItem[] = group.items.map((galleryItem) => ({
+    src: galleryItem.src,
+    caption: galleryItem.caption,
+    downloadName: galleryItem.downloadName,
+    kind: 'image',
+  }));
+
+  emitOpenMedia(items, index);
+};
+
 const handleOpenImage = (message: ListMessageResult) => {
+  const galleryMembership = getImageGalleryMembership(message);
+  if (galleryMembership) {
+    handleOpenImageGallery(message, galleryMembership.index);
+    return;
+  }
+
   const sticker = message.content?.sticker;
   if (sticker?.url) {
     if (isLottieSticker(sticker)) return;
@@ -1429,18 +1546,40 @@ const handleOpenImage = (message: ListMessageResult) => {
       return;
     }
 
-    emit('openImage', sticker.url);
+    emitOpenMedia([
+      {
+        src: sticker.url,
+        caption: '',
+        downloadName: `sticker.${sticker.extension ?? 'webp'}`,
+        kind: 'image',
+      },
+    ]);
     return;
   }
   const imageUrl = message.content?.image?.url || '';
-  const caption = message.content?.image?.caption || '';
-  emit('openImage', imageUrl, caption);
+  if (!imageUrl) return;
+
+  emitOpenMedia([
+    {
+      src: imageUrl,
+      caption: message.content?.image?.caption || '',
+      downloadName: imageDownloadName(message),
+      kind: 'image',
+    },
+  ]);
 };
 
 const handleOpenVideo = (message: ListMessageResult) => {
   const video = message.content?.video;
   if (!video?.url) return;
-  emit('openVideo', video.url, video.caption || message.content?.message || '');
+  emitOpenMedia([
+    {
+      src: video.url,
+      caption: video.caption || message.content?.message || '',
+      downloadName: videoDownloadName(message),
+      kind: 'video',
+    },
+  ]);
 };
 
 const handleOpenLocation = (message: ListMessageResult) => {
@@ -1534,7 +1673,11 @@ const handleContactClick = (message: ListMessageResult) => {
           ></div>
         </div>
         <div
-          v-else-if="item.type === 'message' && item.message"
+          v-else-if="
+            item.type === 'message' &&
+            item.message &&
+            shouldRenderMessage(item.message)
+          "
           :id="`msg-${item.message.message_id}`"
           class="chat-group d-flex align-start position-relative"
           :class="[
@@ -2129,7 +2272,52 @@ const handleContactClick = (message: ListMessageResult) => {
                   </div>
 
                   <div
-                    v-if="
+                    v-if="hasImageGallery(item.message)"
+                    :class="[
+                      'image-gallery-bubble',
+                      !isTypeUser(item.message)
+                        ? 'image-gallery-bubble--right'
+                        : 'image-gallery-bubble--left',
+                      { 'is-deleted': item.message.deleted },
+                    ]"
+                    @click="handleOpenImageGallery(item.message, 0)"
+                  >
+                    <div
+                      :class="[
+                        'image-gallery-grid',
+                        getImageGalleryGridClass(item.message),
+                      ]"
+                    >
+                      <div
+                        v-for="(
+                          galleryItem, galleryIndex
+                        ) in getImageGalleryPreviewItems(item.message)"
+                        :key="`${galleryItem.message.message_id}-${galleryIndex}`"
+                        class="image-gallery-tile"
+                        @click.stop="
+                          handleOpenImageGallery(item.message, galleryIndex)
+                        "
+                      >
+                        <VImg
+                          :src="galleryItem.src"
+                          class="image-gallery-thumb"
+                          cover
+                        />
+                        <div
+                          v-if="
+                            galleryIndex === 3 &&
+                            getImageGalleryRemainingCount(item.message) > 0
+                          "
+                          class="image-gallery-more"
+                        >
+                          +{{ getImageGalleryRemainingCount(item.message) }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    v-else-if="
                       item.message.content?.type === EMessageType.image &&
                       item.message.content?.image?.url
                     "
@@ -3273,6 +3461,7 @@ const handleContactClick = (message: ListMessageResult) => {
     }
 
     &:has(.image-bubble),
+    &:has(.image-gallery-bubble),
     &:has(.video-bubble),
     &:has(.video-note-bubble),
     &:has(.sticker-bubble),
@@ -3655,6 +3844,81 @@ const handleContactClick = (message: ListMessageResult) => {
         text-decoration: underline;
       }
     }
+  }
+
+  .image-gallery-bubble {
+    max-inline-size: 180px;
+    inline-size: min(180px, 72vw);
+    cursor: zoom-in;
+    overflow: hidden;
+    border-radius: 8px;
+    transition: opacity 0.2s;
+
+    &:hover {
+      opacity: 0.9;
+    }
+
+    &.is-deleted {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  .image-gallery-grid {
+    display: grid;
+    gap: 2px;
+    border-radius: 8px;
+    overflow: hidden;
+    inline-size: 100%;
+    aspect-ratio: 1 / 1;
+    background: rgba(var(--v-theme-on-surface), 0.08);
+  }
+
+  .image-gallery-grid--1 {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  .image-gallery-grid--2 {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: 1fr;
+  }
+
+  .image-gallery-grid--3 {
+    grid-template-columns: 1.3fr 1fr;
+    grid-template-rows: repeat(2, 1fr);
+
+    .image-gallery-tile:first-child {
+      grid-row: span 2;
+    }
+  }
+
+  .image-gallery-grid--4 {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+  }
+
+  .image-gallery-tile {
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .image-gallery-thumb {
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  .image-gallery-more {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    color: white;
+    font-size: 1.35rem;
+    font-weight: 600;
   }
 
   .image-bubble,

@@ -58,9 +58,20 @@ const selectedProtocolsWithType = ref<ProtocolWithType[]>([]);
 const selectedClientForProtocols = ref<string>('');
 const selectedChatInfo = ref<ReportConversationHistoryResult | null>(null);
 const imageViewerOpen = ref(false);
-const imageViewerSrc = ref<string>('');
-const imageViewerCaption = ref<string>('');
-const imageViewerKind = ref<'image' | 'video'>('image');
+type ViewerMediaItem = {
+  src: string;
+  caption?: string;
+  downloadName?: string;
+  kind: 'image' | 'video';
+};
+
+type OpenMediaPayload = {
+  items: ViewerMediaItem[];
+  initialIndex: number;
+};
+
+const imageViewerItems = ref<ViewerMediaItem[]>([]);
+const imageViewerInitialIndex = ref(0);
 const locationModalOpen = ref(false);
 const locationData = ref<{
   latitude: number;
@@ -77,17 +88,9 @@ const pdfNotificationSubscription = ref<Subscription | null>(null);
 const isDeletePdfDialogOpen = ref(false);
 const pdfToDelete = ref<ReportConversationHistoryResult | null>(null);
 
-const handleOpenImage = (src: string, caption?: string) => {
-  imageViewerSrc.value = src;
-  imageViewerCaption.value = caption || '';
-  imageViewerKind.value = 'image';
-  imageViewerOpen.value = true;
-};
-
-const handleOpenVideo = (src: string, caption?: string) => {
-  imageViewerSrc.value = src;
-  imageViewerCaption.value = caption || '';
-  imageViewerKind.value = 'video';
+const handleOpenMedia = (payload: OpenMediaPayload) => {
+  imageViewerItems.value = payload.items;
+  imageViewerInitialIndex.value = payload.initialIndex;
   imageViewerOpen.value = true;
 };
 
@@ -1037,8 +1040,7 @@ const copyToClipboard = async (text: string) => {
               :operator-name="selectedChatInfo?.operator || ''"
               :client-photo="selectedChatInfo?.photo || null"
               :loading="loadingMessages"
-              @open-image="handleOpenImage"
-              @open-video="handleOpenVideo"
+              @open-media="handleOpenMedia"
               @open-location="handleOpenLocation"
               @open-contact="handleOpenContact"
             />
@@ -1049,9 +1051,8 @@ const copyToClipboard = async (text: string) => {
 
     <ChatMediaViewer
       v-model="imageViewerOpen"
-      :src="imageViewerSrc"
-      :caption="imageViewerCaption"
-      :kind="imageViewerKind"
+      :items="imageViewerItems"
+      :initial-index="imageViewerInitialIndex"
     />
 
     <ChatContactViewModal

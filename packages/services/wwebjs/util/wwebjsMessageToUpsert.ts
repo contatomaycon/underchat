@@ -175,6 +175,15 @@ function getPinTypeValue(value: unknown): string | number | undefined {
   return trimmed;
 }
 
+function isMediaAlbumAssociation(rawData?: Record<string, unknown>): boolean {
+  const associationType = getNonEmptyString(rawData?.associationType)
+    ?.toUpperCase()
+    ?.trim();
+  const viewMode = getNonEmptyString(rawData?.viewMode)?.toUpperCase()?.trim();
+
+  return associationType === 'MEDIA_ALBUM' || viewMode === 'MEDIA_ALBUM';
+}
+
 function resolvePinType(
   rawType: string,
   rawData?: Record<string, unknown>,
@@ -231,14 +240,19 @@ function getSerializedId(value: unknown): string | undefined {
 
 function resolvePinParentMessageId(
   rawData?: Record<string, unknown>,
-  pinEventData?: IWwebjsPinEventData
+  pinEventData?: IWwebjsPinEventData,
+  options?: { allowParentMsgKey?: boolean }
 ): string | undefined {
+  const allowParentMsgKey = options?.allowParentMsgKey ?? true;
   const candidates: unknown[] = [
     pinEventData?.parentMessageId,
     rawData?.pinParentKey,
-    rawData?.parentMsgKey,
     rawData?.targetMsgKey,
   ];
+
+  if (allowParentMsgKey) {
+    candidates.push(rawData?.parentMsgKey);
+  }
 
   for (const candidate of candidates) {
     const serializedId = getSerializedId(candidate);
@@ -255,21 +269,25 @@ function buildPinInChatMessage(
   rawData?: Record<string, unknown>,
   pinEventData?: IWwebjsPinEventData
 ): Record<string, unknown> | undefined {
-  const hasPinSignals =
+  const isAlbumAssociation = isMediaAlbumAssociation(rawData);
+  const hasExplicitPinSignals =
     rawType === 'pin_message' ||
     rawType === 'pinned_message' ||
     pinEventData !== undefined ||
     rawData?.pinMessageType !== undefined ||
     rawData?.pinType !== undefined ||
-    rawData?.pinParentKey !== undefined ||
-    rawData?.parentMsgKey !== undefined;
+    rawData?.pinActionType !== undefined ||
+    rawData?.pinAction !== undefined ||
+    rawData?.pinParentKey !== undefined;
 
-  if (!hasPinSignals) {
+  if (!hasExplicitPinSignals) {
     return undefined;
   }
 
   const pinType = resolvePinType(rawType, rawData, pinEventData);
-  const parentMessageId = resolvePinParentMessageId(rawData, pinEventData);
+  const parentMessageId = resolvePinParentMessageId(rawData, pinEventData, {
+    allowParentMsgKey: !isAlbumAssociation,
+  });
 
   if (pinType === undefined && !parentMessageId) {
     return undefined;

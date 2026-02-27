@@ -63,9 +63,12 @@ export class ChatSearcherUseCase {
     return (
       status === EChatStatus.ura ||
       status === EChatStatus.ura_output ||
-      status === EChatStatus.ura_schedule ||
       status === EChatStatus.ura_webhook
     );
+  }
+
+  private isScheduledStatus(status: string): boolean {
+    return status === EChatStatus.ura_schedule;
   }
 
   private buildClosedVisibilityForSector(
@@ -703,7 +706,9 @@ export class ChatSearcherUseCase {
         !canListAll &&
         statusArray.some(
           (status) =>
-            status === EChatStatus.in_chat || this.isChatbotStatus(status)
+            status === EChatStatus.in_chat ||
+            this.isChatbotStatus(status) ||
+            this.isScheduledStatus(status)
         )
       ) {
         if (canViewInSector) {
@@ -1228,9 +1233,11 @@ export class ChatSearcherUseCase {
       buildInChatLikeCountFilter([
         EChatStatus.ura,
         EChatStatus.ura_output,
-        EChatStatus.ura_schedule,
         EChatStatus.ura_webhook,
       ]);
+
+    const buildScheduleCountFilter = (): IElasticsearchBoolClause[] =>
+      buildInChatLikeCountFilter([EChatStatus.ura_schedule]);
 
     const buildClosedCountFilter = (): IElasticsearchBoolClause[] => {
       if (canViewOthers || canListAll) {
@@ -1489,6 +1496,22 @@ export class ChatSearcherUseCase {
       },
     };
 
+    const scheduleCountQuery: any = {
+      size: 0,
+      query: {
+        bool: {
+          must: mustClauses,
+          ...(shouldClauses.length > 0
+            ? {
+                should: shouldClauses,
+                minimum_should_match: 1,
+              }
+            : {}),
+          filter: buildScheduleCountFilter(),
+        },
+      },
+    };
+
     const myChatsCountQuery: any = {
       size: 0,
       query: {
@@ -1510,6 +1533,7 @@ export class ChatSearcherUseCase {
       queueCountResult,
       inChatCountResult,
       chatbotCountResult,
+      scheduleCountResult,
       closedCountResult,
       myChatsCountResult,
     ] = await Promise.all([
@@ -1517,6 +1541,10 @@ export class ChatSearcherUseCase {
       this.elasticDatabaseService.select(EElasticIndex.chat, queueCountQuery),
       this.elasticDatabaseService.select(EElasticIndex.chat, inChatCountQuery),
       this.elasticDatabaseService.select(EElasticIndex.chat, chatbotCountQuery),
+      this.elasticDatabaseService.select(
+        EElasticIndex.chat,
+        scheduleCountQuery
+      ),
       this.elasticDatabaseService.select(EElasticIndex.chat, closedCountQuery),
       this.elasticDatabaseService.select(EElasticIndex.chat, myChatsCountQuery),
     ]);
@@ -1532,6 +1560,7 @@ export class ChatSearcherUseCase {
           queue: 0,
           in_chat: 0,
           chatbot: 0,
+          schedule: 0,
           closed: 0,
           my_chats: 0,
         },
@@ -1563,6 +1592,8 @@ export class ChatSearcherUseCase {
       (inChatCountResult?.hits?.total as { value: number })?.value || 0;
     const chatbotTotal =
       (chatbotCountResult?.hits?.total as { value: number })?.value || 0;
+    const scheduleTotal =
+      (scheduleCountResult?.hits?.total as { value: number })?.value || 0;
     const closedTotal =
       (closedCountResult?.hits?.total as { value: number })?.value || 0;
     const myChatsTotal =
@@ -1577,6 +1608,7 @@ export class ChatSearcherUseCase {
         queue: queueTotal,
         in_chat: inChatTotal,
         chatbot: chatbotTotal,
+        schedule: scheduleTotal,
         closed: closedTotal,
         my_chats: myChatsTotal,
       },

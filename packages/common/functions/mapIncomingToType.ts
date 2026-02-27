@@ -34,6 +34,28 @@ function getText(msg: proto.IMessage): string {
   return '';
 }
 
+function hasMeaningfulTextField(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return value.trim().length > 0;
+}
+
+function hasAlbumContainerOnly(msg: proto.IMessage): boolean {
+  const base = unwrapMessage(msg, { keepViewOnce: true }) ?? msg;
+  const albumMessage = (base as Record<string, unknown>).albumMessage;
+  if (!albumMessage) return false;
+
+  return (
+    !base.imageMessage &&
+    !base.videoMessage &&
+    !base.ptvMessage &&
+    !base.documentMessage &&
+    !base.audioMessage &&
+    !base.stickerMessage &&
+    !hasMeaningfulTextField(base.conversation) &&
+    !hasMeaningfulTextField(base.extendedTextMessage?.text)
+  );
+}
+
 function hasQuotedRecursive(msg: proto.IMessage): boolean {
   const base = unwrapMessage(msg, { keepViewOnce: true }) ?? msg;
 
@@ -123,12 +145,18 @@ function detectTemplate({ msg }: IMapCtx): EMessageType | undefined {
 function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
   if (text) return EMessageType.text;
 
-  if (msg.extendedTextMessage || msg.conversation !== undefined) {
+  if (
+    hasMeaningfulTextField(msg.extendedTextMessage?.text) ||
+    hasMeaningfulTextField(msg.conversation)
+  ) {
     return EMessageType.text;
   }
 
   const unwrapped = unwrapMessage(msg) ?? msg;
-  if (unwrapped.extendedTextMessage || unwrapped.conversation !== undefined) {
+  if (
+    hasMeaningfulTextField(unwrapped.extendedTextMessage?.text) ||
+    hasMeaningfulTextField(unwrapped.conversation)
+  ) {
     return EMessageType.text;
   }
 
@@ -141,6 +169,10 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
 
   const msg = m.message as proto.IMessage | undefined;
   if (!msg) return;
+
+  if (hasAlbumContainerOnly(msg)) {
+    return;
+  }
 
   if (
     (m.message as any).editedMessage?.message?.protocolMessage?.type ===

@@ -18,6 +18,8 @@ const LOTTIE_STICKER_EXT = 'was';
 const LOTTIE_STICKER_MIME = 'application/was';
 const LOTTIE_ZIP_ENTRY_MARKER = Buffer.from('animation/animation.json');
 const LOTTIE_JSON_ENTRY_MARKER = Buffer.from('animation.json');
+const MEDIA_ALBUM_ASSOCIATION_TYPE =
+  proto.MessageAssociation.AssociationType.MEDIA_ALBUM;
 
 @injectable()
 export class BaileysUpsertMediaEnricher {
@@ -29,6 +31,7 @@ export class BaileysUpsertMediaEnricher {
   async enrich(upsert: IUpsertMessage, waMessage: WAMessage): Promise<void> {
     const type = upsert.type;
     const content: Partial<IContent> = { type };
+    this.enrichAlbum(content, waMessage);
 
     if (type === EMessageType.image) {
       await this.enrichImage(content, waMessage, upsert.account_id);
@@ -55,6 +58,116 @@ export class BaileysUpsertMediaEnricher {
     if (hasMedia) {
       upsert.content = { ...upsert.content, ...content } as IContent;
     }
+  }
+
+  private toNonEmptyString(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private toNullableNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  private getSerializedId(value: unknown): string | null {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      return this.toNonEmptyString(value);
+    }
+    if (typeof value !== 'object') return null;
+
+    const objectValue = value as Record<string, unknown>;
+    const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
+    for (const key of directKeys) {
+      const normalized = this.toNonEmptyString(objectValue[key]);
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
+  private getAssociationTypeLabel(value: unknown): string | null {
+    if (typeof value === 'number') {
+      if (value === MEDIA_ALBUM_ASSOCIATION_TYPE) {
+        return 'MEDIA_ALBUM';
+      }
+      return String(value);
+    }
+
+    if (typeof value === 'string') {
+      const normalized = this.toNonEmptyString(value);
+      if (!normalized) return null;
+      return normalized.toUpperCase();
+    }
+
+    return null;
+  }
+
+  private resolveMessageAssociation(
+    waMessage: WAMessage
+  ): proto.IMessageAssociation | null {
+    const msg =
+      this.getInnerMessage(waMessage, true) ?? this.getInnerMessage(waMessage);
+    if (!msg) return null;
+
+    const contextCandidates: unknown[] = [
+      (msg as Record<string, unknown>).messageContextInfo,
+      msg.imageMessage?.contextInfo,
+      msg.videoMessage?.contextInfo,
+      msg.ptvMessage?.contextInfo,
+      msg.audioMessage?.contextInfo,
+      msg.documentMessage?.contextInfo,
+    ];
+
+    for (const context of contextCandidates) {
+      const association = (
+        context as { messageAssociation?: proto.IMessageAssociation | null }
+      )?.messageAssociation;
+      if (association) {
+        return association;
+      }
+    }
+
+    return null;
+  }
+
+  private enrichAlbum(content: Partial<IContent>, waMessage: WAMessage): void {
+    if (content.type !== EMessageType.image) return;
+
+    const association = this.resolveMessageAssociation(waMessage);
+    if (!association) return;
+
+    const associationTypeLabel = this.getAssociationTypeLabel(
+      association.associationType
+    );
+    if (associationTypeLabel !== 'MEDIA_ALBUM') {
+      return;
+    }
+
+    const parentMessageId = this.getSerializedId(association.parentMessageKey);
+    const fallbackMessageId = this.getSerializedId(waMessage.key?.id);
+    const albumId = parentMessageId ?? fallbackMessageId;
+    if (!albumId) return;
+
+    content.album = {
+      id: albumId,
+      parent_message_id: parentMessageId,
+      item_index: this.toNullableNumber(association.messageIndex),
+      association_type: associationTypeLabel,
+      source: 'baileys',
+    };
   }
 
   private getInnerMessage(

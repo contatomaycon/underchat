@@ -100,6 +100,16 @@ export interface IEphemeralMessage {
   user_phone?: string | null;
 }
 
+export type TAlbumSource = 'baileys' | 'wwebjs';
+
+export interface IAlbumMessage {
+  id: string;
+  parent_message_id?: string | null;
+  item_index?: number | null;
+  association_type?: string | null;
+  source?: TAlbumSource | null;
+}
+
 export interface IContent {
   type: EMessageType;
   message?: string | null;
@@ -121,6 +131,7 @@ export interface IContent {
   template?: ITemplateMessage | null;
   pin?: IPinMessage | null;
   ephemeral?: IEphemeralMessage | null;
+  album?: IAlbumMessage | null;
 }
 
 export interface IMessageKey {

@@ -227,6 +227,7 @@ export const useChatStore = defineStore('chat', {
     listQueue: [] as ListChatsResult[],
     listInChat: [] as ListChatsResult[],
     listChatbot: [] as ListChatsResult[],
+    listScheduled: [] as ListChatsResult[],
     listClosed: [] as ListChatsResult[],
     queuePagings: {
       current_page: 1,
@@ -246,6 +247,13 @@ export const useChatStore = defineStore('chat', {
       current_page: 1,
       total_pages: 1,
       per_page: 25,
+      count: 0,
+      total: 0,
+    },
+    scheduledPagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 50,
       count: 0,
       total: 0,
     },
@@ -600,11 +608,13 @@ export const useChatStore = defineStore('chat', {
       chat: IChat,
       previousWasInQueue: boolean,
       previousWasInChatbot: boolean,
+      previousWasInScheduled: boolean,
       previousWasInClosed: boolean
     ): void {
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
+      this.removeFromList(this.listScheduled, chat.chat_id);
       this.removeFromList(this.listClosed, chat.chat_id);
 
       if (this.inChatPagings.total > 0) {
@@ -617,6 +627,13 @@ export const useChatStore = defineStore('chat', {
 
       if (previousWasInChatbot && this.chatbotPagings.total > 0) {
         this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
+      }
+
+      if (previousWasInScheduled && this.scheduledPagings.total > 0) {
+        this.scheduledPagings.total = Math.max(
+          0,
+          this.scheduledPagings.total - 1
+        );
       }
 
       if (previousWasInClosed && this.closedPagings.total > 0) {
@@ -642,6 +659,9 @@ export const useChatStore = defineStore('chat', {
       const wasInChatbot = this.listChatbot.some(
         (c) => c.chat_id === chat.chat_id
       );
+      const wasInScheduled = this.listScheduled.some(
+        (c) => c.chat_id === chat.chat_id
+      );
       const wasInClosed = this.listClosed.some(
         (c) => c.chat_id === chat.chat_id
       );
@@ -649,6 +669,7 @@ export const useChatStore = defineStore('chat', {
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
+      this.removeFromList(this.listScheduled, chat.chat_id);
       this.removeFromList(this.listClosed, chat.chat_id);
 
       if (wasInQueue && this.queuePagings.total > 0) {
@@ -661,6 +682,13 @@ export const useChatStore = defineStore('chat', {
 
       if (wasInChatbot && this.chatbotPagings.total > 0) {
         this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
+      }
+
+      if (wasInScheduled && this.scheduledPagings.total > 0) {
+        this.scheduledPagings.total = Math.max(
+          0,
+          this.scheduledPagings.total - 1
+        );
       }
 
       if (wasInClosed && this.closedPagings.total > 0) {
@@ -1001,6 +1029,13 @@ export const useChatStore = defineStore('chat', {
           isActiveChat,
           previousStatus
         );
+      } else if (this.isScheduledStatus(resolvedChat.status)) {
+        this.handleScheduledStatusChat(
+          input,
+          resolvedChat,
+          isActiveChat,
+          previousStatus
+        );
       } else if (resolvedChat.status === EChatStatus.closed) {
         this.handleClosedStatusChat(
           input,
@@ -1141,9 +1176,12 @@ export const useChatStore = defineStore('chat', {
       return (
         status === EChatStatus.ura ||
         status === EChatStatus.ura_output ||
-        status === EChatStatus.ura_schedule ||
         status === EChatStatus.ura_webhook
       );
+    },
+
+    isScheduledStatus(status: string | null | undefined): boolean {
+      return status === EChatStatus.ura_schedule;
     },
 
     findChatInLists(chatId: string): ListChatsResult | null {
@@ -1151,6 +1189,7 @@ export const useChatStore = defineStore('chat', {
         this.listQueue.find((c) => c.chat_id === chatId) ||
         this.listInChat.find((c) => c.chat_id === chatId) ||
         this.listChatbot.find((c) => c.chat_id === chatId) ||
+        this.listScheduled.find((c) => c.chat_id === chatId) ||
         this.listClosed.find((c) => c.chat_id === chatId) ||
         null
       );
@@ -1267,6 +1306,7 @@ export const useChatStore = defineStore('chat', {
       if (
         incomingStatus &&
         (this.isChatbotStatus(incomingStatus) ||
+          this.isScheduledStatus(incomingStatus) ||
           incomingStatus === EChatStatus.transmission) &&
         (existingStatus === EChatStatus.queue ||
           existingStatus === EChatStatus.in_chat ||
@@ -1309,6 +1349,7 @@ export const useChatStore = defineStore('chat', {
         this.listQueue.some((c) => c.chat_id === chatId) ||
         this.listInChat.some((c) => c.chat_id === chatId) ||
         this.listChatbot.some((c) => c.chat_id === chatId) ||
+        this.listScheduled.some((c) => c.chat_id === chatId) ||
         this.listClosed.some((c) => c.chat_id === chatId)
       );
     },
@@ -1603,6 +1644,7 @@ export const useChatStore = defineStore('chat', {
       this.listQueue.forEach(collect);
       this.listInChat.forEach(collect);
       this.listChatbot.forEach(collect);
+      this.listScheduled.forEach(collect);
       this.listClosed.forEach(collect);
 
       if (this.activeChat && shouldRemove(this.activeChat)) {
@@ -1652,6 +1694,9 @@ export const useChatStore = defineStore('chat', {
       const existingInChatbot = this.listChatbot.find(
         (c) => c.chat_id === chat.chat_id
       );
+      const existingInScheduled = this.listScheduled.find(
+        (c) => c.chat_id === chat.chat_id
+      );
       const existingInClosed = this.listClosed.find(
         (c) => c.chat_id === chat.chat_id
       );
@@ -1659,6 +1704,7 @@ export const useChatStore = defineStore('chat', {
       const wasInQueue = !!existingInQueue;
       const wasInInChat = !!existingInInChat;
       const wasInChatbot = !!existingInChatbot;
+      const wasInScheduled = !!existingInScheduled;
       const wasInClosed = !!existingInClosed;
       const previousWasInQueue =
         wasInQueue || previousStatus === EChatStatus.queue;
@@ -1666,6 +1712,8 @@ export const useChatStore = defineStore('chat', {
         wasInInChat || previousStatus === EChatStatus.in_chat;
       const previousWasInChatbot =
         wasInChatbot || this.isChatbotStatus(previousStatus);
+      const previousWasInScheduled =
+        wasInScheduled || this.isScheduledStatus(previousStatus);
       const previousWasInClosed =
         wasInClosed || previousStatus === EChatStatus.closed;
 
@@ -1684,6 +1732,7 @@ export const useChatStore = defineStore('chat', {
               chat,
               previousWasInQueue,
               previousWasInChatbot,
+              previousWasInScheduled,
               previousWasInClosed
             );
             return;
@@ -1702,6 +1751,7 @@ export const useChatStore = defineStore('chat', {
               chat,
               previousWasInQueue,
               previousWasInChatbot,
+              previousWasInScheduled,
               previousWasInClosed
             );
             return;
@@ -1711,6 +1761,7 @@ export const useChatStore = defineStore('chat', {
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
+      this.removeFromList(this.listScheduled, chat.chat_id);
       this.removeFromList(this.listClosed, chat.chat_id);
       const wasAdded = this.replaceOrPushInList(
         this.listQueue,
@@ -1729,6 +1780,13 @@ export const useChatStore = defineStore('chat', {
 
       if (previousWasInChatbot && this.chatbotPagings.total > 0) {
         this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
+      }
+
+      if (previousWasInScheduled && this.scheduledPagings.total > 0) {
+        this.scheduledPagings.total = Math.max(
+          0,
+          this.scheduledPagings.total - 1
+        );
       }
 
       if (previousWasInClosed && this.closedPagings.total > 0) {
@@ -1755,6 +1813,9 @@ export const useChatStore = defineStore('chat', {
       const existingInChatbot = this.listChatbot.find(
         (c) => c.chat_id === chat.chat_id
       );
+      const existingInScheduled = this.listScheduled.find(
+        (c) => c.chat_id === chat.chat_id
+      );
       const existingInClosed = this.listClosed.find(
         (c) => c.chat_id === chat.chat_id
       );
@@ -1762,6 +1823,7 @@ export const useChatStore = defineStore('chat', {
       const wasInQueue = !!existingInQueue;
       const wasInInChat = !!existingInInChat;
       const wasInChatbot = !!existingInChatbot;
+      const wasInScheduled = !!existingInScheduled;
       const wasInClosed = !!existingInClosed;
       const previousWasInQueue =
         wasInQueue || previousStatus === EChatStatus.queue;
@@ -1769,6 +1831,8 @@ export const useChatStore = defineStore('chat', {
         wasInInChat || previousStatus === EChatStatus.in_chat;
       const previousWasInChatbot =
         wasInChatbot || this.isChatbotStatus(previousStatus);
+      const previousWasInScheduled =
+        wasInScheduled || this.isScheduledStatus(previousStatus);
       const previousWasInClosed =
         wasInClosed || previousStatus === EChatStatus.closed;
 
@@ -1776,6 +1840,7 @@ export const useChatStore = defineStore('chat', {
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
         this.removeFromList(this.listChatbot, chat.chat_id);
+        this.removeFromList(this.listScheduled, chat.chat_id);
         this.removeFromList(this.listClosed, chat.chat_id);
 
         if (previousWasInInChat && this.inChatPagings.total > 0) {
@@ -1793,6 +1858,13 @@ export const useChatStore = defineStore('chat', {
           );
         }
 
+        if (previousWasInScheduled && this.scheduledPagings.total > 0) {
+          this.scheduledPagings.total = Math.max(
+            0,
+            this.scheduledPagings.total - 1
+          );
+        }
+
         if (previousWasInClosed && this.closedPagings.total > 0) {
           this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
         }
@@ -1805,6 +1877,7 @@ export const useChatStore = defineStore('chat', {
 
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
+      this.removeFromList(this.listScheduled, chat.chat_id);
       this.removeFromList(this.listClosed, chat.chat_id);
       const wasAdded = this.replaceOrPushInList(
         this.listInChat,
@@ -1823,6 +1896,13 @@ export const useChatStore = defineStore('chat', {
 
       if (previousWasInChatbot && this.chatbotPagings.total > 0) {
         this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
+      }
+
+      if (previousWasInScheduled && this.scheduledPagings.total > 0) {
+        this.scheduledPagings.total = Math.max(
+          0,
+          this.scheduledPagings.total - 1
+        );
       }
 
       if (previousWasInClosed && this.closedPagings.total > 0) {
@@ -1849,6 +1929,9 @@ export const useChatStore = defineStore('chat', {
       const existingInChatbot = this.listChatbot.find(
         (c) => c.chat_id === chat.chat_id
       );
+      const existingInScheduled = this.listScheduled.find(
+        (c) => c.chat_id === chat.chat_id
+      );
       const existingInClosed = this.listClosed.find(
         (c) => c.chat_id === chat.chat_id
       );
@@ -1856,6 +1939,7 @@ export const useChatStore = defineStore('chat', {
       const wasInInChat = !!existingInInChat;
       const wasInQueue = !!existingInQueue;
       const wasInChatbot = !!existingInChatbot;
+      const wasInScheduled = !!existingInScheduled;
       const wasInClosed = !!existingInClosed;
       const previousWasInInChat =
         wasInInChat || previousStatus === EChatStatus.in_chat;
@@ -1863,6 +1947,8 @@ export const useChatStore = defineStore('chat', {
         wasInQueue || previousStatus === EChatStatus.queue;
       const previousWasInChatbot =
         wasInChatbot || this.isChatbotStatus(previousStatus);
+      const previousWasInScheduled =
+        wasInScheduled || this.isScheduledStatus(previousStatus);
       const previousWasInClosed =
         wasInClosed || previousStatus === EChatStatus.closed;
 
@@ -1870,6 +1956,7 @@ export const useChatStore = defineStore('chat', {
         this.removeFromList(this.listChatbot, chat.chat_id);
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
+        this.removeFromList(this.listScheduled, chat.chat_id);
         this.removeFromList(this.listClosed, chat.chat_id);
 
         if (previousWasInInChat && this.inChatPagings.total > 0) {
@@ -1887,6 +1974,13 @@ export const useChatStore = defineStore('chat', {
           );
         }
 
+        if (previousWasInScheduled && this.scheduledPagings.total > 0) {
+          this.scheduledPagings.total = Math.max(
+            0,
+            this.scheduledPagings.total - 1
+          );
+        }
+
         if (previousWasInClosed && this.closedPagings.total > 0) {
           this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
         }
@@ -1899,6 +1993,7 @@ export const useChatStore = defineStore('chat', {
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
+      this.removeFromList(this.listScheduled, chat.chat_id);
       this.removeFromList(this.listClosed, chat.chat_id);
       const wasAdded = this.replaceOrPushInList(
         this.listChatbot,
@@ -1917,6 +2012,126 @@ export const useChatStore = defineStore('chat', {
 
       if (previousWasInQueue && this.queuePagings.total > 0) {
         this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+      }
+
+      if (previousWasInScheduled && this.scheduledPagings.total > 0) {
+        this.scheduledPagings.total = Math.max(
+          0,
+          this.scheduledPagings.total - 1
+        );
+      }
+
+      if (previousWasInClosed && this.closedPagings.total > 0) {
+        this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
+      }
+
+      if (this.activeChat?.chat_id === chat.chat_id) {
+        this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
+      }
+    },
+
+    handleScheduledStatusChat(
+      input: ListChatsResult,
+      chat: IChat,
+      isActiveChat: boolean,
+      previousStatus: string | null
+    ): void {
+      const existingInInChat = this.listInChat.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInQueue = this.listQueue.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInChatbot = this.listChatbot.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInScheduled = this.listScheduled.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInClosed = this.listClosed.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+
+      const wasInInChat = !!existingInInChat;
+      const wasInQueue = !!existingInQueue;
+      const wasInChatbot = !!existingInChatbot;
+      const wasInScheduled = !!existingInScheduled;
+      const wasInClosed = !!existingInClosed;
+      const previousWasInInChat =
+        wasInInChat || previousStatus === EChatStatus.in_chat;
+      const previousWasInQueue =
+        wasInQueue || previousStatus === EChatStatus.queue;
+      const previousWasInChatbot =
+        wasInChatbot || this.isChatbotStatus(previousStatus);
+      const previousWasInScheduled =
+        wasInScheduled || this.isScheduledStatus(previousStatus);
+      const previousWasInClosed =
+        wasInClosed || previousStatus === EChatStatus.closed;
+
+      if (!this.canViewChat(chat)) {
+        this.removeFromList(this.listChatbot, chat.chat_id);
+        this.removeFromList(this.listInChat, chat.chat_id);
+        this.removeFromList(this.listQueue, chat.chat_id);
+        this.removeFromList(this.listScheduled, chat.chat_id);
+        this.removeFromList(this.listClosed, chat.chat_id);
+
+        if (previousWasInInChat && this.inChatPagings.total > 0) {
+          this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
+        }
+
+        if (previousWasInQueue && this.queuePagings.total > 0) {
+          this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+        }
+
+        if (previousWasInChatbot && this.chatbotPagings.total > 0) {
+          this.chatbotPagings.total = Math.max(
+            0,
+            this.chatbotPagings.total - 1
+          );
+        }
+
+        if (previousWasInScheduled && this.scheduledPagings.total > 0) {
+          this.scheduledPagings.total = Math.max(
+            0,
+            this.scheduledPagings.total - 1
+          );
+        }
+
+        if (previousWasInClosed && this.closedPagings.total > 0) {
+          this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
+        }
+
+        if (this.activeChat?.chat_id === chat.chat_id) {
+          this.activeChat = null;
+        }
+        return;
+      }
+
+      this.removeFromList(this.listInChat, chat.chat_id);
+      this.removeFromList(this.listQueue, chat.chat_id);
+      this.removeFromList(this.listChatbot, chat.chat_id);
+      this.removeFromList(this.listClosed, chat.chat_id);
+      const wasAdded = this.replaceOrPushInList(
+        this.listScheduled,
+        input,
+        isActiveChat,
+        EChatStatus.ura_schedule
+      );
+
+      if (wasAdded && !previousWasInScheduled) {
+        this.scheduledPagings.total = (this.scheduledPagings.total || 0) + 1;
+      }
+
+      if (previousWasInInChat && this.inChatPagings.total > 0) {
+        this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
+      }
+
+      if (previousWasInQueue && this.queuePagings.total > 0) {
+        this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+      }
+
+      if (previousWasInChatbot && this.chatbotPagings.total > 0) {
+        this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
       }
 
       if (previousWasInClosed && this.closedPagings.total > 0) {
@@ -1941,6 +2156,9 @@ export const useChatStore = defineStore('chat', {
       const wasInChatbot = this.listChatbot.some(
         (c) => c.chat_id === chat.chat_id
       );
+      const wasInScheduled = this.listScheduled.some(
+        (c) => c.chat_id === chat.chat_id
+      );
       const wasInClosed = this.listClosed.some(
         (c) => c.chat_id === chat.chat_id
       );
@@ -1950,12 +2168,15 @@ export const useChatStore = defineStore('chat', {
         wasInQueue || previousStatus === EChatStatus.queue;
       const previousWasInChatbot =
         wasInChatbot || this.isChatbotStatus(previousStatus);
+      const previousWasInScheduled =
+        wasInScheduled || this.isScheduledStatus(previousStatus);
       const previousWasInClosed =
         wasInClosed || previousStatus === EChatStatus.closed;
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
+      this.removeFromList(this.listScheduled, chat.chat_id);
       const wasAdded = this.replaceOrPushInList(
         this.listClosed,
         input,
@@ -1977,6 +2198,13 @@ export const useChatStore = defineStore('chat', {
 
       if (previousWasInChatbot && this.chatbotPagings.total > 0) {
         this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
+      }
+
+      if (previousWasInScheduled && this.scheduledPagings.total > 0) {
+        this.scheduledPagings.total = Math.max(
+          0,
+          this.scheduledPagings.total - 1
+        );
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -2315,6 +2543,67 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async listScheduledChats(
+      input: ListChatsQuery,
+      append = false
+    ): Promise<ListChatsResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListChatsQuery = {
+          current_page: input.current_page,
+          per_page: input.per_page,
+          status: input.status,
+          filter_label_template_id: input.filter_label_template_id,
+          filter_worker_id: input.filter_worker_id,
+          filter_sector_id: input.filter_sector_id,
+          filter_name: input.filter_name,
+          filter_phone: input.filter_phone,
+          filter_protocol: input.filter_protocol,
+          filter_date_start: input.filter_date_start,
+          filter_date_end: input.filter_date_end,
+        };
+
+        const response = await axios.get<IApiResponse<ListChatsResponse>>(
+          `/chat`,
+          {
+            params: request,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          if (!append) {
+            this.listScheduled = [];
+          }
+          return null;
+        }
+
+        if (append) {
+          const existingIds = new Set(this.listScheduled.map((c) => c.chat_id));
+          const newResults = data.data.results.filter(
+            (c) => !existingIds.has(c.chat_id)
+          );
+          this.listScheduled = [...this.listScheduled, ...newResults];
+          this.scheduledPagings = data.data.pagings;
+          return data.data;
+        }
+
+        this.listScheduled = data.data.results;
+        this.scheduledPagings = data.data.pagings;
+
+        return data.data;
+      } catch {
+        if (!append) {
+          this.listScheduled = [];
+        }
+        return null;
+      }
+    },
+
     async searchChats(
       input: SearchChatsQuery
     ): Promise<SearchChatsResponse | null> {
@@ -2562,6 +2851,9 @@ export const useChatStore = defineStore('chat', {
       if (statusArray.some((s) => this.isChatbotStatus(s))) {
         this.chatbotPagings = { ...pagings };
       }
+      if (statusArray.some((s) => this.isScheduledStatus(s))) {
+        this.scheduledPagings = { ...pagings };
+      }
       if (statusArray.includes(EChatStatus.closed)) {
         this.closedPagings = { ...pagings };
       }
@@ -2625,6 +2917,16 @@ export const useChatStore = defineStore('chat', {
                 : data.data.pagings.total,
           };
         }
+        if (statusArray.some((s) => this.isScheduledStatus(s))) {
+          const scheduleCount = (counts as { schedule?: number })?.schedule;
+          this.scheduledPagings = {
+            ...data.data.pagings,
+            total:
+              isMultiStatus && scheduleCount !== undefined
+                ? scheduleCount
+                : data.data.pagings.total,
+          };
+        }
         if (statusArray.includes(EChatStatus.closed)) {
           const closedCount = (counts as { closed?: number })?.closed;
           this.closedPagings = {
@@ -2653,12 +2955,7 @@ export const useChatStore = defineStore('chat', {
         current_page: pagination.current_page,
         per_page: pagination.per_page,
         status: this.isChatbotStatus(status)
-          ? [
-              EChatStatus.ura,
-              EChatStatus.ura_output,
-              EChatStatus.ura_schedule,
-              EChatStatus.ura_webhook,
-            ]
+          ? [EChatStatus.ura, EChatStatus.ura_output, EChatStatus.ura_webhook]
           : status,
         ...pickDefinedFilters(filters, [...LIST_FILTER_KEYS]),
       };
@@ -2667,6 +2964,11 @@ export const useChatStore = defineStore('chat', {
         fetch: (req: ListChatsQuery, append: boolean) =>
           this.listChatbotChats(req, append),
         getList: () => this.listChatbot,
+      };
+      const scheduledHandler = {
+        fetch: (req: ListChatsQuery, append: boolean) =>
+          this.listScheduledChats(req, append),
+        getList: () => this.listScheduled,
       };
       const handlers: Partial<
         Record<
@@ -2690,7 +2992,7 @@ export const useChatStore = defineStore('chat', {
         },
         [EChatStatus.ura]: chatbotHandler,
         [EChatStatus.ura_output]: chatbotHandler,
-        [EChatStatus.ura_schedule]: chatbotHandler,
+        [EChatStatus.ura_schedule]: scheduledHandler,
         [EChatStatus.ura_webhook]: chatbotHandler,
         [EChatStatus.closed]: {
           fetch: (req, app) => this.listClosedChats(req, app),
@@ -2724,12 +3026,7 @@ export const useChatStore = defineStore('chat', {
         if (!shouldRun) return;
 
         const statusesToInclude = this.isChatbotStatus(targetStatus)
-          ? [
-              EChatStatus.ura,
-              EChatStatus.ura_output,
-              EChatStatus.ura_schedule,
-              EChatStatus.ura_webhook,
-            ]
+          ? [EChatStatus.ura, EChatStatus.ura_output, EChatStatus.ura_webhook]
           : [targetStatus];
         const filtered = results.filter((c) =>
           statusesToInclude.includes(c.status as EChatStatus)
@@ -2758,6 +3055,11 @@ export const useChatStore = defineStore('chat', {
         EChatStatus.ura,
         () => this.listChatbot,
         (items) => (this.listChatbot = items)
+      );
+      updateList(
+        EChatStatus.ura_schedule,
+        () => this.listScheduled,
+        (items) => (this.listScheduled = items)
       );
       updateList(
         EChatStatus.closed,
@@ -3547,6 +3849,7 @@ export const useChatStore = defineStore('chat', {
         this.listQueue.find((c) => c.chat_id === chatId) ??
         this.listInChat.find((c) => c.chat_id === chatId) ??
         this.listChatbot.find((c) => c.chat_id === chatId) ??
+        this.listScheduled.find((c) => c.chat_id === chatId) ??
         this.listClosed.find((c) => c.chat_id === chatId) ??
         this.kanbanQueue.find((c) => c.chat_id === chatId) ??
         this.kanbanInChat.find((c) => c.chat_id === chatId) ??

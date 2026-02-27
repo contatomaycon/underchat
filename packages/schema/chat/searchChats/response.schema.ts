@@ -10,6 +10,7 @@ export const searchChatsResponseSchema = Type.Object({
     queue: Type.Number(),
     in_chat: Type.Number(),
     chatbot: Type.Number(),
+    schedule: Type.Number(),
     closed: Type.Number(),
     my_chats: Type.Number(),
   }),

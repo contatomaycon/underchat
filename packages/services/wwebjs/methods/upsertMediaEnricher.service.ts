@@ -42,6 +42,11 @@ interface WwebjsRawData {
   campaignId?: unknown;
   isAnimated?: unknown;
   isLottie?: unknown;
+  associationType?: unknown;
+  viewMode?: unknown;
+  parentMsgKey?: unknown;
+  messageIndex?: unknown;
+  itemIndex?: unknown;
 }
 
 @injectable()
@@ -54,6 +59,7 @@ export class WwebjsUpsertMediaEnricher {
   async enrich(upsert: IUpsertMessage, msg: Message): Promise<void> {
     const type = upsert.type;
     const content: Partial<IContent> = { type };
+    this.enrichAlbum(content, msg, upsert);
 
     if (!msg.hasMedia) {
       const handledWithoutDownload =
@@ -147,6 +153,46 @@ export class WwebjsUpsertMediaEnricher {
     if (hasMedia) {
       upsert.content = { ...upsert.content, ...content } as IContent;
     }
+  }
+
+  private enrichAlbum(
+    content: Partial<IContent>,
+    msg: Message,
+    upsert: IUpsertMessage
+  ): void {
+    if (content.type !== EMessageType.image) return;
+
+    const rawData = this.getRawData(msg);
+    const associationType = this.getNonEmptyString(rawData.associationType)
+      ?.toUpperCase()
+      ?.trim();
+    const viewMode = this.getNonEmptyString(rawData.viewMode)
+      ?.toUpperCase()
+      ?.trim();
+    const isMediaAlbum =
+      associationType === 'MEDIA_ALBUM' || viewMode === 'MEDIA_ALBUM';
+    if (!isMediaAlbum) {
+      return;
+    }
+
+    const parentMessageId = this.getSerializedId(rawData.parentMsgKey);
+    const fallbackMessageId = this.getSerializedId(upsert.message?.key?.id);
+    const albumId = parentMessageId ?? fallbackMessageId;
+    if (!albumId) {
+      return;
+    }
+
+    const itemIndex =
+      this.toFiniteNumber(rawData.messageIndex) ??
+      this.toFiniteNumber(rawData.itemIndex);
+
+    content.album = {
+      id: albumId,
+      parent_message_id: parentMessageId,
+      item_index: itemIndex,
+      association_type: 'MEDIA_ALBUM',
+      source: 'wwebjs',
+    };
   }
 
   private async enrichCampaignMediaWithoutDownload(
@@ -432,6 +478,29 @@ export class WwebjsUpsertMediaEnricher {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
+  private getSerializedId(value: unknown): string | null {
+    if (!value) return null;
+
+    if (typeof value === 'string') {
+      return this.getNonEmptyString(value) ?? null;
+    }
+
+    if (typeof value !== 'object') {
+      return null;
+    }
+
+    const objectValue = value as Record<string, unknown>;
+    const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
+    for (const key of directKeys) {
+      const normalized = this.getNonEmptyString(objectValue[key]);
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
   private resolveCaption(
     msg: Message,
     rawData: WwebjsRawData = this.getRawData(msg)
@@ -572,6 +641,19 @@ export class WwebjsUpsertMediaEnricher {
       const parsed = Number(value.trim());
       if (!Number.isFinite(parsed)) return null;
       return parsed > 0 ? parsed : null;
+    }
+
+    return null;
+  }
+
+  private toFiniteNumber(value: unknown): number | null {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      return Number.isFinite(parsed) ? parsed : null;
     }
 
     return null;

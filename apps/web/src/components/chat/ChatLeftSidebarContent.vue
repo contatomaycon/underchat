@@ -110,6 +110,8 @@ const contactSortOrder = ref<string | null>('asc');
 
 const isLoadingChatbot = ref(false);
 const isLoadingMoreChatbot = ref(false);
+const isLoadingScheduled = ref(false);
+const isLoadingMoreScheduled = ref(false);
 
 const listClosed = ref<ListChatsResult[]>([]);
 const closedPagings = ref({
@@ -133,6 +135,7 @@ const searchChatsCounts = ref<{
   queue: number;
   in_chat: number;
   chatbot: number;
+  schedule?: number;
   closed?: number;
   my_chats: number;
 } | null>(null);
@@ -164,6 +167,7 @@ type FilterType =
   | 'in_chat'
   | 'queue'
   | 'chatbot'
+  | 'scheduled'
   | 'my_chats'
   | 'closed';
 
@@ -293,6 +297,7 @@ const filteredMyChats = computed(() => {
         ...chatStore.listInChat,
         ...chatStore.listQueue,
         ...chatStore.listChatbot,
+        ...chatStore.listScheduled,
         ...chatStore.listClosed,
       ];
       const myChats = allChats.filter((chat) => chat.user?.id === userId);
@@ -375,6 +380,31 @@ const filteredClosed = computed(() => {
   return [];
 });
 
+const filteredScheduled = computed(() => {
+  if (
+    activeFilter.value === 'all' &&
+    hasActiveFilters.value &&
+    !hasAppliedAdvancedFilters.value &&
+    !hasSearchTerm.value
+  ) {
+    return chatStore.listScheduled;
+  }
+  if (activeFilter.value === 'scheduled') {
+    return chatStore.listScheduled;
+  }
+  return [];
+});
+
+const showScheduledTitle = computed(() => {
+  return (
+    activeFilter.value === 'all' &&
+    hasActiveFilters.value &&
+    !hasAppliedAdvancedFilters.value &&
+    !hasSearchTerm.value &&
+    chatStore.listScheduled.length > 0
+  );
+});
+
 const showClosedTitle = computed(() => {
   return (
     activeFilter.value === 'all' &&
@@ -434,6 +464,7 @@ const myChatsCount = computed(() => {
       ...chatStore.listInChat,
       ...chatStore.listQueue,
       ...chatStore.listChatbot,
+      ...chatStore.listScheduled,
       ...chatStore.listClosed,
     ];
     return allChats.filter((chat) => chat.user?.id === userId).length;
@@ -473,6 +504,19 @@ const closedCount = computed(() => {
   return chatStore.listClosed.length;
 });
 
+const scheduledCount = computed(() => {
+  if (shouldUseEndpointCounts.value && searchChatsCounts.value) {
+    return searchChatsCounts.value.schedule ?? 0;
+  }
+  if (hasActiveFilters.value) {
+    return chatStore.listScheduled.length;
+  }
+  if (chatStore.scheduledPagings.total > 0) {
+    return chatStore.scheduledPagings.total;
+  }
+  return chatStore.listScheduled.length;
+});
+
 const showInChatTitle = computed(() => {
   return activeFilter.value === 'all';
 });
@@ -491,6 +535,7 @@ const expandedFilterText = computed(() => {
     queue: chatStore.i18n.global.t('waiting_for_service'),
     my_chats: chatStore.i18n.global.t('my_chats', 'Meus atendimentos'),
     chatbot: chatStore.i18n.global.t('chatbot', 'ChatBot'),
+    scheduled: chatStore.i18n.global.t('scheduled', 'Agendamento'),
     closed: chatStore.i18n.global.t('closed', 'Fechado'),
   };
 
@@ -557,6 +602,9 @@ const handleFilterClick = (filter: FilterType) => {
   } else if (filter === 'chatbot') {
     chatStore.chatbotPagings.current_page = 1;
     loadChatbotChats();
+  } else if (filter === 'scheduled') {
+    chatStore.scheduledPagings.current_page = 1;
+    loadScheduledChats();
   } else if (filter === 'closed') {
     chatStore.closedPagings.current_page = 1;
     loadClosedChats();
@@ -696,6 +744,9 @@ const handleSortSave = async (status?: 'in_chat' | 'queue') => {
   } else if (activeFilter.value === 'chatbot') {
     chatStore.chatbotPagings.current_page = 1;
     loadChatbotChats();
+  } else if (activeFilter.value === 'scheduled') {
+    chatStore.scheduledPagings.current_page = 1;
+    loadScheduledChats();
   }
 };
 
@@ -708,6 +759,7 @@ const handleFiltersUpdated = async () => {
     activeFilter.value !== 'in_chat' &&
     activeFilter.value !== 'queue' &&
     activeFilter.value !== 'chatbot' &&
+    activeFilter.value !== 'scheduled' &&
     activeFilter.value !== 'closed'
   ) {
     activeFilter.value = 'all';
@@ -718,12 +770,16 @@ const handleFiltersUpdated = async () => {
     currentPageQueue.value = 1;
     currentPageInChat.value = 1;
     chatStore.chatbotPagings.current_page = 1;
+    chatStore.scheduledPagings.current_page = 1;
     closedPagings.value.current_page = 1;
     allChatsWithFiltersPagings.value.current_page = 1;
     await loadChatsByFilter();
   } else if (activeFilter.value === 'chatbot') {
     chatStore.chatbotPagings.current_page = 1;
     await loadChatbotChats();
+  } else if (activeFilter.value === 'scheduled') {
+    chatStore.scheduledPagings.current_page = 1;
+    await loadScheduledChats();
   } else if (activeFilter.value === 'closed') {
     closedPagings.value.current_page = 1;
     await loadClosedChats();
@@ -769,6 +825,7 @@ const handleClearFilters = async () => {
   chatStore.listQueue = [];
   chatStore.listInChat = [];
   chatStore.listChatbot = [];
+  chatStore.listScheduled = [];
   listClosed.value = [];
   chatStore.listClosed = [];
 
@@ -778,6 +835,7 @@ const handleClearFilters = async () => {
   currentPageQueue.value = 1;
   currentPageInChat.value = 1;
   chatStore.chatbotPagings.current_page = 1;
+  chatStore.scheduledPagings.current_page = 1;
   closedPagings.value.current_page = 1;
 
   chatStore.activeChat = null;
@@ -1031,6 +1089,7 @@ const applyCounts = (counts: {
   queue: number;
   in_chat: number;
   chatbot: number;
+  schedule?: number;
   closed?: number;
   my_chats: number;
 }) => {
@@ -1039,6 +1098,9 @@ const applyCounts = (counts: {
   chatStore.queuePagings.total = counts.queue;
   chatStore.inChatPagings.total = counts.in_chat;
   chatStore.chatbotPagings.total = counts.chatbot;
+  if (counts.schedule !== undefined) {
+    chatStore.scheduledPagings.total = counts.schedule;
+  }
   if (counts.closed !== undefined) {
     chatStore.closedPagings.total = counts.closed;
   }
@@ -1109,6 +1171,16 @@ const buildLoadKey = (append: boolean): string | null => {
       closed: {
         current_page: chatStore.closedPagings.current_page,
         per_page: chatStore.closedPagings.per_page,
+      },
+    });
+  }
+
+  if (activeFilter.value === 'scheduled') {
+    return JSON.stringify({
+      ...base,
+      scheduled: {
+        current_page: chatStore.scheduledPagings.current_page,
+        per_page: chatStore.scheduledPagings.per_page,
       },
     });
   }
@@ -1459,6 +1531,52 @@ const loadClosedChats = async (append = false) => {
   }
 };
 
+const loadScheduledChats = async (append = false) => {
+  if (append && isLoadingMoreScheduled.value) return;
+  if (!append && isLoadingScheduled.value) return;
+
+  if (append) {
+    isLoadingMoreScheduled.value = true;
+  } else {
+    isLoadingScheduled.value = true;
+  }
+
+  try {
+    const filters = getChatUserFilters();
+    const searchTerm = getSearchTerm();
+
+    const response = await chatStore.resolveChatEndpoint(
+      EChatStatus.ura_schedule,
+      filters,
+      hasAppliedAdvancedFilters.value,
+      {
+        current_page: chatStore.scheduledPagings.current_page || 1,
+        per_page: 50,
+      },
+      append,
+      searchTerm
+    );
+
+    if (response.counts) {
+      applyCounts(response.counts);
+    }
+
+    const chatsToProcess = append
+      ? chatStore.listScheduled.slice(-50)
+      : chatStore.listScheduled;
+    await Promise.all([
+      loadWorkerConfigs(chatsToProcess),
+      loadChatContacts(chatsToProcess),
+    ]);
+  } finally {
+    if (append) {
+      isLoadingMoreScheduled.value = false;
+    } else {
+      isLoadingScheduled.value = false;
+    }
+  }
+};
+
 const hasMoreContacts = computed(() => {
   return currentPageContacts.value < contactsTotalPages.value;
 });
@@ -1672,6 +1790,21 @@ const handleChatScroll = async (event?: Event) => {
     return;
   }
 
+  if (activeFilter.value === 'scheduled') {
+    if (
+      scrollTop + clientHeight >= scrollHeight - threshold &&
+      chatStore.scheduledPagings.current_page <
+        chatStore.scheduledPagings.total_pages &&
+      !isLoadingScheduled.value &&
+      !isLoadingMoreScheduled.value
+    ) {
+      chatStore.scheduledPagings.current_page += 1;
+      await loadScheduledChats(true);
+      await updateScrollbar();
+    }
+    return;
+  }
+
   if (activeFilter.value === 'closed') {
     return;
   }
@@ -1744,6 +1877,27 @@ const handleClosedReachEnd = async () => {
   await loadClosedChats(true);
 
   isLoadingClosed.value = false;
+  await updateScrollbar();
+};
+
+const handleScheduledReachEnd = async () => {
+  if (activeFilter.value !== 'scheduled') {
+    return;
+  }
+  if (isLoadingScheduled.value || isLoadingMoreScheduled.value) {
+    return;
+  }
+
+  const hasMore =
+    chatStore.scheduledPagings.current_page <
+    chatStore.scheduledPagings.total_pages;
+
+  if (!hasMore) {
+    return;
+  }
+
+  chatStore.scheduledPagings.current_page += 1;
+  await loadScheduledChats(true);
   await updateScrollbar();
 };
 
@@ -1921,6 +2075,7 @@ const performSearch = async (append = false) => {
       const queueChats: ListChatsResult[] = [];
       const inChatChats: ListChatsResult[] = [];
       const chatbotChats: ListChatsResult[] = [];
+      const scheduledChats: ListChatsResult[] = [];
       const closedChats: ListChatsResult[] = [];
 
       for (const chat of result.results) {
@@ -1931,10 +2086,11 @@ const performSearch = async (append = false) => {
         } else if (
           chat.status === EChatStatus.ura ||
           chat.status === EChatStatus.ura_output ||
-          chat.status === EChatStatus.ura_schedule ||
           chat.status === EChatStatus.ura_webhook
         ) {
           chatbotChats.push(chat);
+        } else if (chat.status === EChatStatus.ura_schedule) {
+          scheduledChats.push(chat);
         } else if (chat.status === EChatStatus.closed) {
           closedChats.push(chat);
         }
@@ -1944,12 +2100,14 @@ const performSearch = async (append = false) => {
         chatStore.listQueue.push(...queueChats);
         chatStore.listInChat.push(...inChatChats);
         chatStore.listChatbot.push(...chatbotChats);
+        chatStore.listScheduled.push(...scheduledChats);
         listClosed.value.push(...closedChats);
         chatStore.listClosed.push(...closedChats);
       } else {
         chatStore.listQueue = queueChats;
         chatStore.listInChat = inChatChats;
         chatStore.listChatbot = chatbotChats;
+        chatStore.listScheduled = scheduledChats;
         listClosed.value = closedChats;
         chatStore.listClosed = closedChats;
       }
@@ -1978,6 +2136,14 @@ const performSearch = async (append = false) => {
         total: chatStore.listChatbot.length,
       };
 
+      chatStore.scheduledPagings = {
+        current_page: allChatsWithFiltersPagings.value.current_page,
+        total_pages: allChatsWithFiltersPagings.value.total_pages,
+        per_page: allChatsWithFiltersPagings.value.per_page,
+        count: chatStore.listScheduled.length,
+        total: chatStore.listScheduled.length,
+      };
+
       closedPagings.value = {
         current_page: allChatsWithFiltersPagings.value.current_page,
         total_pages: allChatsWithFiltersPagings.value.total_pages,
@@ -1992,6 +2158,7 @@ const performSearch = async (append = false) => {
             ...chatStore.listQueue,
             ...chatStore.listInChat,
             ...chatStore.listChatbot,
+            ...chatStore.listScheduled,
             ...listClosed.value,
           ];
 
@@ -2012,6 +2179,7 @@ const performSearch = async (append = false) => {
         chatStore.listQueue = [];
         chatStore.listInChat = [];
         chatStore.listChatbot = [];
+        chatStore.listScheduled = [];
         listClosed.value = [];
         chatStore.listClosed = [];
         searchChatsCounts.value = null;
@@ -2023,6 +2191,7 @@ const performSearch = async (append = false) => {
       chatStore.listQueue = [];
       chatStore.listInChat = [];
       chatStore.listChatbot = [];
+      chatStore.listScheduled = [];
       listClosed.value = [];
       chatStore.listClosed = [];
       searchChatsCounts.value = null;
@@ -2185,9 +2354,14 @@ watch(
       if (
         (oldStatus === EChatStatus.ura ||
           oldStatus === EChatStatus.ura_output ||
-          oldStatus === EChatStatus.ura_schedule ||
           oldStatus === EChatStatus.ura_webhook) &&
         activeFilter.value === 'chatbot'
+      ) {
+        activeFilter.value = 'in_chat';
+        expandedFilter.value = 'in_chat';
+      } else if (
+        oldStatus === EChatStatus.ura_schedule &&
+        activeFilter.value === 'scheduled'
       ) {
         activeFilter.value = 'in_chat';
         expandedFilter.value = 'in_chat';
@@ -2210,9 +2384,15 @@ watch(
       newStatus === EChatStatus.queue &&
       (oldStatus === EChatStatus.ura ||
         oldStatus === EChatStatus.ura_output ||
-        oldStatus === EChatStatus.ura_schedule ||
         oldStatus === EChatStatus.ura_webhook) &&
       activeFilter.value === 'chatbot'
+    ) {
+      activeFilter.value = 'queue';
+      expandedFilter.value = 'queue';
+    } else if (
+      newStatus === EChatStatus.queue &&
+      oldStatus === EChatStatus.ura_schedule &&
+      activeFilter.value === 'scheduled'
     ) {
       activeFilter.value = 'queue';
       expandedFilter.value = 'queue';
@@ -2506,6 +2686,29 @@ defineExpose({
             }"
           >
             {{ chatbotCount }}
+          </span>
+        </div>
+      </div>
+      <div v-if="hasActiveFilters" class="chat-filter-item flex-grow-1">
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'scheduled' ? 'flat' : 'text'"
+            :color="activeFilter === 'scheduled' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('scheduled')"
+          >
+            <VIcon size="24">tabler-calendar-time</VIcon>
+          </VBtn>
+          <span
+            v-if="scheduledCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': scheduledCount.toString().length === 1,
+              'badge-double-digit': scheduledCount.toString().length === 2,
+              'badge-triple-digit': scheduledCount.toString().length >= 3,
+            }"
+          >
+            {{ scheduledCount }}
           </span>
         </div>
       </div>
@@ -2986,6 +3189,106 @@ defineExpose({
     </PerfectScrollbar>
   </template>
 
+  <template v-else-if="activeFilter === 'scheduled'">
+    <PerfectScrollbar
+      ref="chatScrollContainer"
+      :options="{ wheelPropagation: false }"
+      @ps-scroll-y="handleChatScroll"
+      @ps-y-reach-end="handleScheduledReachEnd"
+    >
+      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+        <template
+          v-if="
+            (isLoadingScheduled || isLoadingWorkerConfigs) &&
+            !isLoadingMoreScheduled
+          "
+        >
+          <li
+            v-for="i in 5"
+            :key="`skeleton-scheduled-${i}`"
+            class="chat d-flex align-center"
+          >
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="50%" height="16" />
+            </div>
+            <div class="d-flex flex-column align-self-start">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="20" height="16" />
+            </div>
+          </li>
+        </template>
+
+        <template v-else>
+          <ChatQueue
+            v-for="chat in chatStore.listScheduled"
+            :key="`scheduled-${chat.chat_id}`"
+            :user="chat"
+            @click="$emit('openChat', chat.chat_id)"
+          />
+
+          <li
+            v-if="!chatStore.listScheduled.length"
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_chat_scheduled') }}
+          </li>
+
+          <template v-if="isLoadingMoreScheduled">
+            <li
+              v-for="i in 5"
+              :key="`skeleton-scheduled-pagination-${i}`"
+              class="chat d-flex align-center"
+            >
+              <VSkeletonLoader type="avatar" width="40" height="40" />
+              <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+                <VSkeletonLoader
+                  type="text"
+                  width="60%"
+                  height="20"
+                  class="mb-1"
+                />
+                <VSkeletonLoader
+                  type="text"
+                  width="40%"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="50%" height="16" />
+              </div>
+              <div class="d-flex flex-column align-self-start">
+                <VSkeletonLoader
+                  type="text"
+                  width="50"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="20" height="16" />
+              </div>
+            </li>
+          </template>
+        </template>
+      </ul>
+    </PerfectScrollbar>
+  </template>
+
   <template v-else-if="activeFilter === 'my_chats'">
     <PerfectScrollbar
       ref="chatScrollContainer"
@@ -3412,6 +3715,31 @@ defineExpose({
           class="no-chat-items-text text-disabled"
         >
           Nenhum chat fechado
+        </li>
+
+        <li v-if="showScheduledTitle" class="list-none pt-2">
+          <h5 class="chat-header text-primary text-h5">
+            {{ $t('scheduled', 'Agendamento') }}
+          </h5>
+        </li>
+
+        <ChatQueue
+          v-if="showScheduledTitle"
+          v-for="scheduled in filteredScheduled"
+          :key="`scheduled-all-${scheduled.chat_id}`"
+          :user="scheduled"
+          @click="$emit('openChat', scheduled.chat_id)"
+        />
+
+        <li
+          v-if="
+            showScheduledTitle &&
+            !filteredScheduled.length &&
+            !isLoadingScheduled
+          "
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_chat_scheduled') }}
         </li>
 
         <template

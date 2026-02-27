@@ -289,9 +289,9 @@ export class MessageUpsertConsume {
     chat: IChat | null
   ): Promise<IChat | null> {
     if (chat) {
-      const isMessageEmpty = this.isMessageEmpty(data);
+      const shouldDiscardEmptyText = this.shouldDiscardEmptyText(data);
       const shouldSkipMessageCreation =
-        isMessageEmpty &&
+        shouldDiscardEmptyText &&
         ((data.webhook_message_type === 'chatbot' && data.webhook_chatbot_id) ||
           data.webhook_message_type === 'message');
 
@@ -349,9 +349,9 @@ export class MessageUpsertConsume {
       }
     }
 
-    const isMessageEmpty = this.isMessageEmpty(data);
+    const shouldDiscardEmptyText = this.shouldDiscardEmptyText(data);
     const shouldSkipMessageCreation =
-      isMessageEmpty &&
+      shouldDiscardEmptyText &&
       ((data.webhook_message_type === 'chatbot' && data.webhook_chatbot_id) ||
         data.webhook_message_type === 'message');
 
@@ -2105,6 +2105,9 @@ export class MessageUpsertConsume {
       const jidAlt = remoteJidAlt(data.message?.key);
 
       const content = this.buildMessageContent(data);
+      if (this.isEmptyTextContent(content)) {
+        return true;
+      }
 
       const messageQuotedId = content.quoted?.key.id ?? null;
       if (content.quoted && messageQuotedId) {
@@ -2443,17 +2446,17 @@ export class MessageUpsertConsume {
     return false;
   }
 
-  private shouldDiscardEmptyInboundText(data: IUpsertMessage): boolean {
+  private shouldDiscardEmptyText(data: IUpsertMessage): boolean {
     if (data.type !== EMessageType.text) {
       return false;
     }
 
-    const isFromMe = data.message?.key?.fromMe ?? false;
-    if (isFromMe) {
-      return false;
+    if (this.isMessageEmpty(data)) {
+      return true;
     }
 
-    return this.isMessageEmpty(data);
+    const content = this.buildMessageContent(data);
+    return this.isEmptyTextContent(content);
   }
 
   private shouldDiscardUpsert(data: IUpsertMessage): boolean {
@@ -2461,7 +2464,7 @@ export class MessageUpsertConsume {
       return true;
     }
 
-    if (this.shouldDiscardEmptyInboundText(data)) {
+    if (this.shouldDiscardEmptyText(data)) {
       return true;
     }
 
@@ -2488,7 +2491,26 @@ export class MessageUpsertConsume {
     const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
     const ext = msg?.extendedTextMessage as { text?: string } | undefined;
     const messageText = ext?.text ?? (msg?.conversation as string | undefined);
-    return !messageText || messageText.trim() === '';
+    return this.normalizeMessageTextForEmptyCheck(messageText).length === 0;
+  }
+
+  private isEmptyTextContent(content: IContent): boolean {
+    if (content.type !== EMessageType.text) {
+      return false;
+    }
+
+    const messageText = extractMessageTextFromContent(content);
+    return this.normalizeMessageTextForEmptyCheck(messageText).length === 0;
+  }
+
+  private normalizeMessageTextForEmptyCheck(
+    text: string | null | undefined
+  ): string {
+    if (!text) {
+      return '';
+    }
+
+    return text.replace(/[\u200B-\u200F\u2060\uFEFF]/g, '').trim();
   }
 
   private buildMessageContent(data: IUpsertMessage): IContent {
@@ -2654,6 +2676,10 @@ export class MessageUpsertConsume {
           content.message = '';
         }
       }
+    }
+
+    if (data.content?.album) {
+      content.album = data.content.album;
     }
 
     return content;
@@ -2916,9 +2942,9 @@ export class MessageUpsertConsume {
 
       await this.processTransferIfNeeded(t, createChat, data);
 
-      const isMessageEmpty = this.isMessageEmpty(data);
+      const shouldDiscardEmptyText = this.shouldDiscardEmptyText(data);
       const shouldSkipMessageCreation =
-        isMessageEmpty && data.webhook_message_type === 'message';
+        shouldDiscardEmptyText && data.webhook_message_type === 'message';
 
       if (shouldSkipMessageCreation) {
         await this.saveChatWithCaches(createChat);
@@ -2929,9 +2955,9 @@ export class MessageUpsertConsume {
       return this.handleNewChatMessageAndPublish(createChat, data);
     }
 
-    const isMessageEmpty = this.isMessageEmpty(data);
+    const shouldDiscardEmptyText = this.shouldDiscardEmptyText(data);
     const shouldSkipMessageCreation =
-      isMessageEmpty && data.webhook_message_type === 'message';
+      shouldDiscardEmptyText && data.webhook_message_type === 'message';
 
     await this.processTransferIfNeeded(t, getChat, data);
     if (!shouldSkipMessageCreation) {
