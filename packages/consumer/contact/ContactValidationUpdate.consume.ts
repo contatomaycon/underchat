@@ -45,6 +45,14 @@ export class ContactValidationUpdateConsume {
   private async processValidationUpdate(
     data: IContactValidationUpdate
   ): Promise<void> {
+    if (!data.is_validated) {
+      await this.contactService.updateContactIsValided(data.contact_id, false);
+    }
+
+    if (typeof data.phone !== 'string' || data.phone.trim() === '') {
+      return;
+    }
+
     await this.contactService.updateContactValidation(
       data.contact_id,
       data.phone,

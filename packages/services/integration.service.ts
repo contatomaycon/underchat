@@ -26,6 +26,7 @@ import { UserService } from './user.service';
 import { SectorService } from './sector.service';
 import { ChatbotService } from './chatbot.service';
 import { ContactService } from './contact.service';
+import { PhoneValidationService } from './phoneValidation.service';
 import { PlanAccountService } from './planAccount.service';
 import { LabelTemplateViewerByNameRepository } from '@core/repositories/labelTemplate/LabelTemplateViewerByName.repository';
 import { ListIntegrationUsersResponse } from '@core/schema/integration/listUsers/response.schema';
@@ -88,6 +89,8 @@ export class IntegrationService {
     private readonly chatbotService: ChatbotService,
     @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(PhoneValidationService)
+    private readonly phoneValidationService: PhoneValidationService,
     @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
     @inject(LabelTemplateViewerByNameRepository)
@@ -398,6 +401,101 @@ export class IntegrationService {
     return extractPhoneAndDdi(fullPhone);
   };
 
+  private isTechnicalValidationError = (error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+      return true;
+    }
+
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('deadline exceeded') ||
+      errorMessage.includes('no active worker') ||
+      errorMessage.includes('unavailable') ||
+      errorMessage.includes('disconnected') ||
+      errorMessage.includes('connection') ||
+      errorMessage.includes('not connected')
+    );
+  };
+
+  private isInvalidValidationError = (error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('phone_number_not_valid_on_whatsapp') ||
+      errorMessage.includes('phone number is not valid on whatsapp')
+    );
+  };
+
+  private async validateWebhookPhoneForContactCreation(
+    accountId: string,
+    phoneAndDdi: { phone: string; phone_ddi: string | null }
+  ): Promise<{ phone: string; phone_ddi: string; is_valided: boolean }> {
+    const fallbackPhone = phoneAndDdi.phone;
+    const fallbackPhoneDdi = phoneAndDdi.phone_ddi ?? '55';
+
+    try {
+      const validationResult = await this.phoneValidationService.validatePhone(
+        accountId,
+        fallbackPhone,
+        fallbackPhoneDdi,
+        undefined,
+        { bypassCache: true }
+      );
+
+      if (!validationResult.valid) {
+        return {
+          phone: fallbackPhone,
+          phone_ddi: fallbackPhoneDdi,
+          is_valided: false,
+        };
+      }
+
+      if (!validationResult.phone) {
+        return {
+          phone: fallbackPhone,
+          phone_ddi: fallbackPhoneDdi,
+          is_valided: true,
+        };
+      }
+
+      const normalized = extractPhoneAndDdi(validationResult.phone);
+      if (!normalized) {
+        return {
+          phone: fallbackPhone,
+          phone_ddi: fallbackPhoneDdi,
+          is_valided: true,
+        };
+      }
+
+      return {
+        phone: normalized.phone,
+        phone_ddi: normalized.phone_ddi,
+        is_valided: true,
+      };
+    } catch (error) {
+      if (
+        this.isInvalidValidationError(error) ||
+        this.isTechnicalValidationError(error)
+      ) {
+        return {
+          phone: fallbackPhone,
+          phone_ddi: fallbackPhoneDdi,
+          is_valided: false,
+        };
+      }
+
+      return {
+        phone: fallbackPhone,
+        phone_ddi: fallbackPhoneDdi,
+        is_valided: false,
+      };
+    }
+  }
+
   private getOrCreateContact = async (
     accountId: string,
     phoneAndDdi: { phone: string; phone_ddi: string | null },
@@ -431,12 +529,36 @@ export class IntegrationService {
       return null;
     }
 
-    const contactId = await this.createContactWithLabels(accountId, mappedData);
+    const validation = await this.validateWebhookPhoneForContactCreation(
+      accountId,
+      phoneAndDdi
+    );
+
+    const mappedDataWithValidatedPhone: IMappedWebhookData = {
+      ...mappedData,
+      phone: validation.phone,
+      phone_ddi: validation.phone_ddi,
+    };
+
+    const contactId = await this.createContactWithLabels(
+      accountId,
+      mappedDataWithValidatedPhone,
+      validation.is_valided
+    );
     if (!contactId) {
       return null;
     }
 
-    return { contactId, is_valided: false };
+    if (!validation.is_valided) {
+      return { contactId, is_valided: false };
+    }
+
+    return {
+      contactId,
+      is_valided: true,
+      phone_validated: validation.phone,
+      phone_ddi_validated: validation.phone_ddi,
+    };
   };
 
   private buildExistingContactResult = async (
@@ -553,7 +675,8 @@ export class IntegrationService {
 
   private createContactWithLabels = async (
     accountId: string,
-    mappedData: IMappedWebhookData
+    mappedData: IMappedWebhookData,
+    isValidated: boolean
   ): Promise<string | null> => {
     return this.dbRw.transaction(async (tx) => {
       const labelTemplateIds = await this.processLabelsInTransaction(
@@ -566,7 +689,8 @@ export class IntegrationService {
         tx,
         accountId,
         mappedData,
-        labelTemplateIds
+        labelTemplateIds,
+        isValidated
       );
     });
   };
@@ -995,7 +1119,8 @@ export class IntegrationService {
     tx: Transaction,
     accountId: string,
     mappedData: IMappedWebhookData,
-    labelTemplateIds: string[]
+    labelTemplateIds: string[],
+    isValidated: boolean
   ): Promise<string | null> => {
     if (!mappedData.phone) {
       return null;
@@ -1008,7 +1133,8 @@ export class IntegrationService {
       mappedData,
       emailFields,
       phoneFields,
-      labelTemplateIds
+      labelTemplateIds,
+      isValidated
     );
 
     return this.contactCreatorRepository.createContact(contactPayload, tx);
@@ -1027,13 +1153,14 @@ export class IntegrationService {
       phonePartialEncrypted: string | null;
       phoneC: string | null;
     },
-    labelTemplateIds: string[]
+    labelTemplateIds: string[],
+    isValidated: boolean
   ) => {
     return {
       account_id: accountId,
       label_template_ids: labelTemplateIds.length > 0 ? labelTemplateIds : null,
       contact_document_type_id: null,
-      is_valided: false,
+      is_valided: isValidated,
       name: mappedData.first_name || '',
       last_name: mappedData.last_name || null,
       email: emailFields.emailCEncrypted,

@@ -224,11 +224,18 @@ export class PhoneValidationService {
     accountId: string,
     phone: string,
     phoneDdi?: string | null,
-    timeout: number = this.defaultTimeout
+    timeout: number = this.defaultTimeout,
+    options?: { bypassCache?: boolean }
   ): Promise<IPhoneValidationResponse> => {
-    const cachedResult = await this.getCachedResult(accountId, phone, phoneDdi);
-    if (cachedResult) {
-      return cachedResult;
+    if (!options?.bypassCache) {
+      const cachedResult = await this.getCachedResult(
+        accountId,
+        phone,
+        phoneDdi
+      );
+      if (cachedResult) {
+        return cachedResult;
+      }
     }
 
     const workers =

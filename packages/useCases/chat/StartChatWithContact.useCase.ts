@@ -19,11 +19,13 @@ import { SectorService } from '@core/services/sector.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EncryptService } from '@core/services/encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
+import { PhoneValidationService } from '@core/services/phoneValidation.service';
 import {
   IContactData,
   IRequiredData,
 } from '@core/common/interfaces/IStartChatData';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import {
   createChatbotFlowCacheKey,
   createChatbotInactivityCacheKey,
@@ -53,6 +55,8 @@ export class StartChatWithContactUseCase {
     private readonly sectorService: SectorService,
     @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(PhoneValidationService)
+    private readonly phoneValidationService: PhoneValidationService,
     @inject(ChatUserViewerRepository)
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis
@@ -149,10 +153,6 @@ export class StartChatWithContactUseCase {
       throw new Error(t('contact_not_found'));
     }
 
-    if (!contact.is_valided) {
-      throw new Error(t('contact_must_be_validated'));
-    }
-
     const sensitiveData =
       await this.contactService.getContactSensitiveDataDecrypted(contactId);
 
@@ -160,16 +160,130 @@ export class StartChatWithContactUseCase {
       throw new Error(t('contact_phone_required'));
     }
 
-    const contactName = contact.name ?? contact.last_name;
-    const phonePartial = this.encryptService.sanitize(
-      sensitiveData.phone,
-      ETypeSanetize.phone
+    const fallbackPhoneDdi = contact.phone_ddi ?? null;
+    const phoneDdiToValidate = fallbackPhoneDdi ?? '55';
+
+    let validationResult: { valid: boolean; phone?: string | null };
+    try {
+      validationResult = await this.phoneValidationService.validatePhone(
+        accountId,
+        sensitiveData.phone,
+        phoneDdiToValidate,
+        undefined,
+        { bypassCache: true }
+      );
+    } catch (error) {
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+
+        if (this.isInvalidValidationError(errorMessage)) {
+          await this.contactService.updateContactIsValided(contactId, false);
+          throw new Error(t('phone_number_not_valid_on_whatsapp'));
+        }
+
+        if (this.isTechnicalValidationError(errorMessage)) {
+          const canUseFallback =
+            contact.is_valided === true &&
+            !!fallbackPhoneDdi &&
+            !!sensitiveData.phone;
+
+          if (canUseFallback) {
+            return this.buildContactData(
+              contact,
+              sensitiveData.phone,
+              fallbackPhoneDdi,
+              sensitiveData.email
+            );
+          }
+
+          throw new Error(t('contact_must_be_validated'));
+        }
+      }
+
+      throw error;
+    }
+
+    if (!validationResult.valid) {
+      await this.contactService.updateContactIsValided(contactId, false);
+      throw new Error(t('phone_number_not_valid_on_whatsapp'));
+    }
+
+    let normalizedPhone = sensitiveData.phone;
+    let normalizedPhoneDdi = phoneDdiToValidate;
+
+    if (validationResult.phone) {
+      const extracted = extractPhoneAndDdi(validationResult.phone);
+      if (extracted) {
+        normalizedPhone = extracted.phone;
+        normalizedPhoneDdi = extracted.phone_ddi;
+      }
+    }
+
+    const shouldUpdateContact =
+      contact.is_valided !== true ||
+      normalizedPhone !== sensitiveData.phone ||
+      normalizedPhoneDdi !== (contact.phone_ddi ?? '');
+
+    if (shouldUpdateContact) {
+      const updated = await this.contactService.validateContact(
+        contact.contact_id,
+        normalizedPhone,
+        normalizedPhoneDdi
+      );
+
+      if (!updated) {
+        throw new Error(t('contact_must_be_validated'));
+      }
+    }
+
+    return this.buildContactData(
+      contact,
+      normalizedPhone,
+      normalizedPhoneDdi,
+      sensitiveData.email
     );
-    const fullPhone = `${contact.phone_ddi}${sensitiveData.phone}`;
+  }
+
+  private isTechnicalValidationError(errorMessage: string): boolean {
+    return (
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('deadline exceeded') ||
+      errorMessage.includes('no active worker') ||
+      errorMessage.includes('unavailable') ||
+      errorMessage.includes('disconnected') ||
+      errorMessage.includes('connection') ||
+      errorMessage.includes('not connected')
+    );
+  }
+
+  private isInvalidValidationError(errorMessage: string): boolean {
+    return (
+      errorMessage.includes('phone_number_not_valid_on_whatsapp') ||
+      errorMessage.includes('phone number is not valid on whatsapp')
+    );
+  }
+
+  private buildContactData(
+    contact: IContactData['contact'],
+    phone: string,
+    phoneDdi: string,
+    email?: string | null
+  ): IContactData {
+    const contactName = contact.name ?? contact.last_name ?? '';
+    const phonePartial =
+      this.encryptService.sanitize(phone, ETypeSanetize.phone) ?? '';
+    const fullPhone = `${phoneDdi}${phone}`;
 
     return {
-      contact,
-      sensitiveData,
+      contact: {
+        ...contact,
+        phone_ddi: phoneDdi,
+        is_valided: true,
+      },
+      sensitiveData: {
+        phone,
+        email: email ?? null,
+      },
       contactName,
       phonePartial,
       fullPhone,

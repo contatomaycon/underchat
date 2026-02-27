@@ -18,10 +18,20 @@ export class ContactValidatorUseCase {
     error: unknown
   ): never {
     if (error instanceof Error) {
-      if (error.message.includes('timeout')) {
+      const errorMessage = error.message.toLowerCase();
+      if (
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('deadline exceeded')
+      ) {
         throw new Error(t('phone_validation_timeout'));
       }
-      if (error.message.includes('No active worker')) {
+      if (
+        errorMessage.includes('no active worker') ||
+        errorMessage.includes('unavailable') ||
+        errorMessage.includes('disconnected') ||
+        errorMessage.includes('connection') ||
+        errorMessage.includes('not connected')
+      ) {
         throw new Error(t('no_active_worker_for_validation'));
       }
     }
@@ -38,7 +48,9 @@ export class ContactValidatorUseCase {
       const validationResult = await this.phoneValidationService.validatePhone(
         accountId,
         phone,
-        phoneDdi
+        phoneDdi,
+        undefined,
+        { bypassCache: true }
       );
 
       if (!validationResult.valid) {

@@ -5,9 +5,7 @@ import { CsvFileReaderService } from '@core/services/csv.service';
 import { ContactService } from '@core/services/contact.service';
 import { IContactImportStatus } from '@core/common/interfaces/IContactImportStatus';
 import { ICreateContact } from '@core/common/interfaces/ICreateContact';
-import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 import { truncateContactName } from '@core/common/functions/truncateContactName';
-import { EncryptService } from '@core/services/encrypt.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { PlanAccountService } from '@core/services/planAccount.service';
@@ -15,6 +13,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { LabelTemplateViewerByNameRepository } from '@core/repositories/labelTemplate/LabelTemplateViewerByName.repository';
 import { LabelTemplateCreatorRepository } from '@core/repositories/labelTemplate/LabelTemplateCreator.repository';
 import { ELabelStatus } from '@core/common/enums/ELabelStatus';
+import { PhoneValidationService } from '@core/services/phoneValidation.service';
 
 @injectable()
 export class ContactGroupAssignmentCreatorUseCase {
@@ -25,8 +24,8 @@ export class ContactGroupAssignmentCreatorUseCase {
     private readonly csvFileReaderService: CsvFileReaderService,
     @inject(ContactService)
     private readonly contactService: ContactService,
-    @inject(EncryptService)
-    private readonly encryptService: EncryptService,
+    @inject(PhoneValidationService)
+    private readonly phoneValidationService: PhoneValidationService,
     @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
     @inject(CentrifugoService)
@@ -108,6 +107,101 @@ export class ContactGroupAssignmentCreatorUseCase {
     return { phone, phoneDdi: ddi };
   }
 
+  private isTechnicalValidationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return true;
+    }
+
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('deadline exceeded') ||
+      errorMessage.includes('no active worker') ||
+      errorMessage.includes('unavailable') ||
+      errorMessage.includes('disconnected') ||
+      errorMessage.includes('connection') ||
+      errorMessage.includes('not connected')
+    );
+  }
+
+  private isInvalidValidationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('phone_number_not_valid_on_whatsapp') ||
+      errorMessage.includes('phone number is not valid on whatsapp')
+    );
+  }
+
+  private async validateAndNormalizeImportPhone(
+    accountId: string,
+    phone: string,
+    phoneDdi: string
+  ): Promise<{ phone: string; phoneDdi: string; isValidated: boolean }> {
+    const fallback = this.normalizePhoneFromValidation(phone, phoneDdi);
+
+    try {
+      const validationResult = await this.phoneValidationService.validatePhone(
+        accountId,
+        fallback.phone,
+        fallback.phoneDdi,
+        undefined,
+        { bypassCache: true }
+      );
+
+      if (!validationResult.valid) {
+        return {
+          phone: fallback.phone,
+          phoneDdi: fallback.phoneDdi,
+          isValidated: false,
+        };
+      }
+
+      if (!validationResult.phone) {
+        return {
+          phone: fallback.phone,
+          phoneDdi: fallback.phoneDdi,
+          isValidated: true,
+        };
+      }
+
+      const normalized = extractPhoneAndDdi(validationResult.phone);
+      if (!normalized) {
+        return {
+          phone: fallback.phone,
+          phoneDdi: fallback.phoneDdi,
+          isValidated: true,
+        };
+      }
+
+      return {
+        phone: normalized.phone,
+        phoneDdi: normalized.phone_ddi,
+        isValidated: true,
+      };
+    } catch (error) {
+      if (
+        this.isInvalidValidationError(error) ||
+        this.isTechnicalValidationError(error)
+      ) {
+        return {
+          phone: fallback.phone,
+          phoneDdi: fallback.phoneDdi,
+          isValidated: false,
+        };
+      }
+
+      return {
+        phone: fallback.phone,
+        phoneDdi: fallback.phoneDdi,
+        isValidated: false,
+      };
+    }
+  }
+
   private truncateLabelName = (name: string, maxLength: number): string => {
     if (name.length <= maxLength) {
       return name;
@@ -186,13 +280,22 @@ export class ContactGroupAssignmentCreatorUseCase {
   private async processContact(
     t: TFunction<'translation', undefined>,
     contact: ICreateContact,
-    phonesC: string[],
     accountId: string,
     contactGroupId: string | null
   ): Promise<IContactImportStatus> {
     try {
-      const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
-        this.normalizePhoneFromValidation(contact.phone, contact.phone_ddi);
+      const validatedPhone = await this.validateAndNormalizeImportPhone(
+        accountId,
+        contact.phone ?? '',
+        contact.phone_ddi ?? '55'
+      );
+      const phoneToSave = validatedPhone.phone;
+      const phoneDdiToSave = validatedPhone.phoneDdi;
+      const contactToPersist: ICreateContact = {
+        ...contact,
+        phone: phoneToSave,
+        phone_ddi: phoneDdiToSave,
+      };
 
       let labelTemplateIds: string[] = [];
       if (contact.label) {
@@ -215,15 +318,43 @@ export class ContactGroupAssignmentCreatorUseCase {
         const updated = await this.contactService.updateContactFromImport(
           existingContact.contact_id,
           accountId,
-          contact
+          contactToPersist
         );
 
         if (!updated) {
           return this.createStatusResult(
-            contact,
+            contactToPersist,
             'invalid',
             t('contact_creation_failed')
           );
+        }
+
+        const existingSensitiveData =
+          await this.contactService.getContactSensitiveDataDecrypted(
+            existingContact.contact_id
+          );
+        const existingPhoneDecrypted = existingSensitiveData?.phone ?? null;
+        const existingPhoneDdi = existingContact.phone_ddi ?? '55';
+        const existingIsValidated = existingContact.is_valided ?? false;
+        const shouldSyncValidation =
+          existingPhoneDecrypted !== phoneToSave ||
+          existingPhoneDdi !== phoneDdiToSave ||
+          existingIsValidated !== validatedPhone.isValidated;
+
+        if (shouldSyncValidation) {
+          const synced = await this.contactService.updateContactValidation(
+            existingContact.contact_id,
+            `${phoneDdiToSave}${phoneToSave}`,
+            validatedPhone.isValidated
+          );
+
+          if (!synced) {
+            return this.createStatusResult(
+              contactToPersist,
+              'invalid',
+              t('contact_creation_failed')
+            );
+          }
         }
 
         if (contactGroupId) {
@@ -243,7 +374,7 @@ export class ContactGroupAssignmentCreatorUseCase {
         }
 
         return this.createStatusResult(
-          contact,
+          contactToPersist,
           'duplicate',
           t('contact_import_updated')
         );
@@ -254,7 +385,7 @@ export class ContactGroupAssignmentCreatorUseCase {
       const contactCreated = await this.contactService.createContactWithGroup(
         t,
         {
-          ...contact,
+          ...contactToPersist,
           name: truncateContactName(contact.name) ?? contact.name ?? '',
           last_name:
             truncateContactName(contact.last_name) ?? contact.last_name ?? null,
@@ -267,19 +398,19 @@ export class ContactGroupAssignmentCreatorUseCase {
         },
         contactGroupId,
         accountId,
-        false
+        validatedPhone.isValidated
       );
 
       if (!contactCreated) {
         return this.createStatusResult(
-          contact,
+          contactToPersist,
           'invalid',
           t('contact_creation_failed')
         );
       }
 
       return this.createStatusResult(
-        contact,
+        contactToPersist,
         'valid',
         t('contact_creator_success')
       );
@@ -371,14 +502,10 @@ export class ContactGroupAssignmentCreatorUseCase {
         continue;
       }
 
-      const phones = buildCandidatesWithDdi(phone, phoneDdi);
-      const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
-
       try {
         const result = await this.processContact(
           t,
           contact,
-          phonesC,
           accountId,
           contactGroupId
         );

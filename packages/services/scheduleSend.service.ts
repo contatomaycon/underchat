@@ -48,6 +48,8 @@ import {
   IUpsertMessageEnvelope,
 } from '@core/common/interfaces/IUpsertMessage';
 import { ScheduleControlRepository } from '@core/repositories/schedule/ScheduleControl.repository';
+import { PhoneValidationService } from './phoneValidation.service';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 @injectable()
 export class ScheduleSendService {
@@ -77,6 +79,8 @@ export class ScheduleSendService {
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
     @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(PhoneValidationService)
+    private readonly phoneValidationService: PhoneValidationService,
     @inject(ScheduleControlRepository)
     private readonly scheduleControlRepository: ScheduleControlRepository,
     @inject('Redis') private readonly redis: Redis
@@ -811,6 +815,125 @@ export class ScheduleSendService {
     return jid;
   }
 
+  private isTechnicalValidationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return true;
+    }
+
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('deadline exceeded') ||
+      errorMessage.includes('no active worker') ||
+      errorMessage.includes('unavailable') ||
+      errorMessage.includes('disconnected') ||
+      errorMessage.includes('connection') ||
+      errorMessage.includes('not connected')
+    );
+  }
+
+  private isInvalidValidationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('phone_number_not_valid_on_whatsapp') ||
+      errorMessage.includes('phone number is not valid on whatsapp')
+    );
+  }
+
+  private async resolveChatbotValidatedJid(
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated,
+    fallbackJid: string | null
+  ): Promise<string | null> {
+    const decryptedPhone = this.contactService.getContactPhoneDecrypted(
+      contact.phone
+    );
+    const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
+
+    if (!decryptedPhone) {
+      if (contact.is_validated && fallbackJid) {
+        return fallbackJid;
+      }
+      return null;
+    }
+
+    try {
+      const validationResult = await this.phoneValidationService.validatePhone(
+        schedule.account_id,
+        decryptedPhone,
+        phoneDdi,
+        undefined,
+        { bypassCache: true }
+      );
+
+      if (!validationResult.valid) {
+        await this.contactService.updateContactIsValided(
+          contact.contact_id,
+          false
+        );
+        return null;
+      }
+
+      let normalizedPhone = decryptedPhone;
+      let normalizedPhoneDdi = phoneDdi;
+
+      if (validationResult.phone) {
+        const extracted = extractPhoneAndDdi(validationResult.phone);
+        if (extracted) {
+          normalizedPhone = extracted.phone;
+          normalizedPhoneDdi = extracted.phone_ddi;
+        }
+      }
+
+      const shouldSyncValidation =
+        !contact.is_validated ||
+        normalizedPhone !== decryptedPhone ||
+        normalizedPhoneDdi !== phoneDdi;
+
+      if (shouldSyncValidation) {
+        const updated = await this.contactService.updateContactValidation(
+          contact.contact_id,
+          `${normalizedPhoneDdi}${normalizedPhone}`,
+          true
+        );
+
+        if (!updated) {
+          console.warn(
+            `[ScheduleSendService] Failed to sync validated phone for contact ${contact.contact_id}`
+          );
+        }
+      }
+
+      const validatedJid =
+        validationResult.jid ??
+        normalizePhoneToJid(normalizedPhone, normalizedPhoneDdi) ??
+        fallbackJid;
+
+      return validatedJid ?? null;
+    } catch (error) {
+      if (this.isInvalidValidationError(error)) {
+        await this.contactService.updateContactIsValided(
+          contact.contact_id,
+          false
+        );
+        return null;
+      }
+
+      if (this.isTechnicalValidationError(error)) {
+        if (contact.is_validated && fallbackJid) {
+          return fallbackJid;
+        }
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
   private async reportScheduleChatbotFailure(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
@@ -843,11 +966,16 @@ export class ScheduleSendService {
     jid: string,
     now: string
   ): IChat {
-    const phone =
-      this.contactService.getContactPhoneDecrypted(contact.phone) ??
-      getPhoneFromJid(jid, null) ??
-      '';
-    const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
+    const phoneFromJid = getPhoneFromJid(jid, null);
+    const extractedFromJid = phoneFromJid
+      ? extractPhoneAndDdi(phoneFromJid)
+      : null;
+    const fallbackPhone = this.contactService.getContactPhoneDecrypted(
+      contact.phone
+    );
+    const phone = extractedFromJid?.phone ?? fallbackPhone ?? '';
+    const phoneDdi =
+      extractedFromJid?.phone_ddi ?? this.normalizePhoneDdi(contact.phone_ddi);
     const fullPhone = `${phoneDdi}${phone}`;
     const contactPhoneSanitized = phone
       ? this.encryptService.sanitize(phone, ETypeSanetize.phone)
@@ -935,7 +1063,15 @@ export class ScheduleSendService {
     jid: string,
     now: string
   ): IChatMessage {
-    const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
+    const phoneFromJid = getPhoneFromJid(jid, null);
+    const extractedFromJid = phoneFromJid
+      ? extractPhoneAndDdi(phoneFromJid)
+      : null;
+    const phone = extractedFromJid?.phone
+      ? extractedFromJid.phone
+      : (this.contactService.getContactPhoneDecrypted(contact.phone) ?? '');
+    const phoneDdi =
+      extractedFromJid?.phone_ddi ?? this.normalizePhoneDdi(contact.phone_ddi);
 
     return {
       message_id: uuidv7(),
@@ -949,7 +1085,7 @@ export class ScheduleSendService {
       account: { id: schedule.account_id, name: schedule.account_name },
       worker: { id: schedule.worker_id, name: schedule.worker_name },
       user: null,
-      phone: this.contactService.getContactPhoneDecrypted(contact.phone) ?? '',
+      phone,
       phone_ddi: phoneDdi,
       summary: {
         is_sent: false,
@@ -1128,6 +1264,20 @@ export class ScheduleSendService {
 
     const jid = await this.validateContactPhone(contact);
 
+    if (schedule.type === EScheduleType.chatbot) {
+      const validatedJid = await this.resolveChatbotValidatedJid(
+        schedule,
+        contact,
+        jid
+      );
+
+      if (!validatedJid) {
+        return this.reportScheduleChatbotIgnored(schedule, contact);
+      }
+
+      return this.sendScheduleChatbot(schedule, contact, validatedJid);
+    }
+
     if (!jid) {
       const failedMessage = this.createFailedMessage(schedule);
       const saved = await this.saveToElasticsearch(
@@ -1147,10 +1297,6 @@ export class ScheduleSendService {
         success: false,
         contactId: contact.contact_id,
       };
-    }
-
-    if (schedule.type === EScheduleType.chatbot) {
-      return this.sendScheduleChatbot(schedule, contact, jid);
     }
 
     const message = await this.createChatMessage(schedule, contact, jid);

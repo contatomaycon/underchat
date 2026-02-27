@@ -179,17 +179,19 @@ export class ContactCreatorUseCase {
   }
 
   private handlePhoneValidationError(
-    t: TFunction<'translation', undefined>,
     error: unknown
   ): { shouldSkipValidation: boolean } | never {
     if (error instanceof Error) {
       const errorMessage = error.message.toLowerCase();
-      if (errorMessage.includes('timeout')) {
-        throw new Error(t('phone_validation_timeout'));
-      }
       if (
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('deadline exceeded') ||
         errorMessage.includes('no active worker') ||
-        errorMessage.includes('no active worker found')
+        errorMessage.includes('no active worker found') ||
+        errorMessage.includes('unavailable') ||
+        errorMessage.includes('disconnected') ||
+        errorMessage.includes('connection') ||
+        errorMessage.includes('not connected')
       ) {
         return { shouldSkipValidation: true };
       }
@@ -208,7 +210,9 @@ export class ContactCreatorUseCase {
       const validationResult = await this.phoneValidationService.validatePhone(
         accountId,
         phone,
-        phoneDdi
+        phoneDdi,
+        undefined,
+        { bypassCache: true }
       );
 
       if (!validationResult.valid) {
@@ -230,7 +234,7 @@ export class ContactCreatorUseCase {
 
       return { phone, phoneDdi: phoneDdi ?? null, isValidated: true };
     } catch (error) {
-      const validationResult = this.handlePhoneValidationError(t, error);
+      const validationResult = this.handlePhoneValidationError(error);
       if (validationResult.shouldSkipValidation) {
         return { phone, phoneDdi: phoneDdi ?? null, isValidated: false };
       }

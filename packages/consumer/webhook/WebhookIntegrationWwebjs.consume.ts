@@ -18,6 +18,10 @@ import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid'
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { IContactValidationUpdate } from '@core/common/interfaces/IContactValidationUpdate';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
 
 @singleton()
 export class WebhookIntegrationWwebjsConsume {
@@ -150,29 +154,18 @@ export class WebhookIntegrationWwebjsConsume {
   private async processWebhookIntegration(
     data: IWebhookIntegrationRequest
   ): Promise<void> {
-    const validatedJid = await this.resolveValidatedJid(data);
-    const upsertMessage = this.buildUpsertMessage(data, validatedJid);
+    const remoteJid = await this.resolveRemoteJidForInteraction(data);
+    if (!remoteJid) {
+      return;
+    }
+
+    const upsertMessage = this.buildUpsertMessage(data, remoteJid);
 
     if (!upsertMessage) {
       return;
     }
 
     await this.sendToMessageUpsert(upsertMessage);
-  }
-
-  private async resolveValidatedJid(
-    data: IWebhookIntegrationRequest
-  ): Promise<string | null> {
-    if (data.contact_is_valided) {
-      return null;
-    }
-
-    const result = await this.validatePhone(data.phone, data.phone_ddi);
-    if (result.valid && result.jid) {
-      return result.jid;
-    }
-
-    return null;
   }
 
   private async validatePhone(
@@ -183,15 +176,156 @@ export class WebhookIntegrationWwebjsConsume {
     return this.wwebjsService.validatePhone(phoneDdiToUse, phone);
   }
 
-  private buildUpsertMessage(
-    request: IWebhookIntegrationRequest,
-    validatedJid: string | null
-  ): IUpsertMessage | null {
-    const remoteJid = this.resolveRemoteJid(request, validatedJid);
-    if (!remoteJid) {
-      return null;
+  private buildPhoneWithDdi(
+    phone: string | null | undefined,
+    phoneDdi: string | null | undefined
+  ): string {
+    return `${phoneDdi ?? '55'}${phone ?? ''}`;
+  }
+
+  private isTechnicalValidationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return true;
     }
 
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('deadline exceeded') ||
+      errorMessage.includes('no active worker') ||
+      errorMessage.includes('disconnected') ||
+      errorMessage.includes('connection') ||
+      errorMessage.includes('unavailable') ||
+      errorMessage.includes('not connected')
+    );
+  }
+
+  private isInvalidValidationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('phone_number_not_valid_on_whatsapp') ||
+      errorMessage.includes('phone number is not valid on whatsapp')
+    );
+  }
+
+  private shouldPublishSuccessContactUpdate(
+    request: IWebhookIntegrationRequest,
+    validatedPhoneWithDdi: string
+  ): boolean {
+    if (!request.contact_is_valided) {
+      return true;
+    }
+
+    const currentPhoneWithDdi = request.phone_validated
+      ? this.buildPhoneWithDdi(
+          request.phone_validated,
+          request.phone_ddi_validated
+        )
+      : this.buildPhoneWithDdi(request.phone, request.phone_ddi);
+
+    return (
+      onlyDigits(currentPhoneWithDdi) !== onlyDigits(validatedPhoneWithDdi)
+    );
+  }
+
+  private async publishContactValidationUpdate(
+    contactId: string,
+    phoneWithDdi: string,
+    isValidated: boolean
+  ): Promise<void> {
+    const payload: IContactValidationUpdate = {
+      contact_id: contactId,
+      phone: phoneWithDdi,
+      is_validated: isValidated,
+    };
+
+    const topic = this.kafkaServiceQueueService.contactValidationUpdate();
+    await this.streamProducerService.send(topic, payload);
+  }
+
+  private async resolveRemoteJidForInteraction(
+    request: IWebhookIntegrationRequest
+  ): Promise<string | null> {
+    const fallbackRemoteJid =
+      request.contact_is_valided && request.phone_validated
+        ? (normalizePhoneToJid(
+            request.phone_validated,
+            request.phone_ddi_validated ?? null
+          ) ?? null)
+        : null;
+    const fallbackPhoneWithDdi = this.buildPhoneWithDdi(
+      request.phone,
+      request.phone_ddi
+    );
+
+    try {
+      const result = await this.validatePhone(request.phone, request.phone_ddi);
+
+      if (!result.valid) {
+        await this.publishContactValidationUpdate(
+          request.contact_id,
+          fallbackPhoneWithDdi,
+          false
+        );
+        return null;
+      }
+
+      let validatedPhoneWithDdi =
+        result.phone ||
+        getPhoneFromJid(result.jid, null) ||
+        fallbackPhoneWithDdi;
+      let normalized = extractPhoneAndDdi(validatedPhoneWithDdi);
+      if (result.phone) {
+        const extracted = extractPhoneAndDdi(result.phone);
+        if (extracted) {
+          normalized = extracted;
+          validatedPhoneWithDdi = `${extracted.phone_ddi}${extracted.phone}`;
+        }
+      }
+
+      let validatedJid = result.jid ?? null;
+      if (!validatedJid && normalized) {
+        validatedJid =
+          normalizePhoneToJid(normalized.phone, normalized.phone_ddi) ?? null;
+      }
+
+      if (
+        this.shouldPublishSuccessContactUpdate(request, validatedPhoneWithDdi)
+      ) {
+        await this.publishContactValidationUpdate(
+          request.contact_id,
+          validatedPhoneWithDdi,
+          true
+        );
+      }
+
+      return validatedJid ?? fallbackRemoteJid;
+    } catch (error) {
+      if (this.isInvalidValidationError(error)) {
+        await this.publishContactValidationUpdate(
+          request.contact_id,
+          fallbackPhoneWithDdi,
+          false
+        );
+        return null;
+      }
+
+      if (this.isTechnicalValidationError(error)) {
+        return fallbackRemoteJid;
+      }
+
+      return null;
+    }
+  }
+
+  private buildUpsertMessage(
+    request: IWebhookIntegrationRequest,
+    remoteJid: string
+  ): IUpsertMessage | null {
     const messageText = this.extractMessageText(request);
     const waMessage = this.buildWaMessage(remoteJid, messageText ?? '');
 
@@ -227,26 +361,6 @@ export class WebhookIntegrationWwebjsConsume {
     }
 
     return upsert;
-  }
-
-  private resolveRemoteJid(
-    request: IWebhookIntegrationRequest,
-    validatedJid: string | null
-  ): string | null {
-    if (validatedJid) {
-      return validatedJid;
-    }
-
-    if (request.contact_is_valided && request.phone_validated) {
-      return (
-        normalizePhoneToJid(
-          request.phone_validated,
-          request.phone_ddi_validated ?? null
-        ) ?? null
-      );
-    }
-
-    return normalizePhoneToJid(request.phone, request.phone_ddi) ?? null;
   }
 
   private buildWaMessage(remoteJid: string, messageText: string): WAMessage {

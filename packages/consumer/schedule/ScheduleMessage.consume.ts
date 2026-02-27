@@ -26,6 +26,10 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import Redis from 'ioredis';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { scheduleMappings } from '@core/mappings/schedule.mappings';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
+import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
 
 @singleton()
 export class ScheduleMessageConsume {
@@ -184,94 +188,199 @@ export class ScheduleMessageConsume {
     }
   }
 
+  private buildPhoneWithDdi(
+    phone: string | null | undefined,
+    phoneDdi: string | null | undefined
+  ): string {
+    const ddi = phoneDdi || '55';
+    return `${ddi}${phone ?? ''}`;
+  }
+
+  private isTechnicalValidationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return true;
+    }
+
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('deadline exceeded') ||
+      errorMessage.includes('disconnected') ||
+      errorMessage.includes('connection') ||
+      errorMessage.includes('unavailable') ||
+      errorMessage.includes('not connected')
+    );
+  }
+
+  private isInvalidValidationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const errorMessage = error.message.toLowerCase();
+    return (
+      errorMessage.includes('phone_number_not_valid_on_whatsapp') ||
+      errorMessage.includes('phone number is not valid on whatsapp')
+    );
+  }
+
+  private shouldPublishValidationSuccessUpdate(
+    data: IScheduleMessage,
+    validatedPhoneWithDdi: string
+  ): boolean {
+    if (!data.is_validated) {
+      return true;
+    }
+
+    const currentPhoneWithDdi = this.buildPhoneWithDdi(
+      data.message.phone,
+      data.message.phone_ddi
+    );
+
+    return (
+      onlyDigits(currentPhoneWithDdi) !== onlyDigits(validatedPhoneWithDdi)
+    );
+  }
+
+  private async publishContactValidationUpdate(
+    contactId: string,
+    phoneWithDdi: string,
+    isValidated: boolean
+  ): Promise<void> {
+    const contactUpdate: IContactValidationUpdate = {
+      contact_id: contactId,
+      phone: phoneWithDdi,
+      is_validated: isValidated,
+    };
+
+    const topic = this.kafkaServiceQueueService.contactValidationUpdate();
+    await this.streamProducerService.send(topic, contactUpdate);
+  }
+
+  private async resolveValidatedJid(
+    data: IScheduleMessage,
+    fallbackJid: string
+  ): Promise<string | null> {
+    const phone = data.message.phone;
+    const phoneDdi = data.message.phone_ddi || '55';
+
+    if (!phone) {
+      if (data.is_validated) {
+        return fallbackJid;
+      }
+      return null;
+    }
+
+    const fallbackPhoneWithDdi = this.buildPhoneWithDdi(phone, phoneDdi);
+    const maxRetries = 3;
+    let lastError: unknown = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const validationResult =
+          await this.baileysPhoneValidationService.validatePhone(
+            phoneDdi,
+            phone
+          );
+
+        if (!validationResult.valid) {
+          await this.publishContactValidationUpdate(
+            data.contact_id,
+            fallbackPhoneWithDdi,
+            false
+          );
+          return null;
+        }
+
+        const normalizedFromResponse = validationResult.phone
+          ? extractPhoneAndDdi(validationResult.phone)
+          : null;
+        const validatedPhoneWithDdi = normalizedFromResponse
+          ? `${normalizedFromResponse.phone_ddi}${normalizedFromResponse.phone}`
+          : validationResult.phone ||
+            getPhoneFromJid(validationResult.jid, null) ||
+            fallbackPhoneWithDdi;
+
+        let validatedJid = validationResult.jid ?? null;
+        if (!validatedJid && normalizedFromResponse) {
+          validatedJid =
+            normalizePhoneToJid(
+              normalizedFromResponse.phone,
+              normalizedFromResponse.phone_ddi
+            ) ?? null;
+        }
+
+        const jidToUse = validatedJid ?? fallbackJid;
+        if (!jidToUse) {
+          return null;
+        }
+
+        if (
+          this.shouldPublishValidationSuccessUpdate(data, validatedPhoneWithDdi)
+        ) {
+          await this.publishContactValidationUpdate(
+            data.contact_id,
+            validatedPhoneWithDdi,
+            true
+          );
+        }
+
+        return jidToUse;
+      } catch (error) {
+        lastError = error;
+
+        if (this.isInvalidValidationError(error)) {
+          await this.publishContactValidationUpdate(
+            data.contact_id,
+            fallbackPhoneWithDdi,
+            false
+          );
+          return null;
+        }
+
+        if (this.isTechnicalValidationError(error) && attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+          continue;
+        }
+
+        break;
+      }
+    }
+
+    if (lastError instanceof Error) {
+      console.warn(
+        `[ScheduleMessageConsume] Phone validation failed after ${maxRetries} attempts for contact ${data.contact_id}: ${lastError.message}`
+      );
+    }
+
+    if (data.is_validated) {
+      return fallbackJid;
+    }
+
+    return null;
+  }
+
   private async handleMessage(data: IScheduleMessage): Promise<void> {
     const delay = data.message?.send_delay_ms;
     if (delay && typeof delay === 'number' && delay > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
-    const jid = selectJidChat(data.message);
+    const fallbackJid = selectJidChat(data.message);
 
-    if (!jid) {
+    if (!fallbackJid) {
       throw new Error('Received message without remoteJid');
     }
 
-    if (!data.is_validated) {
-      const phone = data.message.phone;
-      const phoneDdi = data.message.phone_ddi || '55';
-
-      if (!phone) {
-        await this.sendStatusUpdate(
-          data.schedule_id,
-          data.contact_id,
-          data.message.message_id,
-          EScheduleStatus.ignored
-        );
-        return;
-      }
-
-      const maxRetries = 3;
-      let isValid = false;
-      let lastError: Error | null = null;
-
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const validationResult =
-            await this.baileysPhoneValidationService.validatePhone(
-              phoneDdi,
-              phone
-            );
-
-          if (validationResult.valid && validationResult.phone) {
-            const contactUpdate: IContactValidationUpdate = {
-              contact_id: data.contact_id,
-              phone: validationResult.phone,
-              is_validated: true,
-            };
-
-            const topic =
-              this.kafkaServiceQueueService.contactValidationUpdate();
-            await this.streamProducerService.send(topic, contactUpdate);
-            isValid = true;
-            break;
-          } else {
-            lastError = new Error('Phone validation returned invalid');
-          }
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(String(error));
-          console.warn(
-            `[ScheduleMessageConsume] Phone validation attempt ${attempt}/${maxRetries} failed for contact ${data.contact_id}:`,
-            lastError.message
-          );
-
-          if (attempt < maxRetries) {
-            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-          }
-        }
-      }
-
-      if (!isValid) {
-        const contactUpdate: IContactValidationUpdate = {
-          contact_id: data.contact_id,
-          phone: phone,
-          is_validated: false,
-        };
-
-        const topic = this.kafkaServiceQueueService.contactValidationUpdate();
-        await this.streamProducerService.send(topic, contactUpdate);
-
-        console.warn(
-          `[ScheduleMessageConsume] Phone validation failed after ${maxRetries} attempts for contact ${data.contact_id}. Ignoring message.`
-        );
-
-        await this.sendStatusUpdate(
-          data.schedule_id,
-          data.contact_id,
-          data.message.message_id,
-          EScheduleStatus.ignored
-        );
-        return;
-      }
+    const jid = await this.resolveValidatedJid(data, fallbackJid);
+    if (!jid) {
+      await this.sendStatusUpdate(
+        data.schedule_id,
+        data.contact_id,
+        data.message.message_id,
+        EScheduleStatus.ignored
+      );
+      return;
     }
 
     const messageType = data.message.content?.type;
