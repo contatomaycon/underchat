@@ -329,6 +329,10 @@ const canReopenChat = computed(() => {
   return true;
 });
 
+const showProtocolInChat = computed(() => {
+  return workerConfigForChat.value?.show_protocol_in_chat === true;
+});
+
 const loadWorkerConfigForChat = async (forceReload = false) => {
   const workerId = chatStore.activeChat?.worker?.id;
   if (!workerId) {
@@ -5070,6 +5074,7 @@ onBeforeUnmount(() => {
               </p>
               <!-- Protocol badge inline (mobile only) -->
               <ChatProtocolBadgeDialog
+                v-if="showProtocolInChat"
                 class="d-sm-none active-chat-protocol-mobile"
                 @click.stop
                 :chat="chatStore.activeChat"
@@ -5094,6 +5099,7 @@ onBeforeUnmount(() => {
 
           <!-- Protocol badge (desktop/tablet) -->
           <ChatProtocolBadgeDialog
+            v-if="showProtocolInChat"
             class="d-none d-sm-flex"
             :chat="chatStore.activeChat"
             :contact-name="

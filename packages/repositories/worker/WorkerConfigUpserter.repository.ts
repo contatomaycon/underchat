@@ -40,6 +40,15 @@ export class WorkerConfigUpserterRepository {
         );
       }
 
+      if (input.show_protocol_in_chat !== undefined) {
+        await this.upsertBooleanConfig(
+          tx,
+          workerId,
+          EWorkerConfigType.show_protocol_in_chat,
+          input.show_protocol_in_chat
+        );
+      }
+
       if (input.allow_attendance_only_online !== undefined) {
         await this.upsertBooleanConfig(
           tx,

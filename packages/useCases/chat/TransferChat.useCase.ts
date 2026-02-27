@@ -17,7 +17,6 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { WorkerService } from '@core/services/worker.service';
-import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
@@ -144,11 +143,19 @@ export class TransferChatUseCase {
     sectorName?: string | null,
     userName?: string | null
   ): Promise<string> {
-    const protocol = generateProtocol();
-
     const chat = await this.chatService.findChatByChatId(accountId, chatId);
     if (!chat) {
       throw new Error(t('chat_not_found'));
+    }
+
+    const protocol =
+      (await this.chatService.getOrCreateChatProtocol(
+        accountId,
+        chatId,
+        protocolType
+      )) || this.chatService.getLatestProtocolByType(chat, protocolType);
+    if (!protocol) {
+      throw new Error(t('chat_transfer_failed'));
     }
 
     const message = replaceMessageTags({
@@ -160,16 +167,13 @@ export class TransferChatUseCase {
       userName,
     });
 
-    await Promise.all([
-      this.chatMessageService.sendMessage(t, {
-        chat,
-        accountId,
-        type: EMessageType.system,
-        message,
-        typeUser: ETypeUserChat.system,
-      }),
-      this.chatService.updateChatProtocol(chatId, protocolType, protocol),
-    ]);
+    await this.chatMessageService.sendMessage(t, {
+      chat,
+      accountId,
+      type: EMessageType.system,
+      message,
+      typeUser: ETypeUserChat.system,
+    });
 
     return protocol;
   }
@@ -250,8 +254,12 @@ export class TransferChatUseCase {
     const existingProtocols = updatedChat.protocol_transfer ?? [];
     let protocolTransfer: string[] | null = null;
     if (protocol) {
-      protocolTransfer = [...existingProtocols, protocol];
-    } else if (existingProtocols.length > 0) {
+      const hasProtocol = existingProtocols.includes(protocol);
+      protocolTransfer = hasProtocol
+        ? existingProtocols
+        : [...existingProtocols, protocol];
+    }
+    if (!protocol && existingProtocols.length > 0) {
       protocolTransfer = existingProtocols;
     }
 

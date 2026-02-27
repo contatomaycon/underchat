@@ -90,6 +90,7 @@ export class WorkerConfigService {
         worker_id: workerId,
         show_attendee_name: null,
         show_worker_name: null,
+        show_protocol_in_chat: null,
         allow_attendance_only_online: null,
         simultaneous_attendance: null,
         generate_protocol_at_start: null,
@@ -132,6 +133,7 @@ export class WorkerConfigService {
       worker_id: result.worker_id,
       show_attendee_name: result.show_attendee_name ?? false,
       show_worker_name: result.show_worker_name ?? false,
+      show_protocol_in_chat: result.show_protocol_in_chat ?? false,
       allow_attendance_only_online:
         result.allow_attendance_only_online ?? false,
       simultaneous_attendance: result.simultaneous_attendance ?? null,

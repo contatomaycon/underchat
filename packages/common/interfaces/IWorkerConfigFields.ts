@@ -1,6 +1,7 @@
 export interface IWorkerConfigFields {
   show_attendee_name: boolean | null;
   show_worker_name: boolean | null;
+  show_protocol_in_chat: boolean | null;
   allow_attendance_only_online: boolean | null;
   generate_protocol_at_start: string | null;
   generate_protocol_at_transfer: string | null;

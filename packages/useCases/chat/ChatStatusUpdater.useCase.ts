@@ -21,7 +21,6 @@ import { WorkerService } from '@core/services/worker.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
@@ -63,11 +62,19 @@ export class ChatStatusUpdaterUseCase {
     protocolText: string,
     protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer'
   ): Promise<string> {
-    const protocol = generateProtocol();
-
     const chat = await this.chatService.findChatByChatId(accountId, chatId);
     if (!chat) {
       throw new Error(t('chat_not_found'));
+    }
+
+    const protocol =
+      (await this.chatService.getOrCreateChatProtocol(
+        accountId,
+        chatId,
+        protocolType
+      )) || this.chatService.getLatestProtocolByType(chat, protocolType);
+    if (!protocol) {
+      throw new Error(t('chat_status_update_failed'));
     }
 
     const message = replaceMessageTags({
@@ -77,16 +84,13 @@ export class ChatStatusUpdaterUseCase {
       t,
     });
 
-    await Promise.all([
-      this.chatMessageService.sendMessage(t, {
-        chat,
-        accountId,
-        type: EMessageType.system,
-        message,
-        typeUser: ETypeUserChat.system,
-      }),
-      this.chatService.updateChatProtocol(chatId, protocolType, protocol),
-    ]);
+    await this.chatMessageService.sendMessage(t, {
+      chat,
+      accountId,
+      type: EMessageType.system,
+      message,
+      typeUser: ETypeUserChat.system,
+    });
 
     return protocol;
   }
@@ -177,25 +181,14 @@ export class ChatStatusUpdaterUseCase {
     let protocolPersisted = false;
 
     if (hasProtocolTag(templateMessage)) {
-      generatedProtocol = generateProtocol();
-      try {
-        protocolPersisted = await this.chatService.updateChatProtocol(
+      generatedProtocol =
+        (await this.chatService.getOrCreateChatProtocol(
+          accountId,
           chatId,
-          'protocol_start',
-          generatedProtocol
-        );
-
-        if (!protocolPersisted) {
-          console.warn(
-            `[ChatStatusUpdater] Failed to persist finish protocol for chat ${chatId}`
-          );
-        }
-      } catch (error) {
-        console.error(
-          `[ChatStatusUpdater] Error persisting finish protocol for chat ${chatId}:`,
-          error
-        );
-      }
+          'protocol_start'
+        )) ||
+        this.chatService.getLatestProtocolByType(chatData, 'protocol_start');
+      protocolPersisted = generatedProtocol !== null;
     }
 
     const message = replaceMessageTags({
@@ -440,8 +433,12 @@ export class ChatStatusUpdaterUseCase {
     const existingProtocols = updatedChat.protocol_start ?? [];
     let protocolStart: string[] | null = null;
     if (protocol) {
-      protocolStart = [...existingProtocols, protocol];
-    } else if (existingProtocols.length > 0) {
+      const hasProtocol = existingProtocols.includes(protocol);
+      protocolStart = hasProtocol
+        ? existingProtocols
+        : [...existingProtocols, protocol];
+    }
+    if (!protocol && existingProtocols.length > 0) {
       protocolStart = existingProtocols;
     }
 

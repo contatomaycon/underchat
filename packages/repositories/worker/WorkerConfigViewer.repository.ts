@@ -368,6 +368,11 @@ export class WorkerConfigViewerRepository {
       show_worker_name: configMap.has(EWorkerConfigType.show_worker_name)
         ? true
         : null,
+      show_protocol_in_chat: configMap.has(
+        EWorkerConfigType.show_protocol_in_chat
+      )
+        ? true
+        : null,
       allow_attendance_only_online: configMap.has(
         EWorkerConfigType.allow_attendance_only_online
       )

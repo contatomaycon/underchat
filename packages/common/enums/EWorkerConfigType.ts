@@ -1,6 +1,7 @@
 export enum EWorkerConfigType {
   show_attendee_name = '019b89ac-697d-750c-b404-0d52ac735a0c',
   show_worker_name = '019b89ac-697d-750c-b404-138f5cb791da',
+  show_protocol_in_chat = '019c9cfa-aba1-7378-bf86-00edd736886e',
   allow_attendance_only_online = '019b89ac-697d-750c-b404-1786f896d04c',
   simultaneous_attendance = '019b89ac-697d-750c-b404-18cfe47c791e',
   generate_protocol_at_start = '019b89ac-697d-750c-b404-1ed338f8324a',

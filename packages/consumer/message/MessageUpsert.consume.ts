@@ -74,7 +74,6 @@ import { parseSerializedMessageId } from '@core/common/functions/parseSerialized
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { IMessageKeyIdContext } from '@core/common/interfaces/IMessageKeyIdContext';
 import { ChatMessageService } from '@core/services/chatMessage.service';
-import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import {
@@ -3149,26 +3148,12 @@ export class MessageUpsertConsume {
 
     let protocol: string | null = null;
     if (hasProtocolTag(message)) {
-      protocol = generateProtocol();
-
-      try {
-        const persisted = await this.chatService.updateChatProtocol(
+      protocol =
+        (await this.chatService.getOrCreateChatProtocol(
+          data.account_id,
           chat.chat_id,
-          'protocol_start',
-          protocol
-        );
-
-        if (!persisted) {
-          console.warn(
-            `[MessageUpsert] Failed to persist outside-hours protocol for chat ${chat.chat_id}`
-          );
-        }
-      } catch (error) {
-        console.error(
-          `[MessageUpsert] Error persisting outside-hours protocol for chat ${chat.chat_id}:`,
-          error
-        );
-      }
+          'protocol_start'
+        )) || this.chatService.getLatestProtocolByType(chat, 'protocol_start');
     }
 
     const formattedMessage = replaceMessageTags({

@@ -36,7 +36,6 @@ import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
@@ -339,27 +338,14 @@ export class WorkerCommandHandlerService {
 
     let protocol: string | null = null;
     if (hasProtocolTag(template)) {
-      protocol = generateProtocol();
-
       if (chat) {
-        try {
-          const persisted = await this.chatService.updateChatProtocol(
+        protocol =
+          (await this.chatService.getOrCreateChatProtocol(
+            accountId,
             chat.chat_id,
-            'protocol_start',
-            protocol
-          );
-
-          if (!persisted) {
-            console.warn(
-              `[WorkerCommandHandler] Failed to persist call protocol for chat ${chat.chat_id}`
-            );
-          }
-        } catch (error) {
-          console.error(
-            `[WorkerCommandHandler] Error persisting call protocol for chat ${chat.chat_id}:`,
-            error
-          );
-        }
+            'protocol_start'
+          )) ||
+          this.chatService.getLatestProtocolByType(chat, 'protocol_start');
       }
     }
 

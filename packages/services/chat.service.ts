@@ -29,10 +29,13 @@ import {
 } from '@core/common/functions/createCacheKey';
 import Redis from 'ioredis';
 import { safeRedisGet } from '@core/plugins/redis';
+import { generateProtocol } from '@core/common/functions/generateProtocol';
 
 type ElasticHit<T> = {
   _source?: T;
 };
+
+type ChatProtocolType = 'protocol_ura' | 'protocol_start' | 'protocol_transfer';
 
 @injectable()
 export class ChatService {
@@ -904,7 +907,7 @@ export class ChatService {
 
   updateChatProtocol = async (
     chatId: string,
-    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer',
+    protocolType: ChatProtocolType,
     protocol: string
   ): Promise<boolean> => {
     return this.elasticDatabaseService.updateArrayField(
@@ -913,6 +916,46 @@ export class ChatService {
       protocolType,
       protocol
     );
+  };
+
+  getOrCreateChatProtocol = async (
+    accountId: string,
+    chatId: string,
+    protocolType: ChatProtocolType
+  ): Promise<string | null> => {
+    const chat = await this.findChatByChatId(accountId, chatId);
+    if (!chat) {
+      return null;
+    }
+
+    const existingProtocol = this.getLatestProtocolByType(chat, protocolType);
+    if (existingProtocol) {
+      return existingProtocol;
+    }
+
+    const protocol = generateProtocol();
+    const persisted = await this.updateChatProtocol(
+      chatId,
+      protocolType,
+      protocol
+    );
+    if (!persisted) {
+      return null;
+    }
+
+    return protocol;
+  };
+
+  getLatestProtocolByType = (
+    chat: IChat,
+    protocolType: ChatProtocolType
+  ): string | null => {
+    const protocols = chat[protocolType] ?? [];
+    if (protocols.length === 0) {
+      return null;
+    }
+
+    return protocols[protocols.length - 1] ?? null;
   };
 
   updateChatSatisfactionResponse = async (

@@ -195,6 +195,7 @@ const cropPreviewSize = 160;
 type WorkerConfigForm = {
   show_attendee_name: boolean;
   show_worker_name: boolean;
+  show_protocol_in_chat: boolean;
   allow_attendance_only_online: boolean;
   simultaneous_attendance: boolean;
   generate_protocol_at_start: boolean;
@@ -227,6 +228,7 @@ type ChatbotConfigResponse = {
 const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   show_attendee_name: false,
   show_worker_name: false,
+  show_protocol_in_chat: false,
   allow_attendance_only_online: false,
   simultaneous_attendance: false,
   generate_protocol_at_start: false,
@@ -888,6 +890,7 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
   if (config) {
     nextState.show_attendee_name = config.show_attendee_name;
     nextState.show_worker_name = config.show_worker_name;
+    nextState.show_protocol_in_chat = config.show_protocol_in_chat ?? false;
     nextState.allow_attendance_only_online =
       config.allow_attendance_only_online;
     nextState.simultaneous_attendance = Boolean(config.simultaneous_attendance);
@@ -1209,6 +1212,7 @@ const onWorkerConfigCheckboxChange = async (
   const fieldsToUpdateViaConfigEndpoint: WorkerConfigField[] = [
     'show_attendee_name',
     'show_worker_name',
+    'show_protocol_in_chat',
     'allow_attendance_only_online',
     'reject_call',
     'auto_save_contacts',
@@ -2036,6 +2040,11 @@ const workerConfigOptions = computed(() => [
     key: 'show_worker_name' as WorkerConfigField,
     title: t('channel_general_config_show_worker_name_title'),
     description: t('channel_general_config_show_worker_name_description'),
+  },
+  {
+    key: 'show_protocol_in_chat' as WorkerConfigField,
+    title: t('channel_general_config_show_protocol_in_chat_title'),
+    description: t('channel_general_config_show_protocol_in_chat_description'),
   },
   {
     key: 'allow_attendance_only_online' as WorkerConfigField,

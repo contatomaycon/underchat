@@ -172,6 +172,8 @@
   "channel_general_config_show_attendee_name_description": "Muestra dentro del chat quién está respondiendo.",
   "channel_general_config_show_worker_name_title": "Mostrar el nombre del canal en el chat",
   "channel_general_config_show_worker_name_description": "Exhibe el nombre del canal en el encabezado y la conversación.",
+  "channel_general_config_show_protocol_in_chat_title": "Mostrar protocolo en el chat",
+  "channel_general_config_show_protocol_in_chat_description": "Exhibe el protocolo en el encabezado y en la conversación.",
   "channel_general_config_allow_attendance_only_online_title": "Permitir atención solo para agentes con estado en línea",
   "channel_general_config_allow_attendance_only_online_description": "Restringe la atención solo a agentes con estado en línea. Los agentes con otros estados no podrán atender manualmente, recibir transferencias o nuevas atenciones automáticas.",
   "channel_general_config_generate_protocol_ura_title": "Generar protocolo en la IVR",

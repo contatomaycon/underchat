@@ -5,6 +5,7 @@ export interface IWorkerConfigValue {
   worker_id: string;
   show_attendee_name: boolean | null;
   show_worker_name: boolean | null;
+  show_protocol_in_chat: boolean | null;
   allow_attendance_only_online: boolean | null;
   simultaneous_attendance: number | null;
   generate_protocol_at_start: string | null;
