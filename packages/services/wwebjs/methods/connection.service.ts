@@ -897,6 +897,8 @@ export class WwebjsConnectionService {
 
           this.publishSub(logoutPayload, true);
           void this.notifyWorkerStatusSafely(logoutPayload, 'logged_out');
+
+          this.clearFolder();
         }
 
         this.pendingResolve?.(this.state());
@@ -904,7 +906,34 @@ export class WwebjsConnectionService {
 
         this.incomingMessageService.unbind();
         this.client = undefined;
-        this.scheduleNextReconnectAttempt();
+
+        if (
+          statusCode === ECodeMessage.loggedOut &&
+          this.typeConnection === EBaileysConnectionType.qrcode &&
+          this.initialConnection &&
+          !this.userRequestedDisconnect
+        ) {
+          this.retryCount = 0;
+          this.logConnectionEvent('session_invalidated_scheduling_qr', {
+            connection_type: this.typeConnection,
+          });
+          this.clearDisconnectRetryTimer();
+          this.disconnectRetryTimer = setTimeout(() => {
+            this.disconnectRetryTimer = undefined;
+            this.connect({
+              initial_connection: this.initialConnection,
+              force_new: false,
+              allow_restore: false,
+              type: this.typeConnection,
+              requested_by_user: false,
+              from_disconnect_restart: true,
+            }).catch(() => {
+              this.scheduleNextReconnectAttempt();
+            });
+          }, RETRY_DELAY);
+        } else {
+          this.scheduleNextReconnectAttempt();
+        }
       });
 
       client.on('auth_failure', () => {
@@ -1194,6 +1223,16 @@ export class WwebjsConnectionService {
     if (requestedByUser) {
       this.qrReadSessionActive = true;
       this.qrReadSessionLocked = false;
+      this.qrGenerationCount = 0;
+      this.qrHash = undefined;
+    }
+
+    if (
+      !this.qrReadSessionActive &&
+      !this.qrReadSessionLocked &&
+      !this.hasSession()
+    ) {
+      this.qrReadSessionActive = true;
       this.qrGenerationCount = 0;
       this.qrHash = undefined;
     }

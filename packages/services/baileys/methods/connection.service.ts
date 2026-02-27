@@ -1069,11 +1069,27 @@ export class BaileysConnectionService {
       this.publishSub(payload, true);
 
       await this.notifyWorkerStatusSafely(payload, 'logged_out');
+
+      this.clearFolder();
     }
 
     resolve(this.state());
     this.pendingResolve = undefined;
-    this.scheduleNextReconnectAttempt();
+
+    if (
+      statusCode === ECodeMessage.loggedOut &&
+      this.typeConnection === EBaileysConnectionType.qrcode &&
+      this.initialConnection &&
+      !this.userRequestedDisconnect
+    ) {
+      this.retryCount = 0;
+      this.logConnectionEvent('session_invalidated_scheduling_qr', {
+        connection_type: this.typeConnection,
+      });
+      this.scheduleReconnect(this.retryDelay);
+    } else {
+      this.scheduleNextReconnectAttempt();
+    }
   }
 
   private onNewLoginAttempt() {
@@ -1115,6 +1131,16 @@ export class BaileysConnectionService {
     if (requestedByUser) {
       this.qrReadSessionActive = true;
       this.qrReadSessionLocked = false;
+      this.qrGenerationCount = 0;
+      this.qrHash = undefined;
+    }
+
+    if (
+      !this.qrReadSessionActive &&
+      !this.qrReadSessionLocked &&
+      !this.hasSession()
+    ) {
+      this.qrReadSessionActive = true;
       this.qrGenerationCount = 0;
       this.qrHash = undefined;
     }
