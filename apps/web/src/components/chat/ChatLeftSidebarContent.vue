@@ -109,6 +109,7 @@ const contactSortField = ref<string | null>('name');
 const contactSortOrder = ref<string | null>('asc');
 
 const isLoadingChatbot = ref(false);
+const isLoadingMoreChatbot = ref(false);
 
 const listClosed = ref<ListChatsResult[]>([]);
 const closedPagings = ref({
@@ -1659,11 +1660,14 @@ const handleChatScroll = async (event?: Event) => {
         chatStore.chatbotPagings.total_pages &&
       !isLoadingChatbot.value
     ) {
-      isLoadingChatbot.value = true;
+      isLoadingMoreChatbot.value = true;
       chatStore.chatbotPagings.current_page += 1;
-      await loadChatbotChats(true);
-      isLoadingChatbot.value = false;
-      await updateScrollbar();
+      try {
+        await loadChatbotChats(true);
+        await updateScrollbar();
+      } finally {
+        isLoadingMoreChatbot.value = false;
+      }
     }
     return;
   }
@@ -2794,7 +2798,12 @@ defineExpose({
       @ps-scroll-y="handleChatScroll"
     >
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <template v-if="isLoadingChatbot || isLoadingWorkerConfigs">
+        <template
+          v-if="
+            (isLoadingChatbot || isLoadingWorkerConfigs) &&
+            !isLoadingMoreChatbot
+          "
+        >
           <li
             v-for="i in chatStore.chatbotPagings.per_page"
             :key="`skeleton-chatbot-${i}`"
@@ -2844,7 +2853,7 @@ defineExpose({
             {{ $t('no_chat_in_ura') }}
           </li>
 
-          <template v-if="isLoadingChatbot">
+          <template v-if="isLoadingMoreChatbot">
             <li
               v-for="i in chatStore.chatbotPagings.per_page"
               :key="`skeleton-chatbot-pagination-${i}`"

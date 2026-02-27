@@ -2195,9 +2195,9 @@ export const useChatStore = defineStore('chat', {
       input: ListChatsQuery,
       append = false
     ): Promise<ListChatsResponse | null> {
-      try {
-        this.loading = true;
+      this.loading = true;
 
+      try {
         const request: ListChatsQuery = {
           current_page: input.current_page,
           per_page: input.per_page,
@@ -2218,8 +2218,6 @@ export const useChatStore = defineStore('chat', {
             params: request,
           }
         );
-
-        this.loading = false;
 
         const data = response?.data;
 
@@ -2251,6 +2249,8 @@ export const useChatStore = defineStore('chat', {
         }
 
         return null;
+      } finally {
+        this.loading = false;
       }
     },
 
