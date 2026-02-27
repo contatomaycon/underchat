@@ -2170,8 +2170,9 @@ export class MessageUpsertConsume {
         return false;
       }
 
-      const existingMessageByKey = await this.findMessageByKeyIdInAccount(
+      const existingMessageByKey = await this.findMessageByKeyId(
         data.account_id,
+        getChat.chat_id,
         messageId,
         data.message?.key
       );

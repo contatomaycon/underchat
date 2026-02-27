@@ -1239,7 +1239,11 @@ export async function wwebjsMessageToUpsert(
   }
 
   const rawType = (msg.type ?? 'chat').toLowerCase();
-  if (rawType === 'notification_template' || rawType === 'e2e_notification') {
+  if (
+    rawType === 'notification_template' ||
+    rawType === 'e2e_notification' ||
+    rawType === 'album'
+  ) {
     return null;
   }
   const rawData = getRawMessageData(msg);
