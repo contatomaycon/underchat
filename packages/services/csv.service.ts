@@ -6,9 +6,13 @@ import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { validateCpf } from '@core/common/functions/validateCpf';
 import { validateCnpj } from '@core/common/functions/validateCnpj';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
+import { repairMojibakeIfSafe } from '@core/common/functions/repairMojibake';
+import { TextDecoder } from 'node:util';
 
 @injectable()
 export class CsvFileReaderService {
+  private readonly replacementCharacter = '\uFFFD';
+
   constructor(
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService
@@ -58,9 +62,47 @@ export class CsvFileReaderService {
     return trimmed;
   }
 
+  private decodeAsWindows1252(buffer: Buffer): string | null {
+    try {
+      const decoder = new TextDecoder('windows-1252');
+      return decoder.decode(buffer);
+    } catch {
+      return null;
+    }
+  }
+
+  private decodeBufferToText(buffer: Buffer): string {
+    const utf8Decoded = buffer.toString('utf8');
+
+    if (!utf8Decoded.includes(this.replacementCharacter)) {
+      return utf8Decoded;
+    }
+
+    const windows1252Decoded = this.decodeAsWindows1252(buffer);
+
+    if (
+      windows1252Decoded &&
+      !windows1252Decoded.includes(this.replacementCharacter)
+    ) {
+      return windows1252Decoded;
+    }
+
+    return buffer.toString('latin1');
+  }
+
+  private sanitizeImportedText(value: string): string {
+    const repaired = repairMojibakeIfSafe(value);
+
+    if (typeof repaired !== 'string') {
+      return value;
+    }
+
+    return repaired;
+  }
+
   async read(file: UploadFileRequest): Promise<ICreateContact[]> {
     const buf = await file.toBuffer();
-    const text = buf.toString('utf8').trim();
+    const text = this.decodeBufferToText(buf).trim();
 
     const isVcard =
       /^BEGIN:VCARD/i.test(text) ||
@@ -379,7 +421,7 @@ export class CsvFileReaderService {
     }
 
     res.push(cur);
-    return res.map((s) => s?.trim() ?? '');
+    return res.map((s) => this.sanitizeImportedText(s?.trim() ?? ''));
   }
 
   private _parseVcardCards(lines: string[]): string[][] {
@@ -502,7 +544,7 @@ export class CsvFileReaderService {
       const i = l.indexOf(':');
       if (i === -1) continue;
       const key = l.slice(0, i).split(';')[0].toUpperCase();
-      const val = l.slice(i + 1);
+      const val = this.sanitizeImportedText(l.slice(i + 1));
       const arr = m.get(key) ?? [];
       arr.push(val);
       m.set(key, arr);
@@ -525,11 +567,11 @@ export class CsvFileReaderService {
 
   private _val(cols: string[], idx: number) {
     if (idx < 0) return '';
-    return cols[idx] ?? '';
+    return this.sanitizeImportedText(cols[idx] ?? '');
   }
 
   private _toNull(v?: string) {
-    const s = (v ?? '').trim();
+    const s = this.sanitizeImportedText(v ?? '').trim();
     return s || null;
   }
 

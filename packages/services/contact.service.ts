@@ -36,6 +36,7 @@ import { truncateContactName } from '@core/common/functions/truncateContactName'
 import { ContactGroupAssignmentCreatorRepository } from '@core/repositories/contactGroup/ContactGroupAssignmentCreator.repository';
 import { ContactGroupAssignmentViewerExistsRepository } from '@core/repositories/contactGroup/ContactGroupAssignmentViewerExists.repository';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
+import { repairMojibakeIfSafe } from '@core/common/functions/repairMojibake';
 
 @injectable()
 export class ContactService {
@@ -159,6 +160,16 @@ export class ContactService {
     }
 
     return trimmedUserId;
+  }
+
+  private normalizeContactText(
+    value: string | null | undefined
+  ): string | null | undefined {
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    return repairMojibakeIfSafe(value);
   }
 
   private processEmailFields(
@@ -290,8 +301,23 @@ export class ContactService {
     );
 
     if (isAlreadyEncrypted) {
+      const encryptedInput = input as ICreateContact;
+      const normalizedName =
+        this.normalizeContactText(encryptedInput.name) ?? '';
+      const normalizedLastName = this.normalizeContactText(
+        encryptedInput.last_name
+      );
+      const normalizedNickname = this.normalizeContactText(
+        encryptedInput.nickname
+      );
+      const normalizedNotes = this.normalizeContactText(encryptedInput.notes);
+
       return {
-        ...input,
+        ...encryptedInput,
+        name: normalizedName,
+        last_name: normalizedLastName,
+        nickname: normalizedNickname,
+        notes: normalizedNotes,
         photo: photoUrl ?? input.photo,
       };
     }
@@ -301,12 +327,24 @@ export class ContactService {
       createInput.label_template_ids
     );
     const channelIds = this.extractChannelIds(createInput.channel_ids);
-    const name = extractFieldValue(createInput.name as FieldValue);
-    const lastName = extractFieldValue(createInput.last_name as FieldValue);
+    const name =
+      this.normalizeContactText(
+        extractFieldValue(createInput.name as FieldValue)
+      ) ?? '';
+    const lastName =
+      this.normalizeContactText(
+        extractFieldValue(createInput.last_name as FieldValue)
+      ) ?? '';
     const phoneDdi = extractFieldValue(createInput.phone_ddi as FieldValue);
-    const nickname = extractFieldValue(createInput.nickname as FieldValue);
+    const nickname =
+      this.normalizeContactText(
+        extractFieldValue(createInput.nickname as FieldValue)
+      ) ?? '';
     const birthday = extractFieldValue(createInput.birthday as FieldValue);
-    const notes = extractFieldValue(createInput.notes as FieldValue);
+    const notes =
+      this.normalizeContactText(
+        extractFieldValue(createInput.notes as FieldValue)
+      ) ?? '';
     const rawContactDocumentTypeId = extractFieldValue(
       createInput.contact_document_type_id as FieldValue
     );
@@ -337,7 +375,7 @@ export class ContactService {
       label_template_ids: labelTemplateIds,
       contact_document_type_id: contactDocumentTypeId,
       is_valided: isValidated,
-      name: name ?? '',
+      name,
       last_name: lastName,
       email: emailFields.emailCEncrypted,
       email_partial: emailFields.emailPartialEncrypted,
@@ -618,11 +656,19 @@ export class ContactService {
     const channelIds = hasChannelIds
       ? this.extractChannelIds(input.channel_ids)
       : null;
-    const name = extractFieldValue(input.name as FieldValue);
-    const lastName = extractFieldValue(input.last_name as FieldValue);
-    const nickname = extractFieldValue(input.nickname as FieldValue);
+    const name = this.normalizeContactText(
+      extractFieldValue(input.name as FieldValue)
+    );
+    const lastName = this.normalizeContactText(
+      extractFieldValue(input.last_name as FieldValue)
+    );
+    const nickname = this.normalizeContactText(
+      extractFieldValue(input.nickname as FieldValue)
+    );
     const birthday = extractFieldValue(input.birthday as FieldValue);
-    const notes = extractFieldValue(input.notes as FieldValue);
+    const notes = this.normalizeContactText(
+      extractFieldValue(input.notes as FieldValue)
+    );
     const rawContactDocumentTypeId = extractFieldValue(
       input.contact_document_type_id as FieldValue
     );
@@ -650,8 +696,8 @@ export class ContactService {
         : null;
 
     const payload: IUpdateContact = {
-      name,
-      last_name: lastName,
+      name: name ?? '',
+      last_name: lastName ?? '',
       email: emailCEncrypted,
       email_partial: emailPartialEncrypted,
       email_c: emailC,
@@ -659,10 +705,10 @@ export class ContactService {
       phone: phoneCEncrypted,
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
-      nickname,
+      nickname: nickname ?? '',
       photo: photoUrl,
       birthday: nullIfEmpty(birthday),
-      notes,
+      notes: notes ?? '',
       is_valided: isValided,
     };
 
@@ -715,20 +761,29 @@ export class ContactService {
       is_valided: currentContact.is_valided ?? false,
     };
 
+    const normalizedCsvName = this.normalizeContactText(csvContact.name);
     const nameValue =
-      truncateContactName(csvContact.name) ?? csvContact.name?.trim();
+      truncateContactName(normalizedCsvName) ?? normalizedCsvName?.trim();
     if (nameValue) {
       payload.name = nameValue;
     }
 
+    const normalizedCsvLastName = this.normalizeContactText(
+      csvContact.last_name
+    );
     const lastNameValue =
-      truncateContactName(csvContact.last_name) ?? csvContact.last_name?.trim();
+      truncateContactName(normalizedCsvLastName) ??
+      normalizedCsvLastName?.trim();
     if (lastNameValue) {
       payload.last_name = lastNameValue;
     }
 
+    const normalizedCsvNickname = this.normalizeContactText(
+      csvContact.nickname
+    );
     const nicknameValue =
-      truncateContactName(csvContact.nickname) ?? csvContact.nickname?.trim();
+      truncateContactName(normalizedCsvNickname) ??
+      normalizedCsvNickname?.trim();
     if (nicknameValue) {
       payload.nickname = nicknameValue;
     }
@@ -744,7 +799,7 @@ export class ContactService {
       payload.email_c = emailFields.emailC;
     }
 
-    const notesValue = csvContact.notes;
+    const notesValue = this.normalizeContactText(csvContact.notes);
     if (notesValue && typeof notesValue === 'string' && notesValue.trim()) {
       payload.notes = notesValue.trim();
     }
