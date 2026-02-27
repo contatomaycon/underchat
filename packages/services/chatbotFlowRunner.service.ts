@@ -1024,6 +1024,67 @@ export class ChatbotFlowRunnerService {
     return null;
   }
 
+  private parseStructuredSelection(
+    rawText: string,
+    maxOption: number
+  ): number | null {
+    if (maxOption < 1) {
+      return null;
+    }
+
+    const normalizedText = rawText.replace(/\r\n?/g, '\n').trim();
+    if (!normalizedText) {
+      return null;
+    }
+
+    const nonEmptyLines = normalizedText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    const candidates: string[] = [];
+    const addCandidate = (value: string): void => {
+      const trimmed = value.trim();
+      if (!trimmed || candidates.includes(trimmed)) {
+        return;
+      }
+      candidates.push(trimmed);
+    };
+
+    if (nonEmptyLines.length > 0) {
+      addCandidate(nonEmptyLines[nonEmptyLines.length - 1]);
+    }
+    addCandidate(normalizedText);
+
+    for (const candidate of candidates) {
+      const sanitized = candidate.replace(/[*_`~]/g, '').trim();
+      if (!sanitized) {
+        continue;
+      }
+
+      const matched =
+        sanitized.match(
+          /^(\d{1,3})(?:\s*$|\s*[.)]\s*.*$|\s*-\s*.*$|\s*:\s*.*$)/
+        ) ||
+        sanitized.match(
+          /^[^:\n]+:\s*(\d{1,3})(?:\s*$|\s*[.)]\s*.*$|\s*-\s*.*$|\s*:\s*.*$)/
+        );
+
+      if (!matched) {
+        continue;
+      }
+
+      const parsed = Number.parseInt(matched[1], 10);
+      if (Number.isNaN(parsed) || parsed < 1 || parsed > maxOption) {
+        return null;
+      }
+
+      return parsed;
+    }
+
+    return null;
+  }
+
   private async getTextOrTranscribedForAiAgent(
     data: IUpsertMessage,
     createChat: IChat,
@@ -3030,13 +3091,12 @@ export class ChatbotFlowRunnerService {
     }
 
     const menuOptions = currentNode.data?.options ?? [];
-    const selectedNumber = Number.parseInt(text, 10);
+    const selectedNumber = this.parseStructuredSelection(
+      text,
+      menuOptions.length
+    );
 
-    if (
-      Number.isNaN(selectedNumber) ||
-      selectedNumber < 1 ||
-      selectedNumber > menuOptions.length
-    ) {
+    if (selectedNumber === null) {
       return this.handleInvalidMenuAttempt(
         t,
         createChat,
@@ -5339,18 +5399,17 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const { users, flowId, sector } = parsed;
 
-    const selectedNumber = Number.parseInt(userText, 10);
+    const selectedNumber = this.parseStructuredSelection(
+      userText,
+      users.length
+    );
     let matchedUser: {
       id: string;
       name: string;
       photo?: string | null;
     } | null = null;
 
-    if (
-      !Number.isNaN(selectedNumber) &&
-      selectedNumber >= 1 &&
-      selectedNumber <= users.length
-    ) {
+    if (selectedNumber !== null) {
       matchedUser = users[selectedNumber - 1];
     }
 
@@ -5500,18 +5559,17 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       );
     }
 
-    const selectedNumber = Number.parseInt(userText, 10);
+    const selectedNumber = this.parseStructuredSelection(
+      userText,
+      sectors.length
+    );
     let matchedSector: {
       id: string;
       name: string;
       color?: string | null;
     } | null = null;
 
-    if (
-      !Number.isNaN(selectedNumber) &&
-      selectedNumber >= 1 &&
-      selectedNumber <= sectors.length
-    ) {
+    if (selectedNumber !== null) {
       matchedSector = sectors[selectedNumber - 1];
     }
 

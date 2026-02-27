@@ -1,7 +1,10 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { updateChannelBodySchema, updateChannelParamsSchema } from './request.schema';
+import {
+  updateChannelBodySchema,
+  updateChannelParamsSchema,
+} from './request.schema';
 
 export const updateChannelSchema = {
   description: 'Atualiza um canal no contexto de configurações',
