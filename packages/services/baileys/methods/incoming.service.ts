@@ -68,6 +68,18 @@ export class BaileysIncomingMessageService {
   private readonly MESSAGE_CACHE_TTL_SECONDS_DEFAULT = 60 * 60 * 8;
   private readonly MESSAGE_CACHE_TTL_SECONDS_POLL = 60 * 60 * 24 * 7;
   private readonly MESSAGE_CACHE_PREFIX = 'wa:msg:';
+  private readonly FORWARDABLE_CACHE_TYPES = new Set<EMessageType>([
+    EMessageType.text,
+    EMessageType.image,
+    EMessageType.document,
+    EMessageType.audio,
+    EMessageType.video,
+    EMessageType.video_note,
+    EMessageType.sticker,
+    EMessageType.location,
+    EMessageType.contact_card,
+    EMessageType.contacts,
+  ]);
 
   constructor(
     @inject(StreamProducerService)
@@ -273,7 +285,14 @@ export class BaileysIncomingMessageService {
   private shouldCacheMessage(m: WAMessage, isRetry = false): boolean {
     if (isRetry) return true;
     if (m.key?.fromMe) return true;
-    return this.hasPollCreationMessage(m.message);
+    if (this.hasPollCreationMessage(m.message)) return true;
+
+    const messageType = mapIncomingToType(m);
+    if (!messageType) return false;
+
+    if (messageType === EMessageType.view_once) return false;
+
+    return this.FORWARDABLE_CACHE_TYPES.has(messageType);
   }
 
   private async cacheMessage(

@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
+  proto,
   WAMediaUpload,
 } from '@whiskeysockets/baileys';
 import { IMediaInput } from '@core/common/interfaces/IMediaInput';
@@ -26,6 +27,7 @@ export class BaileysMessageMediaService {
       width?: number;
       height?: number;
       viewOnce?: boolean;
+      contextInfo?: proto.IContextInfo;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -36,6 +38,7 @@ export class BaileysMessageMediaService {
       width: args?.width,
       height: args?.height,
       viewOnce: args?.viewOnce,
+      contextInfo: args?.contextInfo,
     };
 
     return this.baileysHelpersService.send(jid, content, options);
@@ -56,6 +59,7 @@ export class BaileysMessageMediaService {
       height?: number;
       viewOnce?: boolean;
       seconds?: number;
+      contextInfo?: proto.IContextInfo;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -69,6 +73,7 @@ export class BaileysMessageMediaService {
       height: args?.height,
       viewOnce: args?.viewOnce,
       seconds: args?.seconds,
+      contextInfo: args?.contextInfo,
     };
 
     return this.baileysHelpersService.send(jid, content, options);
@@ -86,6 +91,7 @@ export class BaileysMessageMediaService {
       mimetype?: string;
       viewOnce?: boolean;
       waveform?: Uint8Array;
+      contextInfo?: proto.IContextInfo;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -97,6 +103,7 @@ export class BaileysMessageMediaService {
           audio: audio as WAMediaUpload,
           ptt: true,
           viewOnce: true,
+          contextInfo: args?.contextInfo,
         } as AnyMessageContent)
       : ({
           audio: audio as WAMediaUpload,
@@ -104,6 +111,7 @@ export class BaileysMessageMediaService {
           seconds: args?.seconds,
           mimetype: args?.mimetype,
           waveform: args?.waveform,
+          contextInfo: args?.contextInfo,
         } as AnyMessageContent);
 
     return this.baileysHelpersService.send(jid, content, options);
@@ -119,6 +127,7 @@ export class BaileysMessageMediaService {
       isAnimated?: boolean;
       width?: number;
       height?: number;
+      contextInfo?: proto.IContextInfo;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -127,6 +136,7 @@ export class BaileysMessageMediaService {
       isAnimated: !!args?.isAnimated,
       width: args?.width,
       height: args?.height,
+      contextInfo: args?.contextInfo,
     };
 
     return this.baileysHelpersService.send(jid, content, options);
@@ -142,6 +152,7 @@ export class BaileysMessageMediaService {
       mimetype: string;
       fileName?: string;
       caption?: string;
+      contextInfo?: proto.IContextInfo;
     },
     options?: MiscMessageGenerationOptions
   ) {
@@ -150,6 +161,7 @@ export class BaileysMessageMediaService {
       mimetype: args.mimetype,
       fileName: args.fileName,
       caption: args.caption,
+      contextInfo: args.contextInfo,
     };
 
     return this.baileysHelpersService.send(jid, content, options);

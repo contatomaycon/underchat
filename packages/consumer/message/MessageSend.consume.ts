@@ -37,6 +37,7 @@ import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatu
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
 
 interface IPartitionCommitState {
   nextContiguousOffset: number | null;
@@ -940,7 +941,8 @@ export class MessageSendConsume {
     data: IChatMessage,
     path: 'native' | 'fallback',
     result: 'success' | 'failed',
-    error?: unknown
+    error?: unknown,
+    nativeResolution?: 'cache'
   ): void {
     console.info('[MessageSend] Forward processed', {
       source_message_id: data.content?.forward?.source_message_id ?? null,
@@ -948,30 +950,87 @@ export class MessageSendConsume {
       provider: 'baileys',
       path,
       result,
-      error: error instanceof Error ? error.message : undefined,
+      native_resolution: nativeResolution,
+      error:
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : undefined,
     });
   }
 
-  private resolveForwardSourceKey(data: IChatMessage): {
+  private buildJidAliases(jid: string): string[] {
+    const normalized = normalizeJid(jid) ?? jid;
+    const aliases = new Set<string>([normalized]);
+
+    if (normalized.endsWith('@s.whatsapp.net')) {
+      aliases.add(normalized.replace(/@s\.whatsapp\.net$/, '@c.us'));
+    }
+
+    if (normalized.endsWith('@c.us')) {
+      aliases.add(normalized.replace(/@c\.us$/, '@s.whatsapp.net'));
+    }
+
+    return Array.from(aliases);
+  }
+
+  private resolveForwardSourceKeys(data: IChatMessage): Array<{
     remoteJid: string;
     fromMe: boolean;
     id: string;
     participant?: string;
-  } | null {
+  }> {
     const sourceKey = data.content?.forward?.source_message_key;
     if (!sourceKey?.id) {
-      return null;
+      return [];
     }
 
-    return this.buildBaileysMessageKey(
-      {
-        remote_jid: sourceKey.remote_jid ?? null,
-        from_me: sourceKey.from_me ?? null,
-        id: sourceKey.id ?? null,
-        participant: sourceKey.participant ?? null,
-      },
-      ''
+    const rawId = sourceKey.id.trim();
+    if (!rawId) {
+      return [];
+    }
+
+    const parsed = parseSerializedMessageId(rawId);
+    const rawJids = [
+      sourceKey.remote_jid,
+      sourceKey.remote_jid_alt,
+      parsed?.remoteJid,
+    ].filter(
+      (jid): jid is string => typeof jid === 'string' && jid.trim() !== ''
     );
+
+    const jidCandidates = new Set<string>();
+    for (const jid of rawJids) {
+      for (const alias of this.buildJidAliases(jid)) {
+        jidCandidates.add(alias);
+      }
+    }
+
+    const uniqueKeys = new Map<
+      string,
+      { remoteJid: string; fromMe: boolean; id: string; participant?: string }
+    >();
+    for (const jidCandidate of jidCandidates) {
+      const built = this.buildBaileysMessageKey(
+        {
+          remote_jid: jidCandidate,
+          from_me: sourceKey.from_me ?? null,
+          id: rawId,
+          participant:
+            sourceKey.participant ?? sourceKey.participant_alt ?? null,
+        },
+        jidCandidate
+      );
+      if (!built?.remoteJid) {
+        continue;
+      }
+
+      const dedupeKey = `${built.remoteJid}:${built.fromMe}:${built.id}:${built.participant ?? ''}`;
+      uniqueKeys.set(dedupeKey, built);
+    }
+
+    return Array.from(uniqueKeys.values());
   }
 
   private async tryNativeForward(
@@ -980,37 +1039,39 @@ export class MessageSendConsume {
     chatId: string,
     currentType: EMessageType | undefined
   ): Promise<boolean> {
-    const sourceKey = this.resolveForwardSourceKey(data);
-    if (!sourceKey) {
+    const sourceKeys = this.resolveForwardSourceKeys(data);
+    if (sourceKeys.length === 0) {
       return false;
     }
 
-    const cachedMessage =
-      await this.baileysIncomingMessageService.getCachedMessage(sourceKey);
+    for (const sourceKey of sourceKeys) {
+      const cachedMessage =
+        await this.baileysIncomingMessageService.getCachedMessage(sourceKey);
+      if (!cachedMessage) {
+        continue;
+      }
 
-    if (!cachedMessage) {
-      return false;
+      const nativeForward = await this.baileysMessageTextService.forward(
+        jid,
+        {
+          key: sourceKey,
+          message: cachedMessage,
+        },
+        true
+      );
+
+      if (!nativeForward) {
+        continue;
+      }
+
+      await this.pushUpdate({ message: nativeForward, data });
+      if (currentType) {
+        this.lastMessageTypeByChatId.set(chatId, currentType);
+      }
+      this.logForwardResult(data, 'native', 'success', undefined, 'cache');
+      return true;
     }
-
-    const nativeForward = await this.baileysMessageTextService.forward(
-      jid,
-      {
-        key: sourceKey,
-        message: cachedMessage,
-      },
-      true
-    );
-
-    if (!nativeForward) {
-      return false;
-    }
-
-    await this.pushUpdate({ message: nativeForward, data });
-    if (currentType) {
-      this.lastMessageTypeByChatId.set(chatId, currentType);
-    }
-    this.logForwardResult(data, 'native', 'success');
-    return true;
+    return false;
   }
 
   private async processForwardMessage(
@@ -1116,6 +1177,44 @@ export class MessageSendConsume {
     return values.some((value) => this.isTruthyViewOnce(value));
   }
 
+  private buildOutgoingContextInfo(
+    data: IChatMessage
+  ): proto.IContextInfo | undefined {
+    const rawContext = data.content?.context_info as
+      | Record<string, unknown>
+      | null
+      | undefined;
+    if (!rawContext) {
+      return undefined;
+    }
+
+    const rawForwardingScore =
+      typeof rawContext.forwarding_score === 'number'
+        ? rawContext.forwarding_score
+        : typeof rawContext.forwardingScore === 'number'
+          ? rawContext.forwardingScore
+          : undefined;
+
+    const rawIsForwarded =
+      rawContext.is_forwarded === true || rawContext.isForwarded === true;
+
+    if (!rawIsForwarded && rawForwardingScore === undefined) {
+      return undefined;
+    }
+
+    const contextInfo: Record<string, unknown> = { ...rawContext };
+    delete contextInfo.is_forwarded;
+    delete contextInfo.forwarding_score;
+
+    contextInfo.isForwarded = true;
+    contextInfo.forwardingScore = Math.max(
+      1,
+      Math.floor(rawForwardingScore ?? 1)
+    );
+
+    return contextInfo as proto.IContextInfo;
+  }
+
   private isTruthyViewOnce(value: unknown): boolean {
     if (typeof value === 'boolean') {
       return value;
@@ -1201,6 +1300,7 @@ export class MessageSendConsume {
         mimetype: document.mimetype ?? 'application/octet-stream',
         fileName: document.name ?? undefined,
         caption: data.content?.message ?? undefined,
+        contextInfo: this.buildOutgoingContextInfo(data),
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );
@@ -1230,6 +1330,7 @@ export class MessageSendConsume {
       {
         caption: video.caption ?? data.content?.message ?? undefined,
         seconds: data.content?.video?.duration ?? undefined,
+        contextInfo: this.buildOutgoingContextInfo(data),
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );
@@ -1273,6 +1374,7 @@ export class MessageSendConsume {
         mimetype: audio.mimetype ?? undefined,
         viewOnce: isViewOnce,
         waveform,
+        contextInfo: this.buildOutgoingContextInfo(data),
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );
@@ -1359,6 +1461,7 @@ export class MessageSendConsume {
         jid,
         vcard,
         displayName,
+        this.buildOutgoingContextInfo(data),
         quotedMessage ? { quoted: quotedMessage } : undefined
       );
 
@@ -1398,6 +1501,7 @@ export class MessageSendConsume {
       jid,
       vcards,
       displayName,
+      this.buildOutgoingContextInfo(data),
       quotedMessage ? { quoted: quotedMessage } : undefined
     );
 
@@ -1471,7 +1575,10 @@ export class MessageSendConsume {
     const result = await this.baileysMessageTextService.sendText(
       jid,
       data.content?.message ?? '',
-      { linkPreview: data.content?.link_preview as WAUrlInfo }
+      {
+        linkPreview: data.content?.link_preview as WAUrlInfo,
+        contextInfo: this.buildOutgoingContextInfo(data),
+      }
     );
 
     if (!result) {
@@ -1663,6 +1770,7 @@ export class MessageSendConsume {
       { url: imageUrl },
       {
         caption: data.content?.image?.caption ?? undefined,
+        contextInfo: this.buildOutgoingContextInfo(data),
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );
@@ -1693,6 +1801,7 @@ export class MessageSendConsume {
         isAnimated: sticker.is_animated ?? false,
         width: sticker.width ?? undefined,
         height: sticker.height ?? undefined,
+        contextInfo: this.buildOutgoingContextInfo(data),
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );
@@ -1726,6 +1835,7 @@ export class MessageSendConsume {
         degreesLongitude: location.longitude,
         name: location.name ?? undefined,
         address: location.address ?? undefined,
+        contextInfo: this.buildOutgoingContextInfo(data),
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
     );

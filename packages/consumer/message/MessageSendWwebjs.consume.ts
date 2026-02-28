@@ -708,7 +708,8 @@ export class MessageSendWwebjsConsume {
     data: IChatMessage,
     path: 'native' | 'fallback',
     result: 'success' | 'failed',
-    error?: unknown
+    error?: unknown,
+    nativeResolution?: 'direct' | 'snapshot_poll' | 'unresolved'
   ): void {
     console.info('[MessageSendWwebjs] Forward processed', {
       source_message_id: data.content?.forward?.source_message_id ?? null,
@@ -716,7 +717,13 @@ export class MessageSendWwebjsConsume {
       provider: 'wwebjs',
       path,
       result,
-      error: error instanceof Error ? error.message : undefined,
+      native_resolution: nativeResolution,
+      error:
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : undefined,
     });
   }
 
@@ -820,15 +827,29 @@ export class MessageSendWwebjsConsume {
             jid,
             sourceKey
           );
-        if (nativeResult) {
-          await this.pushUpdate({ message: nativeResult, data });
+        if (nativeResult.sent) {
+          if (nativeResult.messageKey) {
+            await this.pushUpdate({ message: nativeResult.messageKey, data });
+          }
           if (currentType) {
             this.lastMessageTypeByChatId.set(chatId, currentType);
           }
-          this.logForwardResult(data, 'native', 'success');
+          this.logForwardResult(
+            data,
+            'native',
+            'success',
+            undefined,
+            nativeResult.resolution_path
+          );
           return true;
         }
-        this.logForwardResult(data, 'native', 'failed');
+        this.logForwardResult(
+          data,
+          'native',
+          'failed',
+          nativeResult.error,
+          nativeResult.resolution_path
+        );
       } catch (error) {
         this.logForwardResult(data, 'native', 'failed', error);
       }

@@ -20,6 +20,7 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 import { MessageKeyUpdateScriptParams } from '@core/common/interfaces/IMessageKeyUpdateScript';
+import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 
 type MessageKeyPatch = Pick<
   IMessageKey,
@@ -83,7 +84,10 @@ export class MessageUpdateConsume {
     }
 
     if (data.message?.key?.id) {
-      patch.id = data.message.key.id;
+      const normalizedId = this.normalizeMessageKeyId(data.message.key.id);
+      if (normalizedId) {
+        patch.id = normalizedId;
+      }
     }
 
     if (data.message?.key?.fromMe !== undefined) {
@@ -99,6 +103,16 @@ export class MessageUpdateConsume {
     }
 
     return patch;
+  }
+
+  private normalizeMessageKeyId(id: string): string {
+    const trimmed = id.trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    const parsed = parseSerializedMessageId(trimmed);
+    return parsed?.stanzaId ?? trimmed;
   }
 
   private buildMessageKeyUpdateScriptSource(): string {

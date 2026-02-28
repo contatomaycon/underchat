@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import {
   MiscMessageGenerationOptions,
+  proto,
   WALocationMessage,
 } from '@whiskeysockets/baileys';
 import { BaileysHelpersService } from './helpers.service';
@@ -17,7 +18,7 @@ export class BaileysMessageLocationContactService {
    */
   sendLocation(
     jid: string,
-    location: WALocationMessage,
+    location: WALocationMessage & { contextInfo?: proto.IContextInfo },
     options?: MiscMessageGenerationOptions
   ) {
     return this.baileysHelpersService.send(jid, { location }, options);
@@ -30,11 +31,12 @@ export class BaileysMessageLocationContactService {
     jid: string,
     vcard: string,
     displayName?: string,
+    contextInfo?: proto.IContextInfo,
     options?: MiscMessageGenerationOptions
   ) {
     return this.baileysHelpersService.send(
       jid,
-      { contacts: { displayName, contacts: [{ vcard }] } },
+      { contacts: { displayName, contacts: [{ vcard }] }, contextInfo },
       options
     );
   }
@@ -46,12 +48,14 @@ export class BaileysMessageLocationContactService {
     jid: string,
     vcards: string[],
     displayName?: string,
+    contextInfo?: proto.IContextInfo,
     options?: MiscMessageGenerationOptions
   ) {
     return this.baileysHelpersService.send(
       jid,
       {
         contacts: { displayName, contacts: vcards.map((vcard) => ({ vcard })) },
+        contextInfo,
       },
       options
     );

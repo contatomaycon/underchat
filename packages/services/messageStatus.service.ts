@@ -244,12 +244,16 @@ export class MessageStatusService {
     ]);
 
     const keyFromMe = typeof key?.fromMe === 'boolean' ? key.fromMe : undefined;
-    const fromMeCandidates = new Set<boolean>(
-      keyFromMe === undefined ? [false, true] : [keyFromMe]
-    );
+    const fromMeCandidates = new Set<boolean>([false, true]);
+
+    if (keyFromMe !== undefined) {
+      fromMeCandidates.add(keyFromMe);
+      fromMeCandidates.add(!keyFromMe);
+    }
 
     if (parsed) {
       fromMeCandidates.add(parsed.fromMe);
+      fromMeCandidates.add(!parsed.fromMe);
     }
 
     for (const remoteCandidate of remoteCandidates) {
@@ -392,8 +396,22 @@ export class MessageStatusService {
       const hit = result?.hits?.hits?.[0] as
         | ElasticHit<IChatMessage>
         | undefined;
+      const resolvedMessage = hit?._source ?? null;
+
+      if (!resolvedMessage) {
+        logger.warn(
+          {
+            type: 'ack_match_miss',
+            account_id: accountId,
+            message_id: messageId,
+            candidate_count: idCandidates.length,
+          },
+          'No message found for WhatsApp status update'
+        );
+      }
+
       this.recordCircuitSuccess();
-      return hit?._source ?? null;
+      return resolvedMessage;
     } catch (error) {
       this.recordCircuitFailure();
       throw error;

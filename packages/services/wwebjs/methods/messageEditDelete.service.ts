@@ -5,8 +5,20 @@ import type { IMessageKeyResponse } from '@core/common/interfaces/IMessageKeyRes
 import type { IMessageKeyInput } from '@core/common/interfaces/IMessageKeyInput';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 
+export interface IWwebjsForwardMessageResult {
+  sent: boolean;
+  messageKey?: IMessageKeyResponse;
+  resolution_path: 'direct' | 'snapshot_poll' | 'unresolved';
+  error?: string;
+}
+
 @injectable()
 export class WwebjsMessageEditDeleteService {
+  private readonly FORWARD_POLL_TIMEOUT_MS = 8000;
+  private readonly FORWARD_POLL_INTERVAL_MS = 350;
+  private readonly FORWARD_POLL_FETCH_LIMIT = 20;
+  private readonly FORWARD_TIMESTAMP_FUZZ_MS = 15000;
+
   constructor(
     @inject(WwebjsHelpersService)
     private readonly helpers: WwebjsHelpersService
@@ -94,6 +106,161 @@ export class WwebjsMessageEditDeleteService {
     return null;
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private extractSerializedIdFromMessage(msg: unknown): string | undefined {
+    if (!msg || typeof msg !== 'object') {
+      return undefined;
+    }
+
+    const idValue = (msg as { id?: unknown }).id;
+    if (!idValue) {
+      return undefined;
+    }
+
+    if (
+      typeof idValue === 'object' &&
+      idValue !== null &&
+      '_serialized' in (idValue as object)
+    ) {
+      const serialized = (idValue as { _serialized?: unknown })._serialized;
+      return typeof serialized === 'string' && serialized.trim()
+        ? serialized
+        : undefined;
+    }
+
+    if (typeof idValue === 'string' && idValue.trim()) {
+      return idValue;
+    }
+
+    return undefined;
+  }
+
+  private toEpochMillis(value: unknown): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      return null;
+    }
+
+    if (value > 1_000_000_000_000) {
+      return Math.floor(value);
+    }
+
+    return Math.floor(value * 1000);
+  }
+
+  private async fetchRecentFromMeMessages(
+    destinationJid: string
+  ): Promise<any[]> {
+    const client = this.helpers.getClient();
+
+    try {
+      const chat = await client.getChatById(destinationJid);
+      if (
+        !chat ||
+        typeof (chat as { fetchMessages?: unknown }).fetchMessages !==
+          'function'
+      ) {
+        return [];
+      }
+
+      const messages = await (
+        chat as {
+          fetchMessages: (searchOptions: {
+            limit?: number;
+            fromMe?: boolean;
+          }) => Promise<any[]>;
+        }
+      ).fetchMessages({
+        limit: this.FORWARD_POLL_FETCH_LIMIT,
+        fromMe: true,
+      });
+
+      return Array.isArray(messages) ? messages : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async snapshotDestinationMessageIds(
+    destinationJid: string
+  ): Promise<Set<string>> {
+    const messages = await this.fetchRecentFromMeMessages(destinationJid);
+    const ids = new Set<string>();
+
+    for (const message of messages) {
+      const id = this.extractSerializedIdFromMessage(message);
+      if (id) {
+        ids.add(id);
+      }
+    }
+
+    return ids;
+  }
+
+  private pickRecentForwardedCandidate(
+    messages: any[],
+    snapshotIds: Set<string>,
+    forwardStartedAtMs: number
+  ): any | null {
+    const freshCandidates: Array<{ message: any; ts: number }> = [];
+
+    for (const message of messages) {
+      const serializedId = this.extractSerializedIdFromMessage(message);
+      if (!serializedId || snapshotIds.has(serializedId)) {
+        continue;
+      }
+
+      const timestampMs = this.toEpochMillis(
+        (message as { timestamp?: unknown }).timestamp
+      );
+      if (
+        timestampMs !== null &&
+        timestampMs < forwardStartedAtMs - this.FORWARD_TIMESTAMP_FUZZ_MS
+      ) {
+        continue;
+      }
+
+      freshCandidates.push({
+        message,
+        ts: timestampMs ?? Number.MAX_SAFE_INTEGER,
+      });
+    }
+
+    if (!freshCandidates.length) {
+      return null;
+    }
+
+    freshCandidates.sort((a, b) => b.ts - a.ts);
+    return freshCandidates[0].message;
+  }
+
+  private async resolveForwardedMessageByPolling(
+    destinationJid: string,
+    snapshotIds: Set<string>,
+    forwardStartedAtMs: number
+  ): Promise<any | null> {
+    const timeoutAt = Date.now() + this.FORWARD_POLL_TIMEOUT_MS;
+
+    while (Date.now() <= timeoutAt) {
+      const messages = await this.fetchRecentFromMeMessages(destinationJid);
+      const candidate = this.pickRecentForwardedCandidate(
+        messages,
+        snapshotIds,
+        forwardStartedAtMs
+      );
+
+      if (candidate) {
+        return candidate;
+      }
+
+      await this.sleep(this.FORWARD_POLL_INTERVAL_MS);
+    }
+
+    return null;
+  }
+
   async editText(
     newText: string,
     editKey: IMessageKeyInput
@@ -115,7 +282,7 @@ export class WwebjsMessageEditDeleteService {
   async forwardMessage(
     destinationJid: string,
     sourceKey: IMessageKeyInput
-  ): Promise<IMessageKeyResponse | undefined> {
+  ): Promise<IWwebjsForwardMessageResult> {
     const msg = await this.resolveMessageByKey(sourceKey, destinationJid);
 
     if (
@@ -123,16 +290,59 @@ export class WwebjsMessageEditDeleteService {
       typeof (msg as { forward?: (chatId: string) => Promise<unknown> })
         .forward !== 'function'
     ) {
-      return undefined;
+      return {
+        sent: false,
+        resolution_path: 'unresolved',
+        error: 'source_message_not_found',
+      };
     }
 
-    const forwarded = (await (
-      msg as { forward: (chatId: string) => Promise<unknown> }
-    ).forward(destinationJid)) as
-      | Parameters<typeof messageToWaLike>[0]
-      | null
-      | undefined;
+    const snapshotIds =
+      await this.snapshotDestinationMessageIds(destinationJid);
+    const forwardStartedAtMs = Date.now();
 
-    return messageToWaLike(forwarded);
+    try {
+      const forwarded = (await (
+        msg as { forward: (chatId: string) => Promise<unknown> }
+      ).forward(destinationJid)) as
+        | Parameters<typeof messageToWaLike>[0]
+        | null
+        | undefined;
+
+      const directKey = messageToWaLike(forwarded);
+      if (directKey) {
+        return {
+          sent: true,
+          messageKey: directKey,
+          resolution_path: 'direct',
+        };
+      }
+
+      const polledMessage = await this.resolveForwardedMessageByPolling(
+        destinationJid,
+        snapshotIds,
+        forwardStartedAtMs
+      );
+      const polledKey = messageToWaLike(polledMessage);
+
+      if (polledKey) {
+        return {
+          sent: true,
+          messageKey: polledKey,
+          resolution_path: 'snapshot_poll',
+        };
+      }
+
+      return {
+        sent: true,
+        resolution_path: 'unresolved',
+      };
+    } catch (error) {
+      return {
+        sent: false,
+        resolution_path: 'unresolved',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 }

@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import {
   AnyMessageContent,
   MiscMessageGenerationOptions,
+  proto,
   WAMessage,
   WAUrlInfo,
 } from '@whiskeysockets/baileys';
@@ -23,12 +24,14 @@ export class BaileysMessageTextService {
     options?: MiscMessageGenerationOptions & {
       linkPreview?: WAUrlInfo | null;
       mentions?: string[];
+      contextInfo?: proto.IContextInfo;
     }
   ): Promise<WAMessage | undefined> {
     const content: AnyMessageContent = {
       text,
       linkPreview: options?.linkPreview ?? undefined,
       mentions: options?.mentions,
+      contextInfo: options?.contextInfo,
     };
 
     return this.baileysHelpersService.send(jid, content, options);
