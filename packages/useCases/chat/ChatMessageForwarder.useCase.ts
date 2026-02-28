@@ -11,6 +11,8 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { ChatService } from '@core/services/chat.service';
 import { ChatMessageService } from '@core/services/chatMessage.service';
+import { ContactService } from '@core/services/contact.service';
+import { StartChatWithContactUseCase } from '@core/useCases/chat/StartChatWithContact.useCase';
 import {
   ForwardMessageBody,
   ForwardMessageParams,
@@ -19,6 +21,8 @@ import {
   ForwardMessageResponse,
   ForwardMessageResult,
 } from '@core/schema/chat/forwardMessage/response.schema';
+
+type ForwardTargetType = 'chat' | 'contact';
 
 @injectable()
 export class ChatMessageForwarderUseCase {
@@ -39,7 +43,11 @@ export class ChatMessageForwarderUseCase {
     @inject(ChatService)
     private readonly chatService: ChatService,
     @inject(ChatMessageService)
-    private readonly chatMessageService: ChatMessageService
+    private readonly chatMessageService: ChatMessageService,
+    @inject(ContactService)
+    private readonly contactService: ContactService,
+    @inject(StartChatWithContactUseCase)
+    private readonly startChatWithContactUseCase: StartChatWithContactUseCase
   ) {}
 
   private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
@@ -233,6 +241,323 @@ export class ChatMessageForwarderUseCase {
     };
   }
 
+  private hasChannelAccess(
+    workerId: string,
+    userChannels: { id: string; name: string }[]
+  ): boolean {
+    if (userChannels.length === 0) {
+      return true;
+    }
+
+    return userChannels.some((channel) => channel.id === workerId);
+  }
+
+  private buildResult(input: {
+    targetType: ForwardTargetType;
+    status: 'sent' | 'failed';
+    targetChatId?: string | null;
+    targetContactId?: string | null;
+    message?: string | null;
+  }): ForwardMessageResult {
+    return {
+      target_type: input.targetType,
+      target_chat_id: input.targetChatId ?? null,
+      target_contact_id: input.targetContactId ?? null,
+      status: input.status,
+      message: input.message ?? null,
+    };
+  }
+
+  private async publishForwardMessage(input: {
+    t: TFunction<'translation', undefined>;
+    sourceMessage: IChatMessage;
+    sourceContent: NonNullable<IChatMessage['content']>;
+    targetChat: IChat;
+    targetType: ForwardTargetType;
+    targetContactId?: string | null;
+  }): Promise<ForwardMessageResult> {
+    const {
+      t,
+      sourceMessage,
+      sourceContent,
+      targetChat,
+      targetType,
+      targetContactId = null,
+    } = input;
+
+    if (!targetChat.worker?.id) {
+      return this.buildResult({
+        targetType,
+        targetChatId: targetChat.chat_id,
+        targetContactId,
+        status: 'failed',
+        message: t('worker_not_found'),
+      });
+    }
+
+    if (
+      !targetChat.message_key?.remote_jid &&
+      !targetChat.message_key?.remote_jid_alt
+    ) {
+      return this.buildResult({
+        targetType,
+        targetChatId: targetChat.chat_id,
+        targetContactId,
+        status: 'failed',
+        message: t('message_jid_not_found'),
+      });
+    }
+
+    try {
+      const messageToForward = this.buildForwardedMessage(
+        sourceMessage,
+        sourceContent,
+        targetChat
+      );
+
+      const published =
+        await this.chatMessageService.publishPreparedMessage(messageToForward);
+
+      if (!published) {
+        return this.buildResult({
+          targetType,
+          targetChatId: targetChat.chat_id,
+          targetContactId,
+          status: 'failed',
+          message: t('chat_forward_publish_failed'),
+        });
+      }
+
+      return this.buildResult({
+        targetType,
+        targetChatId: targetChat.chat_id,
+        targetContactId,
+        status: 'sent',
+        message: null,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : t('chat_forward_error');
+
+      return this.buildResult({
+        targetType,
+        targetChatId: targetChat.chat_id,
+        targetContactId,
+        status: 'failed',
+        message: errorMessage,
+      });
+    }
+  }
+
+  private async forwardToChatTarget(input: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    sourceChatId: string;
+    sourceMessage: IChatMessage;
+    sourceContent: NonNullable<IChatMessage['content']>;
+    targetChatId: string;
+    userId: string;
+    actions: IJwtGroupHierarchy[];
+    userSectors: string[];
+    userChannels: { id: string; name: string }[];
+  }): Promise<ForwardMessageResult> {
+    const {
+      t,
+      accountId,
+      sourceChatId,
+      sourceMessage,
+      sourceContent,
+      targetChatId,
+      userId,
+      actions,
+      userSectors,
+      userChannels,
+    } = input;
+
+    if (targetChatId === sourceChatId) {
+      return this.buildResult({
+        targetType: 'chat',
+        targetChatId,
+        status: 'failed',
+        message: t('chat_forward_same_chat_not_allowed'),
+      });
+    }
+
+    const targetChat = await this.chatService.findChatByChatId(
+      accountId,
+      targetChatId
+    );
+
+    if (!targetChat) {
+      return this.buildResult({
+        targetType: 'chat',
+        targetChatId,
+        status: 'failed',
+        message: t('chat_not_found'),
+      });
+    }
+
+    if (
+      !this.canAccessChat(
+        targetChat,
+        userId,
+        actions,
+        userSectors,
+        userChannels
+      )
+    ) {
+      return this.buildResult({
+        targetType: 'chat',
+        targetChatId,
+        status: 'failed',
+        message: t('chat_access_denied'),
+      });
+    }
+
+    return this.publishForwardMessage({
+      t,
+      sourceMessage,
+      sourceContent,
+      targetChat,
+      targetType: 'chat',
+    });
+  }
+
+  private async forwardToContactTarget(input: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    sourceChatId: string;
+    sourceMessage: IChatMessage;
+    sourceContent: NonNullable<IChatMessage['content']>;
+    targetContactId: string;
+    workerId: string;
+    userId: string;
+    actions: IJwtGroupHierarchy[];
+    userSectors: string[];
+    userChannels: { id: string; name: string }[];
+  }): Promise<ForwardMessageResult> {
+    const {
+      t,
+      accountId,
+      sourceChatId,
+      sourceMessage,
+      sourceContent,
+      targetContactId,
+      workerId,
+      userId,
+      actions,
+      userSectors,
+      userChannels,
+    } = input;
+
+    if (!this.hasChannelAccess(workerId, userChannels)) {
+      return this.buildResult({
+        targetType: 'contact',
+        targetContactId,
+        status: 'failed',
+        message: t('chat_forward_contact_channel_not_allowed'),
+      });
+    }
+
+    const contact = await this.contactService.viewContactById(
+      targetContactId,
+      accountId
+    );
+
+    if (!contact) {
+      return this.buildResult({
+        targetType: 'contact',
+        targetContactId,
+        status: 'failed',
+        message: t('chat_forward_contact_not_found'),
+      });
+    }
+
+    const contactChannelIds =
+      await this.contactService.listContactChannelsByContactId(
+        accountId,
+        targetContactId
+      );
+    if (contactChannelIds.length > 0 && !contactChannelIds.includes(workerId)) {
+      return this.buildResult({
+        targetType: 'contact',
+        targetContactId,
+        status: 'failed',
+        message: t('chat_forward_contact_channel_not_allowed'),
+      });
+    }
+
+    if (contact.is_valided !== true) {
+      return this.buildResult({
+        targetType: 'contact',
+        targetContactId,
+        status: 'failed',
+        message: t('chat_forward_contact_not_validated'),
+      });
+    }
+
+    let targetChat: IChat;
+    try {
+      targetChat = await this.startChatWithContactUseCase.execute(
+        t,
+        accountId,
+        userId,
+        {
+          contact_id: targetContactId,
+          worker_id: workerId,
+        },
+        userChannels,
+        { onExistingInChat: 'reuse_and_takeover' }
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : t('chat_forward_error');
+      return this.buildResult({
+        targetType: 'contact',
+        targetContactId,
+        status: 'failed',
+        message: errorMessage,
+      });
+    }
+
+    if (targetChat.chat_id === sourceChatId) {
+      return this.buildResult({
+        targetType: 'contact',
+        targetChatId: targetChat.chat_id,
+        targetContactId,
+        status: 'failed',
+        message: t('chat_forward_same_chat_not_allowed'),
+      });
+    }
+
+    if (
+      !this.canAccessChat(
+        targetChat,
+        userId,
+        actions,
+        userSectors,
+        userChannels
+      )
+    ) {
+      return this.buildResult({
+        targetType: 'contact',
+        targetChatId: targetChat.chat_id,
+        targetContactId,
+        status: 'failed',
+        message: t('chat_access_denied'),
+      });
+    }
+
+    return this.publishForwardMessage({
+      t,
+      sourceMessage,
+      sourceContent,
+      targetChat,
+      targetType: 'contact',
+      targetContactId,
+    });
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -243,7 +568,10 @@ export class ChatMessageForwarderUseCase {
     userSectors: string[],
     userChannels: { id: string; name: string }[] = []
   ): Promise<ForwardMessageResponse> {
-    if (!body.target_chat_ids || body.target_chat_ids.length === 0) {
+    const targetChatIds = body.target_chat_ids ?? [];
+    const targetContactIds = body.target_contact_ids ?? [];
+
+    if (targetChatIds.length === 0 && targetContactIds.length === 0) {
       throw new Error(t('chat_forward_target_chat_ids_required'));
     }
 
@@ -286,107 +614,63 @@ export class ChatMessageForwarderUseCase {
     const results: ForwardMessageResult[] = [];
     let sent = 0;
 
-    for (const targetChatId of body.target_chat_ids) {
-      if (targetChatId === params.chat_id) {
-        results.push({
-          target_chat_id: targetChatId,
-          status: 'failed',
-          message: t('chat_forward_same_chat_not_allowed'),
-        });
-        continue;
-      }
-
-      const targetChat = await this.chatService.findChatByChatId(
+    for (const targetChatId of targetChatIds) {
+      const result = await this.forwardToChatTarget({
+        t,
         accountId,
-        targetChatId
-      );
+        sourceChatId: params.chat_id,
+        sourceMessage,
+        sourceContent,
+        targetChatId,
+        userId,
+        actions,
+        userSectors,
+        userChannels,
+      });
 
-      if (!targetChat) {
-        results.push({
-          target_chat_id: targetChatId,
-          status: 'failed',
-          message: t('chat_not_found'),
-        });
-        continue;
+      if (result.status === 'sent') {
+        sent += 1;
       }
 
-      if (
-        !this.canAccessChat(
-          targetChat,
+      results.push(result);
+    }
+
+    if (targetContactIds.length > 0 && !body.worker_id) {
+      for (const targetContactId of targetContactIds) {
+        results.push(
+          this.buildResult({
+            targetType: 'contact',
+            targetContactId,
+            status: 'failed',
+            message: t('chat_forward_worker_required_for_contacts'),
+          })
+        );
+      }
+    } else if (targetContactIds.length > 0 && body.worker_id) {
+      for (const targetContactId of targetContactIds) {
+        const result = await this.forwardToContactTarget({
+          t,
+          accountId,
+          sourceChatId: params.chat_id,
+          sourceMessage,
+          sourceContent,
+          targetContactId,
+          workerId: body.worker_id,
           userId,
           actions,
           userSectors,
-          userChannels
-        )
-      ) {
-        results.push({
-          target_chat_id: targetChatId,
-          status: 'failed',
-          message: t('chat_access_denied'),
+          userChannels,
         });
-        continue;
-      }
 
-      if (!targetChat.worker?.id) {
-        results.push({
-          target_chat_id: targetChatId,
-          status: 'failed',
-          message: t('worker_not_found'),
-        });
-        continue;
-      }
-
-      if (
-        !targetChat.message_key?.remote_jid &&
-        !targetChat.message_key?.remote_jid_alt
-      ) {
-        results.push({
-          target_chat_id: targetChatId,
-          status: 'failed',
-          message: t('message_jid_not_found'),
-        });
-        continue;
-      }
-
-      try {
-        const messageToForward = this.buildForwardedMessage(
-          sourceMessage,
-          sourceContent,
-          targetChat
-        );
-
-        const published =
-          await this.chatMessageService.publishPreparedMessage(
-            messageToForward
-          );
-
-        if (!published) {
-          results.push({
-            target_chat_id: targetChatId,
-            status: 'failed',
-            message: t('chat_forward_publish_failed'),
-          });
-          continue;
+        if (result.status === 'sent') {
+          sent += 1;
         }
 
-        sent += 1;
-        results.push({
-          target_chat_id: targetChatId,
-          status: 'sent',
-          message: null,
-        });
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : t('chat_forward_error');
-        results.push({
-          target_chat_id: targetChatId,
-          status: 'failed',
-          message: errorMessage,
-        });
+        results.push(result);
       }
     }
 
-    const requested = body.target_chat_ids.length;
+    const requested = targetChatIds.length + targetContactIds.length;
     const failed = requested - sent;
 
     return {

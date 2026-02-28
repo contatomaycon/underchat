@@ -155,6 +155,13 @@ export class ChatContactListerRepository {
       filterConditions.push(eq(contact.user_id, filters.filter_user_id));
     }
 
+    if (
+      filters.filter_is_valided !== null &&
+      filters.filter_is_valided !== undefined
+    ) {
+      filterConditions.push(eq(contact.is_valided, filters.filter_is_valided));
+    }
+
     return filterConditions.filter(isDefinedFilter);
   };
 
@@ -292,6 +299,50 @@ export class ChatContactListerRepository {
     return or(contactHasNoChannels, contactHasAllowedChannel) as SQLWrapper;
   };
 
+  private readonly buildFilteredChannelCondition = (
+    accountId: string,
+    filterChannelId: string | undefined,
+    allowedChannelIds: string[]
+  ): SQLWrapper | null => {
+    if (!filterChannelId) {
+      return null;
+    }
+
+    if (
+      allowedChannelIds.length > 0 &&
+      !allowedChannelIds.includes(filterChannelId)
+    ) {
+      return sql`1 = 0`;
+    }
+
+    const contactHasNoChannels = notExists(
+      this.dbRo
+        .select()
+        .from(contactChannel)
+        .where(
+          and(
+            eq(contactChannel.contact_id, contact.contact_id),
+            eq(contactChannel.account_id, accountId)
+          )
+        )
+    );
+
+    const contactHasFilteredChannel = inArray(
+      contact.contact_id,
+      this.dbRo
+        .select({ contact_id: contactChannel.contact_id })
+        .from(contactChannel)
+        .where(
+          and(
+            eq(contactChannel.account_id, accountId),
+            eq(contactChannel.channel_id, filterChannelId)
+          )
+        )
+    );
+
+    return or(contactHasNoChannels, contactHasFilteredChannel) as SQLWrapper;
+  };
+
   private readonly buildWhereConditions = (
     accountId: string,
     query: ListChatContactsRequest | undefined,
@@ -305,12 +356,22 @@ export class ChatContactListerRepository {
       isNull(contact.deleted_at),
     ];
 
-    const channelCondition = this.buildChannelAccessCondition(
+    const filteredChannelCondition = this.buildFilteredChannelCondition(
       accountId,
+      query?.filter_channel_id,
       allowedChannelIds
     );
-    if (channelCondition) {
-      whereConditions.push(channelCondition);
+    if (filteredChannelCondition) {
+      whereConditions.push(filteredChannelCondition);
+    } else {
+      const channelCondition = this.buildChannelAccessCondition(
+        accountId,
+        allowedChannelIds
+      );
+
+      if (channelCondition) {
+        whereConditions.push(channelCondition);
+      }
     }
 
     if (query?.search) {

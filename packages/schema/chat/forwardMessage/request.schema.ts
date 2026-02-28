@@ -6,11 +6,21 @@ export const forwardMessageParamsSchema = Type.Object({
 });
 
 export const forwardMessageBodySchema = Type.Object({
-  target_chat_ids: Type.Array(Type.String(), {
-    minItems: 1,
-    uniqueItems: true,
-    maxItems: 200,
-  }),
+  target_chat_ids: Type.Optional(
+    Type.Array(Type.String(), {
+      minItems: 1,
+      uniqueItems: true,
+      maxItems: 200,
+    })
+  ),
+  target_contact_ids: Type.Optional(
+    Type.Array(Type.String(), {
+      minItems: 1,
+      uniqueItems: true,
+      maxItems: 200,
+    })
+  ),
+  worker_id: Type.Optional(Type.String({ format: 'uuid' })),
 });
 
 export type ForwardMessageParams = Static<typeof forwardMessageParamsSchema>;

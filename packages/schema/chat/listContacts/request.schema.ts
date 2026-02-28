@@ -14,6 +14,8 @@ export const listChatContactsRequestSchema = Type.Object({
   filter_birthday: Type.Optional(Type.String()),
   filter_document: Type.Optional(Type.String()),
   filter_user_id: Type.Optional(Type.String({ format: 'uuid' })),
+  filter_channel_id: Type.Optional(Type.String({ format: 'uuid' })),
+  filter_is_valided: Type.Optional(Type.Boolean()),
   sort_field: Type.Optional(Type.String()),
   sort_order: Type.Optional(Type.String()),
 });

@@ -2714,6 +2714,38 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async searchForwardTargetContacts(input: {
+      filter_channel_id: string;
+      search?: string;
+      current_page?: number;
+      per_page?: number;
+    }): Promise<ListChatContactsFinalResponse | null> {
+      try {
+        const params: Record<string, any> = {
+          current_page: input.current_page ?? 1,
+          per_page: input.per_page ?? 20,
+          search: input.search ?? '',
+          filter_channel_id: input.filter_channel_id,
+          filter_is_valided: true,
+        };
+
+        const response = await axios.get<
+          IApiResponse<ListChatContactsFinalResponse>
+        >('/chat/contacts', {
+          params,
+        });
+
+        const data = response?.data;
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
     async resolveChatEndpoint(
       status: EChatStatus | EChatStatus[] | typeof MY_CHATS_STATUS,
       filters: ChatFilters,
@@ -4093,14 +4125,16 @@ export const useChatStore = defineStore('chat', {
     async forwardMessage(
       chatId: string,
       messageId: string,
-      targetChatIds: string[]
+      payload: {
+        target_chat_ids?: string[];
+        target_contact_ids?: string[];
+        worker_id?: string;
+      }
     ): Promise<ForwardMessageResponse | null> {
       try {
         const response = await axios.post<IApiResponse<ForwardMessageResponse>>(
           `/chat/${chatId}/message/${messageId}/forward`,
-          {
-            target_chat_ids: targetChatIds,
-          }
+          payload
         );
 
         const data = response?.data;

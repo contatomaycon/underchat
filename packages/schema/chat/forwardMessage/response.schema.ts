@@ -1,7 +1,9 @@
 import { Static, Type } from '@sinclair/typebox';
 
 export const forwardMessageResultSchema = Type.Object({
-  target_chat_id: Type.String(),
+  target_type: Type.String({ enum: ['chat', 'contact'] }),
+  target_chat_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  target_contact_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   status: Type.String({ enum: ['sent', 'failed'] }),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });

@@ -8,7 +8,7 @@ import {
 import { forwardMessageResponseSchema } from './response.schema';
 
 export const forwardMessageSchema = {
-  description: 'Encaminha uma mensagem para múltiplos chats',
+  description: 'Encaminha uma mensagem para múltiplos chats ou contatos',
   tags: [ETagSwagger.chat],
   produces: ['application/json'],
   security: [

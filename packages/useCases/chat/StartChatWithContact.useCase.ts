@@ -34,6 +34,14 @@ import {
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
+type StartChatWithContactExistingInChatBehavior =
+  | 'error'
+  | 'reuse_and_takeover';
+
+type StartChatWithContactExecuteOptions = {
+  onExistingInChat?: StartChatWithContactExistingInChatBehavior;
+};
+
 @injectable()
 export class StartChatWithContactUseCase {
   constructor(
@@ -67,7 +75,8 @@ export class StartChatWithContactUseCase {
     accountId: string,
     userId: string,
     body: StartChatWithContactRequest,
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    options: StartChatWithContactExecuteOptions = {}
   ): Promise<IChat> {
     if (userChannels.length > 0) {
       const channelIds = userChannels.map((c) => c.id);
@@ -110,6 +119,15 @@ export class StartChatWithContactUseCase {
 
     if (existingChat) {
       if (existingChat.status === EChatStatus.in_chat) {
+        if (options.onExistingInChat === 'reuse_and_takeover') {
+          return this.updateExistingChat(
+            t,
+            existingChat,
+            contactData,
+            requiredData
+          );
+        }
+
         const sectorName = existingChat.sector?.name;
         if (sectorName) {
           throw new Error(

@@ -107,11 +107,12 @@ const loadingContactCards = ref<Set<string>>(new Set());
 const forwardModalOpen = ref(false);
 const forwardSourceMessage = ref<ListMessageResult | null>(null);
 const forwardChannels = ref<TransferWorker[]>([]);
+const FORWARD_STATUS_ALL = 'all' as const;
+type ForwardStatus = EChatStatus.in_chat | EChatStatus.queue | 'all';
 const selectedForwardChannel = ref<string | null>(null);
-const selectedForwardStatus = ref<
-  EChatStatus.in_chat | EChatStatus.queue | null
->(null);
+const selectedForwardStatus = ref<ForwardStatus | null>(null);
 const forwardTargetChatIds = ref<string[]>([]);
+const forwardTargetContactIds = ref<string[]>([]);
 const forwardTargetSearch = ref('');
 const forwardTargetItems = ref<
   Array<{
@@ -517,8 +518,10 @@ const resetForwardModalState = () => {
   selectedForwardChannel.value = null;
   selectedForwardStatus.value = null;
   forwardTargetChatIds.value = [];
+  forwardTargetContactIds.value = [];
   forwardTargetSearch.value = '';
   forwardTargetItems.value = [];
+  forwardSelectedTargetTitles.value = {};
   forwardTargetsPaging.current_page = 1;
   forwardTargetsPaging.total_pages = 1;
 };
@@ -547,8 +550,92 @@ const buildForwardTargetTitle = (
   fallbackId: string
 ): string => {
   const name = (chat.name ?? '').trim() || t('contact_label');
-  const phone = (chat.phone ?? '').trim() || fallbackId;
+  const rawPhone = (chat.phone ?? '').trim();
+  const phone = rawPhone
+    ? rawPhone.includes('*')
+      ? rawPhone
+      : formatPhoneBR(rawPhone)
+    : fallbackId;
   return `${name} - ${phone}`;
+};
+
+const buildForwardContactTargetTitle = (
+  contact: {
+    name?: string | null;
+    last_name?: string | null;
+    phone_partial?: string | null;
+  },
+  fallbackId: string
+): string => {
+  const nameParts = [contact.name ?? '', contact.last_name ?? '']
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  const name = nameParts.length > 0 ? nameParts.join(' ') : t('contact_label');
+  const rawPhone = (contact.phone_partial ?? '').trim();
+  const phone = rawPhone
+    ? rawPhone.includes('*')
+      ? rawPhone
+      : formatPhoneBR(rawPhone)
+    : fallbackId;
+  return `${name} - ${phone}`;
+};
+
+const isForwardStatusAll = computed(
+  () => selectedForwardStatus.value === FORWARD_STATUS_ALL
+);
+
+const selectedForwardTargetIds = computed<string[]>({
+  get: () =>
+    isForwardStatusAll.value
+      ? forwardTargetContactIds.value
+      : forwardTargetChatIds.value,
+  set: (value) => {
+    if (isForwardStatusAll.value) {
+      forwardTargetContactIds.value = value;
+      return;
+    }
+    forwardTargetChatIds.value = value;
+  },
+});
+
+const forwardSelectedTargetTitles = ref<Record<string, string>>({});
+
+const mergeForwardTargetTitles = (
+  items: Array<{
+    value: string;
+    title: string;
+  }>
+) => {
+  if (items.length === 0) {
+    return;
+  }
+
+  const nextTitles = { ...forwardSelectedTargetTitles.value };
+  for (const item of items) {
+    if (!item.value) continue;
+    nextTitles[item.value] = item.title;
+  }
+  forwardSelectedTargetTitles.value = nextTitles;
+};
+
+const selectedForwardTargetLabels = computed(() => {
+  return selectedForwardTargetIds.value.map((targetId) => {
+    const fromMemory = forwardSelectedTargetTitles.value[targetId];
+    const fromCurrentItems = forwardTargetItems.value.find(
+      (item) => item.value === targetId
+    )?.title;
+
+    return {
+      value: targetId,
+      title: fromMemory || fromCurrentItems || targetId,
+    };
+  });
+});
+
+const removeSelectedForwardTarget = (targetId: string) => {
+  selectedForwardTargetIds.value = selectedForwardTargetIds.value.filter(
+    (id) => id !== targetId
+  );
 };
 
 const loadForwardTargets = async (append = false) => {
@@ -558,35 +645,71 @@ const loadForwardTargets = async (append = false) => {
 
   const nextPage = append ? forwardTargetsPaging.current_page + 1 : 1;
   if (!append) {
-    forwardTargetItems.value = [];
     forwardTargetsPaging.current_page = 1;
     forwardTargetsPaging.total_pages = 1;
   }
 
   isForwardTargetsLoading.value = true;
-  const response = await chatStore.searchForwardTargetChats({
-    filter_worker_id: selectedForwardChannel.value,
-    status: selectedForwardStatus.value,
-    search: forwardTargetSearch.value.trim(),
-    current_page: nextPage,
-    per_page: 20,
-  });
-  isForwardTargetsLoading.value = false;
-
-  if (!response) {
-    return;
-  }
-
-  forwardTargetsPaging.current_page = response.pagings.current_page;
-  forwardTargetsPaging.total_pages = response.pagings.total_pages;
-
+  const search = forwardTargetSearch.value.trim();
   const activeChatId = activeChat.value?.chat_id ?? null;
-  const mappedItems = response.results
-    .filter((chat) => chat.chat_id && chat.chat_id !== activeChatId)
-    .map((chat) => ({
-      value: chat.chat_id,
-      title: buildForwardTargetTitle(chat, chat.chat_id),
-    }));
+  const activeContactId = activeChat.value?.contact?.id ?? null;
+  let mappedItems: Array<{ value: string; title: string }> = [];
+
+  if (isForwardStatusAll.value) {
+    const response = await chatStore.searchForwardTargetContacts({
+      filter_channel_id: selectedForwardChannel.value,
+      search,
+      current_page: nextPage,
+      per_page: 20,
+    });
+    isForwardTargetsLoading.value = false;
+
+    if (!response) {
+      return;
+    }
+
+    forwardTargetsPaging.current_page = response.pagings.current_page;
+    forwardTargetsPaging.total_pages = response.pagings.total_pages;
+
+    mappedItems = response.results
+      .filter(
+        (contact) =>
+          contact.contact_id && contact.contact_id !== activeContactId
+      )
+      .map((contact) => ({
+        value: contact.contact_id,
+        title: buildForwardContactTargetTitle(contact, contact.contact_id),
+      }));
+
+    mergeForwardTargetTitles(mappedItems);
+  } else {
+    const response = await chatStore.searchForwardTargetChats({
+      filter_worker_id: selectedForwardChannel.value,
+      status: selectedForwardStatus.value as
+        | EChatStatus.in_chat
+        | EChatStatus.queue,
+      search,
+      current_page: nextPage,
+      per_page: 20,
+    });
+    isForwardTargetsLoading.value = false;
+
+    if (!response) {
+      return;
+    }
+
+    forwardTargetsPaging.current_page = response.pagings.current_page;
+    forwardTargetsPaging.total_pages = response.pagings.total_pages;
+
+    mappedItems = response.results
+      .filter((chat) => chat.chat_id && chat.chat_id !== activeChatId)
+      .map((chat) => ({
+        value: chat.chat_id,
+        title: buildForwardTargetTitle(chat, chat.chat_id),
+      }));
+
+    mergeForwardTargetTitles(mappedItems);
+  }
 
   if (!append) {
     forwardTargetItems.value = mappedItems;
@@ -600,6 +723,8 @@ const loadForwardTargets = async (append = false) => {
 
 const onForwardStatusChanged = async () => {
   forwardTargetChatIds.value = [];
+  forwardTargetContactIds.value = [];
+  forwardSelectedTargetTitles.value = {};
   await loadForwardTargets(false);
 };
 
@@ -662,25 +787,48 @@ const forwardStatusItems = computed(() => [
     value: EChatStatus.queue,
     title: t('chat_forward_status_queue'),
   },
+  {
+    value: FORWARD_STATUS_ALL,
+    title: t('chat_forward_status_all'),
+  },
 ]);
 
 const canSubmitForward = computed(
   () =>
-    forwardTargetChatIds.value.length > 0 &&
+    selectedForwardTargetIds.value.length > 0 &&
     !isForwardSubmitting.value &&
     !!forwardSourceMessage.value
 );
 
 const submitForward = async () => {
   if (!activeChat.value?.chat_id || !forwardSourceMessage.value) return;
-  if (forwardTargetChatIds.value.length === 0) return;
+  if (selectedForwardTargetIds.value.length === 0) return;
 
   isForwardSubmitting.value = true;
+
+  const workerId = chatStore.user?.user_id;
+  const payload = isForwardStatusAll.value
+    ? {
+        target_contact_ids: [...forwardTargetContactIds.value],
+        worker_id: workerId,
+      }
+    : {
+        target_chat_ids: [...forwardTargetChatIds.value],
+      };
+
+  if (isForwardStatusAll.value && !workerId) {
+    isForwardSubmitting.value = false;
+    chatStore.showSnackbar(
+      t('chat_forward_worker_required_for_contacts'),
+      EColor.error
+    );
+    return;
+  }
 
   const result = await chatStore.forwardMessage(
     activeChat.value.chat_id,
     forwardSourceMessage.value.message_id,
-    forwardTargetChatIds.value
+    payload
   );
 
   isForwardSubmitting.value = false;
@@ -2416,7 +2564,9 @@ watch(locationModalOpen, async (isOpen) => {
 watch(selectedForwardChannel, (channelId) => {
   selectedForwardStatus.value = null;
   forwardTargetChatIds.value = [];
+  forwardTargetContactIds.value = [];
   forwardTargetItems.value = [];
+  forwardSelectedTargetTitles.value = {};
   forwardTargetsPaging.current_page = 1;
   forwardTargetsPaging.total_pages = 1;
 
@@ -2428,7 +2578,9 @@ watch(selectedForwardChannel, (channelId) => {
 watch(selectedForwardStatus, async (status) => {
   if (!status) {
     forwardTargetChatIds.value = [];
+    forwardTargetContactIds.value = [];
     forwardTargetItems.value = [];
+    forwardSelectedTargetTitles.value = {};
     forwardTargetsPaging.current_page = 1;
     forwardTargetsPaging.total_pages = 1;
     return;
@@ -4770,27 +4922,40 @@ onUnmounted(() => {
               {{ t('chat_forward_target_chats_label') }}:
             </VLabel>
             <AppSelectSearch
-              v-model="forwardTargetChatIds"
+              v-model="selectedForwardTargetIds"
               :items="forwardTargetItems"
               item-value="value"
               item-title="title"
               :placeholder="t('chat_forward_target_chats_placeholder')"
-              :loading="isForwardTargetsLoading"
               :disabled="isForwardSubmitting"
               multiple
               chips
-              closable-chips
               :search="forwardTargetSearch"
               :no-items-text="'chat_forward_no_target_chats'"
               :no-results-text="'chat_forward_no_target_chats'"
               @update:search="onForwardSearchUpdate"
             />
 
+            <div
+              v-if="selectedForwardTargetLabels.length > 0"
+              class="forward-target-labels mt-2"
+            >
+              <VChip
+                v-for="target in selectedForwardTargetLabels"
+                :key="target.value"
+                size="small"
+                closable
+                @click:close="removeSelectedForwardTarget(target.value)"
+              >
+                {{ target.title }}
+              </VChip>
+            </div>
+
             <div class="d-flex justify-space-between align-center mt-2">
               <span class="text-caption text-disabled">
                 {{
                   t('chat_forward_selected_count', {
-                    count: forwardTargetChatIds.length,
+                    count: selectedForwardTargetIds.length,
                   })
                 }}
               </span>
@@ -7102,6 +7267,12 @@ onUnmounted(() => {
     width: 32px !important;
     height: 32px !important;
   }
+}
+
+.forward-target-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .fade-enter-active,
