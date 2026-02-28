@@ -937,7 +937,7 @@
   "chat_forward_status_placeholder": "Seleccione el estado",
   "chat_forward_status_in_chat": "En atención",
   "chat_forward_status_queue": "En espera de atención",
-  "chat_forward_target_chats_label": "Chats de destino",
+  "chat_forward_target_chats_label": "Contactos",
   "chat_forward_target_chats_placeholder": "Seleccione los chats",
   "chat_forward_no_target_chats": "No se encontraron chats",
   "chat_forward_selected_count": "{count} chat(s) seleccionado(s)",

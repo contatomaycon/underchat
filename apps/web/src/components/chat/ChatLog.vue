@@ -29,6 +29,7 @@ import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { formatDate } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
 import { useTheme } from 'vuetify';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { can } from '@layouts/plugins/casl';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -625,14 +626,31 @@ const canLoadMoreForwardTargets = computed(() => {
   return forwardTargetsPaging.current_page < forwardTargetsPaging.total_pages;
 });
 
+const formatForwardChannelNumber = (number?: string | null): string | null => {
+  if (!number) return null;
+  return formatPhoneBR(number);
+};
+
 const forwardChannelItems = computed(() =>
   forwardChannels.value.map((channel) => {
-    const number = channel.number ? ` (${channel.number})` : '';
+    const formattedNumber = formatForwardChannelNumber(channel.number ?? null);
+
     return {
       value: channel.id,
-      title: `${channel.name}${number}`,
+      title: formattedNumber
+        ? `${channel.name} (${formattedNumber})`
+        : channel.name,
+      name: channel.name,
+      number: formattedNumber,
     };
   })
+);
+
+const selectedForwardChannelOption = computed(
+  () =>
+    forwardChannelItems.value.find(
+      (channel) => channel.value === selectedForwardChannel.value
+    ) ?? null
 );
 
 const forwardStatusItems = computed(() => [
@@ -4707,8 +4725,8 @@ onUnmounted(() => {
       <VCardText>
         <VRow>
           <VCol cols="12">
-            <VLabel class="text-body-2 mb-1">
-              {{ t('chat_forward_channel_label') }}
+            <VLabel class="text-body-2 mb-1 font-weight-bold">
+              {{ t('chat_forward_channel_label') }}:
             </VLabel>
             <AppSelectSearch
               v-model="selectedForwardChannel"
@@ -4719,11 +4737,23 @@ onUnmounted(() => {
               :loading="isForwardOptionsLoading"
               :disabled="isForwardSubmitting"
             />
+            <div v-if="selectedForwardChannelOption" class="mt-2">
+              <VChip size="small" color="primary" variant="tonal">
+                <VIcon size="16" class="me-1">tabler-device-mobile</VIcon>
+                {{ selectedForwardChannelOption.name }}
+                <span
+                  v-if="selectedForwardChannelOption.number"
+                  class="ms-1 text-caption"
+                >
+                  ({{ selectedForwardChannelOption.number }})
+                </span>
+              </VChip>
+            </div>
           </VCol>
 
           <VCol v-if="selectedForwardChannel" cols="12">
-            <VLabel class="text-body-2 mb-1">
-              {{ t('chat_forward_status_label') }}
+            <VLabel class="text-body-2 mb-1 font-weight-bold">
+              {{ t('chat_forward_status_label') }}:
             </VLabel>
             <AppSelectSearch
               v-model="selectedForwardStatus"
@@ -4736,8 +4766,8 @@ onUnmounted(() => {
           </VCol>
 
           <VCol v-if="selectedForwardStatus" cols="12">
-            <VLabel class="text-body-2 mb-1">
-              {{ t('chat_forward_target_chats_label') }}
+            <VLabel class="text-body-2 mb-1 font-weight-bold">
+              {{ t('chat_forward_target_chats_label') }}:
             </VLabel>
             <AppSelectSearch
               v-model="forwardTargetChatIds"

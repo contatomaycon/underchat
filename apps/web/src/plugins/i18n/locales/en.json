@@ -928,7 +928,7 @@
   "chat_forward_status_placeholder": "Select status",
   "chat_forward_status_in_chat": "In service",
   "chat_forward_status_queue": "Waiting service",
-  "chat_forward_target_chats_label": "Target chats",
+  "chat_forward_target_chats_label": "Contacts",
   "chat_forward_target_chats_placeholder": "Select chats",
   "chat_forward_no_target_chats": "No chats found",
   "chat_forward_selected_count": "{count} chat(s) selected",
