@@ -36,6 +36,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
+import type { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
 import LottieSticker from '@/components/chat/LottieSticker.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import {
@@ -101,6 +102,30 @@ const editHistoryModalOpen = ref(false);
 const viewingEditHistory = ref<ListMessageResult | null>(null);
 
 const loadingContactCards = ref<Set<string>>(new Set());
+
+const forwardModalOpen = ref(false);
+const forwardSourceMessage = ref<ListMessageResult | null>(null);
+const forwardChannels = ref<TransferWorker[]>([]);
+const selectedForwardChannel = ref<string | null>(null);
+const selectedForwardStatus = ref<
+  EChatStatus.in_chat | EChatStatus.queue | null
+>(null);
+const forwardTargetChatIds = ref<string[]>([]);
+const forwardTargetSearch = ref('');
+const forwardTargetItems = ref<
+  Array<{
+    value: string;
+    title: string;
+  }>
+>([]);
+const forwardTargetsPaging = reactive({
+  current_page: 1,
+  total_pages: 1,
+});
+const isForwardOptionsLoading = ref(false);
+const isForwardTargetsLoading = ref(false);
+const isForwardSubmitting = ref(false);
+let forwardSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const mapStyle = computed(() => {
   return {
@@ -463,6 +488,205 @@ const onCopy = async (m: ListMessageResult) => {
     m.content?.link_preview?.['canonical-url'] ||
     '';
   if (text) await navigator.clipboard.writeText(text);
+};
+
+const FORWARD_ALLOWED_TYPES = new Set<string>([
+  EMessageType.text,
+  EMessageType.image,
+  EMessageType.document,
+  EMessageType.audio,
+  EMessageType.video,
+  EMessageType.video_note,
+  EMessageType.sticker,
+  EMessageType.location,
+  EMessageType.contact_card,
+  EMessageType.contacts,
+]);
+
+const canForwardMessage = (message: ListMessageResult): boolean => {
+  if (isDeleted(message)) return false;
+  if (!message.content?.type) return false;
+  if (message.content.type === EMessageType.view_once) return false;
+  if (message.message_key?.is_view_once) return false;
+  return FORWARD_ALLOWED_TYPES.has(message.content.type);
+};
+
+const resetForwardModalState = () => {
+  forwardSourceMessage.value = null;
+  selectedForwardChannel.value = null;
+  selectedForwardStatus.value = null;
+  forwardTargetChatIds.value = [];
+  forwardTargetSearch.value = '';
+  forwardTargetItems.value = [];
+  forwardTargetsPaging.current_page = 1;
+  forwardTargetsPaging.total_pages = 1;
+};
+
+const openForwardModal = async (message: ListMessageResult) => {
+  if (!canForwardMessage(message)) {
+    chatStore.showSnackbar(t('chat_forward_type_not_supported'), EColor.error);
+    return;
+  }
+
+  resetForwardModalState();
+  forwardSourceMessage.value = message;
+  forwardModalOpen.value = true;
+  isForwardOptionsLoading.value = true;
+
+  const options = await chatStore.listTransferOptions();
+  forwardChannels.value = options?.workers ?? [];
+  isForwardOptionsLoading.value = false;
+};
+
+const buildForwardTargetTitle = (
+  chat: {
+    name?: string | null;
+    phone?: string | null;
+  },
+  fallbackId: string
+): string => {
+  const name = (chat.name ?? '').trim() || t('contact_label');
+  const phone = (chat.phone ?? '').trim() || fallbackId;
+  return `${name} - ${phone}`;
+};
+
+const loadForwardTargets = async (append = false) => {
+  if (!selectedForwardChannel.value || !selectedForwardStatus.value) {
+    return;
+  }
+
+  const nextPage = append ? forwardTargetsPaging.current_page + 1 : 1;
+  if (!append) {
+    forwardTargetItems.value = [];
+    forwardTargetsPaging.current_page = 1;
+    forwardTargetsPaging.total_pages = 1;
+  }
+
+  isForwardTargetsLoading.value = true;
+  const response = await chatStore.searchForwardTargetChats({
+    filter_worker_id: selectedForwardChannel.value,
+    status: selectedForwardStatus.value,
+    search: forwardTargetSearch.value.trim(),
+    current_page: nextPage,
+    per_page: 20,
+  });
+  isForwardTargetsLoading.value = false;
+
+  if (!response) {
+    return;
+  }
+
+  forwardTargetsPaging.current_page = response.pagings.current_page;
+  forwardTargetsPaging.total_pages = response.pagings.total_pages;
+
+  const activeChatId = activeChat.value?.chat_id ?? null;
+  const mappedItems = response.results
+    .filter((chat) => chat.chat_id && chat.chat_id !== activeChatId)
+    .map((chat) => ({
+      value: chat.chat_id,
+      title: buildForwardTargetTitle(chat, chat.chat_id),
+    }));
+
+  if (!append) {
+    forwardTargetItems.value = mappedItems;
+    return;
+  }
+
+  const existing = new Set(forwardTargetItems.value.map((item) => item.value));
+  const toAdd = mappedItems.filter((item) => !existing.has(item.value));
+  forwardTargetItems.value = [...forwardTargetItems.value, ...toAdd];
+};
+
+const onForwardStatusChanged = async () => {
+  forwardTargetChatIds.value = [];
+  await loadForwardTargets(false);
+};
+
+const onForwardSearchUpdate = (value: string) => {
+  forwardTargetSearch.value = value;
+  if (!selectedForwardChannel.value || !selectedForwardStatus.value) {
+    return;
+  }
+
+  if (forwardSearchDebounceTimer) {
+    clearTimeout(forwardSearchDebounceTimer);
+  }
+
+  forwardSearchDebounceTimer = setTimeout(() => {
+    void loadForwardTargets(false);
+  }, 350);
+};
+
+const canLoadMoreForwardTargets = computed(() => {
+  if (!selectedForwardChannel.value || !selectedForwardStatus.value) {
+    return false;
+  }
+
+  return forwardTargetsPaging.current_page < forwardTargetsPaging.total_pages;
+});
+
+const forwardChannelItems = computed(() =>
+  forwardChannels.value.map((channel) => {
+    const number = channel.number ? ` (${channel.number})` : '';
+    return {
+      value: channel.id,
+      title: `${channel.name}${number}`,
+    };
+  })
+);
+
+const forwardStatusItems = computed(() => [
+  {
+    value: EChatStatus.in_chat,
+    title: t('chat_forward_status_in_chat'),
+  },
+  {
+    value: EChatStatus.queue,
+    title: t('chat_forward_status_queue'),
+  },
+]);
+
+const canSubmitForward = computed(
+  () =>
+    forwardTargetChatIds.value.length > 0 &&
+    !isForwardSubmitting.value &&
+    !!forwardSourceMessage.value
+);
+
+const submitForward = async () => {
+  if (!activeChat.value?.chat_id || !forwardSourceMessage.value) return;
+  if (forwardTargetChatIds.value.length === 0) return;
+
+  isForwardSubmitting.value = true;
+
+  const result = await chatStore.forwardMessage(
+    activeChat.value.chat_id,
+    forwardSourceMessage.value.message_id,
+    forwardTargetChatIds.value
+  );
+
+  isForwardSubmitting.value = false;
+
+  if (!result) {
+    return;
+  }
+
+  if (result.failed > 0 && result.sent > 0) {
+    chatStore.showSnackbar(
+      t('chat_forward_partial_success', {
+        sent: result.sent,
+        failed: result.failed,
+      }),
+      EColor.warning
+    );
+  } else if (result.sent > 0) {
+    chatStore.showSnackbar(t('chat_forward_success'), EColor.success);
+  } else {
+    chatStore.showSnackbar(t('chat_forward_error'), EColor.error);
+  }
+
+  forwardModalOpen.value = false;
+  resetForwardModalState();
 };
 
 const onTemplateButtonClick = (
@@ -1360,6 +1584,11 @@ onUnmounted(() => {
   for (const key of Object.keys(audioPlaybackRates)) {
     delete audioPlaybackRates[key];
   }
+
+  if (forwardSearchDebounceTimer) {
+    clearTimeout(forwardSearchDebounceTimer);
+    forwardSearchDebounceTimer = null;
+  }
 });
 const formatVideoDuration = (duration?: number | null): string => {
   if (!duration || duration <= 0) return '';
@@ -2166,6 +2395,43 @@ watch(locationModalOpen, async (isOpen) => {
   }
 });
 
+watch(selectedForwardChannel, (channelId) => {
+  selectedForwardStatus.value = null;
+  forwardTargetChatIds.value = [];
+  forwardTargetItems.value = [];
+  forwardTargetsPaging.current_page = 1;
+  forwardTargetsPaging.total_pages = 1;
+
+  if (!channelId) {
+    return;
+  }
+});
+
+watch(selectedForwardStatus, async (status) => {
+  if (!status) {
+    forwardTargetChatIds.value = [];
+    forwardTargetItems.value = [];
+    forwardTargetsPaging.current_page = 1;
+    forwardTargetsPaging.total_pages = 1;
+    return;
+  }
+
+  await onForwardStatusChanged();
+});
+
+watch(forwardModalOpen, (isOpen) => {
+  if (isOpen) {
+    return;
+  }
+
+  if (forwardSearchDebounceTimer) {
+    clearTimeout(forwardSearchDebounceTimer);
+    forwardSearchDebounceTimer = null;
+  }
+
+  resetForwardModalState();
+});
+
 const onMapLoad = () => {
   if (locationMapRef.value?.map) {
     locationMapRef.value.map.resize();
@@ -2663,6 +2929,18 @@ onUnmounted(() => {
                           </template>
                           <VListItemTitle>{{
                             t('chat_action_download')
+                          }}</VListItemTitle>
+                        </VListItem>
+
+                        <VListItem
+                          v-if="canForwardMessage(item.message)"
+                          @click="openForwardModal(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-arrow-forward-up</VIcon>
+                          </template>
+                          <VListItemTitle>{{
+                            t('chat_action_forward')
                           }}</VListItemTitle>
                         </VListItem>
 
@@ -4406,6 +4684,115 @@ onUnmounted(() => {
         </VBtn>
         <VBtn @click="onSaveEdit">
           {{ t('save', 'Salvar') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="forwardModalOpen" max-width="620" :scrollable="false">
+    <VCard>
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span>{{ t('chat_forward_title') }}</span>
+        <VBtn
+          icon
+          variant="text"
+          size="small"
+          :disabled="isForwardSubmitting"
+          @click="forwardModalOpen = false"
+        >
+          <VIcon size="20">tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+
+      <VCardText>
+        <VRow>
+          <VCol cols="12">
+            <VLabel class="text-body-2 mb-1">
+              {{ t('chat_forward_channel_label') }}
+            </VLabel>
+            <AppSelectSearch
+              v-model="selectedForwardChannel"
+              :items="forwardChannelItems"
+              item-value="value"
+              item-title="title"
+              :placeholder="t('chat_forward_channel_placeholder')"
+              :loading="isForwardOptionsLoading"
+              :disabled="isForwardSubmitting"
+            />
+          </VCol>
+
+          <VCol v-if="selectedForwardChannel" cols="12">
+            <VLabel class="text-body-2 mb-1">
+              {{ t('chat_forward_status_label') }}
+            </VLabel>
+            <AppSelectSearch
+              v-model="selectedForwardStatus"
+              :items="forwardStatusItems"
+              item-value="value"
+              item-title="title"
+              :placeholder="t('chat_forward_status_placeholder')"
+              :disabled="isForwardSubmitting"
+            />
+          </VCol>
+
+          <VCol v-if="selectedForwardStatus" cols="12">
+            <VLabel class="text-body-2 mb-1">
+              {{ t('chat_forward_target_chats_label') }}
+            </VLabel>
+            <AppSelectSearch
+              v-model="forwardTargetChatIds"
+              :items="forwardTargetItems"
+              item-value="value"
+              item-title="title"
+              :placeholder="t('chat_forward_target_chats_placeholder')"
+              :loading="isForwardTargetsLoading"
+              :disabled="isForwardSubmitting"
+              multiple
+              chips
+              closable-chips
+              :search="forwardTargetSearch"
+              :no-items-text="'chat_forward_no_target_chats'"
+              :no-results-text="'chat_forward_no_target_chats'"
+              @update:search="onForwardSearchUpdate"
+            />
+
+            <div class="d-flex justify-space-between align-center mt-2">
+              <span class="text-caption text-disabled">
+                {{
+                  t('chat_forward_selected_count', {
+                    count: forwardTargetChatIds.length,
+                  })
+                }}
+              </span>
+              <VBtn
+                v-if="canLoadMoreForwardTargets"
+                variant="text"
+                size="small"
+                :loading="isForwardTargetsLoading"
+                @click="loadForwardTargets(true)"
+              >
+                {{ t('chat_forward_load_more') }}
+              </VBtn>
+            </div>
+          </VCol>
+        </VRow>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isForwardSubmitting"
+          @click="forwardModalOpen = false"
+        >
+          {{ t('cancel') }}
+        </VBtn>
+        <VBtn
+          :loading="isForwardSubmitting"
+          :disabled="!canSubmitForward"
+          @click="submitForward"
+        >
+          {{ t('chat_action_forward') }}
         </VBtn>
       </VCardText>
     </VCard>

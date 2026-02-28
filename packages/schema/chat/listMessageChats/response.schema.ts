@@ -241,6 +241,19 @@ export const albumMessageSchema = Type.Object({
   ),
 });
 
+export const forwardMessageSchema = Type.Object(
+  {
+    source_message_id: Type.String(),
+    source_chat_id: Type.String(),
+    source_type: Type.String({ enum: Object.values(EMessageType) }),
+    source_worker_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    source_message_key: Type.Optional(
+      Type.Union([messageKeySchema, Type.Null()])
+    ),
+  },
+  { additionalProperties: true }
+);
+
 export const contentSchema = Type.Object(
   {
     type: Type.String({ enum: Object.values(EMessageType) }),
@@ -271,6 +284,7 @@ export const contentSchema = Type.Object(
     pin: Type.Optional(Type.Union([pinMessageSchema, Type.Null()])),
     ephemeral: Type.Optional(Type.Union([ephemeralMessageSchema, Type.Null()])),
     album: Type.Optional(Type.Union([albumMessageSchema, Type.Null()])),
+    forward: Type.Optional(Type.Union([forwardMessageSchema, Type.Null()])),
   },
   { additionalProperties: true }
 );
@@ -299,6 +313,7 @@ export type LinkPreview = Static<typeof viewLinkPreviewResponseSchema>;
 export type ContentMessageChat = Static<typeof contentSchema>;
 export type MessageVersion = Static<typeof messageVersionSchema>;
 export type AlbumMessageChat = Static<typeof albumMessageSchema>;
+export type ForwardMessageChat = Static<typeof forwardMessageSchema>;
 export type ImageMessageChat = Static<typeof imageSchema>;
 export type VideoMessageChat = Static<typeof videoSchema>;
 export type AudioMessageChat = Static<typeof audioSchema>;

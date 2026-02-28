@@ -17,6 +17,7 @@ import { viewLinkPreviewSchema } from '@core/schema/chat/viewLinkPreview';
 import { reactMessageSchema } from '@core/schema/chat/reactMessage';
 import { deleteMessageSchema } from '@core/schema/chat/deleteMessage';
 import { editMessageSchema } from '@core/schema/chat/editMessage';
+import { forwardMessageSchema } from '@core/schema/chat/forwardMessage';
 import { updateChatStatusSchema } from '@core/schema/chat/updateChatStatus';
 import { clearChatSummarySchema } from '@core/schema/chat/clearChatSummary';
 import { startChatWithContactSchema } from '@core/schema/chat/startChatWithContact';
@@ -166,6 +167,17 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat/:chat_id/message/:message_id/edit', {
     schema: editMessageSchema,
     handler: chatController.editMessage,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chat/:chat_id/message/:message_id/forward', {
+    schema: forwardMessageSchema,
+    handler: chatController.forwardMessage,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

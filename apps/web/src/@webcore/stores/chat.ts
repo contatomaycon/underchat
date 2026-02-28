@@ -69,6 +69,7 @@ import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptio
 import { ListChatContactChannelsResponse } from '@core/schema/chat/listContactChannels/response.schema';
 import { ListKanbanResponse } from '@core/schema/chat/listKanban/response.schema';
 import { ListKanbanQuery } from '@core/schema/chat/listKanban/request.schema';
+import { ForwardMessageResponse } from '@core/schema/chat/forwardMessage/response.schema';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
@@ -2681,6 +2682,38 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async searchForwardTargetChats(input: {
+      filter_worker_id: string;
+      status: EChatStatus.in_chat | EChatStatus.queue;
+      search?: string;
+      current_page?: number;
+      per_page?: number;
+    }): Promise<SearchChatsResponse | null> {
+      try {
+        const params: Record<string, any> = {
+          current_page: input.current_page ?? 1,
+          per_page: input.per_page ?? 20,
+          search: input.search ?? '',
+          status: input.status,
+          filter_worker_id: input.filter_worker_id,
+        };
+
+        const response = await axios.get<IApiResponse<SearchChatsResponse>>(
+          '/chat/search',
+          { params }
+        );
+
+        const data = response?.data;
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
     async resolveChatEndpoint(
       status: EChatStatus | EChatStatus[] | typeof MY_CHATS_STATUS,
       filters: ChatFilters,
@@ -4054,6 +4087,40 @@ export const useChatStore = defineStore('chat', {
         return true;
       } catch {
         return false;
+      }
+    },
+
+    async forwardMessage(
+      chatId: string,
+      messageId: string,
+      targetChatIds: string[]
+    ): Promise<ForwardMessageResponse | null> {
+      try {
+        const response = await axios.post<IApiResponse<ForwardMessageResponse>>(
+          `/chat/${chatId}/message/${messageId}/forward`,
+          {
+            target_chat_ids: targetChatIds,
+          }
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message || this.i18n.global.t('chat_forward_error');
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t('chat_forward_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+        return null;
       }
     },
 

@@ -878,6 +878,52 @@ export const mensageMappings = () => {
                 },
               },
             },
+            forward: {
+              type: 'nested',
+              properties: {
+                source_message_id: {
+                  type: 'keyword',
+                },
+                source_chat_id: {
+                  type: 'keyword',
+                },
+                source_type: {
+                  type: 'keyword',
+                },
+                source_worker_id: {
+                  type: 'keyword',
+                },
+                source_message_key: {
+                  type: 'nested',
+                  properties: {
+                    remote_jid: {
+                      type: 'keyword',
+                    },
+                    remote_jid_alt: {
+                      type: 'keyword',
+                    },
+                    from_me: {
+                      type: 'boolean',
+                    },
+                    id: {
+                      type: 'keyword',
+                    },
+                    participant: {
+                      type: 'keyword',
+                    },
+                    participant_alt: {
+                      type: 'keyword',
+                    },
+                    addressing_mode: {
+                      type: 'text',
+                    },
+                    is_view_once: {
+                      type: 'boolean',
+                    },
+                  },
+                },
+              },
+            },
           },
         },
         summary: {

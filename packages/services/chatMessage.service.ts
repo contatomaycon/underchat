@@ -425,6 +425,10 @@ export class ChatMessageService {
     return true;
   }
 
+  async publishPreparedMessage(message: IChatMessage): Promise<boolean> {
+    return this.publishMessage(message);
+  }
+
   private createTextMessage(params: ICreateTextMessageParams): IChatMessage {
     const {
       chat,

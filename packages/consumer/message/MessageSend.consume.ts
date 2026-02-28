@@ -8,6 +8,7 @@ import { BaileysMessageEditDeleteService } from '@core/services/baileys/methods/
 import { BaileysMessageLocationContactService } from '@core/services/baileys/methods/messageLocationContact.service';
 import { BaileysMessageStatusStoriesService } from '@core/services/baileys/methods/messageStatusStories.service';
 import { BaileysProfileService } from '@core/services/baileys/methods/profile.service';
+import { BaileysIncomingMessageService } from '@core/services/baileys/methods/incoming.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import {
   IChatMessage,
@@ -92,6 +93,8 @@ export class MessageSendConsume {
     private readonly baileysMessageStatusStoriesService: BaileysMessageStatusStoriesService,
     @inject(BaileysProfileService)
     private readonly baileysProfileService: BaileysProfileService,
+    @inject(BaileysIncomingMessageService)
+    private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
@@ -856,6 +859,15 @@ export class MessageSendConsume {
         lastType,
         (j, d) => this.processVideo(j, d)
       ),
+      [EMessageType.video_note]: this.createMediaTypeHandler(
+        data.content?.video?.url ?? undefined,
+        jid,
+        chatId,
+        data,
+        EMessageType.video_note,
+        lastType,
+        (j, d) => this.processVideo(j, d)
+      ),
       [EMessageType.sticker]: this.createMediaTypeHandler(
         data.content?.sticker?.url ?? undefined,
         jid,
@@ -895,6 +907,14 @@ export class MessageSendConsume {
         EMessageType.contact_card,
         (j, d) => this.processContact(j, d)
       ),
+      [EMessageType.contacts]: this.createActionTypeHandler(
+        !!data.content?.contacts?.length,
+        jid,
+        chatId,
+        data,
+        EMessageType.contacts,
+        (j, d) => this.processContacts(j, d)
+      ),
       [EMessageType.delete_message]: this.createActionTypeHandler(
         !!data.message_key?.id,
         jid,
@@ -916,6 +936,129 @@ export class MessageSendConsume {
     return handlers[currentType] ?? null;
   }
 
+  private logForwardResult(
+    data: IChatMessage,
+    path: 'native' | 'fallback',
+    result: 'success' | 'failed',
+    error?: unknown
+  ): void {
+    console.info('[MessageSend] Forward processed', {
+      source_message_id: data.content?.forward?.source_message_id ?? null,
+      target_chat_id: data.chat_id,
+      provider: 'baileys',
+      path,
+      result,
+      error: error instanceof Error ? error.message : undefined,
+    });
+  }
+
+  private resolveForwardSourceKey(data: IChatMessage): {
+    remoteJid: string;
+    fromMe: boolean;
+    id: string;
+    participant?: string;
+  } | null {
+    const sourceKey = data.content?.forward?.source_message_key;
+    if (!sourceKey?.id) {
+      return null;
+    }
+
+    return this.buildBaileysMessageKey(
+      {
+        remote_jid: sourceKey.remote_jid ?? null,
+        from_me: sourceKey.from_me ?? null,
+        id: sourceKey.id ?? null,
+        participant: sourceKey.participant ?? null,
+      },
+      ''
+    );
+  }
+
+  private async tryNativeForward(
+    jid: string,
+    data: IChatMessage,
+    chatId: string,
+    currentType: EMessageType | undefined
+  ): Promise<boolean> {
+    const sourceKey = this.resolveForwardSourceKey(data);
+    if (!sourceKey) {
+      return false;
+    }
+
+    const cachedMessage =
+      await this.baileysIncomingMessageService.getCachedMessage(sourceKey);
+
+    if (!cachedMessage) {
+      return false;
+    }
+
+    const nativeForward = await this.baileysMessageTextService.forward(
+      jid,
+      {
+        key: sourceKey,
+        message: cachedMessage,
+      },
+      true
+    );
+
+    if (!nativeForward) {
+      return false;
+    }
+
+    await this.pushUpdate({ message: nativeForward, data });
+    if (currentType) {
+      this.lastMessageTypeByChatId.set(chatId, currentType);
+    }
+    this.logForwardResult(data, 'native', 'success');
+    return true;
+  }
+
+  private async processForwardMessage(
+    currentType: EMessageType | undefined,
+    jid: string,
+    chatId: string,
+    data: IChatMessage,
+    lastType: EMessageType | undefined,
+    hasQuoted: boolean
+  ): Promise<boolean> {
+    if (!data.content?.forward) {
+      return false;
+    }
+
+    try {
+      const nativeSent = await this.tryNativeForward(
+        jid,
+        data,
+        chatId,
+        currentType
+      );
+      if (nativeSent) {
+        return true;
+      }
+      this.logForwardResult(data, 'native', 'failed');
+    } catch (error) {
+      this.logForwardResult(data, 'native', 'failed', error);
+    }
+
+    const fallbackHandler = this.selectMessageHandler(
+      currentType,
+      jid,
+      chatId,
+      data,
+      lastType,
+      hasQuoted
+    );
+
+    if (!fallbackHandler) {
+      this.logForwardResult(data, 'fallback', 'failed');
+      throw new Error('Failed to resolve forward fallback handler');
+    }
+
+    await fallbackHandler();
+    this.logForwardResult(data, 'fallback', 'success');
+    return true;
+  }
+
   private async processMessage(data: IChatMessage): Promise<void> {
     const jid = selectJidChat(data);
 
@@ -932,6 +1075,19 @@ export class MessageSendConsume {
     const currentType = data?.content?.type;
     const lastType = this.lastMessageTypeByChatId.get(chatId);
     const hasQuoted = !!data.content?.quoted || data.has_quoted === true;
+
+    if (
+      await this.processForwardMessage(
+        currentType,
+        jid,
+        chatId,
+        data,
+        lastType,
+        hasQuoted
+      )
+    ) {
+      return;
+    }
 
     const handler = this.selectMessageHandler(
       currentType,
@@ -1208,6 +1364,45 @@ export class MessageSendConsume {
 
     if (!result) {
       throw new Error('Failed to send contact');
+    }
+
+    const update: IUpdateMessage = { message: result, data };
+    await this.pushUpdate(update);
+  }
+
+  private async processContacts(
+    jid: string,
+    data: IChatMessage
+  ): Promise<void> {
+    const contacts = data.content?.contacts ?? [];
+
+    if (!contacts.length) {
+      throw new Error('Contacts data is required');
+    }
+
+    const quotedMessage = data.content?.quoted
+      ? this.composeQuotedMessage(data)
+      : undefined;
+
+    const vcards = contacts.map((contact) => this.generateVCard(contact));
+    const firstContact = contacts[0];
+    const firstName =
+      `${firstContact?.name ?? ''} ${firstContact?.last_name ?? ''}`.trim() ||
+      'Contato';
+    const displayName =
+      contacts.length > 1
+        ? `${firstName} e ${contacts.length - 1} outro contato`
+        : firstName;
+
+    const result = await this.baileysMessageLocationContactService.sendContacts(
+      jid,
+      vcards,
+      displayName,
+      quotedMessage ? { quoted: quotedMessage } : undefined
+    );
+
+    if (!result) {
+      throw new Error('Failed to send contacts');
     }
 
     const update: IUpdateMessage = { message: result, data };

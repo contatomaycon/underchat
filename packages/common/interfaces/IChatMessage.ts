@@ -110,6 +110,14 @@ export interface IAlbumMessage {
   source?: TAlbumSource | null;
 }
 
+export interface IForwardMessageContent {
+  source_message_id: string;
+  source_chat_id: string;
+  source_type: EMessageType;
+  source_worker_id?: string | null;
+  source_message_key?: IMessageKey | null;
+}
+
 export interface IContent {
   type: EMessageType;
   message?: string | null;
@@ -132,6 +140,7 @@ export interface IContent {
   pin?: IPinMessage | null;
   ephemeral?: IEphemeralMessage | null;
   album?: IAlbumMessage | null;
+  forward?: IForwardMessageContent | null;
 }
 
 export interface IMessageKey {
