@@ -25,7 +25,8 @@ export const listTransferSectorUsers = async (
     const response = await chatTransferSectorUsersListerUseCase.execute(
       tokenJwtData.account_id,
       request.params.sector_id,
-      request.query.chat_id
+      request.query.chat_id,
+      request.query.channel_id
     );
 
     return sendResponse(reply, {

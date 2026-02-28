@@ -3439,7 +3439,8 @@ export const useChatStore = defineStore('chat', {
       userId?: string | null,
       sectorId?: string | null,
       annotation?: string | null,
-      hasAppliedAdvancedFilters = false
+      hasAppliedAdvancedFilters = false,
+      workerId?: string | null
     ): Promise<boolean> {
       void hasAppliedAdvancedFilters;
       try {
@@ -3449,6 +3450,7 @@ export const useChatStore = defineStore('chat', {
         const response = await axios.post<
           IApiResponse<{ chat_id: string; status: boolean }>
         >(`/chat/${chatId}/transfer`, {
+          worker_id: workerId ?? undefined,
           user_id: userId ?? undefined,
           sector_id: sectorId ?? undefined,
           annotation: annotation?.trim() ?? undefined,
@@ -4961,9 +4963,15 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async listTransferUsers(chatId?: string): Promise<TransferUserResponse[]> {
+    async listTransferUsers(
+      chatId?: string,
+      channelId?: string
+    ): Promise<TransferUserResponse[]> {
       try {
-        const params = chatId ? { chat_id: chatId } : {};
+        const params = {
+          chat_id: chatId ?? undefined,
+          channel_id: channelId ?? undefined,
+        };
         const response = await axios.get<IApiResponse<TransferUserResponse[]>>(
           '/chat/transfer/users',
           { params }
@@ -5007,10 +5015,14 @@ export const useChatStore = defineStore('chat', {
 
     async listTransferSectorUsers(
       sectorId: string,
-      chatId?: string
+      chatId?: string,
+      channelId?: string
     ): Promise<TransferSectorUserResponse[]> {
       try {
-        const params = chatId ? { chat_id: chatId } : {};
+        const params = {
+          chat_id: chatId ?? undefined,
+          channel_id: channelId ?? undefined,
+        };
         const response = await axios.get<
           IApiResponse<TransferSectorUserResponse[]>
         >(`/chat/transfer/sectors/${sectorId}/users`, { params });

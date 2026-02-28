@@ -9,6 +9,7 @@ export type ListTransferSectorUsersParams = Static<
 >;
 
 export const listTransferSectorUsersQuerySchema = Type.Object({
+  channel_id: Type.Optional(Type.String({ format: 'uuid' })),
   chat_id: Type.Optional(Type.String({ format: 'uuid' })),
 });
 

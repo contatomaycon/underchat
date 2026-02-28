@@ -22,6 +22,7 @@ import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { createChatCacheKey } from '@core/common/functions/createCacheKey';
 
 @injectable()
 export class TransferChatUseCase {
@@ -63,6 +64,31 @@ export class TransferChatUseCase {
     ]);
 
     return { userData, sectorData };
+  }
+
+  private async resolveTargetWorker(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chat: IChat,
+    body: TransferChatBody
+  ): Promise<IChat['worker']> {
+    if (!body.worker_id) {
+      return chat.worker;
+    }
+
+    const worker = await this.workerService.viewWorkerNameAndId(
+      accountId,
+      body.worker_id
+    );
+
+    if (!worker) {
+      throw new Error(t('worker_not_found'));
+    }
+
+    return {
+      id: worker.id,
+      name: worker.name,
+    };
   }
 
   private validateUserAndSector(
@@ -195,8 +221,30 @@ export class TransferChatUseCase {
     }
   }
 
+  private async validateUserAccessToTargetChannel(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    targetWorkerId: string,
+    userId?: string
+  ): Promise<void> {
+    if (!userId) {
+      return;
+    }
+
+    const userIdsWithAccess =
+      await this.userService.listUserIdsWithAccessToChannel(
+        accountId,
+        targetWorkerId
+      );
+
+    if (!userIdsWithAccess.includes(userId)) {
+      throw new Error(t('user_not_found'));
+    }
+  }
+
   private buildUpdatedChatForTransfer(
     chat: IChat,
+    worker: IChat['worker'],
     user: IChat['user'] | null | undefined,
     sector: IChat['sector'] | null | undefined,
     shouldClearUser: boolean,
@@ -204,6 +252,7 @@ export class TransferChatUseCase {
   ): IChat {
     return {
       ...chat,
+      worker,
       status: EChatStatus.queue,
       user: shouldClearUser ? null : (user ?? chat.user),
       sector: shouldClearSector ? null : (sector ?? chat.sector),
@@ -269,6 +318,26 @@ export class TransferChatUseCase {
     };
   }
 
+  private async invalidateTransferCache(
+    accountId: string,
+    previousChat: IChat,
+    updatedChat: IChat
+  ): Promise<void> {
+    const cacheAccountId =
+      updatedChat.account?.id ?? previousChat.account?.id ?? accountId;
+
+    if (previousChat.worker?.id && cacheAccountId) {
+      const previousWorkerCacheKey = createChatCacheKey(
+        cacheAccountId,
+        previousChat.worker.id,
+        previousChat.phone
+      );
+      await this.redis.del(previousWorkerCacheKey);
+    }
+
+    await this.chatService.invalidateChatCache(updatedChat);
+  }
+
   private async publishChatUpdate(
     chatWithProtocol: IChat,
     accountId: string
@@ -303,12 +372,26 @@ export class TransferChatUseCase {
       throw new Error(t('chat_not_found'));
     }
 
+    const channelIds = userChannels.map((c) => c.id);
+
     if (userChannels.length > 0) {
-      const channelIds = userChannels.map((c) => c.id);
       if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
         throw new Error(t('chat_access_denied'));
       }
     }
+
+    const targetWorker = await this.resolveTargetWorker(
+      t,
+      accountId,
+      chat,
+      body
+    );
+
+    if (channelIds.length > 0 && !channelIds.includes(targetWorker.id)) {
+      throw new Error(t('chat_access_denied'));
+    }
+
+    const isChannelChanged = targetWorker.id !== chat.worker.id;
 
     const { userData, sectorData } = await this.loadUserAndSector(
       body,
@@ -316,13 +399,19 @@ export class TransferChatUseCase {
     );
 
     const workerConfigFields =
-      await this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id);
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(
+        targetWorker.id
+      );
 
     let user = this.buildUserFromData(body, userData);
     let sector = this.buildSectorFromData(body, sectorData);
 
-    const shouldClearUser = !!(body.sector_id && !body.user_id);
-    const shouldClearSector = !!(body.user_id && !body.sector_id);
+    const isChannelOnlyTransfer =
+      isChannelChanged && !body.user_id && !body.sector_id;
+    const shouldClearUser =
+      isChannelOnlyTransfer || !!(body.sector_id && !body.user_id);
+    const shouldClearSector =
+      isChannelOnlyTransfer || !!(body.user_id && !body.sector_id);
 
     if (shouldClearUser) {
       user = null;
@@ -334,10 +423,18 @@ export class TransferChatUseCase {
 
     this.validateUserAndSector(t, body, user, sector);
 
+    await this.validateUserAccessToTargetChannel(
+      t,
+      accountId,
+      targetWorker.id,
+      body.user_id
+    );
+
     await this.validateTransferTarget(t, workerConfigFields, body);
 
     const updatedChat = this.buildUpdatedChatForTransfer(
       chat,
+      targetWorker,
       user,
       sector,
       shouldClearUser,
@@ -352,7 +449,7 @@ export class TransferChatUseCase {
 
     await this.chatService.clearChatSummary(params.chat_id, accountId);
 
-    await this.chatService.invalidateChatCache(updatedChat);
+    await this.invalidateTransferCache(accountId, chat, updatedChat);
 
     const chatWithProtocol = await this.buildChatWithProtocol(
       updatedChat,

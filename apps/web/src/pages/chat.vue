@@ -56,6 +56,7 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import type { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
 import {
   IChatMessage,
   IQuotedMessage,
@@ -543,13 +544,25 @@ const toggleHeaderPhoneVisibility = async () => {
 };
 
 const isTransferModalOpen = ref(false);
-const transferType = ref<'user' | 'sector'>('user');
+const transferType = ref<'user' | 'sector' | null>(null);
+const selectedTransferChannel = ref<string | null>(null);
 const selectedTransferUser = ref<string | null>(null);
 const selectedTransferSector = ref<string | null>(null);
 const selectedTransferSectorUser = ref<string | null>(null);
+type TransferChannelOption = {
+  value: string;
+  title: string;
+  name: string;
+  number: string | null;
+};
+const transferChannels = ref<TransferChannelOption[]>([]);
 const transferUsers = ref<any[]>([]);
 const transferSectors = ref<any[]>([]);
 const transferSectorUsers = ref<any[]>([]);
+const transferWorkerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(
+  null
+);
+const isLoadingTransferChannels = ref(false);
 const isLoadingTransferUsers = ref(false);
 const isLoadingTransferSectors = ref(false);
 const isLoadingTransferSectorUsers = ref(false);
@@ -558,6 +571,18 @@ const transferAnnotationText = ref('');
 const isTransferAnnotationEmojiOpen = ref(false);
 
 const isLabelModalOpen = ref(false);
+
+const formatChannelNumber = (number?: string | null): string | null => {
+  if (!number) return null;
+  return formatPhoneBR(number);
+};
+
+const selectedTransferChannelOption = computed<TransferChannelOption | null>(
+  () =>
+    transferChannels.value.find(
+      (channel) => channel.value === selectedTransferChannel.value
+    ) ?? null
+);
 
 const activeContactLabelTemplate = computed<{
   label: string;
@@ -647,13 +672,56 @@ watch(
   }
 );
 
-const loadTransferUsers = async () => {
+const loadTransferChannels = async () => {
   if (!chatStore.user?.account_id) return;
+
+  isLoadingTransferChannels.value = true;
+  try {
+    const options = await chatStore.listTransferOptions();
+    transferChannels.value =
+      options?.workers.map((worker: TransferWorker) => {
+        const formattedNumber = formatChannelNumber(worker.number || null);
+
+        return {
+          value: worker.id,
+          title: formattedNumber
+            ? `${worker.name} (${formattedNumber})`
+            : worker.name,
+          name: worker.name,
+          number: formattedNumber,
+        };
+      }) ?? [];
+  } catch (error) {
+    transferChannels.value = [];
+  } finally {
+    isLoadingTransferChannels.value = false;
+  }
+};
+
+const loadTransferWorkerConfig = async (channelId?: string | null) => {
+  if (!channelId) {
+    transferWorkerConfigForChat.value = null;
+    return;
+  }
+
+  try {
+    const config = await channelStore.fetchWorkerConfigForChat(channelId);
+    transferWorkerConfigForChat.value = config;
+  } catch (error) {
+    transferWorkerConfigForChat.value = null;
+  }
+};
+
+const loadTransferUsers = async (channelId?: string | null) => {
+  if (!chatStore.user?.account_id || !channelId) {
+    transferUsers.value = [];
+    return;
+  }
 
   isLoadingTransferUsers.value = true;
   try {
     const chatId = chatStore.activeChat?.chat_id;
-    const users = await chatStore.listTransferUsers(chatId);
+    const users = await chatStore.listTransferUsers(chatId, channelId);
     transferUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,
@@ -661,6 +729,7 @@ const loadTransferUsers = async () => {
       status: user.status || null,
     }));
   } catch (error) {
+    transferUsers.value = [];
   } finally {
     isLoadingTransferUsers.value = false;
   }
@@ -683,13 +752,23 @@ const loadTransferSectors = async () => {
   }
 };
 
-const loadTransferSectorUsers = async (sectorId: string) => {
-  if (!chatStore.user?.account_id || !sectorId) return;
+const loadTransferSectorUsers = async (
+  sectorId: string,
+  channelId?: string | null
+) => {
+  if (!chatStore.user?.account_id || !sectorId || !channelId) {
+    transferSectorUsers.value = [];
+    return;
+  }
 
   isLoadingTransferSectorUsers.value = true;
   try {
     const chatId = chatStore.activeChat?.chat_id;
-    const users = await chatStore.listTransferSectorUsers(sectorId, chatId);
+    const users = await chatStore.listTransferSectorUsers(
+      sectorId,
+      chatId,
+      channelId
+    );
     transferSectorUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,
@@ -703,11 +782,30 @@ const loadTransferSectorUsers = async (sectorId: string) => {
   }
 };
 
-watch(transferType, (newType) => {
+watch(transferType, () => {
   selectedTransferUser.value = null;
   selectedTransferSector.value = null;
   selectedTransferSectorUser.value = null;
   transferSectorUsers.value = [];
+});
+
+watch(selectedTransferChannel, async (channelId) => {
+  selectedTransferUser.value = null;
+  selectedTransferSectorUser.value = null;
+  transferUsers.value = [];
+  transferSectorUsers.value = [];
+
+  await loadTransferWorkerConfig(channelId);
+
+  if (!channelId) {
+    return;
+  }
+
+  await loadTransferUsers(channelId);
+
+  if (selectedTransferSector.value) {
+    await loadTransferSectorUsers(selectedTransferSector.value, channelId);
+  }
 });
 
 watch(isTransferModalOpen, (isOpen) => {
@@ -720,35 +818,47 @@ watch(selectedTransferSector, (sectorId) => {
   selectedTransferSectorUser.value = null;
   transferSectorUsers.value = [];
 
-  if (sectorId) {
-    loadTransferSectorUsers(sectorId);
+  if (sectorId && selectedTransferChannel.value) {
+    loadTransferSectorUsers(sectorId, selectedTransferChannel.value);
   }
 });
 
 watch(isTransferModalOpen, async (isOpen) => {
   if (isOpen) {
-    isLoadingTransferUsers.value = true;
+    isLoadingTransferChannels.value = true;
     isLoadingTransferSectors.value = true;
-    await loadWorkerConfigForChat();
     nextTick(() => {
       try {
-        transferType.value = 'user';
+        transferType.value = null;
+        selectedTransferChannel.value = null;
         selectedTransferUser.value = null;
         selectedTransferSector.value = null;
         selectedTransferSectorUser.value = null;
+        transferChannels.value = [];
+        transferUsers.value = [];
+        transferSectors.value = [];
+        transferSectorUsers.value = [];
+        transferWorkerConfigForChat.value = null;
         transferAnnotationText.value = '';
         isTransferAnnotationEmojiOpen.value = false;
-        loadTransferUsers();
+        loadTransferChannels();
         loadTransferSectors();
       } catch {}
     });
   } else {
     transferAnnotationText.value = '';
+    selectedTransferChannel.value = null;
+    transferWorkerConfigForChat.value = null;
   }
 });
 
 const handleTransfer = async () => {
   if (!chatStore.activeChat?.chat_id) return;
+
+  if (!selectedTransferChannel.value) {
+    chatStore.showSnackbar(t('channel_required'), EColor.error);
+    return;
+  }
 
   if (transferType.value === 'user' && !selectedTransferUser.value) {
     chatStore.showSnackbar(t('user_required'), EColor.error);
@@ -766,9 +876,12 @@ const handleTransfer = async () => {
     const userId =
       transferType.value === 'user'
         ? selectedTransferUser.value
-        : selectedTransferSectorUser.value || null;
+        : transferType.value === 'sector'
+          ? selectedTransferSectorUser.value || null
+          : null;
     const sectorId =
       transferType.value === 'sector' ? selectedTransferSector.value : null;
+    const workerId = selectedTransferChannel.value;
     const annotation = transferAnnotationText.value.trim() || null;
 
     const success = await chatStore.transferChat(
@@ -776,15 +889,23 @@ const handleTransfer = async () => {
       userId,
       sectorId,
       annotation,
-      leftSidebarRef.value?.hasAppliedAdvancedFilters ?? false
+      leftSidebarRef.value?.hasAppliedAdvancedFilters ?? false,
+      workerId
     );
 
     if (success) {
       isTransferModalOpen.value = false;
 
       const activeChat = chatStore.activeChat as IChat;
+      const selectedChannel = selectedTransferChannelOption.value;
       let nextUser: IChat['user'] | null = activeChat.user ?? null;
       let nextSector: IChat['sector'] | null = activeChat.sector ?? null;
+      const nextWorker: IChat['worker'] = selectedChannel
+        ? {
+            id: selectedChannel.value,
+            name: selectedChannel.name,
+          }
+        : activeChat.worker;
 
       if (transferType.value === 'user') {
         const selected = transferUsers.value.find(
@@ -798,7 +919,7 @@ const handleTransfer = async () => {
             }
           : null;
         nextSector = null;
-      } else {
+      } else if (transferType.value === 'sector') {
         const selected = transferSectors.value.find(
           (sector) => sector.value === sectorId
         );
@@ -823,11 +944,15 @@ const handleTransfer = async () => {
         } else {
           nextUser = null;
         }
+      } else {
+        nextUser = null;
+        nextSector = null;
       }
 
       chatStore.addChat(
         {
           ...activeChat,
+          worker: nextWorker,
           status: EChatStatus.queue,
           user: nextUser,
           sector: nextSector,
@@ -6228,20 +6353,62 @@ onBeforeUnmount(() => {
     <DialogCloseBtn @click="isTransferModalOpen = false" />
     <VCard :title="$t('transfer')">
       <VCardText>
-        <template v-if="isLoadingTransferUsers || isLoadingTransferSectors">
+        <template
+          v-if="
+            isLoadingTransferChannels ||
+            isLoadingTransferUsers ||
+            isLoadingTransferSectors
+          "
+        >
           <VRow>
             <VCol cols="12">
-              <VSkeletonLoader type="text" width="100%" />
+              <VSkeletonLoader type="text" width="90" class="mb-2" />
+              <VSkeletonLoader type="text" width="100%" height="40" />
             </VCol>
             <VCol cols="12">
-              <VSkeletonLoader type="text" width="100%" />
+              <VSkeletonLoader type="text" width="130" class="mb-2" />
+              <VSkeletonLoader type="text" width="100%" height="40" />
             </VCol>
             <VCol cols="12">
-              <VSkeletonLoader type="text" width="100%" />
+              <div class="d-flex align-center mb-2">
+                <VSkeletonLoader type="text" width="90" />
+                <VSpacer />
+                <VSkeletonLoader type="avatar" width="24" height="24" />
+              </div>
+              <VSkeletonLoader type="image" width="100%" height="160" />
+              <VSkeletonLoader type="text" width="180" class="mt-2" />
             </VCol>
           </VRow>
         </template>
         <VRow v-else>
+          <VCol cols="12">
+            <VLabel class="text-body-2 mb-1">{{ $t('channel') }} *</VLabel>
+            <AppSelectSearch
+              v-model="selectedTransferChannel"
+              :items="transferChannels"
+              :placeholder="$t('select_channel')"
+              item-value="value"
+              item-title="title"
+            />
+            <div v-if="selectedTransferChannelOption" class="mt-2">
+              <VChip
+                size="small"
+                color="primary"
+                variant="tonal"
+                class="channel-tag"
+              >
+                <VIcon size="16" class="me-1">tabler-device-mobile</VIcon>
+                {{ selectedTransferChannelOption.name }}
+                <span
+                  v-if="selectedTransferChannelOption.number"
+                  class="ms-1 text-caption"
+                >
+                  ({{ selectedTransferChannelOption.number }})
+                </span>
+              </VChip>
+            </div>
+          </VCol>
+
           <VCol cols="12">
             <VLabel class="text-body-2 mb-1">{{ $t('transfer_to') }}:</VLabel>
             <AppSelectSearch
@@ -6250,7 +6417,9 @@ onBeforeUnmount(() => {
                 { value: 'user', title: $t('user') },
                 { value: 'sector', title: $t('sector') },
               ]"
-              :placeholder="$t('transfer_to')"
+              :placeholder="$t('transfer_to_placeholder')"
+              :clearable="true"
+              :disabled="!selectedTransferChannel"
               item-value="value"
               item-title="title"
             />
@@ -6263,6 +6432,7 @@ onBeforeUnmount(() => {
               :items="transferUsers"
               :placeholder="$t('search') + '...'"
               :loading="isLoadingTransferUsers"
+              :disabled="!selectedTransferChannel"
               item-value="value"
               item-title="title"
             >
@@ -6279,7 +6449,7 @@ onBeforeUnmount(() => {
               <template #item-title="{ item }">
                 <template
                   v-if="
-                    workerConfigForChat?.allow_attendance_only_online &&
+                    transferWorkerConfigForChat?.allow_attendance_only_online &&
                     item.status
                   "
                 >
@@ -6318,6 +6488,7 @@ onBeforeUnmount(() => {
                 :items="transferSectors"
                 :placeholder="$t('search') + '...'"
                 :loading="isLoadingTransferSectors"
+                :disabled="!selectedTransferChannel"
                 item-value="value"
                 item-title="title"
               >
@@ -6341,6 +6512,7 @@ onBeforeUnmount(() => {
                 :items="transferSectorUsers"
                 :placeholder="$t('search') + '...'"
                 :loading="isLoadingTransferSectorUsers"
+                :disabled="!selectedTransferChannel"
                 item-value="value"
                 item-title="title"
               >
@@ -6361,7 +6533,7 @@ onBeforeUnmount(() => {
                 <template #item-title="{ item }">
                   <template
                     v-if="
-                      workerConfigForChat?.allow_attendance_only_online &&
+                      transferWorkerConfigForChat?.allow_attendance_only_online &&
                       item.status
                     "
                   >
@@ -6453,9 +6625,12 @@ onBeforeUnmount(() => {
         <VBtn
           color="primary"
           :disabled="
-            transferType === 'user'
+            !selectedTransferChannel ||
+            (transferType === 'user'
               ? !selectedTransferUser
-              : !selectedTransferSector
+              : transferType === 'sector'
+                ? !selectedTransferSector
+                : false)
           "
           :loading="isTransferring"
           @click="handleTransfer"

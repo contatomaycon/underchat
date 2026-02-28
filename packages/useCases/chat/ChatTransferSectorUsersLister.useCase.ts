@@ -18,26 +18,29 @@ export class ChatTransferSectorUsersListerUseCase {
   async execute(
     accountId: string,
     sectorId: string,
-    chatId?: string
+    chatId?: string,
+    channelId?: string
   ): Promise<TransferSectorUserResponse[]> {
     const sectorUsers = await this.sectorService.listSectorUsersForTransfer(
       accountId,
       sectorId
     );
 
-    if (!chatId) {
-      return sectorUsers;
+    let targetChannelId = channelId;
+
+    if (!targetChannelId && chatId) {
+      const chat = await this.chatService.findChatByChatId(accountId, chatId);
+      targetChannelId = chat?.worker?.id;
     }
 
-    const chat = await this.chatService.findChatByChatId(accountId, chatId);
-    if (!chat?.worker?.id) {
+    if (!targetChannelId) {
       return sectorUsers;
     }
 
     const userIdsWithAccess =
       await this.userService.listUserIdsWithAccessToChannel(
         accountId,
-        chat.worker.id
+        targetChannelId
       );
 
     if (userIdsWithAccess.length === 0) {

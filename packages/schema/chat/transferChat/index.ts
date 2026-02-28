@@ -8,7 +8,7 @@ import {
 } from './request.schema';
 
 export const transferChatSchema = {
-  description: 'Transfere um atendimento para outro usuário ou setor',
+  description: 'Transfere um atendimento para outro canal, usuário ou setor',
   tags: [ETagSwagger.chat],
   produces: ['application/json'],
   security: [

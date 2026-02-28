@@ -24,6 +24,7 @@ import { refDebounced } from '@vueuse/core';
 import { EColor } from '@core/common/enums/EColor';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { useTheme } from 'vuetify';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import {
   TransferWorker,
   TransferSector,
@@ -139,6 +140,33 @@ const searchChatsCounts = ref<{
   closed?: number;
   my_chats: number;
 } | null>(null);
+
+const formatChannelNumber = (number?: string | null): string | null => {
+  if (!number) return null;
+  return formatPhoneBR(number);
+};
+
+const availableWorkerOptions = computed(() =>
+  availableWorkers.value.map((worker) => {
+    const formattedNumber = formatChannelNumber(worker.number ?? null);
+
+    return {
+      value: worker.id,
+      title: formattedNumber
+        ? `${worker.name} (${formattedNumber})`
+        : worker.name,
+      name: worker.name,
+      number: formattedNumber,
+    };
+  })
+);
+
+const selectedOpenConversationWorkerOption = computed(
+  () =>
+    availableWorkerOptions.value.find(
+      (worker) => worker.value === selectedWorkerId.value
+    ) ?? null
+);
 const isLoadingWorkerConfigs = ref(false);
 const isLoadingMoreQueue = ref(false);
 const isLoadingMoreInChat = ref(false);
@@ -3823,19 +3851,12 @@ defineExpose({
           <VLabel class="text-body-2 mb-1">{{ $t('channel') }} *</VLabel>
           <AppSelectSearch
             v-model="selectedWorkerId"
-            :items="
-              availableWorkers.map((w) => ({
-                value: w.id,
-                title: w.number ? `${w.name} (${w.number})` : w.name,
-                name: w.name,
-                number: w.number,
-              }))
-            "
+            :items="availableWorkerOptions"
             :placeholder="$t('select_channel')"
             item-value="value"
             item-title="title"
           />
-          <div v-if="selectedWorkerId" class="mt-2">
+          <div v-if="selectedOpenConversationWorkerOption" class="mt-2">
             <VChip
               size="small"
               color="primary"
@@ -3843,22 +3864,9 @@ defineExpose({
               class="channel-tag"
             >
               <VIcon size="16" class="me-1">tabler-device-mobile</VIcon>
-              {{
-                availableWorkers.find(
-                  (w: TransferWorker) => w.id === selectedWorkerId
-                )?.name
-              }}
-              <span
-                v-if="
-                  availableWorkers.find((w) => w.id === selectedWorkerId)
-                    ?.number
-                "
-                class="ms-1 text-caption"
-              >
-                ({{
-                  availableWorkers.find((w) => w.id === selectedWorkerId)
-                    ?.number
-                }})
+              {{ selectedOpenConversationWorkerOption.name }}
+              <span v-if="selectedOpenConversationWorkerOption.number" class="ms-1 text-caption">
+                ({{ selectedOpenConversationWorkerOption.number }})
               </span>
             </VChip>
           </div>

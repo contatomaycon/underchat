@@ -7,7 +7,7 @@ import { ChatTransferUsersListerUseCase } from '@core/useCases/chat/ChatTransfer
 
 export const listTransferUsers = async (
   request: FastifyRequest<{
-    Querystring: { chat_id?: string };
+    Querystring: { chat_id?: string; channel_id?: string };
   }>,
   reply: FastifyReply
 ) => {
@@ -19,7 +19,8 @@ export const listTransferUsers = async (
   try {
     const response = await chatTransferUsersListerUseCase.execute(
       tokenJwtData.account_id,
-      request.query.chat_id
+      request.query.chat_id,
+      request.query.channel_id
     );
 
     return sendResponse(reply, {
