@@ -3241,6 +3241,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const recordingActiveRef = useRef(false);
   const recordingStartTokenRef = useRef(0);
   const cancelArmedRef = useRef(false);
+  const messageInputRef = useRef<TextInput | null>(null);
   const inputRef = useRef('');
   const sendingRef = useRef(false);
   const isQueueOrUraStatusRef = useRef(false);
@@ -6549,6 +6550,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   };
 
   const hasInputText = input.trim().length > 0;
+  const canFocusInput =
+    canComposeInChat &&
+    !sending &&
+    !sendingCapturedMedia &&
+    !isPreparingRecording &&
+    !isRecordingVoice;
   const canUseComposerActions =
     !sending &&
     canComposeInChat &&
@@ -6562,6 +6569,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const showRecordingComposer =
     isRecordingVoice && (isRecordingLocked || !isMicPressActive);
   const canShowIconActions = !hasInputText && !showRecordingComposer;
+
+  const focusComposerInput = useCallback(() => {
+    if (!canFocusInput) return;
+    messageInputRef.current?.focus();
+  }, [canFocusInput]);
+
+  const handleEmojiPress = useCallback(() => {
+    focusComposerInput();
+  }, [focusComposerInput]);
 
   return (
     <KeyboardAvoidingView
@@ -7022,11 +7038,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
               <View style={styles.inputStack}>
                 <TextInput
+                  ref={messageInputRef}
                   style={styles.input}
                   placeholder={pt.type_message}
                   placeholderTextColor={colors.grey500}
                   value={input}
                   onChangeText={setInput}
+                  onPressIn={focusComposerInput}
+                  keyboardType="default"
                   multiline
                   maxLength={65535}
                   editable={
@@ -7037,6 +7056,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     !isRecordingVoice
                   }
                 />
+                {!showRecordingHoldOverlay ? (
+                  <Pressable
+                    style={styles.emojiInputBtn}
+                    onPress={handleEmojiPress}
+                    disabled={!canFocusInput}
+                    accessibilityLabel={pt.open_emoji_keyboard}
+                  >
+                    <Ionicons
+                      name="happy-outline"
+                      size={19}
+                      color={colors.grey600}
+                    />
+                  </Pressable>
+                ) : null}
                 {showRecordingHoldOverlay ? (
                   <View
                     pointerEvents="none"
@@ -9382,6 +9415,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.inputBg,
     borderRadius: 20,
     paddingHorizontal: 16,
+    paddingRight: 46,
     paddingVertical: 10,
     fontSize: 15,
     color: colors.onSurface,
@@ -9389,6 +9423,17 @@ const styles = StyleSheet.create({
   inputStack: {
     flex: 1,
     position: 'relative',
+  },
+  emojiInputBtn: {
+    position: 'absolute',
+    right: 10,
+    top: '50%',
+    marginTop: -14,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   recordingHoldOverlay: {
     position: 'absolute',

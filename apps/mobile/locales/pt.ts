@@ -177,6 +177,7 @@ export const pt = {
   location_map_unavailable: 'Mapa indisponível',
   loading_more_messages: 'Carregando mensagens...',
   open_camera: 'Abrir câmera',
+  open_emoji_keyboard: 'Abrir teclado de emoji',
   open_attachments: 'Abrir anexos',
   camera_permission_denied: 'Permissão da câmera negada.',
   protected_content: 'Conteúdo protegido',
