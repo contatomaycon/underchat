@@ -60,6 +60,8 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as Location from 'expo-location';
 import Constants from 'expo-constants';
 import {
   listMessages,
@@ -84,6 +86,8 @@ import {
   type TransferChatPayload,
   type TransferUserOption,
   type TransferSectorOption,
+  listChatContacts,
+  type ListChatContactResult,
   getChatContactById,
   getChatContactPhoneDecrypted,
   getChatContactByPhone,
@@ -246,6 +250,11 @@ const VOICE_RELEASE_LOCK_GRACE_MS = 220;
 const VOICE_CANCEL_SWIPE_THRESHOLD = 90;
 const RECORDING_WAVEFORM_MAX_BARS = 44;
 const RECORDING_WAVEFORM_MIN_BARS = 26;
+const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
+const MAX_CONTACTS_SELECTED = 10;
 type DownloadKind = 'image' | 'video' | 'document';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -301,6 +310,24 @@ type SearchMessageResultItem = {
   date: string;
   message?: string | null;
 };
+
+type AttachmentActionKey =
+  | 'document'
+  | 'photo'
+  | 'video'
+  | 'audio'
+  | 'contact'
+  | 'location'
+  | 'annotation';
+
+type AttachmentAction = {
+  key: AttachmentActionKey;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+};
+
+type LocationPickerMode = 'current' | 'manual';
 
 function formatPhoneDigits(value: string): string {
   const digits = value.replace(/\D/g, '');
@@ -3346,6 +3373,30 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     downloadName: '',
   });
   const [cameraPickerVisible, setCameraPickerVisible] = useState(false);
+  const [annotationModalVisible, setAnnotationModalVisible] = useState(false);
+  const [annotationInput, setAnnotationInput] = useState('');
+  const [sendingAnnotation, setSendingAnnotation] = useState(false);
+  const [contactPickerVisible, setContactPickerVisible] = useState(false);
+  const [contactPickerSearch, setContactPickerSearch] = useState('');
+  const [debouncedContactSearch, setDebouncedContactSearch] = useState('');
+  const [contactPickerItems, setContactPickerItems] = useState<
+    ListChatContactResult[]
+  >([]);
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
+  const [contactPickerPage, setContactPickerPage] = useState(1);
+  const [contactPickerTotalPages, setContactPickerTotalPages] = useState(1);
+  const [loadingContactPicker, setLoadingContactPicker] = useState(false);
+  const [loadingMoreContactPicker, setLoadingMoreContactPicker] =
+    useState(false);
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
+  const [locationPickerMode, setLocationPickerMode] =
+    useState<LocationPickerMode>('current');
+  const [locationLatitudeInput, setLocationLatitudeInput] = useState('');
+  const [locationLongitudeInput, setLocationLongitudeInput] = useState('');
+  const [locationNameInput, setLocationNameInput] = useState('');
+  const [locationAddressInput, setLocationAddressInput] = useState('');
+  const [locationCurrentLoading, setLocationCurrentLoading] = useState(false);
+  const [locationCurrentError, setLocationCurrentError] = useState(false);
   const [sendingCapturedMedia, setSendingCapturedMedia] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [isMicPressActive, setIsMicPressActive] = useState(false);
@@ -5700,6 +5751,33 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     })
   ).current;
 
+  const submitFormDataMessage = useCallback(
+    async (formData: FormData): Promise<boolean> => {
+      const result = await createMessageWithFormData(
+        chatInfo.chat_id,
+        formData
+      );
+      if (!result.ok) {
+        Alert.alert(pt.error_title, pt.send_error);
+        return false;
+      }
+
+      pendingScrollToBottomRef.current = true;
+      setShowScrollToBottomButton(false);
+      const createdMessage = result.message;
+      if (createdMessage) {
+        setMessages((prev) => mergeMessageLists(prev, createdMessage));
+      } else {
+        await syncLatestMessages();
+      }
+      requestAnimationFrame(() => {
+        scrollToBottomWithRetries(10);
+      });
+      return true;
+    },
+    [chatInfo.chat_id, scrollToBottomWithRetries, syncLatestMessages]
+  );
+
   const sendCapturedMediaDraft = useCallback(
     async (draft: CameraCaptureDraft) => {
       if (sendingCapturedMedia || isHistoryReadonly) return;
@@ -5730,86 +5808,580 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           });
         }
 
-        const result = await createMessageWithFormData(
-          chatInfo.chat_id,
-          formData
-        );
-        if (!result.ok) return;
-
-        pendingScrollToBottomRef.current = true;
-        setShowScrollToBottomButton(false);
-        const createdMessage = result.message;
-        if (createdMessage) {
-          setMessages((prev) => mergeMessageLists(prev, createdMessage));
-        } else {
-          await syncLatestMessages();
-        }
-        requestAnimationFrame(() => {
-          scrollToBottomWithRetries(10);
-        });
+        await submitFormDataMessage(formData);
       } finally {
         setSendingCapturedMedia(false);
       }
     },
-    [
-      chatInfo.chat_id,
-      isHistoryReadonly,
-      scrollToBottomWithRetries,
-      sendingCapturedMedia,
-      syncLatestMessages,
-    ]
+    [isHistoryReadonly, sendingCapturedMedia, submitFormDataMessage]
   );
 
-  const launchCameraCapture = useCallback(
-    async (mediaType: 'images' | 'videos') => {
-      if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
-        return;
+  const extractExtension = useCallback((name: string | null | undefined) => {
+    if (!name) return '';
+    const ext = name.split('.').pop()?.trim().toLowerCase();
+    return ext ?? '';
+  }, []);
+
+  const handlePickPhotoCapture = useCallback(async () => {
+    setCameraPickerVisible(false);
+    if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(pt.warning_title, pt.image_permission_denied);
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsMultipleSelection: false,
+    });
+
+    if (result.canceled || !result.assets || result.assets.length === 0) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    if (!asset?.uri) return;
+
+    const originalName = asset.fileName?.trim();
+    const fileName =
+      originalName && /\.[a-z0-9]{2,5}$/i.test(originalName)
+        ? originalName
+        : `image-${Date.now()}.jpg`;
+    const extension = extractExtension(fileName);
+    const allowedExtensions = new Set(['jpg', 'jpeg', 'png', 'gif']);
+    if (!allowedExtensions.has(extension)) {
+      Alert.alert(pt.warning_title, pt.invalid_image_format);
+      return;
+    }
+
+    if (
+      typeof asset.fileSize === 'number' &&
+      asset.fileSize > MAX_IMAGE_SIZE_BYTES
+    ) {
+      Alert.alert(pt.warning_title, pt.image_size_exceeded);
+      return;
+    }
+
+    await sendCapturedMediaDraft({
+      uri: asset.uri,
+      kind: 'image',
+      fileName,
+      mimeType: asset.mimeType || 'image/jpeg',
+      durationSec: null,
+    });
+  }, [
+    canComposeInChat,
+    extractExtension,
+    sendCapturedMediaDraft,
+    sendingCapturedMedia,
+    sendingVoiceRecording,
+  ]);
+
+  const handlePickVideoCapture = useCallback(async () => {
+    setCameraPickerVisible(false);
+    if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(pt.warning_title, pt.image_permission_denied);
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['videos'],
+      quality: 0.8,
+      allowsMultipleSelection: false,
+    });
+
+    if (result.canceled || !result.assets || result.assets.length === 0) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    if (!asset?.uri) return;
+
+    const originalName = asset.fileName?.trim();
+    const fileName =
+      originalName && /\.[a-z0-9]{2,5}$/i.test(originalName)
+        ? originalName
+        : `video-${Date.now()}.mp4`;
+    const extension = extractExtension(fileName);
+    const allowedExtensions = new Set([
+      'mp4',
+      'avi',
+      'flv',
+      'mkv',
+      'mov',
+      '3gp',
+    ]);
+    if (!allowedExtensions.has(extension)) {
+      Alert.alert(pt.warning_title, pt.invalid_video_format);
+      return;
+    }
+
+    if (
+      typeof asset.fileSize === 'number' &&
+      asset.fileSize > MAX_VIDEO_SIZE_BYTES
+    ) {
+      Alert.alert(pt.warning_title, pt.video_size_exceeded);
+      return;
+    }
+
+    await sendCapturedMediaDraft({
+      uri: asset.uri,
+      kind: 'video',
+      fileName,
+      mimeType: asset.mimeType || 'video/mp4',
+      durationSec:
+        typeof asset.duration === 'number' && Number.isFinite(asset.duration)
+          ? Math.max(1, Math.round(asset.duration / 1000))
+          : null,
+    });
+  }, [
+    canComposeInChat,
+    extractExtension,
+    sendCapturedMediaDraft,
+    sendingCapturedMedia,
+    sendingVoiceRecording,
+  ]);
+
+  const handlePickDocument = useCallback(async () => {
+    setCameraPickerVisible(false);
+    if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
+      return;
+    }
+
+    const result = await DocumentPicker.getDocumentAsync({
+      type: '*/*',
+      multiple: false,
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+    const asset = result.assets[0];
+    if (!asset?.uri || !asset.name) return;
+    if (
+      typeof asset.size === 'number' &&
+      asset.size > MAX_DOCUMENT_SIZE_BYTES
+    ) {
+      Alert.alert(pt.warning_title, pt.document_size_exceeded);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('type', EMessageType.document);
+    formData.append('hash', createClientMessageHash());
+    await appendMediaToFormData(formData, 'documents', {
+      uri: asset.uri,
+      name: asset.name,
+      mimeType: asset.mimeType || 'application/octet-stream',
+    });
+
+    setSendingCapturedMedia(true);
+    try {
+      await submitFormDataMessage(formData);
+    } finally {
+      setSendingCapturedMedia(false);
+    }
+  }, [
+    canComposeInChat,
+    sendingCapturedMedia,
+    sendingVoiceRecording,
+    submitFormDataMessage,
+  ]);
+
+  const handlePickAudioFile = useCallback(async () => {
+    setCameraPickerVisible(false);
+    if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
+      return;
+    }
+
+    const result = await DocumentPicker.getDocumentAsync({
+      type: [
+        'audio/mpeg',
+        'audio/mp3',
+        'audio/aac',
+        'audio/m4a',
+        'audio/x-m4a',
+        'audio/amr',
+        'audio/amr-wb',
+        'audio/ogg',
+        'audio/opus',
+        'audio/*',
+      ],
+      multiple: false,
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+    const asset = result.assets[0];
+    if (!asset?.uri || !asset.name) return;
+
+    const extension = extractExtension(asset.name);
+    const allowedExtensions = new Set([
+      'mp3',
+      'aac',
+      'm4a',
+      'amr',
+      'ogg',
+      'opus',
+    ]);
+    if (!allowedExtensions.has(extension)) {
+      Alert.alert(pt.warning_title, pt.invalid_audio_format);
+      return;
+    }
+
+    if (typeof asset.size === 'number' && asset.size > MAX_AUDIO_SIZE_BYTES) {
+      Alert.alert(pt.warning_title, pt.audio_size_exceeded);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('type', EMessageType.audio);
+    formData.append('hash', createClientMessageHash());
+    await appendMediaToFormData(formData, 'audios', {
+      uri: asset.uri,
+      name: asset.name,
+      mimeType: asset.mimeType || 'audio/mpeg',
+    });
+
+    setSendingCapturedMedia(true);
+    try {
+      await submitFormDataMessage(formData);
+    } finally {
+      setSendingCapturedMedia(false);
+    }
+  }, [
+    canComposeInChat,
+    extractExtension,
+    sendingCapturedMedia,
+    sendingVoiceRecording,
+    submitFormDataMessage,
+  ]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedContactSearch(contactPickerSearch.trim());
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [contactPickerSearch]);
+
+  const loadContactPicker = useCallback(
+    async (page: number, append: boolean) => {
+      if (!contactPickerVisible) return;
+      if (append) {
+        setLoadingMoreContactPicker(true);
+      } else {
+        setLoadingContactPicker(true);
       }
 
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) return;
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: [mediaType],
-        quality: 0.8,
-        videoMaxDuration: 120,
-      });
-
-      if (result.canceled || !result.assets || result.assets.length === 0) {
-        return;
+      try {
+        const response = await listChatContacts(
+          page,
+          25,
+          debouncedContactSearch
+        );
+        const items = response?.results ?? [];
+        if (append) {
+          setContactPickerItems((previous) => {
+            const map = new Map<string, ListChatContactResult>();
+            for (const item of previous) {
+              map.set(item.contact_id, item);
+            }
+            for (const item of items) {
+              map.set(item.contact_id, item);
+            }
+            return Array.from(map.values());
+          });
+        } else {
+          setContactPickerItems(items);
+        }
+        setContactPickerPage(response?.current_page ?? page);
+        setContactPickerTotalPages(response?.total_pages ?? 1);
+      } finally {
+        if (append) {
+          setLoadingMoreContactPicker(false);
+        } else {
+          setLoadingContactPicker(false);
+        }
       }
-
-      const asset = result.assets[0];
-      if (!asset?.uri) return;
-
-      const kind = asset.type === 'video' ? 'video' : 'image';
-      const fallbackExtension = kind === 'video' ? 'mp4' : 'jpg';
-      const fallbackMime = kind === 'video' ? 'video/mp4' : 'image/jpeg';
-      const originalName = asset.fileName?.trim();
-      const hasExtension =
-        typeof originalName === 'string' &&
-        /\.[a-z0-9]{2,5}$/i.test(originalName);
-      const fileName =
-        originalName && hasExtension
-          ? originalName
-          : `${kind}-${Date.now()}.${fallbackExtension}`;
-
-      await sendCapturedMediaDraft({
-        uri: asset.uri,
-        kind,
-        fileName,
-        mimeType: asset.mimeType || fallbackMime,
-        durationSec:
-          kind === 'video' && typeof asset.duration === 'number'
-            ? Math.round(asset.duration / 1000)
-            : null,
-      });
     },
+    [contactPickerVisible, debouncedContactSearch]
+  );
+
+  useEffect(() => {
+    if (!contactPickerVisible) return;
+    setContactPickerPage(1);
+    setContactPickerTotalPages(1);
+    void loadContactPicker(1, false);
+  }, [contactPickerVisible, debouncedContactSearch, loadContactPicker]);
+
+  const handleLoadMoreContactPicker = useCallback(() => {
+    if (
+      !contactPickerVisible ||
+      loadingContactPicker ||
+      loadingMoreContactPicker
+    ) {
+      return;
+    }
+    if (contactPickerPage >= contactPickerTotalPages) return;
+    void loadContactPicker(contactPickerPage + 1, true);
+  }, [
+    contactPickerPage,
+    contactPickerTotalPages,
+    contactPickerVisible,
+    loadContactPicker,
+    loadingContactPicker,
+    loadingMoreContactPicker,
+  ]);
+
+  const toggleContactSelection = useCallback((contactId: string) => {
+    setSelectedContactIds((previous) => {
+      if (previous.includes(contactId)) {
+        return previous.filter((id) => id !== contactId);
+      }
+      if (previous.length >= MAX_CONTACTS_SELECTED) {
+        Alert.alert(
+          pt.warning_title,
+          pt.max_contacts_selected.replace(
+            '{count}',
+            String(MAX_CONTACTS_SELECTED)
+          )
+        );
+        return previous;
+      }
+      return [...previous, contactId];
+    });
+  }, []);
+
+  const handleSendSelectedContacts = useCallback(async () => {
+    if (selectedContactIds.length === 0) {
+      Alert.alert(pt.warning_title, pt.select_at_least_one_contact);
+      return;
+    }
+
+    if (sendingCapturedMedia || !canComposeInChat) return;
+    setSendingCapturedMedia(true);
+
+    try {
+      for (const contactId of selectedContactIds) {
+        const formData = new FormData();
+        formData.append('type', EMessageType.contact_card);
+        formData.append('contacts', contactId);
+        formData.append('hash', createClientMessageHash());
+        const ok = await submitFormDataMessage(formData);
+        if (!ok) return;
+      }
+
+      setContactPickerVisible(false);
+      setContactPickerSearch('');
+      setSelectedContactIds([]);
+    } finally {
+      setSendingCapturedMedia(false);
+    }
+  }, [
+    canComposeInChat,
+    selectedContactIds,
+    sendingCapturedMedia,
+    submitFormDataMessage,
+  ]);
+
+  const resolveCurrentLocation = useCallback(async () => {
+    setLocationCurrentLoading(true);
+    setLocationCurrentError(false);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        setLocationCurrentError(true);
+        Alert.alert(pt.warning_title, pt.location_permission_denied);
+        return;
+      }
+
+      const current = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      setLocationLatitudeInput(current.coords.latitude.toFixed(6));
+      setLocationLongitudeInput(current.coords.longitude.toFixed(6));
+      if (!locationNameInput.trim()) {
+        setLocationNameInput(pt.location_current);
+      }
+    } catch {
+      setLocationCurrentError(true);
+    } finally {
+      setLocationCurrentLoading(false);
+    }
+  }, [locationNameInput]);
+
+  const handleOpenLocationPicker = useCallback(() => {
+    setCameraPickerVisible(false);
+    setLocationPickerMode('current');
+    setLocationNameInput('');
+    setLocationAddressInput('');
+    setLocationPickerVisible(true);
+    void resolveCurrentLocation();
+  }, [resolveCurrentLocation]);
+
+  const handleSendLocation = useCallback(async () => {
+    const latitude = Number.parseFloat(locationLatitudeInput.replace(',', '.'));
+    const longitude = Number.parseFloat(
+      locationLongitudeInput.replace(',', '.')
+    );
+    const isLatitudeValid =
+      Number.isFinite(latitude) && latitude >= -90 && latitude <= 90;
+    const isLongitudeValid =
+      Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+
+    if (!isLatitudeValid || !isLongitudeValid) {
+      Alert.alert(pt.warning_title, pt.location_invalid_coordinates);
+      return;
+    }
+    if (sendingCapturedMedia || !canComposeInChat) return;
+
+    const formData = new FormData();
+    formData.append('type', EMessageType.location);
+    formData.append('location_latitude', String(latitude));
+    formData.append('location_longitude', String(longitude));
+    const normalizedName = locationNameInput.trim();
+    const normalizedAddress = locationAddressInput.trim();
+    if (normalizedName.length > 0) {
+      formData.append('location_name', normalizedName);
+    }
+    if (normalizedAddress.length > 0) {
+      formData.append('location_address', normalizedAddress);
+    }
+    formData.append('hash', createClientMessageHash());
+
+    setSendingCapturedMedia(true);
+    try {
+      const ok = await submitFormDataMessage(formData);
+      if (!ok) return;
+      setLocationPickerVisible(false);
+    } finally {
+      setSendingCapturedMedia(false);
+    }
+  }, [
+    canComposeInChat,
+    locationAddressInput,
+    locationLatitudeInput,
+    locationLongitudeInput,
+    locationNameInput,
+    sendingCapturedMedia,
+    submitFormDataMessage,
+  ]);
+
+  const handleOpenAnnotationModal = useCallback(() => {
+    setCameraPickerVisible(false);
+    setAnnotationInput('');
+    setAnnotationModalVisible(true);
+  }, []);
+
+  const handleSendAnnotation = useCallback(async () => {
+    const message = annotationInput.trim();
+    if (!message || sendingAnnotation || !canComposeInChat) return;
+
+    setSendingAnnotation(true);
+    try {
+      const newMsg = await createMessage(
+        chatInfo.chat_id,
+        EMessageType.annotation,
+        message
+      );
+      if (!newMsg) {
+        Alert.alert(pt.error_title, pt.send_error);
+        return;
+      }
+
+      pendingScrollToBottomRef.current = true;
+      setShowScrollToBottomButton(false);
+      setMessages((prev) => mergeMessageLists(prev, newMsg));
+      setAnnotationModalVisible(false);
+      setAnnotationInput('');
+      requestAnimationFrame(() => {
+        scrollToBottomWithRetries(10);
+      });
+    } finally {
+      setSendingAnnotation(false);
+    }
+  }, [
+    annotationInput,
+    canComposeInChat,
+    chatInfo.chat_id,
+    scrollToBottomWithRetries,
+    sendingAnnotation,
+  ]);
+
+  const attachmentActions = useMemo<AttachmentAction[]>(
+    () => [
+      {
+        key: 'document',
+        label: pt.documents,
+        icon: 'document-text-outline',
+        onPress: () => {
+          void handlePickDocument();
+        },
+      },
+      {
+        key: 'photo',
+        label: pt.photos,
+        icon: 'image-outline',
+        onPress: () => {
+          void handlePickPhotoCapture();
+        },
+      },
+      {
+        key: 'video',
+        label: pt.videos,
+        icon: 'videocam-outline',
+        onPress: () => {
+          void handlePickVideoCapture();
+        },
+      },
+      {
+        key: 'audio',
+        label: pt.audio,
+        icon: 'headset-outline',
+        onPress: () => {
+          void handlePickAudioFile();
+        },
+      },
+      {
+        key: 'contact',
+        label: pt.contact,
+        icon: 'person-outline',
+        onPress: () => {
+          setCameraPickerVisible(false);
+          setSelectedContactIds([]);
+          setContactPickerSearch('');
+          setContactPickerVisible(true);
+        },
+      },
+      {
+        key: 'location',
+        label: pt.location,
+        icon: 'location-outline',
+        onPress: handleOpenLocationPicker,
+      },
+      {
+        key: 'annotation',
+        label: pt.annotation,
+        icon: 'reader-outline',
+        onPress: handleOpenAnnotationModal,
+      },
+    ],
     [
-      canComposeInChat,
-      sendCapturedMediaDraft,
-      sendingCapturedMedia,
-      sendingVoiceRecording,
+      handleOpenAnnotationModal,
+      handleOpenLocationPicker,
+      handlePickAudioFile,
+      handlePickDocument,
+      handlePickPhotoCapture,
+      handlePickVideoCapture,
     ]
   );
 
@@ -5829,16 +6401,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     sendingVoiceRecording,
     isRecordingVoice,
   ]);
-
-  const handlePickPhotoCapture = useCallback(() => {
-    setCameraPickerVisible(false);
-    void launchCameraCapture('images');
-  }, [launchCameraCapture]);
-
-  const handlePickVideoCapture = useCallback(() => {
-    setCameraPickerVisible(false);
-    void launchCameraCapture('videos');
-  }, [launchCameraCapture]);
 
   const recordingDurationLabel = useMemo(() => {
     const durationSec = Math.max(0, (recorderState.durationMillis || 0) / 1000);
@@ -6481,13 +7043,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                       ]}
                       onPress={handleOpenCameraPicker}
                       disabled={!canUseComposerActions}
-                      accessibilityLabel={pt.open_camera}
+                      accessibilityLabel={pt.open_attachments}
                     >
-                      <Ionicons
-                        name="camera-outline"
-                        size={21}
-                        color="#FFFFFF"
-                      />
+                      <Ionicons name="add" size={24} color="#FFFFFF" />
                     </Pressable>
                   ) : null}
 
@@ -7132,30 +7690,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             style={styles.cameraPickerSheet}
             onPress={(event) => event.stopPropagation()}
           >
-            <Pressable
-              style={styles.cameraPickerAction}
-              onPress={handlePickPhotoCapture}
-            >
-              <Ionicons
-                name="camera-outline"
-                size={18}
-                color={colors.primary}
-              />
-              <Text style={styles.cameraPickerActionText}>{pt.take_photo}</Text>
-            </Pressable>
-            <Pressable
-              style={styles.cameraPickerAction}
-              onPress={handlePickVideoCapture}
-            >
-              <Ionicons
-                name="videocam-outline"
-                size={18}
-                color={colors.primary}
-              />
-              <Text style={styles.cameraPickerActionText}>
-                {pt.record_video}
-              </Text>
-            </Pressable>
+            {attachmentActions.map((action) => (
+              <Pressable
+                key={action.key}
+                style={styles.cameraPickerAction}
+                onPress={action.onPress}
+                disabled={!canUseComposerActions}
+              >
+                <Ionicons name={action.icon} size={18} color={colors.primary} />
+                <Text style={styles.cameraPickerActionText}>
+                  {action.label}
+                </Text>
+              </Pressable>
+            ))}
             <Pressable
               style={[styles.cameraPickerAction, styles.cameraPickerCancel]}
               onPress={() => setCameraPickerVisible(false)}
@@ -7165,6 +7712,341 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal
+        visible={annotationModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAnnotationModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setAnnotationModalVisible(false)}
+          />
+          <View style={[styles.bottomSheetCard, styles.annotationSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.annotation}</Text>
+              <Pressable onPress={() => setAnnotationModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+            <TextInput
+              value={annotationInput}
+              onChangeText={setAnnotationInput}
+              style={styles.annotationInput}
+              placeholder={pt.annotation_placeholder}
+              placeholderTextColor={colors.grey500}
+              multiline
+              maxLength={5000}
+            />
+            <Text style={styles.modalHintText}>
+              {pt.annotation_max_characters.replace('{count}', '5000')}
+            </Text>
+            <View style={styles.bottomSheetFooter}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => setAnnotationModalVisible(false)}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.primaryBtn,
+                  (!annotationInput.trim() || sendingAnnotation) &&
+                    styles.sendBtnDisabled,
+                ]}
+                onPress={() => {
+                  void handleSendAnnotation();
+                }}
+                disabled={!annotationInput.trim() || sendingAnnotation}
+              >
+                {sendingAnnotation ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>{pt.send}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={contactPickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setContactPickerVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setContactPickerVisible(false)}
+          />
+          <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.select_contacts}</Text>
+              <Pressable onPress={() => setContactPickerVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <View style={styles.searchInputWrap}>
+              <Ionicons
+                name="search-outline"
+                size={18}
+                color={colors.grey600}
+              />
+              <TextInput
+                style={styles.searchInput}
+                value={contactPickerSearch}
+                onChangeText={setContactPickerSearch}
+                placeholder={pt.search_contacts}
+                placeholderTextColor={colors.grey500}
+                maxLength={120}
+              />
+            </View>
+
+            {loadingContactPicker ? (
+              <View style={styles.modalLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={contactPickerItems}
+                keyExtractor={(item) => item.contact_id}
+                contentContainerStyle={styles.bottomSheetList}
+                onEndReached={handleLoadMoreContactPicker}
+                onEndReachedThreshold={0.25}
+                renderItem={({ item }) => {
+                  const selected = selectedContactIds.includes(item.contact_id);
+                  const fullName = [item.name, item.last_name]
+                    .filter(Boolean)
+                    .join(' ')
+                    .trim();
+                  return (
+                    <Pressable
+                      style={styles.contactPickerRow}
+                      onPress={() => toggleContactSelection(item.contact_id)}
+                    >
+                      <AppAvatar
+                        uri={item.photo}
+                        size={34}
+                        style={styles.contactPickerAvatar}
+                        iconName="person"
+                        iconColor={colors.grey500}
+                      />
+                      <View style={styles.contactPickerRowInfo}>
+                        <Text
+                          style={styles.contactPickerRowName}
+                          numberOfLines={1}
+                        >
+                          {fullName || pt.contact}
+                        </Text>
+                        <Text
+                          style={styles.contactPickerRowPhone}
+                          numberOfLines={1}
+                        >
+                          {item.phone_partial || '-'}
+                        </Text>
+                      </View>
+                      {selected ? (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={20}
+                          color={colors.primary}
+                        />
+                      ) : null}
+                    </Pressable>
+                  );
+                }}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>{pt.no_contacts_found}</Text>
+                }
+                ListFooterComponent={
+                  loadingMoreContactPicker ? (
+                    <View style={styles.modalLoadingWrap}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    </View>
+                  ) : null
+                }
+              />
+            )}
+
+            <Text style={styles.modalHintText}>
+              {pt.selected_contacts
+                .replace('{count}', String(selectedContactIds.length))
+                .replace('{max}', String(MAX_CONTACTS_SELECTED))}
+            </Text>
+
+            <View style={styles.bottomSheetFooter}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => setContactPickerVisible(false)}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.primaryBtn,
+                  (selectedContactIds.length === 0 || sendingCapturedMedia) &&
+                    styles.sendBtnDisabled,
+                ]}
+                onPress={() => {
+                  void handleSendSelectedContacts();
+                }}
+                disabled={
+                  selectedContactIds.length === 0 || sendingCapturedMedia
+                }
+              >
+                {sendingCapturedMedia ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>{pt.send}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={locationPickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLocationPickerVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setLocationPickerVisible(false)}
+          />
+          <View style={[styles.bottomSheetCard, styles.locationSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.location}</Text>
+              <Pressable onPress={() => setLocationPickerVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <View style={styles.locationModeRow}>
+              <Pressable
+                style={[
+                  styles.locationModeBtn,
+                  locationPickerMode === 'current' &&
+                    styles.locationModeBtnActive,
+                ]}
+                onPress={() => {
+                  setLocationPickerMode('current');
+                  void resolveCurrentLocation();
+                }}
+              >
+                <Text
+                  style={[
+                    styles.locationModeBtnText,
+                    locationPickerMode === 'current' &&
+                      styles.locationModeBtnTextActive,
+                  ]}
+                >
+                  {pt.location_current}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.locationModeBtn,
+                  locationPickerMode === 'manual' &&
+                    styles.locationModeBtnActive,
+                ]}
+                onPress={() => setLocationPickerMode('manual')}
+              >
+                <Text
+                  style={[
+                    styles.locationModeBtnText,
+                    locationPickerMode === 'manual' &&
+                      styles.locationModeBtnTextActive,
+                  ]}
+                >
+                  {pt.location_manual}
+                </Text>
+              </Pressable>
+            </View>
+
+            {locationCurrentLoading ? (
+              <View style={styles.modalLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : null}
+
+            {locationCurrentError ? (
+              <Text style={styles.locationErrorText}>{pt.location_error}</Text>
+            ) : null}
+
+            <View style={styles.locationCoordsRow}>
+              <TextInput
+                value={locationLatitudeInput}
+                onChangeText={setLocationLatitudeInput}
+                style={styles.locationCoordinateInput}
+                placeholder={pt.location_latitude}
+                placeholderTextColor={colors.grey500}
+                keyboardType="decimal-pad"
+              />
+              <TextInput
+                value={locationLongitudeInput}
+                onChangeText={setLocationLongitudeInput}
+                style={styles.locationCoordinateInput}
+                placeholder={pt.location_longitude}
+                placeholderTextColor={colors.grey500}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            <TextInput
+              value={locationNameInput}
+              onChangeText={setLocationNameInput}
+              style={styles.locationInput}
+              placeholder={pt.location_name_placeholder}
+              placeholderTextColor={colors.grey500}
+              maxLength={120}
+            />
+
+            <TextInput
+              value={locationAddressInput}
+              onChangeText={setLocationAddressInput}
+              style={styles.locationInput}
+              placeholder={pt.location_address_placeholder}
+              placeholderTextColor={colors.grey500}
+              maxLength={180}
+            />
+
+            <View style={styles.bottomSheetFooter}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => setLocationPickerVisible(false)}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.primaryBtn,
+                  sendingCapturedMedia && styles.sendBtnDisabled,
+                ]}
+                onPress={() => {
+                  void handleSendLocation();
+                }}
+                disabled={sendingCapturedMedia}
+              >
+                {sendingCapturedMedia ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>{pt.send}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={viewer.visible}
         transparent
@@ -8817,6 +9699,12 @@ const styles = StyleSheet.create({
   transferSheetCard: {
     maxHeight: '88%',
   },
+  annotationSheetCard: {
+    maxHeight: '62%',
+  },
+  locationSheetCard: {
+    maxHeight: '72%',
+  },
   bottomSheetHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -9055,6 +9943,108 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.onSurface,
     textAlignVertical: 'top',
+  },
+  annotationInput: {
+    minHeight: 140,
+    maxHeight: 260,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.onSurface,
+    textAlignVertical: 'top',
+  },
+  contactPickerRow: {
+    minHeight: 54,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(40, 101, 183, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(40, 101, 183, 0.12)',
+  },
+  contactPickerAvatar: {
+    borderRadius: 17,
+    overflow: 'hidden',
+  },
+  contactPickerRowInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  contactPickerRowName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  contactPickerRowPhone: {
+    marginTop: 2,
+    fontSize: 12,
+    color: colors.grey700,
+  },
+  locationModeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  locationModeBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  locationModeBtnActive: {
+    backgroundColor: 'rgba(40, 101, 183, 0.12)',
+    borderColor: 'rgba(40, 101, 183, 0.3)',
+  },
+  locationModeBtnText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.grey700,
+  },
+  locationModeBtnTextActive: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  locationErrorText: {
+    fontSize: 12,
+    color: colors.error,
+  },
+  locationCoordsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  locationCoordinateInput: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    backgroundColor: colors.inputBg,
+    fontSize: 14,
+    color: colors.onSurface,
+    paddingHorizontal: 12,
+  },
+  locationInput: {
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    backgroundColor: colors.inputBg,
+    fontSize: 14,
+    color: colors.onSurface,
+    paddingHorizontal: 12,
   },
   pickerOverlay: {
     flex: 1,
