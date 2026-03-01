@@ -6289,33 +6289,24 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     setSendingAnnotation(true);
     try {
-      const newMsg = await createMessage(
-        chatInfo.chat_id,
-        EMessageType.annotation,
-        message
-      );
-      if (!newMsg) {
-        Alert.alert(pt.error_title, pt.send_error);
-        return;
-      }
+      const formData = new FormData();
+      formData.append('type', EMessageType.annotation);
+      formData.append('message', message);
+      formData.append('hash', createClientMessageHash());
 
-      pendingScrollToBottomRef.current = true;
-      setShowScrollToBottomButton(false);
-      setMessages((prev) => mergeMessageLists(prev, newMsg));
+      const ok = await submitFormDataMessage(formData);
+      if (!ok) return;
+
       setAnnotationModalVisible(false);
       setAnnotationInput('');
-      requestAnimationFrame(() => {
-        scrollToBottomWithRetries(10);
-      });
     } finally {
       setSendingAnnotation(false);
     }
   }, [
     annotationInput,
     canComposeInChat,
-    chatInfo.chat_id,
-    scrollToBottomWithRetries,
     sendingAnnotation,
+    submitFormDataMessage,
   ]);
 
   const attachmentActions = useMemo<AttachmentAction[]>(
