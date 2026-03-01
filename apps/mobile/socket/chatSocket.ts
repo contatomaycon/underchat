@@ -57,11 +57,18 @@ export type SocketRecoveryFailedPayload = {
   channel: string;
 };
 
+export type SocketChannelsUpdatedPayload = {
+  event: 'user_channels_updated';
+  user_id: string;
+  channels: Array<{ id: string; name: string }>;
+};
+
 type SocketEventMap = {
   typing: SocketTypingPayload;
   message: SocketMessagePayload;
   chatUpdate: SocketChatPayload;
   recoveryFailed: SocketRecoveryFailedPayload;
+  channelsUpdated: SocketChannelsUpdatedPayload;
 };
 
 type SocketEventName = keyof SocketEventMap;
@@ -92,6 +99,7 @@ const typingListeners = new Set<SocketListener<'typing'>>();
 const messageListeners = new Set<SocketListener<'message'>>();
 const chatUpdateListeners = new Set<SocketListener<'chatUpdate'>>();
 const recoveryFailedListeners = new Set<SocketListener<'recoveryFailed'>>();
+const channelsUpdatedListeners = new Set<SocketListener<'channelsUpdated'>>();
 
 const emitTyping = (payload: SocketTypingPayload): void => {
   for (const listener of typingListeners) {
@@ -133,10 +141,56 @@ const emitRecoveryFailed = (payload: SocketRecoveryFailedPayload): void => {
   }
 };
 
+const emitChannelsUpdated = (payload: SocketChannelsUpdatedPayload): void => {
+  for (const listener of channelsUpdatedListeners) {
+    try {
+      listener(payload);
+    } catch {
+      //
+    }
+  }
+};
+
 const getStringField = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeChannels = (
+  value: unknown
+): Array<{ id: string; name: string }> => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const channels: Array<{ id: string; name: string }> = [];
+
+  for (const item of value) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const channel = item as {
+      id?: unknown;
+      channel_id?: unknown;
+      name?: unknown;
+    };
+    const channelId =
+      getStringField(channel.id) ?? getStringField(channel.channel_id);
+    if (!channelId || seen.has(channelId)) {
+      continue;
+    }
+
+    channels.push({
+      id: channelId,
+      name: typeof channel.name === 'string' ? channel.name : '',
+    });
+    seen.add(channelId);
+  }
+
+  return channels;
 };
 
 const queuePendingMessage = (payload: SocketMessagePayload): void => {
@@ -256,6 +310,35 @@ const parseIncomingPayload = (
   };
 };
 
+const parseUserChannelsUpdatedPayload = (
+  rawData: unknown
+): SocketChannelsUpdatedPayload | null => {
+  if (!rawData || typeof rawData !== 'object') {
+    return null;
+  }
+
+  const data = rawData as Record<string, unknown>;
+  if (data.event !== 'user_channels_updated') {
+    return null;
+  }
+
+  const rawUserId = data.user_id;
+  const userId =
+    getStringField(rawUserId) ??
+    (typeof rawUserId === 'number' && Number.isFinite(rawUserId)
+      ? String(rawUserId)
+      : null);
+  if (!userId) {
+    return null;
+  }
+
+  return {
+    event: 'user_channels_updated',
+    user_id: userId,
+    channels: normalizeChannels(data.channels),
+  };
+};
+
 const isTypingPayload = (
   payload: SocketTypingPayload | SocketMessagePayload | SocketChatPayload
 ): payload is SocketTypingPayload => {
@@ -343,6 +426,12 @@ export const initializeChatSocket = async (
       );
 
       await onMessage(chatChannel, (incoming) => {
+        const channelsUpdated = parseUserChannelsUpdatedPayload(incoming);
+        if (channelsUpdated) {
+          emitChannelsUpdated(channelsUpdated);
+          return;
+        }
+
         const parsed = parseIncomingPayload(incoming);
         if (!parsed) return;
 
@@ -418,6 +507,15 @@ export const addChatSocketListener = <K extends SocketEventName>(
     return () => {
       recoveryFailedListeners.delete(
         listener as SocketListener<'recoveryFailed'>
+      );
+    };
+  }
+
+  if (eventName === 'channelsUpdated') {
+    channelsUpdatedListeners.add(listener as SocketListener<'channelsUpdated'>);
+    return () => {
+      channelsUpdatedListeners.delete(
+        listener as SocketListener<'channelsUpdated'>
       );
     };
   }

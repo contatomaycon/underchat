@@ -10,6 +10,8 @@ export const pt = {
   login_error: 'Ocorreu um erro ao fazer login. Por favor, tente novamente.',
   login_invalid:
     'Credenciais de login inválidas. Verifique seu e-mail/usuário e senha.',
+  chat_permission_denied:
+    'Seu usuário não possui permissão para acessar o chat.',
   network_error:
     'Erro de conexão. Verifique a rede e a URL do backend (EXPO_PUBLIC_BACKEND_URL).',
   app_title: 'Underchat',
@@ -103,6 +105,8 @@ export const pt = {
   loading_more_messages: 'Carregando mensagens...',
   open_camera: 'Abrir câmera',
   camera_permission_denied: 'Permissão da câmera negada.',
+  protected_content: 'Conteúdo protegido',
+  action_unavailable_by_permission: 'Ação indisponível por permissão',
   microphone_permission_denied: 'Permissão de microfone negada.',
   audio_recording_error: 'Não foi possível iniciar a gravação de áudio.',
   slide_left_to_cancel: 'Deslize para cancelar',

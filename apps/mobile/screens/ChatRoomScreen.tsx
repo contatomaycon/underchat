@@ -74,7 +74,8 @@ import {
   type SocketChatPayload,
   type SocketMessagePayload,
 } from '../socket/chatSocket';
-import { getUser } from '../storage/authStorage';
+import { getUser, getPermissions } from '../storage/authStorage';
+import { canPreviewChatContent } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { resolveImageUri } from '../utils/imageUri';
@@ -1936,18 +1937,40 @@ function ExternalAdReplyMessage({
   );
 }
 
+function ProtectedContentPlaceholder({ fromMe }: { fromMe: boolean }) {
+  const textColor = fromMe ? styles.bubbleTextRight : styles.bubbleTextLeft;
+
+  return (
+    <View style={styles.protectedContentWrap}>
+      <View style={styles.protectedIconWrap}>
+        <Ionicons name="lock-closed-outline" size={14} color={colors.grey700} />
+      </View>
+      <View style={styles.protectedContentTextWrap}>
+        <Text style={[styles.protectedContentTitle, textColor]}>
+          {pt.protected_content}
+        </Text>
+        <Text style={[styles.protectedContentSubtitle, textColor]}>
+          {pt.action_unavailable_by_permission}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 function QuotedReplyPreview({
   msg,
   fromMe,
   chatInfo,
   currentUserName,
   onPressQuoted,
+  obfuscateContent = false,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
   chatInfo: ListChatsResult;
   currentUserName: string | null;
   onPressQuoted?: (() => void) | null;
+  obfuscateContent?: boolean;
 }) {
   const quoted = msg.content?.quoted ?? null;
   if (!quoted) return null;
@@ -1976,6 +1999,26 @@ function QuotedReplyPreview({
     fromMe && styles.quotedBlockRight,
     canPressQuoted && styles.quotedBlockInteractive,
   ];
+
+  if (obfuscateContent) {
+    return (
+      <View style={quotedBlockStyle}>
+        <View style={[styles.quotedBar, fromMe && styles.quotedBarRight]} />
+        <View style={styles.quotedBody}>
+          <Text
+            style={[styles.quotedName, fromMe && styles.quotedNameRight]}
+            numberOfLines={1}
+          >
+            {pt.protected_content}
+          </Text>
+          <Text style={styles.quotedMeta} numberOfLines={1}>
+            {pt.action_unavailable_by_permission}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   const quotedInner = (
     <>
       <View style={[styles.quotedBar, fromMe && styles.quotedBarRight]} />
@@ -2117,6 +2160,7 @@ function BubbleContent({
   onOpenVideo,
   onTemplateButtonPress,
   disableTemplateButtons,
+  obfuscateContent = false,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
@@ -2131,7 +2175,12 @@ function BubbleContent({
     message: ListMessageResult
   ) => void;
   disableTemplateButtons?: boolean;
+  obfuscateContent?: boolean;
 }) {
+  if (obfuscateContent) {
+    return <ProtectedContentPlaceholder fromMe={fromMe} />;
+  }
+
   const type = content.type;
   const textColor = fromMe ? styles.bubbleTextRight : styles.bubbleTextLeft;
   const isViewOnce =
@@ -2656,6 +2705,7 @@ function MessageBubble({
   onOpenVideo,
   onTemplateButtonPress,
   disableTemplateButtons,
+  obfuscateContent = false,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
@@ -2672,6 +2722,7 @@ function MessageBubble({
     message: ListMessageResult
   ) => void;
   disableTemplateButtons?: boolean;
+  obfuscateContent?: boolean;
 }) {
   const content = msg.content;
   const timeStr = formatMessageTime(msg.date);
@@ -2689,7 +2740,7 @@ function MessageBubble({
   const showForwardedIndicator = isForwarded && !isSystem && !isAnnotation;
   const reactionsSummary = getReactionsSummary(content?.reactions);
   const showReactionsSummary =
-    reactionsSummary.length > 0 && !isAnnotation && !isSystem;
+    reactionsSummary.length > 0 && !isAnnotation && !isSystem && !obfuscateContent;
   const isShortTextMessage =
     latestText.length > 0 &&
     latestText.length <= 8 &&
@@ -2846,6 +2897,7 @@ function MessageBubble({
           chatInfo={chatInfo}
           currentUserName={currentUserName}
           onPressQuoted={onPressQuoted}
+          obfuscateContent={obfuscateContent}
         />
         <BubbleContent
           msg={msg}
@@ -2858,6 +2910,7 @@ function MessageBubble({
           onOpenVideo={onOpenVideo}
           onTemplateButtonPress={onTemplateButtonPress}
           disableTemplateButtons={disableTemplateButtons}
+          obfuscateContent={obfuscateContent}
         />
         <View
           style={[
@@ -2949,6 +3002,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [chatInfo, setChatInfo] = useState(chat);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [canPreviewProtectedContent, setCanPreviewProtectedContent] =
+    useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [remoteActivityMode, setRemoteActivityMode] =
     useState<RemoteActivityMode | null>(null);
@@ -3052,6 +3107,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const userName = resolveStoredUserName(user);
       setCurrentUserId(resolveUserId(user));
       setCurrentUserName(userName);
+    });
+
+    getPermissions().then((permissions) => {
+      setCanPreviewProtectedContent(canPreviewChatContent(permissions));
     });
   }, []);
 
@@ -3839,6 +3898,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     chatInfo.status === 'ura_output' ||
     chatInfo.status === 'ura_schedule' ||
     chatInfo.status === 'ura_webhook';
+  const shouldObfuscateContent =
+    isQueueOrUraStatus && !canPreviewProtectedContent;
 
   useEffect(() => {
     inputRef.current = input;
@@ -4539,6 +4600,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   onOpenVideo={openVideoViewer}
                   onTemplateButtonPress={handleTemplateButtonPress}
                   disableTemplateButtons={isQueueOrUraStatus || sending}
+                  obfuscateContent={shouldObfuscateContent}
                 />
               );
             }}
@@ -4586,6 +4648,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           />
           <Text style={styles.typingIndicatorText} numberOfLines={1}>
             {typingLabel}
+          </Text>
+        </View>
+      ) : null}
+      {shouldObfuscateContent ? (
+        <View style={styles.protectedBanner}>
+          <Ionicons name="lock-closed-outline" size={14} color={colors.grey700} />
+          <Text style={styles.protectedBannerText}>
+            {pt.protected_content}
           </Text>
         </View>
       ) : null}
@@ -5150,6 +5220,33 @@ const styles = StyleSheet.create({
   },
   bubbleTextRight: {
     color: 'rgba(17, 27, 33, 0.95)',
+  },
+  protectedContentWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+    minHeight: 36,
+  },
+  protectedIconWrap: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(47, 43, 61, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  protectedContentTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  protectedContentTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  protectedContentSubtitle: {
+    fontSize: 11,
+    opacity: 0.72,
   },
   bubbleMeta: {
     flexDirection: 'row',
@@ -6047,6 +6144,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontStyle: 'italic',
     fontWeight: '400',
+  },
+  protectedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(47, 43, 61, 0.06)',
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+  },
+  protectedBannerText: {
+    fontSize: 12,
+    color: colors.grey700,
+    fontWeight: '500',
   },
   scrollToBottomButton: {
     position: 'absolute',

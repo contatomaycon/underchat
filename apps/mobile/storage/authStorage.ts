@@ -5,6 +5,43 @@ const TOKEN_KEY = '@underchat_token';
 const USER_KEY = '@underchat_user';
 const PERMISSIONS_KEY = '@underchat_permissions';
 const SECTORS_KEY = '@underchat_sectors';
+const CHANNELS_KEY = '@underchat_channels';
+
+export type UserChannel = {
+  id: string;
+  name: string;
+};
+
+function normalizeChannels(value: unknown): UserChannel[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const normalized: UserChannel[] = [];
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+
+    const raw = entry as { id?: unknown; channel_id?: unknown; name?: unknown };
+    const idCandidate =
+      typeof raw.id === 'string' && raw.id.trim().length > 0
+        ? raw.id.trim()
+        : typeof raw.channel_id === 'string' && raw.channel_id.trim().length > 0
+          ? raw.channel_id.trim()
+          : null;
+
+    if (!idCandidate || seen.has(idCandidate)) continue;
+
+    normalized.push({
+      id: idCandidate,
+      name: typeof raw.name === 'string' ? raw.name : '',
+    });
+    seen.add(idCandidate);
+  }
+
+  return normalized;
+}
 
 export async function getToken(): Promise<string | null> {
   return AsyncStorage.getItem(TOKEN_KEY);
@@ -58,11 +95,29 @@ export async function setSectors(sectors: string[]): Promise<void> {
   await AsyncStorage.setItem(SECTORS_KEY, JSON.stringify(sectors));
 }
 
+export async function getChannels(): Promise<UserChannel[]> {
+  const raw = await AsyncStorage.getItem(CHANNELS_KEY);
+  if (!raw) return [];
+  try {
+    return normalizeChannels(JSON.parse(raw) as unknown);
+  } catch {
+    return [];
+  }
+}
+
+export async function setChannels(channels: UserChannel[]): Promise<void> {
+  await AsyncStorage.setItem(
+    CHANNELS_KEY,
+    JSON.stringify(normalizeChannels(channels))
+  );
+}
+
 export async function clearAuth(): Promise<void> {
   await Promise.all([
     AsyncStorage.removeItem(TOKEN_KEY),
     AsyncStorage.removeItem(USER_KEY),
     AsyncStorage.removeItem(PERMISSIONS_KEY),
     AsyncStorage.removeItem(SECTORS_KEY),
+    AsyncStorage.removeItem(CHANNELS_KEY),
   ]);
 }

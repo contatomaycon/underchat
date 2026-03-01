@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,10 @@ import {
   setUser,
   setPermissions,
   setSectors,
+  setChannels,
+  clearAuth,
 } from '../storage/authStorage';
+import { hasChatAccessPermission } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 
@@ -26,9 +29,10 @@ const APP_TITLE = pt.app_title;
 
 type Props = {
   onLoginSuccess: () => void;
+  initialError?: string | null;
 };
 
-export function LoginScreen({ onLoginSuccess }: Props) {
+export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -37,6 +41,11 @@ export function LoginScreen({ onLoginSuccess }: Props) {
 
   const emailTrimmed = email.trim();
   const canSubmit = emailTrimmed.length > 0 && password.length >= 4 && !loading;
+
+  useEffect(() => {
+    if (!initialError) return;
+    setError(initialError);
+  }, [initialError]);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -64,10 +73,20 @@ export function LoginScreen({ onLoginSuccess }: Props) {
     setLoading(false);
 
     if (result.success) {
+      const permissions = result.data.permissions ?? [];
+      const channels = result.data.channels ?? [];
+
+      if (!hasChatAccessPermission(permissions)) {
+        await clearAuth();
+        setError(pt.chat_permission_denied);
+        return;
+      }
+
       await setToken(result.data.token);
       await setUser(result.data.user);
-      await setPermissions(result.data.permissions ?? []);
+      await setPermissions(permissions);
       await setSectors(result.data.sectors ?? []);
+      await setChannels(channels);
       onLoginSuccess();
       return;
     }

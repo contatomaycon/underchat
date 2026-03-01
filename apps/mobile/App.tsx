@@ -3,12 +3,26 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LoginScreen } from './screens/LoginScreen';
-import { getToken, getPermissions, getUser } from './storage/authStorage';
-import { canViewChatbotTab as checkCanViewChatbotTab } from './constants/permissions';
+import {
+  getToken,
+  getPermissions,
+  getUser,
+  clearAuth,
+  setChannels,
+} from './storage/authStorage';
+import {
+  canViewChatbotTab as checkCanViewChatbotTab,
+  hasChatAccessPermission,
+} from './constants/chatAuthorization';
 import { ChatFilterProvider } from './context/ChatFilterContext';
 import { RootNavigator } from './navigation/RootNavigator';
 import { addAuthUnauthorizedListener } from './utils/authEvents';
-import { cleanupChatSocket, initializeChatSocket } from './socket/chatSocket';
+import {
+  cleanupChatSocket,
+  initializeChatSocket,
+  addChatSocketListener,
+} from './socket/chatSocket';
+import { pt } from './locales/pt';
 
 function getUserAccountId(user: unknown): string | null {
   if (!user || typeof user !== 'object') return null;
@@ -18,27 +32,113 @@ function getUserAccountId(user: unknown): string | null {
   return null;
 }
 
+function normalizeIdentifier(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return null;
+}
+
+function getUserId(user: unknown): string | null {
+  if (!user || typeof user !== 'object') return null;
+
+  const userInfo = user as { id?: unknown; user_id?: unknown };
+  return (
+    normalizeIdentifier(userInfo.id) ?? normalizeIdentifier(userInfo.user_id)
+  );
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [canViewChatbotTab, setCanViewChatbotTab] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    getToken().then((token) => {
-      setAuthenticated(!!token);
+    let cancelled = false;
+
+    const bootstrapSession = async () => {
+      const token = await getToken();
+      if (!token) {
+        if (!cancelled) {
+          setAuthenticated(false);
+          setCanViewChatbotTab(false);
+          setReady(true);
+        }
+        return;
+      }
+
+      const permissions = await getPermissions();
+      if (!hasChatAccessPermission(permissions)) {
+        await clearAuth();
+        if (!cancelled) {
+          setAuthenticated(false);
+          setCanViewChatbotTab(false);
+          setAuthError(pt.chat_permission_denied);
+          setReady(true);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setAuthenticated(true);
+        setCanViewChatbotTab(checkCanViewChatbotTab(permissions));
+        setReady(true);
+      }
+    };
+
+    bootstrapSession().catch(() => {
+      if (cancelled) return;
+      setAuthenticated(false);
+      setCanViewChatbotTab(false);
       setReady(true);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!authenticated) return;
-    getPermissions().then((permissions) => {
-      setCanViewChatbotTab(checkCanViewChatbotTab(permissions));
-    });
+    let cancelled = false;
+
+    if (!authenticated) {
+      setCanViewChatbotTab(false);
+      cleanupChatSocket().catch(() => {});
+      return;
+    }
+
+    getPermissions()
+      .then(async (permissions) => {
+        if (cancelled) return;
+
+        if (!hasChatAccessPermission(permissions)) {
+          await clearAuth();
+          if (cancelled) return;
+          setAuthenticated(false);
+          setCanViewChatbotTab(false);
+          setAuthError(pt.chat_permission_denied);
+          return;
+        }
+
+        setCanViewChatbotTab(checkCanViewChatbotTab(permissions));
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, [authenticated]);
 
   useEffect(() => {
     let cancelled = false;
+    let offChannelsUpdated: (() => void) | null = null;
 
     if (!authenticated) {
       cleanupChatSocket().catch(() => {});
@@ -49,18 +149,36 @@ export default function App() {
       .then((user) => {
         if (cancelled) return;
         const accountId = getUserAccountId(user);
-        if (!accountId) return;
-        initializeChatSocket(accountId).catch(() => {});
+        const loggedUserId = getUserId(user);
+        if (accountId) {
+          initializeChatSocket(accountId).catch(() => {});
+        }
+
+        offChannelsUpdated = addChatSocketListener(
+          'channelsUpdated',
+          (payload) => {
+            const eventUserId = normalizeIdentifier(payload.user_id);
+            if (!loggedUserId || !eventUserId || eventUserId !== loggedUserId) {
+              return;
+            }
+            void setChannels(payload.channels);
+          }
+        );
       })
       .catch(() => {});
 
     return () => {
       cancelled = true;
+      offChannelsUpdated?.();
     };
   }, [authenticated]);
 
   useEffect(() => {
-    const onUnauthorized = () => setAuthenticated(false);
+    const onUnauthorized = () => {
+      setAuthenticated(false);
+      setCanViewChatbotTab(false);
+      setAuthError(null);
+    };
     return addAuthUnauthorizedListener(onUnauthorized);
   }, []);
 
@@ -75,7 +193,15 @@ export default function App() {
   }
 
   if (!authenticated) {
-    return <LoginScreen onLoginSuccess={() => setAuthenticated(true)} />;
+    return (
+      <LoginScreen
+        onLoginSuccess={() => {
+          setAuthError(null);
+          setAuthenticated(true);
+        }}
+        initialError={authError}
+      />
+    );
   }
 
   return (

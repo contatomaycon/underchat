@@ -23,8 +23,19 @@ import {
   searchChats,
   clearChatSummary,
 } from '../api/chatApi';
-import { getUser, getPermissions, getSectors } from '../storage/authStorage';
-import { canUseUserAndSectorFilters as checkUserSectorFilters } from '../constants/permissions';
+import {
+  getUser,
+  getPermissions,
+  getSectors,
+  getChannels,
+  type UserChannel,
+} from '../storage/authStorage';
+import {
+  canUseUserAndSectorFilters as checkUserSectorFilters,
+  canPickQueueChat,
+  canViewChat,
+  canListAllChatsWithoutSectorLimit,
+} from '../constants/chatAuthorization';
 import { AdvancedFilterModal } from '../components/AdvancedFilterModal';
 import type { AdvancedFilterValues } from '../components/AdvancedFilterModal';
 import { UserSidebar } from '../components/UserSidebar';
@@ -36,6 +47,7 @@ import { resolveImageUri } from '../utils/imageUri';
 import {
   addChatSocketListener,
   type SocketChatPayload,
+  type SocketChannelsUpdatedPayload,
 } from '../socket/chatSocket';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
@@ -47,13 +59,6 @@ const CHAT_STATUS = {
   closed: 'closed' as const,
   chatbot: 'ura' as const,
 };
-
-const SOCKET_CHAT_LIST_ALL_PERMISSIONS = [
-  'full_access',
-  'full_access_group',
-  'chat_group',
-  'list_all_chats_without_sector_limit',
-] as const;
 
 function readString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -88,6 +93,22 @@ function resolveSocketChatSectorId(data: SocketChatPayload): string | null {
   const sector = (data as { sector?: unknown }).sector;
   if (!sector || typeof sector !== 'object') return null;
   return readString((sector as { id?: unknown }).id);
+}
+
+function resolveSocketChatWorkerId(data: SocketChatPayload): string | null {
+  const worker = (data as { worker?: unknown }).worker;
+  if (!worker || typeof worker !== 'object') return null;
+  return readString((worker as { id?: unknown }).id);
+}
+
+function areChannelsEqual(left: UserChannel[], right: UserChannel[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i++) {
+    if (left[i]?.id !== right[i]?.id || left[i]?.name !== right[i]?.name) {
+      return false;
+    }
+  }
+  return true;
 }
 
 const EMPTY_FILTER_VALUES: AdvancedFilterValues = {
@@ -162,9 +183,11 @@ function formatDate(dateStr: string | null | undefined): string {
 function ChatRow({
   item,
   onPress,
+  disabled = false,
 }: {
   item: ListChatsResult;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   const name = item.name ?? item.contact?.name ?? item.phone ?? item.chat_id;
   const lastMsg = item.summary?.last_message ?? '';
@@ -174,7 +197,13 @@ function ChatRow({
   const photoUri = resolveImageUri(photo);
 
   return (
-    <Pressable style={styles.chatRow} onPress={onPress}>
+    <Pressable
+      style={[styles.chatRow, disabled && styles.chatRowDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityState={{ disabled }}
+      accessibilityLabel={disabled ? pt.action_unavailable_by_permission : name}
+    >
       <View style={styles.chatAvatar}>
         {photoUri ? (
           <Image source={{ uri: photoUri }} style={styles.chatAvatarImage} />
@@ -302,7 +331,9 @@ export function ChatListScreen({ route, navigation }: Props) {
     useState(false);
   const [socketPermissions, setSocketPermissions] = useState<string[]>([]);
   const [userSectors, setUserSectors] = useState<string[]>([]);
+  const [userChannels, setUserChannels] = useState<UserChannel[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [canPickAnyQueueChat, setCanPickAnyQueueChat] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const locallyClearedSummaryChatIdsRef = useRef<Set<string>>(new Set());
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
@@ -338,6 +369,20 @@ export function ChatListScreen({ route, navigation }: Props) {
     []
   );
 
+  const filterAuthorizedChats = useCallback(
+    (items: ListChatsResult[]): ListChatsResult[] => {
+      return items.filter((chat) =>
+        canViewChat(chat, {
+          permissions: socketPermissions,
+          userId: currentUserId,
+          userSectors,
+          userChannels,
+        })
+      );
+    },
+    [currentUserId, socketPermissions, userSectors, userChannels]
+  );
+
   useEffect(() => {
     getUser().then((user) => {
       const info =
@@ -356,12 +401,21 @@ export function ChatListScreen({ route, navigation }: Props) {
     getPermissions().then((permissions) => {
       setCanUseUserAndSectorFilters(checkUserSectorFilters(permissions));
       setSocketPermissions(permissions);
+      setCanPickAnyQueueChat(canPickQueueChat(permissions));
     });
   }, []);
 
   useEffect(() => {
     getSectors().then((sectors) => {
       setUserSectors(sectors);
+    });
+  }, []);
+
+  useEffect(() => {
+    getChannels().then((channels) => {
+      setUserChannels((prev) =>
+        areChannelsEqual(prev, channels) ? prev : channels
+      );
     });
   }, []);
 
@@ -395,7 +449,9 @@ export function ChatListScreen({ route, navigation }: Props) {
           const results = res.results.filter(
             (r) => r.chat_id && r.chat_id.trim().length > 0
           );
-          const resolvedResults = applyLocallyClearedUnreadOverrides(results);
+          const visibleResults = filterAuthorizedChats(results);
+          const resolvedResults =
+            applyLocallyClearedUnreadOverrides(visibleResults);
           if (tab === 'queue') {
             setQueue(resolvedResults);
             setInChat([]);
@@ -421,8 +477,11 @@ export function ChatListScreen({ route, navigation }: Props) {
       if (tab === 'all') {
         const res = await listMyChats(1, 50, search || undefined);
         if (res) {
-          const inChatList = res.results.filter((c) => c.status === 'in_chat');
-          const queueList = res.results.filter((c) => c.status === 'queue');
+          const visibleResults = filterAuthorizedChats(res.results);
+          const inChatList = visibleResults.filter(
+            (c) => c.status === 'in_chat'
+          );
+          const queueList = visibleResults.filter((c) => c.status === 'queue');
           setInChat(applyLocallyClearedUnreadOverrides(inChatList));
           setQueue(applyLocallyClearedUnreadOverrides(queueList));
           setCounts({
@@ -433,14 +492,16 @@ export function ChatListScreen({ route, navigation }: Props) {
       } else if (tab === 'queue') {
         const res = await listQueueChats(1, 50);
         if (res) {
-          setQueue(applyLocallyClearedUnreadOverrides(res.results));
+          const visibleResults = filterAuthorizedChats(res.results);
+          setQueue(applyLocallyClearedUnreadOverrides(visibleResults));
           setCounts((c) => ({ ...c, queue: res.counts?.queue ?? 0 }));
           setInChat([]);
         }
       } else if (tab === 'in_chat') {
         const res = await listInChatChats(1, 50);
         if (res) {
-          setInChat(applyLocallyClearedUnreadOverrides(res.results));
+          const visibleResults = filterAuthorizedChats(res.results);
+          setInChat(applyLocallyClearedUnreadOverrides(visibleResults));
           setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
           setQueue([]);
         }
@@ -451,11 +512,12 @@ export function ChatListScreen({ route, navigation }: Props) {
           per_page: 50,
         });
         if (res) {
+          const visibleResults = filterAuthorizedChats(res.results);
           if (tab === 'closed') {
-            setQueue(applyLocallyClearedUnreadOverrides(res.results));
+            setQueue(applyLocallyClearedUnreadOverrides(visibleResults));
             setInChat([]);
           } else {
-            setInChat(applyLocallyClearedUnreadOverrides(res.results));
+            setInChat(applyLocallyClearedUnreadOverrides(visibleResults));
             setQueue([]);
           }
         }
@@ -466,26 +528,41 @@ export function ChatListScreen({ route, navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [tab, search, advancedFilterValues, applyLocallyClearedUnreadOverrides]);
+  }, [
+    tab,
+    search,
+    advancedFilterValues,
+    applyLocallyClearedUnreadOverrides,
+    filterAuthorizedChats,
+  ]);
 
   const canReceiveChatNotification = useCallback(
     (chatData: SocketChatPayload): boolean => {
-      const canListAllChatsWithoutSectorLimit = socketPermissions.some((perm) =>
-        SOCKET_CHAT_LIST_ALL_PERMISSIONS.includes(
-          perm as (typeof SOCKET_CHAT_LIST_ALL_PERMISSIONS)[number]
-        )
-      );
-
-      if (canListAllChatsWithoutSectorLimit) {
-        return true;
-      }
-
       const chatId = resolveSocketChatId(chatData);
       if (!chatId) return false;
 
       const chatExistsInList =
         queue.some((c) => c.chat_id === chatId) ||
         inChat.some((c) => c.chat_id === chatId);
+
+      if (userChannels.length > 0 && !chatExistsInList) {
+        const workerId = resolveSocketChatWorkerId(chatData);
+        if (!workerId) {
+          return false;
+        }
+
+        const userChannelIds = new Set(
+          userChannels.map((channel) => channel.id)
+        );
+        if (!userChannelIds.has(workerId)) {
+          return false;
+        }
+      }
+
+      if (canListAllChatsWithoutSectorLimit(socketPermissions)) {
+        return true;
+      }
+
       if (chatExistsInList) {
         return true;
       }
@@ -512,7 +589,7 @@ export function ChatListScreen({ route, navigation }: Props) {
 
       return userSectors.includes(sectorId);
     },
-    [socketPermissions, queue, inChat, currentUserId, userSectors]
+    [socketPermissions, queue, inChat, currentUserId, userSectors, userChannels]
   );
 
   const scheduleRealtimeReload = useCallback(() => {
@@ -547,20 +624,57 @@ export function ChatListScreen({ route, navigation }: Props) {
       const offRecoveryFailed = addChatSocketListener('recoveryFailed', () => {
         scheduleRealtimeReload();
       });
+      const offChannelsUpdated = addChatSocketListener(
+        'channelsUpdated',
+        (payload: SocketChannelsUpdatedPayload) => {
+          if (!currentUserId) return;
+          if (readIdentifier(payload.user_id) !== currentUserId) {
+            return;
+          }
+
+          setUserChannels((prev) =>
+            areChannelsEqual(prev, payload.channels) ? prev : payload.channels
+          );
+          scheduleRealtimeReload();
+        }
+      );
 
       return () => {
         offMessage();
         offChatUpdate();
         offRecoveryFailed();
+        offChannelsUpdated();
         if (realtimeReloadTimer.current) {
           clearTimeout(realtimeReloadTimer.current);
           realtimeReloadTimer.current = null;
         }
       };
-    }, [canReceiveChatNotification, scheduleRealtimeReload])
+    }, [canReceiveChatNotification, currentUserId, scheduleRealtimeReload])
   );
 
-  const openChat = (chat: ListChatsResult) => {
+  const openChat = (
+    chat: ListChatsResult,
+    queueIndex: number | null = null
+  ) => {
+    const canOpenByVisibility = canViewChat(chat, {
+      permissions: socketPermissions,
+      userId: currentUserId,
+      userSectors,
+      userChannels,
+    });
+    if (!canOpenByVisibility) {
+      return;
+    }
+
+    if (
+      chat.status === 'queue' &&
+      !canPickAnyQueueChat &&
+      queueIndex !== null &&
+      queueIndex !== 0
+    ) {
+      return;
+    }
+
     const chatUserId = resolveUserId(chat.user);
     const shouldClearSummary =
       chat.status === 'in_chat' &&
@@ -718,9 +832,26 @@ export function ChatListScreen({ route, navigation }: Props) {
         <SectionList
           sections={sections}
           keyExtractor={(item) => item.chat_id}
-          renderItem={({ item }) => (
-            <ChatRow item={item} onPress={() => openChat(item)} />
-          )}
+          renderItem={({ item, index }) => {
+            const isQueueItemLocked =
+              item.status === 'queue' && !canPickAnyQueueChat && index !== 0;
+            const canOpenByVisibility = canViewChat(item, {
+              permissions: socketPermissions,
+              userId: currentUserId,
+              userSectors,
+              userChannels,
+            });
+
+            return (
+              <ChatRow
+                item={item}
+                disabled={isQueueItemLocked || !canOpenByVisibility}
+                onPress={() =>
+                  openChat(item, item.status === 'queue' ? index : null)
+                }
+              />
+            );
+          }}
           renderSectionHeader={({ section }) => (
             <SectionHeader title={section.title} />
           )}
@@ -845,6 +976,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.grey200,
+  },
+  chatRowDisabled: {
+    opacity: 0.55,
   },
   chatAvatar: {
     marginRight: 12,
