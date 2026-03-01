@@ -58,6 +58,7 @@ const CHAT_STATUS = {
   all: 'my_chats' as const,
   queue: 'queue' as const,
   in_chat: 'in_chat' as const,
+  closed: 'closed' as const,
   chatbot: 'ura' as const,
 };
 
@@ -70,12 +71,6 @@ const CHATBOT_FILTER_OPTIONS: Array<{
   { value: 'ura_schedule', label: pt.chatbot_type_schedule },
   { value: 'ura_webhook', label: pt.chatbot_type_webhook },
 ];
-
-function isDefaultChatbotFilterSelection(
-  filters: ChatbotFilterStatus[]
-): boolean {
-  return filters.length === 1 && filters[0] === 'ura';
-}
 
 function readString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -141,19 +136,6 @@ const EMPTY_FILTER_VALUES: AdvancedFilterValues = {
   sort_field: null,
   sort_order: null,
 };
-
-function hasAdvancedFilterValues(values: AdvancedFilterValues): boolean {
-  if (values.filter_label_template_id) return true;
-  if (values.filter_worker_id) return true;
-  if (values.filter_user_id) return true;
-  if (values.filter_sector_id) return true;
-  if (values.filter_name?.trim()) return true;
-  if (values.filter_phone?.trim()) return true;
-  if (values.filter_protocol?.trim()) return true;
-  if (values.filter_date_start) return true;
-  if (values.filter_date_end) return true;
-  return false;
-}
 
 function toNextDay(dateStr: string | null): string | null {
   if (!dateStr || dateStr.trim() === '') return null;
@@ -337,10 +319,46 @@ function ChatListSkeleton() {
   );
 }
 
+function mergeChatsById(
+  current: ListChatsResult[],
+  incoming: ListChatsResult[]
+): ListChatsResult[] {
+  if (current.length === 0) return incoming;
+  if (incoming.length === 0) return current;
+
+  const merged = new Map(current.map((item) => [item.chat_id, item]));
+  for (const chat of incoming) {
+    if (!chat.chat_id) continue;
+    merged.set(chat.chat_id, chat);
+  }
+
+  return Array.from(merged.values());
+}
+
+function ChatListLoadMoreSkeleton() {
+  return (
+    <View style={styles.loadMoreSkeletonList}>
+      {Array.from({ length: 3 }, (_, i) => (
+        <View key={`load-more-skeleton-${i}`} style={styles.chatRow}>
+          <View style={styles.skeletonAvatar} />
+          <View style={styles.skeletonContent}>
+            <View style={styles.skeletonRowTop}>
+              <View style={[styles.skeletonLine, styles.skeletonName]} />
+              <View style={[styles.skeletonLine, styles.skeletonDate]} />
+            </View>
+            <View style={[styles.skeletonLine, styles.skeletonMessage]} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function ChatListScreen({ route, navigation }: Props) {
   const { tab } = route.params;
   const isFocused = useIsFocused();
   const {
+    hasAppliedAdvancedFilters,
     setHasAppliedAdvancedFilters,
     advancedFilterValues,
     setAdvancedFilterValues,
@@ -368,6 +386,8 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [canPickAnyQueueChat, setCanPickAnyQueueChat] = useState(false);
   const [profileSidebarVisible, setProfileSidebarVisible] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMorePages, setHasMorePages] = useState(false);
   const [isUserResolved, setIsUserResolved] = useState(false);
   const [isPermissionsResolved, setIsPermissionsResolved] = useState(false);
   const [isSectorsResolved, setIsSectorsResolved] = useState(false);
@@ -376,6 +396,20 @@ export function ChatListScreen({ route, navigation }: Props) {
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
+  const loadingRef = useRef(false);
+  const isLoadingMoreRef = useRef(false);
+  const paginationRef = useRef<{ currentPage: number; totalPages: number }>({
+    currentPage: 1,
+    totalPages: 1,
+  });
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  useEffect(() => {
+    isLoadingMoreRef.current = isLoadingMore;
+  }, [isLoadingMore]);
 
   const applyLocallyClearedUnreadOverrides = useCallback(
     (items: ListChatsResult[]): ListChatsResult[] => {
@@ -478,128 +512,248 @@ export function ChatListScreen({ route, navigation }: Props) {
     isSectorsResolved &&
     isChannelsResolved;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const chatbotStatuses =
-      chatbotFilters.length > 0 ? chatbotFilters : ['ura'];
-    const status = tab === 'chatbot' ? chatbotStatuses : CHAT_STATUS[tab];
-    const hasFilters = hasAdvancedFilterValues(advancedFilterValues);
-    const hasSearchText = (search ?? '').trim().length > 0;
-    const useSearch = hasFilters || hasSearchText;
-    const inChatFilterUserId =
-      tab === 'in_chat' && inChatScope === 'mine'
-        ? currentUserId
-        : advancedFilterValues.filter_user_id;
-    try {
-      if (useSearch) {
-        const res = await searchChats({
-          search: search || '',
-          status,
-          current_page: 1,
-          per_page: 50,
-          filter_label_template_id:
-            advancedFilterValues.filter_label_template_id,
-          filter_worker_id: advancedFilterValues.filter_worker_id,
-          filter_user_id: inChatFilterUserId,
-          filter_sector_id: advancedFilterValues.filter_sector_id,
-          filter_name: advancedFilterValues.filter_name,
-          filter_phone: advancedFilterValues.filter_phone,
-          filter_protocol: advancedFilterValues.filter_protocol,
-          filter_date_start: advancedFilterValues.filter_date_start,
-          filter_date_end: toNextDay(advancedFilterValues.filter_date_end),
-          sort_field: advancedFilterValues.sort_field,
-          sort_order: advancedFilterValues.sort_order,
-        });
-        if (res) {
-          const results = res.results.filter(
-            (r) => r.chat_id && r.chat_id.trim().length > 0
-          );
-          const visibleResults = filterAuthorizedChats(results);
-          const resolvedResults =
-            applyLocallyClearedUnreadOverrides(visibleResults);
-          if (tab === 'queue') {
-            setQueue(resolvedResults);
-            setInChat([]);
-            setCounts((c) => ({ ...c, queue: res.counts?.queue ?? 0 }));
-          } else if (tab === 'in_chat') {
-            setInChat(resolvedResults);
-            setQueue([]);
-            setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
+  const load = useCallback(
+    async (append = false) => {
+      if (append) {
+        const { currentPage, totalPages } = paginationRef.current;
+        if (
+          isLoadingMoreRef.current ||
+          loadingRef.current ||
+          currentPage >= totalPages
+        ) {
+          return;
+        }
+        setIsLoadingMore(true);
+        isLoadingMoreRef.current = true;
+      } else {
+        setLoading(true);
+        loadingRef.current = true;
+        paginationRef.current = { currentPage: 1, totalPages: 1 };
+        setHasMorePages(false);
+      }
+
+      const targetPage = append ? paginationRef.current.currentPage + 1 : 1;
+      const chatbotStatuses =
+        chatbotFilters.length > 0 ? chatbotFilters : ['ura'];
+      const status = tab === 'chatbot' ? chatbotStatuses : CHAT_STATUS[tab];
+      const hasSearchText = (search ?? '').trim().length > 0;
+      const useSearch = hasAppliedAdvancedFilters || hasSearchText;
+      const inChatFilterUserId =
+        tab === 'in_chat' && inChatScope === 'mine'
+          ? currentUserId
+          : advancedFilterValues.filter_user_id;
+
+      const applyPagination = (currentPage: number, totalPages: number) => {
+        const safeCurrent = currentPage > 0 ? currentPage : 1;
+        const safeTotal = totalPages > 0 ? totalPages : 1;
+        paginationRef.current = {
+          currentPage: safeCurrent,
+          totalPages: safeTotal,
+        };
+        setHasMorePages(safeCurrent < safeTotal);
+      };
+
+      try {
+        if (useSearch) {
+          const res = await searchChats({
+            search: search || '',
+            status,
+            current_page: targetPage,
+            per_page: 50,
+            filter_label_template_id:
+              advancedFilterValues.filter_label_template_id,
+            filter_worker_id: advancedFilterValues.filter_worker_id,
+            filter_user_id: inChatFilterUserId,
+            filter_sector_id: advancedFilterValues.filter_sector_id,
+            filter_name: advancedFilterValues.filter_name,
+            filter_phone: advancedFilterValues.filter_phone,
+            filter_protocol: advancedFilterValues.filter_protocol,
+            filter_date_start: advancedFilterValues.filter_date_start,
+            filter_date_end: toNextDay(advancedFilterValues.filter_date_end),
+            sort_field: advancedFilterValues.sort_field,
+            sort_order: advancedFilterValues.sort_order,
+          });
+          if (res) {
+            applyPagination(res.current_page, res.total_pages);
+            const results = res.results.filter(
+              (r) => r.chat_id && r.chat_id.trim().length > 0
+            );
+            const visibleResults = filterAuthorizedChats(results);
+            const resolvedResults =
+              applyLocallyClearedUnreadOverrides(visibleResults);
+            if (tab === 'queue') {
+              setQueue((prev) =>
+                append ? mergeChatsById(prev, resolvedResults) : resolvedResults
+              );
+              if (!append) setInChat([]);
+              setCounts((c) => ({ ...c, queue: res.counts?.queue ?? 0 }));
+            } else if (tab === 'in_chat') {
+              setInChat((prev) =>
+                append ? mergeChatsById(prev, resolvedResults) : resolvedResults
+              );
+              if (!append) setQueue([]);
+              setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
+            } else if (tab === 'closed') {
+              setQueue((prev) =>
+                append ? mergeChatsById(prev, resolvedResults) : resolvedResults
+              );
+              if (!append) setInChat([]);
+            } else {
+              setInChat((prev) =>
+                append ? mergeChatsById(prev, resolvedResults) : resolvedResults
+              );
+              if (!append) setQueue([]);
+            }
           } else {
-            setInChat(resolvedResults);
-            setQueue([]);
+            applyPagination(1, 1);
+            if (!append) {
+              setQueue([]);
+              setInChat([]);
+            }
+          }
+          return;
+        }
+        if (tab === 'all') {
+          const res = await listMyChats(targetPage, 50, search || undefined);
+          if (res) {
+            applyPagination(res.current_page, res.total_pages);
+            const visibleResults = filterAuthorizedChats(res.results);
+            const inChatList = visibleResults.filter(
+              (c) => c.status === 'in_chat'
+            );
+            const queueList = visibleResults.filter(
+              (c) => c.status === 'queue'
+            );
+            const resolvedInChat =
+              applyLocallyClearedUnreadOverrides(inChatList);
+            const resolvedQueue = applyLocallyClearedUnreadOverrides(queueList);
+            setInChat((prev) =>
+              append ? mergeChatsById(prev, resolvedInChat) : resolvedInChat
+            );
+            setQueue((prev) =>
+              append ? mergeChatsById(prev, resolvedQueue) : resolvedQueue
+            );
+            setCounts({
+              queue: res.counts?.queue ?? 0,
+              in_chat: res.counts?.in_chat ?? 0,
+            });
+          } else {
+            applyPagination(1, 1);
+            if (!append) {
+              setQueue([]);
+              setInChat([]);
+            }
+          }
+        } else if (tab === 'queue') {
+          const res = await listQueueChats(targetPage, 50);
+          if (res) {
+            applyPagination(res.current_page, res.total_pages);
+            const visibleResults = filterAuthorizedChats(res.results);
+            const resolvedResults =
+              applyLocallyClearedUnreadOverrides(visibleResults);
+            setQueue((prev) =>
+              append ? mergeChatsById(prev, resolvedResults) : resolvedResults
+            );
+            setCounts((c) => ({ ...c, queue: res.counts?.queue ?? 0 }));
+            if (!append) setInChat([]);
+          } else {
+            applyPagination(1, 1);
+            if (!append) {
+              setQueue([]);
+              setInChat([]);
+            }
+          }
+        } else if (tab === 'in_chat') {
+          const res = await listChats({
+            status: 'in_chat',
+            current_page: targetPage,
+            per_page: 50,
+            filter_user_id: inChatScope === 'mine' ? currentUserId : undefined,
+          });
+          if (res) {
+            applyPagination(res.current_page, res.total_pages);
+            const visibleResults = filterAuthorizedChats(res.results);
+            const resolvedResults =
+              applyLocallyClearedUnreadOverrides(visibleResults);
+            setInChat((prev) =>
+              append ? mergeChatsById(prev, resolvedResults) : resolvedResults
+            );
+            setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
+            if (!append) setQueue([]);
+          } else {
+            applyPagination(1, 1);
+            if (!append) {
+              setQueue([]);
+              setInChat([]);
+            }
           }
         } else {
-          setQueue([]);
-          setInChat([]);
-        }
-        setLoading(false);
-        return;
-      }
-      if (tab === 'all') {
-        const res = await listMyChats(1, 50, search || undefined);
-        if (res) {
-          const visibleResults = filterAuthorizedChats(res.results);
-          const inChatList = visibleResults.filter(
-            (c) => c.status === 'in_chat'
-          );
-          const queueList = visibleResults.filter((c) => c.status === 'queue');
-          setInChat(applyLocallyClearedUnreadOverrides(inChatList));
-          setQueue(applyLocallyClearedUnreadOverrides(queueList));
-          setCounts({
-            queue: res.counts?.queue ?? 0,
-            in_chat: res.counts?.in_chat ?? 0,
+          const res = await listChats({
+            status,
+            current_page: targetPage,
+            per_page: 50,
           });
+          if (res) {
+            applyPagination(res.current_page, res.total_pages);
+            const visibleResults = filterAuthorizedChats(res.results);
+            const resolvedResults =
+              applyLocallyClearedUnreadOverrides(visibleResults);
+            if (tab === 'closed') {
+              setQueue((prev) =>
+                append ? mergeChatsById(prev, resolvedResults) : resolvedResults
+              );
+              if (!append) setInChat([]);
+            } else {
+              setInChat((prev) =>
+                append ? mergeChatsById(prev, resolvedResults) : resolvedResults
+              );
+              if (!append) setQueue([]);
+            }
+          } else {
+            applyPagination(1, 1);
+            if (!append) {
+              setQueue([]);
+              setInChat([]);
+            }
+          }
         }
-      } else if (tab === 'queue') {
-        const res = await listQueueChats(1, 50);
-        if (res) {
-          const visibleResults = filterAuthorizedChats(res.results);
-          setQueue(applyLocallyClearedUnreadOverrides(visibleResults));
-          setCounts((c) => ({ ...c, queue: res.counts?.queue ?? 0 }));
+      } catch {
+        if (!append) {
+          setQueue([]);
           setInChat([]);
         }
-      } else if (tab === 'in_chat') {
-        const res = await listChats({
-          status: 'in_chat',
-          current_page: 1,
-          per_page: 50,
-          filter_user_id: inChatScope === 'mine' ? currentUserId : undefined,
-        });
-        if (res) {
-          const visibleResults = filterAuthorizedChats(res.results);
-          setInChat(applyLocallyClearedUnreadOverrides(visibleResults));
-          setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
-          setQueue([]);
-        }
-      } else {
-        const res = await listChats({
-          status,
-          current_page: 1,
-          per_page: 50,
-        });
-        if (res) {
-          const visibleResults = filterAuthorizedChats(res.results);
-          setInChat(applyLocallyClearedUnreadOverrides(visibleResults));
-          setQueue([]);
+        paginationRef.current = { currentPage: 1, totalPages: 1 };
+        setHasMorePages(false);
+      } finally {
+        if (append) {
+          setIsLoadingMore(false);
+          isLoadingMoreRef.current = false;
+        } else {
+          setLoading(false);
+          loadingRef.current = false;
         }
       }
-    } catch {
-      setQueue([]);
-      setInChat([]);
-    } finally {
-      setLoading(false);
+    },
+    [
+      tab,
+      search,
+      hasAppliedAdvancedFilters,
+      advancedFilterValues,
+      chatbotFilters,
+      inChatScope,
+      currentUserId,
+      applyLocallyClearedUnreadOverrides,
+      filterAuthorizedChats,
+    ]
+  );
+
+  const handleLoadMore = useCallback(() => {
+    if (loading || isLoadingMore || !hasMorePages) {
+      return;
     }
-  }, [
-    tab,
-    search,
-    advancedFilterValues,
-    chatbotFilters,
-    inChatScope,
-    currentUserId,
-    applyLocallyClearedUnreadOverrides,
-    filterAuthorizedChats,
-  ]);
+
+    void load(true);
+  }, [hasMorePages, isLoadingMore, load, loading]);
 
   const canReceiveChatNotification = useCallback(
     (chatData: SocketChatPayload): boolean => {
@@ -797,7 +951,9 @@ export function ChatListScreen({ route, navigation }: Props) {
   );
 
   const sections: { title: string; data: ListChatsResult[] }[] = [];
-  if (tab === 'chatbot') {
+  if (tab === 'closed') {
+    sections.push({ title: pt.closed, data: queue });
+  } else if (tab === 'chatbot') {
     sections.push({ title: pt.chatbot, data: inChat });
   } else {
     if (inChat.length > 0)
@@ -809,11 +965,11 @@ export function ChatListScreen({ route, navigation }: Props) {
     let emptyTitle = pt.chatbot;
     if (tab === 'queue') emptyTitle = pt.awaiting_service;
     if (tab === 'in_chat') emptyTitle = pt.in_service;
+    if (tab === 'closed') emptyTitle = pt.closed;
     sections.push({ title: emptyTitle, data: [] });
   }
 
-  const hasAdvancedFiltersApplied =
-    hasAdvancedFilterValues(advancedFilterValues);
+  const hasAdvancedFiltersApplied = hasAppliedAdvancedFilters;
 
   const insets = useSafeAreaInsets();
 
@@ -858,6 +1014,11 @@ export function ChatListScreen({ route, navigation }: Props) {
           <Pressable
             style={styles.clearFilterBtn}
             onPress={() => {
+              if (tab === 'closed') {
+                (
+                  navigation.getParent() as { navigate: (n: string) => void }
+                )?.navigate('InChat');
+              }
               clearAdvancedFilters();
             }}
             accessibilityLabel={pt.clear_filters}
@@ -943,7 +1104,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         }}
         onApply={(values) => {
           setAdvancedFilterValues(values);
-          setHasAppliedAdvancedFilters(hasAdvancedFilterValues(values));
+          setHasAppliedAdvancedFilters(true);
           setFilterModalVisible(false);
         }}
         canUseUserAndSectorFilters={canUseUserAndSectorFilters}
@@ -999,6 +1160,11 @@ export function ChatListScreen({ route, navigation }: Props) {
           renderSectionHeader={({ section }) => (
             <SectionHeader title={section.title} />
           )}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            isLoadingMore ? <ChatListLoadMoreSkeleton /> : null
+          }
           stickySectionHeadersEnabled
           contentContainerStyle={styles.listContent}
         />
@@ -1137,6 +1303,9 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 24,
+  },
+  loadMoreSkeletonList: {
+    paddingBottom: 12,
   },
   sectionHeader: {
     paddingHorizontal: 16,
