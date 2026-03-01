@@ -66,7 +66,7 @@ import {
   createMessage,
   createMessageWithFormData,
   clearChatSummary,
-  updateChatStatus,
+  updateChatStatusDetailed,
   transferChat,
   listTransferOptions,
   listTransferUsers,
@@ -79,6 +79,8 @@ import {
   viewWorkerConfigForChat,
   searchChats,
   type LabelTemplate,
+  type ChatUserStatus,
+  type WorkerConfigForChat,
   type TransferChatPayload,
   type TransferUserOption,
   type TransferSectorOption,
@@ -100,6 +102,8 @@ import {
   canPreviewChatContent,
   canViewAttendanceHistory,
   canCloseChatWithoutAttending,
+  canPickQueueChat,
+  canReopenChat,
   canToggleForwardToOutputChatbot,
 } from '../constants/chatAuthorization';
 import { AppAvatar } from '../components/AppAvatar';
@@ -1103,6 +1107,33 @@ function resolveStoredUserName(user: unknown): string | null {
     readNonEmptyString(userRecord.user_name) ??
     readNonEmptyString(userRecord.login)
   );
+}
+
+function resolveStoredUserStatus(user: unknown): ChatUserStatus {
+  if (!user || typeof user !== 'object') return 'offline';
+
+  const userRecord = user as {
+    chat_user?: unknown;
+  };
+
+  const chatUser =
+    userRecord.chat_user && typeof userRecord.chat_user === 'object'
+      ? (userRecord.chat_user as { status?: unknown })
+      : null;
+
+  const status = readNonEmptyString(chatUser?.status);
+
+  if (
+    status === 'online' ||
+    status === 'busy' ||
+    status === 'do_not_disturb' ||
+    status === 'away' ||
+    status === 'offline'
+  ) {
+    return status;
+  }
+
+  return 'offline';
 }
 
 function isForwardedMessage(
@@ -3211,12 +3242,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [userSectors, setUserSectors] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [currentUserStatus, setCurrentUserStatus] =
+    useState<ChatUserStatus>('offline');
+  const [inChatCountForWorker, setInChatCountForWorker] = useState(0);
+  const [isAttendReopenLoading, setIsAttendReopenLoading] = useState(false);
   const [canPreviewProtectedContent, setCanPreviewProtectedContent] =
     useState(false);
-  const [workerConfigForChat, setWorkerConfigForChat] = useState<{
-    show_protocol_in_chat: boolean;
-    has_ura_output: boolean;
-  } | null>(null);
+  const [workerConfigForChat, setWorkerConfigForChat] =
+    useState<WorkerConfigForChat | null>(null);
   const [headerPhoneDecrypted, setHeaderPhoneDecrypted] = useState<
     string | null
   >(null);
@@ -3457,6 +3490,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const userName = resolveStoredUserName(user);
       setCurrentUserId(resolveUserId(user));
       setCurrentUserName(userName);
+      setCurrentUserStatus(resolveStoredUserStatus(user));
     });
 
     getPermissions().then((permissions) => {
@@ -3497,6 +3531,54 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       cancelled = true;
     };
   }, [chatInfo.worker?.id]);
+
+  const isQueueOrUraStatus =
+    chatInfo.status === 'queue' ||
+    chatInfo.status === 'ura' ||
+    chatInfo.status === 'ura_output' ||
+    chatInfo.status === 'ura_schedule' ||
+    chatInfo.status === 'ura_webhook';
+  const isClosedStatus = chatInfo.status === 'closed';
+
+  useEffect(() => {
+    const workerId = readNonEmptyString(chatInfo.worker?.id);
+    if (
+      !workerId ||
+      !currentUserId ||
+      (!isQueueOrUraStatus && !isClosedStatus)
+    ) {
+      setInChatCountForWorker(0);
+      return;
+    }
+
+    let cancelled = false;
+    searchChats({
+      search: '',
+      status: 'in_chat',
+      current_page: 1,
+      per_page: 1,
+      filter_worker_id: workerId,
+      filter_user_id: currentUserId,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        const total =
+          typeof result?.total === 'number'
+            ? result.total
+            : typeof result?.count === 'number'
+              ? result.count
+              : 0;
+        setInChatCountForWorker(total);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setInChatCountForWorker(0);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatInfo.worker?.id, currentUserId, isClosedStatus, isQueueOrUraStatus]);
 
   useEffect(() => {
     setHeaderPhoneDecrypted(null);
@@ -4322,13 +4404,66 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ])
   );
 
-  const isQueueOrUraStatus =
-    chatInfo.status === 'queue' ||
-    chatInfo.status === 'ura' ||
-    chatInfo.status === 'ura_output' ||
-    chatInfo.status === 'ura_schedule' ||
-    chatInfo.status === 'ura_webhook';
   const isInChatStatus = chatInfo.status === 'in_chat';
+  const canComposeInChat = !isHistoryReadonly && isInChatStatus;
+  const canAttendByPermission = canPickQueueChat(permissionList);
+  const canReopenByPermission = canReopenChat(permissionList);
+  const simultaneousAttendanceLimit =
+    typeof workerConfigForChat?.simultaneous_attendance === 'number' &&
+    Number.isFinite(workerConfigForChat.simultaneous_attendance) &&
+    workerConfigForChat.simultaneous_attendance > 0
+      ? workerConfigForChat.simultaneous_attendance
+      : null;
+  const cannotAttendDueToStatus =
+    !isHistoryReadonly &&
+    (isQueueOrUraStatus || isClosedStatus) &&
+    workerConfigForChat?.allow_attendance_only_online === true &&
+    currentUserStatus !== 'online';
+  const cannotAttendDueToLimit =
+    !isHistoryReadonly &&
+    (isQueueOrUraStatus || isClosedStatus) &&
+    !cannotAttendDueToStatus &&
+    workerConfigForChat?.simultaneous_attendance_enabled === true &&
+    simultaneousAttendanceLimit !== null &&
+    inChatCountForWorker >= simultaneousAttendanceLimit;
+  const canAttendChatAction =
+    !isHistoryReadonly &&
+    isQueueOrUraStatus &&
+    canAttendByPermission &&
+    !cannotAttendDueToStatus &&
+    !cannotAttendDueToLimit;
+  const canReopenChatAction =
+    !isHistoryReadonly &&
+    isClosedStatus &&
+    canReopenByPermission &&
+    !cannotAttendDueToStatus &&
+    !cannotAttendDueToLimit;
+  const showAttendReopenBanner =
+    !isHistoryReadonly && (isQueueOrUraStatus || isClosedStatus);
+  const attendReopenBannerMessage = isClosedStatus
+    ? pt.chat_closed_message
+    : pt.chat_queue_message;
+  const attendReopenButtonLabel = isClosedStatus ? pt.reopen : pt.attend;
+  const isAttendReopenActionAllowed = isClosedStatus
+    ? canReopenChatAction
+    : canAttendChatAction;
+  const attendReopenBlockedReason = (() => {
+    if (!showAttendReopenBanner || isAttendReopenActionAllowed) return null;
+    if (cannotAttendDueToStatus) return pt.attendance_only_online_required;
+    if (cannotAttendDueToLimit && simultaneousAttendanceLimit !== null) {
+      return pt.simultaneous_attendance_limit_message.replace(
+        '{limit}',
+        String(simultaneousAttendanceLimit)
+      );
+    }
+    if (isClosedStatus && !canReopenByPermission) {
+      return pt.action_unavailable_by_permission;
+    }
+    if (isQueueOrUraStatus && !canAttendByPermission) {
+      return pt.action_unavailable_by_permission;
+    }
+    return pt.action_unavailable_by_permission;
+  })();
   const shouldObfuscateContent =
     isQueueOrUraStatus && !canPreviewProtectedContent;
   const canViewAttendanceHistoryAction =
@@ -4369,9 +4504,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const chatId = readNonEmptyString(chatInfo.chat_id);
     if (!chatId) return;
 
-    const ok = await updateChatStatus(chatId, 'closed');
-    if (!ok) {
-      Alert.alert(pt.error_title, pt.chat_status_update_error);
+    const result = await updateChatStatusDetailed(chatId, 'closed');
+    if (!result.ok) {
+      Alert.alert(
+        pt.error_title,
+        result.message ?? pt.chat_status_update_error
+      );
       return;
     }
 
@@ -4394,6 +4532,49 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       },
     ]);
   }, [confirmCloseService]);
+
+  const handleAttendOrReopen = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (!chatId || isAttendReopenLoading) return;
+
+    if (!isAttendReopenActionAllowed) {
+      Alert.alert(
+        pt.warning_title,
+        attendReopenBlockedReason ?? pt.action_unavailable_by_permission
+      );
+      return;
+    }
+
+    setIsAttendReopenLoading(true);
+    const result = await updateChatStatusDetailed(chatId, 'in_chat');
+    setIsAttendReopenLoading(false);
+
+    if (!result.ok) {
+      Alert.alert(
+        pt.error_title,
+        result.message ?? pt.chat_status_update_error
+      );
+      return;
+    }
+
+    setChatInfo((prev) => ({
+      ...prev,
+      status: 'in_chat',
+    }));
+
+    Alert.alert(
+      pt.success_title,
+      isClosedStatus
+        ? pt.chat_reopened_successfully
+        : pt.chat_attended_successfully
+    );
+  }, [
+    attendReopenBlockedReason,
+    chatInfo.chat_id,
+    isAttendReopenActionAllowed,
+    isAttendReopenLoading,
+    isClosedStatus,
+  ]);
 
   const handleToggleForwardToOutput = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
@@ -5042,7 +5223,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   useEffect(() => {
     inputRef.current = input;
     sendingRef.current = sending;
-    isQueueOrUraStatusRef.current = isQueueOrUraStatus || isHistoryReadonly;
+    isQueueOrUraStatusRef.current = !canComposeInChat;
     sendingCapturedMediaRef.current = sendingCapturedMedia;
     sendingVoiceRecordingRef.current = sendingVoiceRecording;
     isRecordingVoiceRef.current = isRecordingVoice;
@@ -5050,6 +5231,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     isPreparingRecordingRef.current = isPreparingRecording;
   }, [
     input,
+    canComposeInChat,
     isHistoryReadonly,
     isPreparingRecording,
     isQueueOrUraStatus,
@@ -5234,7 +5416,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [isRecordingPaused, isRecordingVoice, recorder]);
 
   const startVoiceRecording = useCallback(async () => {
-    if (isQueueOrUraStatus || isPreparingRecording || sendingVoiceRecording) {
+    if (!canComposeInChat || isPreparingRecording || sendingVoiceRecording) {
       return;
     }
     if (isRecordingVoice) return;
@@ -5281,8 +5463,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
   }, [
     applyRecordingAudioMode,
+    canComposeInChat,
     isPreparingRecording,
-    isQueueOrUraStatus,
     isRecordingVoice,
     recorder,
     recorderOptions,
@@ -5516,12 +5698,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const launchCameraCapture = useCallback(
     async (mediaType: 'images' | 'videos') => {
-      if (
-        isHistoryReadonly ||
-        isQueueOrUraStatus ||
-        sendingCapturedMedia ||
-        sendingVoiceRecording
-      ) {
+      if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
         return;
       }
 
@@ -5565,8 +5742,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     },
     [
-      isHistoryReadonly,
-      isQueueOrUraStatus,
+      canComposeInChat,
       sendCapturedMediaDraft,
       sendingCapturedMedia,
       sendingVoiceRecording,
@@ -5575,8 +5751,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleOpenCameraPicker = useCallback(() => {
     if (
-      isHistoryReadonly ||
-      isQueueOrUraStatus ||
+      !canComposeInChat ||
       sendingCapturedMedia ||
       sendingVoiceRecording ||
       isRecordingVoice
@@ -5585,8 +5760,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
     setCameraPickerVisible(true);
   }, [
-    isHistoryReadonly,
-    isQueueOrUraStatus,
+    canComposeInChat,
     sendingCapturedMedia,
     sendingVoiceRecording,
     isRecordingVoice,
@@ -5638,7 +5812,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const sendTextPayload = useCallback(
     async (rawText: string) => {
       const text = rawText.trim();
-      if (!text || sending || isHistoryReadonly) return false;
+      if (!text || sending || !canComposeInChat) return false;
 
       setSending(true);
       try {
@@ -5661,17 +5835,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
       return false;
     },
-    [chatInfo.chat_id, isHistoryReadonly, sending, scrollToBottomWithRetries]
+    [canComposeInChat, chatInfo.chat_id, sending, scrollToBottomWithRetries]
   );
 
   const handleTemplateButtonPress = useCallback(
     (button: MessageTemplateButton, _message: ListMessageResult) => {
-      if (isQueueOrUraStatus || isHistoryReadonly) return;
+      if (!canComposeInChat) return;
       const buttonText = readNonEmptyString(button.displayText);
       if (!buttonText) return;
       void sendTextPayload(buttonText);
     },
-    [isHistoryReadonly, isQueueOrUraStatus, sendTextPayload]
+    [canComposeInChat, sendTextPayload]
   );
 
   const handleSend = async () => {
@@ -5681,7 +5855,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       sending ||
       isRecordingVoice ||
       sendingCapturedMedia ||
-      isHistoryReadonly
+      !canComposeInChat
     ) {
       return;
     }
@@ -5693,8 +5867,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const hasInputText = input.trim().length > 0;
   const canUseComposerActions =
     !sending &&
-    !isHistoryReadonly &&
-    !isQueueOrUraStatus &&
+    canComposeInChat &&
     !isPreparingRecording &&
     !sendingVoiceRecording &&
     !sendingCapturedMedia;
@@ -5908,9 +6081,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     onOpenImage={openImageViewer}
                     onOpenVideo={openVideoViewer}
                     onTemplateButtonPress={handleTemplateButtonPress}
-                    disableTemplateButtons={
-                      isHistoryReadonly || isQueueOrUraStatus || sending
-                    }
+                    disableTemplateButtons={!canComposeInChat || sending}
                     obfuscateContent={shouldObfuscateContent}
                   />
                 );
@@ -5961,6 +6132,37 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           <Text style={styles.typingIndicatorText} numberOfLines={1}>
             {typingLabel}
           </Text>
+        </View>
+      ) : null}
+      {showAttendReopenBanner ? (
+        <View style={styles.attendReopenBanner}>
+          <Text style={styles.attendReopenBannerText}>
+            {attendReopenBannerMessage}
+          </Text>
+          <Pressable
+            style={[
+              styles.attendReopenBannerAction,
+              (!isAttendReopenActionAllowed || isAttendReopenLoading) &&
+                styles.attendReopenBannerActionDisabled,
+            ]}
+            onPress={() => {
+              void handleAttendOrReopen();
+            }}
+            disabled={!isAttendReopenActionAllowed || isAttendReopenLoading}
+          >
+            {isAttendReopenLoading ? (
+              <ActivityIndicator size="small" color={colors.onPrimary} />
+            ) : (
+              <Text style={styles.attendReopenBannerActionText}>
+                {attendReopenButtonLabel}
+              </Text>
+            )}
+          </Pressable>
+          {attendReopenBlockedReason ? (
+            <Text style={styles.attendReopenBlockedReason}>
+              {attendReopenBlockedReason}
+            </Text>
+          ) : null}
         </View>
       ) : null}
       {shouldObfuscateContent ? (
@@ -6129,6 +6331,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   multiline
                   maxLength={65535}
                   editable={
+                    canComposeInChat &&
                     !sending &&
                     !sendingCapturedMedia &&
                     !isPreparingRecording &&
@@ -8064,6 +8267,42 @@ const styles = StyleSheet.create({
   protectedBannerText: {
     fontSize: 12,
     color: colors.grey700,
+    fontWeight: '500',
+  },
+  attendReopenBanner: {
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 8,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+  },
+  attendReopenBannerText: {
+    fontSize: 12,
+    color: colors.grey700,
+    fontWeight: '500',
+  },
+  attendReopenBannerAction: {
+    height: 34,
+    alignSelf: 'flex-start',
+    borderRadius: 17,
+    paddingHorizontal: 14,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attendReopenBannerActionDisabled: {
+    backgroundColor: colors.grey400,
+  },
+  attendReopenBannerActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.onPrimary,
+  },
+  attendReopenBlockedReason: {
+    fontSize: 12,
+    color: colors.error,
     fontWeight: '500',
   },
   scrollToBottomButton: {

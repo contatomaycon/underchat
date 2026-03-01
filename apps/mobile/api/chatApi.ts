@@ -2,6 +2,7 @@ import {
   apiDelete,
   apiGet,
   apiPatch,
+  apiPatchWithMessage,
   apiPatchForm,
   apiPost,
   apiPostForm,
@@ -291,6 +292,45 @@ export async function updateChatStatus(
     status,
   });
   return !!res?.status;
+}
+
+export type UpdateChatStatusDetailedResult = {
+  ok: boolean;
+  message: string | null;
+  data: ListChatsResult | null;
+};
+
+export async function updateChatStatusDetailed(
+  chatId: string,
+  status: string
+): Promise<UpdateChatStatusDetailedResult> {
+  if (!chatId || chatId.trim().length === 0) {
+    return {
+      ok: false,
+      message: null,
+      data: null,
+    };
+  }
+  const res = await apiPatchWithMessage<ListChatsResult>(
+    `/chat/${chatId}/status`,
+    {
+      status,
+    }
+  );
+
+  if (!res) {
+    return {
+      ok: false,
+      message: null,
+      data: null,
+    };
+  }
+
+  return {
+    ok: res.status === true,
+    message: res.message,
+    data: res.data ?? null,
+  };
 }
 
 export async function transferChat(

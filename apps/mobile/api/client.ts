@@ -10,6 +10,17 @@ async function handleUnauthorized(): Promise<void> {
 }
 
 type ApiEnvelope<T> = { status: boolean; data: T };
+type ApiEnvelopeWithMessage<T> = {
+  status?: boolean;
+  data?: T;
+  message?: unknown;
+};
+
+export type ApiDetailedResponse<T> = {
+  status: boolean;
+  data: T | null;
+  message: string | null;
+};
 
 async function parseJsonSafe<T>(
   response: Response
@@ -18,6 +29,29 @@ async function parseJsonSafe<T>(
     const data = (await response.json()) as ApiEnvelope<T>;
     if (!response.ok || !data?.status) return null;
     return data;
+  } catch {
+    return null;
+  }
+}
+
+async function parseJsonDetailed<T>(
+  response: Response
+): Promise<ApiDetailedResponse<T> | null> {
+  try {
+    const data = (await response.json()) as ApiEnvelopeWithMessage<T>;
+    const message =
+      typeof data?.message === 'string' && data.message.trim().length > 0
+        ? data.message
+        : null;
+    const status = data?.status === true;
+    const payload =
+      data?.data !== undefined && data?.data !== null ? data.data : null;
+
+    return {
+      status,
+      data: payload,
+      message,
+    };
   } catch {
     return null;
   }
@@ -146,6 +180,31 @@ export async function apiPatch<T>(
   }
 
   return parseJsonSafe<T>(res);
+}
+
+export async function apiPatchWithMessage<T>(
+  path: string,
+  body: unknown
+): Promise<ApiDetailedResponse<T> | null> {
+  const headers = await buildAuthHeaders('application/json');
+  if (!headers) return null;
+
+  const url = path.startsWith('http')
+    ? path
+    : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  return parseJsonDetailed<T>(res);
 }
 
 export async function apiPut<T>(

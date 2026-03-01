@@ -72,6 +72,13 @@ export const CLOSE_CHAT_WITHOUT_ATTENDING_PERMISSIONS = [
   'close_chat_without_attending',
 ] as const;
 
+export const REOPEN_CHAT_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'reopen_chat',
+] as const;
+
 export const FORWARD_TO_OUTPUT_CHATBOT_PERMISSIONS = [
   'full_access',
   'full_access_group',
@@ -167,6 +174,10 @@ export function canCloseChatWithoutAttending(permissions: string[]): boolean {
     permissions,
     CLOSE_CHAT_WITHOUT_ATTENDING_PERMISSIONS
   );
+}
+
+export function canReopenChat(permissions: string[]): boolean {
+  return hasAnyPermission(permissions, REOPEN_CHAT_PERMISSIONS);
 }
 
 export function canToggleForwardToOutputChatbot(
