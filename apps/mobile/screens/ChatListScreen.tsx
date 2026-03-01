@@ -1035,48 +1035,51 @@ export function ChatListScreen({ route, navigation }: Props) {
     setIsLoadingTransferSectorUsers(false);
   }, [isTransferring]);
 
-  const openTransferModal = useCallback(async (chat: ListChatsResult) => {
-    setTransferTargetChat(chat);
-    setTransferModalVisible(true);
-    setTransferPickerKind(null);
-    setTransferType(null);
-    setTransferAnnotation('');
-    setTransferChannels([]);
-    setTransferUsers([]);
-    setTransferSectors([]);
-    setTransferSectorUsers([]);
-    setSelectedTransferChannelId(null);
-    setSelectedTransferUserId(null);
-    setSelectedTransferSectorId(null);
-    setSelectedTransferSectorUserId(null);
-    setIsLoadingTransferOptions(true);
+  const openTransferModal = useCallback(
+    async (chat: ListChatsResult) => {
+      setTransferTargetChat(chat);
+      setTransferModalVisible(true);
+      setTransferPickerKind(null);
+      setTransferType(null);
+      setTransferAnnotation('');
+      setTransferChannels([]);
+      setTransferUsers([]);
+      setTransferSectors([]);
+      setTransferSectorUsers([]);
+      setSelectedTransferChannelId(null);
+      setSelectedTransferUserId(null);
+      setSelectedTransferSectorId(null);
+      setSelectedTransferSectorUserId(null);
+      setIsLoadingTransferOptions(true);
 
-    try {
-      const chatId = chat.chat_id;
-      const [baseOptions, users, sectors] = await Promise.all([
-        listTransferOptions(),
-        listTransferUsers(chatId),
-        listTransferSectors(),
-      ]);
+      try {
+        const chatId = chat.chat_id;
+        const [baseOptions, users, sectors] = await Promise.all([
+          listTransferOptions(),
+          listTransferUsers(chatId),
+          listTransferSectors(),
+        ]);
 
-      const channels = (baseOptions?.workers ?? []).map((worker) => {
-        const numberLabel = worker.number ? ` (${worker.number})` : '';
-        return {
-          value: worker.id,
-          label: `${worker.name}${numberLabel}`,
-        };
-      });
+        const channels = (baseOptions?.workers ?? []).map((worker) => {
+          const numberLabel = worker.number ? ` (${worker.number})` : '';
+          return {
+            value: worker.id,
+            label: `${worker.name}${numberLabel}`,
+          };
+        });
 
-      setTransferChannels(channels);
-      setTransferUsers(users);
-      setTransferSectors(sectors);
-    } catch {
-      Alert.alert(pt.error_title, pt.chat_transfer_error);
-      closeTransferModal();
-    } finally {
-      setIsLoadingTransferOptions(false);
-    }
-  }, [closeTransferModal]);
+        setTransferChannels(channels);
+        setTransferUsers(users);
+        setTransferSectors(sectors);
+      } catch {
+        Alert.alert(pt.error_title, pt.chat_transfer_error);
+        closeTransferModal();
+      } finally {
+        setIsLoadingTransferOptions(false);
+      }
+    },
+    [closeTransferModal]
+  );
 
   useEffect(() => {
     if (!transferModalVisible || !transferTargetChat?.chat_id) {
@@ -1544,7 +1547,10 @@ export function ChatListScreen({ route, navigation }: Props) {
         onRequestClose={closeTransferModal}
       >
         <View style={styles.transferOverlay}>
-          <Pressable style={styles.transferBackdrop} onPress={closeTransferModal} />
+          <Pressable
+            style={styles.transferBackdrop}
+            onPress={closeTransferModal}
+          />
           <View style={styles.transferCard}>
             <View style={styles.transferHeaderRow}>
               <Text style={styles.transferTitle}>{pt.transfer_to}</Text>
@@ -1605,7 +1611,9 @@ export function ChatListScreen({ route, navigation }: Props) {
 
                 {transferType === 'user' ? (
                   <>
-                    <Text style={styles.transferFieldLabel}>{pt.attendant}</Text>
+                    <Text style={styles.transferFieldLabel}>
+                      {pt.attendant}
+                    </Text>
                     <Pressable
                       style={styles.transferSelectField}
                       onPress={() => setTransferPickerKind('user')}
@@ -1644,7 +1652,8 @@ export function ChatListScreen({ route, navigation }: Props) {
                         ]}
                         numberOfLines={1}
                       >
-                        {selectedTransferSectorLabel ?? pt.transfer_select_sector}
+                        {selectedTransferSectorLabel ??
+                          pt.transfer_select_sector}
                       </Text>
                       <Ionicons
                         name="chevron-down"
@@ -1673,7 +1682,10 @@ export function ChatListScreen({ route, navigation }: Props) {
                           pt.transfer_select_sector_user}
                       </Text>
                       {isLoadingTransferSectorUsers ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.primary}
+                        />
                       ) : (
                         <Ionicons
                           name="chevron-down"
@@ -1685,7 +1697,9 @@ export function ChatListScreen({ route, navigation }: Props) {
                   </>
                 ) : null}
 
-                <Text style={styles.transferFieldLabel}>{pt.transfer_annotation}</Text>
+                <Text style={styles.transferFieldLabel}>
+                  {pt.transfer_annotation}
+                </Text>
                 <TextInput
                   style={styles.transferAnnotationInput}
                   value={transferAnnotation}
@@ -1712,9 +1726,14 @@ export function ChatListScreen({ route, navigation }: Props) {
                     disabled={isTransferring}
                   >
                     {isTransferring ? (
-                      <ActivityIndicator size="small" color={colors.onPrimary} />
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.onPrimary}
+                      />
                     ) : (
-                      <Text style={styles.transferSubmitText}>{pt.transfer}</Text>
+                      <Text style={styles.transferSubmitText}>
+                        {pt.transfer}
+                      </Text>
                     )}
                   </Pressable>
                 </View>
@@ -1738,12 +1757,17 @@ export function ChatListScreen({ route, navigation }: Props) {
           <View style={styles.transferPickerCard}>
             <View style={styles.transferHeaderRow}>
               <Text style={styles.transferTitle}>{pt.select_option}</Text>
-              <Pressable onPress={() => setTransferPickerKind(null)} hitSlop={12}>
+              <Pressable
+                onPress={() => setTransferPickerKind(null)}
+                hitSlop={12}
+              >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
             {transferPickerOptions.length === 0 ? (
-              <Text style={styles.transferEmptyText}>{pt.no_conversations_found}</Text>
+              <Text style={styles.transferEmptyText}>
+                {pt.no_conversations_found}
+              </Text>
             ) : (
               <SectionList
                 sections={[{ title: '', data: transferPickerOptions }]}
@@ -1754,7 +1778,10 @@ export function ChatListScreen({ route, navigation }: Props) {
                     style={styles.transferPickerOption}
                     onPress={() => handleSelectTransferPickerValue(item.value)}
                   >
-                    <Text style={styles.transferPickerOptionText} numberOfLines={1}>
+                    <Text
+                      style={styles.transferPickerOptionText}
+                      numberOfLines={1}
+                    >
                       {item.label}
                     </Text>
                   </Pressable>
@@ -1870,7 +1897,10 @@ export function ChatListScreen({ route, navigation }: Props) {
               },
             ].filter((action) => action.visible);
 
-            const maxActionsWidth = Math.max(140, Math.floor(screenWidth * 0.5));
+            const maxActionsWidth = Math.max(
+              140,
+              Math.floor(screenWidth * 0.5)
+            );
             const actionWidth = Math.floor(
               maxActionsWidth / Math.max(queueActions.length, 1)
             );
@@ -1940,7 +1970,10 @@ export function ChatListScreen({ route, navigation }: Props) {
                             onPress={action.onPress}
                           >
                             <View style={styles.swipeActionTextWrap}>
-                              <Text style={styles.swipeActionText} numberOfLines={1}>
+                              <Text
+                                style={styles.swipeActionText}
+                                numberOfLines={1}
+                              >
                                 {action.label}
                               </Text>
                             </View>

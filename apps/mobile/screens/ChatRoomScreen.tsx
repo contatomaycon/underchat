@@ -1843,10 +1843,18 @@ function AttendanceHistorySkeleton({ rows }: { rows: number }) {
   return (
     <View style={styles.historySkeletonWrap}>
       {Array.from({ length: rows }).map((_, index) => (
-        <View key={`history-skeleton-${index}`} style={styles.historySkeletonRow}>
+        <View
+          key={`history-skeleton-${index}`}
+          style={styles.historySkeletonRow}
+        >
           <View style={styles.historySkeletonTitle} />
           <View style={styles.historySkeletonLine} />
-          <View style={[styles.historySkeletonLine, styles.historySkeletonLineShort]} />
+          <View
+            style={[
+              styles.historySkeletonLine,
+              styles.historySkeletonLineShort,
+            ]}
+          />
         </View>
       ))}
     </View>
@@ -6573,7 +6581,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             </View>
 
             {attendanceHistoryLoading ? (
-              <AttendanceHistorySkeleton rows={ATTENDANCE_HISTORY_SKELETON_ROWS} />
+              <AttendanceHistorySkeleton
+                rows={ATTENDANCE_HISTORY_SKELETON_ROWS}
+              />
             ) : (
               <FlatList
                 data={attendanceHistory}
@@ -6647,7 +6657,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   onPress={() => setTransferPickerKind('channel')}
                 >
                   <Text style={styles.formSelectorText} numberOfLines={1}>
-                    {selectedTransferChannel?.title ?? pt.transfer_select_channel}
+                    {selectedTransferChannel?.title ??
+                      pt.transfer_select_channel}
                   </Text>
                   {isLoadingTransferChannels ? (
                     <ActivityIndicator size="small" color={colors.primary} />
@@ -6720,7 +6731,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                           pt.transfer_select_sector}
                       </Text>
                       {isLoadingTransferSectors ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.primary}
+                        />
                       ) : (
                         <Ionicons
                           name="chevron-down"
@@ -6744,7 +6758,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                           pt.transfer_select_sector_user}
                       </Text>
                       {isLoadingTransferSectorUsers ? (
-                        <ActivityIndicator size="small" color={colors.primary} />
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.primary}
+                        />
                       ) : (
                         <Ionicons
                           name="chevron-down"

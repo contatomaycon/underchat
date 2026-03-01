@@ -483,7 +483,9 @@ export function ContactListScreen({ navigation }: Props) {
 
       {!hasContactAccess ? (
         <View style={styles.permissionDeniedWrap}>
-          <Text style={styles.permissionDeniedText}>{pt.chat_permission_denied}</Text>
+          <Text style={styles.permissionDeniedText}>
+            {pt.chat_permission_denied}
+          </Text>
         </View>
       ) : (
         <>
