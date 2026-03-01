@@ -211,6 +211,11 @@ function formatCount(value: number): string {
   return value > 99 ? '99+' : String(Math.max(0, value));
 }
 
+function limitText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
 function resolveLabelBackground(color: string | null | undefined): string {
   if (!color) return colors.tagBg;
 
@@ -253,11 +258,13 @@ function ChatRow({
   onPress,
   disabled = false,
   chatbotTypeLabel,
+  onPressLabelDetails,
 }: {
   item: ListChatsResult;
   onPress: () => void;
   disabled?: boolean;
   chatbotTypeLabel?: string | null;
+  onPressLabelDetails?: (labelNames: string[]) => void;
 }) {
   const name = item.name ?? item.contact?.name ?? item.phone ?? item.chat_id;
   const lastMsg = item.summary?.last_message ?? '';
@@ -266,7 +273,11 @@ function ChatRow({
   const labels = Array.isArray(item.label) ? item.label : [];
   const firstLabel = labels[0] ?? null;
   const remainingLabelsCount = labels.length > 1 ? labels.length - 1 : 0;
+  const labelNames = labels
+    .map((labelItem) => labelItem.label?.trim() ?? '')
+    .filter((labelName) => labelName.length > 0);
   const channelName = item.worker?.name?.trim() ?? '';
+  const channelDisplayName = channelName ? limitText(channelName, 20) : '';
   const sectorName = item.sector?.name?.trim() ?? '';
   const attendantName = item.user?.name?.trim() ?? '';
 
@@ -305,8 +316,15 @@ function ChatRow({
             </View>
           ) : null}
         </View>
-        {item.contact || chatbotTypeLabel || firstLabel ? (
+        {channelName || item.contact || chatbotTypeLabel || firstLabel ? (
           <View style={styles.metaRow}>
+            {channelName ? (
+              <View style={styles.channelChip}>
+                <Text style={styles.channelChipText} numberOfLines={1}>
+                  {channelDisplayName}
+                </Text>
+              </View>
+            ) : null}
             {item.contact ? (
               <View style={styles.metaChip}>
                 <Text style={styles.metaChipText}>{pt.contact}</Text>
@@ -318,11 +336,19 @@ function ChatRow({
               </View>
             ) : null}
             {firstLabel ? (
-              <View
+              <Pressable
                 style={[
                   styles.metaChip,
+                  styles.labelChip,
                   { backgroundColor: resolveLabelBackground(firstLabel.color) },
                 ]}
+                disabled={remainingLabelsCount <= 0}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  if (remainingLabelsCount > 0) {
+                    onPressLabelDetails?.(labelNames);
+                  }
+                }}
               >
                 <Text
                   style={[
@@ -333,26 +359,16 @@ function ChatRow({
                   ]}
                   numberOfLines={1}
                 >
-                  {firstLabel.label}
+                  {remainingLabelsCount > 0
+                    ? `${firstLabel.label} +${remainingLabelsCount}`
+                    : firstLabel.label}
                 </Text>
-              </View>
-            ) : null}
-            {remainingLabelsCount > 0 ? (
-              <View style={styles.metaChip}>
-                <Text style={styles.metaChipText}>+{remainingLabelsCount}</Text>
-              </View>
+              </Pressable>
             ) : null}
           </View>
         ) : null}
-        {channelName || sectorName || attendantName ? (
+        {sectorName || attendantName ? (
           <View style={styles.metaRow}>
-            {channelName ? (
-              <View style={styles.metaChip}>
-                <Text style={styles.metaChipText} numberOfLines={1}>
-                  {pt.channel}: {channelName}
-                </Text>
-              </View>
-            ) : null}
             {sectorName ? (
               <View style={styles.metaChip}>
                 <Text style={styles.metaChipText} numberOfLines={1}>
@@ -370,15 +386,6 @@ function ChatRow({
           </View>
         ) : null}
       </View>
-      {channelName ? (
-        <View style={styles.workerLabel}>
-          <View style={styles.workerLabelInner}>
-            <Text style={styles.workerLabelText} numberOfLines={1}>
-              {channelName}
-            </Text>
-          </View>
-        </View>
-      ) : null}
     </Pressable>
   );
 }
@@ -545,6 +552,8 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [isLoadingTransferSectorUsers, setIsLoadingTransferSectorUsers] =
     useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
+  const [labelInfoModalVisible, setLabelInfoModalVisible] = useState(false);
+  const [labelInfoNames, setLabelInfoNames] = useState<string[]>([]);
   const locallyClearedSummaryChatIdsRef = useRef<Set<string>>(new Set());
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -1460,6 +1469,15 @@ export function ChatListScreen({ route, navigation }: Props) {
     openedSwipeableRef.current?.close();
   }, []);
 
+  const openLabelInfoModal = useCallback((labelNames: string[]) => {
+    if (!Array.isArray(labelNames) || labelNames.length <= 1) {
+      return;
+    }
+
+    setLabelInfoNames(labelNames);
+    setLabelInfoModalVisible(true);
+  }, []);
+
   const chatbotTypeLabelByStatus = useCallback(
     (status: ListChatsResult['status']): string | null => {
       if (status === 'ura') return pt.chatbot_type_input;
@@ -1682,6 +1700,38 @@ export function ChatListScreen({ route, navigation }: Props) {
         }}
         canUseUserAndSectorFilters={canUseUserAndSectorFilters}
       />
+      <Modal
+        visible={labelInfoModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLabelInfoModalVisible(false)}
+      >
+        <View style={styles.transferOverlay}>
+          <Pressable
+            style={styles.transferBackdrop}
+            onPress={() => setLabelInfoModalVisible(false)}
+          />
+          <View style={styles.labelInfoCard}>
+            <View style={styles.transferHeaderRow}>
+              <Text style={styles.transferTitle}>{pt.view_labels}</Text>
+              <Pressable
+                onPress={() => setLabelInfoModalVisible(false)}
+                hitSlop={12}
+              >
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+            {labelInfoNames.map((labelName, index) => (
+              <View
+                key={`label-info-${labelName}-${index}`}
+                style={styles.labelInfoRow}
+              >
+                <Text style={styles.labelInfoRowText}>{labelName}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={transferModalVisible}
         transparent
@@ -1987,6 +2037,7 @@ export function ChatListScreen({ route, navigation }: Props) {
                     ? chatbotTypeLabelByStatus(item.status)
                     : null
                 }
+                onPressLabelDetails={openLabelInfoModal}
                 disabled={isQueueItemLocked || !canOpenByVisibility}
                 onPress={() =>
                   openChat(item, item.status === 'queue' ? index : null)
@@ -2401,38 +2452,42 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     maxWidth: '100%',
   },
+  channelChip: {
+    backgroundColor: colors.grey100,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+    maxWidth: '46%',
+    flexShrink: 1,
+  },
+  channelChipText: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  labelChip: {
+    paddingRight: 8,
+  },
   metaChipText: {
     fontSize: 11,
     color: colors.tagText,
     fontWeight: '500',
   },
-  workerLabel: {
-    width: 28,
-    marginLeft: 8,
-    marginRight: -12,
-    marginBottom: -10,
-    marginTop: -10,
-    alignSelf: 'stretch',
-    backgroundColor: 'rgba(47, 43, 61, 0.06)',
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(47, 43, 61, 0.12)',
-    borderTopRightRadius: 4,
-    borderBottomRightRadius: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
+  labelInfoCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
+    maxHeight: '70%',
   },
-  workerLabelInner: {
-    transform: [{ rotate: '-90deg' }],
-    width: 100,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
+  labelInfoRow: {
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
   },
-  workerLabelText: {
-    fontSize: 11,
-    fontWeight: '500',
+  labelInfoRowText: {
+    fontSize: 14,
     color: colors.onSurface,
   },
   empty: {

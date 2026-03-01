@@ -19,8 +19,9 @@ export function RootNavigator() {
   const { hasAppliedAdvancedFilters, canViewChatbotTab, chatCounts } =
     useChatFilter();
 
-  const toBadgeValue = (value: number | null | undefined): string | undefined =>
-    value && value > 0 ? String(value) : undefined;
+  const toBadgeValue = (
+    value: number | null | undefined
+  ): string | undefined => (value && value > 0 ? String(value) : undefined);
 
   const inChatBadge = toBadgeValue(chatCounts.in_chat);
   const queueBadge = toBadgeValue(chatCounts.queue);
