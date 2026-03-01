@@ -36,6 +36,7 @@ export function RootNavigator() {
         component={ChatStackNavigator}
         initialParams={{ tab: 'in_chat' }}
         options={{
+          popToTopOnBlur: true,
           tabBarLabel: 'Em atendimento',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubble-ellipses" size={size} color={color} />
