@@ -324,6 +324,7 @@ type AttachmentAction = {
   key: AttachmentActionKey;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
+  color: string;
   onPress: () => void;
 };
 
@@ -6323,6 +6324,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         key: 'document',
         label: pt.documents,
         icon: 'document-text-outline',
+        color: '#1D9BF0',
         onPress: () => {
           void handlePickDocument();
         },
@@ -6331,6 +6333,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         key: 'photo',
         label: pt.photos,
         icon: 'image-outline',
+        color: '#1D9BF0',
         onPress: () => {
           void handlePickPhotoCapture();
         },
@@ -6339,6 +6342,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         key: 'video',
         label: pt.videos,
         icon: 'videocam-outline',
+        color: '#4F46E5',
         onPress: () => {
           void handlePickVideoCapture();
         },
@@ -6347,6 +6351,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         key: 'audio',
         label: pt.audio,
         icon: 'headset-outline',
+        color: '#22C55E',
         onPress: () => {
           void handlePickAudioFile();
         },
@@ -6355,6 +6360,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         key: 'contact',
         label: pt.contact,
         icon: 'person-outline',
+        color: '#6B7280',
         onPress: () => {
           setCameraPickerVisible(false);
           setSelectedContactIds([]);
@@ -6366,12 +6372,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         key: 'location',
         label: pt.location,
         icon: 'location-outline',
+        color: '#10B981',
         onPress: handleOpenLocationPicker,
       },
       {
         key: 'annotation',
         label: pt.annotation,
         icon: 'reader-outline',
+        color: '#E11D48',
         onPress: handleOpenAnnotationModal,
       },
     ],
@@ -6385,7 +6393,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ]
   );
 
-  const handleOpenCameraPicker = useCallback(() => {
+  const handleOpenAttachmentPicker = useCallback(() => {
     if (
       !canComposeInChat ||
       sendingCapturedMedia ||
@@ -6400,6 +6408,65 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     sendingCapturedMedia,
     sendingVoiceRecording,
     isRecordingVoice,
+  ]);
+
+  const handleQuickCameraCapture = useCallback(async () => {
+    if (
+      !canComposeInChat ||
+      sendingCapturedMedia ||
+      sendingVoiceRecording ||
+      isRecordingVoice
+    ) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(pt.warning_title, pt.camera_permission_denied);
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      videoMaxDuration: 120,
+    });
+
+    if (result.canceled || !result.assets || result.assets.length === 0) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    if (!asset?.uri) return;
+
+    const kind = asset.type === 'video' ? 'video' : 'image';
+    const fallbackExtension = kind === 'video' ? 'mp4' : 'jpg';
+    const fallbackMime = kind === 'video' ? 'video/mp4' : 'image/jpeg';
+    const originalName = asset.fileName?.trim();
+    const hasExtension =
+      typeof originalName === 'string' &&
+      /\.[a-z0-9]{2,5}$/i.test(originalName);
+    const fileName =
+      originalName && hasExtension
+        ? originalName
+        : `${kind}-${Date.now()}.${fallbackExtension}`;
+
+    await sendCapturedMediaDraft({
+      uri: asset.uri,
+      kind,
+      fileName,
+      mimeType: asset.mimeType || fallbackMime,
+      durationSec:
+        kind === 'video' && typeof asset.duration === 'number'
+          ? Math.max(1, Math.round(asset.duration / 1000))
+          : null,
+    });
+  }, [
+    canComposeInChat,
+    isRecordingVoice,
+    sendCapturedMediaDraft,
+    sendingCapturedMedia,
+    sendingVoiceRecording,
   ]);
 
   const recordingDurationLabel = useMemo(() => {
@@ -6947,6 +7014,21 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             </View>
           ) : (
             <>
+              {!isRecordingVoice && !showRecordingHoldOverlay ? (
+                <Pressable
+                  style={[
+                    styles.composerActionBtn,
+                    styles.plusActionBtn,
+                    !canUseComposerActions && styles.sendBtnDisabled,
+                  ]}
+                  onPress={handleOpenAttachmentPicker}
+                  disabled={!canUseComposerActions}
+                  accessibilityLabel={pt.open_attachments}
+                >
+                  <Ionicons name="add" size={20} color={colors.grey700} />
+                </Pressable>
+              ) : null}
+
               <View style={styles.inputStack}>
                 <TextInput
                   style={styles.input}
@@ -7041,11 +7123,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                         styles.composerActionBtn,
                         !canUseComposerActions && styles.sendBtnDisabled,
                       ]}
-                      onPress={handleOpenCameraPicker}
+                      onPress={() => {
+                        void handleQuickCameraCapture();
+                      }}
                       disabled={!canUseComposerActions}
-                      accessibilityLabel={pt.open_attachments}
+                      accessibilityLabel={pt.open_camera}
                     >
-                      <Ionicons name="add" size={24} color="#FFFFFF" />
+                      <Ionicons
+                        name="camera-outline"
+                        size={21}
+                        color="#FFFFFF"
+                      />
                     </Pressable>
                   ) : null}
 
@@ -7690,19 +7778,27 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             style={styles.cameraPickerSheet}
             onPress={(event) => event.stopPropagation()}
           >
-            {attachmentActions.map((action) => (
-              <Pressable
-                key={action.key}
-                style={styles.cameraPickerAction}
-                onPress={action.onPress}
-                disabled={!canUseComposerActions}
-              >
-                <Ionicons name={action.icon} size={18} color={colors.primary} />
-                <Text style={styles.cameraPickerActionText}>
-                  {action.label}
-                </Text>
-              </Pressable>
-            ))}
+            <View style={styles.cameraPickerGrid}>
+              {attachmentActions.map((action) => (
+                <Pressable
+                  key={action.key}
+                  style={styles.cameraPickerGridItem}
+                  onPress={action.onPress}
+                  disabled={!canUseComposerActions}
+                >
+                  <View style={styles.cameraPickerGridIconCircle}>
+                    <Ionicons
+                      name={action.icon}
+                      size={28}
+                      color={action.color}
+                    />
+                  </View>
+                  <Text style={styles.cameraPickerGridLabel} numberOfLines={1}>
+                    {action.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
             <Pressable
               style={[styles.cameraPickerAction, styles.cameraPickerCancel]}
               onPress={() => setCameraPickerVisible(false)}
@@ -9273,7 +9369,7 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     padding: 8,
     paddingBottom: Platform.OS === 'ios' ? 24 : 8,
     backgroundColor: colors.surface,
@@ -9444,6 +9540,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
+  },
+  plusActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignSelf: 'center',
+    backgroundColor: colors.grey200,
   },
   micActionBtn: {
     backgroundColor: '#2563EB',
@@ -10080,17 +10183,46 @@ const styles = StyleSheet.create({
   cameraPickerSheet: {
     borderRadius: 14,
     backgroundColor: '#FFFFFF',
-    padding: 8,
-    gap: 6,
+    paddingTop: 14,
+    paddingHorizontal: 10,
+    paddingBottom: 8,
+    gap: 10,
+  },
+  cameraPickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+  },
+  cameraPickerGridItem: {
+    width: '25%',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginBottom: 14,
+    paddingHorizontal: 2,
+  },
+  cameraPickerGridIconCircle: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F3F5',
+  },
+  cameraPickerGridLabel: {
+    marginTop: 7,
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.onSurface,
+    textAlign: 'center',
   },
   cameraPickerAction: {
-    height: 44,
+    height: 46,
     borderRadius: 10,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(40, 101, 183, 0.08)',
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
   },
   cameraPickerActionText: {
     fontSize: 15,
