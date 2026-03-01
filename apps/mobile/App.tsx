@@ -9,6 +9,7 @@ import {
   getUser,
   clearAuth,
   setChannels,
+  patchUser,
 } from './storage/authStorage';
 import {
   canViewChatbotTab as checkCanViewChatbotTab,
@@ -22,6 +23,7 @@ import {
   initializeChatSocket,
   addChatSocketListener,
 } from './socket/chatSocket';
+import { ensureOnlinePresence } from './socket/presence';
 import { pt } from './locales/pt';
 
 function getUserAccountId(user: unknown): string | null {
@@ -139,6 +141,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     let offChannelsUpdated: (() => void) | null = null;
+    let offUserPresence: (() => void) | null = null;
 
     if (!authenticated) {
       cleanupChatSocket().catch(() => {});
@@ -146,13 +149,15 @@ export default function App() {
     }
 
     getUser()
-      .then((user) => {
+      .then(async (user) => {
         if (cancelled) return;
         const accountId = getUserAccountId(user);
         const loggedUserId = getUserId(user);
         if (accountId) {
-          initializeChatSocket(accountId).catch(() => {});
+          await initializeChatSocket(accountId).catch(() => {});
         }
+
+        await ensureOnlinePresence().catch(() => {});
 
         offChannelsUpdated = addChatSocketListener(
           'channelsUpdated',
@@ -164,12 +169,26 @@ export default function App() {
             void setChannels(payload.channels);
           }
         );
+
+        offUserPresence = addChatSocketListener('userPresence', (payload) => {
+          const eventUserId = normalizeIdentifier(payload.user_id);
+          if (!loggedUserId || !eventUserId || eventUserId !== loggedUserId) {
+            return;
+          }
+
+          void patchUser({
+            chat_user: {
+              status: payload.status,
+            },
+          });
+        });
       })
       .catch(() => {});
 
     return () => {
       cancelled = true;
       offChannelsUpdated?.();
+      offUserPresence?.();
     };
   }, [authenticated]);
 

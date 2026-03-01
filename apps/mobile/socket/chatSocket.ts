@@ -4,6 +4,7 @@ import {
   unsubscribe,
   isChannelSubscribed,
 } from './centrifugo';
+import type { ChatUserStatus } from '../api/chatApi';
 
 const CHANNEL_PATTERN =
   /^[a-zA-Z0-9_.-]+(:[a-zA-Z0-9_.-]+(#[a-zA-Z0-9_.-]+)?)?$/;
@@ -63,12 +64,19 @@ export type SocketChannelsUpdatedPayload = {
   channels: Array<{ id: string; name: string }>;
 };
 
+export type SocketUserPresencePayload = {
+  event: 'user_presence';
+  user_id: string;
+  status: ChatUserStatus;
+};
+
 type SocketEventMap = {
   typing: SocketTypingPayload;
   message: SocketMessagePayload;
   chatUpdate: SocketChatPayload;
   recoveryFailed: SocketRecoveryFailedPayload;
   channelsUpdated: SocketChannelsUpdatedPayload;
+  userPresence: SocketUserPresencePayload;
 };
 
 type SocketEventName = keyof SocketEventMap;
@@ -100,6 +108,7 @@ const messageListeners = new Set<SocketListener<'message'>>();
 const chatUpdateListeners = new Set<SocketListener<'chatUpdate'>>();
 const recoveryFailedListeners = new Set<SocketListener<'recoveryFailed'>>();
 const channelsUpdatedListeners = new Set<SocketListener<'channelsUpdated'>>();
+const userPresenceListeners = new Set<SocketListener<'userPresence'>>();
 
 const emitTyping = (payload: SocketTypingPayload): void => {
   for (const listener of typingListeners) {
@@ -143,6 +152,16 @@ const emitRecoveryFailed = (payload: SocketRecoveryFailedPayload): void => {
 
 const emitChannelsUpdated = (payload: SocketChannelsUpdatedPayload): void => {
   for (const listener of channelsUpdatedListeners) {
+    try {
+      listener(payload);
+    } catch {
+      //
+    }
+  }
+};
+
+const emitUserPresence = (payload: SocketUserPresencePayload): void => {
+  for (const listener of userPresenceListeners) {
     try {
       listener(payload);
     } catch {
@@ -339,6 +358,51 @@ const parseUserChannelsUpdatedPayload = (
   };
 };
 
+const parseUserPresencePayload = (
+  rawData: unknown
+): SocketUserPresencePayload | null => {
+  if (!rawData || typeof rawData !== 'object') {
+    return null;
+  }
+
+  const data = rawData as Record<string, unknown>;
+  if (data.event !== 'user_presence') {
+    return null;
+  }
+
+  const rawUserId = data.user_id;
+  const userId =
+    getStringField(rawUserId) ??
+    (typeof rawUserId === 'number' && Number.isFinite(rawUserId)
+      ? String(rawUserId)
+      : null);
+  if (!userId) {
+    return null;
+  }
+
+  const status = getStringField(data.status);
+  if (!status) {
+    return null;
+  }
+
+  const validStatuses: ChatUserStatus[] = [
+    'online',
+    'away',
+    'busy',
+    'do_not_disturb',
+    'offline',
+  ];
+  if (!validStatuses.includes(status as ChatUserStatus)) {
+    return null;
+  }
+
+  return {
+    event: 'user_presence',
+    user_id: userId,
+    status: status as ChatUserStatus,
+  };
+};
+
 const isTypingPayload = (
   payload: SocketTypingPayload | SocketMessagePayload | SocketChatPayload
 ): payload is SocketTypingPayload => {
@@ -432,6 +496,12 @@ export const initializeChatSocket = async (
           return;
         }
 
+        const userPresence = parseUserPresencePayload(incoming);
+        if (userPresence) {
+          emitUserPresence(userPresence);
+          return;
+        }
+
         const parsed = parseIncomingPayload(incoming);
         if (!parsed) return;
 
@@ -517,6 +587,13 @@ export const addChatSocketListener = <K extends SocketEventName>(
       channelsUpdatedListeners.delete(
         listener as SocketListener<'channelsUpdated'>
       );
+    };
+  }
+
+  if (eventName === 'userPresence') {
+    userPresenceListeners.add(listener as SocketListener<'userPresence'>);
+    return () => {
+      userPresenceListeners.delete(listener as SocketListener<'userPresence'>);
     };
   }
 
