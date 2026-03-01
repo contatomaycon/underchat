@@ -16,7 +16,17 @@ type TabParamList = {
 const Tab = createBottomTabNavigator<TabParamList>();
 
 export function RootNavigator() {
-  const { hasAppliedAdvancedFilters, canViewChatbotTab } = useChatFilter();
+  const { hasAppliedAdvancedFilters, canViewChatbotTab, chatCounts } =
+    useChatFilter();
+
+  const toBadgeValue = (value: number | null | undefined): string | undefined =>
+    value && value > 0 ? String(value) : undefined;
+
+  const inChatBadge = toBadgeValue(chatCounts.in_chat);
+  const queueBadge = toBadgeValue(chatCounts.queue);
+  const chatbotBadgeTotal = chatCounts.chatbot + chatCounts.schedule;
+  const chatbotBadge = toBadgeValue(chatbotBadgeTotal);
+  const closedBadge = toBadgeValue(chatCounts.closed);
 
   return (
     <Tab.Navigator
@@ -29,6 +39,18 @@ export function RootNavigator() {
           backgroundColor: colors.surface,
           borderTopColor: colors.grey200,
         },
+        tabBarBadgeStyle: {
+          minWidth: 16,
+          height: 16,
+          borderRadius: 999,
+          paddingHorizontal: 4,
+          paddingVertical: 0,
+          textAlign: 'center',
+          textAlignVertical: 'center',
+          includeFontPadding: false,
+          fontSize: 9,
+          lineHeight: 12,
+        },
       }}
     >
       <Tab.Screen
@@ -38,6 +60,7 @@ export function RootNavigator() {
         options={{
           popToTopOnBlur: true,
           tabBarLabel: 'Em atendimento',
+          tabBarBadge: inChatBadge,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubble-ellipses" size={size} color={color} />
           ),
@@ -49,6 +72,7 @@ export function RootNavigator() {
         initialParams={{ tab: 'queue' }}
         options={{
           tabBarLabel: 'Fila',
+          tabBarBadge: queueBadge,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubble" size={size} color={color} />
           ),
@@ -61,6 +85,7 @@ export function RootNavigator() {
           initialParams={{ tab: 'chatbot' }}
           options={{
             tabBarLabel: 'Chatbot',
+            tabBarBadge: chatbotBadge,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="chatbubbles-outline" size={size} color={color} />
             ),
@@ -74,6 +99,7 @@ export function RootNavigator() {
           initialParams={{ tab: 'closed' }}
           options={{
             tabBarLabel: 'Fechado',
+            tabBarBadge: closedBadge,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="lock-closed-outline" size={size} color={color} />
             ),

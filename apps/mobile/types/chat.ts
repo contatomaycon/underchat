@@ -65,18 +65,27 @@ export interface ListChatsResult {
 
 export interface ListChatsResponse {
   results: ListChatsResult[];
-  counts: {
-    total: number;
-    queue: number;
-    in_chat: number;
-    chatbot: number;
-    my_chats: number;
-  };
+  counts: ChatListCounts;
   current_page: number;
   total_pages: number;
   per_page: number;
   count: number;
   total: number;
+}
+
+export interface ChatListCounts {
+  total: number;
+  queue: number;
+  in_chat: number;
+  chatbot: number;
+  schedule: number;
+  my_chats: number;
+  closed?: number;
+  in_chat_mine?: number;
+  chatbot_input?: number;
+  chatbot_output?: number;
+  chatbot_schedule?: number;
+  chatbot_webhook?: number;
 }
 
 export const ETypeUserChat = {

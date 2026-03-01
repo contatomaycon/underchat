@@ -18,7 +18,7 @@ import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { Swipeable } from 'react-native-gesture-handler';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatStackParamList } from '../navigation/types';
-import type { ListChatsResult } from '../types/chat';
+import type { ChatListCounts, ListChatsResult } from '../types/chat';
 import {
   listMyChats,
   listQueueChats,
@@ -207,6 +207,32 @@ function formatDate(dateStr: string | null | undefined): string {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
+function formatCount(value: number): string {
+  return value > 99 ? '99+' : String(Math.max(0, value));
+}
+
+function resolveLabelBackground(color: string | null | undefined): string {
+  if (!color) return colors.tagBg;
+
+  const normalized = color.trim();
+  const hexMatch = /^#([0-9A-F]{6}|[0-9A-F]{3})$/i.exec(normalized);
+  if (!hexMatch) return colors.tagBg;
+
+  let hex = normalized.slice(1);
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((char) => `${char}${char}`)
+      .join('');
+  }
+
+  const red = Number.parseInt(hex.slice(0, 2), 16);
+  const green = Number.parseInt(hex.slice(2, 4), 16);
+  const blue = Number.parseInt(hex.slice(4, 6), 16);
+
+  return `rgba(${red}, ${green}, ${blue}, 0.16)`;
+}
+
 function formatTransferUserLabel(option: TransferUserOption): string {
   const name = [option.name, option.last_name]
     .filter((item): item is string => !!item && item.trim().length > 0)
@@ -237,6 +263,12 @@ function ChatRow({
   const lastMsg = item.summary?.last_message ?? '';
   const lastDate = formatDate(item.summary?.last_date ?? item.date);
   const unread = item.summary?.unread_count ?? 0;
+  const labels = Array.isArray(item.label) ? item.label : [];
+  const firstLabel = labels[0] ?? null;
+  const remainingLabelsCount = labels.length > 1 ? labels.length - 1 : 0;
+  const channelName = item.worker?.name?.trim() ?? '';
+  const sectorName = item.sector?.name?.trim() ?? '';
+  const attendantName = item.user?.name?.trim() ?? '';
 
   return (
     <Pressable
@@ -273,28 +305,76 @@ function ChatRow({
             </View>
           ) : null}
         </View>
-        {item.contact || chatbotTypeLabel ? (
-          <View style={styles.tagRow}>
+        {item.contact || chatbotTypeLabel || firstLabel ? (
+          <View style={styles.metaRow}>
             {item.contact ? (
-              <View style={styles.tag}>
-                <Text style={styles.tagText}>{pt.contact}</Text>
+              <View style={styles.metaChip}>
+                <Text style={styles.metaChipText}>{pt.contact}</Text>
               </View>
             ) : null}
             {chatbotTypeLabel ? (
-              <View style={styles.chatbotTypeTag}>
-                <Text style={styles.chatbotTypeTagText}>
-                  {chatbotTypeLabel}
+              <View style={styles.metaChip}>
+                <Text style={styles.metaChipText}>{chatbotTypeLabel}</Text>
+              </View>
+            ) : null}
+            {firstLabel ? (
+              <View
+                style={[
+                  styles.metaChip,
+                  { backgroundColor: resolveLabelBackground(firstLabel.color) },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.metaChipText,
+                    firstLabel.color
+                      ? { color: firstLabel.color }
+                      : styles.metaChipText,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {firstLabel.label}
+                </Text>
+              </View>
+            ) : null}
+            {remainingLabelsCount > 0 ? (
+              <View style={styles.metaChip}>
+                <Text style={styles.metaChipText}>+{remainingLabelsCount}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+        {channelName || sectorName || attendantName ? (
+          <View style={styles.metaRow}>
+            {channelName ? (
+              <View style={styles.metaChip}>
+                <Text style={styles.metaChipText} numberOfLines={1}>
+                  {pt.channel}: {channelName}
+                </Text>
+              </View>
+            ) : null}
+            {sectorName ? (
+              <View style={styles.metaChip}>
+                <Text style={styles.metaChipText} numberOfLines={1}>
+                  {pt.queue}: {sectorName}
+                </Text>
+              </View>
+            ) : null}
+            {attendantName ? (
+              <View style={styles.metaChip}>
+                <Text style={styles.metaChipText} numberOfLines={1}>
+                  {pt.attendant}: {attendantName}
                 </Text>
               </View>
             ) : null}
           </View>
         ) : null}
       </View>
-      {item.user?.name ? (
+      {channelName ? (
         <View style={styles.workerLabel}>
           <View style={styles.workerLabelInner}>
             <Text style={styles.workerLabelText} numberOfLines={1}>
-              {item.user.name}
+              {channelName}
             </Text>
           </View>
         </View>
@@ -408,16 +488,14 @@ export function ChatListScreen({ route, navigation }: Props) {
     chatbotFilters,
     toggleChatbotFilter,
     clearAdvancedFilters,
+    chatCounts,
+    setChatCounts,
   } = useChatFilter();
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
   const [queue, setQueue] = useState<ListChatsResult[]>([]);
   const [inChat, setInChat] = useState<ListChatsResult[]>([]);
-  const [counts, setCounts] = useState<{ queue: number; in_chat: number }>({
-    queue: 0,
-    in_chat: 0,
-  });
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [canUseUserAndSectorFilters, setCanUseUserAndSectorFilters] =
     useState(false);
@@ -528,6 +606,35 @@ export function ChatListScreen({ route, navigation }: Props) {
       );
     },
     [currentUserId, socketPermissions, userSectors, userChannels]
+  );
+
+  const syncChatCounts = useCallback(
+    (counts?: Partial<ChatListCounts> | null) => {
+      if (!counts) return;
+
+      const schedule = counts.schedule ?? 0;
+      const chatbotInput = counts.chatbot_input ?? 0;
+      const chatbotOutput = counts.chatbot_output ?? 0;
+      const chatbotWebhook = counts.chatbot_webhook ?? 0;
+      const chatbotSchedule = counts.chatbot_schedule ?? schedule;
+      const inChatMine = counts.in_chat_mine ?? counts.my_chats ?? 0;
+
+      setChatCounts({
+        total: counts.total ?? 0,
+        queue: counts.queue ?? 0,
+        in_chat: counts.in_chat ?? 0,
+        chatbot: counts.chatbot ?? 0,
+        schedule,
+        my_chats: counts.my_chats ?? 0,
+        closed: counts.closed ?? 0,
+        in_chat_mine: inChatMine,
+        chatbot_input: chatbotInput,
+        chatbot_output: chatbotOutput,
+        chatbot_schedule: chatbotSchedule,
+        chatbot_webhook: chatbotWebhook,
+      });
+    },
+    [setChatCounts]
   );
 
   useEffect(() => {
@@ -662,13 +769,11 @@ export function ChatListScreen({ route, navigation }: Props) {
                 append ? mergeChatsById(prev, resolvedResults) : resolvedResults
               );
               if (!append) setInChat([]);
-              setCounts((c) => ({ ...c, queue: res.counts?.queue ?? 0 }));
             } else if (tab === 'in_chat') {
               setInChat((prev) =>
                 append ? mergeChatsById(prev, resolvedResults) : resolvedResults
               );
               if (!append) setQueue([]);
-              setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
             } else if (tab === 'closed') {
               setQueue((prev) =>
                 append ? mergeChatsById(prev, resolvedResults) : resolvedResults
@@ -680,6 +785,8 @@ export function ChatListScreen({ route, navigation }: Props) {
               );
               if (!append) setQueue([]);
             }
+
+            syncChatCounts(res.counts);
           } else {
             applyPagination(1, 1);
             if (!append) {
@@ -709,10 +816,7 @@ export function ChatListScreen({ route, navigation }: Props) {
             setQueue((prev) =>
               append ? mergeChatsById(prev, resolvedQueue) : resolvedQueue
             );
-            setCounts({
-              queue: res.counts?.queue ?? 0,
-              in_chat: res.counts?.in_chat ?? 0,
-            });
+            syncChatCounts(res.counts);
           } else {
             applyPagination(1, 1);
             if (!append) {
@@ -730,7 +834,7 @@ export function ChatListScreen({ route, navigation }: Props) {
             setQueue((prev) =>
               append ? mergeChatsById(prev, resolvedResults) : resolvedResults
             );
-            setCounts((c) => ({ ...c, queue: res.counts?.queue ?? 0 }));
+            syncChatCounts(res.counts);
             if (!append) setInChat([]);
           } else {
             applyPagination(1, 1);
@@ -754,7 +858,7 @@ export function ChatListScreen({ route, navigation }: Props) {
             setInChat((prev) =>
               append ? mergeChatsById(prev, resolvedResults) : resolvedResults
             );
-            setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
+            syncChatCounts(res.counts);
             if (!append) setQueue([]);
           } else {
             applyPagination(1, 1);
@@ -785,6 +889,8 @@ export function ChatListScreen({ route, navigation }: Props) {
               );
               if (!append) setQueue([]);
             }
+
+            syncChatCounts(res.counts);
           } else {
             applyPagination(1, 1);
             if (!append) {
@@ -820,6 +926,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       currentUserId,
       applyLocallyClearedUnreadOverrides,
       filterAuthorizedChats,
+      syncChatCounts,
     ]
   );
 
@@ -1384,6 +1491,50 @@ export function ChatListScreen({ route, navigation }: Props) {
   }
 
   const hasAdvancedFiltersApplied = hasAppliedAdvancedFilters;
+  const inChatAllCount = chatCounts.in_chat ?? 0;
+  const inChatMineCount = chatCounts.in_chat_mine ?? chatCounts.my_chats ?? 0;
+  const chatbotScheduleCount =
+    chatCounts.chatbot_schedule ?? chatCounts.schedule ?? 0;
+  const chatbotCountsByFilter: Record<ChatbotFilterStatus, number> = {
+    ura: chatCounts.chatbot_input ?? 0,
+    ura_output: chatCounts.chatbot_output ?? 0,
+    ura_schedule: chatbotScheduleCount,
+    ura_webhook: chatCounts.chatbot_webhook ?? 0,
+  };
+
+  const renderQuickFilterChipContent = (
+    label: string,
+    count: number,
+    active: boolean
+  ) => {
+    return (
+      <View style={styles.quickFilterChipContent}>
+        <Text
+          style={[
+            styles.quickFilterChipText,
+            active && styles.quickFilterChipTextActive,
+          ]}
+        >
+          {label}
+        </Text>
+        <View
+          style={[
+            styles.quickFilterChipBadge,
+            active && styles.quickFilterChipBadgeActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.quickFilterChipBadgeText,
+              active && styles.quickFilterChipBadgeTextActive,
+            ]}
+          >
+            {formatCount(count)}
+          </Text>
+        </View>
+      </View>
+    );
+  };
 
   const insets = useSafeAreaInsets();
 
@@ -1467,14 +1618,11 @@ export function ChatListScreen({ route, navigation }: Props) {
             ]}
             onPress={() => setInChatScope('all')}
           >
-            <Text
-              style={[
-                styles.quickFilterChipText,
-                inChatScope === 'all' && styles.quickFilterChipTextActive,
-              ]}
-            >
-              {pt.all_attendances}
-            </Text>
+            {renderQuickFilterChipContent(
+              pt.all_attendances,
+              inChatAllCount,
+              inChatScope === 'all'
+            )}
           </Pressable>
           <Pressable
             style={[
@@ -1483,14 +1631,11 @@ export function ChatListScreen({ route, navigation }: Props) {
             ]}
             onPress={() => setInChatScope('mine')}
           >
-            <Text
-              style={[
-                styles.quickFilterChipText,
-                inChatScope === 'mine' && styles.quickFilterChipTextActive,
-              ]}
-            >
-              {pt.my_attendances}
-            </Text>
+            {renderQuickFilterChipContent(
+              pt.my_attendances,
+              inChatMineCount,
+              inChatScope === 'mine'
+            )}
           </Pressable>
         </View>
       ) : null}
@@ -1507,14 +1652,11 @@ export function ChatListScreen({ route, navigation }: Props) {
                 ]}
                 onPress={() => toggleChatbotFilter(option.value)}
               >
-                <Text
-                  style={[
-                    styles.quickFilterChipText,
-                    active && styles.quickFilterChipTextActive,
-                  ]}
-                >
-                  {option.label}
-                </Text>
+                {renderQuickFilterChipContent(
+                  option.label,
+                  chatbotCountsByFilter[option.value] ?? 0,
+                  active
+                )}
               </Pressable>
             );
           })}
@@ -2103,6 +2245,31 @@ const styles = StyleSheet.create({
   quickFilterChipTextActive: {
     color: colors.onPrimary,
   },
+  quickFilterChipContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  quickFilterChipBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.grey100,
+  },
+  quickFilterChipBadgeActive: {
+    backgroundColor: colors.onPrimary,
+  },
+  quickFilterChipBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.onSurface,
+  },
+  quickFilterChipBadgeTextActive: {
+    color: colors.primary,
+  },
   skeletonList: {
     flex: 1,
     paddingBottom: 24,
@@ -2220,31 +2387,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.onError,
   },
-  tagRow: {
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 6,
     marginTop: 4,
   },
-  tag: {
+  metaChip: {
     backgroundColor: colors.tagBg,
     paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingVertical: 3,
+    borderRadius: 10,
+    maxWidth: '100%',
   },
-  tagText: {
+  metaChipText: {
     fontSize: 11,
     color: colors.tagText,
-  },
-  chatbotTypeTag: {
-    backgroundColor: colors.grey100,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  chatbotTypeTagText: {
-    fontSize: 11,
-    color: colors.grey700,
+    fontWeight: '500',
   },
   workerLabel: {
     width: 28,

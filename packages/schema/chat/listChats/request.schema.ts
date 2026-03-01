@@ -17,6 +17,9 @@ export const listChatsQuerySchema = Type.Object({
   filter_worker_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),
+  filter_user_id: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
   filter_sector_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),

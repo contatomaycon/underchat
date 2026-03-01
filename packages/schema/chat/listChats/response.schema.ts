@@ -84,6 +84,11 @@ export const listChatsResponseSchema = Type.Object({
     chatbot: Type.Number(),
     schedule: Type.Number(),
     my_chats: Type.Number(),
+    in_chat_mine: Type.Number(),
+    chatbot_input: Type.Number(),
+    chatbot_output: Type.Number(),
+    chatbot_schedule: Type.Number(),
+    chatbot_webhook: Type.Number(),
   }),
 });
 

@@ -315,8 +315,8 @@ export class ChatSearcherUseCase {
 
   private buildFilterClauses(
     query: SearchChatsQuery,
+    userId: string,
     actions: IJwtGroupHierarchy[],
-    userSectors: string[],
     userChannels: { id: string; name: string }[]
   ): {
     filterClauses: IElasticsearchBoolClause[];
@@ -373,16 +373,23 @@ export class ChatSearcherUseCase {
       baseFiltersForCounts.push(workerFilter);
     }
 
-    if (
-      query.filter_user_id &&
-      this.canListAllChatsWithoutSectorLimit(actions)
-    ) {
+    if (query.filter_user_id) {
+      const canFilterByAnyUser =
+        this.canViewOthersChats(actions) ||
+        this.canListAllChatsWithoutSectorLimit(actions) ||
+        this.canViewChatsInSector(actions);
+
+      const effectiveFilterUserId =
+        canFilterByAnyUser || query.filter_user_id === userId
+          ? query.filter_user_id
+          : userId;
+
       const userFilter = {
         nested: {
           path: 'user',
           query: {
             term: {
-              'user.id': query.filter_user_id,
+              'user.id': effectiveFilterUserId,
             },
           },
         },
@@ -662,8 +669,8 @@ export class ChatSearcherUseCase {
 
     const filterResult = this.buildFilterClauses(
       query,
+      userId,
       actions,
-      userSectors,
       userChannels
     );
     const { filterClauses, baseFiltersForCounts, isMyChats, statusArray } =
@@ -1229,6 +1236,20 @@ export class ChatSearcherUseCase {
     const buildInChatCountFilter = (): IElasticsearchBoolClause[] =>
       buildInChatLikeCountFilter([EChatStatus.in_chat]);
 
+    const buildInChatMineCountFilter = (): IElasticsearchBoolClause[] => [
+      ...buildInChatLikeCountFilter([EChatStatus.in_chat]),
+      {
+        nested: {
+          path: 'user',
+          query: {
+            term: {
+              'user.id': userId,
+            },
+          },
+        },
+      } as unknown as IElasticsearchBoolClause,
+    ];
+
     const buildChatbotCountFilter = (): IElasticsearchBoolClause[] =>
       buildInChatLikeCountFilter([
         EChatStatus.ura,
@@ -1236,8 +1257,17 @@ export class ChatSearcherUseCase {
         EChatStatus.ura_webhook,
       ]);
 
+    const buildChatbotInputCountFilter = (): IElasticsearchBoolClause[] =>
+      buildInChatLikeCountFilter([EChatStatus.ura]);
+
+    const buildChatbotOutputCountFilter = (): IElasticsearchBoolClause[] =>
+      buildInChatLikeCountFilter([EChatStatus.ura_output]);
+
     const buildScheduleCountFilter = (): IElasticsearchBoolClause[] =>
       buildInChatLikeCountFilter([EChatStatus.ura_schedule]);
+
+    const buildChatbotWebhookCountFilter = (): IElasticsearchBoolClause[] =>
+      buildInChatLikeCountFilter([EChatStatus.ura_webhook]);
 
     const buildClosedCountFilter = (): IElasticsearchBoolClause[] => {
       if (canViewOthers || canListAll) {
@@ -1512,6 +1542,70 @@ export class ChatSearcherUseCase {
       },
     };
 
+    const inChatMineCountQuery: any = {
+      size: 0,
+      query: {
+        bool: {
+          must: mustClauses,
+          ...(shouldClauses.length > 0
+            ? {
+                should: shouldClauses,
+                minimum_should_match: 1,
+              }
+            : {}),
+          filter: buildInChatMineCountFilter(),
+        },
+      },
+    };
+
+    const chatbotInputCountQuery: any = {
+      size: 0,
+      query: {
+        bool: {
+          must: mustClauses,
+          ...(shouldClauses.length > 0
+            ? {
+                should: shouldClauses,
+                minimum_should_match: 1,
+              }
+            : {}),
+          filter: buildChatbotInputCountFilter(),
+        },
+      },
+    };
+
+    const chatbotOutputCountQuery: any = {
+      size: 0,
+      query: {
+        bool: {
+          must: mustClauses,
+          ...(shouldClauses.length > 0
+            ? {
+                should: shouldClauses,
+                minimum_should_match: 1,
+              }
+            : {}),
+          filter: buildChatbotOutputCountFilter(),
+        },
+      },
+    };
+
+    const chatbotWebhookCountQuery: any = {
+      size: 0,
+      query: {
+        bool: {
+          must: mustClauses,
+          ...(shouldClauses.length > 0
+            ? {
+                should: shouldClauses,
+                minimum_should_match: 1,
+              }
+            : {}),
+          filter: buildChatbotWebhookCountFilter(),
+        },
+      },
+    };
+
     const myChatsCountQuery: any = {
       size: 0,
       query: {
@@ -1535,6 +1629,10 @@ export class ChatSearcherUseCase {
       chatbotCountResult,
       scheduleCountResult,
       closedCountResult,
+      inChatMineCountResult,
+      chatbotInputCountResult,
+      chatbotOutputCountResult,
+      chatbotWebhookCountResult,
       myChatsCountResult,
     ] = await Promise.all([
       this.elasticDatabaseService.select(EElasticIndex.chat, queryElastic),
@@ -1546,6 +1644,22 @@ export class ChatSearcherUseCase {
         scheduleCountQuery
       ),
       this.elasticDatabaseService.select(EElasticIndex.chat, closedCountQuery),
+      this.elasticDatabaseService.select(
+        EElasticIndex.chat,
+        inChatMineCountQuery
+      ),
+      this.elasticDatabaseService.select(
+        EElasticIndex.chat,
+        chatbotInputCountQuery
+      ),
+      this.elasticDatabaseService.select(
+        EElasticIndex.chat,
+        chatbotOutputCountQuery
+      ),
+      this.elasticDatabaseService.select(
+        EElasticIndex.chat,
+        chatbotWebhookCountQuery
+      ),
       this.elasticDatabaseService.select(EElasticIndex.chat, myChatsCountQuery),
     ]);
 
@@ -1563,6 +1677,11 @@ export class ChatSearcherUseCase {
           schedule: 0,
           closed: 0,
           my_chats: 0,
+          in_chat_mine: 0,
+          chatbot_input: 0,
+          chatbot_output: 0,
+          chatbot_schedule: 0,
+          chatbot_webhook: 0,
         },
       };
     }
@@ -1596,6 +1715,14 @@ export class ChatSearcherUseCase {
       (scheduleCountResult?.hits?.total as { value: number })?.value || 0;
     const closedTotal =
       (closedCountResult?.hits?.total as { value: number })?.value || 0;
+    const inChatMineTotal =
+      (inChatMineCountResult?.hits?.total as { value: number })?.value || 0;
+    const chatbotInputTotal =
+      (chatbotInputCountResult?.hits?.total as { value: number })?.value || 0;
+    const chatbotOutputTotal =
+      (chatbotOutputCountResult?.hits?.total as { value: number })?.value || 0;
+    const chatbotWebhookTotal =
+      (chatbotWebhookCountResult?.hits?.total as { value: number })?.value || 0;
     const myChatsTotal =
       (myChatsCountResult?.hits?.total as { value: number })?.value || 0;
     const totalCount = queueTotal + inChatTotal;
@@ -1611,6 +1738,11 @@ export class ChatSearcherUseCase {
         schedule: scheduleTotal,
         closed: closedTotal,
         my_chats: myChatsTotal,
+        in_chat_mine: inChatMineTotal,
+        chatbot_input: chatbotInputTotal,
+        chatbot_output: chatbotOutputTotal,
+        chatbot_schedule: scheduleTotal,
+        chatbot_webhook: chatbotWebhookTotal,
       },
     };
   }

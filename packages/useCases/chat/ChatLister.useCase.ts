@@ -692,6 +692,31 @@ export class ChatListerUseCase {
 
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
+    const canViewInSector = this.canViewChatsInSector(actions);
+
+    const requestedFilterUserId = query.filter_user_id ?? null;
+    const canFilterByAnyUser = canViewOthers || canListAll || canViewInSector;
+    const effectiveFilterUserId = requestedFilterUserId
+      ? canFilterByAnyUser || requestedFilterUserId === userId
+        ? requestedFilterUserId
+        : userId
+      : null;
+
+    if (!isMyChats && effectiveFilterUserId) {
+      const userFilter = {
+        nested: {
+          path: 'user',
+          query: {
+            term: {
+              'user.id': effectiveFilterUserId,
+            },
+          },
+        },
+      } as unknown as IElasticsearchBoolClause;
+
+      filterClauses.push(userFilter);
+      baseFiltersForCounts.push(userFilter);
+    }
 
     if (isMyChats) {
       const myChatsFilter: IElasticsearchBoolClause = {
@@ -718,8 +743,6 @@ export class ChatListerUseCase {
 
       filterClauses.push(myChatsFilter);
     }
-
-    const canViewInSector = this.canViewChatsInSector(actions);
 
     const hasInChatLikeStatus = statusArray.some(
       (status) =>
@@ -1139,6 +1162,20 @@ export class ChatListerUseCase {
     const buildInChatCountFilter = (): IElasticsearchBoolClause[] =>
       buildInChatLikeCountFilter([EChatStatus.in_chat]);
 
+    const buildInChatMineCountFilter = (): IElasticsearchBoolClause[] => [
+      ...buildInChatLikeCountFilter([EChatStatus.in_chat]),
+      {
+        nested: {
+          path: 'user',
+          query: {
+            term: {
+              'user.id': userId,
+            },
+          },
+        },
+      } as unknown as IElasticsearchBoolClause,
+    ];
+
     const buildChatbotCountFilter = (): IElasticsearchBoolClause[] =>
       buildInChatLikeCountFilter([
         EChatStatus.ura,
@@ -1146,8 +1183,17 @@ export class ChatListerUseCase {
         EChatStatus.ura_webhook,
       ]);
 
+    const buildChatbotInputCountFilter = (): IElasticsearchBoolClause[] =>
+      buildInChatLikeCountFilter([EChatStatus.ura]);
+
+    const buildChatbotOutputCountFilter = (): IElasticsearchBoolClause[] =>
+      buildInChatLikeCountFilter([EChatStatus.ura_output]);
+
     const buildScheduleCountFilter = (): IElasticsearchBoolClause[] =>
       buildInChatLikeCountFilter([EChatStatus.ura_schedule]);
+
+    const buildChatbotWebhookCountFilter = (): IElasticsearchBoolClause[] =>
+      buildInChatLikeCountFilter([EChatStatus.ura_webhook]);
 
     const buildMyChatsCountFilter = (): IElasticsearchBoolClause[] => {
       const myChatsFilter: IElasticsearchBoolClause = {
@@ -1175,79 +1221,50 @@ export class ChatListerUseCase {
       return [...baseFiltersForCounts, myChatsFilter];
     };
 
-    const queueCountQuery: any = {
+    const buildCountQuery = (countFilter: IElasticsearchBoolClause[]) => ({
       size: 0,
       track_total_hits: true,
       query: {
         bool: {
           must: mustClauses,
-          filter: buildQueueCountFilter(),
+          filter: countFilter,
         },
       },
-    };
+    });
 
-    const inChatCountQuery: any = {
-      size: 0,
-      track_total_hits: true,
-      query: {
-        bool: {
-          must: mustClauses,
-          filter: buildInChatCountFilter(),
-        },
-      },
-    };
+    const countFilters: IElasticsearchBoolClause[][] = [
+      buildQueueCountFilter(),
+      buildInChatCountFilter(),
+      buildChatbotCountFilter(),
+      buildScheduleCountFilter(),
+      buildInChatMineCountFilter(),
+      buildChatbotInputCountFilter(),
+      buildChatbotOutputCountFilter(),
+      buildChatbotWebhookCountFilter(),
+      buildMyChatsCountFilter(),
+    ];
 
-    const chatbotCountQuery: any = {
-      size: 0,
-      track_total_hits: true,
-      query: {
-        bool: {
-          must: mustClauses,
-          filter: buildChatbotCountFilter(),
-        },
-      },
-    };
-
-    const scheduleCountQuery: any = {
-      size: 0,
-      track_total_hits: true,
-      query: {
-        bool: {
-          must: mustClauses,
-          filter: buildScheduleCountFilter(),
-        },
-      },
-    };
-
-    const myChatsCountQuery: any = {
-      size: 0,
-      track_total_hits: true,
-      query: {
-        bool: {
-          must: mustClauses,
-          filter: buildMyChatsCountFilter(),
-        },
-      },
-    };
+    const [result, ...countResults] = await Promise.all([
+      this.elasticDatabaseService.select(EElasticIndex.chat, queryElastic),
+      ...countFilters.map((countFilter) =>
+        this.elasticDatabaseService.select(
+          EElasticIndex.chat,
+          buildCountQuery(countFilter)
+        )
+      ),
+    ]);
 
     const [
-      result,
       queueCountResult,
       inChatCountResult,
       chatbotCountResult,
       scheduleCountResult,
+      inChatMineCountResult,
+      chatbotInputCountResult,
+      chatbotOutputCountResult,
+      chatbotWebhookCountResult,
       myChatsCountResult,
-    ] = await Promise.all([
-      this.elasticDatabaseService.select(EElasticIndex.chat, queryElastic),
-      this.elasticDatabaseService.select(EElasticIndex.chat, queueCountQuery),
-      this.elasticDatabaseService.select(EElasticIndex.chat, inChatCountQuery),
-      this.elasticDatabaseService.select(EElasticIndex.chat, chatbotCountQuery),
-      this.elasticDatabaseService.select(
-        EElasticIndex.chat,
-        scheduleCountQuery
-      ),
-      this.elasticDatabaseService.select(EElasticIndex.chat, myChatsCountQuery),
-    ]);
+    ] = countResults;
 
     if (!result) {
       const pagings = setPaginationData(0, 0, perPage, currentPage);
@@ -1262,6 +1279,11 @@ export class ChatListerUseCase {
           chatbot: 0,
           schedule: 0,
           my_chats: 0,
+          in_chat_mine: 0,
+          chatbot_input: 0,
+          chatbot_output: 0,
+          chatbot_schedule: 0,
+          chatbot_webhook: 0,
         },
       };
     }
@@ -1289,6 +1311,18 @@ export class ChatListerUseCase {
     const inChatTotal = this.getHitsTotal(inChatCountResult?.hits?.total);
     const chatbotTotal = this.getHitsTotal(chatbotCountResult?.hits?.total);
     const scheduleTotal = this.getHitsTotal(scheduleCountResult?.hits?.total);
+    const inChatMineTotal = this.getHitsTotal(
+      inChatMineCountResult?.hits?.total
+    );
+    const chatbotInputTotal = this.getHitsTotal(
+      chatbotInputCountResult?.hits?.total
+    );
+    const chatbotOutputTotal = this.getHitsTotal(
+      chatbotOutputCountResult?.hits?.total
+    );
+    const chatbotWebhookTotal = this.getHitsTotal(
+      chatbotWebhookCountResult?.hits?.total
+    );
     const myChatsTotal = this.getHitsTotal(myChatsCountResult?.hits?.total);
     const totalCount = queueTotal + inChatTotal;
 
@@ -1302,6 +1336,11 @@ export class ChatListerUseCase {
         chatbot: chatbotTotal,
         schedule: scheduleTotal,
         my_chats: myChatsTotal,
+        in_chat_mine: inChatMineTotal,
+        chatbot_input: chatbotInputTotal,
+        chatbot_output: chatbotOutputTotal,
+        chatbot_schedule: scheduleTotal,
+        chatbot_webhook: chatbotWebhookTotal,
       },
     };
   }

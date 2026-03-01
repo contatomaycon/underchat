@@ -9,6 +9,7 @@ import {
 } from './client';
 import {
   MY_CHATS_STATUS,
+  type ChatListCounts,
   type ListChatsResponse,
   type ListMessageResponse,
   type ListMessageResult,
@@ -500,7 +501,7 @@ export interface SearchChatsParams {
 
 export interface SearchChatsResponse {
   results: ListChatsResponse['results'];
-  counts: ListChatsResponse['counts'];
+  counts: ChatListCounts;
   current_page: number;
   total_pages: number;
   per_page: number;
@@ -517,7 +518,7 @@ export interface SearchChatsResponse {
 
 type SearchChatsRawResponse = {
   results?: ListChatsResponse['results'];
-  counts?: ListChatsResponse['counts'];
+  counts?: ChatListCounts;
   pagings?: {
     current_page: number;
     total_pages: number;
@@ -545,14 +546,23 @@ function normalizeSearchChatsResponse(
     total: data.total ?? (data.results ?? []).length,
   };
 
+  const rawCounts = data.counts;
+
   return {
     results: data.results ?? [],
-    counts: data.counts ?? {
+    counts: rawCounts ?? {
       total: pagings.total ?? 0,
       queue: 0,
       in_chat: 0,
       chatbot: 0,
+      schedule: 0,
       my_chats: 0,
+      closed: 0,
+      in_chat_mine: 0,
+      chatbot_input: 0,
+      chatbot_output: 0,
+      chatbot_schedule: 0,
+      chatbot_webhook: 0,
     },
     current_page: pagings.current_page,
     total_pages: pagings.total_pages,
