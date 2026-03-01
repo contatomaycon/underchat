@@ -65,6 +65,38 @@ export async function setUser(user: AuthLoginResponse['user']): Promise<void> {
   await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+export async function patchUser(
+  partial: Record<string, unknown>
+): Promise<void> {
+  const current = await getUser();
+  if (!current || !isRecord(current)) return;
+
+  const merged: Record<string, unknown> = {
+    ...current,
+    ...partial,
+  };
+
+  if (isRecord(current.chat_user) || isRecord(partial.chat_user)) {
+    merged.chat_user = {
+      ...(isRecord(current.chat_user) ? current.chat_user : {}),
+      ...(isRecord(partial.chat_user) ? partial.chat_user : {}),
+    };
+  }
+
+  if (isRecord(current.info) || isRecord(partial.info)) {
+    merged.info = {
+      ...(isRecord(current.info) ? current.info : {}),
+      ...(isRecord(partial.info) ? partial.info : {}),
+    };
+  }
+
+  await setUser(merged as AuthLoginResponse['user']);
+}
+
 export async function getPermissions(): Promise<string[]> {
   const raw = await AsyncStorage.getItem(PERMISSIONS_KEY);
   if (!raw) return [];

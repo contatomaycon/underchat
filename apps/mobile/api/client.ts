@@ -148,6 +148,31 @@ export async function apiPatch<T>(
   return parseJsonSafe<T>(res);
 }
 
+export async function apiPut<T>(
+  path: string,
+  body: unknown
+): Promise<{ status: boolean; data: T } | null> {
+  const headers = await buildAuthHeaders('application/json');
+  if (!headers) return null;
+
+  const url = path.startsWith('http')
+    ? path
+    : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  return parseJsonSafe<T>(res);
+}
+
 export async function apiPatchForm<T>(
   path: string,
   body: FormData

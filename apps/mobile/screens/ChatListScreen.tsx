@@ -125,7 +125,7 @@ const EMPTY_FILTER_VALUES: AdvancedFilterValues = {
   sort_order: null,
 };
 
-function hasAppliedAdvancedFilters(values: AdvancedFilterValues): boolean {
+function hasAdvancedFilterValues(values: AdvancedFilterValues): boolean {
   if (values.filter_label_template_id) return true;
   if (values.filter_worker_id) return true;
   if (values.filter_user_id) return true;
@@ -334,7 +334,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [userChannels, setUserChannels] = useState<UserChannel[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [canPickAnyQueueChat, setCanPickAnyQueueChat] = useState(false);
-  const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [profileSidebarVisible, setProfileSidebarVisible] = useState(false);
   const locallyClearedSummaryChatIdsRef = useRef<Set<string>>(new Set());
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -422,7 +422,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     const status = CHAT_STATUS[tab];
-    const hasFilters = hasAppliedAdvancedFilters(advancedFilterValues);
+    const hasFilters = hasAdvancedFilterValues(advancedFilterValues);
     const hasSearchText = (search ?? '').trim().length > 0;
     const useSearch = hasFilters || hasSearchText;
     try {
@@ -602,15 +602,6 @@ export function ChatListScreen({ route, navigation }: Props) {
     }, 250);
   }, [load]);
 
-  const handleOpenChatFromContact = useCallback(
-    (chat: ListChatsResult) => {
-      setSidebarVisible(false);
-      navigation.push('ChatRoom', { chat });
-      scheduleRealtimeReload();
-    },
-    [navigation, scheduleRealtimeReload]
-  );
-
   useFocusEffect(
     useCallback(() => {
       load();
@@ -750,7 +741,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       <View style={styles.header}>
         <Pressable
           style={styles.avatarPlaceholder}
-          onPress={() => setSidebarVisible(true)}
+          onPress={() => setProfileSidebarVisible(true)}
         >
           {(() => {
             const uri = resolveImageUri(userPhoto);
@@ -782,7 +773,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         >
           <Ionicons name="filter" size={22} color={colors.onSurface} />
         </Pressable>
-        {hasAppliedAdvancedFilters(advancedFilterValues) ? (
+        {hasAdvancedFilterValues(advancedFilterValues) ? (
           <Pressable
             style={styles.clearFilterBtn}
             onPress={() => {
@@ -800,10 +791,9 @@ export function ChatListScreen({ route, navigation }: Props) {
         ) : null}
       </View>
       <UserSidebar
-        visible={sidebarVisible}
-        onClose={() => setSidebarVisible(false)}
-        onOpenChatFromContact={handleOpenChatFromContact}
-        onContactsChanged={scheduleRealtimeReload}
+        visible={profileSidebarVisible}
+        onClose={() => setProfileSidebarVisible(false)}
+        onProfileUpdated={(nextPhoto) => setUserPhoto(nextPhoto)}
       />
       <AdvancedFilterModal
         visible={filterModalVisible}

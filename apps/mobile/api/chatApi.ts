@@ -4,6 +4,7 @@ import {
   apiPatchForm,
   apiPost,
   apiPostForm,
+  apiPut,
 } from './client';
 import {
   MY_CHATS_STATUS,
@@ -48,6 +49,27 @@ export interface ChatUser {
   name: string | null;
   photo?: string | null;
 }
+
+export type ChatUserStatus =
+  | 'online'
+  | 'busy'
+  | 'do_not_disturb'
+  | 'away'
+  | 'offline';
+
+export type UpdateChatUserPayload = {
+  about?: string | null;
+  status?: ChatUserStatus;
+  notifications: boolean;
+  sort_by_chat_order?: string | null;
+  sort_in_chat_order?: string | null;
+  sort_by_my_chats_order?: string | null;
+  sort_my_chats_order?: string | null;
+  sort_by_queue_order?: string | null;
+  sort_queue_order?: string | null;
+  sort_by_chatbot_order?: string | null;
+  sort_chatbot_order?: string | null;
+};
 
 export interface ChatSector {
   id: string;
@@ -229,6 +251,39 @@ export async function listChatWorkers(): Promise<ChatWorker[] | null> {
 
 export async function listChatUsers(): Promise<ChatUser[] | null> {
   const res = await apiGet<ChatUser[]>('/chat/users');
+  return res?.data ?? null;
+}
+
+export async function updateChatUser(
+  payload: UpdateChatUserPayload
+): Promise<boolean> {
+  const res = await apiPut<null>('/chat/user', payload);
+  return !!res?.status;
+}
+
+export async function uploadUserPhoto(
+  userId: string,
+  photoFile: File | Blob
+): Promise<{ photo: string | null } | null> {
+  if (!userId || userId.trim().length === 0) return null;
+
+  const formData = new FormData();
+  formData.append('photo', photoFile);
+
+  const res = await apiPostForm<{ photo: string | null }>(
+    `/user/${userId}/photo`,
+    formData
+  );
+  return res?.data ?? null;
+}
+
+export async function removeUserPhoto(
+  userId: string
+): Promise<{ photo: string | null } | null> {
+  if (!userId || userId.trim().length === 0) return null;
+  const res = await apiDelete<{ photo: string | null }>(
+    `/user/${userId}/photo`
+  );
   return res?.data ?? null;
 }
 

@@ -6,6 +6,7 @@ import { colors } from '../theme/colors';
 import { useChatFilter } from '../context/ChatFilterContext';
 
 type TabParamList = {
+  New: { tab: ChatTab; entry: 'contacts' };
   InChat: { tab: ChatTab };
   Queue: { tab: ChatTab };
   Closed: { tab: ChatTab };
@@ -19,6 +20,7 @@ export function RootNavigator() {
 
   return (
     <Tab.Navigator
+      initialRouteName="InChat"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
@@ -77,6 +79,17 @@ export function RootNavigator() {
           }}
         />
       ) : null}
+      <Tab.Screen
+        name="New"
+        component={ChatStackNavigator}
+        initialParams={{ tab: 'in_chat', entry: 'contacts' }}
+        options={{
+          tabBarLabel: 'Novo',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="add" size={size} color={color} />
+          ),
+        }}
+      />
     </Tab.Navigator>
   );
 }

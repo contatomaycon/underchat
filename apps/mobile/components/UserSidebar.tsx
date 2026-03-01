@@ -2,573 +2,653 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import {
+  ChatUserStatus,
+  removeUserPhoto,
+  updateChatUser,
+  uploadUserPhoto,
+} from '../api/chatApi';
+import {
+  clearAuth,
+  getPermissions,
+  getUser,
+  patchUser,
+} from '../storage/authStorage';
+import { emitAuthUnauthorized } from '../utils/authEvents';
+import { hasChatAccessPermission } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
-import {
-  listChatContacts,
-  validateChatContact,
-  type ListChatContactResult,
-} from '../api/chatApi';
-import { clearAuth, getPermissions, getUser } from '../storage/authStorage';
-import { emitAuthUnauthorized } from '../utils/authEvents';
 import { resolveImageUri } from '../utils/imageUri';
-import {
-  hasContactsModuleAccess,
-  hasChatAccessPermission,
-} from '../constants/chatAuthorization';
-import {
-  ContactAdvancedFilterModal,
-  type ContactAdvancedFilterValues,
-} from './ContactAdvancedFilterModal';
-import { ContactFormModal } from './ContactFormModal';
-import { ContactStartConversationModal } from './ContactStartConversationModal';
-import type { ListChatsResult } from '../types/chat';
-import { addChatSocketListener } from '../socket/chatSocket';
+
+type SidebarStatus = 'online' | 'busy' | 'do_not_disturb';
+
+const STATUS_OPTIONS: Array<{
+  value: SidebarStatus;
+  label: string;
+  color: string;
+}> = [
+  { value: 'online', label: pt.online, color: colors.success },
+  { value: 'busy', label: pt.busy, color: colors.error },
+  {
+    value: 'do_not_disturb',
+    label: pt.do_not_disturb,
+    color: colors.primaryDarken1,
+  },
+];
 
 interface UserSidebarProps {
   visible: boolean;
   onClose: () => void;
   onLogout?: () => void;
-  onOpenChatFromContact?: (chat: ListChatsResult) => void;
-  onContactsChanged?: () => void;
+  onProfileUpdated?: (photo: string | null) => void;
 }
 
-const EMPTY_FILTERS: ContactAdvancedFilterValues = {
-  filter_label_template_id: null,
-  filter_phone_ddi: null,
-  filter_phone: null,
-  filter_name: null,
-  filter_last_name: null,
-  filter_nickname: null,
-  filter_email: null,
-  filter_birthday: null,
-  filter_document: null,
-  filter_user_id: null,
-  sort_field: 'name',
-  sort_order: 'asc',
-};
-
-function hasAnyContactFilter(values: ContactAdvancedFilterValues): boolean {
-  return !!(
-    values.filter_label_template_id ||
-    values.filter_phone_ddi ||
-    values.filter_phone ||
-    values.filter_name ||
-    values.filter_last_name ||
-    values.filter_nickname ||
-    values.filter_email ||
-    values.filter_birthday ||
-    values.filter_document ||
-    values.filter_user_id
-  );
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function resolveUserId(user: unknown): string | null {
-  if (!user || typeof user !== 'object') return null;
-  const cast = user as { id?: unknown; user_id?: unknown };
-  const idValue =
-    typeof cast.id === 'string'
-      ? cast.id.trim()
-      : typeof cast.id === 'number'
-        ? String(cast.id)
-        : null;
-  if (idValue && idValue.length > 0) return idValue;
-
-  const userIdValue =
-    typeof cast.user_id === 'string'
-      ? cast.user_id.trim()
-      : typeof cast.user_id === 'number'
-        ? String(cast.user_id)
-        : null;
-
-  return userIdValue && userIdValue.length > 0 ? userIdValue : null;
+function readString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
-function mergeUniqueContacts(
-  previous: ListChatContactResult[],
-  next: ListChatContactResult[]
-): ListChatContactResult[] {
-  if (next.length === 0) return previous;
-
-  const map = new Map<string, ListChatContactResult>();
-  for (let i = 0; i < previous.length; i++) {
-    map.set(previous[i].contact_id, previous[i]);
-  }
-  for (let i = 0; i < next.length; i++) {
-    map.set(next[i].contact_id, next[i]);
-  }
-  return Array.from(map.values());
+function readBoolean(value: unknown): boolean {
+  return value === true;
 }
 
-function ContactRow({
-  item,
-  onPress,
-  onValidate,
-  onEdit,
-  disabled,
-}: {
-  item: ListChatContactResult;
-  onPress: () => void;
-  onValidate: () => void;
-  onEdit: () => void;
-  disabled?: boolean;
-}) {
-  const displayName =
-    item.name || item.last_name
-      ? [item.name, item.last_name].filter(Boolean).join(' ')
-      : item.phone_partial || item.contact_id;
-  const phoneLabel = item.phone_partial ?? '';
-  const photoUri = resolveImageUri(item.photo);
-  const isValidated = !!item.is_valided;
+function normalizeStatus(value: unknown): SidebarStatus {
+  if (value === 'busy') return 'busy';
+  if (value === 'do_not_disturb') return 'do_not_disturb';
+  return 'online';
+}
 
-  return (
-    <Pressable
-      style={[styles.contactRow, disabled && styles.contactRowDisabled]}
-      onPress={onPress}
-      disabled={disabled}
-    >
-      <View style={styles.contactAvatar}>
-        {photoUri ? (
-          <Image source={{ uri: photoUri }} style={styles.contactAvatarImage} />
-        ) : (
-          <Ionicons name="person" size={24} color={colors.grey500} />
-        )}
-      </View>
-      <View style={styles.contactInfo}>
-        <Text style={styles.contactName} numberOfLines={1}>
-          {displayName}
-        </Text>
-        {phoneLabel ? (
-          <Text style={styles.contactPhone} numberOfLines={1}>
-            {phoneLabel}
-          </Text>
-        ) : null}
-      </View>
-      <View style={styles.contactActionsInline}>
-        {isValidated ? (
-          <View style={[styles.validationChip, styles.validationChipOk]}>
-            <Ionicons name="checkmark" size={16} color={colors.onPrimary} />
-          </View>
-        ) : (
-          <Pressable
-            style={[styles.actionBtn, styles.validateActionBtn]}
-            onPress={onValidate}
-            hitSlop={8}
-          >
-            <Ionicons
-              name="refresh-outline"
-              size={16}
-              color={colors.onPrimary}
-            />
-          </Pressable>
-        )}
-        <Pressable style={styles.actionBtn} onPress={onEdit} hitSlop={8}>
-          <Ionicons name="create-outline" size={16} color={colors.primary} />
-        </Pressable>
-      </View>
-    </Pressable>
-  );
+function readUserProfile(user: unknown): {
+  userId: string | null;
+  name: string;
+  role: string;
+  photo: string | null;
+  about: string;
+  status: SidebarStatus;
+  notifications: boolean;
+} {
+  const root = isRecord(user) ? user : {};
+  const info = isRecord(root.info) ? root.info : {};
+  const type = isRecord(root.type) ? root.type : {};
+  const chatUser = isRecord(root.chat_user) ? root.chat_user : {};
+
+  const userId = readString(root.user_id) ?? readString(root.id);
+  const name = readString(info.name) ?? '-';
+  const role = readString(type.name) ?? '';
+  const photoRaw = readString(info.photo);
+  const photo = photoRaw && photoRaw !== 'null' ? photoRaw : null;
+
+  return {
+    userId,
+    name,
+    role,
+    photo,
+    about: readString(chatUser.about) ?? '',
+    status: normalizeStatus(chatUser.status),
+    notifications: readBoolean(chatUser.notifications),
+  };
 }
 
 export function UserSidebar({
   visible,
   onClose,
   onLogout,
-  onOpenChatFromContact,
-  onContactsChanged,
+  onProfileUpdated,
 }: UserSidebarProps) {
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [contacts, setContacts] = useState<ListChatContactResult[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasAccess, setHasAccess] = useState(true);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+
+  const [userId, setUserId] = useState<string | null>(null);
+  const [name, setName] = useState('-');
+  const [role, setRole] = useState('');
+  const [photo, setPhoto] = useState<string | null>(null);
+
+  const [about, setAbout] = useState('');
+  const [status, setStatus] = useState<SidebarStatus>('online');
+  const [notifications, setNotifications] = useState(false);
+
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [notificationSaving, setNotificationSaving] = useState(false);
+  const [aboutSaving, setAboutSaving] = useState(false);
+  const [photoLoading, setPhotoLoading] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
-  const [filterVisible, setFilterVisible] = useState(false);
-  const [formVisible, setFormVisible] = useState(false);
-  const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
-  const [editingContactId, setEditingContactId] = useState<string | null>(null);
-  const [filters, setFilters] =
-    useState<ContactAdvancedFilterValues>(EMPTY_FILTERS);
-  const [selectedContactForConversation, setSelectedContactForConversation] =
-    useState<ListChatContactResult | null>(null);
-  const [hasContactAccess, setHasContactAccess] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
 
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSyncedAboutRef = useRef('');
+  const aboutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profileReadyRef = useRef(false);
 
-  const hasActiveFilters = useMemo(
-    () => hasAnyContactFilter(filters),
-    [filters]
-  );
+  const statusColor = useMemo(() => {
+    const selected = STATUS_OPTIONS.find((item) => item.value === status);
+    return selected?.color ?? colors.success;
+  }, [status]);
+  const statusLabel = useMemo(() => {
+    const selected = STATUS_OPTIONS.find((item) => item.value === status);
+    return selected?.label ?? pt.online;
+  }, [status]);
 
-  const loadContacts = useCallback(
-    async (page: number, append: boolean) => {
-      if (!visible) return;
+  const persistProfile = useCallback(
+    async (input?: {
+      about?: string;
+      status?: SidebarStatus;
+      notifications?: boolean;
+    }): Promise<boolean> => {
+      const resolvedAbout = input?.about ?? about;
+      const resolvedStatus = input?.status ?? status;
+      const resolvedNotifications = input?.notifications ?? notifications;
 
-      if (append) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
+      const payload = {
+        about: resolvedAbout,
+        status: resolvedStatus as ChatUserStatus,
+        notifications: resolvedNotifications,
+      };
+
+      const ok = await updateChatUser(payload);
+      if (!ok) {
+        Alert.alert(pt.error_title, pt.chat_config_update_error);
+        return false;
       }
 
-      try {
-        const response = await listChatContacts(
-          page,
-          50,
-          debouncedSearch || undefined,
-          filters
-        );
+      await patchUser({
+        chat_user: {
+          about: resolvedAbout,
+          status: resolvedStatus,
+          notifications: resolvedNotifications,
+        },
+      });
 
-        const results = response?.results ?? [];
-        setContacts((previous) =>
-          append ? mergeUniqueContacts(previous, results) : results
-        );
-        setCurrentPage(response?.current_page ?? page);
-        setTotalPages(response?.total_pages ?? 1);
-      } finally {
-        if (append) {
-          setLoadingMore(false);
-        } else {
-          setLoading(false);
-        }
-      }
+      return true;
     },
-    [debouncedSearch, filters, visible]
+    [about, notifications, status]
   );
 
   useEffect(() => {
-    if (searchTimer.current) {
-      clearTimeout(searchTimer.current);
+    if (!visible) {
+      profileReadyRef.current = false;
+      return;
     }
-    searchTimer.current = setTimeout(() => {
-      setDebouncedSearch(search.trim());
-    }, 300);
+
+    let cancelled = false;
+    setLoadingProfile(true);
+
+    const loadProfile = async () => {
+      const permissions = await getPermissions();
+      if (cancelled) return;
+
+      const hasPermission = hasChatAccessPermission(permissions);
+      setHasAccess(hasPermission);
+
+      const user = await getUser();
+      if (cancelled) return;
+
+      const profile = readUserProfile(user);
+      setUserId(profile.userId);
+      setName(profile.name);
+      setRole(profile.role);
+      setPhoto(profile.photo);
+      setAbout(profile.about);
+      setStatus(profile.status);
+      setNotifications(profile.notifications);
+      lastSyncedAboutRef.current = profile.about;
+      profileReadyRef.current = true;
+      setLoadingProfile(false);
+    };
+
+    loadProfile().catch(() => {
+      if (cancelled) return;
+      setLoadingProfile(false);
+      setHasAccess(false);
+    });
 
     return () => {
-      if (searchTimer.current) {
-        clearTimeout(searchTimer.current);
-        searchTimer.current = null;
+      cancelled = true;
+      if (aboutTimerRef.current) {
+        clearTimeout(aboutTimerRef.current);
+        aboutTimerRef.current = null;
       }
     };
-  }, [search]);
-
-  useEffect(() => {
-    if (!visible) return;
-    setCurrentPage(1);
-    setContacts([]);
-    loadContacts(1, false);
-  }, [visible, debouncedSearch, filters, loadContacts]);
-
-  useEffect(() => {
-    if (!visible) return;
-
-    getPermissions()
-      .then((permissions) => {
-        setHasContactAccess(
-          hasContactsModuleAccess(permissions) ||
-            hasChatAccessPermission(permissions)
-        );
-      })
-      .catch(() => setHasContactAccess(false));
-
-    getUser()
-      .then((user) => setCurrentUserId(resolveUserId(user)))
-      .catch(() => setCurrentUserId(null));
   }, [visible]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !hasAccess || !profileReadyRef.current) {
+      return;
+    }
 
-    const offChannelsUpdated = addChatSocketListener(
-      'channelsUpdated',
-      (payload) => {
-        if (!currentUserId || payload.user_id !== currentUserId) {
-          return;
-        }
-        setCurrentPage(1);
-        setContacts([]);
-        loadContacts(1, false);
+    if (about === lastSyncedAboutRef.current) {
+      return;
+    }
+
+    if (aboutTimerRef.current) {
+      clearTimeout(aboutTimerRef.current);
+    }
+
+    aboutTimerRef.current = setTimeout(async () => {
+      setAboutSaving(true);
+      const ok = await persistProfile({ about });
+      if (ok) {
+        lastSyncedAboutRef.current = about;
       }
-    );
+      setAboutSaving(false);
+    }, 1000);
 
     return () => {
-      offChannelsUpdated();
+      if (aboutTimerRef.current) {
+        clearTimeout(aboutTimerRef.current);
+        aboutTimerRef.current = null;
+      }
     };
-  }, [currentUserId, loadContacts, visible]);
+  }, [about, hasAccess, persistProfile, visible]);
 
-  const handleLoadMore = () => {
-    if (loading || loadingMore) return;
-    if (currentPage >= totalPages) return;
-    void loadContacts(currentPage + 1, true);
-  };
+  const handleStatusChange = useCallback(
+    async (nextStatus: SidebarStatus) => {
+      if (statusSaving || nextStatus === status) return;
 
-  const handleLogout = async () => {
+      const previous = status;
+      setStatus(nextStatus);
+      setStatusSaving(true);
+
+      const ok = await persistProfile({ status: nextStatus });
+      if (!ok) {
+        setStatus(previous);
+      }
+
+      setStatusSaving(false);
+    },
+    [persistProfile, status, statusSaving]
+  );
+
+  const handleNotificationToggle = useCallback(
+    async (nextValue: boolean) => {
+      if (notificationSaving || nextValue === notifications) return;
+
+      const previous = notifications;
+      setNotifications(nextValue);
+      setNotificationSaving(true);
+
+      const ok = await persistProfile({ notifications: nextValue });
+      if (!ok) {
+        setNotifications(previous);
+      }
+
+      setNotificationSaving(false);
+    },
+    [notificationSaving, notifications, persistProfile]
+  );
+
+  const handlePickPhoto = useCallback(async () => {
+    if (!userId) return;
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(pt.warning_title, pt.image_permission_denied);
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+
+    if (result.canceled || !result.assets || result.assets.length === 0) {
+      return;
+    }
+
+    const uri = result.assets[0]?.uri;
+    if (!uri) return;
+
+    try {
+      setPhotoLoading(true);
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const uploaded = await uploadUserPhoto(userId, blob);
+
+      if (!uploaded) {
+        Alert.alert(pt.error_title, pt.profile_photo_upload_error);
+        return;
+      }
+
+      const nextPhoto = uploaded.photo ?? null;
+      setPhoto(nextPhoto);
+      await patchUser({ info: { photo: nextPhoto } });
+      onProfileUpdated?.(nextPhoto);
+      setPhotoModalVisible(false);
+      Alert.alert(pt.success_title, pt.profile_photo_upload_success);
+    } catch {
+      Alert.alert(pt.error_title, pt.profile_photo_upload_error);
+    } finally {
+      setPhotoLoading(false);
+    }
+  }, [onProfileUpdated, userId]);
+
+  const handleRemovePhoto = useCallback(async () => {
+    if (!userId || !photo) return;
+
+    try {
+      setPhotoLoading(true);
+      const removed = await removeUserPhoto(userId);
+      if (!removed) {
+        Alert.alert(pt.error_title, pt.profile_photo_remove_error);
+        return;
+      }
+
+      setPhoto(null);
+      await patchUser({ info: { photo: null } });
+      onProfileUpdated?.(null);
+      setPhotoModalVisible(false);
+      Alert.alert(pt.success_title, pt.profile_photo_remove_success);
+    } catch {
+      Alert.alert(pt.error_title, pt.profile_photo_remove_error);
+    } finally {
+      setPhotoLoading(false);
+    }
+  }, [onProfileUpdated, photo, userId]);
+
+  const handleLogout = useCallback(async () => {
     setLogoutLoading(true);
     await clearAuth();
     emitAuthUnauthorized();
     setLogoutLoading(false);
     onClose();
     onLogout?.();
-  };
-
-  const handleOpenCreate = () => {
-    setFormMode('create');
-    setEditingContactId(null);
-    setFormVisible(true);
-  };
-
-  const handleOpenEdit = (contactId: string) => {
-    setFormMode('edit');
-    setEditingContactId(contactId);
-    setFormVisible(true);
-  };
-
-  const handleClearSearch = useCallback(() => {
-    setSearch('');
-    setDebouncedSearch('');
-  }, []);
-
-  const refreshContacts = () => {
-    setCurrentPage(1);
-    setContacts([]);
-    void loadContacts(1, false);
-  };
-
-  const handleValidate = (contact: ListChatContactResult) => {
-    Alert.alert(pt.validate_contact, pt.validate_contact_confirmation, [
-      { text: pt.cancel, style: 'cancel' },
-      {
-        text: pt.validate,
-        onPress: async () => {
-          const ok = await validateChatContact(contact.contact_id);
-          if (!ok) {
-            Alert.alert(pt.error_title, pt.contact_validation_failed);
-            return;
-          }
-
-          setContacts((prev) =>
-            prev.map((item) =>
-              item.contact_id === contact.contact_id
-                ? { ...item, is_valided: true }
-                : item
-            )
-          );
-          Alert.alert(pt.success_title, pt.contact_validation_success);
-        },
-      },
-    ]);
-  };
-
-  const handleContactPress = (contact: ListChatContactResult) => {
-    if (!contact.phone_partial) {
-      Alert.alert(pt.warning_title, pt.contact_phone_required);
-      return;
-    }
-
-    if (!contact.is_valided) {
-      Alert.alert(pt.warning_title, pt.contact_must_be_validated);
-      return;
-    }
-
-    setSelectedContactForConversation(contact);
-  };
-
-  const handleConversationStarted = (chat: ListChatsResult) => {
-    setSelectedContactForConversation(null);
-    onClose();
-    onOpenChatFromContact?.(chat);
-    onContactsChanged?.();
-  };
+  }, [onClose, onLogout]);
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
-      <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
-        <View style={styles.sidebar}>
-          <View style={styles.sidebarHeader}>
-            <Text style={styles.sidebarTitle}>{pt.contacts}</Text>
-            <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={colors.onSurface} />
-            </Pressable>
-          </View>
-
-          {!hasContactAccess ? (
-            <View style={styles.permissionDeniedWrap}>
-              <Text style={styles.permissionDeniedText}>
-                {pt.chat_permission_denied}
-              </Text>
+    <>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        transparent
+        onRequestClose={onClose}
+      >
+        <View style={styles.overlay}>
+          <Pressable style={styles.backdrop} onPress={onClose} />
+          <View style={styles.sidebar}>
+            <View style={styles.sidebarHeader}>
+              <Text style={styles.sidebarTitle}>{pt.account}</Text>
+              <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+                <Ionicons name="close" size={24} color={colors.onSurface} />
+              </Pressable>
             </View>
-          ) : (
-            <>
-              <View style={styles.searchBarRow}>
-                <View style={styles.searchWrap}>
-                  <Ionicons
-                    name="search"
-                    size={20}
-                    color={colors.grey500}
-                    style={styles.searchIcon}
-                  />
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder={pt.search_contacts}
-                    placeholderTextColor={colors.grey500}
-                    value={search}
-                    onChangeText={setSearch}
-                  />
-                  {search.trim().length > 0 ? (
-                    <Pressable
-                      style={styles.searchClearBtn}
-                      onPress={handleClearSearch}
-                      hitSlop={8}
-                      accessibilityLabel={pt.clear_filter}
-                    >
-                      <Ionicons
-                        name="close-circle"
-                        size={18}
-                        color={colors.grey500}
-                      />
-                    </Pressable>
-                  ) : null}
-                </View>
-                <Pressable
-                  style={styles.iconBtn}
-                  onPress={() => setFilterVisible(true)}
-                  accessibilityLabel={pt.advanced_filters}
-                >
-                  <Ionicons name="filter" size={18} color={colors.onSurface} />
-                </Pressable>
-                {hasActiveFilters ? (
-                  <Pressable
-                    style={[styles.iconBtn, styles.clearFilterIconBtn]}
-                    onPress={() => setFilters(EMPTY_FILTERS)}
-                    accessibilityLabel={pt.clear_filters}
-                  >
-                    <Ionicons name="close" size={16} color={colors.onPrimary} />
-                  </Pressable>
-                ) : null}
-                <Pressable style={styles.addBtn} onPress={handleOpenCreate}>
-                  <Ionicons name="add" size={20} color={colors.onPrimary} />
-                </Pressable>
-              </View>
 
-              {loading ? (
-                <View style={styles.loadingWrap}>
-                  <ActivityIndicator size="small" color={colors.primary} />
+            {loadingProfile ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : !hasAccess ? (
+              <View style={styles.permissionDeniedWrap}>
+                <Text style={styles.permissionDeniedText}>
+                  {pt.chat_permission_denied}
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.profileTop}>
+                  <Pressable
+                    style={styles.avatarWrap}
+                    onPress={() => setPhotoModalVisible(true)}
+                  >
+                    {(() => {
+                      const photoUri = resolveImageUri(photo);
+                      return photoUri ? (
+                        <Image
+                          source={{ uri: photoUri }}
+                          style={styles.avatarImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Ionicons
+                          name="person-circle-outline"
+                          size={84}
+                          color={colors.grey400}
+                        />
+                      );
+                    })()}
+                  </Pressable>
+                  <Text style={styles.profileName}>{name}</Text>
+                  <View style={styles.profileMetaRow}>
+                    {role ? (
+                      <Text style={styles.profileRole}>{role}</Text>
+                    ) : null}
+                    <View style={styles.profileStatusInline}>
+                      <View
+                        style={[
+                          styles.profileStatusDot,
+                          { backgroundColor: statusColor },
+                        ]}
+                      />
+                      <Text style={styles.profileStatusText}>
+                        {statusLabel}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-              ) : (
-                <FlatList
-                  data={contacts}
-                  keyExtractor={(item) => item.contact_id}
-                  onEndReached={handleLoadMore}
-                  onEndReachedThreshold={0.3}
-                  renderItem={({ item }) => (
-                    <ContactRow
-                      item={item}
-                      onPress={() => handleContactPress(item)}
-                      onValidate={() => handleValidate(item)}
-                      onEdit={() => handleOpenEdit(item.contact_id)}
+
+                <ScrollView
+                  style={styles.scroll}
+                  contentContainerStyle={styles.scrollContent}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>{pt.about}</Text>
+                    <TextInput
+                      style={styles.aboutInput}
+                      multiline
+                      value={about}
+                      maxLength={200}
+                      onChangeText={setAbout}
+                      placeholder={pt.about}
+                      placeholderTextColor={colors.grey500}
                     />
-                  )}
-                  style={styles.contactList}
-                  contentContainerStyle={styles.contactListContent}
-                  ListEmptyComponent={
-                    !loading && contacts.length === 0 ? (
-                      <View style={styles.empty}>
-                        <Text style={styles.emptyText}>
-                          {pt.no_contacts_found}
-                        </Text>
-                      </View>
-                    ) : null
-                  }
-                  ListFooterComponent={
-                    loadingMore ? (
-                      <View style={styles.listFooterLoading}>
+                    <View style={styles.aboutFooter}>
+                      <Text style={styles.counterText}>{about.length}/200</Text>
+                      {aboutSaving ? (
                         <ActivityIndicator
                           size="small"
                           color={colors.primary}
                         />
-                      </View>
-                    ) : null
-                  }
-                />
-              )}
-            </>
-          )}
+                      ) : null}
+                    </View>
+                  </View>
 
-          <View style={styles.footer}>
-            <Pressable
-              style={[
-                styles.logoutBtn,
-                logoutLoading && styles.logoutBtnDisabled,
-              ]}
-              onPress={handleLogout}
-              disabled={logoutLoading}
-            >
-              {logoutLoading ? (
-                <ActivityIndicator size="small" color={colors.onPrimary} />
-              ) : (
-                <>
-                  <Ionicons
-                    name="log-out-outline"
-                    size={22}
-                    color={colors.onPrimary}
-                    style={styles.logoutIcon}
-                  />
-                  <Text style={styles.logoutText}>{pt.logout}</Text>
-                </>
-              )}
-            </Pressable>
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>{pt.status_chat}</Text>
+                    <View style={styles.statusGroup}>
+                      {STATUS_OPTIONS.map((option) => {
+                        const active = status === option.value;
+                        return (
+                          <Pressable
+                            key={option.value}
+                            style={styles.statusOption}
+                            onPress={() => handleStatusChange(option.value)}
+                            disabled={statusSaving}
+                          >
+                            <View
+                              style={[
+                                styles.statusRadio,
+                                active && {
+                                  borderColor: option.color,
+                                },
+                              ]}
+                            >
+                              {active ? (
+                                <View
+                                  style={[
+                                    styles.statusRadioDot,
+                                    { backgroundColor: option.color },
+                                  ]}
+                                />
+                              ) : null}
+                            </View>
+                            <Text style={styles.statusLabel}>
+                              {option.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    {statusSaving ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.primary}
+                        style={styles.inlineLoader}
+                      />
+                    ) : null}
+                  </View>
+
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>{pt.settings}</Text>
+                    <View style={styles.settingRow}>
+                      <View style={styles.settingLabelWrap}>
+                        <Ionicons
+                          name="notifications-outline"
+                          size={20}
+                          color={colors.onSurface}
+                        />
+                        <Text style={styles.settingLabel}>
+                          {pt.notification}
+                        </Text>
+                      </View>
+                      <Pressable
+                        style={[
+                          styles.switch,
+                          notifications ? styles.switchOn : styles.switchOff,
+                        ]}
+                        onPress={() => handleNotificationToggle(!notifications)}
+                        disabled={notificationSaving}
+                      >
+                        <View
+                          style={[
+                            styles.switchThumb,
+                            notifications && styles.switchThumbOn,
+                          ]}
+                        />
+                      </Pressable>
+                    </View>
+                    {notificationSaving ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.primary}
+                        style={styles.inlineLoader}
+                      />
+                    ) : null}
+                  </View>
+                </ScrollView>
+              </>
+            )}
+
+            <View style={styles.footer}>
+              <Pressable
+                style={[
+                  styles.logoutBtn,
+                  logoutLoading && styles.logoutBtnDisabled,
+                ]}
+                onPress={handleLogout}
+                disabled={logoutLoading}
+              >
+                {logoutLoading ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="log-out-outline"
+                      size={22}
+                      color={colors.onPrimary}
+                      style={styles.logoutIcon}
+                    />
+                    <Text style={styles.logoutText}>{pt.logout}</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
           </View>
         </View>
-      </View>
+      </Modal>
 
-      <ContactAdvancedFilterModal
-        visible={filterVisible}
-        onClose={() => setFilterVisible(false)}
-        initialValues={filters}
-        onApply={(values) => {
-          setFilters(values);
-          setFilterVisible(false);
-        }}
-      />
+      <Modal
+        visible={photoModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoModalVisible(false)}
+      >
+        <View style={styles.photoOverlay}>
+          <View style={styles.photoCard}>
+            <View style={styles.photoHeader}>
+              <Text style={styles.photoTitle}>{pt.profile_photo}</Text>
+              <Pressable
+                onPress={() => setPhotoModalVisible(false)}
+                hitSlop={10}
+              >
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
 
-      <ContactFormModal
-        visible={formVisible}
-        mode={formMode}
-        contactId={editingContactId}
-        onClose={() => setFormVisible(false)}
-        onSuccess={() => {
-          setFormVisible(false);
-          refreshContacts();
-          onContactsChanged?.();
-        }}
-      />
+            <View style={styles.photoPreviewWrap}>
+              {(() => {
+                const photoUri = resolveImageUri(photo);
+                return photoUri ? (
+                  <Image
+                    source={{ uri: photoUri }}
+                    style={styles.photoPreview}
+                  />
+                ) : (
+                  <Ionicons
+                    name="person-circle-outline"
+                    size={120}
+                    color={colors.grey400}
+                  />
+                );
+              })()}
+            </View>
 
-      <ContactStartConversationModal
-        visible={selectedContactForConversation !== null}
-        contact={selectedContactForConversation}
-        onClose={() => setSelectedContactForConversation(null)}
-        onConversationStarted={handleConversationStarted}
-      />
-    </Modal>
+            <View style={styles.photoActions}>
+              <Pressable
+                style={styles.primaryActionBtn}
+                onPress={handlePickPhoto}
+                disabled={photoLoading}
+              >
+                {photoLoading ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryActionText}>
+                    {pt.change_photo}
+                  </Text>
+                )}
+              </Pressable>
+              {photo ? (
+                <Pressable
+                  style={styles.secondaryActionBtn}
+                  onPress={handleRemovePhoto}
+                  disabled={photoLoading}
+                >
+                  <Text style={styles.secondaryActionText}>
+                    {pt.remove_photo}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -579,7 +659,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   sidebar: {
     width: 360,
@@ -600,17 +680,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.grey200,
   },
   sidebarTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '600',
     color: colors.onSurface,
   },
   closeBtn: {
     padding: 4,
+  },
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
   },
   permissionDeniedWrap: {
     flex: 1,
@@ -622,158 +708,168 @@ const styles = StyleSheet.create({
     color: colors.error,
     textAlign: 'center',
   },
-  searchBarRow: {
-    flexDirection: 'row',
+  profileTop: {
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 12,
   },
-  searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    height: 44,
-    backgroundColor: colors.grey100,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: colors.onSurface,
-    paddingVertical: 0,
-  },
-  searchClearBtn: {
-    marginLeft: 6,
-    width: 22,
-    height: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.grey300,
-    backgroundColor: colors.surface,
-  },
-  clearFilterIconBtn: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  addBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-  },
-  loadingWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  contactList: {
-    flex: 1,
-  },
-  contactListContent: {
-    paddingBottom: 16,
-  },
-  contactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-    gap: 10,
-  },
-  contactRowDisabled: {
-    opacity: 0.7,
-  },
-  contactAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: colors.grey200,
+  avatarWrap: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    marginBottom: 10,
+    backgroundColor: colors.grey100,
+    position: 'relative',
   },
-  contactAvatarImage: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  avatarImage: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
   },
-  contactInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  contactName: {
-    fontSize: 15,
+  profileName: {
+    fontSize: 28,
     fontWeight: '600',
     color: colors.onSurface,
   },
-  contactPhone: {
-    fontSize: 12,
-    color: colors.grey600,
+  profileMetaRow: {
     marginTop: 2,
-  },
-  contactActionsInline: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    gap: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  profileRole: {
+    fontSize: 16,
+    color: colors.grey600,
+    textTransform: 'capitalize',
+  },
+  profileStatusInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
-    minWidth: 72,
-    flexShrink: 0,
   },
-  validationChip: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+  profileStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  validationChipOk: {
-    backgroundColor: colors.success,
+  profileStatusText: {
+    fontSize: 14,
+    color: colors.grey700,
+    fontWeight: '500',
   },
-  actionBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 18,
+  },
+  section: {
+    marginTop: 14,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '500',
+    color: colors.grey700,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  aboutInput: {
     borderWidth: 1,
     borderColor: colors.grey300,
-    backgroundColor: colors.grey100,
+    borderRadius: 8,
+    minHeight: 110,
+    textAlignVertical: 'top',
+    fontSize: 16,
+    color: colors.onSurface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.surface,
   },
-  validateActionBtn: {
-    backgroundColor: colors.error,
-    borderColor: colors.error,
-  },
-  empty: {
-    padding: 24,
+  aboutFooter: {
+    marginTop: 6,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  emptyText: {
-    fontSize: 14,
+  counterText: {
+    fontSize: 12,
     color: colors.grey600,
-    textAlign: 'center',
   },
-  listFooterLoading: {
-    paddingVertical: 12,
+  statusGroup: {
+    gap: 10,
+  },
+  statusOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  statusRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.grey400,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  statusRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  statusLabel: {
+    fontSize: 18,
+    color: colors.onSurface,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  settingLabelWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  settingLabel: {
+    fontSize: 18,
+    color: colors.onSurface,
+  },
+  switch: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    paddingHorizontal: 3,
+    justifyContent: 'center',
+  },
+  switchOn: {
+    backgroundColor: colors.primary,
+    alignItems: 'flex-end',
+  },
+  switchOff: {
+    backgroundColor: colors.grey300,
+    alignItems: 'flex-start',
+  },
+  switchThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#fff',
+  },
+  switchThumbOn: {
+    backgroundColor: '#fff',
+  },
+  inlineLoader: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
   },
   footer: {
     padding: 16,
@@ -798,5 +894,67 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.onPrimary,
+  },
+  photoOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  photoCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    padding: 16,
+  },
+  photoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  photoTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  photoPreviewWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  photoPreview: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  photoActions: {
+    gap: 10,
+  },
+  primaryActionBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryActionText: {
+    color: colors.onPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  secondaryActionBtn: {
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: 8,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryActionText: {
+    color: colors.error,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
