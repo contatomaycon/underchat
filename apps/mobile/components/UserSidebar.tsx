@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
   Platform,
   Pressable,
@@ -30,7 +29,7 @@ import { emitAuthUnauthorized } from '../utils/authEvents';
 import { hasChatAccessPermission } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
-import { resolveImageUri } from '../utils/imageUri';
+import { AppAvatar } from './AppAvatar';
 
 type SidebarStatus = 'online' | 'busy' | 'do_not_disturb';
 
@@ -406,22 +405,14 @@ export function UserSidebar({
                     style={styles.avatarWrap}
                     onPress={() => setPhotoModalVisible(true)}
                   >
-                    {(() => {
-                      const photoUri = resolveImageUri(photo);
-                      return photoUri ? (
-                        <Image
-                          source={{ uri: photoUri }}
-                          style={styles.avatarImage}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <Ionicons
-                          name="person-circle-outline"
-                          size={84}
-                          color={colors.grey400}
-                        />
-                      );
-                    })()}
+                    <AppAvatar
+                      uri={photo}
+                      size={84}
+                      style={styles.avatarImage}
+                      iconName="person-circle-outline"
+                      iconSize={84}
+                      iconColor={colors.grey400}
+                    />
                   </Pressable>
                   <Text style={styles.profileName}>{name}</Text>
                   <View style={styles.profileMetaRow}>
@@ -602,21 +593,14 @@ export function UserSidebar({
             </View>
 
             <View style={styles.photoPreviewWrap}>
-              {(() => {
-                const photoUri = resolveImageUri(photo);
-                return photoUri ? (
-                  <Image
-                    source={{ uri: photoUri }}
-                    style={styles.photoPreview}
-                  />
-                ) : (
-                  <Ionicons
-                    name="person-circle-outline"
-                    size={120}
-                    color={colors.grey400}
-                  />
-                );
-              })()}
+              <AppAvatar
+                uri={photo}
+                size={120}
+                style={styles.photoPreview}
+                iconName="person-circle-outline"
+                iconSize={120}
+                iconColor={colors.grey400}
+              />
             </View>
 
             <View style={styles.photoActions}>

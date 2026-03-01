@@ -102,6 +102,7 @@ import {
   canCloseChatWithoutAttending,
   canToggleForwardToOutputChatbot,
 } from '../constants/chatAuthorization';
+import { AppAvatar } from '../components/AppAvatar';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { resolveImageUri } from '../utils/imageUri';
@@ -2748,15 +2749,14 @@ function BubbleContent({
             fromMe && styles.contactAvatarWrapRight,
           ]}
         >
-          {contactDisplay.photoUri ? (
-            <Image
-              source={{ uri: contactDisplay.photoUri }}
-              style={styles.contactAvatar}
-              resizeMode="cover"
-            />
-          ) : (
-            <Ionicons name="person" size={18} color={colors.primary} />
-          )}
+          <AppAvatar
+            uri={contactDisplay.photoUri}
+            size={36}
+            style={styles.contactAvatar}
+            iconName="person"
+            iconSize={18}
+            iconColor={colors.primary}
+          />
         </View>
         <View style={styles.contactInfo}>
           <Text style={styles.contactName} numberOfLines={2}>
@@ -5716,18 +5716,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
           <View style={styles.chatHeaderContactWrap}>
             <View style={styles.chatHeaderAvatarWrap}>
-              {resolveMediaUri(chatInfo.contact?.photo ?? chatInfo.photo) ? (
-                <Image
-                  source={{
-                    uri: resolveMediaUri(
-                      chatInfo.contact?.photo ?? chatInfo.photo
-                    )!,
-                  }}
-                  style={styles.chatHeaderAvatar}
-                />
-              ) : (
-                <Ionicons name="person" size={20} color={colors.grey600} />
-              )}
+              <AppAvatar
+                uri={chatInfo.contact?.photo ?? chatInfo.photo}
+                size={36}
+                style={styles.chatHeaderAvatar}
+                iconName="person"
+                iconSize={20}
+                iconColor={colors.grey600}
+              />
             </View>
 
             <View style={styles.chatHeaderContactInfo}>

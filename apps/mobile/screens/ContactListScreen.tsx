@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -31,7 +30,6 @@ import {
 } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
-import { resolveImageUri } from '../utils/imageUri';
 import {
   ContactAdvancedFilterModal,
   type ContactAdvancedFilterValues,
@@ -42,6 +40,7 @@ import { UserSidebar } from '../components/UserSidebar';
 import { addChatSocketListener } from '../socket/chatSocket';
 import type { ListChatsResult } from '../types/chat';
 import type { ChatStackParamList } from '../navigation/types';
+import { AppAvatar } from '../components/AppAvatar';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Contacts'>;
 
@@ -140,7 +139,6 @@ function ContactRow({
       ? [item.name, item.last_name].filter(Boolean).join(' ')
       : item.phone_partial || item.contact_id;
   const phoneLabel = item.phone_partial ?? '';
-  const photoUri = resolveImageUri(item.photo);
   const isValidated = !!item.is_valided;
 
   return (
@@ -149,13 +147,13 @@ function ContactRow({
       onPress={onPress}
       disabled={disabled}
     >
-      <View style={styles.contactAvatar}>
-        {photoUri ? (
-          <Image source={{ uri: photoUri }} style={styles.contactAvatarImage} />
-        ) : (
-          <Ionicons name="person" size={24} color={colors.grey500} />
-        )}
-      </View>
+      <AppAvatar
+        uri={item.photo}
+        size={42}
+        style={styles.contactAvatar}
+        iconName="person"
+        iconColor={colors.grey500}
+      />
       <View style={styles.contactInfo}>
         <Text style={styles.contactName} numberOfLines={1}>
           {displayName}
@@ -420,22 +418,14 @@ export function ContactListScreen({ navigation }: Props) {
           style={styles.avatarPlaceholder}
           onPress={() => setProfileSidebarVisible(true)}
         >
-          {(() => {
-            const uri = resolveImageUri(userPhoto);
-            return uri ? (
-              <Image
-                source={{ uri }}
-                style={styles.headerAvatarImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <Ionicons
-                name="person-circle-outline"
-                size={40}
-                color={colors.grey400}
-              />
-            );
-          })()}
+          <AppAvatar
+            uri={userPhoto}
+            size={40}
+            style={styles.headerAvatarImage}
+            iconName="person-circle-outline"
+            iconSize={40}
+            iconColor={colors.grey400}
+          />
         </Pressable>
         <View style={styles.searchWrap}>
           <Ionicons
@@ -593,9 +583,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   headerAvatarImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    backgroundColor: 'transparent',
   },
   filterBtn: {
     padding: 8,
@@ -696,11 +684,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-  },
-  contactAvatarImage: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
   },
   contactInfo: {
     flex: 1,

@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -16,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
+import { AppAvatar } from './AppAvatar';
 import { getCountryDialCodeOptions } from '../constants/countryCodes';
 import {
   createChatContact,
@@ -655,18 +655,14 @@ export function ContactFormModal({
                 >
                   <View style={styles.photoRow}>
                     <View style={styles.photoContainer}>
-                      {photoUri ? (
-                        <Image
-                          source={{ uri: photoUri }}
-                          style={styles.photo}
-                        />
-                      ) : (
-                        <Ionicons
-                          name="person-circle-outline"
-                          size={72}
-                          color={colors.grey500}
-                        />
-                      )}
+                      <AppAvatar
+                        uri={photoUri}
+                        size={72}
+                        style={styles.photo}
+                        iconName="person-circle-outline"
+                        iconSize={72}
+                        iconColor={colors.grey500}
+                      />
                     </View>
                     <View style={styles.photoButtons}>
                       <Pressable

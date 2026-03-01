@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LoginScreen } from './screens/LoginScreen';
 import {
   getToken,
@@ -224,13 +225,15 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      <ChatFilterProvider canViewChatbotTab={canViewChatbotTab}>
-        <NavigationContainer>
-          <RootNavigator />
-          <StatusBar style="dark" />
-        </NavigationContainer>
-      </ChatFilterProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ChatFilterProvider canViewChatbotTab={canViewChatbotTab}>
+          <NavigationContainer>
+            <RootNavigator />
+            <StatusBar style="dark" />
+          </NavigationContainer>
+        </ChatFilterProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -10,6 +10,8 @@ export const colors = {
   onSurface: '#2F2B3D',
   success: '#28C76F',
   onSuccess: '#fff',
+  warning: '#FF9F43',
+  onWarning: '#fff',
   error: '#FF4C51',
   onError: '#fff',
   grey50: '#FAFAFA',

@@ -1,17 +1,21 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
+  Alert,
+  ActivityIndicator,
   View,
   Text,
   StyleSheet,
   SectionList,
   Pressable,
   TextInput,
-  Image,
+  Modal,
   Animated,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { Swipeable } from 'react-native-gesture-handler';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatStackParamList } from '../navigation/types';
 import type { ListChatsResult } from '../types/chat';
@@ -21,6 +25,15 @@ import {
   listChats,
   searchChats,
   clearChatSummary,
+  updateChatStatus,
+  transferChat,
+  listTransferOptions,
+  listTransferUsers,
+  listTransferSectors,
+  listTransferSectorUsers,
+  type TransferChatPayload,
+  type TransferSectorOption,
+  type TransferUserOption,
 } from '../api/chatApi';
 import {
   getUser,
@@ -34,10 +47,12 @@ import {
   canPickQueueChat,
   canViewChat,
   canListAllChatsWithoutSectorLimit,
+  canCloseChatWithoutAttending,
 } from '../constants/chatAuthorization';
 import { AdvancedFilterModal } from '../components/AdvancedFilterModal';
 import type { AdvancedFilterValues } from '../components/AdvancedFilterModal';
 import { UserSidebar } from '../components/UserSidebar';
+import { AppAvatar } from '../components/AppAvatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -45,7 +60,6 @@ import {
   useChatFilter,
   type ChatbotFilterStatus,
 } from '../context/ChatFilterContext';
-import { resolveImageUri } from '../utils/imageUri';
 import {
   addChatSocketListener,
   type SocketChatPayload,
@@ -71,6 +85,20 @@ const CHATBOT_FILTER_OPTIONS: Array<{
   { value: 'ura_schedule', label: pt.chatbot_type_schedule },
   { value: 'ura_webhook', label: pt.chatbot_type_webhook },
 ];
+
+type TransferDestinationType = 'user' | 'sector';
+type TransferPickerKind =
+  | 'channel'
+  | 'type'
+  | 'user'
+  | 'sector'
+  | 'sector_user'
+  | null;
+
+type TransferChannelOption = {
+  value: string;
+  label: string;
+};
 
 function readString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -179,6 +207,21 @@ function formatDate(dateStr: string | null | undefined): string {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
+function formatTransferUserLabel(option: TransferUserOption): string {
+  const name = [option.name, option.last_name]
+    .filter((item): item is string => !!item && item.trim().length > 0)
+    .join(' ')
+    .trim();
+
+  if (name.length > 0) return name;
+
+  if (option.nickname && option.nickname.trim().length > 0) {
+    return option.nickname.trim();
+  }
+
+  return option.id;
+}
+
 function ChatRow({
   item,
   onPress,
@@ -194,8 +237,6 @@ function ChatRow({
   const lastMsg = item.summary?.last_message ?? '';
   const lastDate = formatDate(item.summary?.last_date ?? item.date);
   const unread = item.summary?.unread_count ?? 0;
-  const photo = item.photo ?? item.contact?.photo ?? null;
-  const photoUri = resolveImageUri(photo);
 
   return (
     <Pressable
@@ -205,15 +246,14 @@ function ChatRow({
       accessibilityState={{ disabled }}
       accessibilityLabel={disabled ? pt.action_unavailable_by_permission : name}
     >
-      <View style={styles.chatAvatar}>
-        {photoUri ? (
-          <Image source={{ uri: photoUri }} style={styles.chatAvatarImage} />
-        ) : (
-          <View style={styles.chatAvatarPlaceholder}>
-            <Ionicons name="person" size={24} color={colors.grey600} />
-          </View>
-        )}
-      </View>
+      <AppAvatar
+        uri={item.photo ?? item.contact?.photo ?? null}
+        size={48}
+        style={styles.chatAvatar}
+        iconName="person"
+        iconSize={24}
+        iconColor={colors.grey600}
+      />
       <View style={styles.chatRowContent}>
         <View style={styles.chatRowTop}>
           <Text style={styles.chatName} numberOfLines={1}>
@@ -357,6 +397,7 @@ function ChatListLoadMoreSkeleton() {
 export function ChatListScreen({ route, navigation }: Props) {
   const { tab } = route.params;
   const isFocused = useIsFocused();
+  const { width: screenWidth } = useWindowDimensions();
   const {
     hasAppliedAdvancedFilters,
     setHasAppliedAdvancedFilters,
@@ -392,12 +433,47 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [isPermissionsResolved, setIsPermissionsResolved] = useState(false);
   const [isSectorsResolved, setIsSectorsResolved] = useState(false);
   const [isChannelsResolved, setIsChannelsResolved] = useState(false);
+  const [transferModalVisible, setTransferModalVisible] = useState(false);
+  const [transferPickerKind, setTransferPickerKind] =
+    useState<TransferPickerKind>(null);
+  const [transferTargetChat, setTransferTargetChat] =
+    useState<ListChatsResult | null>(null);
+  const [transferType, setTransferType] =
+    useState<TransferDestinationType | null>(null);
+  const [transferAnnotation, setTransferAnnotation] = useState('');
+  const [transferChannels, setTransferChannels] = useState<
+    TransferChannelOption[]
+  >([]);
+  const [transferUsers, setTransferUsers] = useState<TransferUserOption[]>([]);
+  const [transferSectors, setTransferSectors] = useState<
+    TransferSectorOption[]
+  >([]);
+  const [transferSectorUsers, setTransferSectorUsers] = useState<
+    TransferUserOption[]
+  >([]);
+  const [selectedTransferChannelId, setSelectedTransferChannelId] = useState<
+    string | null
+  >(null);
+  const [selectedTransferUserId, setSelectedTransferUserId] = useState<
+    string | null
+  >(null);
+  const [selectedTransferSectorId, setSelectedTransferSectorId] = useState<
+    string | null
+  >(null);
+  const [selectedTransferSectorUserId, setSelectedTransferSectorUserId] =
+    useState<string | null>(null);
+  const [isLoadingTransferOptions, setIsLoadingTransferOptions] =
+    useState(false);
+  const [isLoadingTransferSectorUsers, setIsLoadingTransferSectorUsers] =
+    useState(false);
+  const [isTransferring, setIsTransferring] = useState(false);
   const locallyClearedSummaryChatIdsRef = useRef<Set<string>>(new Set());
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
   const loadingRef = useRef(false);
   const isLoadingMoreRef = useRef(false);
+  const openedSwipeableRef = useRef<Swipeable | null>(null);
   const paginationRef = useRef<{ currentPage: number; totalPages: number }>({
     currentPage: 1,
     totalPages: 1,
@@ -880,6 +956,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     chat: ListChatsResult,
     queueIndex: number | null = null
   ) => {
+    openedSwipeableRef.current?.close();
     const canOpenByVisibility = canViewChat(chat, {
       permissions: socketPermissions,
       userId: currentUserId,
@@ -939,6 +1016,340 @@ export function ChatListScreen({ route, navigation }: Props) {
     navigation.push('ChatRoom', { chat });
   };
 
+  const closeTransferModal = useCallback(() => {
+    if (isTransferring) return;
+    setTransferModalVisible(false);
+    setTransferPickerKind(null);
+    setTransferTargetChat(null);
+    setTransferType(null);
+    setTransferAnnotation('');
+    setTransferChannels([]);
+    setTransferUsers([]);
+    setTransferSectors([]);
+    setTransferSectorUsers([]);
+    setSelectedTransferChannelId(null);
+    setSelectedTransferUserId(null);
+    setSelectedTransferSectorId(null);
+    setSelectedTransferSectorUserId(null);
+    setIsLoadingTransferOptions(false);
+    setIsLoadingTransferSectorUsers(false);
+  }, [isTransferring]);
+
+  const openTransferModal = useCallback(async (chat: ListChatsResult) => {
+    setTransferTargetChat(chat);
+    setTransferModalVisible(true);
+    setTransferPickerKind(null);
+    setTransferType(null);
+    setTransferAnnotation('');
+    setTransferChannels([]);
+    setTransferUsers([]);
+    setTransferSectors([]);
+    setTransferSectorUsers([]);
+    setSelectedTransferChannelId(null);
+    setSelectedTransferUserId(null);
+    setSelectedTransferSectorId(null);
+    setSelectedTransferSectorUserId(null);
+    setIsLoadingTransferOptions(true);
+
+    try {
+      const chatId = chat.chat_id;
+      const [baseOptions, users, sectors] = await Promise.all([
+        listTransferOptions(),
+        listTransferUsers(chatId),
+        listTransferSectors(),
+      ]);
+
+      const channels = (baseOptions?.workers ?? []).map((worker) => {
+        const numberLabel = worker.number ? ` (${worker.number})` : '';
+        return {
+          value: worker.id,
+          label: `${worker.name}${numberLabel}`,
+        };
+      });
+
+      setTransferChannels(channels);
+      setTransferUsers(users);
+      setTransferSectors(sectors);
+    } catch {
+      Alert.alert(pt.error_title, pt.chat_transfer_error);
+      closeTransferModal();
+    } finally {
+      setIsLoadingTransferOptions(false);
+    }
+  }, [closeTransferModal]);
+
+  useEffect(() => {
+    if (!transferModalVisible || !transferTargetChat?.chat_id) {
+      return;
+    }
+
+    const chatId = transferTargetChat.chat_id;
+
+    listTransferUsers(chatId, selectedTransferChannelId ?? undefined)
+      .then((users) => {
+        setTransferUsers(users);
+      })
+      .catch(() => {
+        setTransferUsers([]);
+      });
+  }, [
+    selectedTransferChannelId,
+    transferModalVisible,
+    transferTargetChat?.chat_id,
+  ]);
+
+  useEffect(() => {
+    if (
+      !transferModalVisible ||
+      !transferTargetChat?.chat_id ||
+      transferType !== 'sector' ||
+      !selectedTransferSectorId
+    ) {
+      setTransferSectorUsers([]);
+      return;
+    }
+
+    const chatId = transferTargetChat.chat_id;
+    setIsLoadingTransferSectorUsers(true);
+
+    listTransferSectorUsers(
+      selectedTransferSectorId,
+      chatId,
+      selectedTransferChannelId ?? undefined
+    )
+      .then((users) => {
+        setTransferSectorUsers(users);
+      })
+      .catch(() => {
+        setTransferSectorUsers([]);
+      })
+      .finally(() => {
+        setIsLoadingTransferSectorUsers(false);
+      });
+  }, [
+    selectedTransferChannelId,
+    selectedTransferSectorId,
+    transferModalVisible,
+    transferTargetChat?.chat_id,
+    transferType,
+  ]);
+
+  const handleSelectTransferPickerValue = useCallback(
+    (value: string) => {
+      if (transferPickerKind === 'channel') {
+        setSelectedTransferChannelId(value);
+        setSelectedTransferUserId(null);
+        setSelectedTransferSectorUserId(null);
+      } else if (transferPickerKind === 'type') {
+        if (value === 'user' || value === 'sector') {
+          setTransferType(value);
+        } else {
+          setTransferType(null);
+        }
+        setSelectedTransferUserId(null);
+        setSelectedTransferSectorId(null);
+        setSelectedTransferSectorUserId(null);
+      } else if (transferPickerKind === 'user') {
+        setSelectedTransferUserId(value);
+      } else if (transferPickerKind === 'sector') {
+        setSelectedTransferSectorId(value);
+        setSelectedTransferSectorUserId(null);
+      } else if (transferPickerKind === 'sector_user') {
+        setSelectedTransferSectorUserId(value);
+      }
+
+      setTransferPickerKind(null);
+    },
+    [transferPickerKind]
+  );
+
+  const transferPickerOptions = useMemo(() => {
+    if (transferPickerKind === 'channel') {
+      return transferChannels;
+    }
+    if (transferPickerKind === 'type') {
+      return [
+        { value: 'user', label: pt.transfer_type_user },
+        { value: 'sector', label: pt.transfer_type_sector },
+      ];
+    }
+    if (transferPickerKind === 'user') {
+      return transferUsers.map((option) => ({
+        value: option.id,
+        label: formatTransferUserLabel(option),
+      }));
+    }
+    if (transferPickerKind === 'sector') {
+      return transferSectors.map((option) => ({
+        value: option.id,
+        label: option.name,
+      }));
+    }
+    if (transferPickerKind === 'sector_user') {
+      return transferSectorUsers.map((option) => ({
+        value: option.id,
+        label: formatTransferUserLabel(option),
+      }));
+    }
+    return [];
+  }, [
+    transferChannels,
+    transferPickerKind,
+    transferSectors,
+    transferSectorUsers,
+    transferUsers,
+  ]);
+
+  const selectedTransferChannelLabel =
+    transferChannels.find((item) => item.value === selectedTransferChannelId)
+      ?.label ?? null;
+  const selectedTransferTypeLabel =
+    transferType === 'user'
+      ? pt.transfer_type_user
+      : transferType === 'sector'
+        ? pt.transfer_type_sector
+        : null;
+  const selectedTransferUserLabel =
+    transferUsers.find((item) => item.id === selectedTransferUserId)?.name ??
+    null;
+  const selectedTransferSectorLabel =
+    transferSectors.find((item) => item.id === selectedTransferSectorId)
+      ?.name ?? null;
+  const selectedTransferSectorUserLabel =
+    transferSectorUsers.find((item) => item.id === selectedTransferSectorUserId)
+      ?.name ?? null;
+
+  const submitTransfer = useCallback(async () => {
+    const chatId = transferTargetChat?.chat_id;
+    if (!chatId) return;
+    if (!selectedTransferChannelId) {
+      Alert.alert(pt.warning_title, pt.channel_required);
+      return;
+    }
+    if (transferType === 'user' && !selectedTransferUserId) {
+      Alert.alert(pt.warning_title, pt.user_required);
+      return;
+    }
+    if (transferType === 'sector' && !selectedTransferSectorId) {
+      Alert.alert(pt.warning_title, pt.sector_required);
+      return;
+    }
+
+    const payload: TransferChatPayload = {
+      worker_id: selectedTransferChannelId,
+      user_id:
+        transferType === 'user'
+          ? selectedTransferUserId
+          : transferType === 'sector'
+            ? selectedTransferSectorUserId
+            : null,
+      sector_id: transferType === 'sector' ? selectedTransferSectorId : null,
+      annotation: transferAnnotation.trim() || null,
+    };
+
+    setIsTransferring(true);
+    const ok = await transferChat(chatId, payload);
+    setIsTransferring(false);
+
+    if (!ok) {
+      Alert.alert(pt.error_title, pt.chat_transfer_error);
+      return;
+    }
+
+    Alert.alert(pt.success_title, pt.transfer_successfully);
+    closeTransferModal();
+    void load();
+  }, [
+    closeTransferModal,
+    load,
+    selectedTransferChannelId,
+    selectedTransferSectorId,
+    selectedTransferSectorUserId,
+    selectedTransferUserId,
+    transferAnnotation,
+    transferTargetChat?.chat_id,
+    transferType,
+  ]);
+
+  const handleCloseChat = useCallback(
+    (chat: ListChatsResult) => {
+      openedSwipeableRef.current?.close();
+      Alert.alert(pt.close_service, pt.close_service_confirmation, [
+        {
+          text: pt.cancel,
+          style: 'cancel',
+        },
+        {
+          text: pt.close_service,
+          style: 'destructive',
+          onPress: () => {
+            updateChatStatus(chat.chat_id, 'closed')
+              .then((ok) => {
+                if (!ok) {
+                  Alert.alert(pt.error_title, pt.chat_status_update_error);
+                  return;
+                }
+                Alert.alert(pt.success_title, pt.close_service_success);
+                void load();
+              })
+              .catch(() => {
+                Alert.alert(pt.error_title, pt.chat_status_update_error);
+              });
+          },
+        },
+      ]);
+    },
+    [load]
+  );
+
+  const handleAttendQueueChat = useCallback(
+    async (chat: ListChatsResult) => {
+      openedSwipeableRef.current?.close();
+      const ok = await updateChatStatus(chat.chat_id, 'in_chat');
+      if (!ok) {
+        Alert.alert(pt.error_title, pt.chat_status_update_error);
+        return;
+      }
+
+      const attendedChat: ListChatsResult = {
+        ...chat,
+        status: 'in_chat',
+      };
+
+      const parentNavigation = navigation.getParent() as
+        | {
+            navigate: (
+              routeName: string,
+              params?: {
+                screen?: string;
+                params?: { chat: ListChatsResult };
+              }
+            ) => void;
+          }
+        | undefined;
+
+      if (parentNavigation) {
+        parentNavigation.navigate('InChat', {
+          screen: 'ChatRoom',
+          params: { chat: attendedChat },
+        });
+        return;
+      }
+
+      navigation.push('ChatRoom', { chat: attendedChat });
+    },
+    [navigation]
+  );
+
+  const handleClearSearch = useCallback(() => {
+    openedSwipeableRef.current?.close();
+    setSearch('');
+  }, []);
+
+  const closeOpenedSwipeable = useCallback(() => {
+    openedSwipeableRef.current?.close();
+  }, []);
+
   const chatbotTypeLabelByStatus = useCallback(
     (status: ListChatsResult['status']): string | null => {
       if (status === 'ura') return pt.chatbot_type_input;
@@ -980,33 +1391,49 @@ export function ChatListScreen({ route, navigation }: Props) {
           style={styles.avatarPlaceholder}
           onPress={() => setProfileSidebarVisible(true)}
         >
-          {(() => {
-            const uri = resolveImageUri(userPhoto);
-            return uri ? (
-              <Image
-                source={{ uri }}
-                style={styles.headerAvatarImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <Ionicons
-                name="person-circle-outline"
-                size={40}
-                color={colors.grey400}
-              />
-            );
-          })()}
+          <AppAvatar
+            uri={userPhoto}
+            size={40}
+            style={styles.headerAvatarImage}
+            iconName="person-circle-outline"
+            iconSize={40}
+            iconColor={colors.grey400}
+          />
         </Pressable>
-        <TextInput
-          style={styles.searchInput}
-          placeholder={pt.search_service}
-          placeholderTextColor={colors.grey500}
-          value={search}
-          onChangeText={setSearch}
-        />
+        <View style={styles.searchWrap}>
+          <Ionicons
+            name="search"
+            size={20}
+            color={colors.grey500}
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={styles.searchInput}
+            placeholder={pt.search_service}
+            placeholderTextColor={colors.grey500}
+            value={search}
+            onChangeText={(value) => {
+              closeOpenedSwipeable();
+              setSearch(value);
+            }}
+          />
+          {search.trim().length > 0 ? (
+            <Pressable
+              style={styles.searchClearBtn}
+              onPress={handleClearSearch}
+              hitSlop={8}
+              accessibilityLabel={pt.clear_filter}
+            >
+              <Ionicons name="close-circle" size={18} color={colors.grey500} />
+            </Pressable>
+          ) : null}
+        </View>
         <Pressable
           style={styles.filterBtn}
-          onPress={() => setFilterModalVisible(true)}
+          onPress={() => {
+            closeOpenedSwipeable();
+            setFilterModalVisible(true);
+          }}
         >
           <Ionicons name="filter" size={22} color={colors.onSurface} />
         </Pressable>
@@ -1014,6 +1441,7 @@ export function ChatListScreen({ route, navigation }: Props) {
           <Pressable
             style={styles.clearFilterBtn}
             onPress={() => {
+              closeOpenedSwipeable();
               if (tab === 'closed') {
                 (
                   navigation.getParent() as { navigate: (n: string) => void }
@@ -1109,6 +1537,233 @@ export function ChatListScreen({ route, navigation }: Props) {
         }}
         canUseUserAndSectorFilters={canUseUserAndSectorFilters}
       />
+      <Modal
+        visible={transferModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeTransferModal}
+      >
+        <View style={styles.transferOverlay}>
+          <Pressable style={styles.transferBackdrop} onPress={closeTransferModal} />
+          <View style={styles.transferCard}>
+            <View style={styles.transferHeaderRow}>
+              <Text style={styles.transferTitle}>{pt.transfer_to}</Text>
+              <Pressable onPress={closeTransferModal} hitSlop={12}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            {isLoadingTransferOptions ? (
+              <View style={styles.transferLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
+              <>
+                <Text style={styles.transferFieldLabel}>{pt.channel}</Text>
+                <Pressable
+                  style={styles.transferSelectField}
+                  onPress={() => setTransferPickerKind('channel')}
+                >
+                  <Text
+                    style={[
+                      styles.transferSelectText,
+                      !selectedTransferChannelLabel &&
+                        styles.transferSelectPlaceholder,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {selectedTransferChannelLabel ?? pt.transfer_select_channel}
+                  </Text>
+                  <Ionicons
+                    name="chevron-down"
+                    size={18}
+                    color={colors.grey600}
+                  />
+                </Pressable>
+
+                <Text style={styles.transferFieldLabel}>{pt.transfer_to}</Text>
+                <Pressable
+                  style={styles.transferSelectField}
+                  onPress={() => setTransferPickerKind('type')}
+                >
+                  <Text
+                    style={[
+                      styles.transferSelectText,
+                      !selectedTransferTypeLabel &&
+                        styles.transferSelectPlaceholder,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {selectedTransferTypeLabel ?? pt.transfer_to_placeholder}
+                  </Text>
+                  <Ionicons
+                    name="chevron-down"
+                    size={18}
+                    color={colors.grey600}
+                  />
+                </Pressable>
+
+                {transferType === 'user' ? (
+                  <>
+                    <Text style={styles.transferFieldLabel}>{pt.attendant}</Text>
+                    <Pressable
+                      style={styles.transferSelectField}
+                      onPress={() => setTransferPickerKind('user')}
+                    >
+                      <Text
+                        style={[
+                          styles.transferSelectText,
+                          !selectedTransferUserLabel &&
+                            styles.transferSelectPlaceholder,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {selectedTransferUserLabel ?? pt.transfer_select_user}
+                      </Text>
+                      <Ionicons
+                        name="chevron-down"
+                        size={18}
+                        color={colors.grey600}
+                      />
+                    </Pressable>
+                  </>
+                ) : null}
+
+                {transferType === 'sector' ? (
+                  <>
+                    <Text style={styles.transferFieldLabel}>{pt.sector}</Text>
+                    <Pressable
+                      style={styles.transferSelectField}
+                      onPress={() => setTransferPickerKind('sector')}
+                    >
+                      <Text
+                        style={[
+                          styles.transferSelectText,
+                          !selectedTransferSectorLabel &&
+                            styles.transferSelectPlaceholder,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {selectedTransferSectorLabel ?? pt.transfer_select_sector}
+                      </Text>
+                      <Ionicons
+                        name="chevron-down"
+                        size={18}
+                        color={colors.grey600}
+                      />
+                    </Pressable>
+
+                    <Text style={styles.transferFieldLabel}>
+                      {pt.transfer_sector_user_optional}
+                    </Text>
+                    <Pressable
+                      style={styles.transferSelectField}
+                      onPress={() => setTransferPickerKind('sector_user')}
+                      disabled={!selectedTransferSectorId}
+                    >
+                      <Text
+                        style={[
+                          styles.transferSelectText,
+                          !selectedTransferSectorUserLabel &&
+                            styles.transferSelectPlaceholder,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {selectedTransferSectorUserLabel ??
+                          pt.transfer_select_sector_user}
+                      </Text>
+                      {isLoadingTransferSectorUsers ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Ionicons
+                          name="chevron-down"
+                          size={18}
+                          color={colors.grey600}
+                        />
+                      )}
+                    </Pressable>
+                  </>
+                ) : null}
+
+                <Text style={styles.transferFieldLabel}>{pt.transfer_annotation}</Text>
+                <TextInput
+                  style={styles.transferAnnotationInput}
+                  value={transferAnnotation}
+                  onChangeText={setTransferAnnotation}
+                  placeholder={pt.transfer_annotation_placeholder}
+                  placeholderTextColor={colors.grey500}
+                  multiline
+                  maxLength={300}
+                />
+
+                <View style={styles.transferActionsRow}>
+                  <Pressable
+                    style={styles.transferCancelBtn}
+                    onPress={closeTransferModal}
+                    disabled={isTransferring}
+                  >
+                    <Text style={styles.transferCancelText}>{pt.cancel}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.transferSubmitBtn}
+                    onPress={() => {
+                      void submitTransfer();
+                    }}
+                    disabled={isTransferring}
+                  >
+                    {isTransferring ? (
+                      <ActivityIndicator size="small" color={colors.onPrimary} />
+                    ) : (
+                      <Text style={styles.transferSubmitText}>{pt.transfer}</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={transferPickerKind !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTransferPickerKind(null)}
+      >
+        <View style={styles.transferOverlay}>
+          <Pressable
+            style={styles.transferBackdrop}
+            onPress={() => setTransferPickerKind(null)}
+          />
+          <View style={styles.transferPickerCard}>
+            <View style={styles.transferHeaderRow}>
+              <Text style={styles.transferTitle}>{pt.select_option}</Text>
+              <Pressable onPress={() => setTransferPickerKind(null)} hitSlop={12}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+            {transferPickerOptions.length === 0 ? (
+              <Text style={styles.transferEmptyText}>{pt.no_conversations_found}</Text>
+            ) : (
+              <SectionList
+                sections={[{ title: '', data: transferPickerOptions }]}
+                keyExtractor={(item) => item.value}
+                renderSectionHeader={() => null}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={styles.transferPickerOption}
+                    onPress={() => handleSelectTransferPickerValue(item.value)}
+                  >
+                    <Text style={styles.transferPickerOptionText} numberOfLines={1}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
       {loading ? (
         <ChatListSkeleton />
       ) : sections.every((s) => s.data.length === 0) ? (
@@ -1131,6 +1786,8 @@ export function ChatListScreen({ route, navigation }: Props) {
       ) : (
         <SectionList
           sections={sections}
+          onTouchStart={closeOpenedSwipeable}
+          onScrollBeginDrag={closeOpenedSwipeable}
           keyExtractor={(item) => item.chat_id}
           renderItem={({ item, index }) => {
             const isQueueItemLocked =
@@ -1142,7 +1799,18 @@ export function ChatListScreen({ route, navigation }: Props) {
               userChannels,
             });
 
-            return (
+            const isInChatItem = item.status === 'in_chat';
+            const isQueueItem = item.status === 'queue';
+            const canAttendQueueItem =
+              isQueueItem && (canPickAnyQueueChat || index === 0);
+            const canCloseQueueItem =
+              isQueueItem && canCloseChatWithoutAttending(socketPermissions);
+            const canSwipe =
+              canOpenByVisibility &&
+              !isQueueItemLocked &&
+              (isInChatItem || isQueueItem);
+
+            const row = (
               <ChatRow
                 item={item}
                 chatbotTypeLabel={
@@ -1155,6 +1823,136 @@ export function ChatListScreen({ route, navigation }: Props) {
                   openChat(item, item.status === 'queue' ? index : null)
                 }
               />
+            );
+
+            if (!canSwipe) {
+              return row;
+            }
+
+            const closeSwipeLabel =
+              pt.close_service.split(' ')[0] || pt.close_service;
+
+            const queueActions = [
+              {
+                key: 'attend',
+                visible: isQueueItem,
+                style: styles.swipeAttendBtn,
+                label: pt.attend_service,
+                onPress: () => {
+                  if (!canAttendQueueItem) {
+                    Alert.alert(
+                      pt.warning_title,
+                      pt.action_unavailable_by_permission
+                    );
+                    return;
+                  }
+                  void handleAttendQueueChat(item);
+                },
+              },
+              {
+                key: 'transfer',
+                visible: true,
+                style: styles.swipeTransferBtn,
+                label: pt.transfer,
+                onPress: () => {
+                  openedSwipeableRef.current?.close();
+                  void openTransferModal(item);
+                },
+              },
+              {
+                key: 'close',
+                visible: isInChatItem || canCloseQueueItem,
+                style: styles.swipeCloseBtn,
+                label: closeSwipeLabel,
+                onPress: () => {
+                  handleCloseChat(item);
+                },
+              },
+            ].filter((action) => action.visible);
+
+            const maxActionsWidth = Math.max(140, Math.floor(screenWidth * 0.5));
+            const actionWidth = Math.floor(
+              maxActionsWidth / Math.max(queueActions.length, 1)
+            );
+            let rowSwipeable: Swipeable | null = null;
+
+            return (
+              <Swipeable
+                ref={(instance) => {
+                  rowSwipeable = instance;
+                }}
+                friction={1.6}
+                rightThreshold={32}
+                overshootRight={false}
+                containerStyle={styles.swipeableContainer}
+                childrenContainerStyle={styles.swipeableChildrenContainer}
+                onSwipeableWillOpen={(direction) => {
+                  if (direction !== 'right') return;
+                  if (
+                    openedSwipeableRef.current &&
+                    openedSwipeableRef.current !== rowSwipeable
+                  ) {
+                    openedSwipeableRef.current.close();
+                  }
+                }}
+                onSwipeableOpen={(direction) => {
+                  if (direction !== 'right') return;
+                  openedSwipeableRef.current = rowSwipeable;
+                }}
+                onSwipeableClose={(direction) => {
+                  if (direction === 'right' && openedSwipeableRef.current) {
+                    openedSwipeableRef.current = null;
+                  }
+                }}
+                renderRightActions={(progress, dragX) => {
+                  const actionsWidth = actionWidth * queueActions.length;
+                  const translateX = dragX.interpolate({
+                    inputRange: [-actionsWidth, 0],
+                    outputRange: [0, actionsWidth],
+                    extrapolate: 'clamp',
+                  });
+                  const opacity = progress.interpolate({
+                    inputRange: [0, 0.4, 1],
+                    outputRange: [0.1, 0.75, 1],
+                    extrapolate: 'clamp',
+                  });
+
+                  return (
+                    <Animated.View
+                      style={[
+                        styles.swipeActionsAnimated,
+                        {
+                          width: actionsWidth,
+                          opacity,
+                          transform: [{ translateX }],
+                        },
+                      ]}
+                    >
+                      <View style={styles.swipeActionsRow}>
+                        {queueActions.map((action) => (
+                          <Pressable
+                            key={`${item.chat_id}-${action.key}`}
+                            style={[
+                              styles.swipeActionBtn,
+                              action.style,
+                              { width: actionWidth },
+                            ]}
+                            onPress={action.onPress}
+                          >
+                            <View style={styles.swipeActionTextWrap}>
+                              <Text style={styles.swipeActionText} numberOfLines={1}>
+                                {action.label}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </Animated.View>
+                  );
+                }}
+              >
+                {row}
+              </Swipeable>
             );
           }}
           renderSectionHeader={({ section }) => (
@@ -1199,18 +1997,32 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   headerAvatarImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    backgroundColor: 'transparent',
   },
-  searchInput: {
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
     height: 40,
     backgroundColor: colors.inputBg,
     borderRadius: 8,
     paddingHorizontal: 12,
-    fontSize: 14,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
     color: colors.onSurface,
+    paddingVertical: 0,
+  },
+  searchClearBtn: {
+    marginLeft: 6,
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterBtn: {
     padding: 8,
@@ -1331,19 +2143,6 @@ const styles = StyleSheet.create({
   chatAvatar: {
     marginRight: 12,
   },
-  chatAvatarImage: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-  chatAvatarPlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.grey300,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   chatRowContent: {
     flex: 1,
     minWidth: 0,
@@ -1460,5 +2259,173 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.grey600,
     textAlign: 'center',
+  },
+  swipeActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    justifyContent: 'flex-end',
+    height: '100%',
+  },
+  swipeActionsAnimated: {
+    height: '100%',
+    overflow: 'hidden',
+  },
+  swipeableContainer: {
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
+  swipeableChildrenContainer: {
+    backgroundColor: colors.surface,
+  },
+  swipeActionBtn: {
+    minWidth: 68,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  swipeActionTextWrap: {
+    transform: [{ rotate: '-90deg' }],
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 92,
+  },
+  swipeAttendBtn: {
+    backgroundColor: colors.success,
+  },
+  swipeTransferBtn: {
+    backgroundColor: colors.warning,
+  },
+  swipeCloseBtn: {
+    backgroundColor: colors.error,
+  },
+  swipeActionText: {
+    color: colors.onPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  transferOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  transferBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  transferCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    maxHeight: '88%',
+  },
+  transferPickerCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    maxHeight: '70%',
+    overflow: 'hidden',
+  },
+  transferHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  transferTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.onSurface,
+  },
+  transferLoadingWrap: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  transferFieldLabel: {
+    fontSize: 12,
+    color: colors.grey600,
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  transferSelectField: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.inputBg,
+    gap: 8,
+  },
+  transferSelectText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.onSurface,
+  },
+  transferSelectPlaceholder: {
+    color: colors.grey500,
+  },
+  transferAnnotationInput: {
+    minHeight: 72,
+    maxHeight: 120,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.onSurface,
+    backgroundColor: colors.inputBg,
+    textAlignVertical: 'top',
+  },
+  transferActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 14,
+  },
+  transferCancelBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    minHeight: 40,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  transferCancelText: {
+    color: colors.onSurface,
+    fontWeight: '600',
+  },
+  transferSubmitBtn: {
+    borderRadius: 8,
+    minHeight: 40,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    minWidth: 104,
+  },
+  transferSubmitText: {
+    color: colors.onPrimary,
+    fontWeight: '700',
+  },
+  transferPickerOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.grey200,
+  },
+  transferPickerOptionText: {
+    fontSize: 14,
+    color: colors.onSurface,
+  },
+  transferEmptyText: {
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    color: colors.grey600,
   },
 });
