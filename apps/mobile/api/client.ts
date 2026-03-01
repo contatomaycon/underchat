@@ -9,12 +9,45 @@ async function handleUnauthorized(): Promise<void> {
   emitAuthUnauthorized();
 }
 
+type ApiEnvelope<T> = { status: boolean; data: T };
+
+async function parseJsonSafe<T>(
+  response: Response
+): Promise<ApiEnvelope<T> | null> {
+  try {
+    const data = (await response.json()) as ApiEnvelope<T>;
+    if (!response.ok || !data?.status) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function buildAuthHeaders(
+  contentType?: 'application/json'
+): Promise<Record<string, string> | null> {
+  const token = await getToken();
+  if (!token) return null;
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Accept-Language': 'pt',
+    Authorization: `Bearer ${token}`,
+  };
+
+  if (contentType) {
+    headers['Content-Type'] = contentType;
+  }
+
+  return headers;
+}
+
 export async function apiGet<T>(
   path: string,
   params?: Record<string, string | number | undefined>
 ): Promise<{ status: boolean; data: T } | null> {
-  const token = await getToken();
-  if (!token) return null;
+  const headers = await buildAuthHeaders('application/json');
+  if (!headers) return null;
 
   const url = new URL(
     path.startsWith('http')
@@ -29,12 +62,7 @@ export async function apiGet<T>(
 
   const res = await fetch(url.toString(), {
     method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'Accept-Language': 'pt',
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
   });
 
   if (res.status === 401) {
@@ -42,17 +70,15 @@ export async function apiGet<T>(
     return null;
   }
 
-  const body = (await res.json()) as { status: boolean; data: T };
-  if (!res.ok || !body?.status) return null;
-  return body;
+  return parseJsonSafe<T>(res);
 }
 
 export async function apiPost<T>(
   path: string,
   body: unknown
 ): Promise<{ status: boolean; data: T } | null> {
-  const token = await getToken();
-  if (!token) return null;
+  const headers = await buildAuthHeaders('application/json');
+  if (!headers) return null;
 
   const url = path.startsWith('http')
     ? path
@@ -60,12 +86,7 @@ export async function apiPost<T>(
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'Accept-Language': 'pt',
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     body: JSON.stringify(body),
   });
 
@@ -74,17 +95,15 @@ export async function apiPost<T>(
     return null;
   }
 
-  const data = (await res.json()) as { status: boolean; data: T };
-  if (!res.ok || !data?.status) return null;
-  return data;
+  return parseJsonSafe<T>(res);
 }
 
 export async function apiPostForm<T>(
   path: string,
   body: FormData
 ): Promise<{ status: boolean; data: T } | null> {
-  const token = await getToken();
-  if (!token) return null;
+  const headers = await buildAuthHeaders();
+  if (!headers) return null;
 
   const url = path.startsWith('http')
     ? path
@@ -92,11 +111,7 @@ export async function apiPostForm<T>(
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Accept-Language': 'pt',
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     body,
   });
 
@@ -105,11 +120,85 @@ export async function apiPostForm<T>(
     return null;
   }
 
-  try {
-    const data = (await res.json()) as { status: boolean; data: T };
-    if (!res.ok || !data?.status) return null;
-    return data;
-  } catch {
+  return parseJsonSafe<T>(res);
+}
+
+export async function apiPatch<T>(
+  path: string,
+  body: unknown
+): Promise<{ status: boolean; data: T } | null> {
+  const headers = await buildAuthHeaders('application/json');
+  if (!headers) return null;
+
+  const url = path.startsWith('http')
+    ? path
+    : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401) {
+    await handleUnauthorized();
     return null;
   }
+
+  return parseJsonSafe<T>(res);
+}
+
+export async function apiPatchForm<T>(
+  path: string,
+  body: FormData
+): Promise<{ status: boolean; data: T } | null> {
+  const headers = await buildAuthHeaders();
+  if (!headers) return null;
+
+  const url = path.startsWith('http')
+    ? path
+    : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers,
+    body,
+  });
+
+  if (res.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  return parseJsonSafe<T>(res);
+}
+
+export async function apiDelete<T>(
+  path: string,
+  body?: unknown
+): Promise<{ status: boolean; data: T } | null> {
+  const headers = await buildAuthHeaders('application/json');
+  if (!headers) return null;
+
+  const url = path.startsWith('http')
+    ? path
+    : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  const requestInit: RequestInit = {
+    method: 'DELETE',
+    headers,
+  };
+
+  if (body !== undefined) {
+    requestInit.body = JSON.stringify(body);
+  }
+
+  const res = await fetch(url, requestInit);
+
+  if (res.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  return parseJsonSafe<T>(res);
 }

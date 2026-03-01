@@ -602,6 +602,15 @@ export function ChatListScreen({ route, navigation }: Props) {
     }, 250);
   }, [load]);
 
+  const handleOpenChatFromContact = useCallback(
+    (chat: ListChatsResult) => {
+      setSidebarVisible(false);
+      navigation.push('ChatRoom', { chat });
+      scheduleRealtimeReload();
+    },
+    [navigation, scheduleRealtimeReload]
+  );
+
   useFocusEffect(
     useCallback(() => {
       load();
@@ -793,6 +802,8 @@ export function ChatListScreen({ route, navigation }: Props) {
       <UserSidebar
         visible={sidebarVisible}
         onClose={() => setSidebarVisible(false)}
+        onOpenChatFromContact={handleOpenChatFromContact}
+        onContactsChanged={scheduleRealtimeReload}
       />
       <AdvancedFilterModal
         visible={filterModalVisible}

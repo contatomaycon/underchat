@@ -1,10 +1,35 @@
-import { apiGet, apiPost, apiPostForm } from './client';
+import {
+  apiDelete,
+  apiGet,
+  apiPatchForm,
+  apiPost,
+  apiPostForm,
+} from './client';
 import {
   MY_CHATS_STATUS,
   type ListChatsResponse,
   type ListMessageResponse,
   type ListMessageResult,
+  type ListChatsResult,
 } from '../types/chat';
+import type {
+  ChatContactChannelsItem,
+  ChatContactListItem,
+  ChatContactListResponse,
+  ChatContactViewResponse,
+  ContactListFilters,
+  ContactSortField,
+  ContactSortOrder,
+  CreateChatContactPayload,
+  TransferSector,
+  TransferWorker,
+  UpdateChatContactPayload,
+  WorkerConfigForChat,
+} from '../types/contact';
+import {
+  appendQueryField,
+  serializeContactFilters,
+} from '../utils/contactFilters';
 
 export interface LabelTemplate {
   label_template_id: string;
@@ -53,60 +78,21 @@ function buildChatQuery(
     current_page: params.current_page ?? 1,
     per_page: params.per_page ?? 25,
   };
-  if (
-    params.filter_label_template_id !== null &&
-    params.filter_label_template_id !== undefined &&
-    params.filter_label_template_id !== ''
-  )
-    q.filter_label_template_id = params.filter_label_template_id;
-  if (
-    params.filter_worker_id !== null &&
-    params.filter_worker_id !== undefined &&
-    params.filter_worker_id !== ''
-  )
-    q.filter_worker_id = params.filter_worker_id;
-  if (
-    params.filter_user_id !== null &&
-    params.filter_user_id !== undefined &&
-    params.filter_user_id !== ''
-  )
-    q.filter_user_id = params.filter_user_id;
-  if (
-    params.filter_sector_id !== null &&
-    params.filter_sector_id !== undefined &&
-    params.filter_sector_id !== ''
-  )
-    q.filter_sector_id = params.filter_sector_id;
-  if (
-    params.filter_name !== null &&
-    params.filter_name !== undefined &&
-    params.filter_name !== ''
-  )
-    q.filter_name = params.filter_name;
-  if (
-    params.filter_phone !== null &&
-    params.filter_phone !== undefined &&
-    params.filter_phone !== ''
-  )
-    q.filter_phone = params.filter_phone;
-  if (
-    params.filter_protocol !== null &&
-    params.filter_protocol !== undefined &&
-    params.filter_protocol !== ''
-  )
-    q.filter_protocol = params.filter_protocol;
-  if (
-    params.filter_date_start !== null &&
-    params.filter_date_start !== undefined &&
-    params.filter_date_start !== ''
-  )
-    q.filter_date_start = params.filter_date_start;
-  if (
-    params.filter_date_end !== null &&
-    params.filter_date_end !== undefined &&
-    params.filter_date_end !== ''
-  )
-    q.filter_date_end = params.filter_date_end;
+
+  appendQueryField(
+    q,
+    'filter_label_template_id',
+    params.filter_label_template_id
+  );
+  appendQueryField(q, 'filter_worker_id', params.filter_worker_id);
+  appendQueryField(q, 'filter_user_id', params.filter_user_id);
+  appendQueryField(q, 'filter_sector_id', params.filter_sector_id);
+  appendQueryField(q, 'filter_name', params.filter_name);
+  appendQueryField(q, 'filter_phone', params.filter_phone);
+  appendQueryField(q, 'filter_protocol', params.filter_protocol);
+  appendQueryField(q, 'filter_date_start', params.filter_date_start);
+  appendQueryField(q, 'filter_date_end', params.filter_date_end);
+
   return q;
 }
 
@@ -287,118 +273,92 @@ export async function searchChats(
     current_page: params.current_page ?? 1,
     per_page: params.per_page ?? 50,
   };
-  if (params.status !== null && params.status !== undefined)
+
+  if (params.status !== null && params.status !== undefined) {
     q.status = Array.isArray(params.status)
       ? params.status.join(',')
       : params.status;
-  if (
-    params.filter_label_template_id !== null &&
-    params.filter_label_template_id !== undefined &&
-    params.filter_label_template_id !== ''
-  )
-    q.filter_label_template_id = params.filter_label_template_id;
-  if (
-    params.filter_worker_id !== null &&
-    params.filter_worker_id !== undefined &&
-    params.filter_worker_id !== ''
-  )
-    q.filter_worker_id = params.filter_worker_id;
-  if (
-    params.filter_user_id !== null &&
-    params.filter_user_id !== undefined &&
-    params.filter_user_id !== ''
-  )
-    q.filter_user_id = params.filter_user_id;
-  if (
-    params.filter_sector_id !== null &&
-    params.filter_sector_id !== undefined &&
-    params.filter_sector_id !== ''
-  )
-    q.filter_sector_id = params.filter_sector_id;
-  if (
-    params.filter_name !== null &&
-    params.filter_name !== undefined &&
-    params.filter_name !== ''
-  )
-    q.filter_name = params.filter_name;
-  if (
-    params.filter_phone !== null &&
-    params.filter_phone !== undefined &&
-    params.filter_phone !== ''
-  )
-    q.filter_phone = params.filter_phone;
-  if (
-    params.filter_protocol !== null &&
-    params.filter_protocol !== undefined &&
-    params.filter_protocol !== ''
-  )
-    q.filter_protocol = params.filter_protocol;
-  if (
-    params.filter_date_start !== null &&
-    params.filter_date_start !== undefined &&
-    params.filter_date_start !== ''
-  )
-    q.filter_date_start = params.filter_date_start;
-  if (
-    params.filter_date_end !== null &&
-    params.filter_date_end !== undefined &&
-    params.filter_date_end !== ''
-  )
-    q.filter_date_end = params.filter_date_end;
-  if (
-    params.sort_field !== null &&
-    params.sort_field !== undefined &&
-    params.sort_field !== ''
-  )
-    q.sort_field = params.sort_field;
-  if (
-    params.sort_order !== null &&
-    params.sort_order !== undefined &&
-    params.sort_order !== ''
-  )
-    q.sort_order = params.sort_order;
+  }
+
+  appendQueryField(
+    q,
+    'filter_label_template_id',
+    params.filter_label_template_id
+  );
+  appendQueryField(q, 'filter_worker_id', params.filter_worker_id);
+  appendQueryField(q, 'filter_user_id', params.filter_user_id);
+  appendQueryField(q, 'filter_sector_id', params.filter_sector_id);
+  appendQueryField(q, 'filter_name', params.filter_name);
+  appendQueryField(q, 'filter_phone', params.filter_phone);
+  appendQueryField(q, 'filter_protocol', params.filter_protocol);
+  appendQueryField(q, 'filter_date_start', params.filter_date_start);
+  appendQueryField(q, 'filter_date_end', params.filter_date_end);
+  appendQueryField(q, 'sort_field', params.sort_field);
+  appendQueryField(q, 'sort_order', params.sort_order);
+
   const res = await apiGet<SearchChatsResponse>('/chat/search', q);
   return res?.data ?? null;
 }
 
-export interface ListChatContactResult {
-  contact_id: string;
-  name: string;
-  last_name?: string | null;
-  email_partial?: string | null;
-  phone_partial?: string | null;
-  photo?: string | null;
-  is_valided?: boolean | null;
-  label_templates: Array<{
-    label_template_id: string;
-    label: string;
-    color: string;
-  }>;
-}
+export type ListChatContactResult = ChatContactListItem;
+export type ListChatContactsResponse = ChatContactListResponse;
 
-export interface ListChatContactsResponse {
-  results: ListChatContactResult[];
-  current_page: number;
-  total_pages: number;
-  per_page: number;
-  count: number;
-  total: number;
+type ListChatContactsRawResponse = {
+  results?: ChatContactListItem[];
+  pagings?: {
+    current_page: number;
+    total_pages: number;
+    per_page: number;
+    count: number;
+    total: number;
+  };
+  current_page?: number;
+  total_pages?: number;
+  per_page?: number;
+  count?: number;
+  total?: number;
+};
+
+function normalizeListChatContactsResponse(
+  data: ListChatContactsRawResponse,
+  page: number,
+  perPage: number
+): ChatContactListResponse {
+  const pagings = data.pagings;
+
+  return {
+    results: data.results ?? [],
+    current_page: pagings?.current_page ?? data.current_page ?? page,
+    total_pages: pagings?.total_pages ?? data.total_pages ?? 1,
+    per_page: pagings?.per_page ?? data.per_page ?? perPage,
+    count: pagings?.count ?? data.count ?? (data.results ?? []).length,
+    total: pagings?.total ?? data.total ?? (data.results ?? []).length,
+  };
 }
 
 export async function listChatContacts(
   page = 1,
   perPage = 50,
-  search?: string | null
-): Promise<ListChatContactsResponse | null> {
+  search?: string | null,
+  filters?: ContactListFilters | null
+): Promise<ChatContactListResponse | null> {
   const params: Record<string, string | number> = {
     current_page: page,
     per_page: perPage,
+    ...serializeContactFilters(filters),
   };
+
   if (search !== undefined && search !== null && search.trim() !== '') {
     params.search = search.trim();
   }
-  const res = await apiGet<ListChatContactsResponse>('/chat/contacts', params);
-  return res?.data ?? null;
+
+  const res = await apiGet<ListChatContactsRawResponse>(
+    '/chat/contacts',
+    params
+  );
+  if (!res?.data) return null;
+
+  return normalizeListChatContactsResponse(res.data, page, perPage);
 }
 
 export interface ChatContactLookupResult {
@@ -411,14 +371,30 @@ export interface ChatContactLookupResult {
   photo?: string | null;
 }
 
-export async function getChatContactById(
+export async function viewChatContact(
   contactId: string
-): Promise<ChatContactLookupResult | null> {
+): Promise<ChatContactViewResponse | null> {
   if (!contactId || contactId.trim().length === 0) return null;
-  const res = await apiGet<ChatContactLookupResult>(
+  const res = await apiGet<ChatContactViewResponse>(
     `/chat/contacts/${contactId}`
   );
   return res?.data ?? null;
+}
+
+export async function getChatContactById(
+  contactId: string
+): Promise<ChatContactLookupResult | null> {
+  const data = await viewChatContact(contactId);
+  if (!data) return null;
+
+  return {
+    contact_id: data.contact_id,
+    name: data.name,
+    last_name: data.last_name ?? null,
+    phone_partial: data.phone_partial ?? null,
+    phone_ddi: data.phone_ddi ?? null,
+    photo: data.photo ?? null,
+  };
 }
 
 export async function getChatContactByPhone(
@@ -432,3 +408,321 @@ export async function getChatContactByPhone(
   });
   return res?.data ?? null;
 }
+
+function appendFormValue(
+  formData: FormData,
+  key: string,
+  value: string | null | undefined
+): void {
+  if (value === undefined || value === null || value === '') {
+    return;
+  }
+  formData.append(key, value);
+}
+
+function appendArrayValues(
+  formData: FormData,
+  key: string,
+  values: string[] | null | undefined,
+  appendEmptyWhenPresent = false
+): void {
+  if (values === undefined) {
+    return;
+  }
+
+  if (!values || values.length === 0) {
+    if (appendEmptyWhenPresent) {
+      formData.append(key, '');
+    }
+    return;
+  }
+
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    if (!value || value.trim() === '') continue;
+    formData.append(`${key}[${i}]`, value.trim());
+  }
+}
+
+function normalizePhoneValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const digits = value.replace(/\D/g, '');
+  return digits.length > 0 ? digits : null;
+}
+
+export async function createChatContact(
+  payload: CreateChatContactPayload,
+  photoFile?: File | Blob | null
+): Promise<boolean> {
+  const formData = new FormData();
+
+  appendArrayValues(formData, 'channel_ids', payload.channel_ids);
+  appendArrayValues(formData, 'label_template_ids', payload.label_template_ids);
+  appendFormValue(formData, 'name', payload.name?.trim());
+  appendFormValue(formData, 'last_name', payload.last_name?.trim() ?? null);
+  appendFormValue(formData, 'email', payload.email?.trim() ?? null);
+  appendFormValue(formData, 'phone_ddi', payload.phone_ddi?.trim());
+  appendFormValue(formData, 'phone', normalizePhoneValue(payload.phone));
+  appendFormValue(formData, 'nickname', payload.nickname?.trim() ?? null);
+  appendFormValue(formData, 'birthday', payload.birthday?.trim() ?? null);
+  appendFormValue(formData, 'notes', payload.notes ?? null);
+  appendFormValue(
+    formData,
+    'contact_document_type_id',
+    payload.contact_document_type_id ?? null
+  );
+  appendFormValue(
+    formData,
+    'document',
+    payload.document ? payload.document.replace(/\D/g, '') : null
+  );
+
+  if (payload.image_url) {
+    appendFormValue(formData, 'image_url', payload.image_url);
+  } else if (photoFile) {
+    formData.append('photo', photoFile);
+  }
+
+  appendFormValue(formData, 'chat_id', payload.chat_id ?? null);
+
+  if (payload.user_id !== undefined) {
+    if (payload.user_id === null || payload.user_id.trim() === '') {
+      formData.append('user_id', '');
+    } else {
+      formData.append('user_id', payload.user_id.trim());
+    }
+  }
+
+  if (payload.ignore) {
+    formData.append('ignore', payload.ignore);
+  }
+
+  const res = await apiPostForm<boolean>('/chat/contacts', formData);
+  return !!res?.status;
+}
+
+export async function updateChatContact(
+  payload: UpdateChatContactPayload,
+  photoFile?: File | Blob | null
+): Promise<boolean> {
+  if (!payload.contact_id || payload.contact_id.trim().length === 0) {
+    return false;
+  }
+
+  const formData = new FormData();
+
+  appendArrayValues(formData, 'channel_ids', payload.channel_ids, true);
+  appendArrayValues(
+    formData,
+    'label_template_ids',
+    payload.label_template_ids,
+    true
+  );
+
+  if (payload.name !== undefined) {
+    appendFormValue(formData, 'name', payload.name?.trim() ?? null);
+  }
+  if (payload.last_name !== undefined) {
+    appendFormValue(formData, 'last_name', payload.last_name?.trim() ?? null);
+  }
+  if (payload.email !== undefined) {
+    appendFormValue(formData, 'email', payload.email?.trim() ?? null);
+  }
+  if (payload.phone_ddi !== undefined) {
+    appendFormValue(formData, 'phone_ddi', payload.phone_ddi?.trim() ?? null);
+  }
+  if (payload.phone !== undefined) {
+    appendFormValue(formData, 'phone', normalizePhoneValue(payload.phone));
+  }
+  if (payload.nickname !== undefined) {
+    appendFormValue(formData, 'nickname', payload.nickname?.trim() ?? null);
+  }
+  if (payload.birthday !== undefined) {
+    appendFormValue(formData, 'birthday', payload.birthday?.trim() ?? null);
+  }
+  if (payload.notes !== undefined) {
+    appendFormValue(formData, 'notes', payload.notes ?? null);
+  }
+  if (payload.contact_document_type_id !== undefined) {
+    if (payload.contact_document_type_id === null) {
+      formData.append('contact_document_type_id', '');
+    } else {
+      formData.append(
+        'contact_document_type_id',
+        payload.contact_document_type_id
+      );
+    }
+  }
+  if (payload.document !== undefined) {
+    if (payload.document === null) {
+      formData.append('document', '');
+    } else {
+      appendFormValue(
+        formData,
+        'document',
+        payload.document.replace(/\D/g, '')
+      );
+    }
+  }
+
+  if (payload.image_url) {
+    appendFormValue(formData, 'image_url', payload.image_url);
+  } else if (photoFile) {
+    formData.append('photo', photoFile);
+  }
+
+  if (payload.user_id !== undefined) {
+    if (payload.user_id === null || payload.user_id.trim() === '') {
+      formData.append('user_id', '');
+    } else {
+      formData.append('user_id', payload.user_id.trim());
+    }
+  }
+
+  if (payload.ignore !== undefined) {
+    if (payload.ignore === null) {
+      formData.append('ignore', '');
+    } else {
+      formData.append('ignore', payload.ignore);
+    }
+  }
+
+  const res = await apiPatchForm<boolean>(
+    `/chat/contacts/${payload.contact_id}`,
+    formData
+  );
+
+  return !!res?.status;
+}
+
+export async function validateChatContact(contactId: string): Promise<boolean> {
+  if (!contactId || contactId.trim().length === 0) return false;
+  const res = await apiPost<boolean>(
+    `/chat/contacts/${contactId}/validate`,
+    {}
+  );
+  return !!res?.status;
+}
+
+export async function deleteChatContactPhoto(
+  contactId: string
+): Promise<boolean> {
+  if (!contactId || contactId.trim().length === 0) return false;
+  const res = await apiDelete<boolean>(`/chat/contacts/${contactId}/photo`);
+  return !!res?.status;
+}
+
+export async function removeChatContactLabelTemplate(
+  contactId: string,
+  labelTemplateId: string
+): Promise<boolean> {
+  if (!contactId || !labelTemplateId) return false;
+  const res = await apiDelete<boolean>(
+    `/chat/contacts/${contactId}/labels/${labelTemplateId}`
+  );
+  return !!res?.status;
+}
+
+export async function getChatContactEmailDecrypted(
+  contactId: string
+): Promise<string | null> {
+  if (!contactId || contactId.trim().length === 0) return null;
+  const res = await apiGet<{ email: string | null }>(
+    `/chat/contacts/${contactId}/email`
+  );
+  return res?.data?.email ?? null;
+}
+
+export async function getChatContactPhoneDecrypted(
+  contactId: string
+): Promise<string | null> {
+  if (!contactId || contactId.trim().length === 0) return null;
+  const res = await apiGet<{ phone: string | null }>(
+    `/chat/contacts/${contactId}/phone`
+  );
+  return res?.data?.phone ?? null;
+}
+
+export async function getChatContactDocumentDecrypted(
+  contactId: string
+): Promise<string | null> {
+  if (!contactId || contactId.trim().length === 0) return null;
+  const res = await apiGet<{ document: string }>(
+    `/chat/contacts/${contactId}/document`
+  );
+  return res?.data?.document ?? null;
+}
+
+export async function listContactChannels(): Promise<
+  ChatContactChannelsItem[] | null
+> {
+  const res = await apiGet<ChatContactChannelsItem[]>('/chat/contact-channels');
+  return res?.data ?? null;
+}
+
+export async function viewContactChannelsByContactId(
+  contactId: string
+): Promise<string[] | null> {
+  if (!contactId || contactId.trim().length === 0) return null;
+  const res = await apiGet<string[]>(`/chat/contacts/${contactId}/channels`);
+  return res?.data ?? null;
+}
+
+export async function listTransferOptions(): Promise<{
+  workers: TransferWorker[];
+  sectors: TransferSector[];
+} | null> {
+  const res = await apiGet<{
+    workers: TransferWorker[];
+    sectors: TransferSector[];
+  }>('/chat/transfer-options');
+  return res?.data ?? null;
+}
+
+export async function viewWorkerConfigForChat(
+  workerId: string
+): Promise<WorkerConfigForChat | null> {
+  if (!workerId || workerId.trim().length === 0) return null;
+  const res = await apiGet<WorkerConfigForChat | null>(
+    `/chat/worker/${workerId}/config`
+  );
+  return res?.data ?? null;
+}
+
+export async function startChatWithContact(
+  contactId: string,
+  workerId: string,
+  sectorId?: string | null
+): Promise<ListChatsResult | null> {
+  if (!contactId || !workerId) return null;
+
+  const body: {
+    contact_id: string;
+    worker_id: string;
+    sector_id?: string;
+  } = {
+    contact_id: contactId,
+    worker_id: workerId,
+  };
+
+  if (sectorId) {
+    body.sector_id = sectorId;
+  }
+
+  const res = await apiPost<ListChatsResult>('/chat/start-with-contact', body);
+  return res?.data ?? null;
+}
+
+export type {
+  ContactListFilters,
+  ContactSortField,
+  ContactSortOrder,
+  CreateChatContactPayload,
+  UpdateChatContactPayload,
+  TransferWorker,
+  TransferSector,
+  WorkerConfigForChat,
+  ChatContactChannelsItem,
+  ChatContactViewResponse,
+};
+export { serializeContactFilters };

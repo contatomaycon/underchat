@@ -15,6 +15,8 @@ export const CHAT_ACCESS_PERMISSIONS = [
   'chat_access',
 ] as const;
 
+export const CONTACTS_MODULE_PERMISSIONS = CHAT_ACCESS_PERMISSIONS;
+
 export const VIEW_OTHERS_CHAT_PERMISSIONS = [
   'full_access',
   'full_access_group',
@@ -107,6 +109,10 @@ function resolveChatUserId(chat: ListChatsResult): string | null {
 
 export function hasChatAccessPermission(permissions: string[]): boolean {
   return hasAnyPermission(permissions, CHAT_ACCESS_PERMISSIONS);
+}
+
+export function hasContactsModuleAccess(permissions: string[]): boolean {
+  return hasAnyPermission(permissions, CONTACTS_MODULE_PERMISSIONS);
 }
 
 export function canUseUserAndSectorFilters(permissions: string[]): boolean {
