@@ -280,10 +280,23 @@ function ChatRow({
   const channelDisplayName = channelName ? limitText(channelName, 20) : '';
   const sectorName = item.sector?.name?.trim() ?? '';
   const attendantName = item.user?.name?.trim() ?? '';
+  const attendantFirstName =
+    attendantName
+      .split(/\s+/)
+      .map((part) => part.trim())
+      .find((part) => part.length > 0) ?? '';
+  const attendantLabel = attendantFirstName
+    ? limitText(attendantFirstName, 10)
+    : '';
+  const attendantVerticalLabel = attendantLabel.split('').join('\n');
 
   return (
     <Pressable
-      style={[styles.chatRow, disabled && styles.chatRowDisabled]}
+      style={[
+        styles.chatRow,
+        attendantLabel && styles.chatRowWithAttendant,
+        disabled && styles.chatRowDisabled,
+      ]}
       onPress={onPress}
       disabled={disabled}
       accessibilityState={{ disabled }}
@@ -316,15 +329,8 @@ function ChatRow({
             </View>
           ) : null}
         </View>
-        {channelName || item.contact || chatbotTypeLabel || firstLabel ? (
+        {item.contact || chatbotTypeLabel || firstLabel ? (
           <View style={styles.metaRow}>
-            {channelName ? (
-              <View style={styles.channelChip}>
-                <Text style={styles.channelChipText} numberOfLines={1}>
-                  {channelDisplayName}
-                </Text>
-              </View>
-            ) : null}
             {item.contact ? (
               <View style={styles.metaChip}>
                 <Text style={styles.metaChipText}>{pt.contact}</Text>
@@ -367,8 +373,15 @@ function ChatRow({
             ) : null}
           </View>
         ) : null}
-        {sectorName || attendantName ? (
+        {channelName || sectorName ? (
           <View style={styles.metaRow}>
+            {channelName ? (
+              <View style={styles.metaChip}>
+                <Text style={styles.metaChipText} numberOfLines={1}>
+                  {pt.channel}: {channelDisplayName}
+                </Text>
+              </View>
+            ) : null}
             {sectorName ? (
               <View style={styles.metaChip}>
                 <Text style={styles.metaChipText} numberOfLines={1}>
@@ -376,16 +389,16 @@ function ChatRow({
                 </Text>
               </View>
             ) : null}
-            {attendantName ? (
-              <View style={styles.metaChip}>
-                <Text style={styles.metaChipText} numberOfLines={1}>
-                  {pt.attendant}: {attendantName}
-                </Text>
-              </View>
-            ) : null}
           </View>
         ) : null}
       </View>
+      {attendantLabel ? (
+        <View style={styles.attendantSideLabel}>
+          <Text style={styles.attendantSideLabelText} numberOfLines={10}>
+            {attendantVerticalLabel}
+          </Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -2388,6 +2401,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.grey200,
   },
+  chatRowWithAttendant: {
+    paddingRight: 0,
+  },
   chatRowDisabled: {
     opacity: 0.55,
   },
@@ -2472,6 +2488,28 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.tagText,
     fontWeight: '500',
+  },
+  attendantSideLabel: {
+    alignSelf: 'stretch',
+    width: 28,
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: colors.grey200,
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+    borderTopLeftRadius: 4,
+    borderBottomLeftRadius: 4,
+    backgroundColor: colors.grey100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  attendantSideLabelText: {
+    fontSize: 10,
+    lineHeight: 10,
+    fontWeight: '600',
+    color: colors.onSurface,
+    textAlign: 'center',
   },
   labelInfoCard: {
     backgroundColor: colors.surface,

@@ -106,6 +106,7 @@ import {
   canReopenChat,
   canToggleForwardToOutputChatbot,
 } from '../constants/chatAuthorization';
+import { useChatFilter } from '../context/ChatFilterContext';
 import { AppAvatar } from '../components/AppAvatar';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -3200,6 +3201,7 @@ function MessageBubble({
 export function ChatRoomScreen({ route, navigation }: Props) {
   const { chat, mode = 'default' } = route.params;
   const isHistoryReadonly = mode === 'history_readonly';
+  const { setChatCounts, clearAdvancedFilters } = useChatFilter();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<MessageWithSeparator> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -4533,6 +4535,40 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ]);
   }, [confirmCloseService]);
 
+  const syncGlobalChatCounts = useCallback(async () => {
+    const response = await searchChats({
+      search: '',
+      status: 'in_chat',
+      current_page: 1,
+      per_page: 1,
+    });
+
+    const counts = response?.counts;
+    if (!counts) return;
+
+    const schedule = counts.schedule ?? 0;
+    const chatbotInput = counts.chatbot_input ?? 0;
+    const chatbotOutput = counts.chatbot_output ?? 0;
+    const chatbotWebhook = counts.chatbot_webhook ?? 0;
+    const chatbotSchedule = counts.chatbot_schedule ?? schedule;
+    const inChatMine = counts.in_chat_mine ?? counts.my_chats ?? 0;
+
+    setChatCounts({
+      total: counts.total ?? 0,
+      queue: counts.queue ?? 0,
+      in_chat: counts.in_chat ?? 0,
+      chatbot: counts.chatbot ?? 0,
+      schedule,
+      my_chats: counts.my_chats ?? 0,
+      closed: counts.closed ?? 0,
+      in_chat_mine: inChatMine,
+      chatbot_input: chatbotInput,
+      chatbot_output: chatbotOutput,
+      chatbot_schedule: chatbotSchedule,
+      chatbot_webhook: chatbotWebhook,
+    });
+  }, [setChatCounts]);
+
   const handleAttendOrReopen = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
     if (!chatId || isAttendReopenLoading) return;
@@ -4557,23 +4593,51 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       return;
     }
 
-    setChatInfo((prev) => ({
-      ...prev,
+    const updatedChat: ListChatsResult = {
+      ...chatInfo,
+      ...(result.data ?? {}),
       status: 'in_chat',
-    }));
+    };
 
-    Alert.alert(
-      pt.success_title,
-      isClosedStatus
-        ? pt.chat_reopened_successfully
-        : pt.chat_attended_successfully
-    );
+    setChatInfo(updatedChat);
+
+    if (isClosedStatus) {
+      clearAdvancedFilters();
+    }
+
+    await syncGlobalChatCounts();
+
+    const parentNavigation = navigation.getParent() as
+      | {
+          navigate: (
+            routeName: string,
+            params?: {
+              screen?: string;
+              params?: { chat: ListChatsResult };
+            }
+          ) => void;
+        }
+      | undefined;
+
+    if (parentNavigation) {
+      parentNavigation.navigate('InChat', {
+        screen: 'ChatRoom',
+        params: { chat: updatedChat },
+      });
+      return;
+    }
+
+    navigation.replace('ChatRoom', { chat: updatedChat });
   }, [
     attendReopenBlockedReason,
     chatInfo.chat_id,
+    chatInfo,
+    clearAdvancedFilters,
     isAttendReopenActionAllowed,
     isAttendReopenLoading,
     isClosedStatus,
+    navigation,
+    syncGlobalChatCounts,
   ]);
 
   const handleToggleForwardToOutput = useCallback(async () => {

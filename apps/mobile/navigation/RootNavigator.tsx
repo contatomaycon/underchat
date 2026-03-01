@@ -29,11 +29,36 @@ export function RootNavigator() {
   const chatbotBadge = toBadgeValue(chatbotBadgeTotal);
   const closedBadge = toBadgeValue(chatCounts.closed);
 
+  const buildTabListeners = (
+    routeName: keyof TabParamList,
+    tab: ChatTab,
+    entry: 'chat_list' | 'contacts' = 'chat_list'
+  ) => {
+    return ({ navigation }: { navigation: any }) => ({
+      tabPress: (event: { preventDefault: () => void }) => {
+        event.preventDefault();
+
+        if (entry === 'contacts') {
+          navigation.navigate(routeName, {
+            screen: 'Contacts',
+          });
+          return;
+        }
+
+        navigation.navigate(routeName, {
+          screen: 'ChatList',
+          params: { tab },
+        });
+      },
+    });
+  };
+
   return (
     <Tab.Navigator
       initialRouteName="InChat"
       screenOptions={{
         headerShown: false,
+        popToTopOnBlur: true,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.grey600,
         tabBarStyle: {
@@ -58,8 +83,8 @@ export function RootNavigator() {
         name="InChat"
         component={ChatStackNavigator}
         initialParams={{ tab: 'in_chat' }}
+        listeners={buildTabListeners('InChat', 'in_chat')}
         options={{
-          popToTopOnBlur: true,
           tabBarLabel: 'Em atendimento',
           tabBarBadge: inChatBadge,
           tabBarIcon: ({ color, size }) => (
@@ -71,6 +96,7 @@ export function RootNavigator() {
         name="Queue"
         component={ChatStackNavigator}
         initialParams={{ tab: 'queue' }}
+        listeners={buildTabListeners('Queue', 'queue')}
         options={{
           tabBarLabel: 'Fila',
           tabBarBadge: queueBadge,
@@ -84,6 +110,7 @@ export function RootNavigator() {
           name="Chatbot"
           component={ChatStackNavigator}
           initialParams={{ tab: 'chatbot' }}
+          listeners={buildTabListeners('Chatbot', 'chatbot')}
           options={{
             tabBarLabel: 'Chatbot',
             tabBarBadge: chatbotBadge,
@@ -98,6 +125,7 @@ export function RootNavigator() {
           name="Closed"
           component={ChatStackNavigator}
           initialParams={{ tab: 'closed' }}
+          listeners={buildTabListeners('Closed', 'closed')}
           options={{
             tabBarLabel: 'Fechado',
             tabBarBadge: closedBadge,
@@ -111,6 +139,7 @@ export function RootNavigator() {
         name="New"
         component={ChatStackNavigator}
         initialParams={{ tab: 'in_chat', entry: 'contacts' }}
+        listeners={buildTabListeners('New', 'in_chat', 'contacts')}
         options={{
           tabBarLabel: 'Novo',
           tabBarIcon: ({ color, size }) => (
