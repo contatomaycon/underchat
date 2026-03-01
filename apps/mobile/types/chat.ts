@@ -56,6 +56,9 @@ export interface ListChatsResult {
   date: string;
   started_at?: string | null;
   closed_at?: string | null;
+  protocol_ura?: string[] | null;
+  protocol_start?: string[] | null;
+  protocol_transfer?: string[] | null;
   label?: ChatLabel[] | null;
   forward_to_output_chatbot?: boolean | null;
 }

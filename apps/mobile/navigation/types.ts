@@ -4,12 +4,12 @@ export type ChatTab = 'all' | 'queue' | 'in_chat' | 'closed' | 'chatbot';
 
 export type RootStackParamList = {
   ChatList: { tab: ChatTab };
-  ChatRoom: { chat: ListChatsResult };
+  ChatRoom: { chat: ListChatsResult; mode?: 'default' | 'history_readonly' };
   Contacts: undefined;
 };
 
 export type ChatStackParamList = {
   ChatList: { tab: ChatTab };
-  ChatRoom: { chat: ListChatsResult };
+  ChatRoom: { chat: ListChatsResult; mode?: 'default' | 'history_readonly' };
   Contacts: undefined;
 };

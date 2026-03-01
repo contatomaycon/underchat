@@ -1,6 +1,7 @@
 import {
   apiDelete,
   apiGet,
+  apiPatch,
   apiPatchForm,
   apiPost,
   apiPostForm,
@@ -75,6 +76,45 @@ export interface ChatSector {
   id: string;
   name: string;
   color?: string | null;
+}
+
+export interface TransferChatPayload {
+  worker_id?: string;
+  user_id?: string | null;
+  sector_id?: string | null;
+  annotation?: string | null;
+}
+
+export interface TransferUserOption {
+  id: string;
+  name: string;
+  last_name?: string | null;
+  nickname?: string | null;
+  photo?: string | null;
+  status?: ChatUserStatus | null;
+}
+
+export interface TransferSectorOption {
+  id: string;
+  name: string;
+  color?: string | null;
+}
+
+export interface SearchMessagesResult {
+  message_id: string;
+  date: string;
+  message?: string | null;
+}
+
+export interface SearchMessagesResponse {
+  results: SearchMessagesResult[];
+  pagings: {
+    current_page: number;
+    total_pages: number;
+    per_page: number;
+    count: number;
+    total: number;
+  };
 }
 
 export type ListChatsParams = {
@@ -239,6 +279,152 @@ export async function clearChatSummary(chatId: string): Promise<boolean> {
   return !!res?.status;
 }
 
+export async function updateChatStatus(
+  chatId: string,
+  status: string
+): Promise<boolean> {
+  if (!chatId || chatId.trim().length === 0) return false;
+  const res = await apiPatch<ListChatsResult>(`/chat/${chatId}/status`, {
+    status,
+  });
+  return !!res?.status;
+}
+
+export async function transferChat(
+  chatId: string,
+  payload: TransferChatPayload
+): Promise<boolean> {
+  if (!chatId || chatId.trim().length === 0) return false;
+
+  const body: TransferChatPayload = {
+    worker_id: payload.worker_id,
+    user_id: payload.user_id ?? undefined,
+    sector_id: payload.sector_id ?? undefined,
+    annotation: payload.annotation?.trim() || undefined,
+  };
+
+  const res = await apiPost<{ chat_id: string; status: boolean }>(
+    `/chat/${chatId}/transfer`,
+    body
+  );
+
+  return !!res?.status;
+}
+
+type SearchMessagesRawResponse = {
+  results?: SearchMessagesResult[];
+  pagings?: {
+    current_page: number;
+    total_pages: number;
+    per_page: number;
+    count: number;
+    total: number;
+  };
+  current_page?: number;
+  total_pages?: number;
+  per_page?: number;
+  count?: number;
+  total?: number;
+};
+
+export async function searchMessages(
+  chatId: string,
+  search: string,
+  currentPage = 1,
+  perPage = 50
+): Promise<SearchMessagesResponse> {
+  if (!chatId || chatId.trim().length === 0) {
+    return {
+      results: [],
+      pagings: {
+        current_page: 1,
+        total_pages: 0,
+        per_page: perPage,
+        count: 0,
+        total: 0,
+      },
+    };
+  }
+
+  const res = await apiGet<SearchMessagesRawResponse>(
+    `/chat/${chatId}/search`,
+    {
+      search,
+      current_page: currentPage,
+      per_page: perPage,
+    }
+  );
+
+  const data = res?.data;
+  if (!data) {
+    return {
+      results: [],
+      pagings: {
+        current_page: 1,
+        total_pages: 0,
+        per_page: perPage,
+        count: 0,
+        total: 0,
+      },
+    };
+  }
+
+  const pagings = data.pagings ?? {
+    current_page: data.current_page ?? currentPage,
+    total_pages: data.total_pages ?? 1,
+    per_page: data.per_page ?? perPage,
+    count: data.count ?? (data.results ?? []).length,
+    total: data.total ?? (data.results ?? []).length,
+  };
+
+  return {
+    results: data.results ?? [],
+    pagings,
+  };
+}
+
+export async function updateChatLabel(
+  chatId: string,
+  labelTemplateIds?: string[] | null
+): Promise<boolean> {
+  if (!chatId || chatId.trim().length === 0) return false;
+
+  const body: {
+    label_template_ids?:
+      | Array<{ value: string }>
+      | { value: string | null }
+      | undefined;
+  } = {};
+
+  if (labelTemplateIds === null || labelTemplateIds === undefined) {
+    body.label_template_ids = { value: null };
+  } else if (labelTemplateIds.length === 0) {
+    body.label_template_ids = { value: null };
+  } else {
+    body.label_template_ids = labelTemplateIds.map((id) => ({ value: id }));
+  }
+
+  const res = await apiPatch<{ success: boolean }>(
+    `/chat/${chatId}/label`,
+    body
+  );
+  return !!res?.status;
+}
+
+export async function updateForwardToOutputChatbot(
+  chatId: string,
+  enabled: boolean
+): Promise<boolean> {
+  if (!chatId || chatId.trim().length === 0) return false;
+  const res = await apiPatch<{ success: boolean }>(
+    `/chat/${chatId}/forward-to-output-chatbot`,
+    {
+      forward_to_output_chatbot: enabled,
+    }
+  );
+  return !!res?.status;
+}
+
 export async function listLabelTemplates(): Promise<LabelTemplate[] | null> {
   const res = await apiGet<LabelTemplate[]>('/chat/label-templates');
   return res?.data ?? null;
@@ -318,15 +504,72 @@ export interface SearchChatsResponse {
   per_page: number;
   count: number;
   total: number;
+  pagings: {
+    current_page: number;
+    total_pages: number;
+    per_page: number;
+    count: number;
+    total: number;
+  };
+}
+
+type SearchChatsRawResponse = {
+  results?: ListChatsResponse['results'];
+  counts?: ListChatsResponse['counts'];
+  pagings?: {
+    current_page: number;
+    total_pages: number;
+    per_page: number;
+    count: number;
+    total: number;
+  };
+  current_page?: number;
+  total_pages?: number;
+  per_page?: number;
+  count?: number;
+  total?: number;
+};
+
+function normalizeSearchChatsResponse(
+  data: SearchChatsRawResponse,
+  page: number,
+  perPage: number
+): SearchChatsResponse {
+  const pagings = data.pagings ?? {
+    current_page: data.current_page ?? page,
+    total_pages: data.total_pages ?? 1,
+    per_page: data.per_page ?? perPage,
+    count: data.count ?? (data.results ?? []).length,
+    total: data.total ?? (data.results ?? []).length,
+  };
+
+  return {
+    results: data.results ?? [],
+    counts: data.counts ?? {
+      total: pagings.total ?? 0,
+      queue: 0,
+      in_chat: 0,
+      chatbot: 0,
+      my_chats: 0,
+    },
+    current_page: pagings.current_page,
+    total_pages: pagings.total_pages,
+    per_page: pagings.per_page,
+    count: pagings.count,
+    total: pagings.total,
+    pagings,
+  };
 }
 
 export async function searchChats(
   params: SearchChatsParams
 ): Promise<SearchChatsResponse | null> {
+  const currentPage = params.current_page ?? 1;
+  const perPage = params.per_page ?? 50;
   const q: Record<string, string | number> = {
     search: params.search ?? '',
-    current_page: params.current_page ?? 1,
-    per_page: params.per_page ?? 50,
+    current_page: currentPage,
+    per_page: perPage,
   };
 
   if (params.status !== null && params.status !== undefined) {
@@ -351,8 +594,9 @@ export async function searchChats(
   appendQueryField(q, 'sort_field', params.sort_field);
   appendQueryField(q, 'sort_order', params.sort_order);
 
-  const res = await apiGet<SearchChatsResponse>('/chat/search', q);
-  return res?.data ?? null;
+  const res = await apiGet<SearchChatsRawResponse>('/chat/search', q);
+  if (!res?.data) return null;
+  return normalizeSearchChatsResponse(res.data, currentPage, perPage);
 }
 
 export type ListChatContactResult = ChatContactListItem;
@@ -732,6 +976,54 @@ export async function listTransferOptions(): Promise<{
     sectors: TransferSector[];
   }>('/chat/transfer-options');
   return res?.data ?? null;
+}
+
+export async function listTransferUsers(
+  chatId?: string,
+  channelId?: string
+): Promise<TransferUserOption[]> {
+  const params: Record<string, string> = {};
+  if (chatId && chatId.trim().length > 0) {
+    params.chat_id = chatId;
+  }
+  if (channelId && channelId.trim().length > 0) {
+    params.channel_id = channelId;
+  }
+
+  const res = await apiGet<TransferUserOption[]>(
+    '/chat/transfer/users',
+    params
+  );
+  return res?.data ?? [];
+}
+
+export async function listTransferSectors(): Promise<TransferSectorOption[]> {
+  const res = await apiGet<TransferSectorOption[]>('/chat/transfer/sectors');
+  return res?.data ?? [];
+}
+
+export async function listTransferSectorUsers(
+  sectorId: string,
+  chatId?: string,
+  channelId?: string
+): Promise<TransferUserOption[]> {
+  if (!sectorId || sectorId.trim().length === 0) {
+    return [];
+  }
+
+  const params: Record<string, string> = {};
+  if (chatId && chatId.trim().length > 0) {
+    params.chat_id = chatId;
+  }
+  if (channelId && channelId.trim().length > 0) {
+    params.channel_id = channelId;
+  }
+
+  const res = await apiGet<TransferUserOption[]>(
+    `/chat/transfer/sectors/${sectorId}/users`,
+    params
+  );
+  return res?.data ?? [];
 }
 
 export async function viewWorkerConfigForChat(

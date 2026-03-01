@@ -11,6 +11,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   TextInput,
   Pressable,
   KeyboardAvoidingView,
@@ -22,16 +23,19 @@ import {
   ActivityIndicator,
   PanResponder,
   Easing,
+  Alert,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatStackParamList } from '../navigation/types';
 import {
   type ListChatsResult,
   type ListMessageResult,
+  type ChatLabel,
   type MessageContent,
   type MessageContentContact,
   type MessageContentDocument,
@@ -62,7 +66,24 @@ import {
   createMessage,
   createMessageWithFormData,
   clearChatSummary,
+  updateChatStatus,
+  transferChat,
+  listTransferOptions,
+  listTransferUsers,
+  listTransferSectors,
+  listTransferSectorUsers,
+  listLabelTemplates,
+  updateChatLabel,
+  searchMessages,
+  updateForwardToOutputChatbot,
+  viewWorkerConfigForChat,
+  searchChats,
+  type LabelTemplate,
+  type TransferChatPayload,
+  type TransferUserOption,
+  type TransferSectorOption,
   getChatContactById,
+  getChatContactPhoneDecrypted,
   getChatContactByPhone,
   type ChatContactLookupResult,
 } from '../api/chatApi';
@@ -74,8 +95,13 @@ import {
   type SocketChatPayload,
   type SocketMessagePayload,
 } from '../socket/chatSocket';
-import { getUser, getPermissions } from '../storage/authStorage';
-import { canPreviewChatContent } from '../constants/chatAuthorization';
+import { getUser, getPermissions, getSectors } from '../storage/authStorage';
+import {
+  canPreviewChatContent,
+  canViewAttendanceHistory,
+  canCloseChatWithoutAttending,
+  canToggleForwardToOutputChatbot,
+} from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { resolveImageUri } from '../utils/imageUri';
@@ -203,6 +229,8 @@ const CHAT_MESSAGES_PER_PAGE = 10;
 const CHAT_SOCKET_SYNC_PER_PAGE = 20;
 const CHAT_SOCKET_SYNC_INTERVAL_MS = 30000;
 const CHAT_SOCKET_SYNC_DEBOUNCE_MS = 5000;
+const ATTENDANCE_HISTORY_SKELETON_ROWS = 6;
+const ATTENDANCE_HISTORY_SKELETON_MORE_ROWS = 2;
 const LOAD_OLDER_SCROLL_THRESHOLD = 180;
 const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 const TYPING_TIMEOUT_MS = 5000;
@@ -217,6 +245,157 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let preferredNativeDownloadDirectoryUri: string | null = null;
+
+type ChatRoomMode = 'default' | 'history_readonly';
+
+type ProtocolType = 'A' | 'T' | 'U';
+
+type ProtocolWithType = {
+  protocol: string;
+  type: ProtocolType;
+};
+
+type ChatMenuActionKey =
+  | 'protocol'
+  | 'label'
+  | 'attendance_history'
+  | 'transfer'
+  | 'search_messages'
+  | 'forward_to_output_chatbot'
+  | 'close_service';
+
+type ChatMenuAction = {
+  key: ChatMenuActionKey;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  danger?: boolean;
+  active?: boolean;
+  onPress: () => void;
+};
+
+type TransferDestinationType = 'user' | 'sector' | null;
+
+type TransferPickerKind =
+  | 'channel'
+  | 'type'
+  | 'user'
+  | 'sector'
+  | 'sector_user'
+  | null;
+
+type TransferChannelOption = {
+  value: string;
+  title: string;
+  name: string;
+  number: string | null;
+};
+
+type SearchMessageResultItem = {
+  message_id: string;
+  date: string;
+  message?: string | null;
+};
+
+function formatPhoneDigits(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 0) return value;
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  }
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+}
+
+function formatPhoneWithDdi(
+  phoneValue: string,
+  phoneDdi: string | null | undefined
+): string {
+  const phoneDigits = normalizePhoneDigits(phoneValue);
+  if (!phoneDigits) return phoneValue;
+
+  const ddiDigits = normalizePhoneDigits(phoneDdi);
+  if (!ddiDigits) {
+    return formatPhoneDigits(phoneDigits);
+  }
+
+  const localDigitsRaw = phoneDigits.startsWith(ddiDigits)
+    ? phoneDigits.slice(ddiDigits.length)
+    : phoneDigits;
+  const localDigits =
+    localDigitsRaw.length > 11 ? localDigitsRaw.slice(-11) : localDigitsRaw;
+
+  if (!localDigits) {
+    return `+${ddiDigits}`;
+  }
+
+  return `+${ddiDigits} ${formatPhoneDigits(localDigits)}`;
+}
+
+function resolveProtocolTypeColor(type: ProtocolType): string {
+  if (type === 'T') return colors.primary;
+  if (type === 'U') return '#D97706';
+  return colors.success;
+}
+
+function formatSearchResultDate(dateString: string): string {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  const today = now.toDateString();
+  if (date.toDateString() === today) {
+    return pt.today;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return pt.yesterday;
+  }
+  return date.toLocaleDateString('pt-BR');
+}
+
+function calculateAttendanceTime(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined
+): string {
+  if (!startDate || !endDate) return '-';
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '-';
+
+  const diffMs = end.getTime() - start.getTime();
+  if (diffMs <= 0) return '-';
+
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays > 0) {
+    const hours = diffHours % 24;
+    const minutes = diffMinutes % 60;
+    if (hours > 0 && minutes > 0) return `${diffDays}d ${hours}h ${minutes}min`;
+    if (hours > 0) return `${diffDays}d ${hours}h`;
+    return `${diffDays}d ${minutes}min`;
+  }
+
+  if (diffHours > 0) {
+    const minutes = diffMinutes % 60;
+    if (minutes > 0) return `${diffHours}h ${minutes}min`;
+    return `${diffHours}h`;
+  }
+
+  if (diffMinutes > 0) {
+    const seconds = diffSeconds % 60;
+    if (seconds > 0) return `${diffMinutes}min ${seconds}s`;
+    return `${diffMinutes}min`;
+  }
+
+  return `${diffSeconds}s`;
+}
 
 function fitWaveformToWidth(waveform: number[], width: number): number[] {
   if (waveform.length <= 1) return waveform;
@@ -1659,6 +1838,20 @@ function DateSeparator({ label }: { label: string }) {
   );
 }
 
+function AttendanceHistorySkeleton({ rows }: { rows: number }) {
+  return (
+    <View style={styles.historySkeletonWrap}>
+      {Array.from({ length: rows }).map((_, index) => (
+        <View key={`history-skeleton-${index}`} style={styles.historySkeletonRow}>
+          <View style={styles.historySkeletonTitle} />
+          <View style={styles.historySkeletonLine} />
+          <View style={[styles.historySkeletonLine, styles.historySkeletonLineShort]} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 type AudioCtrl = ReturnType<typeof useChatAudio>;
 
 function VideoMessagePreview({
@@ -2740,7 +2933,10 @@ function MessageBubble({
   const showForwardedIndicator = isForwarded && !isSystem && !isAnnotation;
   const reactionsSummary = getReactionsSummary(content?.reactions);
   const showReactionsSummary =
-    reactionsSummary.length > 0 && !isAnnotation && !isSystem && !obfuscateContent;
+    reactionsSummary.length > 0 &&
+    !isAnnotation &&
+    !isSystem &&
+    !obfuscateContent;
   const isShortTextMessage =
     latestText.length > 0 &&
     latestText.length <= 8 &&
@@ -2963,7 +3159,9 @@ function MessageBubble({
 }
 
 export function ChatRoomScreen({ route, navigation }: Props) {
-  const { chat } = route.params;
+  const { chat, mode = 'default' } = route.params;
+  const isHistoryReadonly = mode === 'history_readonly';
+  const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<MessageWithSeparator> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micPressActiveRef = useRef(false);
@@ -2991,6 +3189,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const socketSyncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null
   );
+  const attendanceHistoryErrorAlertShownRef = useRef(false);
   const lastSocketSyncTimeRef = useRef(0);
   const clearSummaryAttemptedForChatRef = useRef<string | null>(null);
   const preserveScrollOnPrependRef = useRef<{
@@ -3000,9 +3199,88 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const messagesRef = useRef<ListMessageResult[]>([]);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [chatInfo, setChatInfo] = useState(chat);
+  const [permissionList, setPermissionList] = useState<string[]>([]);
+  const [userSectors, setUserSectors] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [canPreviewProtectedContent, setCanPreviewProtectedContent] =
+    useState(false);
+  const [workerConfigForChat, setWorkerConfigForChat] = useState<{
+    show_protocol_in_chat: boolean;
+    has_ura_output: boolean;
+  } | null>(null);
+  const [headerPhoneDecrypted, setHeaderPhoneDecrypted] = useState<
+    string | null
+  >(null);
+  const [isHeaderPhoneDecrypted, setIsHeaderPhoneDecrypted] = useState(false);
+  const [isHeaderPhoneLoading, setIsHeaderPhoneLoading] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [protocolModalVisible, setProtocolModalVisible] = useState(false);
+  const [labelModalVisible, setLabelModalVisible] = useState(false);
+  const [isLoadingLabelModal, setIsLoadingLabelModal] = useState(false);
+  const [isSavingLabelModal, setIsSavingLabelModal] = useState(false);
+  const [labelTemplates, setLabelTemplates] = useState<LabelTemplate[]>([]);
+  const [selectedLabelTemplateIds, setSelectedLabelTemplateIds] = useState<
+    string[]
+  >([]);
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchMessageResultItem[]>(
+    []
+  );
+  const [searchCurrentPage, setSearchCurrentPage] = useState(1);
+  const [searchTotalPages, setSearchTotalPages] = useState(0);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchLoadingMore, setSearchLoadingMore] = useState(false);
+  const [attendanceHistoryVisible, setAttendanceHistoryVisible] =
+    useState(false);
+  const [attendanceHistory, setAttendanceHistory] = useState<ListChatsResult[]>(
+    []
+  );
+  const [attendanceHistoryPage, setAttendanceHistoryPage] = useState(1);
+  const [attendanceHistoryTotalPages, setAttendanceHistoryTotalPages] =
+    useState(0);
+  const [attendanceHistoryLoading, setAttendanceHistoryLoading] =
+    useState(false);
+  const [attendanceHistoryLoadingMore, setAttendanceHistoryLoadingMore] =
+    useState(false);
+  const [transferModalVisible, setTransferModalVisible] = useState(false);
+  const [transferType, setTransferType] =
+    useState<TransferDestinationType>(null);
+  const [transferPickerKind, setTransferPickerKind] =
+    useState<TransferPickerKind>(null);
+  const [transferAnnotation, setTransferAnnotation] = useState('');
+  const [selectedTransferChannelId, setSelectedTransferChannelId] = useState<
+    string | null
+  >(null);
+  const [selectedTransferUserId, setSelectedTransferUserId] = useState<
+    string | null
+  >(null);
+  const [selectedTransferSectorId, setSelectedTransferSectorId] = useState<
+    string | null
+  >(null);
+  const [selectedTransferSectorUserId, setSelectedTransferSectorUserId] =
+    useState<string | null>(null);
+  const [transferChannels, setTransferChannels] = useState<
+    TransferChannelOption[]
+  >([]);
+  const [transferUsers, setTransferUsers] = useState<TransferUserOption[]>([]);
+  const [transferSectors, setTransferSectors] = useState<
+    TransferSectorOption[]
+  >([]);
+  const [transferSectorUsers, setTransferSectorUsers] = useState<
+    TransferUserOption[]
+  >([]);
+  const [isLoadingTransferChannels, setIsLoadingTransferChannels] =
+    useState(false);
+  const [isLoadingTransferUsers, setIsLoadingTransferUsers] = useState(false);
+  const [isLoadingTransferSectors, setIsLoadingTransferSectors] =
+    useState(false);
+  const [isLoadingTransferSectorUsers, setIsLoadingTransferSectorUsers] =
+    useState(false);
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [isTogglingForwardToOutput, setIsTogglingForwardToOutput] =
     useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [remoteActivityMode, setRemoteActivityMode] =
@@ -3072,6 +3350,67 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       player.loop = false;
     }
   );
+  const activeChatLabels = useMemo<ChatLabel[]>(() => {
+    if (!Array.isArray(chatInfo.label)) return [];
+    return chatInfo.label;
+  }, [chatInfo.label]);
+  const primaryChatLabel = useMemo(
+    () => activeChatLabels[0] ?? null,
+    [activeChatLabels]
+  );
+  const remainingChatLabelsCount = Math.max(0, activeChatLabels.length - 1);
+  const maskedHeaderPhone = useMemo(() => {
+    const contactPhone = readNonEmptyString(chatInfo.contact?.phone);
+    const contactDdi = readNonEmptyString(chatInfo.contact?.phone_ddi);
+    if (contactPhone && contactDdi) {
+      return `+${contactDdi} ${contactPhone}`;
+    }
+    if (contactPhone) return contactPhone;
+    return chatInfo.phone ?? '';
+  }, [chatInfo.contact?.phone, chatInfo.contact?.phone_ddi, chatInfo.phone]);
+  const headerPhoneValue = useMemo(() => {
+    if (!isHeaderPhoneDecrypted || !headerPhoneDecrypted) {
+      return maskedHeaderPhone;
+    }
+    const contactDdi = readNonEmptyString(chatInfo.contact?.phone_ddi);
+    return formatPhoneWithDdi(headerPhoneDecrypted, contactDdi);
+  }, [
+    chatInfo.contact?.phone_ddi,
+    headerPhoneDecrypted,
+    isHeaderPhoneDecrypted,
+    maskedHeaderPhone,
+  ]);
+  const protocolList = useMemo<ProtocolWithType[]>(() => {
+    const unique = new Map<string, ProtocolType>();
+    const appendProtocols = (
+      protocols: string[] | null | undefined,
+      type: ProtocolType
+    ) => {
+      if (!Array.isArray(protocols) || protocols.length === 0) return;
+      for (const item of protocols) {
+        const normalized = readNonEmptyString(item);
+        if (!normalized || unique.has(normalized)) continue;
+        unique.set(normalized, type);
+      }
+    };
+
+    appendProtocols(chatInfo.protocol_start, 'A');
+    appendProtocols(chatInfo.protocol_transfer, 'T');
+    appendProtocols(chatInfo.protocol_ura, 'U');
+    return Array.from(unique.entries()).map(([protocol, type]) => ({
+      protocol,
+      type,
+    }));
+  }, [
+    chatInfo.protocol_start,
+    chatInfo.protocol_transfer,
+    chatInfo.protocol_ura,
+  ]);
+  const primaryProtocol = protocolList[0] ?? null;
+  const extraProtocolCount = Math.max(0, protocolList.length - 1);
+  const showProtocolInHeader =
+    workerConfigForChat?.show_protocol_in_chat === true &&
+    protocolList.length > 0;
 
   useEffect(() => {
     setChatInfo(chat);
@@ -3103,16 +3442,75 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+
     getUser().then((user) => {
+      if (!isMounted) return;
       const userName = resolveStoredUserName(user);
       setCurrentUserId(resolveUserId(user));
       setCurrentUserName(userName);
     });
 
     getPermissions().then((permissions) => {
+      if (!isMounted) return;
+      setPermissionList(permissions);
       setCanPreviewProtectedContent(canPreviewChatContent(permissions));
     });
+
+    getSectors().then((sectors) => {
+      if (!isMounted) return;
+      setUserSectors(sectors);
+    });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
+  useEffect(() => {
+    const workerId = readNonEmptyString(chatInfo.worker?.id);
+    if (!workerId) {
+      setWorkerConfigForChat(null);
+      return;
+    }
+
+    let cancelled = false;
+    viewWorkerConfigForChat(workerId)
+      .then((config) => {
+        if (cancelled) return;
+        setWorkerConfigForChat(config);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWorkerConfigForChat(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatInfo.worker?.id]);
+
+  useEffect(() => {
+    setHeaderPhoneDecrypted(null);
+    setIsHeaderPhoneDecrypted(false);
+    setIsHeaderPhoneLoading(false);
+    setMenuVisible(false);
+    setProtocolModalVisible(false);
+    setLabelModalVisible(false);
+    setSearchModalVisible(false);
+    setAttendanceHistoryVisible(false);
+    setTransferModalVisible(false);
+  }, [chatInfo.chat_id]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
 
   const clearTypingTimeout = useCallback(() => {
     if (!typingTimeoutRef.current) return;
@@ -3675,13 +4073,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     []
   );
 
-  useEffect(() => {
-    navigation.setOptions({
-      title:
-        chatInfo.name ?? chatInfo.contact?.name ?? chatInfo.phone ?? 'Chat',
-    });
-  }, [navigation, chatInfo.name, chatInfo.contact?.name, chatInfo.phone]);
-
   useFocusEffect(
     useCallback(() => {
       pendingScrollToBottomRef.current = true;
@@ -3792,6 +4183,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           next.phone = phone;
         }
 
+        const photo = readNonEmptyString(incoming.photo);
+        if (photo) {
+          next.photo = photo;
+        }
+
         if (incoming.contact && typeof incoming.contact === 'object') {
           next.contact = {
             ...(next.contact ?? {}),
@@ -3811,6 +4207,32 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             ...(next.sector ?? {}),
             ...(incoming.sector as NonNullable<typeof prev.sector>),
           };
+        }
+
+        if (incoming.label === null) {
+          next.label = null;
+        } else if (Array.isArray(incoming.label)) {
+          next.label = incoming.label as ChatLabel[];
+        }
+
+        if (Array.isArray(incoming.protocol_start)) {
+          next.protocol_start = incoming.protocol_start as string[];
+        }
+
+        if (Array.isArray(incoming.protocol_transfer)) {
+          next.protocol_transfer = incoming.protocol_transfer as string[];
+        }
+
+        if (Array.isArray(incoming.protocol_ura)) {
+          next.protocol_ura = incoming.protocol_ura as string[];
+        }
+
+        if (
+          incoming.forward_to_output_chatbot === null ||
+          typeof incoming.forward_to_output_chatbot === 'boolean'
+        ) {
+          next.forward_to_output_chatbot =
+            incoming.forward_to_output_chatbot as boolean | null;
         }
 
         if (
@@ -3898,13 +4320,721 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     chatInfo.status === 'ura_output' ||
     chatInfo.status === 'ura_schedule' ||
     chatInfo.status === 'ura_webhook';
+  const isInChatStatus = chatInfo.status === 'in_chat';
   const shouldObfuscateContent =
     isQueueOrUraStatus && !canPreviewProtectedContent;
+  const canViewAttendanceHistoryAction =
+    canViewAttendanceHistory(permissionList);
+  const canShowCloseButton =
+    !isHistoryReadonly &&
+    (isInChatStatus ||
+      (isQueueOrUraStatus && canCloseChatWithoutAttending(permissionList)));
+  const canTransferAction = !isHistoryReadonly && isInChatStatus;
+  const canLabelAction = !isHistoryReadonly && isInChatStatus;
+  const canToggleForwardToOutputAction =
+    !isHistoryReadonly &&
+    (isInChatStatus || isQueueOrUraStatus) &&
+    workerConfigForChat?.has_ura_output === true &&
+    canToggleForwardToOutputChatbot(permissionList);
+  const isForwardToOutputActive = chatInfo.forward_to_output_chatbot !== false;
+
+  const handleToggleHeaderPhoneVisibility = useCallback(async () => {
+    const contactId = readNonEmptyString(chatInfo.contact?.id);
+    if (!contactId) return;
+
+    if (isHeaderPhoneDecrypted) {
+      setHeaderPhoneDecrypted(null);
+      setIsHeaderPhoneDecrypted(false);
+      return;
+    }
+
+    setIsHeaderPhoneLoading(true);
+    const decrypted = await getChatContactPhoneDecrypted(contactId);
+    setIsHeaderPhoneLoading(false);
+
+    if (!decrypted) return;
+    setHeaderPhoneDecrypted(decrypted);
+    setIsHeaderPhoneDecrypted(true);
+  }, [chatInfo.contact?.id, isHeaderPhoneDecrypted]);
+
+  const confirmCloseService = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (!chatId) return;
+
+    const ok = await updateChatStatus(chatId, 'closed');
+    if (!ok) {
+      Alert.alert(pt.error_title, pt.chat_status_update_error);
+      return;
+    }
+
+    Alert.alert(pt.success_title, pt.close_service_success);
+    navigation.goBack();
+  }, [chatInfo.chat_id, navigation]);
+
+  const handleCloseService = useCallback(() => {
+    Alert.alert(pt.close_service, pt.close_service_confirmation, [
+      {
+        text: pt.cancel,
+        style: 'cancel',
+      },
+      {
+        text: pt.close_service,
+        style: 'destructive',
+        onPress: () => {
+          void confirmCloseService();
+        },
+      },
+    ]);
+  }, [confirmCloseService]);
+
+  const handleToggleForwardToOutput = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (!chatId || isTogglingForwardToOutput) return;
+
+    const nextValue = chatInfo.forward_to_output_chatbot === false;
+    setIsTogglingForwardToOutput(true);
+    const ok = await updateForwardToOutputChatbot(chatId, nextValue);
+    setIsTogglingForwardToOutput(false);
+    if (!ok) {
+      Alert.alert(
+        pt.error_title,
+        pt.chat_forward_to_output_chatbot_update_failed
+      );
+      return;
+    }
+
+    setChatInfo((prev) => ({
+      ...prev,
+      forward_to_output_chatbot: nextValue,
+    }));
+  }, [
+    chatInfo.chat_id,
+    chatInfo.forward_to_output_chatbot,
+    isTogglingForwardToOutput,
+  ]);
+
+  const openLabelModal = useCallback(async () => {
+    if (!canLabelAction) return;
+
+    setLabelModalVisible(true);
+    setIsLoadingLabelModal(true);
+    const labels = await listLabelTemplates();
+    setIsLoadingLabelModal(false);
+
+    if (labels) {
+      setLabelTemplates(labels);
+    } else {
+      setLabelTemplates([]);
+    }
+
+    const selectedIds =
+      Array.isArray(chatInfo.label) && chatInfo.label.length > 0
+        ? chatInfo.label.map((item) => item.label_template_id)
+        : [];
+    setSelectedLabelTemplateIds(selectedIds);
+  }, [canLabelAction, chatInfo.label]);
+
+  const handleSaveLabels = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (!chatId || isSavingLabelModal) return;
+
+    setIsSavingLabelModal(true);
+    const nextIds =
+      selectedLabelTemplateIds.length > 0 ? selectedLabelTemplateIds : null;
+    const ok = await updateChatLabel(chatId, nextIds);
+    setIsSavingLabelModal(false);
+    if (!ok) {
+      Alert.alert(pt.error_title, pt.chat_label_update_error);
+      return;
+    }
+
+    const nextLabels: ChatLabel[] | null =
+      nextIds && nextIds.length > 0
+        ? labelTemplates
+            .filter((item) => nextIds.includes(item.label_template_id))
+            .map((item) => ({
+              label_template_id: item.label_template_id,
+              label: item.label,
+              color: item.color,
+            }))
+        : null;
+
+    setChatInfo((prev) => ({
+      ...prev,
+      label: nextLabels && nextLabels.length > 0 ? nextLabels : null,
+    }));
+
+    setLabelModalVisible(false);
+    Alert.alert(pt.success_title, pt.chat_label_update_success);
+  }, [
+    chatInfo.chat_id,
+    isSavingLabelModal,
+    selectedLabelTemplateIds,
+    labelTemplates,
+  ]);
+
+  const handleClearLabels = useCallback(() => {
+    setSelectedLabelTemplateIds([]);
+  }, []);
+
+  const runSearchMessages = useCallback(
+    async (reset: boolean, page: number) => {
+      const chatId = readNonEmptyString(chatInfo.chat_id);
+      const query = debouncedSearchQuery.trim();
+
+      if (!chatId || query.length < 3) {
+        setSearchResults([]);
+        setSearchCurrentPage(1);
+        setSearchTotalPages(0);
+        return;
+      }
+
+      if (reset) {
+        setSearchLoading(true);
+      } else {
+        setSearchLoadingMore(true);
+      }
+
+      const response = await searchMessages(chatId, query, page, 50);
+      if (reset) {
+        setSearchResults(response.results);
+      } else {
+        setSearchResults((prev) => [...prev, ...response.results]);
+      }
+      setSearchCurrentPage(response.pagings.current_page);
+      setSearchTotalPages(response.pagings.total_pages);
+
+      if (reset) {
+        setSearchLoading(false);
+      } else {
+        setSearchLoadingMore(false);
+      }
+    },
+    [chatInfo.chat_id, debouncedSearchQuery]
+  );
+
+  useEffect(() => {
+    if (!searchModalVisible) {
+      setSearchQuery('');
+      setDebouncedSearchQuery('');
+      setSearchResults([]);
+      setSearchCurrentPage(1);
+      setSearchTotalPages(0);
+      setSearchLoading(false);
+      setSearchLoadingMore(false);
+      return;
+    }
+
+    void runSearchMessages(true, 1);
+  }, [searchModalVisible, debouncedSearchQuery, runSearchMessages]);
+
+  const handleLoadMoreSearchResults = useCallback(() => {
+    if (searchLoading || searchLoadingMore) return;
+    if (debouncedSearchQuery.trim().length < 3) return;
+    if (searchCurrentPage >= searchTotalPages) return;
+    void runSearchMessages(false, searchCurrentPage + 1);
+  }, [
+    debouncedSearchQuery,
+    runSearchMessages,
+    searchCurrentPage,
+    searchLoading,
+    searchLoadingMore,
+    searchTotalPages,
+  ]);
+
+  const handleSelectSearchedMessage = useCallback(
+    (messageId: string) => {
+      setSearchModalVisible(false);
+      requestAnimationFrame(() => {
+        scrollToMessageById(messageId);
+      });
+    },
+    [scrollToMessageById]
+  );
+
+  const canListAllChatsForHistory = useMemo(() => {
+    return permissionList.some(
+      (permission) =>
+        permission === 'full_access' ||
+        permission === 'full_access_group' ||
+        permission === 'chat_group' ||
+        permission === 'list_all_chats_in_sector' ||
+        permission === 'list_all_chats_without_sector_limit'
+    );
+  }, [permissionList]);
+  const normalizedHistoryPhone = useMemo(() => {
+    const primaryPhoneDigits = normalizePhoneDigits(chatInfo.phone);
+    const fallbackPhoneDigits = normalizePhoneDigits(chatInfo.contact?.phone);
+    const candidate = primaryPhoneDigits || fallbackPhoneDigits;
+    if (!candidate) return null;
+
+    const ddiDigits = normalizePhoneDigits(chatInfo.contact?.phone_ddi);
+    if (ddiDigits && candidate.startsWith(ddiDigits) && candidate.length > 11) {
+      return candidate.slice(ddiDigits.length);
+    }
+
+    return candidate;
+  }, [chatInfo.phone, chatInfo.contact?.phone, chatInfo.contact?.phone_ddi]);
+  const userSectorsKey = useMemo(() => userSectors.join(','), [userSectors]);
+
+  const loadAttendanceHistory = useCallback(
+    async (reset: boolean, page: number) => {
+      const activePhone = normalizedHistoryPhone;
+      if (!activePhone) {
+        setAttendanceHistory([]);
+        setAttendanceHistoryPage(1);
+        setAttendanceHistoryTotalPages(0);
+        return;
+      }
+
+      if (reset) {
+        setAttendanceHistoryLoading(true);
+      } else {
+        setAttendanceHistoryLoadingMore(true);
+      }
+
+      const query: {
+        current_page: number;
+        per_page: number;
+        search: string;
+        status: string;
+        filter_phone: string;
+        sort_field: string;
+        sort_order: string;
+        filter_user_id?: string;
+        filter_sector_id?: string;
+      } = {
+        current_page: page,
+        per_page: 20,
+        search: '',
+        status: 'closed',
+        filter_phone: activePhone,
+        sort_field: 'closed_at',
+        sort_order: 'desc',
+      };
+      const sectorIds = userSectorsKey
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+
+      if (!canListAllChatsForHistory && currentUserId) {
+        query.filter_user_id = currentUserId;
+      }
+
+      if (!canListAllChatsForHistory && sectorIds.length === 1) {
+        query.filter_sector_id = sectorIds[0];
+      }
+
+      const response = await searchChats(query);
+      if (!response) {
+        if (reset) {
+          setAttendanceHistory([]);
+          setAttendanceHistoryPage(1);
+          setAttendanceHistoryTotalPages(0);
+          if (!attendanceHistoryErrorAlertShownRef.current) {
+            attendanceHistoryErrorAlertShownRef.current = true;
+            Alert.alert(pt.error_title, pt.attendance_history_load_error);
+          }
+        }
+        return;
+      } else if (reset) {
+        setAttendanceHistory(response.results);
+        setAttendanceHistoryPage(response.current_page);
+        setAttendanceHistoryTotalPages(response.total_pages);
+        attendanceHistoryErrorAlertShownRef.current = false;
+      } else {
+        setAttendanceHistory((prev) => [...prev, ...response.results]);
+        setAttendanceHistoryPage(response.current_page);
+        setAttendanceHistoryTotalPages(response.total_pages);
+        attendanceHistoryErrorAlertShownRef.current = false;
+      }
+
+      if (reset) {
+        setAttendanceHistoryLoading(false);
+      } else {
+        setAttendanceHistoryLoadingMore(false);
+      }
+    },
+    [
+      canListAllChatsForHistory,
+      currentUserId,
+      normalizedHistoryPhone,
+      userSectorsKey,
+    ]
+  );
+
+  useEffect(() => {
+    if (!attendanceHistoryVisible) {
+      setAttendanceHistory([]);
+      setAttendanceHistoryPage(1);
+      setAttendanceHistoryTotalPages(0);
+      setAttendanceHistoryLoading(false);
+      setAttendanceHistoryLoadingMore(false);
+      attendanceHistoryErrorAlertShownRef.current = false;
+      return;
+    }
+
+    void loadAttendanceHistory(true, 1);
+  }, [attendanceHistoryVisible, loadAttendanceHistory]);
+
+  const handleLoadMoreAttendanceHistory = useCallback(() => {
+    if (attendanceHistoryLoading || attendanceHistoryLoadingMore) return;
+    if (attendanceHistoryPage >= attendanceHistoryTotalPages) return;
+    void loadAttendanceHistory(false, attendanceHistoryPage + 1);
+  }, [
+    attendanceHistoryLoading,
+    attendanceHistoryLoadingMore,
+    attendanceHistoryPage,
+    attendanceHistoryTotalPages,
+    loadAttendanceHistory,
+  ]);
+
+  const openHistoryConversation = useCallback(
+    (selectedChat: ListChatsResult) => {
+      setAttendanceHistoryVisible(false);
+      navigation.push('ChatRoom', {
+        chat: selectedChat,
+        mode: 'history_readonly',
+      });
+    },
+    [navigation]
+  );
+
+  const selectedTransferChannel = useMemo(
+    () =>
+      transferChannels.find(
+        (item) => item.value === selectedTransferChannelId
+      ) ?? null,
+    [selectedTransferChannelId, transferChannels]
+  );
+  const selectedTransferUser = useMemo(
+    () =>
+      transferUsers.find((item) => item.id === selectedTransferUserId) ?? null,
+    [selectedTransferUserId, transferUsers]
+  );
+  const selectedTransferSector = useMemo(
+    () =>
+      transferSectors.find((item) => item.id === selectedTransferSectorId) ??
+      null,
+    [selectedTransferSectorId, transferSectors]
+  );
+  const selectedTransferSectorUser = useMemo(
+    () =>
+      transferSectorUsers.find(
+        (item) => item.id === selectedTransferSectorUserId
+      ) ?? null,
+    [selectedTransferSectorUserId, transferSectorUsers]
+  );
+
+  useEffect(() => {
+    if (!transferModalVisible) {
+      setTransferType(null);
+      setTransferAnnotation('');
+      setSelectedTransferChannelId(null);
+      setSelectedTransferUserId(null);
+      setSelectedTransferSectorId(null);
+      setSelectedTransferSectorUserId(null);
+      setTransferChannels([]);
+      setTransferUsers([]);
+      setTransferSectors([]);
+      setTransferSectorUsers([]);
+      setTransferPickerKind(null);
+      setIsLoadingTransferChannels(false);
+      setIsLoadingTransferUsers(false);
+      setIsLoadingTransferSectors(false);
+      setIsLoadingTransferSectorUsers(false);
+      return;
+    }
+
+    setIsLoadingTransferChannels(true);
+    setIsLoadingTransferSectors(true);
+
+    listTransferOptions()
+      .then((options) => {
+        const workers = options?.workers ?? [];
+        const channelItems: TransferChannelOption[] = workers.map((worker) => ({
+          value: worker.id,
+          title: worker.number
+            ? `${worker.name} (${worker.number})`
+            : worker.name,
+          name: worker.name,
+          number: worker.number,
+        }));
+        setTransferChannels(channelItems);
+      })
+      .finally(() => {
+        setIsLoadingTransferChannels(false);
+      });
+
+    listTransferSectors()
+      .then((sectors) => {
+        setTransferSectors(sectors);
+      })
+      .finally(() => {
+        setIsLoadingTransferSectors(false);
+      });
+  }, [transferModalVisible]);
+
+  useEffect(() => {
+    if (!transferModalVisible) return;
+
+    setSelectedTransferUserId(null);
+    setSelectedTransferSectorUserId(null);
+    setTransferUsers([]);
+    setTransferSectorUsers([]);
+
+    if (!selectedTransferChannelId) return;
+
+    setIsLoadingTransferUsers(true);
+    listTransferUsers(chatInfo.chat_id, selectedTransferChannelId)
+      .then((users) => {
+        setTransferUsers(users);
+      })
+      .finally(() => {
+        setIsLoadingTransferUsers(false);
+      });
+  }, [chatInfo.chat_id, selectedTransferChannelId, transferModalVisible]);
+
+  useEffect(() => {
+    if (!transferModalVisible) return;
+    setSelectedTransferSectorUserId(null);
+    setTransferSectorUsers([]);
+
+    if (!selectedTransferSectorId || !selectedTransferChannelId) return;
+
+    setIsLoadingTransferSectorUsers(true);
+    listTransferSectorUsers(
+      selectedTransferSectorId,
+      chatInfo.chat_id,
+      selectedTransferChannelId
+    )
+      .then((users) => {
+        setTransferSectorUsers(users);
+      })
+      .finally(() => {
+        setIsLoadingTransferSectorUsers(false);
+      });
+  }, [
+    chatInfo.chat_id,
+    selectedTransferChannelId,
+    selectedTransferSectorId,
+    transferModalVisible,
+  ]);
+
+  const transferPickerItems = useMemo(() => {
+    if (transferPickerKind === 'channel') {
+      return transferChannels.map((item) => ({
+        value: item.value,
+        label: item.title,
+      }));
+    }
+    if (transferPickerKind === 'type') {
+      return [
+        { value: 'user', label: pt.transfer_type_user },
+        { value: 'sector', label: pt.transfer_type_sector },
+      ];
+    }
+    if (transferPickerKind === 'user') {
+      return transferUsers.map((item) => ({
+        value: item.id,
+        label: item.name,
+      }));
+    }
+    if (transferPickerKind === 'sector') {
+      return transferSectors.map((item) => ({
+        value: item.id,
+        label: item.name,
+      }));
+    }
+    if (transferPickerKind === 'sector_user') {
+      return transferSectorUsers.map((item) => ({
+        value: item.id,
+        label: item.name,
+      }));
+    }
+    return [];
+  }, [
+    transferChannels,
+    transferPickerKind,
+    transferSectorUsers,
+    transferSectors,
+    transferUsers,
+  ]);
+
+  const handleSelectTransferPickerValue = useCallback(
+    (value: string) => {
+      if (transferPickerKind === 'channel') {
+        setSelectedTransferChannelId(value);
+      } else if (transferPickerKind === 'type') {
+        if (value === 'user' || value === 'sector') {
+          setTransferType(value);
+        } else {
+          setTransferType(null);
+        }
+        setSelectedTransferUserId(null);
+        setSelectedTransferSectorId(null);
+        setSelectedTransferSectorUserId(null);
+      } else if (transferPickerKind === 'user') {
+        setSelectedTransferUserId(value);
+      } else if (transferPickerKind === 'sector') {
+        setSelectedTransferSectorId(value);
+      } else if (transferPickerKind === 'sector_user') {
+        setSelectedTransferSectorUserId(value);
+      }
+
+      setTransferPickerKind(null);
+    },
+    [transferPickerKind]
+  );
+
+  const submitTransfer = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (!chatId) return;
+    if (!selectedTransferChannelId) {
+      Alert.alert(pt.warning_title, pt.channel_required);
+      return;
+    }
+    if (transferType === 'user' && !selectedTransferUserId) {
+      Alert.alert(pt.warning_title, pt.user_required);
+      return;
+    }
+    if (transferType === 'sector' && !selectedTransferSectorId) {
+      Alert.alert(pt.warning_title, pt.sector_required);
+      return;
+    }
+
+    const payload: TransferChatPayload = {
+      worker_id: selectedTransferChannelId,
+      user_id:
+        transferType === 'user'
+          ? selectedTransferUserId
+          : transferType === 'sector'
+            ? selectedTransferSectorUserId
+            : null,
+      sector_id: transferType === 'sector' ? selectedTransferSectorId : null,
+      annotation: transferAnnotation.trim() || null,
+    };
+
+    setIsTransferring(true);
+    const ok = await transferChat(chatId, payload);
+    setIsTransferring(false);
+    if (!ok) {
+      Alert.alert(pt.error_title, pt.chat_transfer_error);
+      return;
+    }
+
+    Alert.alert(pt.success_title, pt.transfer_successfully);
+    setTransferModalVisible(false);
+    navigation.goBack();
+  }, [
+    chatInfo.chat_id,
+    navigation,
+    selectedTransferChannelId,
+    selectedTransferSectorId,
+    selectedTransferSectorUserId,
+    selectedTransferUserId,
+    transferAnnotation,
+    transferType,
+  ]);
+
+  const menuActions = useMemo<ChatMenuAction[]>(() => {
+    const actions: ChatMenuAction[] = [];
+
+    if (protocolList.length > 0) {
+      actions.push({
+        key: 'protocol',
+        label: pt.view_protocol,
+        icon: 'document-text-outline',
+        onPress: () => {
+          setProtocolModalVisible(true);
+        },
+      });
+    }
+
+    if (canLabelAction) {
+      actions.push({
+        key: 'label',
+        label: pt.label,
+        icon: 'pricetag-outline',
+        onPress: () => {
+          void openLabelModal();
+        },
+      });
+    }
+
+    if (canViewAttendanceHistoryAction) {
+      actions.push({
+        key: 'attendance_history',
+        label: pt.attendance_history,
+        icon: 'time-outline',
+        onPress: () => {
+          setAttendanceHistoryVisible(true);
+        },
+      });
+    }
+
+    if (canTransferAction) {
+      actions.push({
+        key: 'transfer',
+        label: pt.transfer,
+        icon: 'swap-horizontal-outline',
+        onPress: () => {
+          setTransferModalVisible(true);
+        },
+      });
+    }
+
+    actions.push({
+      key: 'search_messages',
+      label: pt.search_messages,
+      icon: 'search-outline',
+      onPress: () => {
+        setSearchModalVisible(true);
+      },
+    });
+
+    if (canToggleForwardToOutputAction) {
+      actions.push({
+        key: 'forward_to_output_chatbot',
+        label: pt.forward_to_output_chatbot,
+        icon: isForwardToOutputActive ? 'toggle' : 'toggle-outline',
+        active: isForwardToOutputActive,
+        onPress: () => {
+          void handleToggleForwardToOutput();
+        },
+      });
+    }
+
+    if (canShowCloseButton) {
+      actions.push({
+        key: 'close_service',
+        label: pt.close_service,
+        icon: 'close-circle-outline',
+        danger: true,
+        onPress: () => {
+          handleCloseService();
+        },
+      });
+    }
+
+    return actions;
+  }, [
+    canLabelAction,
+    canShowCloseButton,
+    canToggleForwardToOutputAction,
+    canTransferAction,
+    canViewAttendanceHistoryAction,
+    handleCloseService,
+    handleToggleForwardToOutput,
+    isForwardToOutputActive,
+    openLabelModal,
+    protocolList.length,
+  ]);
 
   useEffect(() => {
     inputRef.current = input;
     sendingRef.current = sending;
-    isQueueOrUraStatusRef.current = isQueueOrUraStatus;
+    isQueueOrUraStatusRef.current = isQueueOrUraStatus || isHistoryReadonly;
     sendingCapturedMediaRef.current = sendingCapturedMedia;
     sendingVoiceRecordingRef.current = sendingVoiceRecording;
     isRecordingVoiceRef.current = isRecordingVoice;
@@ -3912,6 +5042,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     isPreparingRecordingRef.current = isPreparingRecording;
   }, [
     input,
+    isHistoryReadonly,
     isPreparingRecording,
     isQueueOrUraStatus,
     isRecordingLocked,
@@ -4317,7 +5448,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const sendCapturedMediaDraft = useCallback(
     async (draft: CameraCaptureDraft) => {
-      if (sendingCapturedMedia) return;
+      if (sendingCapturedMedia || isHistoryReadonly) return;
 
       setSendingCapturedMedia(true);
       try {
@@ -4368,6 +5499,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     },
     [
       chatInfo.chat_id,
+      isHistoryReadonly,
       scrollToBottomWithRetries,
       sendingCapturedMedia,
       syncLatestMessages,
@@ -4376,7 +5508,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const launchCameraCapture = useCallback(
     async (mediaType: 'images' | 'videos') => {
-      if (isQueueOrUraStatus || sendingCapturedMedia || sendingVoiceRecording) {
+      if (
+        isHistoryReadonly ||
+        isQueueOrUraStatus ||
+        sendingCapturedMedia ||
+        sendingVoiceRecording
+      ) {
         return;
       }
 
@@ -4420,6 +5557,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     },
     [
+      isHistoryReadonly,
       isQueueOrUraStatus,
       sendCapturedMediaDraft,
       sendingCapturedMedia,
@@ -4429,6 +5567,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleOpenCameraPicker = useCallback(() => {
     if (
+      isHistoryReadonly ||
       isQueueOrUraStatus ||
       sendingCapturedMedia ||
       sendingVoiceRecording ||
@@ -4438,6 +5577,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
     setCameraPickerVisible(true);
   }, [
+    isHistoryReadonly,
     isQueueOrUraStatus,
     sendingCapturedMedia,
     sendingVoiceRecording,
@@ -4490,7 +5630,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const sendTextPayload = useCallback(
     async (rawText: string) => {
       const text = rawText.trim();
-      if (!text || sending) return false;
+      if (!text || sending || isHistoryReadonly) return false;
 
       setSending(true);
       try {
@@ -4513,22 +5653,30 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
       return false;
     },
-    [chatInfo.chat_id, sending, scrollToBottomWithRetries]
+    [chatInfo.chat_id, isHistoryReadonly, sending, scrollToBottomWithRetries]
   );
 
   const handleTemplateButtonPress = useCallback(
     (button: MessageTemplateButton, _message: ListMessageResult) => {
-      if (isQueueOrUraStatus) return;
+      if (isQueueOrUraStatus || isHistoryReadonly) return;
       const buttonText = readNonEmptyString(button.displayText);
       if (!buttonText) return;
       void sendTextPayload(buttonText);
     },
-    [isQueueOrUraStatus, sendTextPayload]
+    [isHistoryReadonly, isQueueOrUraStatus, sendTextPayload]
   );
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || sending || isRecordingVoice || sendingCapturedMedia) return;
+    if (
+      !text ||
+      sending ||
+      isRecordingVoice ||
+      sendingCapturedMedia ||
+      isHistoryReadonly
+    ) {
+      return;
+    }
 
     setInput('');
     await sendTextPayload(text);
@@ -4537,6 +5685,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const hasInputText = input.trim().length > 0;
   const canUseComposerActions =
     !sending &&
+    !isHistoryReadonly &&
     !isQueueOrUraStatus &&
     !isPreparingRecording &&
     !sendingVoiceRecording &&
@@ -4555,74 +5704,233 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
-      {loading ? (
-        <ChatRoomSkeleton />
-      ) : (
-        <>
-          <FlatList
-            key={chatInfo.chat_id}
-            ref={listRef}
-            data={messagesWithSeparators}
-            keyExtractor={(item) =>
-              item.type === 'separator'
-                ? `separator-${chatInfo.chat_id}-${item.separatorDate}`
-                : `message-${chatInfo.chat_id}-${item.message.message_id}`
-            }
-            renderItem={({ item }) => {
-              if (item.type === 'separator') {
-                return <DateSeparator label={item.separatorLabel} />;
-              }
+      <View style={[styles.chatHeader, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.chatHeaderTopRow}>
+          <Pressable
+            style={styles.chatHeaderBackBtn}
+            onPress={() => navigation.goBack()}
+            accessibilityLabel={pt.close}
+          >
+            <Ionicons name="arrow-back" size={22} color={colors.onSurface} />
+          </Pressable>
 
-              const quotedTargetId = resolveQuotedTargetMessageId(
-                item.message,
-                messages
-              );
-              const canGoToQuoted =
-                !!quotedTargetId && messageIdSet.has(quotedTargetId);
-
-              return (
-                <MessageBubble
-                  msg={item.message}
-                  fromMe={item.message.type_user !== ETypeUserChat.client}
-                  chatInfo={chatInfo}
-                  currentUserName={currentUserName}
-                  highlighted={highlightedMessageId === item.message.message_id}
-                  onPressQuoted={
-                    canGoToQuoted && quotedTargetId
-                      ? () => scrollToMessageById(quotedTargetId)
-                      : null
-                  }
-                  resolvedContactDisplay={
-                    resolvedContactCards[item.message.message_id]
-                  }
-                  audioCtrl={audioCtrl}
-                  onOpenImage={openImageViewer}
-                  onOpenVideo={openVideoViewer}
-                  onTemplateButtonPress={handleTemplateButtonPress}
-                  disableTemplateButtons={isQueueOrUraStatus || sending}
-                  obfuscateContent={shouldObfuscateContent}
+          <View style={styles.chatHeaderContactWrap}>
+            <View style={styles.chatHeaderAvatarWrap}>
+              {resolveMediaUri(chatInfo.contact?.photo ?? chatInfo.photo) ? (
+                <Image
+                  source={{
+                    uri: resolveMediaUri(
+                      chatInfo.contact?.photo ?? chatInfo.photo
+                    )!,
+                  }}
+                  style={styles.chatHeaderAvatar}
                 />
-              );
-            }}
-            onScrollToIndexFailed={handleScrollToIndexFailed}
-            onScroll={handleListScroll}
-            scrollEventThrottle={16}
-            onContentSizeChange={handleListContentSizeChange}
-            contentContainerStyle={styles.listContent}
-            inverted={false}
-          />
-          {loadingOlder ? (
-            <View pointerEvents="none" style={styles.loadingOlderTopWrap}>
-              <View style={styles.loadingOlderTopChip}>
-                <ActivityIndicator size="small" color={colors.onPrimary} />
-                <Text style={styles.loadingOlderTopText}>
-                  {pt.loading_more_messages}
+              ) : (
+                <Ionicons name="person" size={20} color={colors.grey600} />
+              )}
+            </View>
+
+            <View style={styles.chatHeaderContactInfo}>
+              <Text style={styles.chatHeaderName} numberOfLines={1}>
+                {chatInfo.contact?.name ?? chatInfo.name ?? pt.contact}
+              </Text>
+
+              <View style={styles.chatHeaderPhoneRow}>
+                <Text style={styles.chatHeaderPhone} numberOfLines={1}>
+                  {headerPhoneValue}
                 </Text>
+                {chatInfo.contact?.id ? (
+                  <Pressable
+                    onPress={() => {
+                      void handleToggleHeaderPhoneVisibility();
+                    }}
+                    disabled={isHeaderPhoneLoading}
+                  >
+                    {isHeaderPhoneLoading ? (
+                      <ActivityIndicator size="small" color={colors.grey600} />
+                    ) : (
+                      <Ionicons
+                        name={
+                          isHeaderPhoneDecrypted
+                            ? 'eye-off-outline'
+                            : 'eye-outline'
+                        }
+                        size={16}
+                        color={colors.grey700}
+                      />
+                    )}
+                  </Pressable>
+                ) : null}
               </View>
             </View>
+          </View>
+
+          <Pressable
+            style={styles.chatHeaderMenuBtn}
+            onPress={() => setMenuVisible(true)}
+            accessibilityLabel={pt.settings}
+          >
+            <Ionicons
+              name="ellipsis-vertical"
+              size={20}
+              color={colors.onSurface}
+            />
+          </Pressable>
+        </View>
+
+        <View style={styles.chatHeaderMetaRow}>
+          {showProtocolInHeader && primaryProtocol ? (
+            <Pressable
+              style={styles.chatHeaderProtocolChip}
+              onPress={() => setProtocolModalVisible(true)}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={14}
+                color={colors.primary}
+              />
+              <Text style={styles.chatHeaderProtocolText} numberOfLines={1}>
+                {pt.protocol}: {primaryProtocol.protocol}
+              </Text>
+              {extraProtocolCount > 0 ? (
+                <View style={styles.chatHeaderCounterChip}>
+                  <Text style={styles.chatHeaderCounterChipText}>
+                    +{extraProtocolCount}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
           ) : null}
-        </>
-      )}
+
+          {primaryChatLabel ? (
+            <Pressable
+              style={[
+                styles.chatHeaderLabelChip,
+                { borderColor: primaryChatLabel.color },
+              ]}
+              onPress={() => {
+                if (!canLabelAction) return;
+                void openLabelModal();
+              }}
+            >
+              <Ionicons
+                name="pricetag-outline"
+                size={14}
+                color={primaryChatLabel.color}
+              />
+              <Text
+                style={[
+                  styles.chatHeaderLabelText,
+                  { color: primaryChatLabel.color },
+                ]}
+                numberOfLines={1}
+              >
+                {primaryChatLabel.label}
+              </Text>
+              {remainingChatLabelsCount > 0 ? (
+                <View
+                  style={[
+                    styles.chatHeaderCounterChip,
+                    { backgroundColor: primaryChatLabel.color },
+                  ]}
+                >
+                  <Text style={styles.chatHeaderCounterChipText}>
+                    +{remainingChatLabelsCount}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+          ) : null}
+
+          {isHistoryReadonly ? (
+            <View style={styles.chatHeaderReadonlyChip}>
+              <Ionicons
+                name="lock-closed-outline"
+                size={13}
+                color={colors.grey700}
+              />
+              <Text style={styles.chatHeaderReadonlyText}>
+                {pt.history_readonly}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.chatBody}>
+        {loading ? (
+          <ChatRoomSkeleton />
+        ) : (
+          <>
+            <FlatList
+              key={chatInfo.chat_id}
+              ref={listRef}
+              data={messagesWithSeparators}
+              keyExtractor={(item) =>
+                item.type === 'separator'
+                  ? `separator-${chatInfo.chat_id}-${item.separatorDate}`
+                  : `message-${chatInfo.chat_id}-${item.message.message_id}`
+              }
+              renderItem={({ item }) => {
+                if (item.type === 'separator') {
+                  return <DateSeparator label={item.separatorLabel} />;
+                }
+
+                const quotedTargetId = resolveQuotedTargetMessageId(
+                  item.message,
+                  messages
+                );
+                const canGoToQuoted =
+                  !!quotedTargetId && messageIdSet.has(quotedTargetId);
+
+                return (
+                  <MessageBubble
+                    msg={item.message}
+                    fromMe={item.message.type_user !== ETypeUserChat.client}
+                    chatInfo={chatInfo}
+                    currentUserName={currentUserName}
+                    highlighted={
+                      highlightedMessageId === item.message.message_id
+                    }
+                    onPressQuoted={
+                      canGoToQuoted && quotedTargetId
+                        ? () => scrollToMessageById(quotedTargetId)
+                        : null
+                    }
+                    resolvedContactDisplay={
+                      resolvedContactCards[item.message.message_id]
+                    }
+                    audioCtrl={audioCtrl}
+                    onOpenImage={openImageViewer}
+                    onOpenVideo={openVideoViewer}
+                    onTemplateButtonPress={handleTemplateButtonPress}
+                    disableTemplateButtons={
+                      isHistoryReadonly || isQueueOrUraStatus || sending
+                    }
+                    obfuscateContent={shouldObfuscateContent}
+                  />
+                );
+              }}
+              onScrollToIndexFailed={handleScrollToIndexFailed}
+              onScroll={handleListScroll}
+              scrollEventThrottle={16}
+              onContentSizeChange={handleListContentSizeChange}
+              contentContainerStyle={styles.listContent}
+              inverted={false}
+            />
+            {loadingOlder ? (
+              <View pointerEvents="none" style={styles.loadingOlderTopWrap}>
+                <View style={styles.loadingOlderTopChip}>
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                  <Text style={styles.loadingOlderTopText}>
+                    {pt.loading_more_messages}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+          </>
+        )}
+      </View>
       {showScrollToBottomButton ? (
         <Pressable
           style={[
@@ -4653,39 +5961,113 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       ) : null}
       {shouldObfuscateContent ? (
         <View style={styles.protectedBanner}>
-          <Ionicons name="lock-closed-outline" size={14} color={colors.grey700} />
-          <Text style={styles.protectedBannerText}>
-            {pt.protected_content}
-          </Text>
+          <Ionicons
+            name="lock-closed-outline"
+            size={14}
+            color={colors.grey700}
+          />
+          <Text style={styles.protectedBannerText}>{pt.protected_content}</Text>
         </View>
       ) : null}
-      <View
-        style={[
-          styles.inputRow,
-          isTyping && styles.inputRowWithTyping,
-          showRecordingComposer && styles.inputRowRecording,
-        ]}
-      >
-        {showRecordingComposer ? (
-          <View style={styles.recordingComposerWrap}>
-            {isRecordingLocked ? (
-              <>
-                <Pressable
-                  style={styles.recordActionBtn}
-                  onPress={() => {
-                    void discardVoiceRecording();
-                  }}
-                  accessibilityLabel={pt.delete_recording}
-                >
-                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                </Pressable>
+      {isHistoryReadonly ? (
+        <View style={styles.readonlyFooter}>
+          <Ionicons
+            name="lock-closed-outline"
+            size={14}
+            color={colors.grey700}
+          />
+          <Text style={styles.readonlyFooterText}>{pt.history_readonly}</Text>
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.inputRow,
+            isTyping && styles.inputRowWithTyping,
+            showRecordingComposer && styles.inputRowRecording,
+          ]}
+        >
+          {showRecordingComposer ? (
+            <View style={styles.recordingComposerWrap}>
+              {isRecordingLocked ? (
+                <>
+                  <Pressable
+                    style={styles.recordActionBtn}
+                    onPress={() => {
+                      void discardVoiceRecording();
+                    }}
+                    accessibilityLabel={pt.delete_recording}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                  </Pressable>
 
-                <View style={styles.recordingLockedCenter}>
-                  <View style={styles.recordingMetaRow}>
+                  <View style={styles.recordingLockedCenter}>
+                    <View style={styles.recordingMetaRow}>
+                      <Animated.View
+                        style={[
+                          styles.recordingDot,
+                          isRecordingPaused && styles.recordingDotPaused,
+                          {
+                            transform: [{ scale: recordingPulse }],
+                          },
+                        ]}
+                      />
+                      <Text style={styles.recordingTimeText}>
+                        {recordingDurationLabel}
+                      </Text>
+                    </View>
+
+                    <View style={styles.recordingWaveformTrack}>
+                      {recordingWaveformBars.map((value, index) => (
+                        <View
+                          key={`record-locked-${index}`}
+                          style={[
+                            styles.recordingWaveformBar,
+                            {
+                              height: `${Math.max(14, value * 100)}%`,
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  </View>
+
+                  <Pressable
+                    style={styles.recordActionBtn}
+                    onPress={togglePauseVoiceRecording}
+                    accessibilityLabel={
+                      isRecordingPaused
+                        ? pt.resume_recording
+                        : pt.pause_recording
+                    }
+                  >
+                    <Ionicons
+                      name={isRecordingPaused ? 'play' : 'pause'}
+                      size={19}
+                      color={colors.primary}
+                    />
+                  </Pressable>
+
+                  <Pressable
+                    style={[
+                      styles.recordActionBtn,
+                      styles.recordSendBtn,
+                      sendingVoiceRecording && styles.sendBtnDisabled,
+                    ]}
+                    onPress={() => {
+                      void sendRecordedVoiceMessage();
+                    }}
+                    disabled={sendingVoiceRecording}
+                    accessibilityLabel={pt.send_recording}
+                  >
+                    <Ionicons name="send" size={18} color="#FFFFFF" />
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <View style={styles.recordingLiveMeta}>
                     <Animated.View
                       style={[
                         styles.recordingDot,
-                        isRecordingPaused && styles.recordingDotPaused,
                         {
                           transform: [{ scale: recordingPulse }],
                         },
@@ -4699,252 +6081,763 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   <View style={styles.recordingWaveformTrack}>
                     {recordingWaveformBars.map((value, index) => (
                       <View
-                        key={`record-locked-${index}`}
+                        key={`record-live-${index}`}
                         style={[
                           styles.recordingWaveformBar,
                           {
-                            height: `${Math.max(14, value * 100)}%`,
+                            height: `${Math.max(12, value * 100)}%`,
                           },
                         ]}
                       />
                     ))}
                   </View>
-                </View>
 
-                <Pressable
-                  style={styles.recordActionBtn}
-                  onPress={togglePauseVoiceRecording}
-                  accessibilityLabel={
-                    isRecordingPaused ? pt.resume_recording : pt.pause_recording
-                  }
-                >
-                  <Ionicons
-                    name={isRecordingPaused ? 'play' : 'pause'}
-                    size={19}
-                    color={colors.primary}
-                  />
-                </Pressable>
-
-                <Pressable
-                  style={[
-                    styles.recordActionBtn,
-                    styles.recordSendBtn,
-                    sendingVoiceRecording && styles.sendBtnDisabled,
-                  ]}
-                  onPress={() => {
-                    void sendRecordedVoiceMessage();
-                  }}
-                  disabled={sendingVoiceRecording}
-                  accessibilityLabel={pt.send_recording}
-                >
-                  <Ionicons name="send" size={18} color="#FFFFFF" />
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <View style={styles.recordingLiveMeta}>
                   <Animated.View
                     style={[
-                      styles.recordingDot,
+                      styles.recordingHintWrap,
                       {
-                        transform: [{ scale: recordingPulse }],
+                        opacity: recordingHintOpacity,
+                        transform: [{ translateY: recordingHintOffset }],
                       },
                     ]}
-                  />
-                  <Text style={styles.recordingTimeText}>
-                    {recordingDurationLabel}
-                  </Text>
-                </View>
-
-                <View style={styles.recordingWaveformTrack}>
-                  {recordingWaveformBars.map((value, index) => (
-                    <View
-                      key={`record-live-${index}`}
-                      style={[
-                        styles.recordingWaveformBar,
-                        {
-                          height: `${Math.max(12, value * 100)}%`,
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-
-                <Animated.View
-                  style={[
-                    styles.recordingHintWrap,
-                    {
-                      opacity: recordingHintOpacity,
-                      transform: [{ translateY: recordingHintOffset }],
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name="chevron-up-outline"
-                    size={16}
-                    color={colors.primary}
-                  />
-                  <Text style={styles.recordingHintText}>
-                    {pt.slide_up_to_lock}
-                  </Text>
-                </Animated.View>
-              </>
-            )}
-          </View>
-        ) : (
-          <>
-            <View style={styles.inputStack}>
-              <TextInput
-                style={styles.input}
-                placeholder={pt.type_message}
-                placeholderTextColor={colors.grey500}
-                value={input}
-                onChangeText={setInput}
-                multiline
-                maxLength={65535}
-                editable={
-                  !sending &&
-                  !sendingCapturedMedia &&
-                  !isPreparingRecording &&
-                  !isRecordingVoice
-                }
-              />
-              {showRecordingHoldOverlay ? (
-                <View pointerEvents="none" style={styles.recordingHoldOverlay}>
-                  <View style={styles.recordingHoldLeft}>
-                    <Animated.View
-                      style={[
-                        styles.recordingDot,
-                        !isRecordingVoice && styles.recordingDotPaused,
-                        {
-                          transform: [{ scale: recordingPulse }],
-                        },
-                      ]}
-                    />
-                    <Text style={styles.recordingHoldTime}>
-                      {recordingDurationLabel}
-                    </Text>
-                  </View>
-
-                  <View style={styles.recordingHoldCenter}>
-                    <Text
-                      style={[
-                        styles.recordingHoldCancelText,
-                        isRecordingCancelArmed &&
-                          styles.recordingHoldCancelTextArmed,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {isRecordingCancelArmed
-                        ? pt.release_to_cancel
-                        : pt.slide_left_to_cancel}
-                    </Text>
-                    <Ionicons
-                      name="chevron-back-outline"
-                      size={18}
-                      color={
-                        isRecordingCancelArmed ? '#EF4444' : colors.grey600
-                      }
-                    />
-                  </View>
-
-                  <View style={styles.recordingHoldRight}>
-                    <Ionicons
-                      name="lock-closed-outline"
-                      size={15}
-                      color={colors.grey600}
-                    />
+                  >
                     <Ionicons
                       name="chevron-up-outline"
-                      size={18}
-                      color={colors.grey600}
+                      size={16}
+                      color={colors.primary}
                     />
-                  </View>
-                </View>
-              ) : null}
+                    <Text style={styles.recordingHintText}>
+                      {pt.slide_up_to_lock}
+                    </Text>
+                  </Animated.View>
+                </>
+              )}
             </View>
-
-            {hasInputText ? (
-              <Pressable
-                style={[
-                  styles.sendBtn,
-                  (!hasInputText || sending) && styles.sendBtnDisabled,
-                ]}
-                onPress={handleSend}
-                disabled={!hasInputText || sending}
-              >
-                <Ionicons name="send" size={22} color="#fff" />
-              </Pressable>
-            ) : (
-              <View style={styles.composerActionsWrap}>
-                {!isRecordingVoice && !showRecordingHoldOverlay ? (
-                  <Pressable
-                    style={[
-                      styles.composerActionBtn,
-                      !canUseComposerActions && styles.sendBtnDisabled,
-                    ]}
-                    onPress={handleOpenCameraPicker}
-                    disabled={!canUseComposerActions}
-                    accessibilityLabel={pt.open_camera}
+          ) : (
+            <>
+              <View style={styles.inputStack}>
+                <TextInput
+                  style={styles.input}
+                  placeholder={pt.type_message}
+                  placeholderTextColor={colors.grey500}
+                  value={input}
+                  onChangeText={setInput}
+                  multiline
+                  maxLength={65535}
+                  editable={
+                    !sending &&
+                    !sendingCapturedMedia &&
+                    !isPreparingRecording &&
+                    !isRecordingVoice
+                  }
+                />
+                {showRecordingHoldOverlay ? (
+                  <View
+                    pointerEvents="none"
+                    style={styles.recordingHoldOverlay}
                   >
-                    <Ionicons name="camera-outline" size={21} color="#FFFFFF" />
-                  </Pressable>
-                ) : null}
-
-                {canShowIconActions ? (
-                  <View style={styles.micGestureWrap} collapsable={false}>
-                    {showRecordingHoldOverlay && !isRecordingCancelArmed ? (
+                    <View style={styles.recordingHoldLeft}>
                       <Animated.View
-                        pointerEvents="none"
                         style={[
-                          styles.micLockHintPill,
+                          styles.recordingDot,
+                          !isRecordingVoice && styles.recordingDotPaused,
                           {
-                            opacity: recordingHintOpacity,
-                            transform: [{ translateY: recordingHintOffset }],
+                            transform: [{ scale: recordingPulse }],
                           },
                         ]}
-                      >
-                        <Ionicons
-                          name="lock-closed"
-                          size={14}
-                          color={colors.grey700}
-                        />
-                        <Ionicons
-                          name="chevron-up-outline"
-                          size={18}
-                          color={colors.grey700}
-                        />
-                      </Animated.View>
-                    ) : null}
+                      />
+                      <Text style={styles.recordingHoldTime}>
+                        {recordingDurationLabel}
+                      </Text>
+                    </View>
 
-                    <Animated.View
-                      {...micPanResponder.panHandlers}
-                      collapsable={false}
-                      style={[
-                        styles.composerActionBtn,
-                        styles.micActionBtn,
-                        (isPreparingRecording || isRecordingVoice) &&
-                          styles.micActionBtnRecording,
-                        styles.micActionBtnLarge,
-                        !canUseComposerActions && styles.sendBtnDisabled,
-                        {
-                          transform: [{ scale: recordingPulse }],
-                        },
-                      ]}
-                    >
-                      {isPreparingRecording ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                      ) : (
-                        <Ionicons name="mic" size={22} color="#FFFFFF" />
-                      )}
-                    </Animated.View>
+                    <View style={styles.recordingHoldCenter}>
+                      <Text
+                        style={[
+                          styles.recordingHoldCancelText,
+                          isRecordingCancelArmed &&
+                            styles.recordingHoldCancelTextArmed,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {isRecordingCancelArmed
+                          ? pt.release_to_cancel
+                          : pt.slide_left_to_cancel}
+                      </Text>
+                      <Ionicons
+                        name="chevron-back-outline"
+                        size={18}
+                        color={
+                          isRecordingCancelArmed ? '#EF4444' : colors.grey600
+                        }
+                      />
+                    </View>
+
+                    <View style={styles.recordingHoldRight}>
+                      <Ionicons
+                        name="lock-closed-outline"
+                        size={15}
+                        color={colors.grey600}
+                      />
+                      <Ionicons
+                        name="chevron-up-outline"
+                        size={18}
+                        color={colors.grey600}
+                      />
+                    </View>
                   </View>
                 ) : null}
               </View>
+
+              {hasInputText ? (
+                <Pressable
+                  style={[
+                    styles.sendBtn,
+                    (!hasInputText || sending) && styles.sendBtnDisabled,
+                  ]}
+                  onPress={handleSend}
+                  disabled={!hasInputText || sending}
+                >
+                  <Ionicons name="send" size={22} color="#fff" />
+                </Pressable>
+              ) : (
+                <View style={styles.composerActionsWrap}>
+                  {!isRecordingVoice && !showRecordingHoldOverlay ? (
+                    <Pressable
+                      style={[
+                        styles.composerActionBtn,
+                        !canUseComposerActions && styles.sendBtnDisabled,
+                      ]}
+                      onPress={handleOpenCameraPicker}
+                      disabled={!canUseComposerActions}
+                      accessibilityLabel={pt.open_camera}
+                    >
+                      <Ionicons
+                        name="camera-outline"
+                        size={21}
+                        color="#FFFFFF"
+                      />
+                    </Pressable>
+                  ) : null}
+
+                  {canShowIconActions ? (
+                    <View style={styles.micGestureWrap} collapsable={false}>
+                      {showRecordingHoldOverlay && !isRecordingCancelArmed ? (
+                        <Animated.View
+                          pointerEvents="none"
+                          style={[
+                            styles.micLockHintPill,
+                            {
+                              opacity: recordingHintOpacity,
+                              transform: [{ translateY: recordingHintOffset }],
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="lock-closed"
+                            size={14}
+                            color={colors.grey700}
+                          />
+                          <Ionicons
+                            name="chevron-up-outline"
+                            size={18}
+                            color={colors.grey700}
+                          />
+                        </Animated.View>
+                      ) : null}
+
+                      <Animated.View
+                        {...micPanResponder.panHandlers}
+                        collapsable={false}
+                        style={[
+                          styles.composerActionBtn,
+                          styles.micActionBtn,
+                          (isPreparingRecording || isRecordingVoice) &&
+                            styles.micActionBtnRecording,
+                          styles.micActionBtnLarge,
+                          !canUseComposerActions && styles.sendBtnDisabled,
+                          {
+                            transform: [{ scale: recordingPulse }],
+                          },
+                        ]}
+                      >
+                        {isPreparingRecording ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Ionicons name="mic" size={22} color="#FFFFFF" />
+                        )}
+                      </Animated.View>
+                    </View>
+                  ) : null}
+                </View>
+              )}
+            </>
+          )}
+        </View>
+      )}
+
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <Pressable
+          style={styles.menuOverlay}
+          onPress={() => setMenuVisible(false)}
+        >
+          <Pressable
+            style={styles.menuCard}
+            onPress={(event) => event.stopPropagation()}
+          >
+            {menuActions.map((action) => (
+              <Pressable
+                key={action.key}
+                style={styles.menuItem}
+                onPress={() => {
+                  setMenuVisible(false);
+                  action.onPress();
+                }}
+              >
+                <Ionicons
+                  name={action.icon}
+                  size={18}
+                  color={action.danger ? colors.error : colors.onSurface}
+                />
+                <Text
+                  style={[
+                    styles.menuItemText,
+                    action.danger && styles.menuItemTextDanger,
+                  ]}
+                >
+                  {action.label}
+                </Text>
+                {action.active ? (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={18}
+                    color={colors.primary}
+                  />
+                ) : null}
+                {isTogglingForwardToOutput &&
+                action.key === 'forward_to_output_chatbot' ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : null}
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={protocolModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setProtocolModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setProtocolModalVisible(false)}
+          />
+          <View style={styles.bottomSheetCard}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.protocols}</Text>
+              <Pressable onPress={() => setProtocolModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+            <FlatList
+              data={protocolList}
+              keyExtractor={(item) => `${item.type}-${item.protocol}`}
+              contentContainerStyle={styles.bottomSheetList}
+              renderItem={({ item }) => (
+                <View style={styles.protocolRow}>
+                  <View
+                    style={[
+                      styles.protocolTypeBadge,
+                      { backgroundColor: resolveProtocolTypeColor(item.type) },
+                    ]}
+                  >
+                    <Text style={styles.protocolTypeBadgeText}>
+                      {item.type}
+                    </Text>
+                  </View>
+                  <Text style={styles.protocolRowText}>{item.protocol}</Text>
+                </View>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={labelModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLabelModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setLabelModalVisible(false)}
+          />
+          <View style={styles.bottomSheetCard}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.label}</Text>
+              <Pressable onPress={() => setLabelModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            {isLoadingLabelModal ? (
+              <View style={styles.modalLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={labelTemplates}
+                keyExtractor={(item) => item.label_template_id}
+                contentContainerStyle={styles.bottomSheetList}
+                renderItem={({ item }) => {
+                  const selected = selectedLabelTemplateIds.includes(
+                    item.label_template_id
+                  );
+                  return (
+                    <Pressable
+                      style={styles.labelRow}
+                      onPress={() => {
+                        setSelectedLabelTemplateIds((prev) => {
+                          if (prev.includes(item.label_template_id)) {
+                            return prev.filter(
+                              (id) => id !== item.label_template_id
+                            );
+                          }
+                          return [...prev, item.label_template_id];
+                        });
+                      }}
+                    >
+                      <View
+                        style={[
+                          styles.labelColorDot,
+                          { backgroundColor: item.color },
+                        ]}
+                      />
+                      <Text style={styles.labelRowText}>{item.label}</Text>
+                      {selected ? (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={18}
+                          color={colors.primary}
+                        />
+                      ) : null}
+                    </Pressable>
+                  );
+                }}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+                }
+              />
             )}
-          </>
-        )}
-      </View>
+
+            <View style={styles.bottomSheetFooter}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={handleClearLabels}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.clear_filter}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.primaryBtn,
+                  isSavingLabelModal && styles.sendBtnDisabled,
+                ]}
+                onPress={() => {
+                  void handleSaveLabels();
+                }}
+                disabled={isSavingLabelModal}
+              >
+                {isSavingLabelModal ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>{pt.save}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={searchModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSearchModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setSearchModalVisible(false)}
+          />
+          <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.search_messages}</Text>
+              <Pressable onPress={() => setSearchModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <View style={styles.searchInputWrap}>
+              <Ionicons
+                name="search-outline"
+                size={18}
+                color={colors.grey600}
+              />
+              <TextInput
+                style={styles.searchInput}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder={pt.search_messages_placeholder}
+                placeholderTextColor={colors.grey500}
+                maxLength={120}
+              />
+            </View>
+
+            {debouncedSearchQuery.length > 0 &&
+            debouncedSearchQuery.length < 3 ? (
+              <Text style={styles.modalHintText}>
+                {pt.search_minimum_characters.replace('{count}', '3')}
+              </Text>
+            ) : null}
+
+            {searchLoading ? (
+              <View style={styles.modalLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={searchResults}
+                keyExtractor={(item) => item.message_id}
+                contentContainerStyle={styles.bottomSheetList}
+                onEndReached={handleLoadMoreSearchResults}
+                onEndReachedThreshold={0.25}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={styles.searchResultRow}
+                    onPress={() => handleSelectSearchedMessage(item.message_id)}
+                  >
+                    <Text style={styles.searchResultDate}>
+                      {formatSearchResultDate(item.date)}
+                    </Text>
+                    <Text style={styles.searchResultText} numberOfLines={3}>
+                      {item.message || '-'}
+                    </Text>
+                  </Pressable>
+                )}
+                ListEmptyComponent={
+                  debouncedSearchQuery.trim().length >= 3 ? (
+                    <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+                  ) : null
+                }
+                ListFooterComponent={
+                  searchLoadingMore ? (
+                    <View style={styles.modalLoadingWrap}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    </View>
+                  ) : null
+                }
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={attendanceHistoryVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAttendanceHistoryVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setAttendanceHistoryVisible(false)}
+          />
+          <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>
+                {pt.attendance_history}
+              </Text>
+              <Pressable onPress={() => setAttendanceHistoryVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            {attendanceHistoryLoading ? (
+              <AttendanceHistorySkeleton rows={ATTENDANCE_HISTORY_SKELETON_ROWS} />
+            ) : (
+              <FlatList
+                data={attendanceHistory}
+                keyExtractor={(item) => item.chat_id}
+                contentContainerStyle={styles.bottomSheetList}
+                onEndReached={handleLoadMoreAttendanceHistory}
+                onEndReachedThreshold={0.25}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={styles.historyRow}
+                    onPress={() => openHistoryConversation(item)}
+                  >
+                    <Text style={styles.historyRowTitle} numberOfLines={1}>
+                      {item.contact?.name ?? item.name ?? item.phone}
+                    </Text>
+                    <Text style={styles.historyRowSubtitle}>
+                      {pt.protocol}: {item.protocol_start?.[0] || '-'}
+                    </Text>
+                    <Text style={styles.historyRowSubtitle}>
+                      {pt.attendance_time}:{' '}
+                      {calculateAttendanceTime(item.started_at, item.closed_at)}
+                    </Text>
+                  </Pressable>
+                )}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>
+                    {pt.no_attendance_history}
+                  </Text>
+                }
+                ListFooterComponent={
+                  attendanceHistoryLoadingMore ? (
+                    <AttendanceHistorySkeleton
+                      rows={ATTENDANCE_HISTORY_SKELETON_MORE_ROWS}
+                    />
+                  ) : null
+                }
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={transferModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTransferModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setTransferModalVisible(false)}
+          />
+          <View style={[styles.bottomSheetCard, styles.transferSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.transfer}</Text>
+              <Pressable onPress={() => setTransferModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+            <ScrollView
+              style={styles.transferFormScroll}
+              contentContainerStyle={styles.transferFormContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.formField}>
+                <Text style={styles.formFieldLabel}>{pt.channel}</Text>
+                <Pressable
+                  style={styles.formSelector}
+                  onPress={() => setTransferPickerKind('channel')}
+                >
+                  <Text style={styles.formSelectorText} numberOfLines={1}>
+                    {selectedTransferChannel?.title ?? pt.transfer_select_channel}
+                  </Text>
+                  {isLoadingTransferChannels ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Ionicons
+                      name="chevron-down"
+                      size={16}
+                      color={colors.grey600}
+                    />
+                  )}
+                </Pressable>
+              </View>
+
+              <View style={styles.formField}>
+                <Text style={styles.formFieldLabel}>{pt.transfer_to}</Text>
+                <Pressable
+                  style={styles.formSelector}
+                  onPress={() => setTransferPickerKind('type')}
+                >
+                  <Text style={styles.formSelectorText} numberOfLines={1}>
+                    {transferType === 'user'
+                      ? pt.transfer_type_user
+                      : transferType === 'sector'
+                        ? pt.transfer_type_sector
+                        : pt.transfer_to_placeholder}
+                  </Text>
+                  <Ionicons
+                    name="chevron-down"
+                    size={16}
+                    color={colors.grey600}
+                  />
+                </Pressable>
+              </View>
+
+              {transferType === 'user' ? (
+                <View style={styles.formField}>
+                  <Text style={styles.formFieldLabel}>
+                    {pt.transfer_type_user}
+                  </Text>
+                  <Pressable
+                    style={styles.formSelector}
+                    onPress={() => setTransferPickerKind('user')}
+                  >
+                    <Text style={styles.formSelectorText} numberOfLines={1}>
+                      {selectedTransferUser?.name ?? pt.transfer_select_user}
+                    </Text>
+                    {isLoadingTransferUsers ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Ionicons
+                        name="chevron-down"
+                        size={16}
+                        color={colors.grey600}
+                      />
+                    )}
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {transferType === 'sector' ? (
+                <>
+                  <View style={styles.formField}>
+                    <Text style={styles.formFieldLabel}>{pt.sector}</Text>
+                    <Pressable
+                      style={styles.formSelector}
+                      onPress={() => setTransferPickerKind('sector')}
+                    >
+                      <Text style={styles.formSelectorText} numberOfLines={1}>
+                        {selectedTransferSector?.name ??
+                          pt.transfer_select_sector}
+                      </Text>
+                      {isLoadingTransferSectors ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Ionicons
+                          name="chevron-down"
+                          size={16}
+                          color={colors.grey600}
+                        />
+                      )}
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.formField}>
+                    <Text style={styles.formFieldLabel}>
+                      {pt.transfer_sector_user_optional}
+                    </Text>
+                    <Pressable
+                      style={styles.formSelector}
+                      onPress={() => setTransferPickerKind('sector_user')}
+                    >
+                      <Text style={styles.formSelectorText} numberOfLines={1}>
+                        {selectedTransferSectorUser?.name ??
+                          pt.transfer_select_sector_user}
+                      </Text>
+                      {isLoadingTransferSectorUsers ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Ionicons
+                          name="chevron-down"
+                          size={16}
+                          color={colors.grey600}
+                        />
+                      )}
+                    </Pressable>
+                  </View>
+                </>
+              ) : null}
+
+              <View style={styles.formField}>
+                <Text style={styles.formFieldLabel}>
+                  {pt.transfer_annotation}
+                </Text>
+                <TextInput
+                  value={transferAnnotation}
+                  onChangeText={setTransferAnnotation}
+                  style={styles.transferAnnotationInput}
+                  placeholder={pt.transfer_annotation_placeholder}
+                  placeholderTextColor={colors.grey500}
+                  multiline
+                  maxLength={300}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.bottomSheetFooter}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => setTransferModalVisible(false)}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.primaryBtn,
+                  isTransferring && styles.sendBtnDisabled,
+                ]}
+                onPress={() => {
+                  void submitTransfer();
+                }}
+                disabled={isTransferring}
+              >
+                {isTransferring ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>{pt.transfer}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={transferPickerKind !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTransferPickerKind(null)}
+      >
+        <Pressable
+          style={styles.pickerOverlay}
+          onPress={() => setTransferPickerKind(null)}
+        >
+          <Pressable
+            style={styles.pickerCard}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <FlatList
+              data={transferPickerItems}
+              keyExtractor={(item) => item.value}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.pickerRow}
+                  onPress={() => handleSelectTransferPickerValue(item.value)}
+                >
+                  <Text style={styles.pickerRowText}>{item.label}</Text>
+                </Pressable>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+              }
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <Modal
         visible={cameraPickerVisible}
         transparent
@@ -6392,6 +8285,485 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     opacity: 0.5,
+  },
+  chatHeader: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.grey200,
+  },
+  chatHeaderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chatHeaderBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatHeaderContactWrap: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  chatHeaderAvatarWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.grey200,
+    overflow: 'hidden',
+  },
+  chatHeaderAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  chatHeaderContactInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  chatHeaderName: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  chatHeaderPhoneRow: {
+    marginTop: 2,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chatHeaderPhone: {
+    flexShrink: 1,
+    maxWidth: 220,
+    fontSize: 12,
+    color: colors.grey700,
+  },
+  chatHeaderMenuBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatHeaderMetaRow: {
+    marginTop: 10,
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chatHeaderProtocolChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 101, 183, 0.25)',
+    backgroundColor: 'rgba(40, 101, 183, 0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    maxWidth: '100%',
+  },
+  chatHeaderProtocolText: {
+    maxWidth: 220,
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '500',
+  },
+  chatHeaderCounterChip: {
+    borderRadius: 999,
+    backgroundColor: colors.primary,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatHeaderCounterChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  chatHeaderLabelChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    maxWidth: '100%',
+    backgroundColor: '#FFFFFF',
+  },
+  chatHeaderLabelText: {
+    maxWidth: 180,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  chatHeaderReadonlyChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+  },
+  chatHeaderReadonlyText: {
+    fontSize: 12,
+    color: colors.grey700,
+    fontWeight: '500',
+  },
+  chatBody: {
+    flex: 1,
+  },
+  readonlyFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+  },
+  readonlyFooterText: {
+    fontSize: 13,
+    color: colors.grey700,
+    fontWeight: '500',
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: Platform.OS === 'ios' ? 64 : 50,
+    paddingRight: 12,
+  },
+  menuCard: {
+    minWidth: 220,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  menuItem: {
+    minHeight: 42,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  menuItemText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.onSurface,
+  },
+  menuItemTextDanger: {
+    color: colors.error,
+  },
+  bottomSheetOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  bottomSheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  bottomSheetCard: {
+    maxHeight: '82%',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 14,
+    gap: 12,
+  },
+  searchSheetCard: {
+    maxHeight: '88%',
+  },
+  transferSheetCard: {
+    maxHeight: '88%',
+  },
+  bottomSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 2,
+  },
+  bottomSheetTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  bottomSheetList: {
+    paddingBottom: 12,
+  },
+  bottomSheetFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+  },
+  secondaryBtn: {
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  secondaryBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  primaryBtn: {
+    minHeight: 40,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  primaryBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onPrimary,
+  },
+  modalLoadingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+  },
+  modalHintText: {
+    fontSize: 12,
+    color: colors.grey700,
+    marginTop: -4,
+  },
+  emptyText: {
+    textAlign: 'center',
+    fontSize: 13,
+    color: colors.grey600,
+    paddingVertical: 18,
+  },
+  protocolRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 42,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.grey200,
+  },
+  protocolTypeBadge: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  protocolTypeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  protocolRowText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    color: colors.onSurface,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 42,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.grey200,
+  },
+  labelColorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  labelRowText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    color: colors.onSurface,
+  },
+  searchInputWrap: {
+    height: 44,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.inputBg,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.onSurface,
+    paddingVertical: 0,
+  },
+  searchResultRow: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginBottom: 8,
+    backgroundColor: 'rgba(40, 101, 183, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(40, 101, 183, 0.1)',
+  },
+  searchResultDate: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  searchResultText: {
+    marginTop: 4,
+    fontSize: 13,
+    color: colors.onSurface,
+    lineHeight: 18,
+  },
+  historyRow: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    marginBottom: 8,
+    backgroundColor: 'rgba(47, 43, 61, 0.04)',
+  },
+  historyRowTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  historyRowSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    color: colors.grey700,
+  },
+  historySkeletonWrap: {
+    gap: 8,
+    paddingBottom: 8,
+  },
+  historySkeletonRow: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(47, 43, 61, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(47, 43, 61, 0.08)',
+  },
+  historySkeletonTitle: {
+    width: '45%',
+    height: 16,
+    borderRadius: 5,
+    backgroundColor: colors.grey300,
+  },
+  historySkeletonLine: {
+    marginTop: 8,
+    width: '70%',
+    height: 13,
+    borderRadius: 5,
+    backgroundColor: colors.grey300,
+  },
+  historySkeletonLineShort: {
+    width: '52%',
+  },
+  transferFormScroll: {
+    flexShrink: 1,
+    minHeight: 0,
+  },
+  transferFormContent: {
+    gap: 12,
+    paddingBottom: 4,
+  },
+  formField: {
+    gap: 6,
+  },
+  formFieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.grey700,
+  },
+  formSelector: {
+    minHeight: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  formSelectorText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    color: colors.onSurface,
+  },
+  transferAnnotationInput: {
+    minHeight: 86,
+    maxHeight: 130,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.onSurface,
+    textAlignVertical: 'top',
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  pickerCard: {
+    width: '88%',
+    maxHeight: '62%',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 6,
+  },
+  pickerRow: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.grey200,
+  },
+  pickerRowText: {
+    fontSize: 14,
+    color: colors.onSurface,
   },
   cameraPickerOverlay: {
     flex: 1,

@@ -58,6 +58,27 @@ export const PREVIEW_CHAT_CONTENT_PERMISSIONS = [
   'preview_chat',
 ] as const;
 
+export const ATTENDANCE_HISTORY_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'attendance_history',
+] as const;
+
+export const CLOSE_CHAT_WITHOUT_ATTENDING_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'close_chat_without_attending',
+] as const;
+
+export const FORWARD_TO_OUTPUT_CHATBOT_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'forward_to_output_chatbot',
+] as const;
+
 export type ChatAuthorizationContext = {
   permissions: string[];
   userId: string | null;
@@ -135,6 +156,23 @@ export function canPickQueueChat(permissions: string[]): boolean {
 
 export function canPreviewChatContent(permissions: string[]): boolean {
   return hasAnyPermission(permissions, PREVIEW_CHAT_CONTENT_PERMISSIONS);
+}
+
+export function canViewAttendanceHistory(permissions: string[]): boolean {
+  return hasAnyPermission(permissions, ATTENDANCE_HISTORY_PERMISSIONS);
+}
+
+export function canCloseChatWithoutAttending(permissions: string[]): boolean {
+  return hasAnyPermission(
+    permissions,
+    CLOSE_CHAT_WITHOUT_ATTENDING_PERMISSIONS
+  );
+}
+
+export function canToggleForwardToOutputChatbot(
+  permissions: string[]
+): boolean {
+  return hasAnyPermission(permissions, FORWARD_TO_OUTPUT_CHATBOT_PERMISSIONS);
 }
 
 export function canViewOthersChats(permissions: string[]): boolean {
