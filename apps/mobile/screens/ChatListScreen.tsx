@@ -11,14 +11,13 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatStackParamList } from '../navigation/types';
 import type { ListChatsResult } from '../types/chat';
 import {
   listMyChats,
   listQueueChats,
-  listInChatChats,
   listChats,
   searchChats,
   clearChatSummary,
@@ -42,7 +41,10 @@ import { UserSidebar } from '../components/UserSidebar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
-import { useChatFilter } from '../context/ChatFilterContext';
+import {
+  useChatFilter,
+  type ChatbotFilterStatus,
+} from '../context/ChatFilterContext';
 import { resolveImageUri } from '../utils/imageUri';
 import {
   addChatSocketListener,
@@ -56,9 +58,24 @@ const CHAT_STATUS = {
   all: 'my_chats' as const,
   queue: 'queue' as const,
   in_chat: 'in_chat' as const,
-  closed: 'closed' as const,
   chatbot: 'ura' as const,
 };
+
+const CHATBOT_FILTER_OPTIONS: Array<{
+  value: ChatbotFilterStatus;
+  label: string;
+}> = [
+  { value: 'ura', label: pt.chatbot_type_input },
+  { value: 'ura_output', label: pt.chatbot_type_output },
+  { value: 'ura_schedule', label: pt.chatbot_type_schedule },
+  { value: 'ura_webhook', label: pt.chatbot_type_webhook },
+];
+
+function isDefaultChatbotFilterSelection(
+  filters: ChatbotFilterStatus[]
+): boolean {
+  return filters.length === 1 && filters[0] === 'ura';
+}
 
 function readString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -184,10 +201,12 @@ function ChatRow({
   item,
   onPress,
   disabled = false,
+  chatbotTypeLabel,
 }: {
   item: ListChatsResult;
   onPress: () => void;
   disabled?: boolean;
+  chatbotTypeLabel?: string | null;
 }) {
   const name = item.name ?? item.contact?.name ?? item.phone ?? item.chat_id;
   const lastMsg = item.summary?.last_message ?? '';
@@ -232,11 +251,20 @@ function ChatRow({
             </View>
           ) : null}
         </View>
-        {item.contact ? (
+        {item.contact || chatbotTypeLabel ? (
           <View style={styles.tagRow}>
-            <View style={styles.tag}>
-              <Text style={styles.tagText}>{pt.contact}</Text>
-            </View>
+            {item.contact ? (
+              <View style={styles.tag}>
+                <Text style={styles.tagText}>{pt.contact}</Text>
+              </View>
+            ) : null}
+            {chatbotTypeLabel ? (
+              <View style={styles.chatbotTypeTag}>
+                <Text style={styles.chatbotTypeTagText}>
+                  {chatbotTypeLabel}
+                </Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -311,10 +339,15 @@ function ChatListSkeleton() {
 
 export function ChatListScreen({ route, navigation }: Props) {
   const { tab } = route.params;
+  const isFocused = useIsFocused();
   const {
     setHasAppliedAdvancedFilters,
     advancedFilterValues,
     setAdvancedFilterValues,
+    inChatScope,
+    setInChatScope,
+    chatbotFilters,
+    toggleChatbotFilter,
     clearAdvancedFilters,
   } = useChatFilter();
   const [search, setSearch] = useState('');
@@ -335,6 +368,10 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [canPickAnyQueueChat, setCanPickAnyQueueChat] = useState(false);
   const [profileSidebarVisible, setProfileSidebarVisible] = useState(false);
+  const [isUserResolved, setIsUserResolved] = useState(false);
+  const [isPermissionsResolved, setIsPermissionsResolved] = useState(false);
+  const [isSectorsResolved, setIsSectorsResolved] = useState(false);
+  const [isChannelsResolved, setIsChannelsResolved] = useState(false);
   const locallyClearedSummaryChatIdsRef = useRef<Set<string>>(new Set());
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -384,47 +421,75 @@ export function ChatListScreen({ route, navigation }: Props) {
   );
 
   useEffect(() => {
-    getUser().then((user) => {
-      const info =
-        user && typeof user === 'object'
-          ? (user as { info?: { photo?: string | null } }).info
-          : undefined;
-      const photo = info && info.photo ? String(info.photo) : null;
-      setUserPhoto(photo && photo !== 'null' ? photo : null);
-      const userId =
-        user && typeof user === 'object' ? resolveUserId(user) : null;
-      setCurrentUserId(userId);
-    });
+    getUser()
+      .then((user) => {
+        const info =
+          user && typeof user === 'object'
+            ? (user as { info?: { photo?: string | null } }).info
+            : undefined;
+        const photo = info && info.photo ? String(info.photo) : null;
+        setUserPhoto(photo && photo !== 'null' ? photo : null);
+        const userId =
+          user && typeof user === 'object' ? resolveUserId(user) : null;
+        setCurrentUserId(userId);
+      })
+      .finally(() => {
+        setIsUserResolved(true);
+      });
   }, []);
 
   useEffect(() => {
-    getPermissions().then((permissions) => {
-      setCanUseUserAndSectorFilters(checkUserSectorFilters(permissions));
-      setSocketPermissions(permissions);
-      setCanPickAnyQueueChat(canPickQueueChat(permissions));
-    });
+    getPermissions()
+      .then((permissions) => {
+        setCanUseUserAndSectorFilters(checkUserSectorFilters(permissions));
+        setSocketPermissions(permissions);
+        setCanPickAnyQueueChat(canPickQueueChat(permissions));
+      })
+      .finally(() => {
+        setIsPermissionsResolved(true);
+      });
   }, []);
 
   useEffect(() => {
-    getSectors().then((sectors) => {
-      setUserSectors(sectors);
-    });
+    getSectors()
+      .then((sectors) => {
+        setUserSectors(sectors);
+      })
+      .finally(() => {
+        setIsSectorsResolved(true);
+      });
   }, []);
 
   useEffect(() => {
-    getChannels().then((channels) => {
-      setUserChannels((prev) =>
-        areChannelsEqual(prev, channels) ? prev : channels
-      );
-    });
+    getChannels()
+      .then((channels) => {
+        setUserChannels((prev) =>
+          areChannelsEqual(prev, channels) ? prev : channels
+        );
+      })
+      .finally(() => {
+        setIsChannelsResolved(true);
+      });
   }, []);
+
+  const isAuthContextResolved =
+    isUserResolved &&
+    isPermissionsResolved &&
+    isSectorsResolved &&
+    isChannelsResolved;
 
   const load = useCallback(async () => {
     setLoading(true);
-    const status = CHAT_STATUS[tab];
+    const chatbotStatuses =
+      chatbotFilters.length > 0 ? chatbotFilters : ['ura'];
+    const status = tab === 'chatbot' ? chatbotStatuses : CHAT_STATUS[tab];
     const hasFilters = hasAdvancedFilterValues(advancedFilterValues);
     const hasSearchText = (search ?? '').trim().length > 0;
     const useSearch = hasFilters || hasSearchText;
+    const inChatFilterUserId =
+      tab === 'in_chat' && inChatScope === 'mine'
+        ? currentUserId
+        : advancedFilterValues.filter_user_id;
     try {
       if (useSearch) {
         const res = await searchChats({
@@ -435,7 +500,7 @@ export function ChatListScreen({ route, navigation }: Props) {
           filter_label_template_id:
             advancedFilterValues.filter_label_template_id,
           filter_worker_id: advancedFilterValues.filter_worker_id,
-          filter_user_id: advancedFilterValues.filter_user_id,
+          filter_user_id: inChatFilterUserId,
           filter_sector_id: advancedFilterValues.filter_sector_id,
           filter_name: advancedFilterValues.filter_name,
           filter_phone: advancedFilterValues.filter_phone,
@@ -460,9 +525,6 @@ export function ChatListScreen({ route, navigation }: Props) {
             setInChat(resolvedResults);
             setQueue([]);
             setCounts((c) => ({ ...c, in_chat: res.counts?.in_chat ?? 0 }));
-          } else if (tab === 'closed') {
-            setQueue(resolvedResults);
-            setInChat([]);
           } else {
             setInChat(resolvedResults);
             setQueue([]);
@@ -498,7 +560,12 @@ export function ChatListScreen({ route, navigation }: Props) {
           setInChat([]);
         }
       } else if (tab === 'in_chat') {
-        const res = await listInChatChats(1, 50);
+        const res = await listChats({
+          status: 'in_chat',
+          current_page: 1,
+          per_page: 50,
+          filter_user_id: inChatScope === 'mine' ? currentUserId : undefined,
+        });
         if (res) {
           const visibleResults = filterAuthorizedChats(res.results);
           setInChat(applyLocallyClearedUnreadOverrides(visibleResults));
@@ -513,13 +580,8 @@ export function ChatListScreen({ route, navigation }: Props) {
         });
         if (res) {
           const visibleResults = filterAuthorizedChats(res.results);
-          if (tab === 'closed') {
-            setQueue(applyLocallyClearedUnreadOverrides(visibleResults));
-            setInChat([]);
-          } else {
-            setInChat(applyLocallyClearedUnreadOverrides(visibleResults));
-            setQueue([]);
-          }
+          setInChat(applyLocallyClearedUnreadOverrides(visibleResults));
+          setQueue([]);
         }
       }
     } catch {
@@ -532,6 +594,9 @@ export function ChatListScreen({ route, navigation }: Props) {
     tab,
     search,
     advancedFilterValues,
+    chatbotFilters,
+    inChatScope,
+    currentUserId,
     applyLocallyClearedUnreadOverrides,
     filterAuthorizedChats,
   ]);
@@ -602,11 +667,16 @@ export function ChatListScreen({ route, navigation }: Props) {
     }, 250);
   }, [load]);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  useEffect(() => {
+    if (!isFocused || !isAuthContextResolved) {
+      if (!isAuthContextResolved) {
+        setLoading(true);
+      }
+      return;
+    }
+
+    load();
+  }, [isFocused, isAuthContextResolved, load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -715,10 +785,19 @@ export function ChatListScreen({ route, navigation }: Props) {
     navigation.push('ChatRoom', { chat });
   };
 
+  const chatbotTypeLabelByStatus = useCallback(
+    (status: ListChatsResult['status']): string | null => {
+      if (status === 'ura') return pt.chatbot_type_input;
+      if (status === 'ura_output') return pt.chatbot_type_output;
+      if (status === 'ura_schedule') return pt.chatbot_type_schedule;
+      if (status === 'ura_webhook') return pt.chatbot_type_webhook;
+      return null;
+    },
+    []
+  );
+
   const sections: { title: string; data: ListChatsResult[] }[] = [];
-  if (tab === 'closed') {
-    sections.push({ title: pt.closed, data: queue });
-  } else if (tab === 'chatbot') {
+  if (tab === 'chatbot') {
     sections.push({ title: pt.chatbot, data: inChat });
   } else {
     if (inChat.length > 0)
@@ -730,9 +809,11 @@ export function ChatListScreen({ route, navigation }: Props) {
     let emptyTitle = pt.chatbot;
     if (tab === 'queue') emptyTitle = pt.awaiting_service;
     if (tab === 'in_chat') emptyTitle = pt.in_service;
-    if (tab === 'closed') emptyTitle = pt.closed;
     sections.push({ title: emptyTitle, data: [] });
   }
+
+  const hasAdvancedFiltersApplied =
+    hasAdvancedFilterValues(advancedFilterValues);
 
   const insets = useSafeAreaInsets();
 
@@ -773,15 +854,10 @@ export function ChatListScreen({ route, navigation }: Props) {
         >
           <Ionicons name="filter" size={22} color={colors.onSurface} />
         </Pressable>
-        {hasAdvancedFilterValues(advancedFilterValues) ? (
+        {hasAdvancedFiltersApplied ? (
           <Pressable
             style={styles.clearFilterBtn}
             onPress={() => {
-              if (tab === 'closed') {
-                (
-                  navigation.getParent() as { navigate: (n: string) => void }
-                )?.navigate('InChat');
-              }
               clearAdvancedFilters();
             }}
             accessibilityLabel={pt.clear_filters}
@@ -790,6 +866,68 @@ export function ChatListScreen({ route, navigation }: Props) {
           </Pressable>
         ) : null}
       </View>
+      {tab === 'in_chat' ? (
+        <View style={styles.quickFilterRow}>
+          <Pressable
+            style={[
+              styles.quickFilterChip,
+              inChatScope === 'all' && styles.quickFilterChipActive,
+            ]}
+            onPress={() => setInChatScope('all')}
+          >
+            <Text
+              style={[
+                styles.quickFilterChipText,
+                inChatScope === 'all' && styles.quickFilterChipTextActive,
+              ]}
+            >
+              {pt.all_attendances}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.quickFilterChip,
+              inChatScope === 'mine' && styles.quickFilterChipActive,
+            ]}
+            onPress={() => setInChatScope('mine')}
+          >
+            <Text
+              style={[
+                styles.quickFilterChipText,
+                inChatScope === 'mine' && styles.quickFilterChipTextActive,
+              ]}
+            >
+              {pt.my_attendances}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {tab === 'chatbot' ? (
+        <View style={styles.quickFilterRowWrap}>
+          {CHATBOT_FILTER_OPTIONS.map((option) => {
+            const active = chatbotFilters.includes(option.value);
+            return (
+              <Pressable
+                key={option.value}
+                style={[
+                  styles.quickFilterChip,
+                  active && styles.quickFilterChipActive,
+                ]}
+                onPress={() => toggleChatbotFilter(option.value)}
+              >
+                <Text
+                  style={[
+                    styles.quickFilterChipText,
+                    active && styles.quickFilterChipTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       <UserSidebar
         visible={profileSidebarVisible}
         onClose={() => setProfileSidebarVisible(false)}
@@ -805,7 +943,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         }}
         onApply={(values) => {
           setAdvancedFilterValues(values);
-          setHasAppliedAdvancedFilters(true);
+          setHasAppliedAdvancedFilters(hasAdvancedFilterValues(values));
           setFilterModalVisible(false);
         }}
         canUseUserAndSectorFilters={canUseUserAndSectorFilters}
@@ -846,6 +984,11 @@ export function ChatListScreen({ route, navigation }: Props) {
             return (
               <ChatRow
                 item={item}
+                chatbotTypeLabel={
+                  tab === 'chatbot'
+                    ? chatbotTypeLabelByStatus(item.status)
+                    : null
+                }
                 disabled={isQueueItemLocked || !canOpenByVisibility}
                 onPress={() =>
                   openChat(item, item.status === 'queue' ? index : null)
@@ -913,6 +1056,41 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  quickFilterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
+  },
+  quickFilterRowWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
+  },
+  quickFilterChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  quickFilterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  quickFilterChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.onSurface,
+  },
+  quickFilterChipTextActive: {
+    color: colors.onPrimary,
   },
   skeletonList: {
     flex: 1,
@@ -1056,6 +1234,16 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 11,
     color: colors.tagText,
+  },
+  chatbotTypeTag: {
+    backgroundColor: colors.grey100,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  chatbotTypeTagText: {
+    fontSize: 11,
+    color: colors.grey700,
   },
   workerLabel: {
     width: 28,

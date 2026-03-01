@@ -1,6 +1,6 @@
 import type { ListChatsResult } from '../types/chat';
 
-export type ChatTab = 'all' | 'queue' | 'in_chat' | 'closed' | 'chatbot';
+export type ChatTab = 'all' | 'queue' | 'in_chat' | 'chatbot';
 
 export type RootStackParamList = {
   ChatList: { tab: ChatTab };

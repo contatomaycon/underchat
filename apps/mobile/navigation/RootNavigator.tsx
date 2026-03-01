@@ -9,14 +9,13 @@ type TabParamList = {
   New: { tab: ChatTab; entry: 'contacts' };
   InChat: { tab: ChatTab };
   Queue: { tab: ChatTab };
-  Closed: { tab: ChatTab };
   Chatbot: { tab: ChatTab };
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
 export function RootNavigator() {
-  const { hasAppliedAdvancedFilters, canViewChatbotTab } = useChatFilter();
+  const { canViewChatbotTab } = useChatFilter();
 
   return (
     <Tab.Navigator
@@ -53,19 +52,6 @@ export function RootNavigator() {
           ),
         }}
       />
-      {hasAppliedAdvancedFilters ? (
-        <Tab.Screen
-          name="Closed"
-          component={ChatStackNavigator}
-          initialParams={{ tab: 'closed' }}
-          options={{
-            tabBarLabel: 'Encerrados',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="time" size={size} color={color} />
-            ),
-          }}
-        />
-      ) : null}
       {canViewChatbotTab ? (
         <Tab.Screen
           name="Chatbot"

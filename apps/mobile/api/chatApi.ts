@@ -118,7 +118,7 @@ export interface SearchMessagesResponse {
 }
 
 export type ListChatsParams = {
-  status: string;
+  status: string | string[];
   current_page?: number;
   per_page?: number;
   filter_label_template_id?: string | null;
@@ -136,7 +136,9 @@ function buildChatQuery(
   params: ListChatsParams
 ): Record<string, string | number> {
   const q: Record<string, string | number> = {
-    status: params.status,
+    status: Array.isArray(params.status)
+      ? params.status.join(',')
+      : params.status,
     current_page: params.current_page ?? 1,
     per_page: params.per_page ?? 25,
   };

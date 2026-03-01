@@ -7,6 +7,13 @@ import {
 } from 'react';
 import type { AdvancedFilterValues } from '../components/AdvancedFilterModal';
 
+export type InChatScope = 'all' | 'mine';
+export type ChatbotFilterStatus =
+  | 'ura'
+  | 'ura_output'
+  | 'ura_schedule'
+  | 'ura_webhook';
+
 const EMPTY_FILTER_VALUES: AdvancedFilterValues = {
   filter_label_template_id: null,
   filter_worker_id: null,
@@ -21,12 +28,21 @@ const EMPTY_FILTER_VALUES: AdvancedFilterValues = {
   sort_order: null,
 };
 
+const DEFAULT_IN_CHAT_SCOPE: InChatScope = 'all';
+const DEFAULT_CHATBOT_FILTERS: ChatbotFilterStatus[] = ['ura'];
+
 interface ChatFilterContextValue {
   hasAppliedAdvancedFilters: boolean;
   setHasAppliedAdvancedFilters: (value: boolean) => void;
   advancedFilterValues: AdvancedFilterValues;
   setAdvancedFilterValues: (values: AdvancedFilterValues) => void;
   clearAdvancedFilters: () => void;
+  inChatScope: InChatScope;
+  setInChatScope: (scope: InChatScope) => void;
+  chatbotFilters: ChatbotFilterStatus[];
+  setChatbotFilters: (filters: ChatbotFilterStatus[]) => void;
+  toggleChatbotFilter: (filter: ChatbotFilterStatus) => void;
+  clearAllChatListFilters: () => void;
   canViewChatbotTab: boolean;
 }
 
@@ -43,6 +59,12 @@ export function ChatFilterProvider({
     useState(false);
   const [advancedFilterValues, setAdvancedFilterValues] =
     useState<AdvancedFilterValues>(EMPTY_FILTER_VALUES);
+  const [inChatScope, setInChatScope] = useState<InChatScope>(
+    DEFAULT_IN_CHAT_SCOPE
+  );
+  const [chatbotFilters, setChatbotFilters] = useState<ChatbotFilterStatus[]>(
+    DEFAULT_CHATBOT_FILTERS
+  );
 
   const setFilters = useCallback((value: boolean) => {
     setHasAppliedAdvancedFilters(value);
@@ -53,12 +75,36 @@ export function ChatFilterProvider({
     setHasAppliedAdvancedFilters(false);
   }, []);
 
+  const toggleChatbotFilter = useCallback((filter: ChatbotFilterStatus) => {
+    setChatbotFilters((current) => {
+      if (current.includes(filter)) {
+        if (current.length === 1) return current;
+        return current.filter((item) => item !== filter);
+      }
+
+      return [...current, filter];
+    });
+  }, []);
+
+  const clearAllChatListFilters = useCallback(() => {
+    setAdvancedFilterValues(EMPTY_FILTER_VALUES);
+    setHasAppliedAdvancedFilters(false);
+    setInChatScope(DEFAULT_IN_CHAT_SCOPE);
+    setChatbotFilters(DEFAULT_CHATBOT_FILTERS);
+  }, []);
+
   const value: ChatFilterContextValue = {
     hasAppliedAdvancedFilters,
     setHasAppliedAdvancedFilters: setFilters,
     advancedFilterValues,
     setAdvancedFilterValues,
     clearAdvancedFilters,
+    inChatScope,
+    setInChatScope,
+    chatbotFilters,
+    setChatbotFilters,
+    toggleChatbotFilter,
+    clearAllChatListFilters,
     canViewChatbotTab,
   };
 
