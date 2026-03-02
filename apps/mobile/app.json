@@ -16,8 +16,10 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
-      }
+        },
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.underchat.mobile"
     },
     "android": {
       "package": "com.underchat.mobile",
