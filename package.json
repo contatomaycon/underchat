@@ -194,7 +194,6 @@
   },
   "pnpm": {
     "overrides": {
-      "glob": "^8.0.0",
       "inflight": "^1.0.6"
     }
   }

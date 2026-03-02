@@ -12,6 +12,8 @@ Comandos:
 
 - Gerar APK (distribuição interna): `cd /home/maycon/underchat/apps/mobile && pnpm run build:android:apk`
 - Gerar AAB (release/Play Store): `cd /home/maycon/underchat/apps/mobile && pnpm run build:android:aab`
+- Gerar TestFligter
+  cd /home/maycon/underchat/apps/mobile && pnpm --filter mobile run eas:build:dev:ios
 
 Perfis EAS usados:
 
