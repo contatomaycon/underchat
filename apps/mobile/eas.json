@@ -10,6 +10,17 @@
         "buildType": "apk"
       }
     },
+    "preview-apk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production-aab": {
+      "android": {
+        "buildType": "app-bundle"
+      }
+    },
     "development-simulator": {
       "developmentClient": true,
       "distribution": "internal",

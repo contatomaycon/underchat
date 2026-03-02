@@ -16,6 +16,10 @@
     "run:android": "ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk} PATH=${ANDROID_HOME}/platform-tools:$PATH expo run:android",
     "run:ios": "ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk} PATH=${ANDROID_HOME}/platform-tools:$PATH expo run:ios",
     "eas:build:dev:android": "eas build --profile development --platform android",
+    "eas:build:apk:android": "eas build --profile preview-apk --platform android",
+    "eas:build:aab:android": "eas build --profile production-aab --platform android",
+    "build:android:apk": "pnpm run eas:build:apk:android",
+    "build:android:aab": "pnpm run eas:build:aab:android",
     "eas:build:dev:ios": "eas build --profile development --platform ios",
     "web": "expo start --web --localhost",
     "build": "expo export --platform web"
