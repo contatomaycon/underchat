@@ -14,6 +14,7 @@ Comandos:
 - Gerar AAB (release/Play Store): `cd /home/maycon/underchat/apps/mobile && pnpm run build:android:aab`
 - Gerar TestFligter
   cd /home/maycon/underchat/apps/mobile && pnpm --filter mobile run eas:build:dev:ios
+  cd /home/maycon/underchat/apps/mobile && pnpm exec expo start --dev-client --tunnel
 
 Perfis EAS usados:
 
