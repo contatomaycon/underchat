@@ -3247,6 +3247,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const isQueueOrUraStatusRef = useRef(false);
   const sendingCapturedMediaRef = useRef(false);
   const sendingVoiceRecordingRef = useRef(false);
+  const documentPickerActiveRef = useRef(false);
   const isRecordingVoiceRef = useRef(false);
   const isRecordingLockedRef = useRef(false);
   const isPreparingRecordingRef = useRef(false);
@@ -5959,38 +5960,47 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
       return;
     }
+    if (documentPickerActiveRef.current) return;
 
-    const result = await DocumentPicker.getDocumentAsync({
-      type: '*/*',
-      multiple: false,
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled || !result.assets || result.assets.length === 0) return;
+    documentPickerActiveRef.current = true;
+    await new Promise<void>((resolve) => setTimeout(resolve, 350));
 
-    const asset = result.assets[0];
-    if (!asset?.uri || !asset.name) return;
-    if (
-      typeof asset.size === 'number' &&
-      asset.size > MAX_DOCUMENT_SIZE_BYTES
-    ) {
-      Alert.alert(pt.warning_title, pt.document_size_exceeded);
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('type', EMessageType.document);
-    formData.append('hash', createClientMessageHash());
-    await appendMediaToFormData(formData, 'documents', {
-      uri: asset.uri,
-      name: asset.name,
-      mimeType: asset.mimeType || 'application/octet-stream',
-    });
-
-    setSendingCapturedMedia(true);
     try {
-      await submitFormDataMessage(formData);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0)
+        return;
+
+      const asset = result.assets[0];
+      if (!asset?.uri || !asset.name) return;
+      if (
+        typeof asset.size === 'number' &&
+        asset.size > MAX_DOCUMENT_SIZE_BYTES
+      ) {
+        Alert.alert(pt.warning_title, pt.document_size_exceeded);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('type', EMessageType.document);
+      formData.append('hash', createClientMessageHash());
+      await appendMediaToFormData(formData, 'documents', {
+        uri: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType || 'application/octet-stream',
+      });
+
+      setSendingCapturedMedia(true);
+      try {
+        await submitFormDataMessage(formData);
+      } finally {
+        setSendingCapturedMedia(false);
+      }
     } finally {
-      setSendingCapturedMedia(false);
+      documentPickerActiveRef.current = false;
     }
   }, [
     canComposeInChat,
@@ -6004,61 +6014,70 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
       return;
     }
+    if (documentPickerActiveRef.current) return;
 
-    const result = await DocumentPicker.getDocumentAsync({
-      type: [
-        'audio/mpeg',
-        'audio/mp3',
-        'audio/aac',
-        'audio/m4a',
-        'audio/x-m4a',
-        'audio/amr',
-        'audio/amr-wb',
-        'audio/ogg',
-        'audio/opus',
-        'audio/*',
-      ],
-      multiple: false,
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled || !result.assets || result.assets.length === 0) return;
+    documentPickerActiveRef.current = true;
+    await new Promise<void>((resolve) => setTimeout(resolve, 350));
 
-    const asset = result.assets[0];
-    if (!asset?.uri || !asset.name) return;
-
-    const extension = extractExtension(asset.name);
-    const allowedExtensions = new Set([
-      'mp3',
-      'aac',
-      'm4a',
-      'amr',
-      'ogg',
-      'opus',
-    ]);
-    if (!allowedExtensions.has(extension)) {
-      Alert.alert(pt.warning_title, pt.invalid_audio_format);
-      return;
-    }
-
-    if (typeof asset.size === 'number' && asset.size > MAX_AUDIO_SIZE_BYTES) {
-      Alert.alert(pt.warning_title, pt.audio_size_exceeded);
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('type', EMessageType.audio);
-    formData.append('hash', createClientMessageHash());
-    await appendMediaToFormData(formData, 'audios', {
-      uri: asset.uri,
-      name: asset.name,
-      mimeType: asset.mimeType || 'audio/mpeg',
-    });
-
-    setSendingCapturedMedia(true);
     try {
-      await submitFormDataMessage(formData);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'audio/mpeg',
+          'audio/mp3',
+          'audio/aac',
+          'audio/m4a',
+          'audio/x-m4a',
+          'audio/amr',
+          'audio/amr-wb',
+          'audio/ogg',
+          'audio/opus',
+          'audio/*',
+        ],
+        multiple: false,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets || result.assets.length === 0)
+        return;
+
+      const asset = result.assets[0];
+      if (!asset?.uri || !asset.name) return;
+
+      const extension = extractExtension(asset.name);
+      const allowedExtensions = new Set([
+        'mp3',
+        'aac',
+        'm4a',
+        'amr',
+        'ogg',
+        'opus',
+      ]);
+      if (!allowedExtensions.has(extension)) {
+        Alert.alert(pt.warning_title, pt.invalid_audio_format);
+        return;
+      }
+
+      if (typeof asset.size === 'number' && asset.size > MAX_AUDIO_SIZE_BYTES) {
+        Alert.alert(pt.warning_title, pt.audio_size_exceeded);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('type', EMessageType.audio);
+      formData.append('hash', createClientMessageHash());
+      await appendMediaToFormData(formData, 'audios', {
+        uri: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType || 'audio/mpeg',
+      });
+
+      setSendingCapturedMedia(true);
+      try {
+        await submitFormDataMessage(formData);
+      } finally {
+        setSendingCapturedMedia(false);
+      }
     } finally {
-      setSendingCapturedMedia(false);
+      documentPickerActiveRef.current = false;
     }
   }, [
     canComposeInChat,
