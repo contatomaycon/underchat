@@ -31,6 +31,7 @@ import {
   listTransferUsers,
   listTransferSectors,
   listTransferSectorUsers,
+  type ChatUserStatus,
   type TransferChatPayload,
   type TransferSectorOption,
   type TransferUserOption,
@@ -65,6 +66,11 @@ import {
   type SocketChatPayload,
   type SocketChannelsUpdatedPayload,
 } from '../socket/chatSocket';
+import {
+  getChatUserStatusColor,
+  normalizeChatUserStatus,
+  readChatUserStatus,
+} from '../utils/chatUserStatus';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -514,6 +520,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
+  const [userStatus, setUserStatus] = useState<ChatUserStatus>('offline');
   const [queue, setQueue] = useState<ListChatsResult[]>([]);
   const [inChat, setInChat] = useState<ListChatsResult[]>([]);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
@@ -668,6 +675,7 @@ export function ChatListScreen({ route, navigation }: Props) {
             : undefined;
         const photo = info && info.photo ? String(info.photo) : null;
         setUserPhoto(photo && photo !== 'null' ? photo : null);
+        setUserStatus(readChatUserStatus(user));
         const userId =
           user && typeof user === 'object' ? resolveUserId(user) : null;
         setCurrentUserId(userId);
@@ -1067,12 +1075,24 @@ export function ChatListScreen({ route, navigation }: Props) {
           scheduleRealtimeReload();
         }
       );
+      const offUserPresence = addChatSocketListener(
+        'userPresence',
+        (payload) => {
+          if (!currentUserId) return;
+          if (readIdentifier(payload.user_id) !== currentUserId) {
+            return;
+          }
+
+          setUserStatus(normalizeChatUserStatus(payload.status));
+        }
+      );
 
       return () => {
         offMessage();
         offChatUpdate();
         offRecoveryFailed();
         offChannelsUpdated();
+        offUserPresence();
         if (realtimeReloadTimer.current) {
           clearTimeout(realtimeReloadTimer.current);
           realtimeReloadTimer.current = null;
@@ -1576,14 +1596,22 @@ export function ChatListScreen({ route, navigation }: Props) {
           style={styles.avatarPlaceholder}
           onPress={() => setProfileSidebarVisible(true)}
         >
-          <AppAvatar
-            uri={userPhoto}
-            size={40}
-            style={styles.headerAvatarImage}
-            iconName="person-circle-outline"
-            iconSize={40}
-            iconColor={colors.grey400}
-          />
+          <View style={styles.headerAvatarWrap}>
+            <AppAvatar
+              uri={userPhoto}
+              size={40}
+              style={styles.headerAvatarImage}
+              iconName="person-circle-outline"
+              iconSize={40}
+              iconColor={colors.grey400}
+            />
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: getChatUserStatusColor(userStatus) },
+              ]}
+            />
+          </View>
         </Pressable>
         <View style={styles.searchWrap}>
           <Ionicons
@@ -1697,6 +1725,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         visible={profileSidebarVisible}
         onClose={() => setProfileSidebarVisible(false)}
         onProfileUpdated={(nextPhoto) => setUserPhoto(nextPhoto)}
+        onStatusUpdated={setUserStatus}
       />
       <AdvancedFilterModal
         visible={filterModalVisible}
@@ -2235,8 +2264,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  headerAvatarWrap: {
+    position: 'relative',
+    width: 40,
+    height: 40,
+  },
   headerAvatarImage: {
     backgroundColor: 'transparent',
+  },
+  statusBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: colors.surface,
   },
   searchWrap: {
     flexDirection: 'row',

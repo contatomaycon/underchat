@@ -149,14 +149,6 @@ export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
               </Pressable>
             </View>
 
-            <Pressable
-              style={styles.forgotLink}
-              onPress={() => {}}
-              disabled={loading}
-            >
-              <Text style={styles.link}>{pt.forgot_password}</Text>
-            </Pressable>
-
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <Pressable
@@ -245,14 +237,6 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     color: colors.grey500,
-  },
-  forgotLink: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  link: {
-    fontSize: 14,
-    color: colors.primary,
   },
   error: {
     fontSize: 14,

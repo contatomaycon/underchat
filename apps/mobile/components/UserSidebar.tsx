@@ -52,6 +52,7 @@ interface UserSidebarProps {
   onClose: () => void;
   onLogout?: () => void;
   onProfileUpdated?: (photo: string | null) => void;
+  onStatusUpdated?: (status: ChatUserStatus) => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -110,6 +111,7 @@ export function UserSidebar({
   onClose,
   onLogout,
   onProfileUpdated,
+  onStatusUpdated,
 }: UserSidebarProps) {
   const [hasAccess, setHasAccess] = useState(true);
   const [loadingProfile, setLoadingProfile] = useState(false);
@@ -173,9 +175,13 @@ export function UserSidebar({
         },
       });
 
+      if (input?.status) {
+        onStatusUpdated?.(resolvedStatus);
+      }
+
       return true;
     },
-    [about, notifications, status]
+    [about, notifications, onStatusUpdated, status]
   );
 
   useEffect(() => {

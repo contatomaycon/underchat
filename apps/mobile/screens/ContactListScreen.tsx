@@ -16,6 +16,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   listChatContacts,
   validateChatContact,
+  type ChatUserStatus,
   type ListChatContactResult,
 } from '../api/chatApi';
 import {
@@ -41,6 +42,11 @@ import { addChatSocketListener } from '../socket/chatSocket';
 import type { ListChatsResult } from '../types/chat';
 import type { ChatStackParamList } from '../navigation/types';
 import { AppAvatar } from '../components/AppAvatar';
+import {
+  getChatUserStatusColor,
+  normalizeChatUserStatus,
+  readChatUserStatus,
+} from '../utils/chatUserStatus';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Contacts'>;
 
@@ -194,6 +200,7 @@ export function ContactListScreen({ navigation }: Props) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
+  const [userStatus, setUserStatus] = useState<ChatUserStatus>('offline');
   const [contacts, setContacts] = useState<ListChatContactResult[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -277,6 +284,7 @@ export function ContactListScreen({ navigation }: Props) {
             : undefined;
         const photo = info && info.photo ? String(info.photo) : null;
         setUserPhoto(photo && photo !== 'null' ? photo : null);
+        setUserStatus(readChatUserStatus(user));
       })
       .catch(() => setUserPhoto(null));
 
@@ -328,9 +336,20 @@ export function ContactListScreen({ navigation }: Props) {
           void loadContacts(1, false);
         }
       );
+      const offUserPresence = addChatSocketListener(
+        'userPresence',
+        (payload) => {
+          if (!currentUserId || payload.user_id !== currentUserId) {
+            return;
+          }
+
+          setUserStatus(normalizeChatUserStatus(payload.status));
+        }
+      );
 
       return () => {
         offChannelsUpdated();
+        offUserPresence();
       };
     }, [currentUserId, loadContacts, userChannels])
   );
@@ -418,14 +437,22 @@ export function ContactListScreen({ navigation }: Props) {
           style={styles.avatarPlaceholder}
           onPress={() => setProfileSidebarVisible(true)}
         >
-          <AppAvatar
-            uri={userPhoto}
-            size={40}
-            style={styles.headerAvatarImage}
-            iconName="person-circle-outline"
-            iconSize={40}
-            iconColor={colors.grey400}
-          />
+          <View style={styles.headerAvatarWrap}>
+            <AppAvatar
+              uri={userPhoto}
+              size={40}
+              style={styles.headerAvatarImage}
+              iconName="person-circle-outline"
+              iconSize={40}
+              iconColor={colors.grey400}
+            />
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: getChatUserStatusColor(userStatus) },
+              ]}
+            />
+          </View>
         </Pressable>
         <View style={styles.searchWrap}>
           <Ionicons
@@ -476,6 +503,7 @@ export function ContactListScreen({ navigation }: Props) {
         visible={profileSidebarVisible}
         onClose={() => setProfileSidebarVisible(false)}
         onProfileUpdated={(nextPhoto) => setUserPhoto(nextPhoto)}
+        onStatusUpdated={setUserStatus}
       />
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{pt.contacts}</Text>
@@ -584,8 +612,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  headerAvatarWrap: {
+    position: 'relative',
+    width: 40,
+    height: 40,
+  },
   headerAvatarImage: {
     backgroundColor: 'transparent',
+  },
+  statusBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: colors.surface,
   },
   filterBtn: {
     padding: 8,
