@@ -63,6 +63,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Location from 'expo-location';
 import Constants from 'expo-constants';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import {
   listMessages,
   createMessage,
@@ -258,8 +259,6 @@ const MAX_CONTACTS_SELECTED = 10;
 type DownloadKind = 'image' | 'video' | 'document';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-let preferredNativeDownloadDirectoryUri: string | null = null;
 
 type ChatRoomMode = 'default' | 'history_readonly';
 
@@ -963,40 +962,23 @@ async function forceDownloadToDevice(
     } catch {}
   }
 
-  const copyToDirectory = (directoryUri: string): boolean => {
+  if (requireOptionalNativeModule('ExpoSharing') != null) {
     try {
-      const directory = new Directory(directoryUri);
-      const destinationFile = new File(directory, fileName);
-      if (destinationFile.exists) {
-        destinationFile.delete();
+      const SharingModule =
+        require('expo-sharing') as typeof import('expo-sharing');
+      const isAvailable = await SharingModule.isAvailableAsync();
+      if (isAvailable) {
+        await SharingModule.shareAsync(downloadedFile.uri, {
+          dialogTitle: fileName,
+        });
+        cleanupDownloadedFile();
+        return;
       }
-      downloadedFile.copy(destinationFile);
-      cleanupDownloadedFile();
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  if (preferredNativeDownloadDirectoryUri) {
-    const copied = copyToDirectory(preferredNativeDownloadDirectoryUri);
-    if (copied) return;
-    preferredNativeDownloadDirectoryUri = null;
+    } catch {}
   }
 
-  try {
-    const pickedDirectory = await Directory.pickDirectoryAsync();
-    preferredNativeDownloadDirectoryUri = pickedDirectory.uri;
-    if (copyToDirectory(preferredNativeDownloadDirectoryUri)) {
-      return;
-    }
-  } catch {}
-
-  const fallbackDirectory = new Directory(Paths.document, 'downloads');
-  if (!fallbackDirectory.exists) {
-    fallbackDirectory.create({ intermediates: true, idempotent: true });
-  }
-  copyToDirectory(fallbackDirectory.uri);
+  cleanupDownloadedFile();
+  Linking.openURL(sourceUrl);
 }
 
 function getLatestMessageText(msg: ListMessageResult): string {
@@ -7858,7 +7840,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animationType="slide"
         onRequestClose={() => setAnnotationModalVisible(false)}
       >
-        <View style={styles.bottomSheetOverlay}>
+        <KeyboardAvoidingView
+          style={styles.bottomSheetOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+        >
           <Pressable
             style={styles.bottomSheetBackdrop}
             onPress={() => setAnnotationModalVisible(false)}
@@ -7908,7 +7894,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               </Pressable>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
