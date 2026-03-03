@@ -295,6 +295,7 @@ export const pt = {
   forward: 'Encaminhar',
   message_actions: 'Ações da mensagem',
   react_to_message: 'Reagir à mensagem',
+  more_actions: 'Mais ações',
   chat_react_error: 'Não foi possível reagir à mensagem.',
   chat_edit_error: 'Não foi possível editar a mensagem.',
   chat_delete_error: 'Não foi possível apagar a mensagem.',

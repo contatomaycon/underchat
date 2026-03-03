@@ -29,6 +29,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -311,6 +312,10 @@ type MessageAction = {
   onPress: () => void;
 };
 
+type MessageOverlayAnchor = {
+  showReactions: boolean;
+};
+
 type ForwardStatusType = 'in_chat' | 'queue' | 'all' | null;
 
 type ForwardTargetItem = {
@@ -425,6 +430,14 @@ const mapDebugSupportInfo = [
 
 const hasNativeMapSupport =
   NativeMapView != null && Platform.OS !== 'web' && !isExpoGoStoreClient;
+
+const blurModuleExpoBlur = requireOptionalNativeModule('ExpoBlur');
+const blurModuleExpoBlurView = requireOptionalNativeModule('ExpoBlurView');
+const hasNativeBlurSupport =
+  Platform.OS !== 'web' &&
+  (blurModuleExpoBlur != null ||
+    blurModuleExpoBlurView != null ||
+    !isExpoGoStoreClient);
 
 const LOCATION_MAP_DEFAULT_REGION: LocationMapRegion = {
   latitude: -14.235004,
@@ -3164,7 +3177,7 @@ function BubbleContent({
     type !== EMessageType.system
   ) {
     return renderWithContextCards(
-      <Text style={[styles.bubbleText, textColor]} selectable>
+      <Text style={[styles.bubbleText, textColor]} selectable={false}>
         {text}
       </Text>
     );
@@ -3187,10 +3200,7 @@ function MessageBubble({
   onTemplateButtonPress,
   disableTemplateButtons,
   canInteract,
-  reactionPickerOpen,
   onOpenActions,
-  onToggleReactionPicker,
-  onSelectQuickReaction,
   obfuscateContent = false,
 }: {
   msg: ListMessageResult;
@@ -3209,10 +3219,7 @@ function MessageBubble({
   ) => void;
   disableTemplateButtons?: boolean;
   canInteract?: boolean;
-  reactionPickerOpen?: boolean;
   onOpenActions?: (message: ListMessageResult) => void;
-  onToggleReactionPicker?: (message: ListMessageResult) => void;
-  onSelectQuickReaction?: (message: ListMessageResult, emoji: string) => void;
   obfuscateContent?: boolean;
 }) {
   const content = msg.content;
@@ -3352,26 +3359,6 @@ function MessageBubble({
         wrapAlign === 'flex-start' && styles.bubbleWrapLeft,
       ]}
     >
-      {canInteract && reactionPickerOpen ? (
-        <View
-          style={[
-            styles.quickReactionStrip,
-            fromMe
-              ? styles.quickReactionStripRight
-              : styles.quickReactionStripLeft,
-          ]}
-        >
-          {QUICK_REACTIONS.map((emoji) => (
-            <Pressable
-              key={`${msg.message_id}-${emoji}`}
-              style={styles.quickReactionBtn}
-              onPress={() => onSelectQuickReaction?.(msg, emoji)}
-            >
-              <Text style={styles.quickReactionEmoji}>{emoji}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
       <Pressable
         style={({ pressed }) => [
           styles.bubble,
@@ -3456,35 +3443,6 @@ function MessageBubble({
           />
         </View>
       </Pressable>
-      {canInteract ? (
-        <View
-          style={[
-            styles.messageActionSide,
-            fromMe
-              ? styles.messageActionSideRight
-              : styles.messageActionSideLeft,
-          ]}
-        >
-          <Pressable
-            style={styles.messageActionSideBtn}
-            onPress={() => onToggleReactionPicker?.(msg)}
-            accessibilityLabel={pt.react_to_message}
-          >
-            <Ionicons name="happy-outline" size={14} color={colors.grey700} />
-          </Pressable>
-          <Pressable
-            style={styles.messageActionSideBtn}
-            onPress={() => onOpenActions?.(msg)}
-            accessibilityLabel={pt.message_actions}
-          >
-            <Ionicons
-              name="ellipsis-horizontal"
-              size={14}
-              color={colors.grey700}
-            />
-          </Pressable>
-        </View>
-      ) : null}
       {showReactionsSummary ? (
         <View
           style={[
@@ -3651,11 +3609,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [messages, setMessages] = useState<ListMessageResult[]>([]);
   const [messageActionTarget, setMessageActionTarget] =
     useState<ListMessageResult | null>(null);
+  const [messageOverlayAnchor, setMessageOverlayAnchor] =
+    useState<MessageOverlayAnchor | null>(null);
   const [replyMessageTarget, setReplyMessageTarget] =
     useState<ListMessageResult | null>(null);
-  const [activeReactionMessageId, setActiveReactionMessageId] = useState<
-    string | null
-  >(null);
   const [editingMessageTarget, setEditingMessageTarget] =
     useState<ListMessageResult | null>(null);
   const [editingMessageText, setEditingMessageText] = useState('');
@@ -5872,6 +5829,53 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     return () => clearTimeout(timer);
   }, [forwardModalVisible, forwardSearch, forwardStatus, loadForwardTargets]);
 
+  const closeMessageOverlay = useCallback(() => {
+    setMessageActionTarget(null);
+    setMessageOverlayAnchor(null);
+  }, []);
+
+  const handleQuickReaction = useCallback(
+    async (emoji: string) => {
+      const target = messageActionTarget;
+      if (!target) return;
+
+      const previousReactions = target.content?.reactions ?? null;
+      const messageWorkerId = currentUserId ?? '';
+      const messageWorkerName = currentUserName ?? '';
+
+      closeMessageOverlay();
+      applyLocalReaction(target.message_id, emoji, messageWorkerId, messageWorkerName);
+
+      const ok = await reactToMessage(chatInfo.chat_id, target.message_id, emoji);
+      if (ok) return;
+
+      setMessages((previous) =>
+        previous.map((entry) => {
+          if (entry.message_id !== target.message_id) {
+            return entry;
+          }
+
+          return {
+            ...entry,
+            content: {
+              ...(entry.content ?? { type: EMessageType.text }),
+              reactions: previousReactions,
+            },
+          };
+        })
+      );
+      Alert.alert(pt.error_title, pt.chat_react_error);
+    },
+    [
+      applyLocalReaction,
+      chatInfo.chat_id,
+      closeMessageOverlay,
+      currentUserId,
+      currentUserName,
+      messageActionTarget,
+    ]
+  );
+
   const messageActions = useMemo<MessageAction[]>(() => {
     const target = messageActionTarget;
     if (!target) return [];
@@ -5893,7 +5897,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         icon: 'arrow-undo-outline',
         onPress: () => {
           setReplyMessageTarget(target);
-          setMessageActionTarget(null);
+          closeMessageOverlay();
           requestAnimationFrame(() => {
             messageInputRef.current?.focus();
           });
@@ -5908,7 +5912,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         icon: 'copy-outline',
         onPress: () => {
           void handleCopyMessageContent(target);
-          setMessageActionTarget(null);
+          closeMessageOverlay();
         },
       });
     }
@@ -5920,7 +5924,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         icon: 'download-outline',
         onPress: () => {
           void handleDownloadMessage(target);
-          setMessageActionTarget(null);
+          closeMessageOverlay();
         },
       });
     }
@@ -5933,7 +5937,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         onPress: () => {
           setForwardSourceMessage(target);
           setForwardModalVisible(true);
-          setMessageActionTarget(null);
+          closeMessageOverlay();
         },
       });
     }
@@ -5943,8 +5947,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       label: pt.react,
       icon: 'happy-outline',
       onPress: () => {
-        setActiveReactionMessageId(target.message_id);
-        setMessageActionTarget(null);
+        setMessageOverlayAnchor((previous) =>
+          previous
+            ? {
+                ...previous,
+                showReactions: true,
+              }
+            : previous
+        );
       },
     });
 
@@ -5956,7 +5966,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         onPress: () => {
           setEditingMessageTarget(target);
           setEditingMessageText(getLatestMessageText(target));
-          setMessageActionTarget(null);
+          closeMessageOverlay();
         },
       });
     }
@@ -5968,7 +5978,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         icon: 'trash-outline',
         danger: true,
         onPress: () => {
-          setMessageActionTarget(null);
+          closeMessageOverlay();
 
           const previousDeleted = target.deleted === true;
           setMessages((previous) =>
@@ -6000,6 +6010,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [
     canComposeInChat,
     chatInfo.chat_id,
+    closeMessageOverlay,
     handleCopyMessageContent,
     handleDownloadMessage,
     isHistoryReadonly,
@@ -7827,70 +7838,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     chatInfo={chatInfo}
                     currentUserName={currentUserName}
                     highlighted={
-                      highlightedMessageId === item.message.message_id
+                      highlightedMessageId === item.message.message_id ||
+                      messageActionTarget?.message_id === item.message.message_id
                     }
                     canInteract={
                       canInteractWithMessage(item.message) &&
                       !isHistoryReadonly &&
                       !shouldObfuscateContent
                     }
-                    reactionPickerOpen={
-                      activeReactionMessageId === item.message.message_id
-                    }
                     onOpenActions={(message) => {
-                      setActiveReactionMessageId(null);
                       setMessageActionTarget(message);
-                    }}
-                    onToggleReactionPicker={(message) => {
-                      if (isHistoryReadonly || shouldObfuscateContent) return;
-                      if (!canInteractWithMessage(message)) return;
-                      setActiveReactionMessageId((previous) =>
-                        previous === message.message_id
-                          ? null
-                          : message.message_id
-                      );
-                    }}
-                    onSelectQuickReaction={(message, emoji) => {
-                      void (async () => {
-                        const previousReactions =
-                          message.content?.reactions ?? null;
-                        const messageWorkerId = currentUserId ?? '';
-                        const messageWorkerName = currentUserName ?? '';
-
-                        setActiveReactionMessageId(null);
-                        applyLocalReaction(
-                          message.message_id,
-                          emoji,
-                          messageWorkerId,
-                          messageWorkerName
-                        );
-
-                        const ok = await reactToMessage(
-                          chatInfo.chat_id,
-                          message.message_id,
-                          emoji
-                        );
-
-                        if (!ok) {
-                          setMessages((previous) =>
-                            previous.map((entry) => {
-                              if (entry.message_id !== message.message_id) {
-                                return entry;
-                              }
-                              return {
-                                ...entry,
-                                content: {
-                                  ...(entry.content ?? {
-                                    type: EMessageType.text,
-                                  }),
-                                  reactions: previousReactions,
-                                },
-                              };
-                            })
-                          );
-                          Alert.alert(pt.error_title, pt.chat_react_error);
-                        }
-                      })();
+                      setMessageOverlayAnchor({ showReactions: true });
                     }}
                     onPressQuoted={
                       canGoToQuoted && quotedTargetId
@@ -8376,39 +8334,109 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={messageActionTarget !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setMessageActionTarget(null)}
+        onRequestClose={closeMessageOverlay}
       >
-        <Pressable
-          style={styles.menuOverlay}
-          onPress={() => setMessageActionTarget(null)}
-        >
+        <View style={styles.messageOverlayRoot}>
           <Pressable
-            style={styles.menuCard}
-            onPress={(event) => event.stopPropagation()}
+            style={styles.messageOverlayBackdropPress}
+            onPress={closeMessageOverlay}
           >
-            {messageActions.map((action) => (
-              <Pressable
-                key={action.key}
-                style={styles.menuItem}
-                onPress={action.onPress}
-              >
-                <Ionicons
-                  name={action.icon}
-                  size={18}
-                  color={action.danger ? colors.error : colors.onSurface}
-                />
-                <Text
-                  style={[
-                    styles.menuItemText,
-                    action.danger && styles.menuItemTextDanger,
-                  ]}
-                >
-                  {action.label}
-                </Text>
-              </Pressable>
-            ))}
+            {hasNativeBlurSupport ? (
+              <BlurView
+                intensity={40}
+                tint="dark"
+                style={styles.messageOverlayBlur}
+              />
+            ) : null}
+            <View style={styles.messageOverlayDim} />
           </Pressable>
-        </Pressable>
+
+          <View style={styles.messageOverlayCenterWrap}>
+            {messageOverlayAnchor?.showReactions !== false ? (
+              <View style={styles.messageOverlayReactions}>
+              {QUICK_REACTIONS.map((emoji) => (
+                <Pressable
+                  key={`overlay-reaction-${emoji}`}
+                  style={styles.messageOverlayReactionBtn}
+                  onPress={() => {
+                    void handleQuickReaction(emoji);
+                  }}
+                >
+                  <Text style={styles.messageOverlayReactionEmoji}>{emoji}</Text>
+                </Pressable>
+              ))}
+              <Pressable
+                style={styles.messageOverlayReactionMoreBtn}
+                onPress={() => {
+                  setMessageOverlayAnchor((previous) =>
+                    previous
+                      ? {
+                          ...previous,
+                          showReactions: false,
+                        }
+                      : previous
+                  );
+                }}
+                accessibilityLabel={pt.more_actions}
+              >
+                <Ionicons name="add" size={18} color={colors.grey700} />
+              </Pressable>
+              </View>
+            ) : null}
+
+            {messageActionTarget ? (
+              <View style={styles.messageOverlaySelectedWrap}>
+                <MessageBubble
+                  msg={messageActionTarget}
+                  fromMe={
+                    messageActionTarget.type_user !== ETypeUserChat.client
+                  }
+                  chatInfo={chatInfo}
+                  currentUserName={currentUserName}
+                  highlighted
+                  canInteract={false}
+                  onOpenActions={() => {
+                    // noop
+                  }}
+                  onPressQuoted={null}
+                  resolvedContactDisplay={
+                    resolvedContactCards[messageActionTarget.message_id]
+                  }
+                  audioCtrl={audioCtrl}
+                  onOpenImage={openImageViewer}
+                  onOpenVideo={openVideoViewer}
+                  onTemplateButtonPress={handleTemplateButtonPress}
+                  disableTemplateButtons={!canComposeInChat || sending}
+                  obfuscateContent={shouldObfuscateContent}
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.messageOverlayMenu}>
+              {messageActions.map((action) => (
+                <Pressable
+                  key={action.key}
+                  style={styles.messageOverlayMenuItem}
+                  onPress={action.onPress}
+                >
+                  <Text
+                    style={[
+                      styles.messageOverlayMenuItemText,
+                      action.danger && styles.menuItemTextDanger,
+                    ]}
+                  >
+                    {action.label}
+                  </Text>
+                  <Ionicons
+                    name={action.icon}
+                    size={20}
+                    color={action.danger ? colors.error : colors.grey700}
+                  />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <Modal
@@ -9677,7 +9705,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             </View>
 
             <View style={styles.viewerMediaContainer}>
-              {viewer.kind === 'video' ? (
+              {viewer.kind === 'video' && viewer.src ? (
                 <VideoView
                   key={viewer.src}
                   player={viewerVideoPlayer}
@@ -9688,13 +9716,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   allowsPictureInPicture
                   playsInline
                 />
-              ) : (
+              ) : viewer.src ? (
                 <Image
                   source={{ uri: viewer.src }}
                   style={styles.viewerImage}
                   resizeMode="contain"
                 />
-              )}
+              ) : null}
             </View>
 
             {viewer.caption ? (
@@ -11384,6 +11412,100 @@ const styles = StyleSheet.create({
   },
   menuItemTextDanger: {
     color: colors.error,
+  },
+  messageOverlayRoot: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  messageOverlayBackdropPress: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  messageOverlayBlur: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  messageOverlayDim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.10)',
+  },
+  messageOverlayReactions: {
+    width: '100%',
+    maxWidth: 336,
+    minHeight: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.16)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+    marginBottom: 10,
+  },
+  messageOverlayReactionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  messageOverlayReactionEmoji: {
+    fontSize: 26,
+    lineHeight: 26,
+  },
+  messageOverlayReactionMoreBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+    marginLeft: 2,
+  },
+  messageOverlayMenu: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.16)',
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 8,
+    marginTop: 10,
+  },
+  messageOverlayCenterWrap: {
+    width: '92%',
+    maxWidth: 360,
+    alignItems: 'center',
+  },
+  messageOverlaySelectedWrap: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  messageOverlayMenuItem: {
+    minHeight: 46,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(47, 43, 61, 0.12)',
+  },
+  messageOverlayMenuItemText: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.onSurface,
+    fontWeight: '500',
   },
   bottomSheetOverlay: {
     flex: 1,
