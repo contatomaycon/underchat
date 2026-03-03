@@ -71,6 +71,7 @@ import {
   normalizeChatUserStatus,
   readChatUserStatus,
 } from '../utils/chatUserStatus';
+import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -1122,6 +1123,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   }, []);
 
   const handleOpenProfileSidebar = useCallback(() => {
+    dismissKeyboard();
     if (profileSidebarReopenTimerRef.current) {
       clearTimeout(profileSidebarReopenTimerRef.current);
       profileSidebarReopenTimerRef.current = null;
@@ -1151,6 +1153,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     chat: ListChatsResult,
     queueIndex: number | null = null
   ) => {
+    dismissKeyboard();
     openedSwipeableRef.current?.close();
     const canOpenByVisibility = canViewChat(chat, {
       permissions: socketPermissions,
@@ -1213,6 +1216,7 @@ export function ChatListScreen({ route, navigation }: Props) {
 
   const closeTransferModal = useCallback(() => {
     if (isTransferring) return;
+    dismissKeyboard();
     setTransferModalVisible(false);
     setTransferPickerKind(null);
     setTransferTargetChat(null);
@@ -1232,6 +1236,7 @@ export function ChatListScreen({ route, navigation }: Props) {
 
   const openTransferModal = useCallback(
     async (chat: ListChatsResult) => {
+      dismissKeyboard();
       setTransferTargetChat(chat);
       setTransferModalVisible(true);
       setTransferPickerKind(null);
@@ -1540,6 +1545,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   );
 
   const handleClearSearch = useCallback(() => {
+    dismissKeyboard();
     openedSwipeableRef.current?.close();
     setSearch('');
   }, []);
@@ -1690,6 +1696,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         <Pressable
           style={styles.filterBtn}
           onPress={() => {
+            dismissKeyboard();
             closeOpenedSwipeable();
             setFilterModalVisible(true);
           }}
@@ -1700,6 +1707,7 @@ export function ChatListScreen({ route, navigation }: Props) {
           <Pressable
             style={styles.clearFilterBtn}
             onPress={() => {
+              dismissKeyboard();
               closeOpenedSwipeable();
               if (tab === 'closed') {
                 (
@@ -1721,7 +1729,7 @@ export function ChatListScreen({ route, navigation }: Props) {
               styles.quickFilterChip,
               inChatScope === 'all' && styles.quickFilterChipActive,
             ]}
-            onPress={() => setInChatScope('all')}
+            onPress={dismissKeyboardAnd(() => setInChatScope('all'))}
           >
             {renderQuickFilterChipContent(
               pt.all_attendances,
@@ -1734,7 +1742,7 @@ export function ChatListScreen({ route, navigation }: Props) {
               styles.quickFilterChip,
               inChatScope === 'mine' && styles.quickFilterChipActive,
             ]}
-            onPress={() => setInChatScope('mine')}
+            onPress={dismissKeyboardAnd(() => setInChatScope('mine'))}
           >
             {renderQuickFilterChipContent(
               pt.my_attendances,
@@ -1755,7 +1763,9 @@ export function ChatListScreen({ route, navigation }: Props) {
                   styles.quickFilterChip,
                   active && styles.quickFilterChipActive,
                 ]}
-                onPress={() => toggleChatbotFilter(option.value)}
+                onPress={dismissKeyboardAnd(() =>
+                  toggleChatbotFilter(option.value)
+                )}
               >
                 {renderQuickFilterChipContent(
                   option.label,
@@ -1829,12 +1839,15 @@ export function ChatListScreen({ route, navigation }: Props) {
         <View style={styles.transferOverlay}>
           <Pressable
             style={styles.transferBackdrop}
-            onPress={closeTransferModal}
+            onPress={dismissKeyboardAnd(closeTransferModal)}
           />
           <View style={styles.transferCard}>
             <View style={styles.transferHeaderRow}>
               <Text style={styles.transferTitle}>{pt.transfer_to}</Text>
-              <Pressable onPress={closeTransferModal} hitSlop={12}>
+              <Pressable
+                onPress={dismissKeyboardAnd(closeTransferModal)}
+                hitSlop={12}
+              >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -1848,7 +1861,9 @@ export function ChatListScreen({ route, navigation }: Props) {
                 <Text style={styles.transferFieldLabel}>{pt.channel}</Text>
                 <Pressable
                   style={styles.transferSelectField}
-                  onPress={() => setTransferPickerKind('channel')}
+                  onPress={dismissKeyboardAnd(() =>
+                    setTransferPickerKind('channel')
+                  )}
                 >
                   <Text
                     style={[
@@ -1870,7 +1885,9 @@ export function ChatListScreen({ route, navigation }: Props) {
                 <Text style={styles.transferFieldLabel}>{pt.transfer_to}</Text>
                 <Pressable
                   style={styles.transferSelectField}
-                  onPress={() => setTransferPickerKind('type')}
+                  onPress={dismissKeyboardAnd(() =>
+                    setTransferPickerKind('type')
+                  )}
                 >
                   <Text
                     style={[
@@ -1896,7 +1913,9 @@ export function ChatListScreen({ route, navigation }: Props) {
                     </Text>
                     <Pressable
                       style={styles.transferSelectField}
-                      onPress={() => setTransferPickerKind('user')}
+                      onPress={dismissKeyboardAnd(() =>
+                        setTransferPickerKind('user')
+                      )}
                     >
                       <Text
                         style={[
@@ -1922,7 +1941,9 @@ export function ChatListScreen({ route, navigation }: Props) {
                     <Text style={styles.transferFieldLabel}>{pt.sector}</Text>
                     <Pressable
                       style={styles.transferSelectField}
-                      onPress={() => setTransferPickerKind('sector')}
+                      onPress={dismissKeyboardAnd(() =>
+                        setTransferPickerKind('sector')
+                      )}
                     >
                       <Text
                         style={[
@@ -1947,7 +1968,9 @@ export function ChatListScreen({ route, navigation }: Props) {
                     </Text>
                     <Pressable
                       style={styles.transferSelectField}
-                      onPress={() => setTransferPickerKind('sector_user')}
+                      onPress={dismissKeyboardAnd(() =>
+                        setTransferPickerKind('sector_user')
+                      )}
                       disabled={!selectedTransferSectorId}
                     >
                       <Text
@@ -1993,16 +2016,16 @@ export function ChatListScreen({ route, navigation }: Props) {
                 <View style={styles.transferActionsRow}>
                   <Pressable
                     style={styles.transferCancelBtn}
-                    onPress={closeTransferModal}
+                    onPress={dismissKeyboardAnd(closeTransferModal)}
                     disabled={isTransferring}
                   >
                     <Text style={styles.transferCancelText}>{pt.cancel}</Text>
                   </Pressable>
                   <Pressable
                     style={styles.transferSubmitBtn}
-                    onPress={() => {
+                    onPress={dismissKeyboardAnd(() => {
                       void submitTransfer();
-                    }}
+                    })}
                     disabled={isTransferring}
                   >
                     {isTransferring ? (
@@ -2032,13 +2055,13 @@ export function ChatListScreen({ route, navigation }: Props) {
         <View style={styles.transferOverlay}>
           <Pressable
             style={styles.transferBackdrop}
-            onPress={() => setTransferPickerKind(null)}
+            onPress={dismissKeyboardAnd(() => setTransferPickerKind(null))}
           />
           <View style={styles.transferPickerCard}>
             <View style={styles.transferHeaderRow}>
               <Text style={styles.transferTitle}>{pt.select_option}</Text>
               <Pressable
-                onPress={() => setTransferPickerKind(null)}
+                onPress={dismissKeyboardAnd(() => setTransferPickerKind(null))}
                 hitSlop={12}
               >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
@@ -2051,6 +2074,7 @@ export function ChatListScreen({ route, navigation }: Props) {
             ) : (
               <SectionList
                 sections={[{ title: '', data: transferPickerOptions }]}
+                keyboardDismissMode="on-drag"
                 keyExtractor={(item) => item.value}
                 renderSectionHeader={() => null}
                 renderItem={({ item }) => (
@@ -2093,8 +2117,15 @@ export function ChatListScreen({ route, navigation }: Props) {
       ) : (
         <SectionList
           sections={sections}
-          onTouchStart={closeOpenedSwipeable}
-          onScrollBeginDrag={closeOpenedSwipeable}
+          onTouchStart={() => {
+            dismissKeyboard();
+            closeOpenedSwipeable();
+          }}
+          onScrollBeginDrag={() => {
+            dismissKeyboard();
+            closeOpenedSwipeable();
+          }}
+          keyboardDismissMode="on-drag"
           keyExtractor={(item) => item.chat_id}
           renderItem={({ item, index }) => {
             const isQueueItemLocked =

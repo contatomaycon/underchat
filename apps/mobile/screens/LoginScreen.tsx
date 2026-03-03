@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +25,7 @@ import {
 import { hasChatAccessPermission } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
+import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 
 const APP_TITLE = pt.app_title;
 
@@ -103,67 +105,70 @@ export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         contentInsetAdjustmentBehavior="automatic"
       >
-        <View style={styles.card}>
-          <Text style={styles.title}>
-            {pt.welcome} {APP_TITLE}!
-          </Text>
-          <Text style={styles.subtitle}>{pt.please_login}</Text>
+        <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
+          <View style={styles.card}>
+            <Text style={styles.title}>
+              {pt.welcome} {APP_TITLE}!
+            </Text>
+            <Text style={styles.subtitle}>{pt.please_login}</Text>
 
-          <View style={styles.form}>
-            <Text style={styles.label}>{pt.email}:</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder={pt.email_placeholder}
-              placeholderTextColor={styles.placeholder.color}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              editable={!loading}
-            />
-
-            <Text style={styles.label}>{pt.password}:</Text>
-            <View style={styles.passwordInputWrap}>
+            <View style={styles.form}>
+              <Text style={styles.label}>{pt.email}:</Text>
               <TextInput
-                style={styles.inputWithIcon}
-                value={password}
-                onChangeText={setPassword}
-                placeholder={pt.password_placeholder}
+                style={styles.input}
+                value={email}
+                onChangeText={setEmail}
+                placeholder={pt.email_placeholder}
                 placeholderTextColor={styles.placeholder.color}
-                secureTextEntry={!passwordVisible}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
                 editable={!loading}
               />
-              <Pressable
-                style={styles.passwordIcon}
-                onPress={() => setPasswordVisible((v) => !v)}
-                disabled={loading}
-              >
-                <Ionicons
-                  name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
-                  size={22}
-                  color={colors.grey600}
+
+              <Text style={styles.label}>{pt.password}:</Text>
+              <View style={styles.passwordInputWrap}>
+                <TextInput
+                  style={styles.inputWithIcon}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder={pt.password_placeholder}
+                  placeholderTextColor={styles.placeholder.color}
+                  secureTextEntry={!passwordVisible}
+                  editable={!loading}
                 />
+                <Pressable
+                  style={styles.passwordIcon}
+                  onPress={() => setPasswordVisible((v) => !v)}
+                  disabled={loading}
+                >
+                  <Ionicons
+                    name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
+                    size={22}
+                    color={colors.grey600}
+                  />
+                </Pressable>
+              </View>
+
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+
+              <Pressable
+                style={[styles.button, !canSubmit && styles.buttonDisabled]}
+                onPress={dismissKeyboardAnd(handleSubmit)}
+                disabled={!canSubmit}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>{pt.login}</Text>
+                )}
               </Pressable>
             </View>
-
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-
-            <Pressable
-              style={[styles.button, !canSubmit && styles.buttonDisabled]}
-              onPress={handleSubmit}
-              disabled={!canSubmit}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>{pt.login}</Text>
-              )}
-            </Pressable>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </ScrollView>
     </KeyboardAvoidingView>
   );

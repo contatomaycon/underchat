@@ -47,6 +47,7 @@ import {
   normalizeChatUserStatus,
   readChatUserStatus,
 } from '../utils/chatUserStatus';
+import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Contacts'>;
 
@@ -375,6 +376,7 @@ export function ContactListScreen({ navigation }: Props) {
   }, []);
 
   const handleOpenProfileSidebar = useCallback(() => {
+    dismissKeyboard();
     if (profileSidebarReopenTimerRef.current) {
       clearTimeout(profileSidebarReopenTimerRef.current);
       profileSidebarReopenTimerRef.current = null;
@@ -407,18 +409,21 @@ export function ContactListScreen({ navigation }: Props) {
   };
 
   const handleOpenCreate = () => {
+    dismissKeyboard();
     setFormMode('create');
     setEditingContactId(null);
     setFormVisible(true);
   };
 
   const handleOpenEdit = (contactId: string) => {
+    dismissKeyboard();
     setFormMode('edit');
     setEditingContactId(contactId);
     setFormVisible(true);
   };
 
   const handleClearSearch = useCallback(() => {
+    dismissKeyboard();
     setSearch('');
     setDebouncedSearch('');
   }, []);
@@ -455,6 +460,7 @@ export function ContactListScreen({ navigation }: Props) {
   };
 
   const handleContactPress = (contact: ListChatContactResult) => {
+    dismissKeyboard();
     if (!contact.phone_partial) {
       Alert.alert(pt.warning_title, pt.contact_phone_required);
       return;
@@ -527,7 +533,7 @@ export function ContactListScreen({ navigation }: Props) {
         </View>
         <Pressable
           style={styles.filterBtn}
-          onPress={() => setFilterVisible(true)}
+          onPress={dismissKeyboardAnd(() => setFilterVisible(true))}
           accessibilityLabel={pt.advanced_filters}
         >
           <Ionicons name="filter" size={22} color={colors.onSurface} />
@@ -535,7 +541,7 @@ export function ContactListScreen({ navigation }: Props) {
         {hasActiveFilters ? (
           <Pressable
             style={styles.clearFilterBtn}
-            onPress={() => setFilters(EMPTY_FILTERS)}
+            onPress={dismissKeyboardAnd(() => setFilters(EMPTY_FILTERS))}
             accessibilityLabel={pt.clear_filters}
           >
             <Ionicons name="close" size={16} color={colors.onPrimary} />
@@ -571,6 +577,7 @@ export function ContactListScreen({ navigation }: Props) {
             <FlatList
               data={contacts}
               keyExtractor={(item) => item.contact_id}
+              keyboardDismissMode="on-drag"
               onEndReached={handleLoadMore}
               onEndReachedThreshold={0.3}
               renderItem={({ item }) => (

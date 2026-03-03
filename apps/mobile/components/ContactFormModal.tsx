@@ -4,11 +4,13 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,6 +47,7 @@ import {
   normalizeDocumentDigits,
 } from '../utils/contactDocument';
 import { resolveImageUri } from '../utils/imageUri';
+import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 
 type ContactFormMode = 'create' | 'edit';
 type PickerKind =
@@ -286,6 +289,12 @@ export function ContactFormModal({
     };
   }, [canLoadContact, contactId, visible]);
 
+  useEffect(() => {
+    if (!visible) {
+      setPickerKind(null);
+    }
+  }, [visible]);
+
   const selectedUserName =
     userOptions.find((item) => item.value === selectedUserId)?.label ??
     pt.select_attendant_filter;
@@ -405,6 +414,23 @@ export function ContactFormModal({
     if (pickerKind === 'documentType') setDocumentTypeId(null);
     if (pickerKind === 'ignore') setIgnore(CONTACT_IGNORE.not_ignore);
     setPickerKind(null);
+  };
+
+  const openPicker = (kind: Exclude<PickerKind, null>) => {
+    dismissKeyboard();
+    setPickerKind(kind);
+  };
+
+  const closePicker = () => {
+    setPickerKind(null);
+  };
+
+  const handleRequestClose = () => {
+    if (pickerKind !== null) {
+      closePicker();
+      return;
+    }
+    onClose();
   };
 
   const handlePickImage = async () => {
@@ -624,20 +650,23 @@ export function ContactFormModal({
     .filter(Boolean) as Option[];
 
   return (
-    <>
-      <Modal
-        visible={visible}
-        animationType="slide"
-        transparent
-        onRequestClose={onClose}
-      >
-        <View style={styles.overlay}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={handleRequestClose}
+    >
+      <View style={styles.overlay}>
+        <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
           <View style={styles.modal}>
             <View style={styles.header}>
               <Text style={styles.title}>
                 {isEditMode ? pt.edit_contact : pt.add_contact}
               </Text>
-              <Pressable style={styles.closeBtn} onPress={onClose}>
+              <Pressable
+                style={styles.closeBtn}
+                onPress={dismissKeyboardAnd(onClose)}
+              >
                 <Ionicons name="close" size={24} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -652,6 +681,9 @@ export function ContactFormModal({
                   style={styles.scroll}
                   contentContainerStyle={styles.scrollContent}
                   keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode={
+                    Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                  }
                 >
                   <View style={styles.photoRow}>
                     <View style={styles.photoContainer}>
@@ -770,7 +802,7 @@ export function ContactFormModal({
                       </Text>
                       <Pressable
                         style={styles.selector}
-                        onPress={() => setPickerKind('phoneDdi')}
+                        onPress={() => openPicker('phoneDdi')}
                       >
                         <Text style={styles.selectorText} numberOfLines={1}>
                           {selectedPhoneDdiName}
@@ -819,7 +851,7 @@ export function ContactFormModal({
                       <Text style={styles.label}>{pt.document_type}</Text>
                       <Pressable
                         style={styles.selector}
-                        onPress={() => setPickerKind('documentType')}
+                        onPress={() => openPicker('documentType')}
                       >
                         <Text style={styles.selectorText} numberOfLines={1}>
                           {selectedDocumentTypeName}
@@ -868,7 +900,7 @@ export function ContactFormModal({
                     <Text style={styles.label}>{pt.filter_by_attendant}</Text>
                     <Pressable
                       style={styles.selector}
-                      onPress={() => setPickerKind('user')}
+                      onPress={() => openPicker('user')}
                     >
                       <Text style={styles.selectorText} numberOfLines={1}>
                         {selectedUserName}
@@ -885,7 +917,7 @@ export function ContactFormModal({
                     <Text style={styles.label}>{pt.ignore}</Text>
                     <Pressable
                       style={styles.selector}
-                      onPress={() => setPickerKind('ignore')}
+                      onPress={() => openPicker('ignore')}
                     >
                       <Text style={styles.selectorText} numberOfLines={1}>
                         {selectedIgnoreName}
@@ -902,7 +934,7 @@ export function ContactFormModal({
                     <Text style={styles.label}>{pt.filter_by_tag}</Text>
                     <Pressable
                       style={styles.selector}
-                      onPress={() => setPickerKind('labels')}
+                      onPress={() => openPicker('labels')}
                     >
                       <Text style={styles.selectorText} numberOfLines={1}>
                         {selectedLabelsData.length > 0
@@ -945,7 +977,7 @@ export function ContactFormModal({
                     <Text style={styles.label}>{pt.channel}</Text>
                     <Pressable
                       style={styles.selector}
-                      onPress={() => setPickerKind('channels')}
+                      onPress={() => openPicker('channels')}
                     >
                       <Text style={styles.selectorText} numberOfLines={1}>
                         {selectedChannelsData.length > 0
@@ -988,12 +1020,15 @@ export function ContactFormModal({
                 </ScrollView>
 
                 <View style={styles.footer}>
-                  <Pressable style={styles.cancelBtn} onPress={onClose}>
+                  <Pressable
+                    style={styles.cancelBtn}
+                    onPress={dismissKeyboardAnd(onClose)}
+                  >
                     <Text style={styles.cancelBtnText}>{pt.cancel}</Text>
                   </Pressable>
                   <Pressable
                     style={[styles.saveBtn, saving && styles.disabledBtn]}
-                    onPress={handleSave}
+                    onPress={dismissKeyboardAnd(handleSave)}
                     disabled={saving}
                   >
                     {saving ? (
@@ -1009,65 +1044,62 @@ export function ContactFormModal({
               </>
             )}
           </View>
-        </View>
-      </Modal>
+        </TouchableWithoutFeedback>
 
-      <Modal
-        visible={pickerKind !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPickerKind(null)}
-      >
-        <Pressable
-          style={styles.pickerOverlay}
-          onPress={() => setPickerKind(null)}
-        >
-          <View style={styles.pickerCard}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>{currentPickerTitle}</Text>
-              <View style={styles.pickerActions}>
-                <Pressable
-                  style={styles.pickerActionBtn}
-                  onPress={clearPickerSelection}
-                >
-                  <Text style={styles.pickerActionText}>{pt.clear_filter}</Text>
-                </Pressable>
-                {isMultiPicker ? (
+        {pickerKind !== null ? (
+          <Pressable style={styles.pickerOverlay} onPress={closePicker}>
+            <Pressable
+              style={styles.pickerCard}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>{currentPickerTitle}</Text>
+                <View style={styles.pickerActions}>
                   <Pressable
                     style={styles.pickerActionBtn}
-                    onPress={() => setPickerKind(null)}
+                    onPress={clearPickerSelection}
                   >
-                    <Text style={styles.pickerActionText}>{pt.done}</Text>
+                    <Text style={styles.pickerActionText}>
+                      {pt.clear_filter}
+                    </Text>
                   </Pressable>
-                ) : null}
+                  {isMultiPicker ? (
+                    <Pressable
+                      style={styles.pickerActionBtn}
+                      onPress={closePicker}
+                    >
+                      <Text style={styles.pickerActionText}>{pt.done}</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               </View>
-            </View>
-            <FlatList
-              data={pickerItems}
-              keyExtractor={(item, index) => `${item.value}-${index}`}
-              renderItem={({ item }) => {
-                const selected = isOptionSelected(item.value);
-                return (
-                  <Pressable
-                    style={styles.pickerRow}
-                    onPress={() => toggleOption(item.value)}
-                  >
-                    <Text style={styles.pickerRowText}>{item.label}</Text>
-                    {selected ? (
-                      <Ionicons
-                        name="checkmark"
-                        size={18}
-                        color={colors.primary}
-                      />
-                    ) : null}
-                  </Pressable>
-                );
-              }}
-            />
-          </View>
-        </Pressable>
-      </Modal>
-    </>
+              <FlatList
+                data={pickerItems}
+                keyExtractor={(item, index) => `${item.value}-${index}`}
+                renderItem={({ item }) => {
+                  const selected = isOptionSelected(item.value);
+                  return (
+                    <Pressable
+                      style={styles.pickerRow}
+                      onPress={() => toggleOption(item.value)}
+                    >
+                      <Text style={styles.pickerRowText}>{item.label}</Text>
+                      {selected ? (
+                        <Ionicons
+                          name="checkmark"
+                          size={18}
+                          color={colors.primary}
+                        />
+                      ) : null}
+                    </Pressable>
+                  );
+                }}
+              />
+            </Pressable>
+          </Pressable>
+        ) : null}
+      </View>
+    </Modal>
   );
 }
 
@@ -1282,7 +1314,11 @@ const styles = StyleSheet.create({
     opacity: 0.65,
   },
   pickerOverlay: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     padding: 24,

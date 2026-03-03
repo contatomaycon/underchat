@@ -4,6 +4,7 @@ import {
   Text,
   Modal,
   Pressable,
+  TouchableWithoutFeedback,
   ScrollView,
   TextInput,
   StyleSheet,
@@ -25,6 +26,7 @@ import {
   type ChatSector,
 } from '../api/chatApi';
 import { colors } from '../theme/colors';
+import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 
 export interface AdvancedFilterValues {
   filter_label_template_id: string | null;
@@ -197,6 +199,12 @@ export function AdvancedFilterModal({
     }
   }, [visible, canUseUserAndSectorFilters]);
 
+  useEffect(() => {
+    if (!visible) {
+      setPickerKind(null);
+    }
+  }, [visible]);
+
   const handleApply = () => {
     setSaving(true);
     onApply({
@@ -304,19 +312,40 @@ export function AdvancedFilterModal({
     setPickerKind(null);
   };
 
+  const openPicker = (kind: Exclude<PickerKind, null>) => {
+    dismissKeyboard();
+    setPickerKind(kind);
+  };
+
+  const closePicker = () => {
+    setPickerKind(null);
+  };
+
+  const handleRequestClose = () => {
+    if (pickerKind !== null) {
+      closePicker();
+      return;
+    }
+    onClose();
+  };
+
   return (
-    <>
-      <Modal
-        visible={visible}
-        animationType="slide"
-        transparent
-        onRequestClose={onClose}
-      >
-        <View style={styles.modalOverlay}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={handleRequestClose}
+    >
+      <View style={styles.modalOverlay}>
+        <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{pt.advanced_filters}</Text>
-              <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+              <Pressable
+                onPress={dismissKeyboardAnd(onClose)}
+                hitSlop={12}
+                style={styles.closeBtn}
+              >
                 <Ionicons name="close" size={24} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -324,6 +353,9 @@ export function AdvancedFilterModal({
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={
+                Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+              }
             >
               <View style={styles.field}>
                 <Text style={styles.label}>{pt.filter_by_tag}</Text>
@@ -332,7 +364,7 @@ export function AdvancedFilterModal({
                 ) : (
                   <Pressable
                     style={styles.selectTouch}
-                    onPress={() => setPickerKind('tag')}
+                    onPress={() => openPicker('tag')}
                   >
                     <Text style={styles.selectText} numberOfLines={1}>
                       {tags.find((x) => x.label_template_id === filterLabel)
@@ -355,7 +387,7 @@ export function AdvancedFilterModal({
                   ) : (
                     <Pressable
                       style={styles.selectTouch}
-                      onPress={() => setPickerKind('sector')}
+                      onPress={() => openPicker('sector')}
                     >
                       <Text style={styles.selectText} numberOfLines={1}>
                         {sectors.find((x) => x.id === filterSector)?.name ??
@@ -378,7 +410,7 @@ export function AdvancedFilterModal({
                 ) : (
                   <Pressable
                     style={styles.selectTouch}
-                    onPress={() => setPickerKind('worker')}
+                    onPress={() => openPicker('worker')}
                   >
                     <Text style={styles.selectText} numberOfLines={1}>
                       {workers.find((x) => x.id === filterWorker)?.name ??
@@ -401,7 +433,7 @@ export function AdvancedFilterModal({
                   ) : (
                     <Pressable
                       style={styles.selectTouch}
-                      onPress={() => setPickerKind('user')}
+                      onPress={() => openPicker('user')}
                     >
                       <Text style={styles.selectText} numberOfLines={1}>
                         {users.find((x) => x.user_id === filterUser)?.name ??
@@ -479,7 +511,7 @@ export function AdvancedFilterModal({
                   <Text style={styles.label}>{pt.sort_by}</Text>
                   <Pressable
                     style={styles.selectTouch}
-                    onPress={() => setPickerKind('sort_field')}
+                    onPress={() => openPicker('sort_field')}
                   >
                     <Text style={styles.selectText} numberOfLines={1}>
                       {SORT_FIELD_OPTIONS.find((x) => x.value === sortField)
@@ -496,7 +528,7 @@ export function AdvancedFilterModal({
                   <Text style={styles.label}>{pt.sort_order}</Text>
                   <Pressable
                     style={styles.selectTouch}
-                    onPress={() => setPickerKind('sort_order')}
+                    onPress={() => openPicker('sort_order')}
                   >
                     <Text style={styles.selectText} numberOfLines={1}>
                       {SORT_ORDER_OPTIONS.find((x) => x.value === sortOrder)
@@ -512,12 +544,15 @@ export function AdvancedFilterModal({
               </View>
             </ScrollView>
             <View style={styles.footer}>
-              <Pressable style={styles.cancelBtn} onPress={onClose}>
+              <Pressable
+                style={styles.cancelBtn}
+                onPress={dismissKeyboardAnd(onClose)}
+              >
                 <Text style={styles.cancelBtnText}>{pt.cancel}</Text>
               </Pressable>
               <Pressable
                 style={[styles.filterBtn, saving && styles.filterBtnDisabled]}
-                onPress={handleApply}
+                onPress={dismissKeyboardAnd(handleApply)}
                 disabled={saving}
               >
                 {saving ? (
@@ -528,50 +563,45 @@ export function AdvancedFilterModal({
               </Pressable>
             </View>
           </View>
-        </View>
-      </Modal>
+        </TouchableWithoutFeedback>
 
-      <Modal
-        visible={pickerKind !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPickerKind(null)}
-      >
-        <Pressable
-          style={styles.pickerOverlay}
-          onPress={() => setPickerKind(null)}
-        >
-          <View style={styles.pickerCard}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle} numberOfLines={1}>
-                {getCurrentLabel()}
-              </Text>
-              <Pressable
-                onPress={clearPickerValue}
-                style={styles.clearPickerBtn}
-              >
-                <Text style={styles.clearPickerText}>{pt.clear_filter}</Text>
-              </Pressable>
-            </View>
-            <FlatList
-              data={pickerOptions}
-              keyExtractor={(item) => item.value}
-              renderItem={({ item }) => (
+        {pickerKind !== null ? (
+          <Pressable style={styles.pickerOverlay} onPress={closePicker}>
+            <Pressable
+              style={styles.pickerCard}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle} numberOfLines={1}>
+                  {getCurrentLabel()}
+                </Text>
                 <Pressable
-                  style={styles.pickerRow}
-                  onPress={() => selectPickerValue(item.value)}
+                  onPress={clearPickerValue}
+                  style={styles.clearPickerBtn}
                 >
-                  <Text style={styles.pickerRowText} numberOfLines={1}>
-                    {item.title}
-                  </Text>
+                  <Text style={styles.clearPickerText}>{pt.clear_filter}</Text>
                 </Pressable>
-              )}
-              style={styles.pickerList}
-            />
-          </View>
-        </Pressable>
-      </Modal>
-    </>
+              </View>
+              <FlatList
+                data={pickerOptions}
+                keyExtractor={(item) => item.value}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={styles.pickerRow}
+                    onPress={() => selectPickerValue(item.value)}
+                  >
+                    <Text style={styles.pickerRowText} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                  </Pressable>
+                )}
+                style={styles.pickerList}
+              />
+            </Pressable>
+          </Pressable>
+        ) : null}
+      </View>
+    </Modal>
   );
 }
 
@@ -696,7 +726,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   pickerOverlay: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     padding: 24,

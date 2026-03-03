@@ -136,6 +136,7 @@ import {
   parseWhatsAppTextTokens,
   type WhatsAppTextToken,
 } from '../utils/whatsAppTextFormat';
+import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 
 type EmojiDatasetEntry = {
   unified?: string;
@@ -8533,13 +8534,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, []);
 
   const handleChatBodyTouchStart = useCallback(() => {
-    if (!composerEmojiPickerVisible) return;
-    closeComposerEmojiPicker();
+    dismissKeyboard();
+    if (composerEmojiPickerVisible) {
+      closeComposerEmojiPicker();
+    }
   }, [closeComposerEmojiPicker, composerEmojiPickerVisible]);
 
   const handleMessageListScrollBeginDrag = useCallback(() => {
-    if (!composerEmojiPickerVisible) return;
-    closeComposerEmojiPicker();
+    dismissKeyboard();
+    if (composerEmojiPickerVisible) {
+      closeComposerEmojiPicker();
+    }
   }, [closeComposerEmojiPicker, composerEmojiPickerVisible]);
 
   const composerEmojiDismissPanResponder = useMemo(
@@ -8761,6 +8766,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               key={chatInfo.chat_id}
               ref={listRef}
               data={messagesWithSeparators}
+              keyboardDismissMode="on-drag"
               keyExtractor={(item) =>
                 item.type === 'separator'
                   ? `separator-${chatInfo.chat_id}-${item.separatorDate}`
@@ -8951,6 +8957,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               <ScrollView
                 style={styles.quickMessageListScroll}
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               >
                 {quickMessageTemplates.map((template) => (
                   <Pressable
@@ -9032,6 +9039,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 }
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               >
                 <Text style={styles.quickMessagePreviewText}>
                   {replaceTagsInQuickMessage(selectedQuickMessage.message) ||
@@ -9440,6 +9448,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   contentContainerStyle={styles.reactionPickerEmojiGrid}
                   showsVerticalScrollIndicator
                   keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                 >
                   {composerEmojisByCategory.map((emoji, index) => (
                     <Pressable
@@ -9676,7 +9685,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={editingMessageTarget !== null}
         transparent
         animationType="slide"
-        onRequestClose={() => setEditingMessageTarget(null)}
+        onRequestClose={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
       >
         <KeyboardAvoidingView
           style={styles.bottomSheetOverlay}
@@ -9685,12 +9694,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         >
           <Pressable
             style={styles.bottomSheetBackdrop}
-            onPress={() => setEditingMessageTarget(null)}
+            onPress={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
           />
           <View style={[styles.bottomSheetCard, styles.annotationSheetCard]}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.edit_message}</Text>
-              <Pressable onPress={() => setEditingMessageTarget(null)}>
+              <Pressable
+                onPress={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
+              >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -9708,7 +9719,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={() => setEditingMessageTarget(null)}
+                onPress={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -9718,9 +9729,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   (!editingMessageText.trim() || savingEditedMessage) &&
                     styles.sendBtnDisabled,
                 ]}
-                onPress={() => {
+                onPress={dismissKeyboardAnd(() => {
                   void handleSaveEditedMessage();
-                }}
+                })}
                 disabled={!editingMessageText.trim() || savingEditedMessage}
               >
                 {savingEditedMessage ? (
@@ -9807,17 +9818,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={forwardModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setForwardModalVisible(false)}
+        onRequestClose={dismissKeyboardAnd(() => setForwardModalVisible(false))}
       >
         <View style={styles.bottomSheetOverlay}>
           <Pressable
             style={styles.bottomSheetBackdrop}
-            onPress={() => setForwardModalVisible(false)}
+            onPress={dismissKeyboardAnd(() => setForwardModalVisible(false))}
           />
           <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.forward}</Text>
-              <Pressable onPress={() => setForwardModalVisible(false)}>
+              <Pressable
+                onPress={dismissKeyboardAnd(() => setForwardModalVisible(false))}
+              >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -9837,10 +9850,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     forwardStatus === option.value &&
                       styles.forwardStatusChipActive,
                   ]}
-                  onPress={() => {
+                  onPress={dismissKeyboardAnd(() => {
                     setForwardStatus(option.value);
                     setForwardSelectedIds([]);
-                  }}
+                  })}
                 >
                   <Text
                     style={[
@@ -9880,6 +9893,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 data={forwardItems}
                 keyExtractor={(item) => item.value}
                 contentContainerStyle={styles.bottomSheetList}
+                keyboardDismissMode="on-drag"
                 onEndReached={handleLoadMoreForwardTargets}
                 onEndReachedThreshold={0.25}
                 renderItem={({ item }) => {
@@ -9887,7 +9901,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   return (
                     <Pressable
                       style={styles.forwardTargetRow}
-                      onPress={() => toggleForwardTarget(item.value)}
+                      onPress={dismissKeyboardAnd(() =>
+                        toggleForwardTarget(item.value)
+                      )}
                     >
                       <Text style={styles.forwardTargetText} numberOfLines={2}>
                         {item.title}
@@ -9924,7 +9940,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={() => setForwardModalVisible(false)}
+                onPress={dismissKeyboardAnd(() => setForwardModalVisible(false))}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -9934,9 +9950,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   (forwardSelectedIds.length === 0 || forwardSubmitting) &&
                     styles.sendBtnDisabled,
                 ]}
-                onPress={() => {
+                onPress={dismissKeyboardAnd(() => {
                   void handleSubmitForward();
-                }}
+                })}
                 disabled={forwardSelectedIds.length === 0 || forwardSubmitting}
               >
                 {forwardSubmitting ? (
@@ -10149,17 +10165,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={searchModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setSearchModalVisible(false)}
+        onRequestClose={dismissKeyboardAnd(() => setSearchModalVisible(false))}
       >
         <View style={styles.bottomSheetOverlay}>
           <Pressable
             style={styles.bottomSheetBackdrop}
-            onPress={() => setSearchModalVisible(false)}
+            onPress={dismissKeyboardAnd(() => setSearchModalVisible(false))}
           />
           <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.search_messages}</Text>
-              <Pressable onPress={() => setSearchModalVisible(false)}>
+              <Pressable
+                onPress={dismissKeyboardAnd(() => setSearchModalVisible(false))}
+              >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -10196,12 +10214,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 data={searchResults}
                 keyExtractor={(item) => item.message_id}
                 contentContainerStyle={styles.bottomSheetList}
+                keyboardDismissMode="on-drag"
                 onEndReached={handleLoadMoreSearchResults}
                 onEndReachedThreshold={0.25}
                 renderItem={({ item }) => (
                   <Pressable
                     style={styles.searchResultRow}
-                    onPress={() => handleSelectSearchedMessage(item.message_id)}
+                    onPress={dismissKeyboardAnd(() =>
+                      handleSelectSearchedMessage(item.message_id)
+                    )}
                   >
                     <Text style={styles.searchResultDate}>
                       {formatSearchResultDate(item.date)}
@@ -10300,17 +10321,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={transferModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setTransferModalVisible(false)}
+        onRequestClose={dismissKeyboardAnd(() => setTransferModalVisible(false))}
       >
         <View style={styles.bottomSheetOverlay}>
           <Pressable
             style={styles.bottomSheetBackdrop}
-            onPress={() => setTransferModalVisible(false)}
+            onPress={dismissKeyboardAnd(() => setTransferModalVisible(false))}
           />
           <View style={[styles.bottomSheetCard, styles.transferSheetCard]}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.transfer}</Text>
-              <Pressable onPress={() => setTransferModalVisible(false)}>
+              <Pressable
+                onPress={dismissKeyboardAnd(() => setTransferModalVisible(false))}
+              >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -10318,13 +10341,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               style={styles.transferFormScroll}
               contentContainerStyle={styles.transferFormContent}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.formField}>
                 <Text style={styles.formFieldLabel}>{pt.channel}</Text>
                 <Pressable
                   style={styles.formSelector}
-                  onPress={() => setTransferPickerKind('channel')}
+                  onPress={dismissKeyboardAnd(() =>
+                    setTransferPickerKind('channel')
+                  )}
                 >
                   <Text style={styles.formSelectorText} numberOfLines={1}>
                     {selectedTransferChannel?.title ??
@@ -10346,7 +10372,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 <Text style={styles.formFieldLabel}>{pt.transfer_to}</Text>
                 <Pressable
                   style={styles.formSelector}
-                  onPress={() => setTransferPickerKind('type')}
+                  onPress={dismissKeyboardAnd(() => setTransferPickerKind('type'))}
                 >
                   <Text style={styles.formSelectorText} numberOfLines={1}>
                     {transferType === 'user'
@@ -10370,7 +10396,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   </Text>
                   <Pressable
                     style={styles.formSelector}
-                    onPress={() => setTransferPickerKind('user')}
+                    onPress={dismissKeyboardAnd(() =>
+                      setTransferPickerKind('user')
+                    )}
                   >
                     <Text style={styles.formSelectorText} numberOfLines={1}>
                       {selectedTransferUser?.name ?? pt.transfer_select_user}
@@ -10394,7 +10422,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     <Text style={styles.formFieldLabel}>{pt.sector}</Text>
                     <Pressable
                       style={styles.formSelector}
-                      onPress={() => setTransferPickerKind('sector')}
+                      onPress={dismissKeyboardAnd(() =>
+                        setTransferPickerKind('sector')
+                      )}
                     >
                       <Text style={styles.formSelectorText} numberOfLines={1}>
                         {selectedTransferSector?.name ??
@@ -10421,7 +10451,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     </Text>
                     <Pressable
                       style={styles.formSelector}
-                      onPress={() => setTransferPickerKind('sector_user')}
+                      onPress={dismissKeyboardAnd(() =>
+                        setTransferPickerKind('sector_user')
+                      )}
                     >
                       <Text style={styles.formSelectorText} numberOfLines={1}>
                         {selectedTransferSectorUser?.name ??
@@ -10463,7 +10495,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={() => setTransferModalVisible(false)}
+                onPress={dismissKeyboardAnd(() => setTransferModalVisible(false))}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -10472,9 +10504,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   styles.primaryBtn,
                   isTransferring && styles.sendBtnDisabled,
                 ]}
-                onPress={() => {
+                onPress={dismissKeyboardAnd(() => {
                   void submitTransfer();
-                }}
+                })}
                 disabled={isTransferring}
               >
                 {isTransferring ? (
@@ -10492,11 +10524,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={transferPickerKind !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setTransferPickerKind(null)}
+        onRequestClose={dismissKeyboardAnd(() => setTransferPickerKind(null))}
       >
         <Pressable
           style={styles.pickerOverlay}
-          onPress={() => setTransferPickerKind(null)}
+          onPress={dismissKeyboardAnd(() => setTransferPickerKind(null))}
         >
           <Pressable
             style={styles.pickerCard}
@@ -10505,10 +10537,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <FlatList
               data={transferPickerItems}
               keyExtractor={(item) => item.value}
+              keyboardDismissMode="on-drag"
               renderItem={({ item }) => (
                 <Pressable
                   style={styles.pickerRow}
-                  onPress={() => handleSelectTransferPickerValue(item.value)}
+                  onPress={dismissKeyboardAnd(() =>
+                    handleSelectTransferPickerValue(item.value)
+                  )}
                 >
                   <Text style={styles.pickerRowText}>{item.label}</Text>
                 </Pressable>
@@ -10570,7 +10605,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={annotationModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setAnnotationModalVisible(false)}
+        onRequestClose={dismissKeyboardAnd(() => setAnnotationModalVisible(false))}
       >
         <KeyboardAvoidingView
           style={styles.bottomSheetOverlay}
@@ -10579,12 +10614,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         >
           <Pressable
             style={styles.bottomSheetBackdrop}
-            onPress={() => setAnnotationModalVisible(false)}
+            onPress={dismissKeyboardAnd(() => setAnnotationModalVisible(false))}
           />
           <View style={[styles.bottomSheetCard, styles.annotationSheetCard]}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.annotation}</Text>
-              <Pressable onPress={() => setAnnotationModalVisible(false)}>
+              <Pressable
+                onPress={dismissKeyboardAnd(() => setAnnotationModalVisible(false))}
+              >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -10603,7 +10640,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={() => setAnnotationModalVisible(false)}
+                onPress={dismissKeyboardAnd(() => setAnnotationModalVisible(false))}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -10613,9 +10650,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   (!annotationInput.trim() || sendingAnnotation) &&
                     styles.sendBtnDisabled,
                 ]}
-                onPress={() => {
+                onPress={dismissKeyboardAnd(() => {
                   void handleSendAnnotation();
-                }}
+                })}
                 disabled={!annotationInput.trim() || sendingAnnotation}
               >
                 {sendingAnnotation ? (
@@ -10633,17 +10670,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={contactPickerVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setContactPickerVisible(false)}
+        onRequestClose={dismissKeyboardAnd(() => setContactPickerVisible(false))}
       >
         <View style={styles.bottomSheetOverlay}>
           <Pressable
             style={styles.bottomSheetBackdrop}
-            onPress={() => setContactPickerVisible(false)}
+            onPress={dismissKeyboardAnd(() => setContactPickerVisible(false))}
           />
           <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.select_contacts}</Text>
-              <Pressable onPress={() => setContactPickerVisible(false)}>
+              <Pressable
+                onPress={dismissKeyboardAnd(() => setContactPickerVisible(false))}
+              >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -10673,6 +10712,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 data={contactPickerItems}
                 keyExtractor={(item) => item.contact_id}
                 contentContainerStyle={styles.bottomSheetList}
+                keyboardDismissMode="on-drag"
                 onEndReached={handleLoadMoreContactPicker}
                 onEndReachedThreshold={0.25}
                 renderItem={({ item }) => {
@@ -10684,7 +10724,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   return (
                     <Pressable
                       style={styles.contactPickerRow}
-                      onPress={() => toggleContactSelection(item.contact_id)}
+                      onPress={dismissKeyboardAnd(() =>
+                        toggleContactSelection(item.contact_id)
+                      )}
                     >
                       <AppAvatar
                         uri={item.photo}
@@ -10739,7 +10781,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={() => setContactPickerVisible(false)}
+                onPress={dismissKeyboardAnd(() => setContactPickerVisible(false))}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -10749,9 +10791,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   (selectedContactIds.length === 0 || sendingCapturedMedia) &&
                     styles.sendBtnDisabled,
                 ]}
-                onPress={() => {
+                onPress={dismissKeyboardAnd(() => {
                   void handleSendSelectedContacts();
-                }}
+                })}
                 disabled={
                   selectedContactIds.length === 0 || sendingCapturedMedia
                 }
@@ -10771,17 +10813,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={locationPickerVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setLocationPickerVisible(false)}
+        onRequestClose={dismissKeyboardAnd(() => setLocationPickerVisible(false))}
       >
         <View style={styles.bottomSheetOverlay}>
           <Pressable
             style={styles.bottomSheetBackdrop}
-            onPress={() => setLocationPickerVisible(false)}
+            onPress={dismissKeyboardAnd(() => setLocationPickerVisible(false))}
           />
           <View style={[styles.bottomSheetCard, styles.locationSheetCard]}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.send_location}</Text>
-              <Pressable onPress={() => setLocationPickerVisible(false)}>
+              <Pressable
+                onPress={dismissKeyboardAnd(() => setLocationPickerVisible(false))}
+              >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -10795,18 +10839,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               <TextInput
                 value={locationSearchInput}
                 onChangeText={setLocationSearchInput}
-                onSubmitEditing={() => {
+                onSubmitEditing={dismissKeyboardAnd(() => {
                   void handleSearchLocation();
-                }}
+                })}
                 style={styles.searchInput}
                 placeholder={pt.location_search_placeholder}
                 placeholderTextColor={colors.grey500}
                 returnKeyType="search"
               />
               <Pressable
-                onPress={() => {
+                onPress={dismissKeyboardAnd(() => {
                   void handleSearchLocation();
-                }}
+                })}
                 style={styles.locationSearchBtn}
                 disabled={locationSearchLoading}
               >
@@ -10947,9 +10991,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 styles.locationSendCurrentBtn,
                 sendingCapturedMedia && styles.sendBtnDisabled,
               ]}
-              onPress={() => {
+              onPress={dismissKeyboardAnd(() => {
                 void handleSendLocation();
-              }}
+              })}
               disabled={sendingCapturedMedia}
             >
               {sendingCapturedMedia ? (
@@ -10963,7 +11007,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
             <Pressable
               style={styles.secondaryBtn}
-              onPress={() => setLocationPickerVisible(false)}
+              onPress={dismissKeyboardAnd(() => setLocationPickerVisible(false))}
             >
               <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
             </Pressable>

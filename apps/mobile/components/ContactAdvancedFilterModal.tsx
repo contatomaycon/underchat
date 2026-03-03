@@ -3,11 +3,13 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +31,7 @@ import type {
   ContactSortField,
   ContactSortOrder,
 } from '../types/contact';
+import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 
 type PickerKind =
   | 'label'
@@ -175,6 +178,12 @@ export function ContactAdvancedFilterModal({
       .finally(() => setLoadingUsers(false));
   }, [visible]);
 
+  useEffect(() => {
+    if (!visible) {
+      setPickerKind(null);
+    }
+  }, [visible]);
+
   const pickerItems = useMemo(() => {
     if (pickerKind === 'label') {
       return labels.map((item) => ({
@@ -253,6 +262,23 @@ export function ContactAdvancedFilterModal({
     onClose();
   };
 
+  const openPicker = (kind: Exclude<PickerKind, null>) => {
+    dismissKeyboard();
+    setPickerKind(kind);
+  };
+
+  const closePicker = () => {
+    setPickerKind(null);
+  };
+
+  const handleRequestClose = () => {
+    if (pickerKind !== null) {
+      closePicker();
+      return;
+    }
+    onClose();
+  };
+
   const selectedLabelName =
     labels.find((item) => item.label_template_id === filterLabel)?.label ??
     pt.select_tag_filter;
@@ -271,18 +297,21 @@ export function ContactAdvancedFilterModal({
     (filterPhoneDdi ? `+${filterPhoneDdi}` : pt.select_phone_ddi);
 
   return (
-    <>
-      <Modal
-        visible={visible}
-        transparent
-        animationType="slide"
-        onRequestClose={onClose}
-      >
-        <View style={styles.overlay}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={handleRequestClose}
+    >
+      <View style={styles.overlay}>
+        <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
           <View style={styles.modal}>
             <View style={styles.header}>
               <Text style={styles.title}>{pt.advanced_filters}</Text>
-              <Pressable onPress={onClose} style={styles.closeBtn}>
+              <Pressable
+                onPress={dismissKeyboardAnd(onClose)}
+                style={styles.closeBtn}
+              >
                 <Ionicons name="close" size={24} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -291,6 +320,9 @@ export function ContactAdvancedFilterModal({
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={
+                Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+              }
             >
               <View style={styles.field}>
                 <Text style={styles.label}>{pt.filter_by_tag}</Text>
@@ -301,7 +333,7 @@ export function ContactAdvancedFilterModal({
                 ) : (
                   <Pressable
                     style={styles.selector}
-                    onPress={() => setPickerKind('label')}
+                    onPress={() => openPicker('label')}
                   >
                     <Text numberOfLines={1} style={styles.selectorText}>
                       {selectedLabelName}
@@ -320,7 +352,7 @@ export function ContactAdvancedFilterModal({
                   <Text style={styles.label}>{pt.phone_ddi}</Text>
                   <Pressable
                     style={styles.selector}
-                    onPress={() => setPickerKind('phoneDdi')}
+                    onPress={() => openPicker('phoneDdi')}
                   >
                     <Text numberOfLines={1} style={styles.selectorText}>
                       {selectedPhoneDdiName}
@@ -435,7 +467,7 @@ export function ContactAdvancedFilterModal({
                 ) : (
                   <Pressable
                     style={styles.selector}
-                    onPress={() => setPickerKind('user')}
+                    onPress={() => openPicker('user')}
                   >
                     <Text numberOfLines={1} style={styles.selectorText}>
                       {selectedUserName}
@@ -454,7 +486,7 @@ export function ContactAdvancedFilterModal({
                   <Text style={styles.label}>{pt.sort_by}</Text>
                   <Pressable
                     style={styles.selector}
-                    onPress={() => setPickerKind('sortField')}
+                    onPress={() => openPicker('sortField')}
                   >
                     <Text numberOfLines={1} style={styles.selectorText}>
                       {selectedSortFieldName}
@@ -470,7 +502,7 @@ export function ContactAdvancedFilterModal({
                   <Text style={styles.label}>{pt.sort_order}</Text>
                   <Pressable
                     style={styles.selector}
-                    onPress={() => setPickerKind('sortOrder')}
+                    onPress={() => openPicker('sortOrder')}
                   >
                     <Text numberOfLines={1} style={styles.selectorText}>
                       {selectedSortOrderName}
@@ -486,12 +518,15 @@ export function ContactAdvancedFilterModal({
             </ScrollView>
 
             <View style={styles.footer}>
-              <Pressable style={styles.cancelButton} onPress={onClose}>
+              <Pressable
+                style={styles.cancelButton}
+                onPress={dismissKeyboardAnd(onClose)}
+              >
                 <Text style={styles.cancelButtonText}>{pt.cancel}</Text>
               </Pressable>
               <Pressable
                 style={[styles.applyButton, saving && styles.disabledButton]}
-                onPress={handleApply}
+                onPress={dismissKeyboardAnd(handleApply)}
                 disabled={saving}
               >
                 {saving ? (
@@ -502,42 +537,40 @@ export function ContactAdvancedFilterModal({
               </Pressable>
             </View>
           </View>
-        </View>
-      </Modal>
+        </TouchableWithoutFeedback>
 
-      <Modal
-        visible={pickerKind !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPickerKind(null)}
-      >
-        <Pressable
-          style={styles.pickerOverlay}
-          onPress={() => setPickerKind(null)}
-        >
-          <View style={styles.pickerCard}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>{currentPickerLabel}</Text>
-              <Pressable style={styles.clearButton} onPress={clearPickerValue}>
-                <Text style={styles.clearButtonText}>{pt.clear_filter}</Text>
-              </Pressable>
-            </View>
-            <FlatList
-              data={pickerItems}
-              keyExtractor={(item, index) => `${item.value}-${index}`}
-              renderItem={({ item }) => (
+        {pickerKind !== null ? (
+          <Pressable style={styles.pickerOverlay} onPress={closePicker}>
+            <Pressable
+              style={styles.pickerCard}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>{currentPickerLabel}</Text>
                 <Pressable
-                  style={styles.pickerRow}
-                  onPress={() => selectPickerValue(item.value)}
+                  style={styles.clearButton}
+                  onPress={clearPickerValue}
                 >
-                  <Text style={styles.pickerRowText}>{item.label}</Text>
+                  <Text style={styles.clearButtonText}>{pt.clear_filter}</Text>
                 </Pressable>
-              )}
-            />
-          </View>
-        </Pressable>
-      </Modal>
-    </>
+              </View>
+              <FlatList
+                data={pickerItems}
+                keyExtractor={(item, index) => `${item.value}-${index}`}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={styles.pickerRow}
+                    onPress={() => selectPickerValue(item.value)}
+                  >
+                    <Text style={styles.pickerRowText}>{item.label}</Text>
+                  </Pressable>
+                )}
+              />
+            </Pressable>
+          </Pressable>
+        ) : null}
+      </View>
+    </Modal>
   );
 }
 
@@ -661,7 +694,11 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   pickerOverlay: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     justifyContent: 'center',
     padding: 24,

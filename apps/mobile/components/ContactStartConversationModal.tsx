@@ -103,6 +103,12 @@ export function ContactStartConversationModal({
       .finally(() => setLoadingConfig(false));
   }, [selectedWorkerId, visible]);
 
+  useEffect(() => {
+    if (!visible) {
+      setPickerKind(null);
+    }
+  }, [visible]);
+
   const selectedWorker = useMemo(
     () => workers.find((item) => item.id === selectedWorkerId) ?? null,
     [selectedWorkerId, workers]
@@ -173,165 +179,176 @@ export function ContactStartConversationModal({
         ? pt.sector
         : '';
 
+  const openPicker = (kind: Exclude<PickerKind, null>) => {
+    setPickerKind(kind);
+  };
+
+  const closePicker = () => {
+    setPickerKind(null);
+  };
+
+  const handleRequestClose = () => {
+    if (pickerKind !== null) {
+      closePicker();
+      return;
+    }
+    onClose();
+  };
+
   return (
-    <>
-      <Modal
-        visible={visible}
-        transparent
-        animationType="slide"
-        onRequestClose={onClose}
-      >
-        <View style={styles.overlay}>
-          <View style={styles.modal}>
-            <View style={styles.header}>
-              <Text style={styles.title}>{pt.select_channel_sector}</Text>
-              <Pressable style={styles.closeBtn} onPress={onClose}>
-                <Ionicons name="close" size={24} color={colors.onSurface} />
-              </Pressable>
-            </View>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={handleRequestClose}
+    >
+      <View style={styles.overlay}>
+        <View style={styles.modal}>
+          <View style={styles.header}>
+            <Text style={styles.title}>{pt.select_channel_sector}</Text>
+            <Pressable style={styles.closeBtn} onPress={onClose}>
+              <Ionicons name="close" size={24} color={colors.onSurface} />
+            </Pressable>
+          </View>
 
-            <View style={styles.content}>
-              {loadingOptions ? (
-                <View style={styles.loadingWrap}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              ) : (
-                <>
-                  <View style={styles.field}>
-                    <Text style={styles.label}>
-                      {pt.channel} <Text style={styles.required}>*</Text>
-                    </Text>
-                    <Pressable
-                      style={styles.selector}
-                      onPress={() => setPickerKind('worker')}
-                    >
-                      <Text style={styles.selectorText} numberOfLines={1}>
-                        {selectedWorker
-                          ? selectedWorker.number
-                            ? `${selectedWorker.name} (${selectedWorker.number})`
-                            : selectedWorker.name
-                          : pt.select_channel}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={16}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
-                  </View>
-
-                  <View style={styles.field}>
-                    <Text style={styles.label}>{pt.sector}</Text>
-                    <Pressable
-                      style={styles.selector}
-                      onPress={() => setPickerKind('sector')}
-                    >
-                      <Text style={styles.selectorText} numberOfLines={1}>
-                        {selectedSector?.name ?? pt.select_sector}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={16}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
-                  </View>
-
-                  {loadingConfig ? (
-                    <View style={styles.inlineLoadingWrap}>
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    </View>
-                  ) : null}
-
-                  {cannotOpenConversation ? (
-                    <Text style={styles.warningText}>
-                      {pt.attendance_only_online_required}
-                    </Text>
-                  ) : null}
-                </>
-              )}
-            </View>
-
-            <View style={styles.footer}>
-              <Pressable style={styles.cancelBtn} onPress={onClose}>
-                <Text style={styles.cancelBtnText}>{pt.cancel}</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.confirmBtn,
-                  (!selectedWorkerId ||
-                    startingConversation ||
-                    cannotOpenConversation) &&
-                    styles.disabledBtn,
-                ]}
-                disabled={
-                  !selectedWorkerId ||
-                  startingConversation ||
-                  cannotOpenConversation
-                }
-                onPress={handleStartConversation}
-              >
-                {startingConversation ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.confirmBtnText}>
-                    {pt.open_conversation}
+          <View style={styles.content}>
+            {loadingOptions ? (
+              <View style={styles.loadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
+              <>
+                <View style={styles.field}>
+                  <Text style={styles.label}>
+                    {pt.channel} <Text style={styles.required}>*</Text>
                   </Text>
-                )}
-              </Pressable>
-            </View>
+                  <Pressable
+                    style={styles.selector}
+                    onPress={() => openPicker('worker')}
+                  >
+                    <Text style={styles.selectorText} numberOfLines={1}>
+                      {selectedWorker
+                        ? selectedWorker.number
+                          ? `${selectedWorker.name} (${selectedWorker.number})`
+                          : selectedWorker.name
+                        : pt.select_channel}
+                    </Text>
+                    <Ionicons
+                      name="chevron-down"
+                      size={16}
+                      color={colors.grey600}
+                    />
+                  </Pressable>
+                </View>
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>{pt.sector}</Text>
+                  <Pressable
+                    style={styles.selector}
+                    onPress={() => openPicker('sector')}
+                  >
+                    <Text style={styles.selectorText} numberOfLines={1}>
+                      {selectedSector?.name ?? pt.select_sector}
+                    </Text>
+                    <Ionicons
+                      name="chevron-down"
+                      size={16}
+                      color={colors.grey600}
+                    />
+                  </Pressable>
+                </View>
+
+                {loadingConfig ? (
+                  <View style={styles.inlineLoadingWrap}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : null}
+
+                {cannotOpenConversation ? (
+                  <Text style={styles.warningText}>
+                    {pt.attendance_only_online_required}
+                  </Text>
+                ) : null}
+              </>
+            )}
+          </View>
+
+          <View style={styles.footer}>
+            <Pressable style={styles.cancelBtn} onPress={onClose}>
+              <Text style={styles.cancelBtnText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.confirmBtn,
+                (!selectedWorkerId ||
+                  startingConversation ||
+                  cannotOpenConversation) &&
+                  styles.disabledBtn,
+              ]}
+              disabled={
+                !selectedWorkerId ||
+                startingConversation ||
+                cannotOpenConversation
+              }
+              onPress={handleStartConversation}
+            >
+              {startingConversation ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.confirmBtnText}>
+                  {pt.open_conversation}
+                </Text>
+              )}
+            </Pressable>
           </View>
         </View>
-      </Modal>
 
-      <Modal
-        visible={pickerKind !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPickerKind(null)}
-      >
-        <Pressable
-          style={styles.pickerOverlay}
-          onPress={() => setPickerKind(null)}
-        >
-          <View style={styles.pickerCard}>
-            <View style={styles.pickerHeader}>
-              <Text style={styles.pickerTitle}>{currentPickerTitle}</Text>
-              {pickerKind === 'sector' ? (
-                <Pressable
-                  style={styles.clearPickerBtn}
-                  onPress={() => {
-                    setSelectedSectorId(null);
-                    setPickerKind(null);
-                  }}
-                >
-                  <Text style={styles.clearPickerText}>{pt.clear_filter}</Text>
-                </Pressable>
-              ) : null}
-            </View>
-            <FlatList
-              data={pickerItems}
-              keyExtractor={(item) => item.value}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={styles.pickerRow}
-                  onPress={() => {
-                    if (pickerKind === 'worker') {
-                      setSelectedWorkerId(item.value);
-                    } else if (pickerKind === 'sector') {
-                      setSelectedSectorId(item.value);
-                    }
-                    setPickerKind(null);
-                  }}
-                >
-                  <Text style={styles.pickerRowText}>{item.label}</Text>
-                </Pressable>
-              )}
-            />
-          </View>
-        </Pressable>
-      </Modal>
-    </>
+        {pickerKind !== null ? (
+          <Pressable style={styles.pickerOverlay} onPress={closePicker}>
+            <Pressable
+              style={styles.pickerCard}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>{currentPickerTitle}</Text>
+                {pickerKind === 'sector' ? (
+                  <Pressable
+                    style={styles.clearPickerBtn}
+                    onPress={() => {
+                      setSelectedSectorId(null);
+                      closePicker();
+                    }}
+                  >
+                    <Text style={styles.clearPickerText}>
+                      {pt.clear_filter}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              <FlatList
+                data={pickerItems}
+                keyExtractor={(item) => item.value}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={styles.pickerRow}
+                    onPress={() => {
+                      if (pickerKind === 'worker') {
+                        setSelectedWorkerId(item.value);
+                      } else if (pickerKind === 'sector') {
+                        setSelectedSectorId(item.value);
+                      }
+                      closePicker();
+                    }}
+                  >
+                    <Text style={styles.pickerRowText}>{item.label}</Text>
+                  </Pressable>
+                )}
+              />
+            </Pressable>
+          </Pressable>
+        ) : null}
+      </View>
+    </Modal>
   );
 }
 
@@ -442,7 +459,11 @@ const styles = StyleSheet.create({
     opacity: 0.65,
   },
   pickerOverlay: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     padding: 24,
