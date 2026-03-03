@@ -1131,6 +1131,17 @@ function formatPreviewUrlForDisplay(value: string | null | undefined): string {
   return normalized.replace(/([/:?&=#._-])/g, '$1\u200B');
 }
 
+function generateQuickMessageProtocolFallback(): string {
+  const now = new Date();
+  const year = now.getFullYear().toString();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const randomDigits = Array.from({ length: 7 }, () =>
+    Math.floor(Math.random() * 10).toString()
+  ).join('');
+  return `${year}${month}${day}${randomDigits}`;
+}
+
 function resolveExternalSourceAppName(
   sourceApp: string | null | undefined
 ): string {
@@ -8239,7 +8250,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       return protocolUra[protocolUra.length - 1] ?? '';
     }
 
-    return '';
+    return generateQuickMessageProtocolFallback();
   }, [
     chatInfo.protocol_start,
     chatInfo.protocol_transfer,
@@ -8269,14 +8280,21 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const channelName = chatInfo.worker?.name || '';
 
       let replaced = message;
-      replaced = replaced.replaceAll('{{ greeting }}', greeting);
-      replaced = replaced.replaceAll('{{ name }}', contactName);
-      replaced = replaced.replaceAll('{{ protocol }}', protocol);
-      replaced = replaced.replaceAll('{{ date }}', date);
-      replaced = replaced.replaceAll('{{ time }}', time);
-      replaced = replaced.replaceAll('{{ account_name }}', accountName);
-      replaced = replaced.replaceAll('{{ phone }}', phone);
-      replaced = replaced.replaceAll('{{ channel_name }}', channelName);
+      replaced = replaced.replaceAll(/\{\{\s*greeting\s*\}\}/gi, greeting);
+      replaced = replaced.replaceAll(/\{\{\s*name\s*\}\}/gi, contactName);
+      replaced = replaced.replaceAll(/\{\{\s*protocol\s*\}\}/gi, protocol);
+      replaced = replaced.replaceAll(/\{\{\s*protocolo\s*\}\}/gi, protocol);
+      replaced = replaced.replaceAll(/\{\{\s*date\s*\}\}/gi, date);
+      replaced = replaced.replaceAll(/\{\{\s*time\s*\}\}/gi, time);
+      replaced = replaced.replaceAll(
+        /\{\{\s*account_name\s*\}\}/gi,
+        accountName
+      );
+      replaced = replaced.replaceAll(/\{\{\s*phone\s*\}\}/gi, phone);
+      replaced = replaced.replaceAll(
+        /\{\{\s*channel_name\s*\}\}/gi,
+        channelName
+      );
 
       return replaced;
     },
@@ -8352,9 +8370,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const messageValue = replaceTagsInQuickMessage(template.message);
 
       if (template.type === EMessageType.text) {
-        return await sendTextPayload(messageValue, {
-          quickMessageTemplateId: template.message_template_id,
-        });
+        return await sendTextPayload(messageValue);
       }
 
       if (!template.attachment_url) return false;
