@@ -220,6 +220,9 @@ export function ContactListScreen({ navigation }: Props) {
   const [profileSidebarVisible, setProfileSidebarVisible] = useState(false);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profileSidebarReopenTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   const hasActiveFilters = useMemo(
     () => hasAnyContactFilter(filters),
@@ -274,6 +277,15 @@ export function ContactListScreen({ navigation }: Props) {
       }
     };
   }, [search]);
+
+  useEffect(() => {
+    return () => {
+      if (profileSidebarReopenTimerRef.current) {
+        clearTimeout(profileSidebarReopenTimerRef.current);
+        profileSidebarReopenTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     getUser()
@@ -352,6 +364,40 @@ export function ContactListScreen({ navigation }: Props) {
         offUserPresence();
       };
     }, [currentUserId, loadContacts, userChannels])
+  );
+
+  const handleCloseProfileSidebar = useCallback(() => {
+    if (profileSidebarReopenTimerRef.current) {
+      clearTimeout(profileSidebarReopenTimerRef.current);
+      profileSidebarReopenTimerRef.current = null;
+    }
+    setProfileSidebarVisible(false);
+  }, []);
+
+  const handleOpenProfileSidebar = useCallback(() => {
+    if (profileSidebarReopenTimerRef.current) {
+      clearTimeout(profileSidebarReopenTimerRef.current);
+      profileSidebarReopenTimerRef.current = null;
+    }
+
+    if (!profileSidebarVisible) {
+      setProfileSidebarVisible(true);
+      return;
+    }
+
+    setProfileSidebarVisible(false);
+    profileSidebarReopenTimerRef.current = setTimeout(() => {
+      setProfileSidebarVisible(true);
+      profileSidebarReopenTimerRef.current = null;
+    }, 40);
+  }, [profileSidebarVisible]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        handleCloseProfileSidebar();
+      };
+    }, [handleCloseProfileSidebar])
   );
 
   const handleLoadMore = () => {
@@ -435,7 +481,7 @@ export function ContactListScreen({ navigation }: Props) {
       <View style={styles.header}>
         <Pressable
           style={styles.avatarPlaceholder}
-          onPress={() => setProfileSidebarVisible(true)}
+          onPress={handleOpenProfileSidebar}
         >
           <View style={styles.headerAvatarWrap}>
             <AppAvatar
@@ -501,7 +547,7 @@ export function ContactListScreen({ navigation }: Props) {
       </View>
       <UserSidebar
         visible={profileSidebarVisible}
-        onClose={() => setProfileSidebarVisible(false)}
+        onClose={handleCloseProfileSidebar}
         onProfileUpdated={(nextPhoto) => setUserPhoto(nextPhoto)}
         onStatusUpdated={setUserStatus}
       />

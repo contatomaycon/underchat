@@ -261,7 +261,9 @@ export async function apiDelete<T>(
   path: string,
   body?: unknown
 ): Promise<{ status: boolean; data: T } | null> {
-  const headers = await buildAuthHeaders('application/json');
+  const headers = await buildAuthHeaders(
+    body !== undefined ? 'application/json' : undefined
+  );
   if (!headers) return null;
 
   const url = path.startsWith('http')

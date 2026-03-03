@@ -581,6 +581,9 @@ export function ChatListScreen({ route, navigation }: Props) {
   const loadingRef = useRef(false);
   const isLoadingMoreRef = useRef(false);
   const openedSwipeableRef = useRef<Swipeable | null>(null);
+  const profileSidebarReopenTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const paginationRef = useRef<{ currentPage: number; totalPages: number }>({
     currentPage: 1,
     totalPages: 1,
@@ -593,6 +596,15 @@ export function ChatListScreen({ route, navigation }: Props) {
   useEffect(() => {
     isLoadingMoreRef.current = isLoadingMore;
   }, [isLoadingMore]);
+
+  useEffect(() => {
+    return () => {
+      if (profileSidebarReopenTimerRef.current) {
+        clearTimeout(profileSidebarReopenTimerRef.current);
+        profileSidebarReopenTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const applyLocallyClearedUnreadOverrides = useCallback(
     (items: ListChatsResult[]): ListChatsResult[] => {
@@ -1101,6 +1113,40 @@ export function ChatListScreen({ route, navigation }: Props) {
     }, [canReceiveChatNotification, currentUserId, scheduleRealtimeReload])
   );
 
+  const handleCloseProfileSidebar = useCallback(() => {
+    if (profileSidebarReopenTimerRef.current) {
+      clearTimeout(profileSidebarReopenTimerRef.current);
+      profileSidebarReopenTimerRef.current = null;
+    }
+    setProfileSidebarVisible(false);
+  }, []);
+
+  const handleOpenProfileSidebar = useCallback(() => {
+    if (profileSidebarReopenTimerRef.current) {
+      clearTimeout(profileSidebarReopenTimerRef.current);
+      profileSidebarReopenTimerRef.current = null;
+    }
+
+    if (!profileSidebarVisible) {
+      setProfileSidebarVisible(true);
+      return;
+    }
+
+    setProfileSidebarVisible(false);
+    profileSidebarReopenTimerRef.current = setTimeout(() => {
+      setProfileSidebarVisible(true);
+      profileSidebarReopenTimerRef.current = null;
+    }, 40);
+  }, [profileSidebarVisible]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        handleCloseProfileSidebar();
+      };
+    }, [handleCloseProfileSidebar])
+  );
+
   const openChat = (
     chat: ListChatsResult,
     queueIndex: number | null = null
@@ -1594,7 +1640,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       <View style={styles.header}>
         <Pressable
           style={styles.avatarPlaceholder}
-          onPress={() => setProfileSidebarVisible(true)}
+          onPress={handleOpenProfileSidebar}
         >
           <View style={styles.headerAvatarWrap}>
             <AppAvatar
@@ -1723,7 +1769,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       ) : null}
       <UserSidebar
         visible={profileSidebarVisible}
-        onClose={() => setProfileSidebarVisible(false)}
+        onClose={handleCloseProfileSidebar}
         onProfileUpdated={(nextPhoto) => setUserPhoto(nextPhoto)}
         onStatusUpdated={setUserStatus}
       />

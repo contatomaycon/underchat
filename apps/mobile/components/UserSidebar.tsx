@@ -32,6 +32,12 @@ import { colors } from '../theme/colors';
 import { AppAvatar } from './AppAvatar';
 
 type SidebarStatus = 'online' | 'busy' | 'do_not_disturb';
+type PhotoPickerSource = 'camera' | 'gallery';
+type ProfilePhotoFilePayload = {
+  uri: string;
+  name: string;
+  mimeType: string;
+};
 
 const STATUS_OPTIONS: Array<{
   value: SidebarStatus;
@@ -73,6 +79,35 @@ function normalizeStatus(value: unknown): SidebarStatus {
   if (value === 'busy') return 'busy';
   if (value === 'do_not_disturb') return 'do_not_disturb';
   return 'online';
+}
+
+function resolveProfilePhotoFile(
+  asset: ImagePicker.ImagePickerAsset
+): ProfilePhotoFilePayload | null {
+  const uri = typeof asset.uri === 'string' ? asset.uri.trim() : '';
+  if (uri.length === 0) return null;
+
+  const mimeType =
+    typeof asset.mimeType === 'string' && asset.mimeType.trim().length > 0
+      ? asset.mimeType.trim()
+      : 'image/jpeg';
+  const fileNameRaw =
+    typeof asset.fileName === 'string' ? asset.fileName.trim() : '';
+  const hasExtension = /\.[a-z0-9]{2,5}$/i.test(fileNameRaw);
+  const fallbackExtension = mimeType.includes('png')
+    ? 'png'
+    : mimeType.includes('webp')
+      ? 'webp'
+      : 'jpg';
+  const name = hasExtension
+    ? fileNameRaw
+    : `profile-photo-${Date.now()}.${fallbackExtension}`;
+
+  return {
+    uri,
+    name,
+    mimeType,
+  };
 }
 
 function readUserProfile(user: unknown): {
@@ -135,6 +170,13 @@ export function UserSidebar({
   const lastSyncedAboutRef = useRef('');
   const aboutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profileReadyRef = useRef(false);
+  const closePhotoModal = useCallback(() => {
+    setPhotoModalVisible(false);
+  }, []);
+  const closeSidebar = useCallback(() => {
+    setPhotoModalVisible(false);
+    onClose();
+  }, [onClose]);
 
   const statusColor = useMemo(() => {
     const selected = STATUS_OPTIONS.find((item) => item.value === status);
@@ -187,6 +229,16 @@ export function UserSidebar({
   useEffect(() => {
     if (!visible) {
       profileReadyRef.current = false;
+      setPhotoModalVisible(false);
+      setLoadingProfile(false);
+      setStatusSaving(false);
+      setNotificationSaving(false);
+      setAboutSaving(false);
+      setPhotoLoading(false);
+      if (aboutTimerRef.current) {
+        clearTimeout(aboutTimerRef.current);
+        aboutTimerRef.current = null;
+      }
       return;
     }
 
@@ -297,52 +349,97 @@ export function UserSidebar({
     [notificationSaving, notifications, persistProfile]
   );
 
-  const handlePickPhoto = useCallback(async () => {
-    if (!userId) return;
+  const uploadPhotoByAsset = useCallback(
+    async (asset: ImagePicker.ImagePickerAsset) => {
+      if (!userId) return;
+      const filePayload = resolveProfilePhotoFile(asset);
+      if (!filePayload) return;
 
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(pt.warning_title, pt.image_permission_denied);
-      return;
-    }
+      try {
+        setPhotoLoading(true);
+        let uploaded: { photo: string | null } | null = null;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.9,
-    });
+        if (Platform.OS === 'web') {
+          const response = await fetch(filePayload.uri);
+          const blob = await response.blob();
+          uploaded = await uploadUserPhoto(userId, blob);
+        } else {
+          uploaded = await uploadUserPhoto(userId, {
+            uri: filePayload.uri,
+            name: filePayload.name,
+            type: filePayload.mimeType,
+          } as unknown as Blob);
+        }
 
-    if (result.canceled || !result.assets || result.assets.length === 0) {
-      return;
-    }
+        if (!uploaded) {
+          Alert.alert(pt.error_title, pt.profile_photo_upload_error);
+          return;
+        }
 
-    const uri = result.assets[0]?.uri;
-    if (!uri) return;
-
-    try {
-      setPhotoLoading(true);
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const uploaded = await uploadUserPhoto(userId, blob);
-
-      if (!uploaded) {
+        const nextPhoto = uploaded.photo ?? null;
+        setPhoto(nextPhoto);
+        await patchUser({ info: { photo: nextPhoto } });
+        onProfileUpdated?.(nextPhoto);
+        setPhotoModalVisible(false);
+        Alert.alert(pt.success_title, pt.profile_photo_upload_success);
+      } catch {
         Alert.alert(pt.error_title, pt.profile_photo_upload_error);
+      } finally {
+        setPhotoLoading(false);
+      }
+    },
+    [onProfileUpdated, userId]
+  );
+
+  const handlePickPhoto = useCallback(
+    async (source: PhotoPickerSource) => {
+      if (photoLoading || !userId) return;
+
+      const permission =
+        source === 'camera'
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        Alert.alert(
+          pt.warning_title,
+          source === 'camera'
+            ? pt.camera_permission_denied
+            : pt.image_permission_denied
+        );
         return;
       }
 
-      const nextPhoto = uploaded.photo ?? null;
-      setPhoto(nextPhoto);
-      await patchUser({ info: { photo: nextPhoto } });
-      onProfileUpdated?.(nextPhoto);
-      setPhotoModalVisible(false);
-      Alert.alert(pt.success_title, pt.profile_photo_upload_success);
-    } catch {
-      Alert.alert(pt.error_title, pt.profile_photo_upload_error);
-    } finally {
-      setPhotoLoading(false);
-    }
-  }, [onProfileUpdated, userId]);
+      const pickerResult =
+        source === 'camera'
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: ['images'],
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.9,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ['images'],
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.9,
+              allowsMultipleSelection: false,
+            });
+
+      if (
+        pickerResult.canceled ||
+        !pickerResult.assets ||
+        pickerResult.assets.length === 0
+      ) {
+        return;
+      }
+
+      const asset = pickerResult.assets[0];
+      if (!asset?.uri) return;
+      await uploadPhotoByAsset(asset);
+    },
+    [photoLoading, uploadPhotoByAsset, userId]
+  );
 
   const handleRemovePhoto = useCallback(async () => {
     if (!userId || !photo) return;
@@ -372,9 +469,9 @@ export function UserSidebar({
     await clearAuth();
     emitAuthUnauthorized();
     setLogoutLoading(false);
-    onClose();
+    closeSidebar();
     onLogout?.();
-  }, [onClose, onLogout]);
+  }, [closeSidebar, onLogout]);
 
   return (
     <>
@@ -382,14 +479,18 @@ export function UserSidebar({
         visible={visible}
         animationType="slide"
         transparent
-        onRequestClose={onClose}
+        onRequestClose={closeSidebar}
       >
         <View style={styles.overlay}>
-          <Pressable style={styles.backdrop} onPress={onClose} />
+          <Pressable style={styles.backdrop} onPress={closeSidebar} />
           <View style={styles.sidebar}>
             <View style={styles.sidebarHeader}>
               <Text style={styles.sidebarTitle}>{pt.account}</Text>
-              <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+              <Pressable
+                onPress={closeSidebar}
+                hitSlop={12}
+                style={styles.closeBtn}
+              >
                 <Ionicons name="close" size={24} color={colors.onSurface} />
               </Pressable>
             </View>
@@ -578,65 +679,73 @@ export function UserSidebar({
             </View>
           </View>
         </View>
-      </Modal>
+        {photoModalVisible ? (
+          <View style={styles.photoOverlayLayer}>
+            <Pressable
+              style={styles.photoOverlayBackdrop}
+              onPress={closePhotoModal}
+            />
+            <View style={styles.photoCard}>
+              <View style={styles.photoHeader}>
+                <Text style={styles.photoTitle}>{pt.profile_photo}</Text>
+                <Pressable onPress={closePhotoModal} hitSlop={10}>
+                  <Ionicons name="close" size={22} color={colors.onSurface} />
+                </Pressable>
+              </View>
 
-      <Modal
-        visible={photoModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPhotoModalVisible(false)}
-      >
-        <View style={styles.photoOverlay}>
-          <View style={styles.photoCard}>
-            <View style={styles.photoHeader}>
-              <Text style={styles.photoTitle}>{pt.profile_photo}</Text>
-              <Pressable
-                onPress={() => setPhotoModalVisible(false)}
-                hitSlop={10}
-              >
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
+              <View style={styles.photoPreviewWrap}>
+                <AppAvatar
+                  uri={photo}
+                  size={120}
+                  style={styles.photoPreview}
+                  iconName="person-circle-outline"
+                  iconSize={120}
+                  iconColor={colors.grey400}
+                />
+              </View>
 
-            <View style={styles.photoPreviewWrap}>
-              <AppAvatar
-                uri={photo}
-                size={120}
-                style={styles.photoPreview}
-                iconName="person-circle-outline"
-                iconSize={120}
-                iconColor={colors.grey400}
-              />
-            </View>
-
-            <View style={styles.photoActions}>
-              <Pressable
-                style={styles.primaryActionBtn}
-                onPress={handlePickPhoto}
-                disabled={photoLoading}
-              >
-                {photoLoading ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.primaryActionText}>
-                    {pt.change_photo}
-                  </Text>
-                )}
-              </Pressable>
-              {photo ? (
+              <View style={styles.photoActions}>
                 <Pressable
-                  style={styles.secondaryActionBtn}
-                  onPress={handleRemovePhoto}
+                  style={styles.primaryActionBtn}
+                  onPress={() => {
+                    void handlePickPhoto('camera');
+                  }}
                   disabled={photoLoading}
                 >
-                  <Text style={styles.secondaryActionText}>
-                    {pt.remove_photo}
+                  {photoLoading ? (
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.primaryActionText}>
+                      {pt.open_camera}
+                    </Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  style={styles.neutralActionBtn}
+                  onPress={() => {
+                    void handlePickPhoto('gallery');
+                  }}
+                  disabled={photoLoading}
+                >
+                  <Text style={styles.neutralActionText}>
+                    {pt.select_photo}
                   </Text>
                 </Pressable>
-              ) : null}
+                {photo ? (
+                  <Pressable
+                    style={styles.secondaryActionBtn}
+                    onPress={handleRemovePhoto}
+                    disabled={photoLoading}
+                  >
+                    <Text style={styles.secondaryActionText}>
+                      {pt.remove_photo}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           </View>
-        </View>
+        ) : null}
       </Modal>
     </>
   );
@@ -885,12 +994,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.onPrimary,
   },
-  photoOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
+  photoOverlayLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
+    zIndex: 40,
+    elevation: 40,
+  },
+  photoOverlayBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   photoCard: {
     width: '100%',
@@ -931,6 +1049,20 @@ const styles = StyleSheet.create({
   },
   primaryActionText: {
     color: colors.onPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  neutralActionBtn: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  neutralActionText: {
+    color: colors.primary,
     fontSize: 15,
     fontWeight: '600',
   },
