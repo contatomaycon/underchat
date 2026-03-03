@@ -436,6 +436,8 @@ const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_CONTACTS_SELECTED = 10;
+const EMOJI_PICKER_DISMISS_DY_THRESHOLD = 24;
+const EMOJI_PICKER_DISMISS_VY_THRESHOLD = 0.55;
 type DownloadKind = 'image' | 'video' | 'document';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -8526,6 +8528,51 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     messageInputRef.current?.focus();
   }, [canFocusInput]);
 
+  const closeComposerEmojiPicker = useCallback(() => {
+    setComposerEmojiPickerVisible(false);
+  }, []);
+
+  const handleChatBodyTouchStart = useCallback(() => {
+    if (!composerEmojiPickerVisible) return;
+    closeComposerEmojiPicker();
+  }, [closeComposerEmojiPicker, composerEmojiPickerVisible]);
+
+  const handleMessageListScrollBeginDrag = useCallback(() => {
+    if (!composerEmojiPickerVisible) return;
+    closeComposerEmojiPicker();
+  }, [closeComposerEmojiPicker, composerEmojiPickerVisible]);
+
+  const composerEmojiDismissPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onStartShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponder: (_event, gestureState) => {
+          if (!composerEmojiPickerVisible) return false;
+          if (gestureState.dy <= 4) return false;
+          return Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+        },
+        onPanResponderRelease: (_event, gestureState) => {
+          if (
+            gestureState.dy >= EMOJI_PICKER_DISMISS_DY_THRESHOLD ||
+            gestureState.vy >= EMOJI_PICKER_DISMISS_VY_THRESHOLD
+          ) {
+            closeComposerEmojiPicker();
+          }
+        },
+        onPanResponderTerminate: (_event, gestureState) => {
+          if (
+            gestureState.dy >= EMOJI_PICKER_DISMISS_DY_THRESHOLD ||
+            gestureState.vy >= EMOJI_PICKER_DISMISS_VY_THRESHOLD
+          ) {
+            closeComposerEmojiPicker();
+          }
+        },
+        onPanResponderTerminationRequest: () => true,
+      }),
+    [closeComposerEmojiPicker, composerEmojiPickerVisible]
+  );
+
   const handleEmojiPress = useCallback(() => {
     if (!canFocusInput) return;
 
@@ -8705,7 +8752,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         </View>
       </View>
 
-      <View style={styles.chatBody}>
+      <View style={styles.chatBody} onTouchStart={handleChatBodyTouchStart}>
         {loading ? (
           <ChatRoomSkeleton />
         ) : (
@@ -8769,6 +8816,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               }}
               onScrollToIndexFailed={handleScrollToIndexFailed}
               onScroll={handleListScroll}
+              onScrollBeginDrag={handleMessageListScrollBeginDrag}
               scrollEventThrottle={16}
               onContentSizeChange={handleListContentSizeChange}
               contentContainerStyle={styles.listContent}
@@ -9365,7 +9413,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           {composerEmojiPickerVisible ? (
             <View style={styles.composerEmojiPickerWrap}>
               <View style={styles.composerEmojiPickerCard}>
-                <View style={styles.reactionPickerHandle} />
+                <View
+                  style={styles.reactionPickerHandle}
+                  {...composerEmojiDismissPanResponder.panHandlers}
+                />
 
                 <View style={styles.reactionPickerSearchWrap}>
                   <Ionicons
