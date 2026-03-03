@@ -203,6 +203,7 @@ export function ContactStartConversationModal({
       onRequestClose={handleRequestClose}
     >
       <View style={styles.overlay}>
+        <Pressable style={styles.modalBackdrop} onPress={handleRequestClose} />
         <View style={styles.modal}>
           <View style={styles.header}>
             <Text style={styles.title}>{pt.select_channel_sector}</Text>
@@ -357,6 +358,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
   },
   modal: {
     backgroundColor: colors.surface,

@@ -337,6 +337,10 @@ export function AdvancedFilterModal({
       onRequestClose={handleRequestClose}
     >
       <View style={styles.modalOverlay}>
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={dismissKeyboardAnd(handleRequestClose)}
+        />
         <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
@@ -610,6 +614,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
   },
   modalCard: {
     backgroundColor: colors.surface,
