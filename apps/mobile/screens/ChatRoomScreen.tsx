@@ -1125,6 +1125,12 @@ function resolveDomainFromUrl(value: string | null | undefined): string {
   }
 }
 
+function formatPreviewUrlForDisplay(value: string | null | undefined): string {
+  const normalized = readNonEmptyString(value);
+  if (!normalized) return '';
+  return normalized.replace(/([/:?&=#._-])/g, '$1\u200B');
+}
+
 function resolveExternalSourceAppName(
   sourceApp: string | null | undefined
 ): string {
@@ -2634,6 +2640,7 @@ function LinkPreviewMessage({
   const previewImage = resolvePreviewImage(preview);
   const title = readNonEmptyString(preview.title);
   const description = readNonEmptyString(preview.description);
+  const previewUrlDisplay = formatPreviewUrlForDisplay(previewUrl);
   const domain = resolveDomainFromUrl(
     preview['canonical-url'] ?? preview['matched-text'] ?? previewUrl
   );
@@ -2689,9 +2696,21 @@ function LinkPreviewMessage({
         </View>
       </View>
       {previewUrl ? (
-        <Text style={styles.linkPreviewUrl} numberOfLines={1}>
-          {previewUrl}
-        </Text>
+        <View
+          style={[
+            styles.linkPreviewUrlContainer,
+            previewImage && styles.linkPreviewUrlContainerWithThumb,
+          ]}
+        >
+          <Text
+            style={styles.linkPreviewUrl}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+            textBreakStrategy="highQuality"
+          >
+            {previewUrlDisplay}
+          </Text>
+        </View>
       ) : null}
     </Pressable>
   );
@@ -3742,6 +3761,7 @@ function MessageBubble({
           style={[
             styles.bubble,
             fromMe ? styles.bubbleRight : styles.bubbleLeft,
+            fromMe && hasAnyLinkContent && styles.bubbleRightWithLink,
             !fromMe && hasAnyLinkContent && styles.bubbleLeftWithLink,
             isAnnotation && styles.bubbleAnnotation,
             hasQuoted && styles.bubbleQuotedMinWidth,
@@ -3821,6 +3841,7 @@ function MessageBubble({
           isContactCard && styles.bubbleContact,
           isAudio && styles.bubbleAudio,
           isDocument && styles.bubbleDocument,
+          fromMe && hasAnyLinkContent && styles.bubbleRightWithLink,
           !fromMe && hasAnyLinkContent && styles.bubbleLeftWithLink,
           hasQuoted && styles.bubbleQuotedMinWidth,
           isShortTextMessage && styles.bubbleShortMinWidth,
@@ -3879,6 +3900,7 @@ function MessageBubble({
         <View
           style={[
             styles.bubbleMeta,
+            fromMe && hasAnyLinkContent && styles.bubbleMetaRightWithLink,
             isAudio && styles.bubbleMetaAudio,
             isDocument && styles.bubbleMetaDocument,
           ]}
@@ -11092,6 +11114,11 @@ const styles = StyleSheet.create({
     maxWidth: '90%',
     paddingRight: 20,
   },
+  bubbleRightWithLink: {
+    maxWidth: '90%',
+    minWidth: 220,
+    paddingRight: 18,
+  },
   bubbleRight: {
     backgroundColor: colors.bubbleSent,
     borderBottomRightRadius: 4,
@@ -11236,6 +11263,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 4,
     marginTop: 4,
+  },
+  bubbleMetaRightWithLink: {
+    gap: 3,
   },
   bubbleTime: {
     fontSize: 11,
@@ -11667,11 +11697,15 @@ const styles = StyleSheet.create({
   },
   linkPreviewCardRight: {
     backgroundColor: 'rgba(255, 255, 255, 0.36)',
+    alignSelf: 'stretch',
+    minWidth: 280,
   },
   linkPreviewMain: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
+    width: '100%',
+    minWidth: 0,
   },
   linkPreviewThumb: {
     width: 48,
@@ -11700,9 +11734,23 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: 'rgba(47, 43, 61, 0.74)',
   },
+  linkPreviewUrlContainer: {
+    width: '100%',
+    minWidth: 0,
+    marginTop: 0,
+  },
+  linkPreviewUrlContainerWithThumb: {
+    paddingLeft: 0,
+    paddingBottom: 10,
+  },
   linkPreviewUrl: {
+    width: '100%',
+    minWidth: 0,
     fontSize: 12,
+    lineHeight: 17,
     color: colors.primary,
+    flexShrink: 1,
+    includeFontPadding: false,
   },
   externalAdCard: {
     borderRadius: 8,
