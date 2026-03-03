@@ -8895,10 +8895,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 </View>
               ) : null}
 
-              <Text style={styles.quickMessagePreviewText}>
-                {replaceTagsInQuickMessage(selectedQuickMessage.message) ||
-                  pt.quick_message_no_text}
-              </Text>
+              <ScrollView
+                style={styles.quickMessagePreviewTextScroll}
+                contentContainerStyle={
+                  styles.quickMessagePreviewTextScrollContent
+                }
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={styles.quickMessagePreviewText}>
+                  {replaceTagsInQuickMessage(selectedQuickMessage.message) ||
+                    pt.quick_message_no_text}
+                </Text>
+              </ScrollView>
 
               <View style={styles.quickMessagePreviewActions}>
                 <Pressable
@@ -12262,6 +12271,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.onSurface,
     lineHeight: 20,
+  },
+  quickMessagePreviewTextScroll: {
+    maxHeight: 220,
+  },
+  quickMessagePreviewTextScrollContent: {
+    paddingRight: 4,
   },
   quickMessagePreviewActions: {
     marginTop: 4,
