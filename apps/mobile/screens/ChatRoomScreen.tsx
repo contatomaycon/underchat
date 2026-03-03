@@ -4,6 +4,7 @@ import {
   useCallback,
   useMemo,
   useRef,
+  type ComponentType,
   type ReactElement,
 } from 'react';
 import {
@@ -327,7 +328,80 @@ type AttachmentAction = {
   onPress: () => void;
 };
 
-type LocationPickerMode = 'current' | 'manual';
+type LocationSearchResult = {
+  id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+};
+
+type LocationMapRegion = {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+};
+
+type MapPressCoordinateEvent = {
+  nativeEvent: {
+    coordinate: {
+      latitude: number;
+      longitude: number;
+    };
+  };
+};
+
+type ReactNativeMapsModule = {
+  default?: ComponentType<Record<string, unknown>>;
+  MapView?: ComponentType<Record<string, unknown>>;
+  Marker?: ComponentType<Record<string, unknown>>;
+};
+
+let reactNativeMapsLoadError: string | null = null;
+
+const reactNativeMapsModule = (() => {
+  try {
+    return require('react-native-maps') as ReactNativeMapsModule;
+  } catch (error) {
+    reactNativeMapsLoadError =
+      error instanceof Error ? error.message : String(error);
+    return null;
+  }
+})();
+
+const NativeMapView =
+  reactNativeMapsModule?.default ?? reactNativeMapsModule?.MapView ?? null;
+const NativeMapMarker = reactNativeMapsModule?.Marker ?? null;
+
+const isExpoGoStoreClient =
+  (Constants as { executionEnvironment?: string | null })
+    .executionEnvironment === 'storeClient';
+
+const mapDebugSupportInfo = [
+  `platform=${Platform.OS}`,
+  `exec=${
+    (Constants as { executionEnvironment?: string | null })
+      .executionEnvironment ?? 'null'
+  }`,
+  `appOwnership=${
+    (Constants as { appOwnership?: string | null }).appOwnership ?? 'null'
+  }`,
+  `nativeMapView=${NativeMapView ? 'yes' : 'no'}`,
+  `nativeMarker=${NativeMapMarker ? 'yes' : 'no'}`,
+  `expoGoStoreClient=${isExpoGoStoreClient ? 'yes' : 'no'}`,
+  `loadError=${reactNativeMapsLoadError ?? 'none'}`,
+].join(' | ');
+
+const hasNativeMapSupport =
+  NativeMapView != null && Platform.OS !== 'web' && !isExpoGoStoreClient;
+
+const LOCATION_MAP_DEFAULT_REGION: LocationMapRegion = {
+  latitude: -14.235004,
+  longitude: -51.92528,
+  latitudeDelta: 28,
+  longitudeDelta: 28,
+};
 
 function formatPhoneDigits(value: string): string {
   const digits = value.replace(/\D/g, '');
@@ -340,6 +414,11 @@ function formatPhoneDigits(value: string): string {
     return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
   }
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7, 11)}`;
+}
+
+function parseCoordinateInput(value: string): number | null {
+  const parsed = Number.parseFloat(value.replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function formatPhoneWithDdi(
@@ -3374,12 +3453,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [loadingMoreContactPicker, setLoadingMoreContactPicker] =
     useState(false);
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
-  const [locationPickerMode, setLocationPickerMode] =
-    useState<LocationPickerMode>('current');
   const [locationLatitudeInput, setLocationLatitudeInput] = useState('');
   const [locationLongitudeInput, setLocationLongitudeInput] = useState('');
   const [locationNameInput, setLocationNameInput] = useState('');
   const [locationAddressInput, setLocationAddressInput] = useState('');
+  const [locationSearchInput, setLocationSearchInput] = useState('');
+  const [locationSearchLoading, setLocationSearchLoading] = useState(false);
+  const [locationSearchResults, setLocationSearchResults] = useState<
+    LocationSearchResult[]
+  >([]);
+  const [locationCurrentAccuracy, setLocationCurrentAccuracy] = useState<
+    number | null
+  >(null);
+  const [locationMapRegion, setLocationMapRegion] =
+    useState<LocationMapRegion | null>(null);
   const [locationCurrentLoading, setLocationCurrentLoading] = useState(false);
   const [locationCurrentError, setLocationCurrentError] = useState(false);
   const [sendingCapturedMedia, setSendingCapturedMedia] = useState(false);
@@ -6196,6 +6283,70 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     submitFormDataMessage,
   ]);
 
+  const submitLocationPayload = useCallback(
+    async (payload: {
+      latitude: number;
+      longitude: number;
+      name?: string;
+      address?: string;
+    }) => {
+      if (sendingCapturedMedia || !canComposeInChat) return false;
+
+      const formData = new FormData();
+      formData.append('type', EMessageType.location);
+      formData.append('location_latitude', String(payload.latitude));
+      formData.append('location_longitude', String(payload.longitude));
+
+      const normalizedName = payload.name?.trim() ?? '';
+      const normalizedAddress = payload.address?.trim() ?? '';
+      if (normalizedName.length > 0) {
+        formData.append('location_name', normalizedName);
+      }
+      if (normalizedAddress.length > 0) {
+        formData.append('location_address', normalizedAddress);
+      }
+      formData.append('hash', createClientMessageHash());
+
+      setSendingCapturedMedia(true);
+      try {
+        const ok = await submitFormDataMessage(formData);
+        if (!ok) return false;
+        setLocationPickerVisible(false);
+        return true;
+      } finally {
+        setSendingCapturedMedia(false);
+      }
+    },
+    [canComposeInChat, sendingCapturedMedia, submitFormDataMessage]
+  );
+
+  const applyLocationSelection = useCallback(
+    (payload: {
+      latitude: number;
+      longitude: number;
+      name?: string;
+      address?: string;
+      accuracy?: number | null;
+    }) => {
+      setLocationLatitudeInput(payload.latitude.toFixed(6));
+      setLocationLongitudeInput(payload.longitude.toFixed(6));
+      if (payload.name !== undefined) {
+        setLocationNameInput(payload.name);
+      }
+      if (payload.address !== undefined) {
+        setLocationAddressInput(payload.address);
+      }
+      setLocationCurrentAccuracy(payload.accuracy ?? null);
+      setLocationMapRegion({
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        latitudeDelta: 0.006,
+        longitudeDelta: 0.006,
+      });
+    },
+    []
+  );
+
   const resolveCurrentLocation = useCallback(async () => {
     setLocationCurrentLoading(true);
     setLocationCurrentError(false);
@@ -6210,74 +6361,226 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const current = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-      setLocationLatitudeInput(current.coords.latitude.toFixed(6));
-      setLocationLongitudeInput(current.coords.longitude.toFixed(6));
-      if (!locationNameInput.trim()) {
-        setLocationNameInput(pt.location_current);
-      }
+
+      const latitude = Number(current.coords.latitude.toFixed(6));
+      const longitude = Number(current.coords.longitude.toFixed(6));
+      const resolvedName = locationNameInput.trim() || pt.location_current;
+      let resolvedAddress = locationAddressInput.trim();
+
+      try {
+        const reverseResult = await Location.reverseGeocodeAsync({
+          latitude,
+          longitude,
+        });
+        const currentAddress = reverseResult[0];
+        if (currentAddress) {
+          const formattedAddress = [
+            currentAddress.name,
+            currentAddress.street,
+            currentAddress.streetNumber,
+            currentAddress.district,
+            currentAddress.city,
+            currentAddress.region,
+          ]
+            .filter(
+              (part) => typeof part === 'string' && part.trim().length > 0
+            )
+            .join(', ');
+          if (formattedAddress) {
+            resolvedAddress = formattedAddress;
+          }
+        }
+      } catch {}
+
+      applyLocationSelection({
+        latitude,
+        longitude,
+        name: resolvedName,
+        address: resolvedAddress,
+        accuracy: current.coords.accuracy,
+      });
     } catch {
       setLocationCurrentError(true);
     } finally {
       setLocationCurrentLoading(false);
     }
-  }, [locationNameInput]);
+  }, [applyLocationSelection, locationAddressInput, locationNameInput]);
+
+  const handleSearchLocation = useCallback(async () => {
+    const query = locationSearchInput.trim();
+    if (query.length < 3) {
+      setLocationSearchResults([]);
+      return;
+    }
+
+    setLocationSearchLoading(true);
+    setLocationCurrentError(false);
+    try {
+      const geocoded = await Location.geocodeAsync(query);
+      const results: LocationSearchResult[] = geocoded
+        .slice(0, 5)
+        .map((item) => {
+          const latitude = Number(item.latitude.toFixed(6));
+          const longitude = Number(item.longitude.toFixed(6));
+          return {
+            id: `${latitude}-${longitude}`,
+            name: query,
+            address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+            latitude,
+            longitude,
+          };
+        });
+
+      setLocationSearchResults(results);
+      const firstResult = results[0];
+      if (firstResult) {
+        applyLocationSelection({
+          latitude: firstResult.latitude,
+          longitude: firstResult.longitude,
+          name: firstResult.name,
+          address: firstResult.address,
+        });
+      }
+    } catch {
+      setLocationCurrentError(true);
+      setLocationSearchResults([]);
+    } finally {
+      setLocationSearchLoading(false);
+    }
+  }, [applyLocationSelection, locationSearchInput]);
+
+  const handleSelectSearchResult = useCallback(
+    (result: LocationSearchResult) => {
+      applyLocationSelection({
+        latitude: result.latitude,
+        longitude: result.longitude,
+        name: result.name,
+        address: result.address,
+      });
+    },
+    [applyLocationSelection]
+  );
+
+  const handleMapPress = useCallback(
+    (event: MapPressCoordinateEvent) => {
+      const { latitude, longitude } = event.nativeEvent.coordinate;
+      applyLocationSelection({
+        latitude,
+        longitude,
+        name: locationNameInput.trim() || pt.location_current,
+        address:
+          locationAddressInput.trim() ||
+          `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+      });
+    },
+    [applyLocationSelection, locationAddressInput, locationNameInput]
+  );
+
+  const handleSendCurrentLocation = useCallback(async () => {
+    setLocationCurrentLoading(true);
+    setLocationCurrentError(false);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        setLocationCurrentError(true);
+        Alert.alert(pt.warning_title, pt.location_permission_denied);
+        return;
+      }
+
+      const current = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      const latitude = Number(current.coords.latitude.toFixed(6));
+      const longitude = Number(current.coords.longitude.toFixed(6));
+      const name = pt.location_current;
+      const address = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+
+      applyLocationSelection({
+        latitude,
+        longitude,
+        name,
+        address,
+        accuracy: current.coords.accuracy,
+      });
+
+      await submitLocationPayload({
+        latitude,
+        longitude,
+        name,
+        address,
+      });
+    } catch {
+      setLocationCurrentError(true);
+    } finally {
+      setLocationCurrentLoading(false);
+    }
+  }, [applyLocationSelection, submitLocationPayload]);
 
   const handleOpenLocationPicker = useCallback(() => {
     setCameraPickerVisible(false);
-    setLocationPickerMode('current');
     setLocationNameInput('');
     setLocationAddressInput('');
+    setLocationSearchInput('');
+    setLocationSearchResults([]);
+    setLocationCurrentAccuracy(null);
+    setLocationMapRegion(null);
     setLocationPickerVisible(true);
     void resolveCurrentLocation();
   }, [resolveCurrentLocation]);
 
   const handleSendLocation = useCallback(async () => {
-    const latitude = Number.parseFloat(locationLatitudeInput.replace(',', '.'));
-    const longitude = Number.parseFloat(
-      locationLongitudeInput.replace(',', '.')
-    );
+    const latitude = parseCoordinateInput(locationLatitudeInput);
+    const longitude = parseCoordinateInput(locationLongitudeInput);
     const isLatitudeValid =
-      Number.isFinite(latitude) && latitude >= -90 && latitude <= 90;
+      typeof latitude === 'number' && latitude >= -90 && latitude <= 90;
     const isLongitudeValid =
-      Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
+      typeof longitude === 'number' && longitude >= -180 && longitude <= 180;
 
     if (!isLatitudeValid || !isLongitudeValid) {
       Alert.alert(pt.warning_title, pt.location_invalid_coordinates);
       return;
     }
-    if (sendingCapturedMedia || !canComposeInChat) return;
 
-    const formData = new FormData();
-    formData.append('type', EMessageType.location);
-    formData.append('location_latitude', String(latitude));
-    formData.append('location_longitude', String(longitude));
-    const normalizedName = locationNameInput.trim();
-    const normalizedAddress = locationAddressInput.trim();
-    if (normalizedName.length > 0) {
-      formData.append('location_name', normalizedName);
-    }
-    if (normalizedAddress.length > 0) {
-      formData.append('location_address', normalizedAddress);
-    }
-    formData.append('hash', createClientMessageHash());
-
-    setSendingCapturedMedia(true);
-    try {
-      const ok = await submitFormDataMessage(formData);
-      if (!ok) return;
-      setLocationPickerVisible(false);
-    } finally {
-      setSendingCapturedMedia(false);
-    }
+    await submitLocationPayload({
+      latitude,
+      longitude,
+      name: locationNameInput,
+      address: locationAddressInput,
+    });
   }, [
-    canComposeInChat,
     locationAddressInput,
     locationLatitudeInput,
     locationLongitudeInput,
     locationNameInput,
-    sendingCapturedMedia,
-    submitFormDataMessage,
+    submitLocationPayload,
   ]);
+
+  const selectedLatitude = useMemo(
+    () => parseCoordinateInput(locationLatitudeInput),
+    [locationLatitudeInput]
+  );
+
+  const selectedLongitude = useMemo(
+    () => parseCoordinateInput(locationLongitudeInput),
+    [locationLongitudeInput]
+  );
+
+  const selectedCoordinate = useMemo(() => {
+    if (
+      selectedLatitude === null ||
+      selectedLongitude === null ||
+      selectedLatitude < -90 ||
+      selectedLatitude > 90 ||
+      selectedLongitude < -180 ||
+      selectedLongitude > 180
+    ) {
+      return null;
+    }
+    return {
+      latitude: selectedLatitude,
+      longitude: selectedLongitude,
+    };
+  }, [selectedLatitude, selectedLongitude]);
 
   const handleOpenAnnotationModal = useCallback(() => {
     setCameraPickerVisible(false);
@@ -8048,126 +8351,209 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           />
           <View style={[styles.bottomSheetCard, styles.locationSheetCard]}>
             <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>{pt.location}</Text>
+              <Text style={styles.bottomSheetTitle}>{pt.send_location}</Text>
               <Pressable onPress={() => setLocationPickerVisible(false)}>
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
             </View>
 
-            <View style={styles.locationModeRow}>
-              <Pressable
-                style={[
-                  styles.locationModeBtn,
-                  locationPickerMode === 'current' &&
-                    styles.locationModeBtnActive,
-                ]}
-                onPress={() => {
-                  setLocationPickerMode('current');
-                  void resolveCurrentLocation();
+            <View style={styles.searchInputWrap}>
+              <Ionicons
+                name="search-outline"
+                size={18}
+                color={colors.grey600}
+              />
+              <TextInput
+                value={locationSearchInput}
+                onChangeText={setLocationSearchInput}
+                onSubmitEditing={() => {
+                  void handleSearchLocation();
                 }}
-              >
-                <Text
-                  style={[
-                    styles.locationModeBtnText,
-                    locationPickerMode === 'current' &&
-                      styles.locationModeBtnTextActive,
-                  ]}
-                >
-                  {pt.location_current}
-                </Text>
-              </Pressable>
-
+                style={styles.searchInput}
+                placeholder={pt.location_search_placeholder}
+                placeholderTextColor={colors.grey500}
+                returnKeyType="search"
+              />
               <Pressable
-                style={[
-                  styles.locationModeBtn,
-                  locationPickerMode === 'manual' &&
-                    styles.locationModeBtnActive,
-                ]}
-                onPress={() => setLocationPickerMode('manual')}
+                onPress={() => {
+                  void handleSearchLocation();
+                }}
+                style={styles.locationSearchBtn}
+                disabled={locationSearchLoading}
               >
-                <Text
-                  style={[
-                    styles.locationModeBtnText,
-                    locationPickerMode === 'manual' &&
-                      styles.locationModeBtnTextActive,
-                  ]}
-                >
-                  {pt.location_manual}
-                </Text>
+                {locationSearchLoading ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons
+                    name="arrow-forward"
+                    size={18}
+                    color={colors.primary}
+                  />
+                )}
               </Pressable>
             </View>
 
-            {locationCurrentLoading ? (
-              <View style={styles.modalLoadingWrap}>
-                <ActivityIndicator size="small" color={colors.primary} />
-              </View>
-            ) : null}
+            <View style={styles.locationMapWrap}>
+              {hasNativeMapSupport && NativeMapView ? (
+                <NativeMapView
+                  style={styles.locationMap}
+                  region={locationMapRegion ?? LOCATION_MAP_DEFAULT_REGION}
+                  onPress={handleMapPress}
+                  showsCompass
+                  showsUserLocation
+                  loadingEnabled
+                >
+                  {selectedCoordinate && NativeMapMarker ? (
+                    <NativeMapMarker coordinate={selectedCoordinate} />
+                  ) : null}
+                </NativeMapView>
+              ) : (
+                <View style={styles.locationPickerMapFallback}>
+                  <Ionicons
+                    name="map-outline"
+                    size={28}
+                    color={colors.grey600}
+                  />
+                  <Text style={styles.locationMapFallbackText}>
+                    {pt.location_map_unavailable}
+                  </Text>
+                  {__DEV__ ? (
+                    <Text style={styles.locationMapFallbackDebugText}>
+                      {mapDebugSupportInfo}
+                    </Text>
+                  ) : null}
+                </View>
+              )}
+            </View>
 
             {locationCurrentError ? (
               <Text style={styles.locationErrorText}>{pt.location_error}</Text>
             ) : null}
 
-            <View style={styles.locationCoordsRow}>
-              <TextInput
-                value={locationLatitudeInput}
-                onChangeText={setLocationLatitudeInput}
-                style={styles.locationCoordinateInput}
-                placeholder={pt.location_latitude}
-                placeholderTextColor={colors.grey500}
-                keyboardType="decimal-pad"
+            <Pressable
+              style={styles.locationLiveBtn}
+              onPress={() =>
+                Alert.alert(pt.warning_title, pt.location_live_not_available)
+              }
+            >
+              <Ionicons
+                name="navigate-circle-outline"
+                size={20}
+                color={colors.primary}
               />
-              <TextInput
-                value={locationLongitudeInput}
-                onChangeText={setLocationLongitudeInput}
-                style={styles.locationCoordinateInput}
-                placeholder={pt.location_longitude}
-                placeholderTextColor={colors.grey500}
-                keyboardType="decimal-pad"
-              />
-            </View>
+              <Text style={styles.locationLiveBtnText}>
+                {pt.location_live_share}
+              </Text>
+            </Pressable>
 
-            <TextInput
-              value={locationNameInput}
-              onChangeText={setLocationNameInput}
-              style={styles.locationInput}
-              placeholder={pt.location_name_placeholder}
-              placeholderTextColor={colors.grey500}
-              maxLength={120}
-            />
+            <Text style={styles.locationSectionTitle}>
+              {pt.location_nearby_places}
+            </Text>
 
-            <TextInput
-              value={locationAddressInput}
-              onChangeText={setLocationAddressInput}
-              style={styles.locationInput}
-              placeholder={pt.location_address_placeholder}
-              placeholderTextColor={colors.grey500}
-              maxLength={180}
-            />
+            <Pressable
+              style={styles.locationCurrentRow}
+              onPress={() => {
+                void handleSendCurrentLocation();
+              }}
+              disabled={sendingCapturedMedia || locationCurrentLoading}
+            >
+              <View style={styles.locationCurrentIconWrap}>
+                <Ionicons name="locate" size={16} color={colors.primary} />
+              </View>
+              <View style={styles.locationCurrentContent}>
+                <Text style={styles.locationCurrentTitle}>
+                  {pt.location_current}
+                </Text>
+                <Text style={styles.locationCurrentSubtitle}>
+                  {locationCurrentAccuracy !== null
+                    ? pt.location_precision_meters.replace(
+                        '{meters}',
+                        String(Math.max(1, Math.round(locationCurrentAccuracy)))
+                      )
+                    : pt.location_searching}
+                </Text>
+              </View>
+              {locationCurrentLoading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={colors.grey600}
+                />
+              )}
+            </Pressable>
 
-            <View style={styles.bottomSheetFooter}>
+            {locationSearchLoading ? (
+              <View style={styles.locationSearchLoadingRow}>
+                <Text style={styles.locationSearchLoadingText}>
+                  {pt.location_searching}
+                </Text>
+                <ActivityIndicator size="small" color={colors.grey600} />
+              </View>
+            ) : null}
+
+            {locationSearchResults.map((result) => (
               <Pressable
-                style={styles.secondaryBtn}
-                onPress={() => setLocationPickerVisible(false)}
+                key={result.id}
+                style={styles.locationSearchResultRow}
+                onPress={() => handleSelectSearchResult(result)}
               >
-                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+                <Ionicons
+                  name="location-outline"
+                  size={18}
+                  color={colors.primary}
+                />
+                <View style={styles.locationSearchResultContent}>
+                  <Text
+                    style={styles.locationSearchResultTitle}
+                    numberOfLines={1}
+                  >
+                    {result.name}
+                  </Text>
+                  <Text
+                    style={styles.locationSearchResultSubtitle}
+                    numberOfLines={1}
+                  >
+                    {result.address}
+                  </Text>
+                </View>
               </Pressable>
-              <Pressable
-                style={[
-                  styles.primaryBtn,
-                  sendingCapturedMedia && styles.sendBtnDisabled,
-                ]}
-                onPress={() => {
-                  void handleSendLocation();
-                }}
-                disabled={sendingCapturedMedia}
-              >
-                {sendingCapturedMedia ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>{pt.send}</Text>
-                )}
-              </Pressable>
-            </View>
+            ))}
+
+            {!locationSearchLoading &&
+            locationSearchInput.trim().length >= 3 &&
+            locationSearchResults.length === 0 ? (
+              <Text style={styles.locationSearchEmptyText}>
+                {pt.location_search_no_results}
+              </Text>
+            ) : null}
+
+            <Pressable
+              style={[
+                styles.locationSendCurrentBtn,
+                sendingCapturedMedia && styles.sendBtnDisabled,
+              ]}
+              onPress={() => {
+                void handleSendLocation();
+              }}
+              disabled={sendingCapturedMedia}
+            >
+              {sendingCapturedMedia ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>
+                  {pt.send_location_current}
+                </Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={() => setLocationPickerVisible(false)}
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -9847,7 +10233,7 @@ const styles = StyleSheet.create({
     maxHeight: '62%',
   },
   locationSheetCard: {
-    maxHeight: '72%',
+    maxHeight: '90%',
   },
   bottomSheetHeader: {
     flexDirection: 'row',
@@ -10132,33 +10518,146 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.grey700,
   },
-  locationModeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  locationModeBtn: {
-    flex: 1,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: colors.grey300,
+  locationSearchBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
   },
-  locationModeBtnActive: {
-    backgroundColor: 'rgba(40, 101, 183, 0.12)',
-    borderColor: 'rgba(40, 101, 183, 0.3)',
+  locationMapWrap: {
+    height: 300,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.grey300,
   },
-  locationModeBtnText: {
+  locationMap: {
+    flex: 1,
+  },
+  locationPickerMapFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.inputBg,
+    paddingHorizontal: 16,
+  },
+  locationMapFallbackText: {
     fontSize: 13,
+    color: colors.grey700,
+    textAlign: 'center',
+  },
+  locationMapFallbackDebugText: {
+    marginTop: 8,
+    fontSize: 10,
+    lineHeight: 14,
+    color: colors.grey700,
+    textAlign: 'center',
+  },
+  locationLiveBtn: {
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.inputBg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+  },
+  locationLiveBtnText: {
+    fontSize: 16,
     fontWeight: '500',
+    color: colors.primary,
+  },
+  locationSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  locationCurrentRow: {
+    minHeight: 64,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+  },
+  locationCurrentIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.inputBg,
+  },
+  locationCurrentContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  locationCurrentTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  locationCurrentSubtitle: {
+    fontSize: 13,
+    color: colors.grey700,
+    marginTop: 2,
+  },
+  locationSearchLoadingRow: {
+    minHeight: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+  },
+  locationSearchLoadingText: {
+    fontSize: 16,
     color: colors.grey700,
   },
-  locationModeBtnTextActive: {
-    color: colors.primary,
+  locationSearchResultRow: {
+    minHeight: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+  },
+  locationSearchResultContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  locationSearchResultTitle: {
+    fontSize: 14,
     fontWeight: '600',
+    color: colors.onSurface,
+  },
+  locationSearchResultSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: colors.grey700,
+  },
+  locationSearchEmptyText: {
+    fontSize: 13,
+    color: colors.grey700,
+    textAlign: 'center',
+    paddingVertical: 4,
   },
   locationErrorText: {
     fontSize: 12,
@@ -10189,6 +10688,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.onSurface,
     paddingHorizontal: 12,
+  },
+  locationSendCurrentBtn: {
+    minHeight: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
   },
   pickerOverlay: {
     flex: 1,
