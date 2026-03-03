@@ -630,9 +630,9 @@ export function UserSidebar({
                       ) : null}
                     </View>
 
-                    <View style={styles.section}>
-                      <Text style={styles.sectionTitle}>{pt.settings}</Text>
-                      <View style={styles.settingRow}>
+                  <View style={[styles.section, styles.settingsSection]}>
+                    <Text style={styles.sectionTitle}>{pt.settings}</Text>
+                    <View style={styles.settingRow}>
                         <View style={styles.settingLabelWrap}>
                           <Ionicons
                             name="notifications-outline"
@@ -895,6 +895,9 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: 14,
+  },
+  settingsSection: {
+    marginTop: 24,
   },
   sectionTitle: {
     fontSize: 17,
