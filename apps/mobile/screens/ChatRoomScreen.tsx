@@ -2069,6 +2069,15 @@ function LocationMessagePreview({
     previewCandidates[
       Math.min(previewSourceIndex, previewCandidates.length - 1)
     ];
+  const previewRegion = useMemo(
+    () => ({
+      latitude,
+      longitude,
+      latitudeDelta: 0.0032,
+      longitudeDelta: 0.0032,
+    }),
+    [latitude, longitude]
+  );
   const title = name?.trim() || pt.location;
 
   const handleOpen = useCallback(() => {
@@ -2078,7 +2087,23 @@ function LocationMessagePreview({
   return (
     <Pressable style={styles.locationBubble} onPress={handleOpen}>
       <View style={styles.locationMapPreview}>
-        {previewLoadError ? (
+        {hasNativeMapSupport && NativeMapView ? (
+          <>
+            <NativeMapView
+              style={styles.locationMapImage}
+              region={previewRegion}
+              scrollEnabled={false}
+              zoomEnabled={false}
+              rotateEnabled={false}
+              pitchEnabled={false}
+              toolbarEnabled={false}
+              pointerEvents="none"
+            />
+            <View style={styles.locationPinOverlay}>
+              <Ionicons name="location-sharp" size={36} color="#EF4444" />
+            </View>
+          </>
+        ) : previewLoadError ? (
           <View style={styles.locationMapFallback}>
             <Ionicons name="location" size={28} color={colors.primary} />
           </View>
