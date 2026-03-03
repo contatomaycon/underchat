@@ -1240,8 +1240,13 @@ const shouldFormatMessage = (message: ListMessageResult): boolean => {
   );
 };
 
+const normalizeMessageLineBreaks = (text: string): string =>
+  text
+    .replaceAll(/\r\n?/g, '\n')
+    .replaceAll(/[\t ]*\n[\t ]*\n+/g, '\n\n');
+
 const formatWhatsAppText = (text: string): string =>
-  formatWhatsAppTextToHtml(text);
+  formatWhatsAppTextToHtml(normalizeMessageLineBreaks(text));
 
 const getMessageEditHistory = (
   message: ListMessageResult
