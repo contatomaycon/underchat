@@ -1157,13 +1157,6 @@ export class ChatMessageCreatorUseCase {
       throw new Error(messageContext.t('message_not_found'));
     }
 
-    if (
-      !targetMessage.message_key?.id ||
-      !targetMessage.message_key?.remote_jid
-    ) {
-      throw new Error(messageContext.t('message_key_not_found'));
-    }
-
     const userId = chatContext.chat.worker.id ?? '';
     const userName = chatContext.chat.worker.name ?? '';
 
@@ -1173,6 +1166,14 @@ export class ChatMessageCreatorUseCase {
       userId,
       userName
     );
+
+    if (
+      !targetMessage.message_key?.id ||
+      !targetMessage.message_key?.remote_jid
+    ) {
+      await this.centrifugoChatPublish(updatedMessage);
+      return true;
+    }
 
     const reactionMessage = this.createReactionMessage(
       chatContext.chat,

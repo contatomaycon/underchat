@@ -30,6 +30,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -124,6 +125,18 @@ import { AppAvatar } from '../components/AppAvatar';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { resolveImageUri } from '../utils/imageUri';
+
+type EmojiDatasetEntry = {
+  unified?: string;
+  obsoleted_by?: string;
+  category?: string;
+  short_name?: string;
+  short_names?: string[];
+  sort_order?: number;
+};
+
+const EMOJI_DATASET =
+  require('emoji-datasource/emoji.json') as EmojiDatasetEntry[];
 
 function decodeBase64Waveform(base64: string): number[] | null {
   try {
@@ -672,8 +685,100 @@ const EMessageType = {
 } as const;
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const REACTION_RECENT_STORAGE_KEY = 'chat_reaction_recent_emojis_v1';
+const REACTION_FALLBACK_EMOJIS = [
+  '😀',
+  '😂',
+  '😍',
+  '👍',
+  '🙏',
+  '🎉',
+  '🔥',
+  '❤️',
+] as const;
+const REACTION_CATEGORY_DEFINITIONS = [
+  {
+    key: 'recent',
+    icon: 'time-outline',
+    sourceCategories: [] as string[],
+  },
+  {
+    key: 'smileys',
+    icon: 'happy-outline',
+    sourceCategories: ['Smileys & Emotion', 'People & Body'],
+  },
+  {
+    key: 'animals',
+    icon: 'paw-outline',
+    sourceCategories: ['Animals & Nature'],
+  },
+  {
+    key: 'foods',
+    icon: 'pizza-outline',
+    sourceCategories: ['Food & Drink'],
+  },
+  {
+    key: 'activities',
+    icon: 'football-outline',
+    sourceCategories: ['Activities', 'Activity'],
+  },
+  {
+    key: 'travel',
+    icon: 'car-outline',
+    sourceCategories: ['Travel & Places'],
+  },
+  {
+    key: 'objects',
+    icon: 'bulb-outline',
+    sourceCategories: ['Objects'],
+  },
+  {
+    key: 'symbols',
+    icon: 'at-outline',
+    sourceCategories: ['Symbols'],
+  },
+  {
+    key: 'flags',
+    icon: 'flag-outline',
+    sourceCategories: ['Flags'],
+  },
+] as const;
+type ReactionCategoryKey =
+  (typeof REACTION_CATEGORY_DEFINITIONS)[number]['key'];
+type ReactionCategoryConfig = {
+  key: ReactionCategoryKey;
+  icon: keyof typeof Ionicons.glyphMap;
+  sourceCategories: readonly string[];
+};
 const LONG_TEXT_COLLAPSE_LINES = 8;
 const LONG_TEXT_COLLAPSE_CHAR_THRESHOLD = 420;
+
+function unifiedToEmoji(unified: string): string | null {
+  if (!unified) return null;
+  const codepoints = unified
+    .split('-')
+    .map((hex) => Number.parseInt(hex, 16))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (codepoints.length === 0) return null;
+  return String.fromCodePoint(...codepoints);
+}
+
+function normalizeEmojiDatasetEntry(entry: EmojiDatasetEntry): string | null {
+  const unified = entry.obsoleted_by || entry.unified;
+  if (!unified) return null;
+  return unifiedToEmoji(unified);
+}
+
+function matchesEmojiSearch(entry: EmojiDatasetEntry, query: string): boolean {
+  if (!query) return true;
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  const shortName = (entry.short_name ?? '').toLowerCase();
+  if (shortName.includes(normalized)) return true;
+  return (entry.short_names ?? []).some((name) =>
+    name.toLowerCase().includes(normalized)
+  );
+}
 
 const FORWARD_ALLOWED_TYPES = new Set<string>([
   EMessageType.text,
@@ -3236,7 +3341,9 @@ function BubbleContent({
           numberOfLines={shouldCollapse ? LONG_TEXT_COLLAPSE_LINES : undefined}
           onTextLayout={(event) => {
             if (isLongTextByLines || !text) return;
-            if ((event.nativeEvent.lines?.length ?? 0) > LONG_TEXT_COLLAPSE_LINES) {
+            if (
+              (event.nativeEvent.lines?.length ?? 0) > LONG_TEXT_COLLAPSE_LINES
+            ) {
               setIsLongTextByLines(true);
             }
           }}
@@ -3694,6 +3801,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     useState<ListMessageResult | null>(null);
   const [messageOverlayAnchor, setMessageOverlayAnchor] =
     useState<MessageOverlayAnchor | null>(null);
+  const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
+  const [reactionCategory, setReactionCategory] =
+    useState<ReactionCategoryKey>('recent');
+  const [reactionSearch, setReactionSearch] = useState('');
+  const [recentReactionEmojis, setRecentReactionEmojis] = useState<string[]>(
+    []
+  );
   const [replyMessageTarget, setReplyMessageTarget] =
     useState<ListMessageResult | null>(null);
   const [editingMessageTarget, setEditingMessageTarget] =
@@ -5912,10 +6026,86 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     return () => clearTimeout(timer);
   }, [forwardModalVisible, forwardSearch, forwardStatus, loadForwardTargets]);
 
+  useEffect(() => {
+    const loadRecentReactions = async () => {
+      try {
+        const saved = await AsyncStorage.getItem(REACTION_RECENT_STORAGE_KEY);
+        if (!saved) return;
+        const parsed = JSON.parse(saved) as unknown;
+        if (!Array.isArray(parsed)) return;
+        const sanitized = parsed
+          .filter((item): item is string => typeof item === 'string')
+          .slice(0, 40);
+        setRecentReactionEmojis(sanitized);
+      } catch {
+        // noop
+      }
+    };
+
+    void loadRecentReactions();
+  }, []);
+
+  useEffect(() => {
+    void AsyncStorage.setItem(
+      REACTION_RECENT_STORAGE_KEY,
+      JSON.stringify(recentReactionEmojis.slice(0, 40))
+    ).catch(() => {
+      // noop
+    });
+  }, [recentReactionEmojis]);
+
   const closeMessageOverlay = useCallback(() => {
     setMessageActionTarget(null);
     setMessageOverlayAnchor(null);
+    setReactionPickerVisible(false);
+    setReactionSearch('');
+    setReactionCategory('recent');
   }, []);
+
+  const emojiEntriesSorted = useMemo(() => {
+    return [...EMOJI_DATASET].sort((a, b) => {
+      const orderA = typeof a.sort_order === 'number' ? a.sort_order : 999999;
+      const orderB = typeof b.sort_order === 'number' ? b.sort_order : 999999;
+      return orderA - orderB;
+    });
+  }, []);
+
+  const reactionCategoryConfigs =
+    REACTION_CATEGORY_DEFINITIONS as readonly ReactionCategoryConfig[];
+
+  const reactionEmojisByCategory = useMemo(() => {
+    if (reactionCategory === 'recent') {
+      if (recentReactionEmojis.length > 0) {
+        return recentReactionEmojis;
+      }
+      return [...QUICK_REACTIONS, ...REACTION_FALLBACK_EMOJIS].filter(
+        (emoji, index, arr) => arr.indexOf(emoji) === index
+      );
+    }
+
+    const categoryConfig = reactionCategoryConfigs.find(
+      (cfg) => cfg.key === reactionCategory
+    );
+    if (!categoryConfig) return [];
+
+    const available = emojiEntriesSorted
+      .filter((entry) =>
+        categoryConfig.sourceCategories.includes(entry.category ?? '')
+      )
+      .filter((entry) => matchesEmojiSearch(entry, reactionSearch))
+      .map((entry) => normalizeEmojiDatasetEntry(entry))
+      .filter((emoji): emoji is string => !!emoji);
+
+    return available.filter(
+      (emoji, index, arr) => arr.indexOf(emoji) === index
+    );
+  }, [
+    emojiEntriesSorted,
+    reactionCategory,
+    reactionCategoryConfigs,
+    reactionSearch,
+    recentReactionEmojis,
+  ]);
 
   const handleQuickReaction = useCallback(
     async (emoji: string) => {
@@ -5927,6 +6117,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const messageWorkerName = currentUserName ?? '';
 
       closeMessageOverlay();
+      setRecentReactionEmojis((previous) => {
+        const next = [emoji, ...previous.filter((item) => item !== emoji)];
+        return next.slice(0, 40);
+      });
       applyLocalReaction(
         target.message_id,
         emoji,
@@ -6033,22 +6227,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         },
       });
     }
-
-    actions.push({
-      key: 'react',
-      label: pt.react,
-      icon: 'happy-outline',
-      onPress: () => {
-        setMessageOverlayAnchor((previous) =>
-          previous
-            ? {
-                ...previous,
-                showReactions: true,
-              }
-            : previous
-        );
-      },
-    });
 
     if (canEditMessage(target, fromMe)) {
       actions.push({
@@ -7942,6 +8120,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     onOpenActions={(message) => {
                       setMessageActionTarget(message);
                       setMessageOverlayAnchor({ showReactions: true });
+                      setReactionPickerVisible(false);
                     }}
                     onPressQuoted={
                       canGoToQuoted && quotedTargetId
@@ -8432,7 +8611,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         <View style={styles.messageOverlayRoot}>
           <Pressable
             style={styles.messageOverlayBackdropPress}
-            onPress={closeMessageOverlay}
+            onPress={() => {
+              if (reactionPickerVisible) {
+                setReactionPickerVisible(false);
+                return;
+              }
+              closeMessageOverlay();
+            }}
           >
             {hasNativeBlurSupport ? (
               <BlurView
@@ -8463,14 +8648,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 <Pressable
                   style={styles.messageOverlayReactionMoreBtn}
                   onPress={() => {
-                    setMessageOverlayAnchor((previous) =>
-                      previous
-                        ? {
-                            ...previous,
-                            showReactions: false,
-                          }
-                        : previous
-                    );
+                    setReactionCategory('recent');
+                    setReactionSearch('');
+                    setReactionPickerVisible(true);
                   }}
                   accessibilityLabel={pt.more_actions}
                 >
@@ -8480,32 +8660,38 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             ) : null}
 
             {messageActionTarget ? (
-              <View style={styles.messageOverlaySelectedWrap}>
-                <MessageBubble
-                  msg={messageActionTarget}
-                  fromMe={
-                    messageActionTarget.type_user !== ETypeUserChat.client
-                  }
-                  chatInfo={chatInfo}
-                  currentUserName={currentUserName}
-                  highlighted
-                  canInteract={false}
-                  onOpenActions={() => {
-                    // noop
-                  }}
-                  onPressQuoted={null}
-                  resolvedContactDisplay={
-                    resolvedContactCards[messageActionTarget.message_id]
-                  }
-                  audioCtrl={audioCtrl}
-                  onOpenImage={openImageViewer}
-                  onOpenVideo={openVideoViewer}
-                  onTemplateButtonPress={handleTemplateButtonPress}
-                  disableTemplateButtons={!canComposeInChat || sending}
-                  forceCollapsedLongText
-                  obfuscateContent={shouldObfuscateContent}
-                />
-              </View>
+              <ScrollView
+                style={styles.messageOverlaySelectedScroll}
+                contentContainerStyle={styles.messageOverlayContentScrollInner}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.messageOverlaySelectedWrap}>
+                  <MessageBubble
+                    msg={messageActionTarget}
+                    fromMe={
+                      messageActionTarget.type_user !== ETypeUserChat.client
+                    }
+                    chatInfo={chatInfo}
+                    currentUserName={currentUserName}
+                    highlighted
+                    canInteract={false}
+                    onOpenActions={() => {
+                      // noop
+                    }}
+                    onPressQuoted={null}
+                    resolvedContactDisplay={
+                      resolvedContactCards[messageActionTarget.message_id]
+                    }
+                    audioCtrl={audioCtrl}
+                    onOpenImage={openImageViewer}
+                    onOpenVideo={openVideoViewer}
+                    onTemplateButtonPress={handleTemplateButtonPress}
+                    disableTemplateButtons={!canComposeInChat || sending}
+                    forceCollapsedLongText
+                    obfuscateContent={shouldObfuscateContent}
+                  />
+                </View>
+              </ScrollView>
             ) : null}
 
             <View style={styles.messageOverlayMenu}>
@@ -8531,6 +8717,76 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 </Pressable>
               ))}
             </View>
+
+            {reactionPickerVisible ? (
+              <View style={styles.reactionPickerOverlayInline}>
+                <View style={styles.reactionPickerCard}>
+                  <View style={styles.reactionPickerHandle} />
+
+                  <View style={styles.reactionPickerSearchWrap}>
+                    <Ionicons
+                      name="search-outline"
+                      size={22}
+                      color={colors.grey500}
+                    />
+                    <TextInput
+                      value={reactionSearch}
+                      onChangeText={setReactionSearch}
+                      placeholder="Pesquisar emoji"
+                      placeholderTextColor={colors.grey500}
+                      style={styles.reactionPickerSearchInput}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
+
+                  <ScrollView
+                    style={styles.reactionPickerEmojiScroll}
+                    contentContainerStyle={styles.reactionPickerEmojiGrid}
+                    showsVerticalScrollIndicator
+                  >
+                    {reactionEmojisByCategory.map((emoji, index) => (
+                      <Pressable
+                        key={`reaction-picker-${reactionCategory}-${emoji}-${index}`}
+                        style={styles.reactionPickerEmojiBtn}
+                        onPress={() => {
+                          setReactionPickerVisible(false);
+                          void handleQuickReaction(emoji);
+                        }}
+                      >
+                        <Text style={styles.reactionPickerEmojiText}>
+                          {emoji}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+
+                  <View style={styles.reactionPickerTabs}>
+                    {reactionCategoryConfigs.map((category) => (
+                      <Pressable
+                        key={`reaction-category-${category.key}`}
+                        style={[
+                          styles.reactionPickerTab,
+                          reactionCategory === category.key &&
+                            styles.reactionPickerTabActive,
+                        ]}
+                        onPress={() => setReactionCategory(category.key)}
+                      >
+                        <Ionicons
+                          name={category.icon}
+                          size={21}
+                          color={
+                            reactionCategory === category.key
+                              ? colors.primary
+                              : colors.grey600
+                          }
+                        />
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -10294,9 +10550,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     borderRadius: 999,
-    paddingVertical: 2,
+    paddingVertical: 3,
     paddingHorizontal: 8,
-    minHeight: 22,
+    minHeight: 26,
     backgroundColor: '#FFFFFF',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(47, 43, 61, 0.14)',
@@ -10305,13 +10561,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    minHeight: 18,
   },
   reactionSummaryEmoji: {
-    fontSize: 14,
-    lineHeight: 14,
+    fontSize: 15,
+    lineHeight: 20,
+    textAlignVertical: 'center',
   },
   reactionSummaryCount: {
     fontSize: 11,
+    lineHeight: 14,
     fontWeight: '600',
     color: 'rgba(47, 43, 61, 0.72)',
   },
@@ -11557,15 +11816,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   messageOverlayReactionBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
   messageOverlayReactionEmoji: {
     fontSize: 26,
-    lineHeight: 26,
+    lineHeight: 31,
+    marginTop: -1,
   },
   messageOverlayReactionMoreBtn: {
     width: 30,
@@ -11595,10 +11855,102 @@ const styles = StyleSheet.create({
     width: '92%',
     maxWidth: 360,
     alignItems: 'center',
+    maxHeight: '92%',
+  },
+  messageOverlaySelectedScroll: {
+    width: '100%',
+    maxHeight: '48%',
+  },
+  messageOverlayContentScrollInner: {
+    width: '100%',
+    alignItems: 'center',
+    paddingBottom: 4,
   },
   messageOverlaySelectedWrap: {
     width: '100%',
     alignItems: 'center',
+  },
+  reactionPickerOverlayInline: {
+    width: '100%',
+    marginTop: 10,
+  },
+  reactionPickerCard: {
+    width: '100%',
+    maxWidth: 360,
+    maxHeight: 430,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 16 : 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.16)',
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 8,
+  },
+  reactionPickerHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: colors.grey300,
+    alignSelf: 'center',
+    marginBottom: 10,
+  },
+  reactionPickerSearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: colors.grey100,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  reactionPickerSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.onSurface,
+    paddingVertical: 0,
+  },
+  reactionPickerEmojiScroll: {
+    maxHeight: 270,
+  },
+  reactionPickerEmojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingBottom: 16,
+  },
+  reactionPickerEmojiBtn: {
+    width: '14.2857%',
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactionPickerEmojiText: {
+    fontSize: 34,
+    lineHeight: 36,
+  },
+  reactionPickerTabs: {
+    marginTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.grey300,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingTop: 8,
+  },
+  reactionPickerTab: {
+    minWidth: 44,
+    minHeight: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactionPickerTabActive: {
+    backgroundColor: 'rgba(40, 101, 183, 0.12)',
   },
   messageOverlayMenuItem: {
     minHeight: 46,
