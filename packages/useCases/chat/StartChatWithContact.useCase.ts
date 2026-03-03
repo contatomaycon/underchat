@@ -226,6 +226,23 @@ export class StartChatWithContactUseCase {
       throw new Error(t('phone_number_not_valid_on_whatsapp'));
     }
 
+    if (validationResult.phone?.endsWith('@lid')) {
+      if (
+        contact.is_valided === true &&
+        fallbackPhoneDdi &&
+        sensitiveData.phone
+      ) {
+        return this.buildContactData(
+          contact,
+          sensitiveData.phone,
+          fallbackPhoneDdi,
+          sensitiveData.email
+        );
+      }
+      await this.contactService.updateContactIsValided(contactId, false);
+      throw new Error(t('phone_number_not_valid_on_whatsapp'));
+    }
+
     let normalizedPhone = sensitiveData.phone;
     let normalizedPhoneDdi = phoneDdiToValidate;
 
