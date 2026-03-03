@@ -41,7 +41,7 @@ export class WwebjsMessageMediaService {
   async sendImage(
     jid: string,
     image: IMediaInput,
-    args?: { caption?: string },
+    args?: { caption?: string; extra?: Record<string, unknown> },
     quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
@@ -51,6 +51,7 @@ export class WwebjsMessageMediaService {
       caption: args?.caption,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
+      extra: args?.extra,
     };
     const msg = await this.helpers.sendMessage(jid, media, options);
 
@@ -60,7 +61,11 @@ export class WwebjsMessageMediaService {
   async sendVideo(
     jid: string,
     video: IMediaInput,
-    args?: { caption?: string; seconds?: number },
+    args?: {
+      caption?: string;
+      seconds?: number;
+      extra?: Record<string, unknown>;
+    },
     quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
@@ -70,6 +75,7 @@ export class WwebjsMessageMediaService {
       caption: args?.caption,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
+      extra: args?.extra,
     };
     const msg = await this.helpers.sendMessage(jid, media, options);
 
@@ -85,6 +91,7 @@ export class WwebjsMessageMediaService {
       mimetype?: string;
       viewOnce?: boolean;
       waveform?: Uint8Array;
+      extra?: Record<string, unknown>;
     },
     quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
@@ -96,6 +103,7 @@ export class WwebjsMessageMediaService {
       isViewOnce: args?.viewOnce,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
+      extra: args?.extra,
     };
 
     const msg = await this.helpers.sendMessage(jid, media, options);
@@ -106,7 +114,8 @@ export class WwebjsMessageMediaService {
   async sendSticker(
     jid: string,
     sticker: IMediaInput,
-    quoted?: { key: IWwebjsQuotedKeyInput }
+    quoted?: { key: IWwebjsQuotedKeyInput },
+    extra?: Record<string, unknown>
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(sticker);
@@ -115,6 +124,7 @@ export class WwebjsMessageMediaService {
       sendMediaAsSticker: true,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
+      extra,
     };
     const msg = await this.helpers.sendMessage(jid, media, options);
     return messageToWaLike(msg ?? undefined);
@@ -123,7 +133,12 @@ export class WwebjsMessageMediaService {
   async sendDocument(
     jid: string,
     document: IMediaInput,
-    args: { mimetype: string; fileName?: string; caption?: string },
+    args: {
+      mimetype: string;
+      fileName?: string;
+      caption?: string;
+      extra?: Record<string, unknown>;
+    },
     quoted?: { key: IWwebjsQuotedKeyInput }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
@@ -134,6 +149,7 @@ export class WwebjsMessageMediaService {
       caption: args.caption,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
+      extra: args.extra,
     };
     const msg = await this.helpers.sendMessage(jid, media, options);
 

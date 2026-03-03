@@ -17,6 +17,7 @@ export class WwebjsMessageEditDeleteService {
   private readonly FORWARD_POLL_TIMEOUT_MS = 8000;
   private readonly FORWARD_POLL_INTERVAL_MS = 350;
   private readonly FORWARD_POLL_FETCH_LIMIT = 20;
+  private readonly FORWARD_SOURCE_SCAN_FETCH_LIMIT = 100;
   private readonly FORWARD_TIMESTAMP_FUZZ_MS = 15000;
 
   constructor(
@@ -47,26 +48,8 @@ export class WwebjsMessageEditDeleteService {
 
     const parsed = parseSerializedMessageId(rawId);
     const stanzaId = parsed?.stanzaId ?? rawId;
-    const fromMeCandidates =
-      typeof key.fromMe === 'boolean'
-        ? [key.fromMe]
-        : typeof key.from_me === 'boolean'
-          ? [key.from_me]
-          : typeof parsed?.fromMe === 'boolean'
-            ? [parsed.fromMe]
-            : [false, true];
-
-    const remoteCandidates = new Set<string>();
-    const directRemote = (key.remoteJid ?? key.remote_jid ?? '').trim();
-    if (directRemote) {
-      remoteCandidates.add(directRemote);
-    }
-    if (chatJid?.trim()) {
-      remoteCandidates.add(chatJid.trim());
-    }
-    if (parsed?.remoteJid?.trim()) {
-      remoteCandidates.add(parsed.remoteJid.trim());
-    }
+    const fromMeCandidates = this.buildFromMeCandidates(key, parsed);
+    const remoteCandidates = this.buildRemoteCandidates(key, chatJid, parsed);
 
     const candidates = new Set<string>();
     if (parsed) {
@@ -81,6 +64,191 @@ export class WwebjsMessageEditDeleteService {
 
     candidates.add(rawId);
     return Array.from(candidates);
+  }
+
+  private buildJidAliases(jid: string): string[] {
+    const normalized = jid.trim();
+    if (!normalized) {
+      return [];
+    }
+
+    const aliases = new Set<string>([normalized]);
+    if (normalized.endsWith('@s.whatsapp.net')) {
+      aliases.add(normalized.replace(/@s\.whatsapp\.net$/, '@c.us'));
+    }
+
+    if (normalized.endsWith('@c.us')) {
+      aliases.add(normalized.replace(/@c\.us$/, '@s.whatsapp.net'));
+    }
+
+    return Array.from(aliases);
+  }
+
+  private buildFromMeCandidates(
+    key: IMessageKeyInput,
+    parsed: ReturnType<typeof parseSerializedMessageId>
+  ): boolean[] {
+    if (typeof key.fromMe === 'boolean') {
+      return [key.fromMe];
+    }
+
+    if (typeof key.from_me === 'boolean') {
+      return [key.from_me];
+    }
+
+    if (typeof parsed?.fromMe === 'boolean') {
+      return [parsed.fromMe];
+    }
+
+    return [false, true];
+  }
+
+  private buildRemoteCandidates(
+    key: IMessageKeyInput,
+    chatJid: string | undefined,
+    parsed: ReturnType<typeof parseSerializedMessageId>
+  ): string[] {
+    const directRemote = (key.remoteJid ?? key.remote_jid ?? '').trim();
+    const rawCandidates = [
+      directRemote,
+      chatJid?.trim() ?? '',
+      parsed?.remoteJid?.trim() ?? '',
+    ].filter(Boolean);
+
+    const remoteCandidates = new Set<string>();
+    for (const rawCandidate of rawCandidates) {
+      for (const alias of this.buildJidAliases(rawCandidate)) {
+        remoteCandidates.add(alias);
+      }
+    }
+
+    return Array.from(remoteCandidates);
+  }
+
+  private extractStanzaIdFromMessage(message: unknown): string | undefined {
+    const serialized = this.extractSerializedIdFromMessage(message);
+    const parsed = serialized ? parseSerializedMessageId(serialized) : null;
+    if (parsed?.stanzaId) {
+      return parsed.stanzaId;
+    }
+
+    const idValue = (message as { id?: unknown })?.id;
+    if (
+      typeof idValue === 'object' &&
+      idValue !== null &&
+      'id' in (idValue as object)
+    ) {
+      const stanzaId = (idValue as { id?: unknown }).id;
+      if (typeof stanzaId === 'string' && stanzaId.trim()) {
+        return stanzaId.trim();
+      }
+    }
+
+    return undefined;
+  }
+
+  private extractFromMeFromMessage(message: unknown): boolean | undefined {
+    const serialized = this.extractSerializedIdFromMessage(message);
+    const parsed = serialized ? parseSerializedMessageId(serialized) : null;
+    if (typeof parsed?.fromMe === 'boolean') {
+      return parsed.fromMe;
+    }
+
+    const directFromMe = (message as { fromMe?: unknown })?.fromMe;
+    if (typeof directFromMe === 'boolean') {
+      return directFromMe;
+    }
+
+    const idValue = (message as { id?: unknown })?.id;
+    if (
+      typeof idValue === 'object' &&
+      idValue !== null &&
+      'fromMe' in (idValue as object)
+    ) {
+      const idFromMe = (idValue as { fromMe?: unknown }).fromMe;
+      if (typeof idFromMe === 'boolean') {
+        return idFromMe;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async resolveMessageByChatScan(
+    key: IMessageKeyInput,
+    chatJid: string | undefined,
+    serializedCandidates: string[]
+  ): Promise<any | null> {
+    const client = this.helpers.getClient();
+    const rawId = key.id?.trim();
+    if (!rawId) {
+      return null;
+    }
+
+    const parsed = parseSerializedMessageId(rawId);
+    const stanzaId = parsed?.stanzaId ?? rawId;
+    if (!stanzaId) {
+      return null;
+    }
+
+    const fromMeCandidates = new Set(this.buildFromMeCandidates(key, parsed));
+    const remoteCandidates = this.buildRemoteCandidates(key, chatJid, parsed);
+    const serializedSet = new Set(serializedCandidates);
+    serializedSet.add(rawId);
+
+    for (const remoteCandidate of remoteCandidates) {
+      let chatMessages: any[] = [];
+
+      try {
+        const chat = await client.getChatById(remoteCandidate);
+        if (
+          !chat ||
+          typeof (chat as { fetchMessages?: unknown }).fetchMessages !==
+            'function'
+        ) {
+          continue;
+        }
+
+        chatMessages = await (
+          chat as {
+            fetchMessages: (searchOptions: {
+              limit?: number;
+              fromMe?: boolean;
+            }) => Promise<any[]>;
+          }
+        ).fetchMessages({
+          limit: this.FORWARD_SOURCE_SCAN_FETCH_LIMIT,
+        });
+      } catch {
+        continue;
+      }
+
+      if (!Array.isArray(chatMessages) || chatMessages.length === 0) {
+        continue;
+      }
+
+      for (const chatMessage of chatMessages) {
+        const serialized = this.extractSerializedIdFromMessage(chatMessage);
+        if (serialized && serializedSet.has(serialized)) {
+          return chatMessage;
+        }
+
+        const messageStanzaId = this.extractStanzaIdFromMessage(chatMessage);
+        if (!messageStanzaId || messageStanzaId !== stanzaId) {
+          continue;
+        }
+
+        const messageFromMe = this.extractFromMeFromMessage(chatMessage);
+        if (
+          messageFromMe === undefined ||
+          fromMeCandidates.has(messageFromMe)
+        ) {
+          return chatMessage;
+        }
+      }
+    }
+
+    return null;
   }
 
   private async resolveMessageByKey(
@@ -101,6 +269,15 @@ export class WwebjsMessageEditDeleteService {
           return message;
         }
       } catch {}
+    }
+
+    const scannedMessage = await this.resolveMessageByChatScan(
+      key,
+      chatJid,
+      candidates
+    );
+    if (scannedMessage) {
+      return scannedMessage;
     }
 
     return null;

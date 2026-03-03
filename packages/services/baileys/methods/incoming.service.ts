@@ -314,6 +314,16 @@ export class BaileysIncomingMessageService {
     } catch {}
   }
 
+  async cacheOutgoingForwardableMessage(
+    message: WAMessage | proto.WebMessageInfo
+  ): Promise<void> {
+    if (!message?.key || !message?.message) {
+      return;
+    }
+
+    await this.cacheMessage(message as WAMessage, { isRetry: true });
+  }
+
   async getCachedMessage(
     key: WAMessageKey
   ): Promise<proto.IMessage | undefined> {

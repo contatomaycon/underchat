@@ -229,6 +229,44 @@ export class ChatMessageService {
     return data;
   }
 
+  public async getMessageKeyByMessageId(
+    accountId: string,
+    messageId: string
+  ): Promise<IChatMessage['message_key'] | null> {
+    const normalizedMessageId = messageId?.trim();
+    if (!normalizedMessageId) {
+      return null;
+    }
+
+    const queryElastic = {
+      size: 1,
+      query: {
+        bool: {
+          filter: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: { 'account.id': accountId },
+                },
+              },
+            },
+            { term: { message_id: normalizedMessageId } },
+          ],
+        },
+      },
+      sort: [{ date: { order: 'desc' } }],
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    const message = result?.hits.hits[0]?._source as IChatMessage | null;
+    return message?.message_key ?? null;
+  }
+
   private centrifugoChatPublish(dataPublish: IChatMessage): Promise<any> {
     return this.centrifugoService.publishSub(
       chatAccountCentrifugo(dataPublish.account.id),

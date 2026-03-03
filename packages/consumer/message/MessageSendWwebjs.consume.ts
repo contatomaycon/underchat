@@ -32,6 +32,8 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { webcrypto } from 'node:crypto';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
+import { ChatMessageService } from '@core/services/chatMessage.service';
+import { buildForwardExtraOptions } from '@core/services/wwebjs/util/buildForwardExtraOptions';
 
 interface IPartitionCommitState {
   nextContiguousOffset: number | null;
@@ -50,6 +52,13 @@ interface IQueuedEnvelope {
   chatId: string | null;
 }
 
+type ForwardFailReason =
+  | 'missing_source_key'
+  | 'source_key_incomplete'
+  | 'source_not_found_cache_or_store'
+  | 'native_forward_exception'
+  | 'fallback_handler_unavailable';
+
 interface INonRetryableError extends Error {
   readonly nonRetryable: true;
 }
@@ -63,6 +72,8 @@ export class MessageSendWwebjsConsume {
   private readonly RETRY_BASE_MS = 500;
   private readonly RETRY_MAX_MS = 8000;
   private readonly DLQ_PUBLISH_RETRY_DELAY_MS = 5000;
+  private readonly FORWARD_SOURCE_KEY_MAX_WAIT_MS = 4000;
+  private readonly FORWARD_SOURCE_KEY_POLL_INTERVAL_MS = 300;
   private readonly SYSTEM_QUEUE_KEY = 'system';
   private readonly REDRIVE_COUNT_FIELD = '__wwebjs_redrive_count';
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
@@ -93,6 +104,8 @@ export class MessageSendWwebjsConsume {
     private readonly wwebjsMessageStatusStoriesService: WwebjsMessageStatusStoriesService,
     @inject(WwebjsProfileService)
     private readonly wwebjsProfileService: WwebjsProfileService,
+    @inject(ChatMessageService)
+    private readonly chatMessageService: ChatMessageService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
@@ -769,12 +782,104 @@ export class MessageSendWwebjsConsume {
     };
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private hasForwardSourceKeyId(data: IChatMessage): boolean {
+    return !!data.content?.forward?.source_message_key?.id?.trim();
+  }
+
+  private hasForwardSourceRemote(data: IChatMessage): boolean {
+    const sourceKey = data.content?.forward?.source_message_key;
+    if (sourceKey?.remote_jid?.trim() || sourceKey?.remote_jid_alt?.trim()) {
+      return true;
+    }
+
+    const parsed = parseSerializedMessageId(sourceKey?.id ?? null);
+    return !!parsed?.remoteJid?.trim();
+  }
+
+  private hasUsableForwardSourceKey(data: IChatMessage): boolean {
+    return (
+      this.hasForwardSourceKeyId(data) && this.hasForwardSourceRemote(data)
+    );
+  }
+
+  private resolveMissingSourceReason(data: IChatMessage): ForwardFailReason {
+    if (!this.hasForwardSourceKeyId(data)) {
+      return 'missing_source_key';
+    }
+
+    return 'source_key_incomplete';
+  }
+
+  private mergeForwardSourceKey(
+    data: IChatMessage,
+    sourceKey: NonNullable<IChatMessage['message_key']>
+  ): void {
+    if (!data.content?.forward) {
+      return;
+    }
+
+    const currentKey = data.content.forward.source_message_key ?? null;
+    data.content.forward.source_message_key = {
+      ...(currentKey ?? { is_view_once: false }),
+      ...sourceKey,
+      is_view_once:
+        sourceKey.is_view_once ??
+        currentKey?.is_view_once ??
+        data.message_key?.is_view_once ??
+        false,
+    };
+  }
+
+  private async hydrateForwardSourceKey(data: IChatMessage): Promise<void> {
+    if (this.hasUsableForwardSourceKey(data)) {
+      return;
+    }
+
+    const accountId = data.account?.id?.trim();
+    const sourceMessageId = data.content?.forward?.source_message_id?.trim();
+    if (!accountId || !sourceMessageId) {
+      return;
+    }
+
+    const deadline = Date.now() + this.FORWARD_SOURCE_KEY_MAX_WAIT_MS;
+    while (Date.now() <= deadline) {
+      const sourceKey = await this.chatMessageService.getMessageKeyByMessageId(
+        accountId,
+        sourceMessageId
+      );
+
+      if (sourceKey) {
+        this.mergeForwardSourceKey(
+          data,
+          sourceKey as NonNullable<IChatMessage['message_key']>
+        );
+      }
+
+      if (this.hasUsableForwardSourceKey(data)) {
+        return;
+      }
+
+      if (Date.now() >= deadline) {
+        return;
+      }
+
+      await this.sleep(this.FORWARD_SOURCE_KEY_POLL_INTERVAL_MS);
+    }
+  }
+
   private logForwardResult(
     data: IChatMessage,
     path: 'native' | 'fallback',
     result: 'success' | 'failed',
-    error?: unknown,
-    nativeResolution?: 'direct' | 'snapshot_poll' | 'unresolved'
+    options?: {
+      reason?: ForwardFailReason;
+      error?: unknown;
+      nativeResolution?: 'direct' | 'snapshot_poll' | 'unresolved';
+    }
   ): void {
     console.info('[MessageSendWwebjs] Forward processed', {
       source_message_id: data.content?.forward?.source_message_id ?? null,
@@ -782,12 +887,13 @@ export class MessageSendWwebjsConsume {
       provider: 'wwebjs',
       path,
       result,
-      native_resolution: nativeResolution,
+      reason: options?.reason,
+      native_resolution: options?.nativeResolution,
       error:
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
+        options?.error instanceof Error
+          ? options.error.message
+          : typeof options?.error === 'string'
+            ? options.error
             : undefined,
     });
   }
@@ -823,7 +929,8 @@ export class MessageSendWwebjsConsume {
     chatId: string,
     currentType: EMessageType | undefined,
     lastType: EMessageType | undefined,
-    hasQuoted: boolean
+    hasQuoted: boolean,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (
       await this.processTextOrSystemMessage(
@@ -831,12 +938,20 @@ export class MessageSendWwebjsConsume {
         jid,
         chatId,
         currentType,
-        hasQuoted
+        hasQuoted,
+        forwardExtra
       )
     )
       return true;
     if (
-      await this.processImageMessage(data, jid, chatId, currentType, lastType)
+      await this.processImageMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        lastType,
+        forwardExtra
+      )
     )
       return true;
     if (
@@ -845,27 +960,73 @@ export class MessageSendWwebjsConsume {
         jid,
         chatId,
         currentType,
-        lastType
+        lastType,
+        forwardExtra
       )
     )
       return true;
     if (
-      await this.processAudioMessage(data, jid, chatId, currentType, lastType)
+      await this.processAudioMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        lastType,
+        forwardExtra
+      )
     )
       return true;
     if (
-      await this.processVideoMessage(data, jid, chatId, currentType, lastType)
+      await this.processVideoMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        lastType,
+        forwardExtra
+      )
     )
       return true;
     if (
-      await this.processStickerMessage(data, jid, chatId, currentType, lastType)
+      await this.processStickerMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        lastType,
+        forwardExtra
+      )
     )
       return true;
-    if (await this.processLocationMessage(data, jid, chatId, currentType))
+    if (
+      await this.processLocationMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        forwardExtra
+      )
+    )
       return true;
-    if (await this.processContactCardMessage(data, jid, chatId, currentType))
+    if (
+      await this.processContactCardMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        forwardExtra
+      )
+    )
       return true;
-    if (await this.processContactsMessage(data, jid, chatId, currentType))
+    if (
+      await this.processContactsMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        forwardExtra
+      )
+    )
       return true;
 
     return false;
@@ -883,6 +1044,8 @@ export class MessageSendWwebjsConsume {
       return false;
     }
 
+    await this.hydrateForwardSourceKey(data);
+
     const sourceKey = this.buildForwardSourceKey(data);
 
     if (sourceKey) {
@@ -899,40 +1062,43 @@ export class MessageSendWwebjsConsume {
           if (currentType) {
             this.lastMessageTypeByChatId.set(chatId, currentType);
           }
-          this.logForwardResult(
-            data,
-            'native',
-            'success',
-            undefined,
-            nativeResult.resolution_path
-          );
+          this.logForwardResult(data, 'native', 'success', {
+            nativeResolution: nativeResult.resolution_path,
+          });
           return true;
         }
-        this.logForwardResult(
-          data,
-          'native',
-          'failed',
-          nativeResult.error,
-          nativeResult.resolution_path
-        );
+        this.logForwardResult(data, 'native', 'failed', {
+          reason: 'source_not_found_cache_or_store',
+          error: nativeResult.error,
+          nativeResolution: nativeResult.resolution_path,
+        });
       } catch (error) {
-        this.logForwardResult(data, 'native', 'failed', error);
+        this.logForwardResult(data, 'native', 'failed', {
+          reason: 'native_forward_exception',
+          error,
+        });
       }
     } else {
-      this.logForwardResult(data, 'native', 'failed');
+      this.logForwardResult(data, 'native', 'failed', {
+        reason: this.resolveMissingSourceReason(data),
+      });
     }
 
+    const forwardExtra = buildForwardExtraOptions(data);
     const fallbackResult = await this.processForwardFallback(
       data,
       jid,
       chatId,
       currentType,
       lastType,
-      hasQuoted
+      hasQuoted,
+      forwardExtra
     );
 
     if (!fallbackResult) {
-      this.logForwardResult(data, 'fallback', 'failed');
+      this.logForwardResult(data, 'fallback', 'failed', {
+        reason: 'fallback_handler_unavailable',
+      });
       throw new Error('Failed to resolve forward fallback handler');
     }
 
@@ -1012,7 +1178,8 @@ export class MessageSendWwebjsConsume {
     jid: string,
     chatId: string,
     currentType: EMessageType | undefined,
-    hasQuoted: boolean
+    hasQuoted: boolean,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (
       currentType !== EMessageType.text &&
@@ -1065,7 +1232,8 @@ export class MessageSendWwebjsConsume {
       const result = await this.wwebjsMessageTextService.sendTextQuoted(
         jid,
         data.content?.message ?? '',
-        quotedKey
+        quotedKey,
+        { extra: forwardExtra }
       );
       if (result) await this.pushUpdate({ message: result, data });
       this.lastMessageTypeByChatId.set(chatId, EMessageType.text);
@@ -1086,6 +1254,7 @@ export class MessageSendWwebjsConsume {
           title?: string;
           description?: string;
         } | null,
+        extra: forwardExtra,
       }
     );
     if (result) await this.pushUpdate({ message: result, data });
@@ -1098,7 +1267,8 @@ export class MessageSendWwebjsConsume {
     jid: string,
     chatId: string,
     currentType: EMessageType | undefined,
-    lastType: EMessageType | undefined
+    lastType: EMessageType | undefined,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (currentType !== EMessageType.image || !data.content?.image?.url)
       return false;
@@ -1106,7 +1276,10 @@ export class MessageSendWwebjsConsume {
     const result = await this.wwebjsMessageMediaService.sendImage(
       jid,
       { url: data.content.image.url },
-      { caption: data.content.image.caption ?? undefined },
+      {
+        caption: data.content.image.caption ?? undefined,
+        extra: forwardExtra,
+      },
       this.getQuotedKey(data)
     );
     if (result) await this.pushUpdate({ message: result, data });
@@ -1119,7 +1292,8 @@ export class MessageSendWwebjsConsume {
     jid: string,
     chatId: string,
     currentType: EMessageType | undefined,
-    lastType: EMessageType | undefined
+    lastType: EMessageType | undefined,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (currentType !== EMessageType.document || !data.content?.document?.url)
       return false;
@@ -1131,6 +1305,7 @@ export class MessageSendWwebjsConsume {
         mimetype: data.content.document.mimetype ?? 'application/octet-stream',
         fileName: data.content.document.name ?? undefined,
         caption: data.content?.message ?? undefined,
+        extra: forwardExtra,
       },
       this.getQuotedKey(data)
     );
@@ -1144,7 +1319,8 @@ export class MessageSendWwebjsConsume {
     jid: string,
     chatId: string,
     currentType: EMessageType | undefined,
-    lastType: EMessageType | undefined
+    lastType: EMessageType | undefined,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (currentType !== EMessageType.audio || !data.content?.audio?.url)
       return false;
@@ -1165,6 +1341,7 @@ export class MessageSendWwebjsConsume {
           data.content.audio.view_once ??
           undefined,
         waveform,
+        extra: forwardExtra,
       },
       this.getQuotedKey(data)
     );
@@ -1178,7 +1355,8 @@ export class MessageSendWwebjsConsume {
     jid: string,
     chatId: string,
     currentType: EMessageType | undefined,
-    lastType: EMessageType | undefined
+    lastType: EMessageType | undefined,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (
       (currentType !== EMessageType.video &&
@@ -1194,6 +1372,7 @@ export class MessageSendWwebjsConsume {
         caption:
           data.content.video.caption ?? data.content?.message ?? undefined,
         seconds: data.content.video.duration ?? undefined,
+        extra: forwardExtra,
       },
       this.getQuotedKey(data)
     );
@@ -1207,7 +1386,8 @@ export class MessageSendWwebjsConsume {
     jid: string,
     chatId: string,
     currentType: EMessageType | undefined,
-    lastType: EMessageType | undefined
+    lastType: EMessageType | undefined,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (currentType !== EMessageType.sticker || !data.content?.sticker?.url)
       return false;
@@ -1215,7 +1395,8 @@ export class MessageSendWwebjsConsume {
     const result = await this.wwebjsMessageMediaService.sendSticker(
       jid,
       { url: data.content.sticker.url },
-      this.getQuotedKey(data)
+      this.getQuotedKey(data),
+      forwardExtra
     );
     if (result) await this.pushUpdate({ message: result, data });
     this.lastMessageTypeByChatId.set(chatId, EMessageType.sticker);
@@ -1226,7 +1407,8 @@ export class MessageSendWwebjsConsume {
     data: IChatMessage,
     jid: string,
     chatId: string,
-    currentType: EMessageType | undefined
+    currentType: EMessageType | undefined,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (currentType !== EMessageType.location || !data.content?.location)
       return false;
@@ -1239,7 +1421,8 @@ export class MessageSendWwebjsConsume {
         name: loc.name ?? undefined,
         address: loc.address ?? undefined,
       },
-      this.getQuotedKey(data)
+      this.getQuotedKey(data),
+      forwardExtra
     );
     if (result) await this.pushUpdate({ message: result, data });
     this.lastMessageTypeByChatId.set(chatId, EMessageType.location);
@@ -1250,7 +1433,8 @@ export class MessageSendWwebjsConsume {
     data: IChatMessage,
     jid: string,
     chatId: string,
-    currentType: EMessageType | undefined
+    currentType: EMessageType | undefined,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (currentType !== EMessageType.contact_card || !data.content?.contact)
       return false;
@@ -1271,7 +1455,8 @@ export class MessageSendWwebjsConsume {
       await this.wwebjsMessageLocationContactService.sendContactCard(
         jid,
         vcard,
-        this.getQuotedKey(data)
+        this.getQuotedKey(data),
+        forwardExtra
       );
     if (result) await this.pushUpdate({ message: result, data });
     this.lastMessageTypeByChatId.set(chatId, EMessageType.contact_card);
@@ -1282,7 +1467,8 @@ export class MessageSendWwebjsConsume {
     data: IChatMessage,
     jid: string,
     chatId: string,
-    currentType: EMessageType | undefined
+    currentType: EMessageType | undefined,
+    forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (
       currentType !== EMessageType.contacts ||
@@ -1308,7 +1494,8 @@ export class MessageSendWwebjsConsume {
       await this.wwebjsMessageLocationContactService.sendContactCard(
         jid,
         vcardLines.join('\n'),
-        this.getQuotedKey(data)
+        this.getQuotedKey(data),
+        forwardExtra
       );
 
     if (result) await this.pushUpdate({ message: result, data });

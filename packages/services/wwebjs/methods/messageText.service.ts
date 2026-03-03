@@ -18,10 +18,19 @@ export class WwebjsMessageTextService {
   async sendText(
     jid: string,
     text: string,
-    options?: { linkPreview?: IWAUrlInfo | null; mentions?: string[] }
+    options?: {
+      linkPreview?: IWAUrlInfo | null;
+      mentions?: string[];
+      extra?: Record<string, unknown>;
+    }
   ): Promise<IMessageKeyResponse | undefined> {
-    const sendOptions: { linkPreview?: boolean; mentions?: string[] } = {
+    const sendOptions: {
+      linkPreview?: boolean;
+      mentions?: string[];
+      extra?: Record<string, unknown>;
+    } = {
       linkPreview: true,
+      extra: options?.extra,
     };
     if (options?.mentions?.length) {
       sendOptions.mentions = options.mentions;
@@ -34,7 +43,8 @@ export class WwebjsMessageTextService {
   async sendTextQuoted(
     jid: string,
     text: string,
-    quoted: { key: IWwebjsQuotedKeyInput }
+    quoted: { key: IWwebjsQuotedKeyInput },
+    options?: { extra?: Record<string, unknown> }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const quotedMessageId =
@@ -43,6 +53,7 @@ export class WwebjsMessageTextService {
     const sendOptions = {
       quotedMessageId,
       ignoreQuoteErrors: false,
+      extra: options?.extra,
     };
     const msg = await this.helpers.sendMessage(jid, text, sendOptions);
 

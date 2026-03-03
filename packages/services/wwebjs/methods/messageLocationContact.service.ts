@@ -21,7 +21,8 @@ export class WwebjsMessageLocationContactService {
   async sendLocation(
     jid: string,
     location: IWALocationMessage,
-    quoted?: { key: IWwebjsQuotedKeyInput }
+    quoted?: { key: IWwebjsQuotedKeyInput },
+    extra?: Record<string, unknown>
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const quotedMessageId = quoted?.key?.id
@@ -40,6 +41,7 @@ export class WwebjsMessageLocationContactService {
     const options = {
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
+      extra,
     };
     const msg = await this.helpers.sendMessage(jid, loc, options);
 
@@ -49,7 +51,8 @@ export class WwebjsMessageLocationContactService {
   async sendContactCard(
     jid: string,
     vcard: string,
-    quoted?: { key: IWwebjsQuotedKeyInput }
+    quoted?: { key: IWwebjsQuotedKeyInput },
+    extra?: Record<string, unknown>
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const quotedMessageId = quoted?.key?.id
@@ -61,6 +64,7 @@ export class WwebjsMessageLocationContactService {
       parseVCards: true,
       quotedMessageId,
       ignoreQuoteErrors: quotedMessageId ? false : undefined,
+      extra,
     };
     const msg = await this.helpers.sendMessage(jid, vcard, options);
 

@@ -38,6 +38,7 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { ChatMessageService } from '@core/services/chatMessage.service';
 
 interface IPartitionCommitState {
   nextContiguousOffset: number | null;
@@ -56,6 +57,13 @@ interface IQueuedEnvelope {
   chatId: string | null;
 }
 
+type ForwardFailReason =
+  | 'missing_source_key'
+  | 'source_key_incomplete'
+  | 'source_not_found_cache_or_store'
+  | 'native_forward_exception'
+  | 'fallback_handler_unavailable';
+
 @singleton()
 export class MessageSendConsume {
   private consumer: KafkaConsumer | null = null;
@@ -65,6 +73,8 @@ export class MessageSendConsume {
   private readonly RETRY_BASE_MS = 500;
   private readonly RETRY_MAX_MS = 8000;
   private readonly DLQ_PUBLISH_RETRY_DELAY_MS = 5000;
+  private readonly FORWARD_SOURCE_KEY_MAX_WAIT_MS = 4000;
+  private readonly FORWARD_SOURCE_KEY_POLL_INTERVAL_MS = 300;
   private readonly SYSTEM_QUEUE_KEY = 'system';
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
     new Map();
@@ -96,6 +106,8 @@ export class MessageSendConsume {
     private readonly baileysProfileService: BaileysProfileService,
     @inject(BaileysIncomingMessageService)
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
+    @inject(ChatMessageService)
+    private readonly chatMessageService: ChatMessageService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
@@ -937,12 +949,104 @@ export class MessageSendConsume {
     return handlers[currentType] ?? null;
   }
 
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private hasForwardSourceKeyId(data: IChatMessage): boolean {
+    return !!data.content?.forward?.source_message_key?.id?.trim();
+  }
+
+  private hasForwardSourceRemote(data: IChatMessage): boolean {
+    const sourceKey = data.content?.forward?.source_message_key;
+    if (sourceKey?.remote_jid?.trim() || sourceKey?.remote_jid_alt?.trim()) {
+      return true;
+    }
+
+    const parsed = parseSerializedMessageId(sourceKey?.id ?? null);
+    return !!parsed?.remoteJid?.trim();
+  }
+
+  private hasUsableForwardSourceKey(data: IChatMessage): boolean {
+    return (
+      this.hasForwardSourceKeyId(data) && this.hasForwardSourceRemote(data)
+    );
+  }
+
+  private resolveMissingSourceReason(data: IChatMessage): ForwardFailReason {
+    if (!this.hasForwardSourceKeyId(data)) {
+      return 'missing_source_key';
+    }
+
+    return 'source_key_incomplete';
+  }
+
+  private mergeForwardSourceKey(
+    data: IChatMessage,
+    sourceKey: NonNullable<IChatMessage['message_key']>
+  ): void {
+    if (!data.content?.forward) {
+      return;
+    }
+
+    const currentKey = data.content.forward.source_message_key ?? null;
+    data.content.forward.source_message_key = {
+      ...(currentKey ?? { is_view_once: false }),
+      ...sourceKey,
+      is_view_once:
+        sourceKey.is_view_once ??
+        currentKey?.is_view_once ??
+        data.message_key?.is_view_once ??
+        false,
+    };
+  }
+
+  private async hydrateForwardSourceKey(data: IChatMessage): Promise<void> {
+    if (this.hasUsableForwardSourceKey(data)) {
+      return;
+    }
+
+    const accountId = data.account?.id?.trim();
+    const sourceMessageId = data.content?.forward?.source_message_id?.trim();
+    if (!accountId || !sourceMessageId) {
+      return;
+    }
+
+    const deadline = Date.now() + this.FORWARD_SOURCE_KEY_MAX_WAIT_MS;
+    while (Date.now() <= deadline) {
+      const sourceKey = await this.chatMessageService.getMessageKeyByMessageId(
+        accountId,
+        sourceMessageId
+      );
+
+      if (sourceKey) {
+        this.mergeForwardSourceKey(
+          data,
+          sourceKey as NonNullable<IChatMessage['message_key']>
+        );
+      }
+
+      if (this.hasUsableForwardSourceKey(data)) {
+        return;
+      }
+
+      if (Date.now() >= deadline) {
+        return;
+      }
+
+      await this.sleep(this.FORWARD_SOURCE_KEY_POLL_INTERVAL_MS);
+    }
+  }
+
   private logForwardResult(
     data: IChatMessage,
     path: 'native' | 'fallback',
     result: 'success' | 'failed',
-    error?: unknown,
-    nativeResolution?: 'cache'
+    options?: {
+      reason?: ForwardFailReason;
+      error?: unknown;
+      nativeResolution?: 'cache';
+    }
   ): void {
     console.info('[MessageSend] Forward processed', {
       source_message_id: data.content?.forward?.source_message_id ?? null,
@@ -950,12 +1054,13 @@ export class MessageSendConsume {
       provider: 'baileys',
       path,
       result,
-      native_resolution: nativeResolution,
+      reason: options?.reason,
+      native_resolution: options?.nativeResolution,
       error:
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
+        options?.error instanceof Error
+          ? options.error.message
+          : typeof options?.error === 'string'
+            ? options.error
             : undefined,
     });
   }
@@ -1038,10 +1143,17 @@ export class MessageSendConsume {
     data: IChatMessage,
     chatId: string,
     currentType: EMessageType | undefined
-  ): Promise<boolean> {
+  ): Promise<{
+    sent: boolean;
+    reason?: ForwardFailReason;
+    nativeResolution?: 'cache';
+  }> {
     const sourceKeys = this.resolveForwardSourceKeys(data);
     if (sourceKeys.length === 0) {
-      return false;
+      return {
+        sent: false,
+        reason: this.resolveMissingSourceReason(data),
+      };
     }
 
     for (const sourceKey of sourceKeys) {
@@ -1068,10 +1180,19 @@ export class MessageSendConsume {
       if (currentType) {
         this.lastMessageTypeByChatId.set(chatId, currentType);
       }
-      this.logForwardResult(data, 'native', 'success', undefined, 'cache');
-      return true;
+      this.logForwardResult(data, 'native', 'success', {
+        nativeResolution: 'cache',
+      });
+      return {
+        sent: true,
+        nativeResolution: 'cache',
+      };
     }
-    return false;
+
+    return {
+      sent: false,
+      reason: 'source_not_found_cache_or_store',
+    };
   }
 
   private async processForwardMessage(
@@ -1086,19 +1207,26 @@ export class MessageSendConsume {
       return false;
     }
 
+    await this.hydrateForwardSourceKey(data);
+
     try {
-      const nativeSent = await this.tryNativeForward(
+      const nativeForwardResult = await this.tryNativeForward(
         jid,
         data,
         chatId,
         currentType
       );
-      if (nativeSent) {
+      if (nativeForwardResult.sent) {
         return true;
       }
-      this.logForwardResult(data, 'native', 'failed');
+      this.logForwardResult(data, 'native', 'failed', {
+        reason: nativeForwardResult.reason,
+      });
     } catch (error) {
-      this.logForwardResult(data, 'native', 'failed', error);
+      this.logForwardResult(data, 'native', 'failed', {
+        reason: 'native_forward_exception',
+        error,
+      });
     }
 
     const fallbackHandler = this.selectMessageHandler(
@@ -1111,7 +1239,9 @@ export class MessageSendConsume {
     );
 
     if (!fallbackHandler) {
-      this.logForwardResult(data, 'fallback', 'failed');
+      this.logForwardResult(data, 'fallback', 'failed', {
+        reason: 'fallback_handler_unavailable',
+      });
       throw new Error('Failed to resolve forward fallback handler');
     }
 
@@ -2107,6 +2237,20 @@ export class MessageSendConsume {
   private async pushUpdate(input: IUpdateMessage): Promise<void> {
     const topic = this.kafkaServiceQueueService.updateMessage();
     await this.streamProducerService.send(topic, input);
+
+    const outgoingMessage = input.message as
+      | (WAMessage & { key?: unknown; message?: unknown })
+      | undefined;
+
+    if (!outgoingMessage?.key || !outgoingMessage?.message) {
+      return;
+    }
+
+    try {
+      await this.baileysIncomingMessageService.cacheOutgoingForwardableMessage(
+        outgoingMessage
+      );
+    } catch {}
   }
 
   private async sendExternalIdUpdate(
