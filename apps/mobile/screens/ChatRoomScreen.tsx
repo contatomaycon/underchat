@@ -214,11 +214,13 @@ type WhatsAppFormattedTextProps = {
   ellipsizeMode?: 'head' | 'middle' | 'tail' | 'clip';
   selectable?: boolean;
   onTextLayout?: (event: NativeSyntheticEvent<{ lines?: unknown[] }>) => void;
+  onLinkLongPress?: (url: string) => void;
 };
 
 function renderWhatsAppTextToken(
   token: WhatsAppTextToken,
-  tokenIndex: number
+  tokenIndex: number,
+  onLinkLongPress?: (url: string) => void
 ): ReactElement | string | Array<ReactElement | null> {
   if (token.type === 'newline') {
     return '\n';
@@ -248,6 +250,9 @@ function renderWhatsAppTextToken(
           onPress={() => {
             void openExternalTextUrl(url);
           }}
+          onLongPress={() => {
+            onLinkLongPress?.(url);
+          }}
           suppressHighlighting
         >
           {chunk.text}
@@ -273,6 +278,7 @@ function WhatsAppFormattedText({
   ellipsizeMode,
   selectable,
   onTextLayout,
+  onLinkLongPress,
 }: WhatsAppFormattedTextProps) {
   const tokens = useMemo(() => parseWhatsAppTextTokens(text), [text]);
 
@@ -285,7 +291,7 @@ function WhatsAppFormattedText({
       onTextLayout={onTextLayout}
     >
       {tokens.map((token, tokenIndex) =>
-        renderWhatsAppTextToken(token, tokenIndex)
+        renderWhatsAppTextToken(token, tokenIndex, onLinkLongPress)
       )}
     </Text>
   );
@@ -2618,9 +2624,11 @@ function LocationMessagePreview({
 function LinkPreviewMessage({
   preview,
   fromMe,
+  onLongPress,
 }: {
   preview: MessageContentLinkPreview;
   fromMe: boolean;
+  onLongPress?: () => void;
 }) {
   const previewUrl = resolvePreviewUrl(preview);
   const previewImage = resolvePreviewImage(preview);
@@ -2650,6 +2658,8 @@ function LinkPreviewMessage({
       onPress={() => {
         void handleOpenLink();
       }}
+      onLongPress={onLongPress}
+      delayLongPress={220}
       disabled={!previewUrl}
     >
       <View style={styles.linkPreviewMain}>
@@ -2690,9 +2700,11 @@ function LinkPreviewMessage({
 function ExternalAdReplyMessage({
   adReply,
   fromMe,
+  onLongPress,
 }: {
   adReply: MessageContextExternalAdReply;
   fromMe: boolean;
+  onLongPress?: () => void;
 }) {
   const thumbnailUri = resolveMediaUri(adReply.thumbnail_url);
   const sourceApp = resolveExternalSourceAppName(adReply.source_app);
@@ -2720,6 +2732,8 @@ function ExternalAdReplyMessage({
       onPress={() => {
         void handleOpenSourceUrl();
       }}
+      onLongPress={onLongPress}
+      delayLongPress={220}
       disabled={!sourceUrl}
     >
       <View style={styles.externalAdMain}>
@@ -3038,10 +3052,18 @@ function BubbleContent({
     return (
       <View style={styles.contentStack}>
         {hasLinkPreview && linkPreview ? (
-          <LinkPreviewMessage preview={linkPreview} fromMe={fromMe} />
+          <LinkPreviewMessage
+            preview={linkPreview}
+            fromMe={fromMe}
+            onLongPress={() => onOpenActions?.(msg)}
+          />
         ) : null}
         {hasExternalAdReply && externalAdReply ? (
-          <ExternalAdReplyMessage adReply={externalAdReply} fromMe={fromMe} />
+          <ExternalAdReplyMessage
+            adReply={externalAdReply}
+            fromMe={fromMe}
+            onLongPress={() => onOpenActions?.(msg)}
+          />
         ) : null}
         {child}
       </View>
@@ -3078,6 +3100,7 @@ function BubbleContent({
           <WhatsAppFormattedText
             text={cap}
             style={[styles.mediaCaption, textColor]}
+            onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
       </View>
@@ -3112,6 +3135,7 @@ function BubbleContent({
           <WhatsAppFormattedText
             text={cap}
             style={[styles.mediaCaption, textColor]}
+            onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
       </View>
@@ -3190,6 +3214,7 @@ function BubbleContent({
             <WhatsAppFormattedText
               text={cap}
               style={[styles.mediaCaption, textColor]}
+              onLinkLongPress={() => onOpenActions?.(msg)}
             />
           ) : null}
         </View>
@@ -3326,6 +3351,7 @@ function BubbleContent({
           <WhatsAppFormattedText
             text={cap}
             style={[styles.mediaCaption, textColor, styles.audioCaption]}
+            onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
       </View>
@@ -3399,6 +3425,7 @@ function BubbleContent({
           <WhatsAppFormattedText
             text={cap}
             style={[styles.mediaCaption, textColor, styles.documentCaption]}
+            onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
       </View>
@@ -3468,7 +3495,11 @@ function BubbleContent({
           <Ionicons name="time" size={18} color={colors.grey600} />
         ) : null}
         {text ? (
-          <WhatsAppFormattedText text={text} style={styles.systemText} />
+          <WhatsAppFormattedText
+            text={text}
+            style={styles.systemText}
+            onLinkLongPress={() => onOpenActions?.(msg)}
+          />
         ) : null}
       </View>
     );
@@ -3488,12 +3519,14 @@ function BubbleContent({
           <WhatsAppFormattedText
             text={title}
             style={[styles.templateTitle, textColor]}
+            onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
         {body ? (
           <WhatsAppFormattedText
             text={body}
             style={[styles.templateContent, textColor]}
+            onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
         {templateButtons.length > 0 ? (
@@ -3563,6 +3596,7 @@ function BubbleContent({
           style={[styles.bubbleText, textColor]}
           selectable={false}
           numberOfLines={shouldCollapse ? LONG_TEXT_COLLAPSE_LINES : undefined}
+          onLinkLongPress={() => onOpenActions?.(msg)}
           onTextLayout={(event) => {
             if (isLongTextByLines || !text) return;
             if (
@@ -3635,6 +3669,14 @@ function MessageBubble({
   const content = msg.content;
   const timeStr = formatMessageTime(msg.date);
   const latestText = getLatestMessageText(msg).trim();
+  const hasInlineLinkInText = splitTextChunksWithLinks(latestText).some(
+    (chunk) => !!chunk.url
+  );
+  const hasAnyLinkContent = Boolean(
+    content?.link_preview ||
+    content?.context_info?.external_ad_reply ||
+    hasInlineLinkInText
+  );
   const hasQuoted = !!content?.quoted;
   const isSystem = content?.type === EMessageType.system;
   const isAnnotation = content?.type === EMessageType.annotation;
@@ -3700,6 +3742,7 @@ function MessageBubble({
           style={[
             styles.bubble,
             fromMe ? styles.bubbleRight : styles.bubbleLeft,
+            !fromMe && hasAnyLinkContent && styles.bubbleLeftWithLink,
             isAnnotation && styles.bubbleAnnotation,
             hasQuoted && styles.bubbleQuotedMinWidth,
             isShortTextMessage && styles.bubbleShortMinWidth,
@@ -3778,6 +3821,7 @@ function MessageBubble({
           isContactCard && styles.bubbleContact,
           isAudio && styles.bubbleAudio,
           isDocument && styles.bubbleDocument,
+          !fromMe && hasAnyLinkContent && styles.bubbleLeftWithLink,
           hasQuoted && styles.bubbleQuotedMinWidth,
           isShortTextMessage && styles.bubbleShortMinWidth,
           highlighted && styles.bubbleHighlighted,
@@ -11043,6 +11087,10 @@ const styles = StyleSheet.create({
   bubbleLeft: {
     backgroundColor: colors.surface,
     borderBottomLeftRadius: 4,
+  },
+  bubbleLeftWithLink: {
+    maxWidth: '90%',
+    paddingRight: 20,
   },
   bubbleRight: {
     backgroundColor: colors.bubbleSent,
