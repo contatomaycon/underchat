@@ -50,6 +50,10 @@ interface IQueuedEnvelope {
   chatId: string | null;
 }
 
+interface INonRetryableError extends Error {
+  readonly nonRetryable: true;
+}
+
 @singleton()
 export class MessageSendWwebjsConsume {
   private consumer: KafkaConsumer | null = null;
@@ -60,6 +64,7 @@ export class MessageSendWwebjsConsume {
   private readonly RETRY_MAX_MS = 8000;
   private readonly DLQ_PUBLISH_RETRY_DELAY_MS = 5000;
   private readonly SYSTEM_QUEUE_KEY = 'system';
+  private readonly REDRIVE_COUNT_FIELD = '__wwebjs_redrive_count';
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
     new Map();
   private readonly inFlightTasks = new Set<Promise<void>>();
@@ -400,6 +405,21 @@ export class MessageSendWwebjsConsume {
         return;
       } catch (error) {
         lastError = error;
+        const terminalReason = this.resolveTerminalReason(error);
+
+        if (terminalReason) {
+          console.warn('[MessageSendWwebjs] Message processing failed', {
+            chat_id: envelope.chatId,
+            queue_key: envelope.queueKey,
+            partition: envelope.partition,
+            offset: envelope.offset,
+            attempt,
+            result: 'terminal',
+            error: terminalReason,
+          });
+          return;
+        }
+
         const isLastAttempt = attempt === this.MAX_PROCESS_ATTEMPTS;
 
         console.warn('[MessageSendWwebjs] Message processing failed', {
@@ -608,6 +628,8 @@ export class MessageSendWwebjsConsume {
     error: unknown,
     attempts: number
   ): Promise<void> {
+    const redriveCount = this.extractRedriveCount(envelope.payload);
+
     const dlqPayload: IWorkerSendMessageDlq = {
       worker_id: wwebjsEnvironment.wwebjsWorkerId,
       topic: envelope.topic,
@@ -616,6 +638,7 @@ export class MessageSendWwebjsConsume {
       chat_id: envelope.chatId,
       queue_key: envelope.queueKey,
       attempts,
+      redrive_count: redriveCount,
       error: this.errorMessage(error),
       payload: envelope.payload,
       raw_payload: envelope.rawPayload,
@@ -661,6 +684,48 @@ export class MessageSendWwebjsConsume {
     }
 
     return String(error);
+  }
+
+  private nonRetryableError(message: string): INonRetryableError {
+    const error = new Error(message) as INonRetryableError;
+    Object.defineProperty(error, 'nonRetryable', {
+      value: true,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
+    return error;
+  }
+
+  private resolveTerminalReason(error: unknown): string | null {
+    if (
+      error instanceof Error &&
+      (error as Partial<INonRetryableError>).nonRetryable === true
+    ) {
+      return error.message;
+    }
+
+    return null;
+  }
+
+  private extractRedriveCount(payload: unknown): number {
+    if (!payload || typeof payload !== 'object') {
+      return 0;
+    }
+
+    if (!(this.REDRIVE_COUNT_FIELD in payload)) {
+      return 0;
+    }
+
+    const value = (payload as Record<string, unknown>)[
+      this.REDRIVE_COUNT_FIELD
+    ];
+
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      return 0;
+    }
+
+    return Math.floor(value);
   }
 
   private getRandomDelay(): number {
@@ -961,6 +1026,12 @@ export class MessageSendWwebjsConsume {
     const hasMessageKey = !!messageKey?.id;
 
     if (currentType === EMessageType.text && hasVersions && hasMessageKey) {
+      if (messageKey?.from_me !== true) {
+        throw this.nonRetryableError(
+          'Message edit is not allowed for non-own message'
+        );
+      }
+
       const latestVersion = data.content?.version
         ? [...data.content.version].sort(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -980,7 +1051,7 @@ export class MessageSendWwebjsConsume {
       );
 
       if (!result) {
-        throw new Error('Failed to edit message');
+        throw this.nonRetryableError('Failed to edit message');
       }
 
       await this.pushUpdate({ message: result, data });

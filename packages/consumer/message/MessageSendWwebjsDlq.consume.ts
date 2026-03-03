@@ -18,8 +18,10 @@ export class MessageSendWwebjsDlqConsume {
   private isRunning = false;
   private readonly partitionChains: Map<number, Promise<void>> = new Map();
   private readonly MAX_REDRIVE_ATTEMPTS = 5;
+  private readonly MAX_GLOBAL_REDRIVE_COUNT = 5;
   private readonly RETRY_BASE_MS = 500;
   private readonly RETRY_MAX_MS = 8000;
+  private readonly REDRIVE_COUNT_FIELD = '__wwebjs_redrive_count';
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -72,8 +74,29 @@ export class MessageSendWwebjsDlqConsume {
         this.partitionChains.get(partition) ?? Promise.resolve();
 
       const currentChain = previousChain.then(async () => {
+        const nextRedriveCount = this.resolveNextRedriveCount(data);
+
+        if (nextRedriveCount > this.MAX_GLOBAL_REDRIVE_COUNT) {
+          console.error(
+            '[MessageSendWwebjsDlq] Message discarded after global redrive limit',
+            {
+              worker_id: data.worker_id,
+              queue_key: data.queue_key,
+              chat_id: data.chat_id,
+              partition: data.partition,
+              offset: data.offset,
+              attempts: data.attempts,
+              redrive_count: data.redrive_count ?? 0,
+              max_global_redrive_count: this.MAX_GLOBAL_REDRIVE_COUNT,
+            }
+          );
+
+          await this.commitNext(topic, partition, offset);
+          return;
+        }
+
         try {
-          await this.redriveWithRetry(data, redriveTopic);
+          await this.redriveWithRetry(data, redriveTopic, nextRedriveCount);
           console.info('[MessageSendWwebjsDlq] Message requeued', {
             worker_id: data.worker_id,
             queue_key: data.queue_key,
@@ -81,6 +104,7 @@ export class MessageSendWwebjsDlqConsume {
             partition: data.partition,
             offset: data.offset,
             attempts: data.attempts,
+            redrive_count: nextRedriveCount,
           });
         } catch (error) {
           console.error('[MessageSendWwebjsDlq] Failed to requeue message', {
@@ -90,6 +114,7 @@ export class MessageSendWwebjsDlqConsume {
             partition: data.partition,
             offset: data.offset,
             attempts: data.attempts,
+            redrive_count: nextRedriveCount,
             error: this.errorMessage(error),
           });
         } finally {
@@ -166,14 +191,16 @@ export class MessageSendWwebjsDlqConsume {
 
   private async redriveWithRetry(
     data: IWorkerSendMessageDlq,
-    redriveTopic: string
+    redriveTopic: string,
+    nextRedriveCount: number
   ): Promise<void> {
     const key = this.resolveRedriveKey(data);
+    const payload = this.createRedrivePayload(data.payload, nextRedriveCount);
     let lastError: unknown = null;
 
     for (let attempt = 1; attempt <= this.MAX_REDRIVE_ATTEMPTS; attempt++) {
       try {
-        await this.streamProducerService.send(redriveTopic, data.payload, key);
+        await this.streamProducerService.send(redriveTopic, payload, key);
         return;
       } catch (error) {
         lastError = error;
@@ -206,6 +233,31 @@ export class MessageSendWwebjsDlqConsume {
     }
 
     return undefined;
+  }
+
+  private resolveNextRedriveCount(data: IWorkerSendMessageDlq): number {
+    const count =
+      typeof data.redrive_count === 'number' &&
+      Number.isFinite(data.redrive_count) &&
+      data.redrive_count >= 0
+        ? Math.floor(data.redrive_count)
+        : 0;
+
+    return count + 1;
+  }
+
+  private createRedrivePayload(
+    payload: unknown,
+    redriveCount: number
+  ): unknown {
+    if (!payload || typeof payload !== 'object') {
+      return payload;
+    }
+
+    return {
+      ...(payload as Record<string, unknown>),
+      [this.REDRIVE_COUNT_FIELD]: redriveCount,
+    };
   }
 
   private calculateRetryDelayMs(attempt: number): number {

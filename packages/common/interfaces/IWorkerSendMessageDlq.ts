@@ -6,6 +6,7 @@ export interface IWorkerSendMessageDlq {
   chat_id: string | null;
   queue_key: string;
   attempts: number;
+  redrive_count?: number;
   error: string;
   payload: unknown;
   raw_payload: string | null;

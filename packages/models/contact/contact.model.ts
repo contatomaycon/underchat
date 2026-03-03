@@ -34,7 +34,7 @@ export const contact = pgTable(
     email_c: varchar({ length: 500 }),
     phone_ddi: varchar({ length: 5 }),
     phone: varchar({ length: 500 }),
-    phone_partial: varchar({ length: 15 }),
+    phone_partial: varchar({ length: 20 }),
     phone_c: varchar({ length: 500 }),
     nickname: varchar({ length: 250 }),
     photo: varchar({ length: 500 }),
