@@ -672,6 +672,8 @@ const EMessageType = {
 } as const;
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const LONG_TEXT_COLLAPSE_LINES = 8;
+const LONG_TEXT_COLLAPSE_CHAR_THRESHOLD = 420;
 
 const FORWARD_ALLOWED_TYPES = new Set<string>([
   EMessageType.text,
@@ -2667,6 +2669,7 @@ function BubbleContent({
   onOpenActions,
   onTemplateButtonPress,
   disableTemplateButtons,
+  forceCollapsedLongText = false,
   obfuscateContent = false,
 }: {
   msg: ListMessageResult;
@@ -2683,8 +2686,17 @@ function BubbleContent({
     message: ListMessageResult
   ) => void;
   disableTemplateButtons?: boolean;
+  forceCollapsedLongText?: boolean;
   obfuscateContent?: boolean;
 }) {
+  const [isLongTextExpanded, setIsLongTextExpanded] = useState(false);
+  const [isLongTextByLines, setIsLongTextByLines] = useState(false);
+
+  useEffect(() => {
+    setIsLongTextExpanded(false);
+    setIsLongTextByLines(false);
+  }, [msg.message_id, forceCollapsedLongText]);
+
   if (obfuscateContent) {
     return <ProtectedContentPlaceholder fromMe={fromMe} />;
   }
@@ -3211,10 +3223,42 @@ function BubbleContent({
     type !== EMessageType.contacts &&
     type !== EMessageType.system
   ) {
+    const isLongByLength = text.length > LONG_TEXT_COLLAPSE_CHAR_THRESHOLD;
+    const shouldCollapse = forceCollapsedLongText || !isLongTextExpanded;
+    const canExpand = isLongByLength || isLongTextByLines;
+    const canToggleExpanded = canExpand && !forceCollapsedLongText;
+
     return renderWithContextCards(
-      <Text style={[styles.bubbleText, textColor]} selectable={false}>
-        {text}
-      </Text>
+      <View style={styles.bubbleTextWrap}>
+        <Text
+          style={[styles.bubbleText, textColor]}
+          selectable={false}
+          numberOfLines={shouldCollapse ? LONG_TEXT_COLLAPSE_LINES : undefined}
+          onTextLayout={(event) => {
+            if (isLongTextByLines || !text) return;
+            if ((event.nativeEvent.lines?.length ?? 0) > LONG_TEXT_COLLAPSE_LINES) {
+              setIsLongTextByLines(true);
+            }
+          }}
+        >
+          {text}
+        </Text>
+        {canExpand ? (
+          <Pressable
+            onPress={() => {
+              if (!canToggleExpanded) return;
+              setIsLongTextExpanded((previous) => !previous);
+            }}
+            hitSlop={8}
+            style={styles.readMoreButton}
+            disabled={!canToggleExpanded}
+          >
+            <Text style={styles.readMoreText}>
+              {shouldCollapse ? pt.read_more : pt.read_less}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
     );
   }
 
@@ -3236,6 +3280,7 @@ function MessageBubble({
   disableTemplateButtons,
   canInteract,
   onOpenActions,
+  forceCollapsedLongText = false,
   obfuscateContent = false,
 }: {
   msg: ListMessageResult;
@@ -3255,6 +3300,7 @@ function MessageBubble({
   disableTemplateButtons?: boolean;
   canInteract?: boolean;
   onOpenActions?: (message: ListMessageResult) => void;
+  forceCollapsedLongText?: boolean;
   obfuscateContent?: boolean;
 }) {
   const content = msg.content;
@@ -3453,6 +3499,7 @@ function MessageBubble({
           onOpenActions={onOpenActions}
           onTemplateButtonPress={onTemplateButtonPress}
           disableTemplateButtons={disableTemplateButtons}
+          forceCollapsedLongText={forceCollapsedLongText}
           obfuscateContent={obfuscateContent}
         />
         <View
@@ -8455,6 +8502,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   onOpenVideo={openVideoViewer}
                   onTemplateButtonPress={handleTemplateButtonPress}
                   disableTemplateButtons={!canComposeInChat || sending}
+                  forceCollapsedLongText
                   obfuscateContent={shouldObfuscateContent}
                 />
               </View>
@@ -9995,6 +10043,18 @@ const styles = StyleSheet.create({
   },
   bubbleText: {
     fontSize: 15,
+  },
+  bubbleTextWrap: {
+    minWidth: 0,
+  },
+  readMoreButton: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  readMoreText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
   },
   bubbleTextLeft: {
     color: colors.onSurface,

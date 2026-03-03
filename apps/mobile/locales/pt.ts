@@ -288,6 +288,8 @@ export const pt = {
   replying_to: 'Respondendo mensagem',
   cancel_reply: 'Cancelar resposta',
   copy: 'Copiar',
+  read_more: 'Ler mais',
+  read_less: 'Ler menos',
   react: 'Reagir',
   edit: 'Editar',
   edit_message: 'Editar mensagem',
