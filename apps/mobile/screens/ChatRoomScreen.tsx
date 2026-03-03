@@ -2136,11 +2136,13 @@ function VideoMessagePreview({
   thumbnailUri,
   isVideoNote,
   onPress,
+  onLongPress,
 }: {
   sourceUri: string;
   thumbnailUri: string | null;
   isVideoNote: boolean;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   const [thumbnailLoadError, setThumbnailLoadError] = useState(false);
   const shouldUseVideoFramePreview = !thumbnailUri || thumbnailLoadError;
@@ -2166,6 +2168,8 @@ function VideoMessagePreview({
     <Pressable
       style={isVideoNote ? styles.videoNoteThumbWrap : styles.videoThumbWrap}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={220}
     >
       {shouldUseVideoFramePreview ? (
         <VideoView
@@ -2200,11 +2204,13 @@ function LocationMessagePreview({
   longitude,
   name,
   address,
+  onLongPress,
 }: {
   latitude: number;
   longitude: number;
   name: string | null | undefined;
   address: string | null | undefined;
+  onLongPress?: () => void;
 }) {
   const [previewSourceIndex, setPreviewSourceIndex] = useState(0);
   const [previewLoadError, setPreviewLoadError] = useState(false);
@@ -2232,7 +2238,12 @@ function LocationMessagePreview({
   }, [address, latitude, longitude, title]);
 
   return (
-    <Pressable style={styles.locationBubble} onPress={handleOpen}>
+    <Pressable
+      style={styles.locationBubble}
+      onPress={handleOpen}
+      onLongPress={onLongPress}
+      delayLongPress={220}
+    >
       <View style={styles.locationMapPreview}>
         {hasNativeMapSupport && NativeMapView ? (
           <>
@@ -2653,6 +2664,7 @@ function BubbleContent({
   audioCtrl,
   onOpenImage,
   onOpenVideo,
+  onOpenActions,
   onTemplateButtonPress,
   disableTemplateButtons,
   obfuscateContent = false,
@@ -2665,6 +2677,7 @@ function BubbleContent({
   audioCtrl: AudioCtrl | null;
   onOpenImage: (msg: ListMessageResult) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
+  onOpenActions?: (message: ListMessageResult) => void;
   onTemplateButtonPress?: (
     button: MessageTemplateButton,
     message: ListMessageResult
@@ -2727,7 +2740,11 @@ function BubbleContent({
     if (!imageUri) return null;
     return renderWithContextCards(
       <View style={[styles.mediaBubble, styles.mediaBubbleImage]}>
-        <Pressable onPress={() => onOpenImage(msg)}>
+        <Pressable
+          onPress={() => onOpenImage(msg)}
+          onLongPress={() => onOpenActions?.(msg)}
+          delayLongPress={220}
+        >
           <Image
             source={{ uri: imageUri }}
             style={styles.imageThumb}
@@ -2762,6 +2779,7 @@ function BubbleContent({
           thumbnailUri={thumbUri}
           isVideoNote={isVideoNote}
           onPress={() => onOpenVideo(msg)}
+          onLongPress={() => onOpenActions?.(msg)}
         />
         {videoMeta ? <Text style={styles.mediaMeta}>{videoMeta}</Text> : null}
         {cap ? (
@@ -2785,6 +2803,8 @@ function BubbleContent({
               'document'
             )
           }
+          onLongPress={() => onOpenActions?.(msg)}
+          delayLongPress={220}
         >
           <Ionicons name="document-outline" size={20} color={colors.grey700} />
           <Text style={styles.stickerFallbackText}>Sticker</Text>
@@ -2792,7 +2812,11 @@ function BubbleContent({
       );
     }
     return renderWithContextCards(
-      <Pressable onPress={() => onOpenImage(msg)}>
+      <Pressable
+        onPress={() => onOpenImage(msg)}
+        onLongPress={() => onOpenActions?.(msg)}
+        delayLongPress={220}
+      >
         <Image
           source={{ uri: stickerUri }}
           style={styles.stickerThumb}
@@ -2817,6 +2841,7 @@ function BubbleContent({
         longitude={longitude}
         name={content.location.name}
         address={content.location.address}
+        onLongPress={() => onOpenActions?.(msg)}
       />
     );
   }
@@ -2866,6 +2891,8 @@ function BubbleContent({
           <Pressable
             style={[styles.audioSpeedBtn, fromMe && styles.audioSpeedBtnRight]}
             onPress={() => audioCtrl.toggleSpeed(messageId)}
+            onLongPress={() => onOpenActions?.(msg)}
+            delayLongPress={220}
           >
             <Text
               style={[
@@ -2883,6 +2910,8 @@ function BubbleContent({
                 fromMe && styles.audioPlayBtnCircleRight,
               ]}
               onPress={() => audioCtrl.playPause(messageId, url)}
+              onLongPress={() => onOpenActions?.(msg)}
+              delayLongPress={220}
             >
               <Ionicons
                 name={audioState.isPlaying ? 'pause' : 'play'}
@@ -2906,6 +2935,8 @@ function BubbleContent({
             onLayout={(e) => {
               audioCtrl.setWaveformWidth(messageId, e.nativeEvent.layout.width);
             }}
+            onLongPress={() => onOpenActions?.(msg)}
+            delayLongPress={220}
             onPress={(e) => {
               const ev = e.nativeEvent as unknown as {
                 locationX?: number;
@@ -2984,6 +3015,8 @@ function BubbleContent({
           <Pressable
             style={styles.documentMainAction}
             onPress={() => Linking.openURL(docUrl)}
+            onLongPress={() => onOpenActions?.(msg)}
+            delayLongPress={220}
           >
             <View
               style={[
@@ -3018,6 +3051,8 @@ function BubbleContent({
                 'document'
               );
             }}
+            onLongPress={() => onOpenActions?.(msg)}
+            delayLongPress={220}
             accessibilityLabel={pt.download}
           >
             <Ionicons
@@ -3415,6 +3450,7 @@ function MessageBubble({
           audioCtrl={audioCtrl}
           onOpenImage={onOpenImage}
           onOpenVideo={onOpenVideo}
+          onOpenActions={onOpenActions}
           onTemplateButtonPress={onTemplateButtonPress}
           disableTemplateButtons={disableTemplateButtons}
           obfuscateContent={obfuscateContent}
@@ -5844,9 +5880,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const messageWorkerName = currentUserName ?? '';
 
       closeMessageOverlay();
-      applyLocalReaction(target.message_id, emoji, messageWorkerId, messageWorkerName);
+      applyLocalReaction(
+        target.message_id,
+        emoji,
+        messageWorkerId,
+        messageWorkerName
+      );
 
-      const ok = await reactToMessage(chatInfo.chat_id, target.message_id, emoji);
+      const ok = await reactToMessage(
+        chatInfo.chat_id,
+        target.message_id,
+        emoji
+      );
       if (ok) return;
 
       setMessages((previous) =>
@@ -7839,7 +7884,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     currentUserName={currentUserName}
                     highlighted={
                       highlightedMessageId === item.message.message_id ||
-                      messageActionTarget?.message_id === item.message.message_id
+                      messageActionTarget?.message_id ===
+                        item.message.message_id
                     }
                     canInteract={
                       canInteractWithMessage(item.message) &&
@@ -8354,33 +8400,35 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           <View style={styles.messageOverlayCenterWrap}>
             {messageOverlayAnchor?.showReactions !== false ? (
               <View style={styles.messageOverlayReactions}>
-              {QUICK_REACTIONS.map((emoji) => (
+                {QUICK_REACTIONS.map((emoji) => (
+                  <Pressable
+                    key={`overlay-reaction-${emoji}`}
+                    style={styles.messageOverlayReactionBtn}
+                    onPress={() => {
+                      void handleQuickReaction(emoji);
+                    }}
+                  >
+                    <Text style={styles.messageOverlayReactionEmoji}>
+                      {emoji}
+                    </Text>
+                  </Pressable>
+                ))}
                 <Pressable
-                  key={`overlay-reaction-${emoji}`}
-                  style={styles.messageOverlayReactionBtn}
+                  style={styles.messageOverlayReactionMoreBtn}
                   onPress={() => {
-                    void handleQuickReaction(emoji);
+                    setMessageOverlayAnchor((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            showReactions: false,
+                          }
+                        : previous
+                    );
                   }}
+                  accessibilityLabel={pt.more_actions}
                 >
-                  <Text style={styles.messageOverlayReactionEmoji}>{emoji}</Text>
+                  <Ionicons name="add" size={18} color={colors.grey700} />
                 </Pressable>
-              ))}
-              <Pressable
-                style={styles.messageOverlayReactionMoreBtn}
-                onPress={() => {
-                  setMessageOverlayAnchor((previous) =>
-                    previous
-                      ? {
-                          ...previous,
-                          showReactions: false,
-                        }
-                      : previous
-                  );
-                }}
-                accessibilityLabel={pt.more_actions}
-              >
-                <Ionicons name="add" size={18} color={colors.grey700} />
-              </Pressable>
               </View>
             ) : null}
 
