@@ -1892,6 +1892,20 @@ function mergeMessageBatch(
 }
 
 type ReactionSummaryItem = { emoji: string; count: number };
+type ReplyComposerPreviewModel = {
+  name: string;
+  text: string;
+  meta: string;
+  type: string;
+  thumbUri: string | null;
+  contactPhotoUri: string | null;
+  showContactGroupIcon: boolean;
+  showDocumentIcon: boolean;
+  showVideoIcon: boolean;
+  showAudioIcon: boolean;
+  showLocationIcon: boolean;
+  showStickerFallbackIcon: boolean;
+};
 
 function getReactionsSummary(
   reactions: MessageReaction[] | null | undefined
@@ -1914,6 +1928,221 @@ function getReactionsSummary(
       if (b.count !== a.count) return b.count - a.count;
       return a.emoji.localeCompare(b.emoji);
     });
+}
+
+function resolveReplyComposerType(
+  content: MessageContent | null | undefined
+): string {
+  const explicitType = readNonEmptyString(content?.type);
+  if (explicitType) return explicitType;
+  if (content?.image) return EMessageType.image;
+  if (content?.video) return EMessageType.video;
+  if (content?.audio) return EMessageType.audio;
+  if (content?.document) return EMessageType.document;
+  if (content?.sticker) return EMessageType.sticker;
+  if (content?.location) return EMessageType.location;
+  if (content?.contact) return EMessageType.contact_card;
+  if (content?.contacts && content.contacts.length > 0)
+    return EMessageType.contacts;
+  return EMessageType.text;
+}
+
+function resolveReplyComposerName(
+  message: ListMessageResult,
+  chatInfo: ListChatsResult,
+  currentUserName: string | null | undefined
+): string {
+  if (message.type_user === ETypeUserChat.client) {
+    return resolveTypingDisplayName(chatInfo);
+  }
+
+  return (
+    readNonEmptyString(message.user?.name) ||
+    readNonEmptyString(currentUserName) ||
+    readNonEmptyString(chatInfo.user?.name) ||
+    pt.attendant
+  );
+}
+
+function resolveReplyComposerText(
+  message: ListMessageResult,
+  replyType: string
+): string {
+  const content = message.content;
+  if (!content) return '';
+
+  if (replyType === EMessageType.image) {
+    return readNonEmptyString(content.image?.caption) ?? 'Foto';
+  }
+
+  if (replyType === EMessageType.document) {
+    return (
+      readNonEmptyString(content.document?.name) ||
+      readNonEmptyString(content.message) ||
+      pt.document
+    );
+  }
+
+  if (replyType === EMessageType.video) {
+    return readNonEmptyString(content.video?.caption) ?? 'Vídeo';
+  }
+
+  if (replyType === EMessageType.video_note) {
+    return readNonEmptyString(content.video?.caption) ?? 'Vídeo circular';
+  }
+
+  if (replyType === EMessageType.audio) {
+    return readNonEmptyString(content.message) ?? pt.audio;
+  }
+
+  if (replyType === EMessageType.sticker) {
+    return 'Sticker';
+  }
+
+  if (replyType === EMessageType.location) {
+    return (
+      readNonEmptyString(content.location?.name) ||
+      readNonEmptyString(content.location?.address) ||
+      pt.location
+    );
+  }
+
+  if (replyType === EMessageType.contact_card && content.contact) {
+    const contactName =
+      [content.contact.name, content.contact.last_name]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || pt.contact;
+    const contactMessage = readNonEmptyString(content.message);
+    return contactMessage ? `${contactName} - ${contactMessage}` : contactName;
+  }
+
+  if (replyType === EMessageType.contacts) {
+    const firstContact = content.contacts?.[0];
+    if (firstContact) {
+      const firstName =
+        [firstContact.name, firstContact.last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || pt.contact;
+      const extraCount = (content.contacts?.length ?? 0) - 1;
+      const groupName =
+        extraCount > 0
+          ? `${firstName} e ${extraCount} ${pt.contacts_other}`
+          : firstName;
+      const groupedMessage = readNonEmptyString(content.message);
+      return groupedMessage ? `${groupName} - ${groupedMessage}` : groupName;
+    }
+    return pt.contact;
+  }
+
+  return (
+    readNonEmptyString(content.message) ||
+    readNonEmptyString(content.link_preview?.['matched-text']) ||
+    readNonEmptyString(content.link_preview?.['canonical-url']) ||
+    ''
+  );
+}
+
+function resolveReplyComposerMeta(
+  message: ListMessageResult,
+  replyType: string
+): string {
+  const content = message.content;
+  if (!content) return '';
+
+  if (replyType === EMessageType.document) {
+    const ext = content.document?.extension
+      ? content.document.extension.replace(/^\./, '').toUpperCase()
+      : '';
+    const size = formatFileSize(content.document?.size);
+    return [ext, size].filter(Boolean).join(' • ');
+  }
+
+  if (
+    replyType === EMessageType.video ||
+    replyType === EMessageType.video_note
+  ) {
+    const ext = content.video?.extension
+      ? content.video.extension.replace(/^\./, '').toUpperCase()
+      : '';
+    const size = formatFileSize(content.video?.size);
+    return [ext, size].filter(Boolean).join(' • ');
+  }
+
+  if (replyType === EMessageType.audio) {
+    const size = formatFileSize(content.audio?.size);
+    const duration = formatVideoDuration(content.audio?.duration);
+    return [size, duration].filter(Boolean).join(' • ');
+  }
+
+  return '';
+}
+
+function resolveReplyComposerThumbUri(
+  message: ListMessageResult,
+  replyType: string
+): string | null {
+  const content = message.content;
+  if (!content) return null;
+
+  if (replyType === EMessageType.image) {
+    return resolveMediaUri(content.image?.thumbnail ?? content.image?.url);
+  }
+
+  if (replyType === EMessageType.sticker) {
+    if (!isRenderableSticker(content.sticker)) return null;
+    return resolveMediaUri(content.sticker?.url);
+  }
+
+  return null;
+}
+
+function resolveReplyComposerContactPhoto(
+  message: ListMessageResult,
+  replyType: string
+): string | null {
+  const content = message.content;
+  if (!content) return null;
+
+  if (replyType === EMessageType.contact_card) {
+    return resolveMediaUri(content.contact?.photo);
+  }
+
+  if (replyType === EMessageType.contacts) {
+    return resolveMediaUri(content.contacts?.[0]?.photo);
+  }
+
+  return null;
+}
+
+function buildReplyComposerPreviewModel(
+  message: ListMessageResult,
+  chatInfo: ListChatsResult,
+  currentUserName: string | null | undefined
+): ReplyComposerPreviewModel {
+  const type = resolveReplyComposerType(message.content);
+  const thumbUri = resolveReplyComposerThumbUri(message, type);
+  const contactPhotoUri = resolveReplyComposerContactPhoto(message, type);
+
+  return {
+    name: resolveReplyComposerName(message, chatInfo, currentUserName),
+    text: resolveReplyComposerText(message, type) || pt.type_message,
+    meta: resolveReplyComposerMeta(message, type),
+    type,
+    thumbUri,
+    contactPhotoUri,
+    showContactGroupIcon:
+      type === EMessageType.contacts &&
+      !contactPhotoUri &&
+      (message.content?.contacts?.length ?? 0) > 1,
+    showDocumentIcon: type === EMessageType.document,
+    showVideoIcon:
+      type === EMessageType.video || type === EMessageType.video_note,
+    showAudioIcon: type === EMessageType.audio,
+    showLocationIcon: type === EMessageType.location,
+    showStickerFallbackIcon: type === EMessageType.sticker && !thumbUri,
+  };
 }
 
 function resolveQuotedType(quoted: MessageQuoted | null | undefined): string {
@@ -4243,6 +4472,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     chatInfo.phone,
     remoteActivityMode,
   ]);
+  const replyComposerPreview = useMemo(() => {
+    if (!replyMessageTarget) return null;
+    return buildReplyComposerPreviewModel(
+      replyMessageTarget,
+      chatInfo,
+      currentUserName
+    );
+  }, [chatInfo, currentUserName, replyMessageTarget]);
   const audioCtrl = useChatAudio();
   const viewerVideoPlayer = useVideoPlayer(
     viewer.kind === 'video' && viewer.src ? { uri: viewer.src } : null,
@@ -8322,6 +8559,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       if (!text || sending || !canComposeInChat) return false;
       const replyMessageId = replyMessageTarget?.message_id;
       const firstUrl = extractFirstUrl(text);
+      if (replyMessageId) {
+        setReplyMessageTarget(null);
+      }
 
       setSending(true);
       try {
@@ -8344,9 +8584,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           pendingScrollToBottomRef.current = true;
           setShowScrollToBottomButton(false);
           setMessages((prev) => mergeMessageLists(prev, newMsg));
-          if (replyMessageId) {
-            setReplyMessageTarget(null);
-          }
           requestAnimationFrame(() => {
             scrollToBottomWithRetries(10);
           });
@@ -8921,19 +9158,93 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         </View>
       ) : (
         <>
-          {replyMessageTarget ? (
+          {replyComposerPreview ? (
             <View style={styles.replyComposerPreview}>
               <View style={styles.replyComposerPreviewBar} />
-              <View style={styles.replyComposerPreviewBody}>
-                <Text
-                  style={styles.replyComposerPreviewTitle}
-                  numberOfLines={1}
-                >
-                  {pt.replying_to}
+              {replyComposerPreview.thumbUri ? (
+                <Image
+                  source={{ uri: replyComposerPreview.thumbUri }}
+                  style={styles.replyComposerPreviewMedia}
+                  resizeMode="cover"
+                />
+              ) : replyComposerPreview.type === EMessageType.contact_card ||
+                replyComposerPreview.type === EMessageType.contacts ? (
+                replyComposerPreview.contactPhotoUri ? (
+                  <Image
+                    source={{ uri: replyComposerPreview.contactPhotoUri }}
+                    style={styles.replyComposerPreviewContactAvatar}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.replyComposerPreviewDocIcon}>
+                    <Ionicons
+                      name={
+                        replyComposerPreview.showContactGroupIcon
+                          ? 'people-outline'
+                          : 'person-outline'
+                      }
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </View>
+                )
+              ) : replyComposerPreview.showDocumentIcon ? (
+                <View style={styles.replyComposerPreviewDocIcon}>
+                  <Ionicons
+                    name="document-text-outline"
+                    size={20}
+                    color={colors.primary}
+                  />
+                </View>
+              ) : replyComposerPreview.showVideoIcon ? (
+                <View style={styles.replyComposerPreviewDocIcon}>
+                  <Ionicons
+                    name="play-circle-outline"
+                    size={20}
+                    color={colors.primary}
+                  />
+                </View>
+              ) : replyComposerPreview.showAudioIcon ? (
+                <View style={styles.replyComposerPreviewDocIcon}>
+                  <Ionicons
+                    name="mic-outline"
+                    size={20}
+                    color={colors.primary}
+                  />
+                </View>
+              ) : replyComposerPreview.showLocationIcon ? (
+                <View style={styles.replyComposerPreviewDocIcon}>
+                  <Ionicons
+                    name="location-outline"
+                    size={20}
+                    color={colors.primary}
+                  />
+                </View>
+              ) : replyComposerPreview.showStickerFallbackIcon ? (
+                <View style={styles.replyComposerPreviewDocIcon}>
+                  <Ionicons
+                    name="pricetag-outline"
+                    size={20}
+                    color={colors.primary}
+                  />
+                </View>
+              ) : null}
+
+              <View style={styles.replyComposerPreviewContent}>
+                <Text style={styles.replyComposerPreviewName} numberOfLines={1}>
+                  {replyComposerPreview.name}
                 </Text>
-                <Text style={styles.replyComposerPreviewText} numberOfLines={2}>
-                  {getLatestMessageText(replyMessageTarget) || pt.type_message}
+                <Text style={styles.replyComposerPreviewText} numberOfLines={1}>
+                  {replyComposerPreview.text}
                 </Text>
+                {replyComposerPreview.meta ? (
+                  <Text
+                    style={styles.replyComposerPreviewMeta}
+                    numberOfLines={1}
+                  >
+                    {replyComposerPreview.meta}
+                  </Text>
+                ) : null}
               </View>
               <Pressable
                 style={styles.replyComposerPreviewClose}
@@ -8957,7 +9268,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               <ScrollView
                 style={styles.quickMessageListScroll}
                 keyboardShouldPersistTaps="handled"
-                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                keyboardDismissMode={
+                  Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                }
               >
                 {quickMessageTemplates.map((template) => (
                   <Pressable
@@ -9039,7 +9352,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 }
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
-                keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                keyboardDismissMode={
+                  Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                }
               >
                 <Text style={styles.quickMessagePreviewText}>
                   {replaceTagsInQuickMessage(selectedQuickMessage.message) ||
@@ -9448,7 +9763,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   contentContainerStyle={styles.reactionPickerEmojiGrid}
                   showsVerticalScrollIndicator
                   keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+                  keyboardDismissMode={
+                    Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                  }
                 >
                   {composerEmojisByCategory.map((emoji, index) => (
                     <Pressable
@@ -9700,7 +10017,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.edit_message}</Text>
               <Pressable
-                onPress={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
+                onPress={dismissKeyboardAnd(() =>
+                  setEditingMessageTarget(null)
+                )}
               >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
@@ -9719,7 +10038,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
+                onPress={dismissKeyboardAnd(() =>
+                  setEditingMessageTarget(null)
+                )}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -9829,7 +10150,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.forward}</Text>
               <Pressable
-                onPress={dismissKeyboardAnd(() => setForwardModalVisible(false))}
+                onPress={dismissKeyboardAnd(() =>
+                  setForwardModalVisible(false)
+                )}
               >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
@@ -9940,7 +10263,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={dismissKeyboardAnd(() => setForwardModalVisible(false))}
+                onPress={dismissKeyboardAnd(() =>
+                  setForwardModalVisible(false)
+                )}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -10321,7 +10646,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={transferModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() => setTransferModalVisible(false))}
+        onRequestClose={dismissKeyboardAnd(() =>
+          setTransferModalVisible(false)
+        )}
       >
         <View style={styles.bottomSheetOverlay}>
           <Pressable
@@ -10332,7 +10659,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.transfer}</Text>
               <Pressable
-                onPress={dismissKeyboardAnd(() => setTransferModalVisible(false))}
+                onPress={dismissKeyboardAnd(() =>
+                  setTransferModalVisible(false)
+                )}
               >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
@@ -10341,7 +10670,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               style={styles.transferFormScroll}
               contentContainerStyle={styles.transferFormContent}
               keyboardShouldPersistTaps="handled"
-              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              keyboardDismissMode={
+                Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+              }
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.formField}>
@@ -10372,7 +10703,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 <Text style={styles.formFieldLabel}>{pt.transfer_to}</Text>
                 <Pressable
                   style={styles.formSelector}
-                  onPress={dismissKeyboardAnd(() => setTransferPickerKind('type'))}
+                  onPress={dismissKeyboardAnd(() =>
+                    setTransferPickerKind('type')
+                  )}
                 >
                   <Text style={styles.formSelectorText} numberOfLines={1}>
                     {transferType === 'user'
@@ -10495,7 +10828,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={dismissKeyboardAnd(() => setTransferModalVisible(false))}
+                onPress={dismissKeyboardAnd(() =>
+                  setTransferModalVisible(false)
+                )}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -10605,7 +10940,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={annotationModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() => setAnnotationModalVisible(false))}
+        onRequestClose={dismissKeyboardAnd(() =>
+          setAnnotationModalVisible(false)
+        )}
       >
         <KeyboardAvoidingView
           style={styles.bottomSheetOverlay}
@@ -10620,7 +10957,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.annotation}</Text>
               <Pressable
-                onPress={dismissKeyboardAnd(() => setAnnotationModalVisible(false))}
+                onPress={dismissKeyboardAnd(() =>
+                  setAnnotationModalVisible(false)
+                )}
               >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
@@ -10640,7 +10979,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={dismissKeyboardAnd(() => setAnnotationModalVisible(false))}
+                onPress={dismissKeyboardAnd(() =>
+                  setAnnotationModalVisible(false)
+                )}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -10670,7 +11011,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={contactPickerVisible}
         transparent
         animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() => setContactPickerVisible(false))}
+        onRequestClose={dismissKeyboardAnd(() =>
+          setContactPickerVisible(false)
+        )}
       >
         <View style={styles.bottomSheetOverlay}>
           <Pressable
@@ -10681,7 +11024,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.select_contacts}</Text>
               <Pressable
-                onPress={dismissKeyboardAnd(() => setContactPickerVisible(false))}
+                onPress={dismissKeyboardAnd(() =>
+                  setContactPickerVisible(false)
+                )}
               >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
@@ -10781,7 +11126,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={dismissKeyboardAnd(() => setContactPickerVisible(false))}
+                onPress={dismissKeyboardAnd(() =>
+                  setContactPickerVisible(false)
+                )}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
@@ -10813,7 +11160,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={locationPickerVisible}
         transparent
         animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() => setLocationPickerVisible(false))}
+        onRequestClose={dismissKeyboardAnd(() =>
+          setLocationPickerVisible(false)
+        )}
       >
         <View style={styles.bottomSheetOverlay}>
           <Pressable
@@ -10824,7 +11173,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.send_location}</Text>
               <Pressable
-                onPress={dismissKeyboardAnd(() => setLocationPickerVisible(false))}
+                onPress={dismissKeyboardAnd(() =>
+                  setLocationPickerVisible(false)
+                )}
               >
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
@@ -11007,7 +11358,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
             <Pressable
               style={styles.secondaryBtn}
-              onPress={dismissKeyboardAnd(() => setLocationPickerVisible(false))}
+              onPress={dismissKeyboardAnd(() =>
+                setLocationPickerVisible(false)
+              )}
             >
               <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
             </Pressable>
@@ -12492,45 +12845,81 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   replyComposerPreview: {
-    minHeight: 52,
+    position: 'relative',
+    marginHorizontal: 10,
+    marginTop: 8,
+    marginBottom: 8,
+    minHeight: 56,
     backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.grey200,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.16)',
+    paddingLeft: 12,
+    paddingRight: 36,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   replyComposerPreviewBar: {
     width: 3,
     alignSelf: 'stretch',
     borderRadius: 999,
     backgroundColor: colors.primary,
+    flexShrink: 0,
   },
-  replyComposerPreviewBody: {
+  replyComposerPreviewMedia: {
+    width: 40,
+    height: 40,
+    borderRadius: 6,
+    backgroundColor: 'rgba(47, 43, 61, 0.12)',
+    flexShrink: 0,
+  },
+  replyComposerPreviewContactAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 6,
+    backgroundColor: 'rgba(47, 43, 61, 0.12)',
+    flexShrink: 0,
+  },
+  replyComposerPreviewDocIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 6,
+    backgroundColor: 'rgba(40, 101, 183, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  replyComposerPreviewContent: {
     flex: 1,
     minWidth: 0,
   },
-  replyComposerPreviewTitle: {
-    fontSize: 12,
-    fontWeight: '700',
+  replyComposerPreviewName: {
+    fontSize: 14,
+    lineHeight: 16,
+    fontWeight: '600',
     color: colors.primary,
   },
   replyComposerPreviewText: {
     marginTop: 2,
+    fontSize: 13,
+    color: colors.onSurface,
+  },
+  replyComposerPreviewMeta: {
+    marginTop: 2,
     fontSize: 12,
-    color: colors.grey700,
+    color: colors.grey600,
   },
   replyComposerPreviewClose: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(47, 43, 61, 0.08)',
   },
   inputRowWithTyping: {
     borderTopWidth: 0,
