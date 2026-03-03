@@ -505,6 +505,8 @@ type ForwardTargetItem = {
   title: string;
 };
 
+type ForwardPickerKind = 'channel' | null;
+
 type TransferDestinationType = 'user' | 'sector' | null;
 
 type TransferPickerKind =
@@ -4373,6 +4375,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [forwardStatus, setForwardStatus] =
     useState<ForwardStatusType>('in_chat');
   const [forwardSearch, setForwardSearch] = useState('');
+  const [forwardPickerKind, setForwardPickerKind] =
+    useState<ForwardPickerKind>(null);
+  const [forwardChannels, setForwardChannels] = useState<
+    TransferChannelOption[]
+  >([]);
+  const [selectedForwardChannelId, setSelectedForwardChannelId] = useState<
+    string | null
+  >(null);
+  const [forwardChannelsLoading, setForwardChannelsLoading] = useState(false);
   const [forwardItems, setForwardItems] = useState<ForwardTargetItem[]>([]);
   const [forwardSelectedIds, setForwardSelectedIds] = useState<string[]>([]);
   const [forwardCurrentPage, setForwardCurrentPage] = useState(1);
@@ -6078,6 +6089,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       ) ?? null,
     [selectedTransferSectorUserId, transferSectorUsers]
   );
+  const selectedForwardChannel = useMemo(
+    () =>
+      forwardChannels.find((item) => item.value === selectedForwardChannelId) ??
+      null,
+    [forwardChannels, selectedForwardChannelId]
+  );
 
   useEffect(() => {
     if (!transferModalVisible) {
@@ -6485,10 +6502,35 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     []
   );
 
+  const closeForwardModal = useCallback(() => {
+    setForwardModalVisible(false);
+    setForwardPickerKind(null);
+  }, []);
+
+  const handleForwardRequestClose = useCallback(() => {
+    dismissKeyboard();
+    if (forwardPickerKind !== null) {
+      setForwardPickerKind(null);
+      return;
+    }
+    setForwardModalVisible(false);
+  }, [forwardPickerKind]);
+
   const loadForwardTargets = useCallback(
     async (page: number, append: boolean) => {
-      if (!forwardModalVisible || !forwardSourceMessage || !forwardStatus)
+      if (
+        !forwardModalVisible ||
+        !forwardSourceMessage ||
+        !forwardStatus ||
+        !selectedForwardChannelId
+      ) {
+        if (!append) {
+          setForwardItems([]);
+          setForwardCurrentPage(1);
+          setForwardTotalPages(1);
+        }
         return;
+      }
 
       if (append) {
         setForwardLoadingMore(true);
@@ -6503,6 +6545,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         if (forwardStatus === 'all') {
           const response = await listChatContacts(page, 20, search, {
             filter_is_valided: 'true',
+            filter_channel_id: selectedForwardChannelId,
           });
           const currentContactId = readNonEmptyString(chatInfo.contact?.id);
 
@@ -6530,6 +6573,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             status: forwardStatus,
             current_page: page,
             per_page: 20,
+            filter_worker_id: selectedForwardChannelId,
           });
 
           for (const chatItem of response?.results ?? []) {
@@ -6572,6 +6616,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       forwardSearch,
       forwardSourceMessage,
       forwardStatus,
+      selectedForwardChannelId,
     ]
   );
 
@@ -6587,19 +6632,75 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       setForwardLoading(false);
       setForwardLoadingMore(false);
       setForwardSubmitting(false);
+      setForwardChannels([]);
+      setSelectedForwardChannelId(null);
+      setForwardPickerKind(null);
+      setForwardChannelsLoading(false);
       return;
     }
 
-    void loadForwardTargets(1, false);
-  }, [forwardModalVisible, loadForwardTargets]);
+    let isActive = true;
+    setForwardChannelsLoading(true);
+
+    listTransferOptions()
+      .then((options) => {
+        if (!isActive) return;
+        const workers = options?.workers ?? [];
+        const channelItems: TransferChannelOption[] = workers.map((worker) => ({
+          value: worker.id,
+          title: worker.number
+            ? `${worker.name} (${worker.number})`
+            : worker.name,
+          name: worker.name,
+          number: worker.number,
+        }));
+        setForwardChannels(channelItems);
+        if (channelItems.length === 0) {
+          setSelectedForwardChannelId(null);
+          return;
+        }
+
+        const currentWorkerId = readNonEmptyString(chatInfo.worker?.id);
+        const preferredChannelId =
+          (currentWorkerId &&
+            channelItems.find((item) => item.value === currentWorkerId)
+              ?.value) ??
+          channelItems[0]?.value ??
+          null;
+        setSelectedForwardChannelId(preferredChannelId);
+      })
+      .finally(() => {
+        if (!isActive) return;
+        setForwardChannelsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [chatInfo.worker?.id, forwardModalVisible]);
 
   useEffect(() => {
     if (!forwardModalVisible) return;
+
+    setForwardSelectedIds([]);
+    setForwardItems([]);
+    setForwardCurrentPage(1);
+    setForwardTotalPages(1);
+  }, [forwardModalVisible, forwardStatus, selectedForwardChannelId]);
+
+  useEffect(() => {
+    if (!forwardModalVisible || !selectedForwardChannelId) return;
     const timer = setTimeout(() => {
       void loadForwardTargets(1, false);
     }, 300);
     return () => clearTimeout(timer);
-  }, [forwardModalVisible, forwardSearch, forwardStatus, loadForwardTargets]);
+  }, [
+    forwardModalVisible,
+    forwardSearch,
+    forwardStatus,
+    loadForwardTargets,
+    selectedForwardChannelId,
+  ]);
 
   useEffect(() => {
     const loadRecentReactions = async () => {
@@ -6934,16 +7035,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleSubmitForward = useCallback(async () => {
     if (!forwardSourceMessage || forwardSelectedIds.length === 0) return;
+    if (!selectedForwardChannelId) {
+      Alert.alert(pt.warning_title, pt.channel_required);
+      return;
+    }
 
     let payload: MessageForwardPayload;
     if (forwardStatus === 'all') {
-      if (!currentUserId) {
-        Alert.alert(pt.warning_title, pt.forward_worker_required_for_contacts);
-        return;
-      }
       payload = {
         target_contact_ids: forwardSelectedIds,
-        worker_id: currentUserId,
+        worker_id: selectedForwardChannelId,
       };
     } else {
       payload = {
@@ -6974,16 +7075,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     } else if (response.sent > 0) {
       Alert.alert(pt.success_title, pt.chat_forward_success);
     } else {
-      Alert.alert(pt.error_title, pt.chat_forward_error);
+      const firstFailureMessage =
+        response.results.find((item) => item.status === 'failed')?.reason ??
+        null;
+      Alert.alert(pt.error_title, firstFailureMessage || pt.chat_forward_error);
     }
 
-    setForwardModalVisible(false);
+    closeForwardModal();
   }, [
     chatInfo.chat_id,
-    currentUserId,
+    closeForwardModal,
     forwardSelectedIds,
     forwardSourceMessage,
     forwardStatus,
+    selectedForwardChannelId,
   ]);
 
   const handleSaveEditedMessage = useCallback(async () => {
@@ -7052,6 +7157,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleLoadMoreForwardTargets = useCallback(() => {
     if (!forwardModalVisible || forwardLoading || forwardLoadingMore) return;
+    if (!selectedForwardChannelId) return;
     if (forwardCurrentPage >= forwardTotalPages) return;
     void loadForwardTargets(forwardCurrentPage + 1, true);
   }, [
@@ -7061,7 +7167,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     forwardModalVisible,
     forwardTotalPages,
     loadForwardTargets,
+    selectedForwardChannelId,
   ]);
+  const canInteractWithForwardTargets =
+    !!selectedForwardChannelId && forwardChannels.length > 0;
 
   useEffect(() => {
     inputRef.current = input;
@@ -10139,22 +10248,44 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={forwardModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() => setForwardModalVisible(false))}
+        onRequestClose={handleForwardRequestClose}
       >
         <View style={styles.bottomSheetOverlay}>
           <Pressable
             style={styles.bottomSheetBackdrop}
-            onPress={dismissKeyboardAnd(() => setForwardModalVisible(false))}
+            onPress={handleForwardRequestClose}
           />
           <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
             <View style={styles.bottomSheetHeader}>
               <Text style={styles.bottomSheetTitle}>{pt.forward}</Text>
-              <Pressable
-                onPress={dismissKeyboardAnd(() =>
-                  setForwardModalVisible(false)
-                )}
-              >
+              <Pressable onPress={handleForwardRequestClose}>
                 <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <View style={styles.formField}>
+              <Text style={styles.formFieldLabel}>{pt.channel}</Text>
+              <Pressable
+                style={styles.formSelector}
+                onPress={dismissKeyboardAnd(() =>
+                  setForwardPickerKind('channel')
+                )}
+                disabled={
+                  forwardChannelsLoading || forwardChannels.length === 0
+                }
+              >
+                <Text style={styles.formSelectorText} numberOfLines={1}>
+                  {selectedForwardChannel?.title ?? pt.transfer_select_channel}
+                </Text>
+                {forwardChannelsLoading ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons
+                    name="chevron-down"
+                    size={16}
+                    color={colors.grey600}
+                  />
+                )}
               </Pressable>
             </View>
 
@@ -10172,10 +10303,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     styles.forwardStatusChip,
                     forwardStatus === option.value &&
                       styles.forwardStatusChipActive,
+                    !canInteractWithForwardTargets &&
+                      styles.forwardStatusChipDisabled,
                   ]}
+                  disabled={!canInteractWithForwardTargets}
                   onPress={dismissKeyboardAnd(() => {
                     setForwardStatus(option.value);
-                    setForwardSelectedIds([]);
                   })}
                 >
                   <Text
@@ -10204,10 +10337,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 placeholder={pt.search_contacts}
                 placeholderTextColor={colors.grey500}
                 maxLength={120}
+                editable={canInteractWithForwardTargets}
               />
             </View>
 
-            {forwardLoading ? (
+            {forwardChannelsLoading ? (
+              <View style={styles.modalLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : !canInteractWithForwardTargets ? (
+              <Text style={styles.emptyText}>{pt.channel_required}</Text>
+            ) : forwardLoading ? (
               <View style={styles.modalLoadingWrap}>
                 <ActivityIndicator size="small" color={colors.primary} />
               </View>
@@ -10263,22 +10403,26 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <View style={styles.bottomSheetFooter}>
               <Pressable
                 style={styles.secondaryBtn}
-                onPress={dismissKeyboardAnd(() =>
-                  setForwardModalVisible(false)
-                )}
+                onPress={dismissKeyboardAnd(closeForwardModal)}
               >
                 <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
               </Pressable>
               <Pressable
                 style={[
                   styles.primaryBtn,
-                  (forwardSelectedIds.length === 0 || forwardSubmitting) &&
+                  (!canInteractWithForwardTargets ||
+                    forwardSelectedIds.length === 0 ||
+                    forwardSubmitting) &&
                     styles.sendBtnDisabled,
                 ]}
                 onPress={dismissKeyboardAnd(() => {
                   void handleSubmitForward();
                 })}
-                disabled={forwardSelectedIds.length === 0 || forwardSubmitting}
+                disabled={
+                  !canInteractWithForwardTargets ||
+                  forwardSelectedIds.length === 0 ||
+                  forwardSubmitting
+                }
               >
                 {forwardSubmitting ? (
                   <ActivityIndicator size="small" color={colors.onPrimary} />
@@ -10287,6 +10431,40 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 )}
               </Pressable>
             </View>
+
+            {forwardPickerKind === 'channel' ? (
+              <Pressable
+                style={styles.inlinePickerOverlay}
+                onPress={dismissKeyboardAnd(() => setForwardPickerKind(null))}
+              >
+                <Pressable
+                  style={styles.pickerCard}
+                  onPress={(event) => event.stopPropagation()}
+                >
+                  <FlatList
+                    data={forwardChannels}
+                    keyExtractor={(item) => item.value}
+                    keyboardDismissMode="on-drag"
+                    renderItem={({ item }) => (
+                      <Pressable
+                        style={styles.pickerRow}
+                        onPress={dismissKeyboardAnd(() => {
+                          setSelectedForwardChannelId(item.value);
+                          setForwardPickerKind(null);
+                        })}
+                      >
+                        <Text style={styles.pickerRowText}>{item.title}</Text>
+                      </Pressable>
+                    )}
+                    ListEmptyComponent={
+                      <Text style={styles.emptyText}>
+                        {pt.no_results_found}
+                      </Text>
+                    }
+                  />
+                </Pressable>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -13814,6 +13992,9 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: 'rgba(40, 101, 183, 0.08)',
   },
+  forwardStatusChipDisabled: {
+    opacity: 0.55,
+  },
   forwardStatusChipText: {
     fontSize: 12,
     fontWeight: '600',
@@ -14142,6 +14323,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
+  },
+  inlinePickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    zIndex: 10,
   },
   pickerCard: {
     width: '88%',
