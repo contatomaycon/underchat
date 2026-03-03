@@ -8430,22 +8430,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               <Text style={styles.locationErrorText}>{pt.location_error}</Text>
             ) : null}
 
-            <Pressable
-              style={styles.locationLiveBtn}
-              onPress={() =>
-                Alert.alert(pt.warning_title, pt.location_live_not_available)
-              }
-            >
-              <Ionicons
-                name="navigate-circle-outline"
-                size={20}
-                color={colors.primary}
-              />
-              <Text style={styles.locationLiveBtnText}>
-                {pt.location_live_share}
-              </Text>
-            </Pressable>
-
             <Text style={styles.locationSectionTitle}>
               {pt.location_nearby_places}
             </Text>
@@ -10555,23 +10539,6 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     color: colors.grey700,
     textAlign: 'center',
-  },
-  locationLiveBtn: {
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.inputBg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-  },
-  locationLiveBtnText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.primary,
   },
   locationSectionTitle: {
     fontSize: 16,
