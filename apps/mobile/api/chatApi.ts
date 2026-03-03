@@ -15,6 +15,7 @@ import {
   type ListMessageResponse,
   type ListMessageResult,
   type ListChatsResult,
+  type MessageContentLinkPreview,
 } from '../types/chat';
 import type {
   ChatContactChannelsItem,
@@ -118,6 +119,23 @@ export interface SearchMessagesResponse {
     total: number;
   };
 }
+
+export interface QuickMessageTemplate {
+  message_template_id: string;
+  command: string;
+  message: string;
+  attachment_url?: string | null;
+  type: string;
+  mimetype?: string | null;
+  duration?: number | null;
+  width?: number | null;
+  height?: number | null;
+  auto_send?: boolean | null;
+}
+
+type ListQuickMessageTemplatesResponse = {
+  results?: QuickMessageTemplate[];
+};
 
 export interface MessageForwardPayload {
   target_chat_ids?: string[];
@@ -269,12 +287,16 @@ export async function createMessage(
   chatId: string,
   type: string,
   message?: string,
-  messageQuotedId?: string | null
+  messageQuotedId?: string | null,
+  linkPreview?: MessageContentLinkPreview | null,
+  quickMessageTemplateId?: string | null
 ): Promise<ListMessageResult | null> {
   const payload: {
     type: string;
     message: string;
     message_quoted_id?: string;
+    link_preview?: MessageContentLinkPreview;
+    quick_message_template_id?: string;
   } = {
     type,
     message: message ?? '',
@@ -287,8 +309,35 @@ export async function createMessage(
     payload.message_quoted_id = messageQuotedId.trim();
   }
 
+  if (linkPreview && typeof linkPreview === 'object') {
+    payload.link_preview = linkPreview;
+  }
+
+  if (
+    typeof quickMessageTemplateId === 'string' &&
+    quickMessageTemplateId.trim().length > 0
+  ) {
+    payload.quick_message_template_id = quickMessageTemplateId.trim();
+  }
+
   const res = await apiPost<ListMessageResult>(`/chat/${chatId}`, payload);
   return res?.data ?? null;
+}
+
+export async function listQuickMessageTemplates(
+  command?: string | null
+): Promise<QuickMessageTemplate[]> {
+  const normalizedCommand =
+    typeof command === 'string' ? command.trim() : undefined;
+
+  const res = await apiGet<ListQuickMessageTemplatesResponse>(
+    '/chat/quick-message-templates',
+    {
+      command: normalizedCommand,
+    }
+  );
+
+  return res?.data?.results ?? [];
 }
 
 export async function reactToMessage(
@@ -1115,6 +1164,20 @@ export async function viewContactChannelsByContactId(
   if (!contactId || contactId.trim().length === 0) return null;
   const res = await apiGet<string[]>(`/chat/contacts/${contactId}/channels`);
   return res?.data ?? null;
+}
+
+export async function generateLinkPreview(
+  url: string
+): Promise<MessageContentLinkPreview | null> {
+  const normalizedUrl = url.trim();
+  if (!normalizedUrl) return null;
+
+  const res = await apiPost<MessageContentLinkPreview>(`/chat/link-preview`, {
+    url: normalizedUrl,
+  });
+
+  if (!res?.status) return null;
+  return res.data ?? null;
 }
 
 export async function listTransferOptions(): Promise<{

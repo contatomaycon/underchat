@@ -19,6 +19,7 @@ import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EColor } from '@core/common/enums/EColor';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { formatWhatsAppTextToHtml } from '@core/common/functions/whatsAppTextFormat';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import LottieSticker from '@/components/chat/LottieSticker.vue';
@@ -428,27 +429,8 @@ onErrorCaptured((err, instance) => {
   return true;
 });
 
-const formatWhatsAppText = (text: string): string => {
-  if (!text) return '';
-
-  const escapeHtml = (str: string) => {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  };
-
-  let formatted = escapeHtml(text);
-
-  formatted = formatted.replaceAll(/`([^`]+?)`/g, '<code>$1</code>');
-  formatted = formatted.replaceAll(/~([^~]+?)~/g, '<s>$1</s>');
-  formatted = formatted.replaceAll(/(?<!_)_([^_\n]+?)_(?!_)/g, '<em>$1</em>');
-  formatted = formatted.replaceAll(
-    /(?<!\*)\*([^*\n]+?)\*(?!\*)/g,
-    '<strong>$1</strong>'
-  );
-
-  return formatted;
-};
+const formatWhatsAppText = (text: string): string =>
+  formatWhatsAppTextToHtml(text);
 
 const getPinMessageText = (message: ListMessageResult): string | null => {
   if (!message.content?.pin) return null;

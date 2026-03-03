@@ -30,6 +30,7 @@ import { formatDate } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
 import { useTheme } from 'vuetify';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { formatWhatsAppTextToHtml } from '@core/common/functions/whatsAppTextFormat';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { can } from '@layouts/plugins/casl';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -1239,27 +1240,8 @@ const shouldFormatMessage = (message: ListMessageResult): boolean => {
   );
 };
 
-const formatWhatsAppText = (text: string): string => {
-  if (!text) return '';
-
-  const escapeHtml = (str: string) => {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  };
-
-  let formatted = escapeHtml(text);
-
-  formatted = formatted.replaceAll(/`([^`]+?)`/g, '<code>$1</code>');
-  formatted = formatted.replaceAll(/~([^~]+?)~/g, '<s>$1</s>');
-  formatted = formatted.replaceAll(/(?<!_)_([^_\n]+?)_(?!_)/g, '<em>$1</em>');
-  formatted = formatted.replaceAll(
-    /(?<!\*)\*([^*\n]+?)\*(?!\*)/g,
-    '<strong>$1</strong>'
-  );
-
-  return formatted;
-};
+const formatWhatsAppText = (text: string): string =>
+  formatWhatsAppTextToHtml(text);
 
 const getMessageEditHistory = (
   message: ListMessageResult

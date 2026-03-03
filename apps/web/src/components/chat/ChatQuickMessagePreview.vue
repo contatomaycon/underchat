@@ -4,6 +4,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { formatDate } from '@/@webcore/utils/formatters';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { formatWhatsAppTextToHtml } from '@core/common/functions/whatsAppTextFormat';
 import { useI18n } from 'vue-i18n';
 import type { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
 
@@ -160,27 +161,8 @@ const replacedMessage = computed(() => {
   return replaceTagsInMessage(props.template.message);
 });
 
-const formatWhatsAppText = (text: string): string => {
-  if (!text) return '';
-
-  const escapeHtml = (str: string) => {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  };
-
-  let formatted = escapeHtml(text);
-
-  formatted = formatted.replaceAll(/`([^`]+?)`/g, '<code>$1</code>');
-  formatted = formatted.replaceAll(/~([^~]+?)~/g, '<s>$1</s>');
-  formatted = formatted.replaceAll(/(?<!_)_([^_\n]+?)_(?!_)/g, '<em>$1</em>');
-  formatted = formatted.replaceAll(
-    /(?<!\*)\*([^*\n]+?)\*(?!\*)/g,
-    '<strong>$1</strong>'
-  );
-
-  return formatted;
-};
+const formatWhatsAppText = (text: string): string =>
+  formatWhatsAppTextToHtml(text);
 
 const currentTime = computed(() => {
   return formatDate(new Date().toISOString(), {

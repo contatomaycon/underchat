@@ -26,8 +26,10 @@ import {
   Easing,
   Alert,
   Keyboard,
+  type StyleProp,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -74,6 +76,7 @@ import {
   createMessage,
   createMessageWithFormData,
   clearChatSummary,
+  generateLinkPreview,
   updateChatStatusDetailed,
   transferChat,
   listTransferOptions,
@@ -86,12 +89,14 @@ import {
   updateForwardToOutputChatbot,
   viewWorkerConfigForChat,
   searchChats,
+  listQuickMessageTemplates,
   type LabelTemplate,
   type ChatUserStatus,
   type WorkerConfigForChat,
   type TransferChatPayload,
   type TransferUserOption,
   type TransferSectorOption,
+  type QuickMessageTemplate,
   listChatContacts,
   type ListChatContactResult,
   getChatContactById,
@@ -126,6 +131,11 @@ import { AppAvatar } from '../components/AppAvatar';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { resolveImageUri } from '../utils/imageUri';
+import { extractFirstUrl } from '../utils/extractFirstUrl';
+import {
+  parseWhatsAppTextTokens,
+  type WhatsAppTextToken,
+} from '../utils/whatsAppTextFormat';
 
 type EmojiDatasetEntry = {
   unified?: string;
@@ -138,6 +148,148 @@ type EmojiDatasetEntry = {
 
 const EMOJI_DATASET =
   require('emoji-datasource/emoji.json') as EmojiDatasetEntry[];
+
+const INLINE_URL_PATTERN = /((?:https?:\/\/|www\.)[^\s<>()]+[^\s<>().,;:!?])/gi;
+
+type TextChunk = {
+  text: string;
+  url: string | null;
+};
+
+function normalizeInlineUrl(url: string): string {
+  return url.startsWith('www.') ? `https://${url}` : url;
+}
+
+function splitTextChunksWithLinks(text: string): TextChunk[] {
+  if (!text) return [];
+
+  const chunks: TextChunk[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(INLINE_URL_PATTERN)) {
+    const urlText = match[0];
+    const index = match.index ?? 0;
+
+    if (index > lastIndex) {
+      chunks.push({ text: text.slice(lastIndex, index), url: null });
+    }
+
+    chunks.push({ text: urlText, url: normalizeInlineUrl(urlText) });
+    lastIndex = index + urlText.length;
+  }
+
+  if (lastIndex < text.length) {
+    chunks.push({ text: text.slice(lastIndex), url: null });
+  }
+
+  return chunks.length > 0 ? chunks : [{ text, url: null }];
+}
+
+async function openExternalTextUrl(url: string): Promise<void> {
+  try {
+    await Linking.openURL(url);
+  } catch {}
+}
+
+function hasMeaningfulLinkPreview(
+  preview: MessageContentLinkPreview | null | undefined
+): preview is MessageContentLinkPreview {
+  if (!preview) return false;
+
+  return Boolean(
+    readNonEmptyString(preview.title) ||
+    readNonEmptyString(preview.description) ||
+    readNonEmptyString(preview['canonical-url']) ||
+    readNonEmptyString(preview['matched-text']) ||
+    readNonEmptyString(preview.jpegThumbnail) ||
+    readNonEmptyString(preview.highQualityThumbnail) ||
+    readNonEmptyString(preview.originalThumbnailUrl)
+  );
+}
+
+type WhatsAppFormattedTextProps = {
+  text: string;
+  style?: StyleProp<TextStyle>;
+  numberOfLines?: number;
+  ellipsizeMode?: 'head' | 'middle' | 'tail' | 'clip';
+  selectable?: boolean;
+  onTextLayout?: (event: NativeSyntheticEvent<{ lines?: unknown[] }>) => void;
+};
+
+function renderWhatsAppTextToken(
+  token: WhatsAppTextToken,
+  tokenIndex: number
+): ReactElement | string | Array<ReactElement | null> {
+  if (token.type === 'newline') {
+    return '\n';
+  }
+
+  const tokenStyle =
+    token.type === 'bold'
+      ? styles.whatsAppBold
+      : token.type === 'italic'
+        ? styles.whatsAppItalic
+        : token.type === 'strike'
+          ? styles.whatsAppStrike
+          : token.type === 'code'
+            ? styles.whatsAppCode
+            : null;
+
+  const chunks = splitTextChunksWithLinks(token.text);
+  return chunks.map((chunk, chunkIndex) => {
+    if (!chunk.text) return null;
+
+    if (chunk.url) {
+      const url = chunk.url;
+      return (
+        <Text
+          key={`whatsapp-token-${tokenIndex}-${chunkIndex}`}
+          style={[tokenStyle, styles.whatsAppLink]}
+          onPress={() => {
+            void openExternalTextUrl(url);
+          }}
+          suppressHighlighting
+        >
+          {chunk.text}
+        </Text>
+      );
+    }
+
+    return (
+      <Text
+        key={`whatsapp-token-${tokenIndex}-${chunkIndex}`}
+        style={tokenStyle}
+      >
+        {chunk.text}
+      </Text>
+    );
+  });
+}
+
+function WhatsAppFormattedText({
+  text,
+  style,
+  numberOfLines,
+  ellipsizeMode,
+  selectable,
+  onTextLayout,
+}: WhatsAppFormattedTextProps) {
+  const tokens = useMemo(() => parseWhatsAppTextTokens(text), [text]);
+
+  return (
+    <Text
+      style={style}
+      numberOfLines={numberOfLines}
+      ellipsizeMode={ellipsizeMode}
+      selectable={selectable}
+      onTextLayout={onTextLayout}
+    >
+      {tokens.map((token, tokenIndex) =>
+        renderWhatsAppTextToken(token, tokenIndex)
+      )}
+    </Text>
+  );
+}
 
 function decodeBase64Waveform(base64: string): number[] | null {
   try {
@@ -2777,7 +2929,8 @@ function QuotedReplyPreview({
             ]}
           >
             {quotedText ? (
-              <Text
+              <WhatsAppFormattedText
+                text={quotedText}
                 style={[
                   styles.quotedText,
                   fromMe && styles.quotedTextRight,
@@ -2785,9 +2938,7 @@ function QuotedReplyPreview({
                 ]}
                 numberOfLines={2}
                 ellipsizeMode="tail"
-              >
-                {quotedText}
-              </Text>
+              />
             ) : null}
             {quotedMeta ? (
               <Text style={styles.quotedMeta} numberOfLines={1}>
@@ -2924,7 +3075,10 @@ function BubbleContent({
           />
         </Pressable>
         {cap ? (
-          <Text style={[styles.mediaCaption, textColor]}>{cap}</Text>
+          <WhatsAppFormattedText
+            text={cap}
+            style={[styles.mediaCaption, textColor]}
+          />
         ) : null}
       </View>
     );
@@ -2955,7 +3109,10 @@ function BubbleContent({
         />
         {videoMeta ? <Text style={styles.mediaMeta}>{videoMeta}</Text> : null}
         {cap ? (
-          <Text style={[styles.mediaCaption, textColor]}>{cap}</Text>
+          <WhatsAppFormattedText
+            text={cap}
+            style={[styles.mediaCaption, textColor]}
+          />
         ) : null}
       </View>
     );
@@ -3030,7 +3187,10 @@ function BubbleContent({
         <View style={styles.audioWrap}>
           <Text style={[styles.audioDuration, textColor]}>{durStr}</Text>
           {cap ? (
-            <Text style={[styles.mediaCaption, textColor]}>{cap}</Text>
+            <WhatsAppFormattedText
+              text={cap}
+              style={[styles.mediaCaption, textColor]}
+            />
           ) : null}
         </View>
       );
@@ -3163,9 +3323,10 @@ function BubbleContent({
           </Pressable>
         </View>
         {cap ? (
-          <Text style={[styles.mediaCaption, textColor, styles.audioCaption]}>
-            {cap}
-          </Text>
+          <WhatsAppFormattedText
+            text={cap}
+            style={[styles.mediaCaption, textColor, styles.audioCaption]}
+          />
         ) : null}
       </View>
     );
@@ -3235,11 +3396,10 @@ function BubbleContent({
           </Pressable>
         </View>
         {cap ? (
-          <Text
+          <WhatsAppFormattedText
+            text={cap}
             style={[styles.mediaCaption, textColor, styles.documentCaption]}
-          >
-            {cap}
-          </Text>
+          />
         ) : null}
       </View>
     );
@@ -3307,7 +3467,9 @@ function BubbleContent({
         {content.ephemeral ? (
           <Ionicons name="time" size={18} color={colors.grey600} />
         ) : null}
-        {text ? <Text style={styles.systemText}>{text}</Text> : null}
+        {text ? (
+          <WhatsAppFormattedText text={text} style={styles.systemText} />
+        ) : null}
       </View>
     );
   }
@@ -3323,10 +3485,16 @@ function BubbleContent({
     return renderWithContextCards(
       <View style={styles.templateWrap}>
         {title ? (
-          <Text style={[styles.templateTitle, textColor]}>{title}</Text>
+          <WhatsAppFormattedText
+            text={title}
+            style={[styles.templateTitle, textColor]}
+          />
         ) : null}
         {body ? (
-          <Text style={[styles.templateContent, textColor]}>{body}</Text>
+          <WhatsAppFormattedText
+            text={body}
+            style={[styles.templateContent, textColor]}
+          />
         ) : null}
         {templateButtons.length > 0 ? (
           <View style={styles.templateButtons}>
@@ -3390,7 +3558,8 @@ function BubbleContent({
 
     return renderWithContextCards(
       <View style={styles.bubbleTextWrap}>
-        <Text
+        <WhatsAppFormattedText
+          text={text}
           style={[styles.bubbleText, textColor]}
           selectable={false}
           numberOfLines={shouldCollapse ? LONG_TEXT_COLLAPSE_LINES : undefined}
@@ -3402,9 +3571,7 @@ function BubbleContent({
               setIsLongTextByLines(true);
             }
           }}
-        >
-          {text}
-        </Text>
+        />
         {canExpand ? (
           <Pressable
             onPress={() => {
@@ -3676,7 +3843,9 @@ function MessageBubble({
             <Text
               style={[
                 styles.bubbleEditedBadge,
-                fromMe ? styles.bubbleEditedBadgeRight : styles.bubbleEditedBadgeLeft,
+                fromMe
+                  ? styles.bubbleEditedBadgeRight
+                  : styles.bubbleEditedBadgeLeft,
               ]}
               numberOfLines={1}
             >
@@ -3748,6 +3917,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const sendingCapturedMediaRef = useRef(false);
   const sendingVoiceRecordingRef = useRef(false);
   const documentPickerActiveRef = useRef(false);
+  const quickMessageSearchRequestRef = useRef(0);
   const isRecordingVoiceRef = useRef(false);
   const isRecordingLockedRef = useRef(false);
   const isPreparingRecordingRef = useRef(false);
@@ -3904,6 +4074,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [input, setInput] = useState('');
+  const [showQuickMessageList, setShowQuickMessageList] = useState(false);
+  const [quickMessageTemplates, setQuickMessageTemplates] = useState<
+    QuickMessageTemplate[]
+  >([]);
+  const [quickMessageLoading, setQuickMessageLoading] = useState(false);
+  const [selectedQuickMessage, setSelectedQuickMessage] =
+    useState<QuickMessageTemplate | null>(null);
+  const [sendingQuickMessage, setSendingQuickMessage] = useState(false);
   const [sending, setSending] = useState(false);
   const [viewer, setViewer] = useState<MediaViewerState>({
     visible: false,
@@ -4068,6 +4246,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     clearSummaryAttemptedForChatRef.current = null;
     preserveScrollOnPrependRef.current = null;
     setMessages([]);
+    quickMessageSearchRequestRef.current += 1;
+    setShowQuickMessageList(false);
+    setQuickMessageTemplates([]);
+    setQuickMessageLoading(false);
+    setSelectedQuickMessage(null);
+    setSendingQuickMessage(false);
     setLoading(true);
     setHighlightedMessageId(null);
     setShowScrollToBottomButton(false);
@@ -6204,7 +6388,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       .map((entry) => normalizeEmojiDatasetEntry(entry))
       .filter((emoji): emoji is string => !!emoji);
 
-    return available.filter((emoji, index, arr) => arr.indexOf(emoji) === index);
+    return available.filter(
+      (emoji, index, arr) => arr.indexOf(emoji) === index
+    );
   }, [
     composerEmojiCategory,
     composerEmojiSearch,
@@ -7964,19 +8150,108 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     void discardVoiceRecordingCbRef.current();
   }, [chatInfo.chat_id]);
 
+  const getQuickMessageGreeting = useCallback(() => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return pt.good_morning;
+    if (hour >= 12 && hour < 18) return pt.good_afternoon;
+    return pt.good_evening;
+  }, []);
+
+  const getCurrentProtocol = useCallback(() => {
+    const protocolStart = chatInfo.protocol_start;
+    if (Array.isArray(protocolStart) && protocolStart.length > 0) {
+      return protocolStart[protocolStart.length - 1] ?? '';
+    }
+
+    const protocolTransfer = chatInfo.protocol_transfer;
+    if (Array.isArray(protocolTransfer) && protocolTransfer.length > 0) {
+      return protocolTransfer[protocolTransfer.length - 1] ?? '';
+    }
+
+    const protocolUra = chatInfo.protocol_ura;
+    if (Array.isArray(protocolUra) && protocolUra.length > 0) {
+      return protocolUra[protocolUra.length - 1] ?? '';
+    }
+
+    return '';
+  }, [
+    chatInfo.protocol_start,
+    chatInfo.protocol_transfer,
+    chatInfo.protocol_ura,
+  ]);
+
+  const replaceTagsInQuickMessage = useCallback(
+    (message: string | null | undefined) => {
+      if (!message) return '';
+
+      const contactName = chatInfo.name || '';
+      const protocol = getCurrentProtocol();
+      const now = new Date();
+      const date = now.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+      const time = now.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const greeting = getQuickMessageGreeting();
+      const accountName = chatInfo.account?.name || '';
+      const phoneDigits = normalizePhoneDigits(chatInfo.phone);
+      const phone = phoneDigits ? formatPhoneDigits(phoneDigits) : '';
+      const channelName = chatInfo.worker?.name || '';
+
+      let replaced = message;
+      replaced = replaced.replaceAll('{{ greeting }}', greeting);
+      replaced = replaced.replaceAll('{{ name }}', contactName);
+      replaced = replaced.replaceAll('{{ protocol }}', protocol);
+      replaced = replaced.replaceAll('{{ date }}', date);
+      replaced = replaced.replaceAll('{{ time }}', time);
+      replaced = replaced.replaceAll('{{ account_name }}', accountName);
+      replaced = replaced.replaceAll('{{ phone }}', phone);
+      replaced = replaced.replaceAll('{{ channel_name }}', channelName);
+
+      return replaced;
+    },
+    [
+      chatInfo.account?.name,
+      chatInfo.name,
+      chatInfo.phone,
+      chatInfo.worker?.name,
+      getCurrentProtocol,
+      getQuickMessageGreeting,
+    ]
+  );
+
   const sendTextPayload = useCallback(
-    async (rawText: string) => {
+    async (
+      rawText: string,
+      options?: {
+        quickMessageTemplateId?: string | null;
+      }
+    ) => {
       const text = rawText.trim();
       if (!text || sending || !canComposeInChat) return false;
       const replyMessageId = replyMessageTarget?.message_id;
+      const firstUrl = extractFirstUrl(text);
 
       setSending(true);
       try {
+        let linkPreviewPayload: MessageContentLinkPreview | null = null;
+        if (firstUrl) {
+          linkPreviewPayload = await generateLinkPreview(firstUrl);
+        }
+
         const newMsg = await createMessage(
           chatInfo.chat_id,
           EMessageType.text,
           text,
-          replyMessageId
+          replyMessageId,
+          hasMeaningfulLinkPreview(linkPreviewPayload)
+            ? linkPreviewPayload
+            : undefined,
+          options?.quickMessageTemplateId
         );
         if (newMsg) {
           pendingScrollToBottomRef.current = true;
@@ -8004,6 +8279,113 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ]
   );
 
+  const sendQuickMessageTemplate = useCallback(
+    async (template: QuickMessageTemplate) => {
+      if (!canComposeInChat || sendingQuickMessage) return false;
+
+      const messageValue = replaceTagsInQuickMessage(template.message);
+
+      if (template.type === EMessageType.text) {
+        return await sendTextPayload(messageValue, {
+          quickMessageTemplateId: template.message_template_id,
+        });
+      }
+
+      if (!template.attachment_url) return false;
+
+      const formData = new FormData();
+      formData.append('type', template.type);
+      formData.append('hash', createClientMessageHash());
+      formData.append(
+        'quick_message_template_id',
+        template.message_template_id
+      );
+
+      const normalizedMessage = messageValue.trim();
+      if (normalizedMessage) {
+        formData.append('message', normalizedMessage);
+      }
+
+      return await submitFormDataMessage(formData);
+    },
+    [
+      canComposeInChat,
+      replaceTagsInQuickMessage,
+      sendTextPayload,
+      sendingQuickMessage,
+      submitFormDataMessage,
+    ]
+  );
+
+  const handleSelectQuickMessage = useCallback(
+    async (template: QuickMessageTemplate) => {
+      setShowQuickMessageList(false);
+      if (template.auto_send) {
+        setInput('');
+        setQuickMessageTemplates([]);
+        setSelectedQuickMessage(null);
+        setSendingQuickMessage(true);
+        try {
+          await sendQuickMessageTemplate(template);
+        } finally {
+          setSendingQuickMessage(false);
+        }
+        return;
+      }
+
+      setSelectedQuickMessage(template);
+      setInput('');
+      setQuickMessageTemplates([]);
+      setComposerEmojiPickerVisible(false);
+      Keyboard.dismiss();
+    },
+    [sendQuickMessageTemplate]
+  );
+
+  const handleSendSelectedQuickMessage = useCallback(async () => {
+    if (!selectedQuickMessage || sendingQuickMessage) return;
+    setSendingQuickMessage(true);
+    try {
+      const sent = await sendQuickMessageTemplate(selectedQuickMessage);
+      if (sent) {
+        setSelectedQuickMessage(null);
+      }
+    } finally {
+      setSendingQuickMessage(false);
+    }
+  }, [selectedQuickMessage, sendQuickMessageTemplate, sendingQuickMessage]);
+
+  const handleCancelQuickMessage = useCallback(() => {
+    setSelectedQuickMessage(null);
+  }, []);
+
+  const handleComposerInputChange = useCallback((value: string) => {
+    setInput(value);
+
+    if (value.startsWith('/')) {
+      const searchTerm = value.slice(1).trim();
+      const requestId = quickMessageSearchRequestRef.current + 1;
+      quickMessageSearchRequestRef.current = requestId;
+
+      setShowQuickMessageList(true);
+
+      void (async () => {
+        setQuickMessageLoading(true);
+        const templates = await listQuickMessageTemplates(searchTerm || null);
+        if (quickMessageSearchRequestRef.current !== requestId) return;
+        setQuickMessageTemplates(templates);
+        setQuickMessageLoading(false);
+      })();
+
+      return;
+    }
+
+    quickMessageSearchRequestRef.current += 1;
+    setShowQuickMessageList(false);
+    setQuickMessageTemplates([]);
+    setQuickMessageLoading(false);
+  }, []);
+
   const handleTemplateButtonPress = useCallback(
     (button: MessageTemplateButton, _message: ListMessageResult) => {
       if (!canComposeInChat) return;
@@ -8019,6 +8401,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (
       !text ||
       sending ||
+      sendingQuickMessage ||
       isRecordingVoice ||
       sendingCapturedMedia ||
       !canComposeInChat
@@ -8034,11 +8417,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const canFocusInput =
     canComposeInChat &&
     !sending &&
+    !selectedQuickMessage &&
+    !sendingQuickMessage &&
     !sendingCapturedMedia &&
     !isPreparingRecording &&
     !isRecordingVoice;
   const canUseComposerActions =
     !sending &&
+    !selectedQuickMessage &&
+    !sendingQuickMessage &&
     canComposeInChat &&
     !isPreparingRecording &&
     !sendingVoiceRecording &&
@@ -8273,9 +8660,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                       messageActionTarget?.message_id ===
                         item.message.message_id
                     }
-                    canInteract={
-                      canOpenActionsForMessage(item.message)
-                    }
+                    canInteract={canOpenActionsForMessage(item.message)}
                     onOpenActions={(message) => {
                       setMessageActionTarget(message);
                       setMessageOverlayAnchor({
@@ -8421,6 +8806,124 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               >
                 <Ionicons name="close" size={18} color={colors.grey700} />
               </Pressable>
+            </View>
+          ) : null}
+
+          {showQuickMessageList &&
+          quickMessageTemplates.length > 0 &&
+          !selectedQuickMessage ? (
+            <View style={styles.quickMessageListCard}>
+              {quickMessageLoading ? (
+                <View style={styles.quickMessageListLoading}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : null}
+              <ScrollView
+                style={styles.quickMessageListScroll}
+                keyboardShouldPersistTaps="handled"
+              >
+                {quickMessageTemplates.map((template) => (
+                  <Pressable
+                    key={template.message_template_id}
+                    style={styles.quickMessageListItem}
+                    onPress={() => {
+                      void handleSelectQuickMessage(template);
+                    }}
+                  >
+                    <Text style={styles.quickMessageListCommand}>
+                      /{template.command}
+                    </Text>
+                    <Text
+                      style={styles.quickMessageListMessage}
+                      numberOfLines={1}
+                    >
+                      {replaceTagsInQuickMessage(template.message) ||
+                        pt.quick_message_no_text}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {selectedQuickMessage ? (
+            <View style={styles.quickMessagePreviewCard}>
+              <View style={styles.quickMessagePreviewHeader}>
+                <Text style={styles.quickMessagePreviewTitle} numberOfLines={1}>
+                  /{selectedQuickMessage.command}
+                </Text>
+                <Pressable
+                  style={styles.quickMessagePreviewCloseBtn}
+                  onPress={handleCancelQuickMessage}
+                  accessibilityLabel={pt.close}
+                >
+                  <Ionicons name="close" size={17} color={colors.grey700} />
+                </Pressable>
+              </View>
+
+              {selectedQuickMessage.type === EMessageType.image &&
+              selectedQuickMessage.attachment_url ? (
+                <Image
+                  source={{
+                    uri:
+                      resolveMediaUri(selectedQuickMessage.attachment_url) ??
+                      selectedQuickMessage.attachment_url,
+                  }}
+                  style={styles.quickMessagePreviewImage}
+                  resizeMode="cover"
+                />
+              ) : null}
+
+              {(selectedQuickMessage.type === EMessageType.video ||
+                selectedQuickMessage.type === EMessageType.audio) &&
+              selectedQuickMessage.attachment_url ? (
+                <View style={styles.quickMessagePreviewMediaBadge}>
+                  <Ionicons
+                    name={
+                      selectedQuickMessage.type === EMessageType.video
+                        ? 'videocam-outline'
+                        : 'musical-notes-outline'
+                    }
+                    size={16}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.quickMessagePreviewMediaText}>
+                    {selectedQuickMessage.type === EMessageType.video
+                      ? pt.videos
+                      : pt.audio}
+                  </Text>
+                </View>
+              ) : null}
+
+              <Text style={styles.quickMessagePreviewText}>
+                {replaceTagsInQuickMessage(selectedQuickMessage.message) ||
+                  pt.quick_message_no_text}
+              </Text>
+
+              <View style={styles.quickMessagePreviewActions}>
+                <Pressable
+                  style={styles.secondaryBtn}
+                  onPress={handleCancelQuickMessage}
+                >
+                  <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.primaryBtn,
+                    sendingQuickMessage && styles.sendBtnDisabled,
+                  ]}
+                  onPress={() => {
+                    void handleSendSelectedQuickMessage();
+                  }}
+                  disabled={sendingQuickMessage}
+                >
+                  {sendingQuickMessage ? (
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>{pt.send}</Text>
+                  )}
+                </Pressable>
+              </View>
             </View>
           ) : null}
 
@@ -8586,13 +9089,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     placeholder={pt.type_message}
                     placeholderTextColor={colors.grey500}
                     value={input}
-                    onChangeText={setInput}
+                    onChangeText={handleComposerInputChange}
                     onPressIn={focusComposerInput}
                     keyboardType="default"
                     multiline
                     maxLength={65535}
                     editable={
                       canComposeInChat &&
+                      !selectedQuickMessage &&
+                      !sendingQuickMessage &&
                       !sending &&
                       !sendingCapturedMedia &&
                       !isPreparingRecording &&
@@ -8603,7 +9108,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     <Pressable
                       style={[
                         styles.emojiInputBtn,
-                        composerEmojiPickerVisible && styles.emojiInputBtnActive,
+                        composerEmojiPickerVisible &&
+                          styles.emojiInputBtnActive,
                       ]}
                       onPress={handleEmojiPress}
                       disabled={!canFocusInput}
@@ -8678,10 +9184,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   <Pressable
                     style={[
                       styles.sendBtn,
-                      (!hasInputText || sending) && styles.sendBtnDisabled,
+                      (!hasInputText || sending || sendingQuickMessage) &&
+                        styles.sendBtnDisabled,
                     ]}
                     onPress={handleSend}
-                    disabled={!hasInputText || sending}
+                    disabled={!hasInputText || sending || sendingQuickMessage}
                   >
                     <Ionicons name="send" size={22} color="#fff" />
                   </Pressable>
@@ -8798,7 +9305,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                       style={styles.reactionPickerEmojiBtn}
                       onPress={() => handleSelectComposerEmoji(emoji)}
                     >
-                      <Text style={styles.reactionPickerEmojiText}>{emoji}</Text>
+                      <Text style={styles.reactionPickerEmojiText}>
+                        {emoji}
+                      </Text>
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -9096,7 +9605,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           />
           <View style={styles.editHistoryCard}>
             <View style={styles.editHistoryHeader}>
-              <Text style={styles.editHistoryTitle}>{pt.chat_edit_history}</Text>
+              <Text style={styles.editHistoryTitle}>
+                {pt.chat_edit_history}
+              </Text>
               <Pressable onPress={() => setViewingEditHistoryMessage(null)}>
                 <Ionicons name="close" size={22} color={colors.onSurface} />
               </Pressable>
@@ -9129,7 +9640,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                             {formatMessageTime(item.date)}
                           </Text>
                         </View>
-                        <Text style={styles.editHistoryItemText}>{item.text}</Text>
+                        <Text style={styles.editHistoryItemText}>
+                          {item.text}
+                        </Text>
                       </View>
                     )
                   )
@@ -10594,6 +11107,7 @@ const styles = StyleSheet.create({
   },
   bubbleText: {
     fontSize: 15,
+    lineHeight: 21,
   },
   bubbleTextWrap: {
     minWidth: 0,
@@ -10606,6 +11120,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: colors.primary,
+  },
+  whatsAppBold: {
+    fontWeight: '700',
+  },
+  whatsAppItalic: {
+    fontStyle: 'italic',
+  },
+  whatsAppStrike: {
+    textDecorationLine: 'line-through',
+  },
+  whatsAppCode: {
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
+    backgroundColor: 'rgba(47, 43, 61, 0.1)',
+    borderRadius: 4,
+    paddingHorizontal: 2,
+  },
+  whatsAppLink: {
+    color: colors.primary,
+    textDecorationLine: 'underline',
   },
   bubbleTextLeft: {
     color: colors.onSurface,
@@ -10987,6 +11520,7 @@ const styles = StyleSheet.create({
   },
   mediaCaption: {
     fontSize: 14,
+    lineHeight: 20,
     marginTop: 8,
   },
   mediaMeta: {
@@ -11431,6 +11965,7 @@ const styles = StyleSheet.create({
   },
   systemText: {
     fontSize: 14,
+    lineHeight: 20,
     color: colors.grey700,
   },
   templateWrap: {
@@ -11629,6 +12164,109 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.grey200,
+    gap: 8,
+  },
+  quickMessageListCard: {
+    marginHorizontal: 10,
+    marginTop: 8,
+    marginBottom: 2,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.2)',
+    overflow: 'hidden',
+  },
+  quickMessageListLoading: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(47, 43, 61, 0.12)',
+  },
+  quickMessageListScroll: {
+    maxHeight: 260,
+  },
+  quickMessageListItem: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(47, 43, 61, 0.12)',
+  },
+  quickMessageListCommand: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  quickMessageListMessage: {
+    fontSize: 12,
+    color: colors.grey700,
+  },
+  quickMessagePreviewCard: {
+    marginHorizontal: 10,
+    marginTop: 8,
+    marginBottom: 2,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.2)',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  quickMessagePreviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  quickMessagePreviewTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  quickMessagePreviewCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+  },
+  quickMessagePreviewImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 10,
+    backgroundColor: colors.inputBg,
+  },
+  quickMessagePreviewMediaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: 'rgba(40, 101, 183, 0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  quickMessagePreviewMediaText: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  quickMessagePreviewText: {
+    fontSize: 14,
+    color: colors.onSurface,
+    lineHeight: 20,
+  },
+  quickMessagePreviewActions: {
+    marginTop: 4,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
     gap: 8,
   },
   replyComposerPreview: {
