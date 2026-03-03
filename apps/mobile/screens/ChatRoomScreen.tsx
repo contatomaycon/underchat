@@ -25,6 +25,7 @@ import {
   PanResponder,
   Easing,
   Alert,
+  Keyboard,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -3808,6 +3809,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [recentReactionEmojis, setRecentReactionEmojis] = useState<string[]>(
     []
   );
+  const [composerEmojiPickerVisible, setComposerEmojiPickerVisible] =
+    useState(false);
+  const [composerEmojiCategory, setComposerEmojiCategory] =
+    useState<ReactionCategoryKey>('recent');
+  const [composerEmojiSearch, setComposerEmojiSearch] = useState('');
   const [replyMessageTarget, setReplyMessageTarget] =
     useState<ListMessageResult | null>(null);
   const [editingMessageTarget, setEditingMessageTarget] =
@@ -6107,6 +6113,38 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     recentReactionEmojis,
   ]);
 
+  const composerEmojisByCategory = useMemo(() => {
+    if (composerEmojiCategory === 'recent') {
+      if (recentReactionEmojis.length > 0) {
+        return recentReactionEmojis;
+      }
+      return [...QUICK_REACTIONS, ...REACTION_FALLBACK_EMOJIS].filter(
+        (emoji, index, arr) => arr.indexOf(emoji) === index
+      );
+    }
+
+    const categoryConfig = reactionCategoryConfigs.find(
+      (cfg) => cfg.key === composerEmojiCategory
+    );
+    if (!categoryConfig) return [];
+
+    const available = emojiEntriesSorted
+      .filter((entry) =>
+        categoryConfig.sourceCategories.includes(entry.category ?? '')
+      )
+      .filter((entry) => matchesEmojiSearch(entry, composerEmojiSearch))
+      .map((entry) => normalizeEmojiDatasetEntry(entry))
+      .filter((emoji): emoji is string => !!emoji);
+
+    return available.filter((emoji, index, arr) => arr.indexOf(emoji) === index);
+  }, [
+    composerEmojiCategory,
+    composerEmojiSearch,
+    emojiEntriesSorted,
+    reactionCategoryConfigs,
+    recentReactionEmojis,
+  ]);
+
   const handleQuickReaction = useCallback(
     async (emoji: string) => {
       const target = messageActionTarget;
@@ -7913,12 +7951,33 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const focusComposerInput = useCallback(() => {
     if (!canFocusInput) return;
+    setComposerEmojiPickerVisible(false);
     messageInputRef.current?.focus();
   }, [canFocusInput]);
 
   const handleEmojiPress = useCallback(() => {
-    focusComposerInput();
-  }, [focusComposerInput]);
+    if (!canFocusInput) return;
+
+    setComposerEmojiPickerVisible((previous) => {
+      if (previous) {
+        messageInputRef.current?.focus();
+        return false;
+      }
+
+      setComposerEmojiCategory('recent');
+      setComposerEmojiSearch('');
+      Keyboard.dismiss();
+      return true;
+    });
+  }, [canFocusInput]);
+
+  const handleSelectComposerEmoji = useCallback((emoji: string) => {
+    setInput((previous) => `${previous}${emoji}`);
+    setRecentReactionEmojis((previous) => {
+      const next = [emoji, ...previous.filter((item) => item !== emoji)];
+      return next.slice(0, 40);
+    });
+  }, []);
 
   return (
     <KeyboardAvoidingView
@@ -8440,7 +8499,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   />
                   {!showRecordingHoldOverlay ? (
                     <Pressable
-                      style={styles.emojiInputBtn}
+                      style={[
+                        styles.emojiInputBtn,
+                        composerEmojiPickerVisible && styles.emojiInputBtnActive,
+                      ]}
                       onPress={handleEmojiPress}
                       disabled={!canFocusInput}
                       accessibilityLabel={pt.open_emoji_keyboard}
@@ -8599,6 +8661,72 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               </>
             )}
           </View>
+
+          {composerEmojiPickerVisible ? (
+            <View style={styles.composerEmojiPickerWrap}>
+              <View style={styles.composerEmojiPickerCard}>
+                <View style={styles.reactionPickerHandle} />
+
+                <View style={styles.reactionPickerSearchWrap}>
+                  <Ionicons
+                    name="search-outline"
+                    size={22}
+                    color={colors.grey500}
+                  />
+                  <TextInput
+                    value={composerEmojiSearch}
+                    onChangeText={setComposerEmojiSearch}
+                    placeholder="Pesquisar emoji"
+                    placeholderTextColor={colors.grey500}
+                    style={styles.reactionPickerSearchInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                <ScrollView
+                  style={styles.reactionPickerEmojiScroll}
+                  contentContainerStyle={styles.reactionPickerEmojiGrid}
+                  showsVerticalScrollIndicator
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {composerEmojisByCategory.map((emoji, index) => (
+                    <Pressable
+                      key={`composer-emoji-${composerEmojiCategory}-${emoji}-${index}`}
+                      style={styles.reactionPickerEmojiBtn}
+                      onPress={() => handleSelectComposerEmoji(emoji)}
+                    >
+                      <Text style={styles.reactionPickerEmojiText}>{emoji}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                <View style={styles.reactionPickerTabs}>
+                  {reactionCategoryConfigs.map((category) => (
+                    <Pressable
+                      key={`composer-reaction-category-${category.key}`}
+                      style={[
+                        styles.reactionPickerTab,
+                        composerEmojiCategory === category.key &&
+                          styles.reactionPickerTabActive,
+                      ]}
+                      onPress={() => setComposerEmojiCategory(category.key)}
+                    >
+                      <Ionicons
+                        name={category.icon}
+                        size={21}
+                        color={
+                          composerEmojiCategory === category.key
+                            ? colors.primary
+                            : colors.grey600
+                        }
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          ) : null}
         </>
       )}
 
@@ -11400,6 +11528,26 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emojiInputBtnActive: {
+    backgroundColor: 'rgba(40, 101, 183, 0.1)',
+  },
+  composerEmojiPickerWrap: {
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingTop: 6,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 6,
+  },
+  composerEmojiPickerCard: {
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 12 : 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.16)',
   },
   recordingHoldOverlay: {
     position: 'absolute',
