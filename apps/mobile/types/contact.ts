@@ -28,6 +28,8 @@ export type ContactSortOrder = 'asc' | 'desc';
 
 export interface ContactListFilters {
   filter_label_template_id?: string | null;
+  filter_channel_id?: string | null;
+  filter_is_valided?: string | null;
   filter_phone_ddi?: string | null;
   filter_phone?: string | null;
   filter_name?: string | null;

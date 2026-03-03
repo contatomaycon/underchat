@@ -119,6 +119,25 @@ export interface SearchMessagesResponse {
   };
 }
 
+export interface MessageForwardPayload {
+  target_chat_ids?: string[];
+  target_contact_ids?: string[];
+  worker_id?: string;
+}
+
+export interface MessageForwardResultItem {
+  target_id: string;
+  status: 'sent' | 'failed';
+  reason?: string;
+}
+
+export interface MessageForwardResponse {
+  requested: number;
+  sent: number;
+  failed: number;
+  results: MessageForwardResultItem[];
+}
+
 export type ListChatsParams = {
   status: string | string[];
   current_page?: number;
@@ -249,13 +268,92 @@ export async function listMessages(
 export async function createMessage(
   chatId: string,
   type: string,
-  message?: string
+  message?: string,
+  messageQuotedId?: string | null
 ): Promise<ListMessageResult | null> {
-  const res = await apiPost<ListMessageResult>(`/chat/${chatId}`, {
+  const payload: {
+    type: string;
+    message: string;
+    message_quoted_id?: string;
+  } = {
     type,
     message: message ?? '',
-  });
+  };
+
+  if (
+    typeof messageQuotedId === 'string' &&
+    messageQuotedId.trim().length > 0
+  ) {
+    payload.message_quoted_id = messageQuotedId.trim();
+  }
+
+  const res = await apiPost<ListMessageResult>(`/chat/${chatId}`, payload);
   return res?.data ?? null;
+}
+
+export async function reactToMessage(
+  chatId: string,
+  messageId: string,
+  emoji: string
+): Promise<boolean> {
+  if (!chatId || !messageId) return false;
+  const normalizedEmoji = emoji.trim();
+  if (!normalizedEmoji) return false;
+
+  const res = await apiPost<boolean>(
+    `/chat/${chatId}/message/${messageId}/react`,
+    { emoji: normalizedEmoji }
+  );
+
+  return !!res?.status;
+}
+
+export async function editMessage(
+  chatId: string,
+  messageId: string,
+  message: string
+): Promise<boolean> {
+  if (!chatId || !messageId) return false;
+  if (!message || message.trim().length === 0) return false;
+
+  const res = await apiPost<boolean>(
+    `/chat/${chatId}/message/${messageId}/edit`,
+    {
+      message: message.trim(),
+    }
+  );
+
+  return !!res?.status;
+}
+
+export async function deleteMessage(
+  chatId: string,
+  messageId: string
+): Promise<boolean> {
+  if (!chatId || !messageId) return false;
+
+  const res = await apiPost<boolean>(
+    `/chat/${chatId}/message/${messageId}/delete`,
+    {}
+  );
+
+  return !!res?.status;
+}
+
+export async function forwardMessage(
+  chatId: string,
+  messageId: string,
+  payload: MessageForwardPayload
+): Promise<MessageForwardResponse | null> {
+  if (!chatId || !messageId) return null;
+
+  const res = await apiPost<MessageForwardResponse>(
+    `/chat/${chatId}/message/${messageId}/forward`,
+    payload
+  );
+
+  if (!res?.status) return null;
+  return res.data ?? null;
 }
 
 export async function createMessageWithFormData(

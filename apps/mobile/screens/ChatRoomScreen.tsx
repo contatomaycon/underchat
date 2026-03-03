@@ -63,6 +63,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Location from 'expo-location';
+import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import {
@@ -93,6 +94,11 @@ import {
   getChatContactById,
   getChatContactPhoneDecrypted,
   getChatContactByPhone,
+  reactToMessage,
+  editMessage,
+  deleteMessage,
+  forwardMessage,
+  type MessageForwardPayload,
   type ChatContactLookupResult,
 } from '../api/chatApi';
 import {
@@ -286,6 +292,30 @@ type ChatMenuAction = {
   danger?: boolean;
   active?: boolean;
   onPress: () => void;
+};
+
+type MessageActionKey =
+  | 'reply'
+  | 'copy'
+  | 'download'
+  | 'forward'
+  | 'react'
+  | 'edit'
+  | 'delete';
+
+type MessageAction = {
+  key: MessageActionKey;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  danger?: boolean;
+  onPress: () => void;
+};
+
+type ForwardStatusType = 'in_chat' | 'queue' | 'all' | null;
+
+type ForwardTargetItem = {
+  value: string;
+  title: string;
 };
 
 type TransferDestinationType = 'user' | 'sector' | null;
@@ -627,6 +657,110 @@ const EMessageType = {
   annotation: 'annotation',
   view_once: 'view_once',
 } as const;
+
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+const FORWARD_ALLOWED_TYPES = new Set<string>([
+  EMessageType.text,
+  EMessageType.image,
+  EMessageType.document,
+  EMessageType.audio,
+  EMessageType.video,
+  EMessageType.video_note,
+  EMessageType.sticker,
+  EMessageType.location,
+  EMessageType.contact_card,
+  EMessageType.contacts,
+]);
+
+function isDeletedMessage(message: ListMessageResult): boolean {
+  return message.deleted === true;
+}
+
+function canInteractWithMessage(message: ListMessageResult): boolean {
+  if (isDeletedMessage(message)) return false;
+  if (message.summary?.is_sent_to_internal === false) return false;
+  if (message.content?.type === EMessageType.view_once) return false;
+  if (message.content?.type === EMessageType.annotation) return false;
+  if (message.content?.type === EMessageType.system) return false;
+  return true;
+}
+
+function isTextMessage(message: ListMessageResult): boolean {
+  return message.content?.type === EMessageType.text;
+}
+
+function isDownloadableImage(message: ListMessageResult): boolean {
+  return !!message.content?.image?.url;
+}
+
+function isDownloadableDocument(message: ListMessageResult): boolean {
+  return !!message.content?.document?.url;
+}
+
+function isDownloadableVideo(message: ListMessageResult): boolean {
+  if (!message.content?.video?.url) return false;
+  if (message.message_key?.is_view_once) return false;
+  return (
+    message.content?.type === EMessageType.video ||
+    message.content?.type === EMessageType.video_note
+  );
+}
+
+function isDownloadableAudio(message: ListMessageResult): boolean {
+  if (!message.content?.audio?.url) return false;
+  if (message.message_key?.is_view_once) return false;
+  return message.content?.type === EMessageType.audio;
+}
+
+function isDownloadableSticker(message: ListMessageResult): boolean {
+  return (
+    message.content?.type === EMessageType.sticker &&
+    !!message.content?.sticker?.url
+  );
+}
+
+function shouldShowCopyAction(message: ListMessageResult): boolean {
+  if (message.content?.type === EMessageType.contact_card) return false;
+  if (isDownloadableDocument(message)) return false;
+  if (isDownloadableImage(message)) return false;
+  if (isDownloadableVideo(message)) return false;
+  if (isDownloadableAudio(message)) return false;
+  if (isDownloadableSticker(message)) return false;
+  return (
+    isTextMessage(message) || message.content?.type === EMessageType.system
+  );
+}
+
+function shouldShowDownloadAction(message: ListMessageResult): boolean {
+  return (
+    isDownloadableDocument(message) ||
+    isDownloadableImage(message) ||
+    isDownloadableVideo(message) ||
+    isDownloadableAudio(message) ||
+    isDownloadableSticker(message)
+  );
+}
+
+function canForwardMessage(message: ListMessageResult): boolean {
+  if (isDeletedMessage(message)) return false;
+  if (!message.content?.type) return false;
+  if (message.content.type === EMessageType.view_once) return false;
+  if (message.message_key?.is_view_once) return false;
+  return FORWARD_ALLOWED_TYPES.has(message.content.type);
+}
+
+function canEditMessage(message: ListMessageResult, fromMe: boolean): boolean {
+  if (!fromMe) return false;
+  if (!isTextMessage(message)) return false;
+  if (isDeletedMessage(message)) return false;
+
+  const messageDate = new Date(message.date);
+  const now = new Date();
+  const diffInMinutes = (now.getTime() - messageDate.getTime()) / (1000 * 60);
+
+  return diffInMinutes < 10;
+}
 
 function formatFileSize(bytes: number | null | undefined): string {
   if (bytes == null || bytes === 0) return '';
@@ -3052,6 +3186,11 @@ function MessageBubble({
   onOpenVideo,
   onTemplateButtonPress,
   disableTemplateButtons,
+  canInteract,
+  reactionPickerOpen,
+  onOpenActions,
+  onToggleReactionPicker,
+  onSelectQuickReaction,
   obfuscateContent = false,
 }: {
   msg: ListMessageResult;
@@ -3069,6 +3208,11 @@ function MessageBubble({
     message: ListMessageResult
   ) => void;
   disableTemplateButtons?: boolean;
+  canInteract?: boolean;
+  reactionPickerOpen?: boolean;
+  onOpenActions?: (message: ListMessageResult) => void;
+  onToggleReactionPicker?: (message: ListMessageResult) => void;
+  onSelectQuickReaction?: (message: ListMessageResult, emoji: string) => void;
   obfuscateContent?: boolean;
 }) {
   const content = msg.content;
@@ -3208,8 +3352,28 @@ function MessageBubble({
         wrapAlign === 'flex-start' && styles.bubbleWrapLeft,
       ]}
     >
-      <View
-        style={[
+      {canInteract && reactionPickerOpen ? (
+        <View
+          style={[
+            styles.quickReactionStrip,
+            fromMe
+              ? styles.quickReactionStripRight
+              : styles.quickReactionStripLeft,
+          ]}
+        >
+          {QUICK_REACTIONS.map((emoji) => (
+            <Pressable
+              key={`${msg.message_id}-${emoji}`}
+              style={styles.quickReactionBtn}
+              onPress={() => onSelectQuickReaction?.(msg, emoji)}
+            >
+              <Text style={styles.quickReactionEmoji}>{emoji}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      <Pressable
+        style={({ pressed }) => [
           styles.bubble,
           { backgroundColor: bubbleBg },
           isSystem && styles.bubbleSystem,
@@ -3219,7 +3383,13 @@ function MessageBubble({
           hasQuoted && styles.bubbleQuotedMinWidth,
           isShortTextMessage && styles.bubbleShortMinWidth,
           highlighted && styles.bubbleHighlighted,
+          pressed && canInteract && styles.bubblePressed,
         ]}
+        onLongPress={() => {
+          if (!canInteract) return;
+          onOpenActions?.(msg);
+        }}
+        delayLongPress={220}
       >
         {showForwardedIndicator ? (
           <View style={styles.forwardedIndicator}>
@@ -3285,7 +3455,36 @@ function MessageBubble({
             color={fromMe ? colors.bubbleSentTime : colors.grey600}
           />
         </View>
-      </View>
+      </Pressable>
+      {canInteract ? (
+        <View
+          style={[
+            styles.messageActionSide,
+            fromMe
+              ? styles.messageActionSideRight
+              : styles.messageActionSideLeft,
+          ]}
+        >
+          <Pressable
+            style={styles.messageActionSideBtn}
+            onPress={() => onToggleReactionPicker?.(msg)}
+            accessibilityLabel={pt.react_to_message}
+          >
+            <Ionicons name="happy-outline" size={14} color={colors.grey700} />
+          </Pressable>
+          <Pressable
+            style={styles.messageActionSideBtn}
+            onPress={() => onOpenActions?.(msg)}
+            accessibilityLabel={pt.message_actions}
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={14}
+              color={colors.grey700}
+            />
+          </Pressable>
+        </View>
+      ) : null}
       {showReactionsSummary ? (
         <View
           style={[
@@ -3450,6 +3649,30 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     string | null
   >(null);
   const [messages, setMessages] = useState<ListMessageResult[]>([]);
+  const [messageActionTarget, setMessageActionTarget] =
+    useState<ListMessageResult | null>(null);
+  const [replyMessageTarget, setReplyMessageTarget] =
+    useState<ListMessageResult | null>(null);
+  const [activeReactionMessageId, setActiveReactionMessageId] = useState<
+    string | null
+  >(null);
+  const [editingMessageTarget, setEditingMessageTarget] =
+    useState<ListMessageResult | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState('');
+  const [savingEditedMessage, setSavingEditedMessage] = useState(false);
+  const [forwardModalVisible, setForwardModalVisible] = useState(false);
+  const [forwardSourceMessage, setForwardSourceMessage] =
+    useState<ListMessageResult | null>(null);
+  const [forwardStatus, setForwardStatus] =
+    useState<ForwardStatusType>('in_chat');
+  const [forwardSearch, setForwardSearch] = useState('');
+  const [forwardItems, setForwardItems] = useState<ForwardTargetItem[]>([]);
+  const [forwardSelectedIds, setForwardSelectedIds] = useState<string[]>([]);
+  const [forwardCurrentPage, setForwardCurrentPage] = useState(1);
+  const [forwardTotalPages, setForwardTotalPages] = useState(1);
+  const [forwardLoading, setForwardLoading] = useState(false);
+  const [forwardLoadingMore, setForwardLoadingMore] = useState(false);
+  const [forwardSubmitting, setForwardSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [input, setInput] = useState('');
@@ -5432,6 +5655,490 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     protocolList.length,
   ]);
 
+  const handleCopyMessageContent = useCallback(
+    async (message: ListMessageResult) => {
+      const text =
+        message.content?.message ||
+        message.content?.link_preview?.['matched-text'] ||
+        message.content?.link_preview?.['canonical-url'] ||
+        '';
+      if (!text) return;
+      await Clipboard.setStringAsync(text);
+    },
+    []
+  );
+
+  const handleDownloadMessage = useCallback(
+    async (message: ListMessageResult) => {
+      const audioUrl = readNonEmptyString(message.content?.audio?.url);
+      if (audioUrl && isDownloadableAudio(message)) {
+        await forceDownloadToDevice(
+          resolveMediaUri(audioUrl) ?? audioUrl,
+          `audio-${message.message_id.slice(-8)}.${(message.content?.audio?.extension ?? 'mp3').replace(/^\./, '')}`,
+          'document'
+        );
+        return;
+      }
+
+      const documentUrl = readNonEmptyString(message.content?.document?.url);
+      if (documentUrl && isDownloadableDocument(message)) {
+        await forceDownloadToDevice(
+          resolveMediaUri(documentUrl) ?? documentUrl,
+          resolveDocumentDownloadName(message.content?.document),
+          'document'
+        );
+        return;
+      }
+
+      const videoUrl = readNonEmptyString(message.content?.video?.url);
+      if (videoUrl && isDownloadableVideo(message)) {
+        await forceDownloadToDevice(
+          resolveMediaUri(videoUrl) ?? videoUrl,
+          resolveVideoDownloadName(message.content?.video),
+          'video'
+        );
+        return;
+      }
+
+      const stickerUrl = readNonEmptyString(message.content?.sticker?.url);
+      if (stickerUrl && isDownloadableSticker(message)) {
+        await forceDownloadToDevice(
+          resolveMediaUri(stickerUrl) ?? stickerUrl,
+          resolveStickerDownloadName(message),
+          'document'
+        );
+        return;
+      }
+
+      const imageUrl = readNonEmptyString(message.content?.image?.url);
+      if (imageUrl && isDownloadableImage(message)) {
+        await forceDownloadToDevice(
+          resolveMediaUri(imageUrl) ?? imageUrl,
+          resolveImageDownloadName(message, imageUrl),
+          'image'
+        );
+      }
+    },
+    []
+  );
+
+  const applyLocalReaction = useCallback(
+    (messageId: string, emoji: string, userId: string, userName: string) => {
+      setMessages((previous) =>
+        previous.map((entry) => {
+          if (entry.message_id !== messageId) return entry;
+          const baseContent: MessageContent = {
+            ...(entry.content ?? { type: EMessageType.text }),
+          };
+          const filtered = (baseContent.reactions ?? []).filter(
+            (reaction) => reaction?.user_id !== userId
+          );
+          const nextReactions = emoji
+            ? [
+                ...filtered,
+                {
+                  emoji,
+                  user_id: userId,
+                  user_name: userName,
+                },
+              ]
+            : filtered;
+          return {
+            ...entry,
+            content: {
+              ...baseContent,
+              reactions: nextReactions.length > 0 ? nextReactions : null,
+            },
+          };
+        })
+      );
+    },
+    []
+  );
+
+  const loadForwardTargets = useCallback(
+    async (page: number, append: boolean) => {
+      if (!forwardModalVisible || !forwardSourceMessage || !forwardStatus)
+        return;
+
+      if (append) {
+        setForwardLoadingMore(true);
+      } else {
+        setForwardLoading(true);
+      }
+
+      const search = forwardSearch.trim();
+      const targetItems: ForwardTargetItem[] = [];
+
+      try {
+        if (forwardStatus === 'all') {
+          const response = await listChatContacts(page, 20, search, {
+            filter_is_valided: 'true',
+          });
+          const currentContactId = readNonEmptyString(chatInfo.contact?.id);
+
+          for (const contact of response?.results ?? []) {
+            if (!contact.contact_id) continue;
+            if (currentContactId && contact.contact_id === currentContactId) {
+              continue;
+            }
+            const fullName = [contact.name, contact.last_name]
+              .filter(Boolean)
+              .join(' ')
+              .trim();
+            const title = `${fullName || pt.contact} - ${contact.phone_partial || contact.contact_id}`;
+            targetItems.push({
+              value: contact.contact_id,
+              title,
+            });
+          }
+
+          setForwardCurrentPage(response?.current_page ?? page);
+          setForwardTotalPages(response?.total_pages ?? 1);
+        } else {
+          const response = await searchChats({
+            search,
+            status: forwardStatus,
+            current_page: page,
+            per_page: 20,
+          });
+
+          for (const chatItem of response?.results ?? []) {
+            if (!chatItem.chat_id || chatItem.chat_id === chatInfo.chat_id)
+              continue;
+            const title = `${chatItem.name ?? chatItem.contact?.name ?? pt.contact} - ${chatItem.phone || chatItem.chat_id}`;
+            targetItems.push({
+              value: chatItem.chat_id,
+              title,
+            });
+          }
+
+          setForwardCurrentPage(response?.current_page ?? page);
+          setForwardTotalPages(response?.total_pages ?? 1);
+        }
+
+        if (!append) {
+          setForwardItems(targetItems);
+          return;
+        }
+
+        setForwardItems((previous) => {
+          const map = new Map<string, ForwardTargetItem>();
+          for (const item of previous) map.set(item.value, item);
+          for (const item of targetItems) map.set(item.value, item);
+          return Array.from(map.values());
+        });
+      } finally {
+        if (append) {
+          setForwardLoadingMore(false);
+        } else {
+          setForwardLoading(false);
+        }
+      }
+    },
+    [
+      chatInfo.chat_id,
+      chatInfo.contact?.id,
+      forwardModalVisible,
+      forwardSearch,
+      forwardSourceMessage,
+      forwardStatus,
+    ]
+  );
+
+  useEffect(() => {
+    if (!forwardModalVisible) {
+      setForwardSourceMessage(null);
+      setForwardStatus('in_chat');
+      setForwardSearch('');
+      setForwardItems([]);
+      setForwardSelectedIds([]);
+      setForwardCurrentPage(1);
+      setForwardTotalPages(1);
+      setForwardLoading(false);
+      setForwardLoadingMore(false);
+      setForwardSubmitting(false);
+      return;
+    }
+
+    void loadForwardTargets(1, false);
+  }, [forwardModalVisible, loadForwardTargets]);
+
+  useEffect(() => {
+    if (!forwardModalVisible) return;
+    const timer = setTimeout(() => {
+      void loadForwardTargets(1, false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [forwardModalVisible, forwardSearch, forwardStatus, loadForwardTargets]);
+
+  const messageActions = useMemo<MessageAction[]>(() => {
+    const target = messageActionTarget;
+    if (!target) return [];
+
+    const fromMe = target.type_user !== ETypeUserChat.client;
+    const canInteract =
+      canInteractWithMessage(target) &&
+      !isHistoryReadonly &&
+      !shouldObfuscateContent;
+
+    if (!canInteract) return [];
+
+    const actions: MessageAction[] = [];
+
+    if (canComposeInChat) {
+      actions.push({
+        key: 'reply',
+        label: pt.reply,
+        icon: 'arrow-undo-outline',
+        onPress: () => {
+          setReplyMessageTarget(target);
+          setMessageActionTarget(null);
+          requestAnimationFrame(() => {
+            messageInputRef.current?.focus();
+          });
+        },
+      });
+    }
+
+    if (shouldShowCopyAction(target)) {
+      actions.push({
+        key: 'copy',
+        label: pt.copy,
+        icon: 'copy-outline',
+        onPress: () => {
+          void handleCopyMessageContent(target);
+          setMessageActionTarget(null);
+        },
+      });
+    }
+
+    if (shouldShowDownloadAction(target)) {
+      actions.push({
+        key: 'download',
+        label: pt.download,
+        icon: 'download-outline',
+        onPress: () => {
+          void handleDownloadMessage(target);
+          setMessageActionTarget(null);
+        },
+      });
+    }
+
+    if (canForwardMessage(target)) {
+      actions.push({
+        key: 'forward',
+        label: pt.forward,
+        icon: 'arrow-redo-outline',
+        onPress: () => {
+          setForwardSourceMessage(target);
+          setForwardModalVisible(true);
+          setMessageActionTarget(null);
+        },
+      });
+    }
+
+    actions.push({
+      key: 'react',
+      label: pt.react,
+      icon: 'happy-outline',
+      onPress: () => {
+        setActiveReactionMessageId(target.message_id);
+        setMessageActionTarget(null);
+      },
+    });
+
+    if (canEditMessage(target, fromMe)) {
+      actions.push({
+        key: 'edit',
+        label: pt.edit,
+        icon: 'create-outline',
+        onPress: () => {
+          setEditingMessageTarget(target);
+          setEditingMessageText(getLatestMessageText(target));
+          setMessageActionTarget(null);
+        },
+      });
+    }
+
+    if (fromMe && target.content?.type !== EMessageType.system) {
+      actions.push({
+        key: 'delete',
+        label: pt.delete,
+        icon: 'trash-outline',
+        danger: true,
+        onPress: () => {
+          setMessageActionTarget(null);
+
+          const previousDeleted = target.deleted === true;
+          setMessages((previous) =>
+            previous.map((entry) =>
+              entry.message_id === target.message_id
+                ? { ...entry, deleted: true }
+                : entry
+            )
+          );
+
+          void (async () => {
+            const ok = await deleteMessage(chatInfo.chat_id, target.message_id);
+            if (ok) return;
+
+            setMessages((previous) =>
+              previous.map((entry) =>
+                entry.message_id === target.message_id
+                  ? { ...entry, deleted: previousDeleted }
+                  : entry
+              )
+            );
+            Alert.alert(pt.error_title, pt.chat_delete_error);
+          })();
+        },
+      });
+    }
+
+    return actions;
+  }, [
+    canComposeInChat,
+    chatInfo.chat_id,
+    handleCopyMessageContent,
+    handleDownloadMessage,
+    isHistoryReadonly,
+    messageActionTarget,
+    shouldObfuscateContent,
+  ]);
+
+  const handleSubmitForward = useCallback(async () => {
+    if (!forwardSourceMessage || forwardSelectedIds.length === 0) return;
+
+    let payload: MessageForwardPayload;
+    if (forwardStatus === 'all') {
+      if (!currentUserId) {
+        Alert.alert(pt.warning_title, pt.forward_worker_required_for_contacts);
+        return;
+      }
+      payload = {
+        target_contact_ids: forwardSelectedIds,
+        worker_id: currentUserId,
+      };
+    } else {
+      payload = {
+        target_chat_ids: forwardSelectedIds,
+      };
+    }
+
+    setForwardSubmitting(true);
+    const response = await forwardMessage(
+      chatInfo.chat_id,
+      forwardSourceMessage.message_id,
+      payload
+    );
+    setForwardSubmitting(false);
+
+    if (!response) {
+      Alert.alert(pt.error_title, pt.chat_forward_error);
+      return;
+    }
+
+    if (response.failed > 0 && response.sent > 0) {
+      Alert.alert(
+        pt.warning_title,
+        pt.chat_forward_partial_success
+          .replace('{sent}', String(response.sent))
+          .replace('{failed}', String(response.failed))
+      );
+    } else if (response.sent > 0) {
+      Alert.alert(pt.success_title, pt.chat_forward_success);
+    } else {
+      Alert.alert(pt.error_title, pt.chat_forward_error);
+    }
+
+    setForwardModalVisible(false);
+  }, [
+    chatInfo.chat_id,
+    currentUserId,
+    forwardSelectedIds,
+    forwardSourceMessage,
+    forwardStatus,
+  ]);
+
+  const handleSaveEditedMessage = useCallback(async () => {
+    const target = editingMessageTarget;
+    const editedText = editingMessageText.trim();
+    if (!target || !editedText || savingEditedMessage) return;
+
+    const previous = target;
+
+    setMessages((entries) =>
+      entries.map((entry) => {
+        if (entry.message_id !== target.message_id) return entry;
+        const previousVersions = entry.content?.version ?? [];
+        return {
+          ...entry,
+          content: {
+            ...(entry.content ?? { type: EMessageType.text }),
+            message: editedText,
+            version: [
+              ...previousVersions,
+              {
+                type: entry.content?.type ?? EMessageType.text,
+                message: editedText,
+                date: new Date().toISOString(),
+              },
+            ],
+          },
+        };
+      })
+    );
+
+    setSavingEditedMessage(true);
+    const ok = await editMessage(
+      chatInfo.chat_id,
+      target.message_id,
+      editedText
+    );
+    setSavingEditedMessage(false);
+
+    if (!ok) {
+      setMessages((entries) =>
+        entries.map((entry) =>
+          entry.message_id === previous.message_id ? previous : entry
+        )
+      );
+      Alert.alert(pt.error_title, pt.chat_edit_error);
+      return;
+    }
+
+    setEditingMessageTarget(null);
+    setEditingMessageText('');
+  }, [
+    chatInfo.chat_id,
+    editingMessageTarget,
+    editingMessageText,
+    savingEditedMessage,
+  ]);
+
+  const toggleForwardTarget = useCallback((targetId: string) => {
+    setForwardSelectedIds((previous) => {
+      if (previous.includes(targetId)) {
+        return previous.filter((id) => id !== targetId);
+      }
+      return [...previous, targetId];
+    });
+  }, []);
+
+  const handleLoadMoreForwardTargets = useCallback(() => {
+    if (!forwardModalVisible || forwardLoading || forwardLoadingMore) return;
+    if (forwardCurrentPage >= forwardTotalPages) return;
+    void loadForwardTargets(forwardCurrentPage + 1, true);
+  }, [
+    forwardCurrentPage,
+    forwardLoading,
+    forwardLoadingMore,
+    forwardModalVisible,
+    forwardTotalPages,
+    loadForwardTargets,
+  ]);
+
   useEffect(() => {
     inputRef.current = input;
     sendingRef.current = sending;
@@ -5850,6 +6557,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const submitFormDataMessage = useCallback(
     async (formData: FormData): Promise<boolean> => {
+      const replyMessageId = replyMessageTarget?.message_id;
+      if (replyMessageId && !formData.get('message_quoted_id')) {
+        formData.append('message_quoted_id', replyMessageId);
+      }
+
       const result = await createMessageWithFormData(
         chatInfo.chat_id,
         formData
@@ -5867,12 +6579,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       } else {
         await syncLatestMessages();
       }
+      if (replyMessageId) {
+        setReplyMessageTarget(null);
+      }
       requestAnimationFrame(() => {
         scrollToBottomWithRetries(10);
       });
       return true;
     },
-    [chatInfo.chat_id, scrollToBottomWithRetries, syncLatestMessages]
+    [
+      chatInfo.chat_id,
+      replyMessageTarget?.message_id,
+      scrollToBottomWithRetries,
+      syncLatestMessages,
+    ]
   );
 
   const sendCapturedMediaDraft = useCallback(
@@ -6827,18 +7547,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     async (rawText: string) => {
       const text = rawText.trim();
       if (!text || sending || !canComposeInChat) return false;
+      const replyMessageId = replyMessageTarget?.message_id;
 
       setSending(true);
       try {
         const newMsg = await createMessage(
           chatInfo.chat_id,
           EMessageType.text,
-          text
+          text,
+          replyMessageId
         );
         if (newMsg) {
           pendingScrollToBottomRef.current = true;
           setShowScrollToBottomButton(false);
           setMessages((prev) => mergeMessageLists(prev, newMsg));
+          if (replyMessageId) {
+            setReplyMessageTarget(null);
+          }
           requestAnimationFrame(() => {
             scrollToBottomWithRetries(10);
           });
@@ -6849,7 +7574,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
       return false;
     },
-    [canComposeInChat, chatInfo.chat_id, sending, scrollToBottomWithRetries]
+    [
+      canComposeInChat,
+      chatInfo.chat_id,
+      replyMessageTarget?.message_id,
+      sending,
+      scrollToBottomWithRetries,
+    ]
   );
 
   const handleTemplateButtonPress = useCallback(
@@ -7098,6 +7829,69 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     highlighted={
                       highlightedMessageId === item.message.message_id
                     }
+                    canInteract={
+                      canInteractWithMessage(item.message) &&
+                      !isHistoryReadonly &&
+                      !shouldObfuscateContent
+                    }
+                    reactionPickerOpen={
+                      activeReactionMessageId === item.message.message_id
+                    }
+                    onOpenActions={(message) => {
+                      setActiveReactionMessageId(null);
+                      setMessageActionTarget(message);
+                    }}
+                    onToggleReactionPicker={(message) => {
+                      if (isHistoryReadonly || shouldObfuscateContent) return;
+                      if (!canInteractWithMessage(message)) return;
+                      setActiveReactionMessageId((previous) =>
+                        previous === message.message_id
+                          ? null
+                          : message.message_id
+                      );
+                    }}
+                    onSelectQuickReaction={(message, emoji) => {
+                      void (async () => {
+                        const previousReactions =
+                          message.content?.reactions ?? null;
+                        const messageWorkerId = currentUserId ?? '';
+                        const messageWorkerName = currentUserName ?? '';
+
+                        setActiveReactionMessageId(null);
+                        applyLocalReaction(
+                          message.message_id,
+                          emoji,
+                          messageWorkerId,
+                          messageWorkerName
+                        );
+
+                        const ok = await reactToMessage(
+                          chatInfo.chat_id,
+                          message.message_id,
+                          emoji
+                        );
+
+                        if (!ok) {
+                          setMessages((previous) =>
+                            previous.map((entry) => {
+                              if (entry.message_id !== message.message_id) {
+                                return entry;
+                              }
+                              return {
+                                ...entry,
+                                content: {
+                                  ...(entry.content ?? {
+                                    type: EMessageType.text,
+                                  }),
+                                  reactions: previousReactions,
+                                },
+                              };
+                            })
+                          );
+                          Alert.alert(pt.error_title, pt.chat_react_error);
+                        }
+                      })();
+                    }}
                     onPressQuoted={
                       canGoToQuoted && quotedTargetId
                         ? () => scrollToMessageById(quotedTargetId)
@@ -7214,33 +8008,124 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           <Text style={styles.readonlyFooterText}>{pt.history_readonly}</Text>
         </View>
       ) : (
-        <View
-          style={[
-            styles.inputRow,
-            isTyping && styles.inputRowWithTyping,
-            showRecordingComposer && styles.inputRowRecording,
-          ]}
-        >
-          {showRecordingComposer ? (
-            <View style={styles.recordingComposerWrap}>
-              {isRecordingLocked ? (
-                <>
-                  <Pressable
-                    style={styles.recordActionBtn}
-                    onPress={() => {
-                      void discardVoiceRecording();
-                    }}
-                    accessibilityLabel={pt.delete_recording}
-                  >
-                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                  </Pressable>
+        <>
+          {replyMessageTarget ? (
+            <View style={styles.replyComposerPreview}>
+              <View style={styles.replyComposerPreviewBar} />
+              <View style={styles.replyComposerPreviewBody}>
+                <Text
+                  style={styles.replyComposerPreviewTitle}
+                  numberOfLines={1}
+                >
+                  {pt.replying_to}
+                </Text>
+                <Text style={styles.replyComposerPreviewText} numberOfLines={2}>
+                  {getLatestMessageText(replyMessageTarget) || pt.type_message}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.replyComposerPreviewClose}
+                onPress={() => setReplyMessageTarget(null)}
+                accessibilityLabel={pt.cancel_reply}
+              >
+                <Ionicons name="close" size={18} color={colors.grey700} />
+              </Pressable>
+            </View>
+          ) : null}
 
-                  <View style={styles.recordingLockedCenter}>
-                    <View style={styles.recordingMetaRow}>
+          <View
+            style={[
+              styles.inputRow,
+              isTyping && styles.inputRowWithTyping,
+              showRecordingComposer && styles.inputRowRecording,
+            ]}
+          >
+            {showRecordingComposer ? (
+              <View style={styles.recordingComposerWrap}>
+                {isRecordingLocked ? (
+                  <>
+                    <Pressable
+                      style={styles.recordActionBtn}
+                      onPress={() => {
+                        void discardVoiceRecording();
+                      }}
+                      accessibilityLabel={pt.delete_recording}
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={20}
+                        color="#EF4444"
+                      />
+                    </Pressable>
+
+                    <View style={styles.recordingLockedCenter}>
+                      <View style={styles.recordingMetaRow}>
+                        <Animated.View
+                          style={[
+                            styles.recordingDot,
+                            isRecordingPaused && styles.recordingDotPaused,
+                            {
+                              transform: [{ scale: recordingPulse }],
+                            },
+                          ]}
+                        />
+                        <Text style={styles.recordingTimeText}>
+                          {recordingDurationLabel}
+                        </Text>
+                      </View>
+
+                      <View style={styles.recordingWaveformTrack}>
+                        {recordingWaveformBars.map((value, index) => (
+                          <View
+                            key={`record-locked-${index}`}
+                            style={[
+                              styles.recordingWaveformBar,
+                              {
+                                height: `${Math.max(14, value * 100)}%`,
+                              },
+                            ]}
+                          />
+                        ))}
+                      </View>
+                    </View>
+
+                    <Pressable
+                      style={styles.recordActionBtn}
+                      onPress={togglePauseVoiceRecording}
+                      accessibilityLabel={
+                        isRecordingPaused
+                          ? pt.resume_recording
+                          : pt.pause_recording
+                      }
+                    >
+                      <Ionicons
+                        name={isRecordingPaused ? 'play' : 'pause'}
+                        size={19}
+                        color={colors.primary}
+                      />
+                    </Pressable>
+
+                    <Pressable
+                      style={[
+                        styles.recordActionBtn,
+                        styles.recordSendBtn,
+                        sendingVoiceRecording && styles.sendBtnDisabled,
+                      ]}
+                      onPress={() => {
+                        void sendRecordedVoiceMessage();
+                      }}
+                      disabled={sendingVoiceRecording}
+                      accessibilityLabel={pt.send_recording}
+                    >
+                      <Ionicons name="send" size={18} color="#FFFFFF" />
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.recordingLiveMeta}>
                       <Animated.View
                         style={[
                           styles.recordingDot,
-                          isRecordingPaused && styles.recordingDotPaused,
                           {
                             transform: [{ scale: recordingPulse }],
                           },
@@ -7254,297 +8139,486 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     <View style={styles.recordingWaveformTrack}>
                       {recordingWaveformBars.map((value, index) => (
                         <View
-                          key={`record-locked-${index}`}
+                          key={`record-live-${index}`}
                           style={[
                             styles.recordingWaveformBar,
                             {
-                              height: `${Math.max(14, value * 100)}%`,
+                              height: `${Math.max(12, value * 100)}%`,
                             },
                           ]}
                         />
                       ))}
                     </View>
-                  </View>
 
-                  <Pressable
-                    style={styles.recordActionBtn}
-                    onPress={togglePauseVoiceRecording}
-                    accessibilityLabel={
-                      isRecordingPaused
-                        ? pt.resume_recording
-                        : pt.pause_recording
-                    }
-                  >
-                    <Ionicons
-                      name={isRecordingPaused ? 'play' : 'pause'}
-                      size={19}
-                      color={colors.primary}
-                    />
-                  </Pressable>
-
-                  <Pressable
-                    style={[
-                      styles.recordActionBtn,
-                      styles.recordSendBtn,
-                      sendingVoiceRecording && styles.sendBtnDisabled,
-                    ]}
-                    onPress={() => {
-                      void sendRecordedVoiceMessage();
-                    }}
-                    disabled={sendingVoiceRecording}
-                    accessibilityLabel={pt.send_recording}
-                  >
-                    <Ionicons name="send" size={18} color="#FFFFFF" />
-                  </Pressable>
-                </>
-              ) : (
-                <>
-                  <View style={styles.recordingLiveMeta}>
                     <Animated.View
                       style={[
-                        styles.recordingDot,
+                        styles.recordingHintWrap,
                         {
-                          transform: [{ scale: recordingPulse }],
+                          opacity: recordingHintOpacity,
+                          transform: [{ translateY: recordingHintOffset }],
                         },
                       ]}
-                    />
-                    <Text style={styles.recordingTimeText}>
-                      {recordingDurationLabel}
-                    </Text>
-                  </View>
-
-                  <View style={styles.recordingWaveformTrack}>
-                    {recordingWaveformBars.map((value, index) => (
-                      <View
-                        key={`record-live-${index}`}
-                        style={[
-                          styles.recordingWaveformBar,
-                          {
-                            height: `${Math.max(12, value * 100)}%`,
-                          },
-                        ]}
-                      />
-                    ))}
-                  </View>
-
-                  <Animated.View
-                    style={[
-                      styles.recordingHintWrap,
-                      {
-                        opacity: recordingHintOpacity,
-                        transform: [{ translateY: recordingHintOffset }],
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name="chevron-up-outline"
-                      size={16}
-                      color={colors.primary}
-                    />
-                    <Text style={styles.recordingHintText}>
-                      {pt.slide_up_to_lock}
-                    </Text>
-                  </Animated.View>
-                </>
-              )}
-            </View>
-          ) : (
-            <>
-              {!isRecordingVoice && !showRecordingHoldOverlay ? (
-                <Pressable
-                  style={[
-                    styles.composerActionBtn,
-                    styles.plusActionBtn,
-                    !canUseComposerActions && styles.sendBtnDisabled,
-                  ]}
-                  onPress={handleOpenAttachmentPicker}
-                  disabled={!canUseComposerActions}
-                  accessibilityLabel={pt.open_attachments}
-                >
-                  <Ionicons name="add" size={20} color={colors.grey700} />
-                </Pressable>
-              ) : null}
-
-              <View style={styles.inputStack}>
-                <TextInput
-                  ref={messageInputRef}
-                  style={styles.input}
-                  placeholder={pt.type_message}
-                  placeholderTextColor={colors.grey500}
-                  value={input}
-                  onChangeText={setInput}
-                  onPressIn={focusComposerInput}
-                  keyboardType="default"
-                  multiline
-                  maxLength={65535}
-                  editable={
-                    canComposeInChat &&
-                    !sending &&
-                    !sendingCapturedMedia &&
-                    !isPreparingRecording &&
-                    !isRecordingVoice
-                  }
-                />
-                {!showRecordingHoldOverlay ? (
-                  <Pressable
-                    style={styles.emojiInputBtn}
-                    onPress={handleEmojiPress}
-                    disabled={!canFocusInput}
-                    accessibilityLabel={pt.open_emoji_keyboard}
-                  >
-                    <Ionicons
-                      name="happy-outline"
-                      size={19}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
-                ) : null}
-                {showRecordingHoldOverlay ? (
-                  <View
-                    pointerEvents="none"
-                    style={styles.recordingHoldOverlay}
-                  >
-                    <View style={styles.recordingHoldLeft}>
-                      <Animated.View
-                        style={[
-                          styles.recordingDot,
-                          !isRecordingVoice && styles.recordingDotPaused,
-                          {
-                            transform: [{ scale: recordingPulse }],
-                          },
-                        ]}
-                      />
-                      <Text style={styles.recordingHoldTime}>
-                        {recordingDurationLabel}
-                      </Text>
-                    </View>
-
-                    <View style={styles.recordingHoldCenter}>
-                      <Text
-                        style={[
-                          styles.recordingHoldCancelText,
-                          isRecordingCancelArmed &&
-                            styles.recordingHoldCancelTextArmed,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {isRecordingCancelArmed
-                          ? pt.release_to_cancel
-                          : pt.slide_left_to_cancel}
-                      </Text>
-                      <Ionicons
-                        name="chevron-back-outline"
-                        size={18}
-                        color={
-                          isRecordingCancelArmed ? '#EF4444' : colors.grey600
-                        }
-                      />
-                    </View>
-
-                    <View style={styles.recordingHoldRight}>
-                      <Ionicons
-                        name="lock-closed-outline"
-                        size={15}
-                        color={colors.grey600}
-                      />
-                      <Ionicons
-                        name="chevron-up-outline"
-                        size={18}
-                        color={colors.grey600}
-                      />
-                    </View>
-                  </View>
-                ) : null}
-              </View>
-
-              {hasInputText ? (
-                <Pressable
-                  style={[
-                    styles.sendBtn,
-                    (!hasInputText || sending) && styles.sendBtnDisabled,
-                  ]}
-                  onPress={handleSend}
-                  disabled={!hasInputText || sending}
-                >
-                  <Ionicons name="send" size={22} color="#fff" />
-                </Pressable>
-              ) : (
-                <View style={styles.composerActionsWrap}>
-                  {!isRecordingVoice && !showRecordingHoldOverlay ? (
-                    <Pressable
-                      style={[
-                        styles.composerActionBtn,
-                        !canUseComposerActions && styles.sendBtnDisabled,
-                      ]}
-                      onPress={() => {
-                        void handleQuickCameraCapture();
-                      }}
-                      disabled={!canUseComposerActions}
-                      accessibilityLabel={pt.open_camera}
                     >
                       <Ionicons
-                        name="camera-outline"
-                        size={21}
-                        color="#FFFFFF"
+                        name="chevron-up-outline"
+                        size={16}
+                        color={colors.primary}
+                      />
+                      <Text style={styles.recordingHintText}>
+                        {pt.slide_up_to_lock}
+                      </Text>
+                    </Animated.View>
+                  </>
+                )}
+              </View>
+            ) : (
+              <>
+                {!isRecordingVoice && !showRecordingHoldOverlay ? (
+                  <Pressable
+                    style={[
+                      styles.composerActionBtn,
+                      styles.plusActionBtn,
+                      !canUseComposerActions && styles.sendBtnDisabled,
+                    ]}
+                    onPress={handleOpenAttachmentPicker}
+                    disabled={!canUseComposerActions}
+                    accessibilityLabel={pt.open_attachments}
+                  >
+                    <Ionicons name="add" size={20} color={colors.grey700} />
+                  </Pressable>
+                ) : null}
+
+                <View style={styles.inputStack}>
+                  <TextInput
+                    ref={messageInputRef}
+                    style={styles.input}
+                    placeholder={pt.type_message}
+                    placeholderTextColor={colors.grey500}
+                    value={input}
+                    onChangeText={setInput}
+                    onPressIn={focusComposerInput}
+                    keyboardType="default"
+                    multiline
+                    maxLength={65535}
+                    editable={
+                      canComposeInChat &&
+                      !sending &&
+                      !sendingCapturedMedia &&
+                      !isPreparingRecording &&
+                      !isRecordingVoice
+                    }
+                  />
+                  {!showRecordingHoldOverlay ? (
+                    <Pressable
+                      style={styles.emojiInputBtn}
+                      onPress={handleEmojiPress}
+                      disabled={!canFocusInput}
+                      accessibilityLabel={pt.open_emoji_keyboard}
+                    >
+                      <Ionicons
+                        name="happy-outline"
+                        size={19}
+                        color={colors.grey600}
                       />
                     </Pressable>
                   ) : null}
-
-                  {canShowIconActions ? (
-                    <View style={styles.micGestureWrap} collapsable={false}>
-                      {showRecordingHoldOverlay && !isRecordingCancelArmed ? (
+                  {showRecordingHoldOverlay ? (
+                    <View
+                      pointerEvents="none"
+                      style={styles.recordingHoldOverlay}
+                    >
+                      <View style={styles.recordingHoldLeft}>
                         <Animated.View
-                          pointerEvents="none"
                           style={[
-                            styles.micLockHintPill,
+                            styles.recordingDot,
+                            !isRecordingVoice && styles.recordingDotPaused,
                             {
-                              opacity: recordingHintOpacity,
-                              transform: [{ translateY: recordingHintOffset }],
+                              transform: [{ scale: recordingPulse }],
                             },
                           ]}
-                        >
-                          <Ionicons
-                            name="lock-closed"
-                            size={14}
-                            color={colors.grey700}
-                          />
-                          <Ionicons
-                            name="chevron-up-outline"
-                            size={18}
-                            color={colors.grey700}
-                          />
-                        </Animated.View>
-                      ) : null}
+                        />
+                        <Text style={styles.recordingHoldTime}>
+                          {recordingDurationLabel}
+                        </Text>
+                      </View>
 
-                      <Animated.View
-                        {...micPanResponder.panHandlers}
-                        collapsable={false}
-                        style={[
-                          styles.composerActionBtn,
-                          styles.micActionBtn,
-                          (isPreparingRecording || isRecordingVoice) &&
-                            styles.micActionBtnRecording,
-                          styles.micActionBtnLarge,
-                          !canUseComposerActions && styles.sendBtnDisabled,
-                          {
-                            transform: [{ scale: recordingPulse }],
-                          },
-                        ]}
-                      >
-                        {isPreparingRecording ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : (
-                          <Ionicons name="mic" size={22} color="#FFFFFF" />
-                        )}
-                      </Animated.View>
+                      <View style={styles.recordingHoldCenter}>
+                        <Text
+                          style={[
+                            styles.recordingHoldCancelText,
+                            isRecordingCancelArmed &&
+                              styles.recordingHoldCancelTextArmed,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {isRecordingCancelArmed
+                            ? pt.release_to_cancel
+                            : pt.slide_left_to_cancel}
+                        </Text>
+                        <Ionicons
+                          name="chevron-back-outline"
+                          size={18}
+                          color={
+                            isRecordingCancelArmed ? '#EF4444' : colors.grey600
+                          }
+                        />
+                      </View>
+
+                      <View style={styles.recordingHoldRight}>
+                        <Ionicons
+                          name="lock-closed-outline"
+                          size={15}
+                          color={colors.grey600}
+                        />
+                        <Ionicons
+                          name="chevron-up-outline"
+                          size={18}
+                          color={colors.grey600}
+                        />
+                      </View>
                     </View>
                   ) : null}
                 </View>
-              )}
-            </>
-          )}
-        </View>
+
+                {hasInputText ? (
+                  <Pressable
+                    style={[
+                      styles.sendBtn,
+                      (!hasInputText || sending) && styles.sendBtnDisabled,
+                    ]}
+                    onPress={handleSend}
+                    disabled={!hasInputText || sending}
+                  >
+                    <Ionicons name="send" size={22} color="#fff" />
+                  </Pressable>
+                ) : (
+                  <View style={styles.composerActionsWrap}>
+                    {!isRecordingVoice && !showRecordingHoldOverlay ? (
+                      <Pressable
+                        style={[
+                          styles.composerActionBtn,
+                          !canUseComposerActions && styles.sendBtnDisabled,
+                        ]}
+                        onPress={() => {
+                          void handleQuickCameraCapture();
+                        }}
+                        disabled={!canUseComposerActions}
+                        accessibilityLabel={pt.open_camera}
+                      >
+                        <Ionicons
+                          name="camera-outline"
+                          size={21}
+                          color="#FFFFFF"
+                        />
+                      </Pressable>
+                    ) : null}
+
+                    {canShowIconActions ? (
+                      <View style={styles.micGestureWrap} collapsable={false}>
+                        {showRecordingHoldOverlay && !isRecordingCancelArmed ? (
+                          <Animated.View
+                            pointerEvents="none"
+                            style={[
+                              styles.micLockHintPill,
+                              {
+                                opacity: recordingHintOpacity,
+                                transform: [
+                                  { translateY: recordingHintOffset },
+                                ],
+                              },
+                            ]}
+                          >
+                            <Ionicons
+                              name="lock-closed"
+                              size={14}
+                              color={colors.grey700}
+                            />
+                            <Ionicons
+                              name="chevron-up-outline"
+                              size={18}
+                              color={colors.grey700}
+                            />
+                          </Animated.View>
+                        ) : null}
+
+                        <Animated.View
+                          {...micPanResponder.panHandlers}
+                          collapsable={false}
+                          style={[
+                            styles.composerActionBtn,
+                            styles.micActionBtn,
+                            (isPreparingRecording || isRecordingVoice) &&
+                              styles.micActionBtnRecording,
+                            styles.micActionBtnLarge,
+                            !canUseComposerActions && styles.sendBtnDisabled,
+                            {
+                              transform: [{ scale: recordingPulse }],
+                            },
+                          ]}
+                        >
+                          {isPreparingRecording ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <Ionicons name="mic" size={22} color="#FFFFFF" />
+                          )}
+                        </Animated.View>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+        </>
       )}
+
+      <Modal
+        visible={messageActionTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMessageActionTarget(null)}
+      >
+        <Pressable
+          style={styles.menuOverlay}
+          onPress={() => setMessageActionTarget(null)}
+        >
+          <Pressable
+            style={styles.menuCard}
+            onPress={(event) => event.stopPropagation()}
+          >
+            {messageActions.map((action) => (
+              <Pressable
+                key={action.key}
+                style={styles.menuItem}
+                onPress={action.onPress}
+              >
+                <Ionicons
+                  name={action.icon}
+                  size={18}
+                  color={action.danger ? colors.error : colors.onSurface}
+                />
+                <Text
+                  style={[
+                    styles.menuItemText,
+                    action.danger && styles.menuItemTextDanger,
+                  ]}
+                >
+                  {action.label}
+                </Text>
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={editingMessageTarget !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditingMessageTarget(null)}
+      >
+        <KeyboardAvoidingView
+          style={styles.bottomSheetOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+        >
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setEditingMessageTarget(null)}
+          />
+          <View style={[styles.bottomSheetCard, styles.annotationSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.edit_message}</Text>
+              <Pressable onPress={() => setEditingMessageTarget(null)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <TextInput
+              value={editingMessageText}
+              onChangeText={setEditingMessageText}
+              style={styles.annotationInput}
+              placeholder={pt.type_message}
+              placeholderTextColor={colors.grey500}
+              multiline
+              maxLength={65535}
+            />
+
+            <View style={styles.bottomSheetFooter}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => setEditingMessageTarget(null)}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.primaryBtn,
+                  (!editingMessageText.trim() || savingEditedMessage) &&
+                    styles.sendBtnDisabled,
+                ]}
+                onPress={() => {
+                  void handleSaveEditedMessage();
+                }}
+                disabled={!editingMessageText.trim() || savingEditedMessage}
+              >
+                {savingEditedMessage ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>{pt.save}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={forwardModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setForwardModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setForwardModalVisible(false)}
+          />
+          <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.forward}</Text>
+              <Pressable onPress={() => setForwardModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <View style={styles.forwardStatusRow}>
+              {(
+                [
+                  { value: 'in_chat', label: pt.in_chat },
+                  { value: 'queue', label: pt.queue },
+                  { value: 'all', label: pt.all },
+                ] as const
+              ).map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={[
+                    styles.forwardStatusChip,
+                    forwardStatus === option.value &&
+                      styles.forwardStatusChipActive,
+                  ]}
+                  onPress={() => {
+                    setForwardStatus(option.value);
+                    setForwardSelectedIds([]);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.forwardStatusChipText,
+                      forwardStatus === option.value &&
+                        styles.forwardStatusChipTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={styles.searchInputWrap}>
+              <Ionicons
+                name="search-outline"
+                size={18}
+                color={colors.grey600}
+              />
+              <TextInput
+                style={styles.searchInput}
+                value={forwardSearch}
+                onChangeText={setForwardSearch}
+                placeholder={pt.search_contacts}
+                placeholderTextColor={colors.grey500}
+                maxLength={120}
+              />
+            </View>
+
+            {forwardLoading ? (
+              <View style={styles.modalLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={forwardItems}
+                keyExtractor={(item) => item.value}
+                contentContainerStyle={styles.bottomSheetList}
+                onEndReached={handleLoadMoreForwardTargets}
+                onEndReachedThreshold={0.25}
+                renderItem={({ item }) => {
+                  const selected = forwardSelectedIds.includes(item.value);
+                  return (
+                    <Pressable
+                      style={styles.forwardTargetRow}
+                      onPress={() => toggleForwardTarget(item.value)}
+                    >
+                      <Text style={styles.forwardTargetText} numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      {selected ? (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={18}
+                          color={colors.primary}
+                        />
+                      ) : null}
+                    </Pressable>
+                  );
+                }}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+                }
+                ListFooterComponent={
+                  forwardLoadingMore ? (
+                    <View style={styles.modalLoadingWrap}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    </View>
+                  ) : null
+                }
+              />
+            )}
+
+            <Text style={styles.modalHintText}>
+              {pt.selected_contacts
+                .replace('{count}', String(forwardSelectedIds.length))
+                .replace('{max}', '∞')}
+            </Text>
+
+            <View style={styles.bottomSheetFooter}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => setForwardModalVisible(false)}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.primaryBtn,
+                  (forwardSelectedIds.length === 0 || forwardSubmitting) &&
+                    styles.sendBtnDisabled,
+                ]}
+                onPress={() => {
+                  void handleSubmitForward();
+                }}
+                disabled={forwardSelectedIds.length === 0 || forwardSubmitting}
+              >
+                {forwardSubmitting ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>{pt.forward}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={menuVisible}
@@ -8787,6 +9861,62 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(30, 90, 180, 0.42)',
   },
+  bubblePressed: {
+    opacity: 0.92,
+  },
+  messageActionSide: {
+    position: 'absolute',
+    top: 6,
+    flexDirection: 'column',
+    gap: 4,
+  },
+  messageActionSideLeft: {
+    right: -36,
+  },
+  messageActionSideRight: {
+    left: -36,
+  },
+  messageActionSideBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.18)',
+  },
+  quickReactionStrip: {
+    position: 'absolute',
+    top: -34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.18)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    zIndex: 20,
+  },
+  quickReactionStripLeft: {
+    left: 8,
+  },
+  quickReactionStripRight: {
+    right: 8,
+  },
+  quickReactionBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickReactionEmoji: {
+    fontSize: 16,
+    lineHeight: 16,
+  },
   bubbleText: {
     fontSize: 15,
   },
@@ -9801,6 +10931,47 @@ const styles = StyleSheet.create({
     borderTopColor: colors.grey200,
     gap: 8,
   },
+  replyComposerPreview: {
+    minHeight: 52,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.grey200,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  replyComposerPreviewBar: {
+    width: 3,
+    alignSelf: 'stretch',
+    borderRadius: 999,
+    backgroundColor: colors.primary,
+  },
+  replyComposerPreviewBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  replyComposerPreviewTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  replyComposerPreviewText: {
+    marginTop: 2,
+    fontSize: 12,
+    color: colors.grey700,
+  },
+  replyComposerPreviewClose: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+  },
   inputRowWithTyping: {
     borderTopWidth: 0,
     paddingTop: 6,
@@ -10391,6 +11562,50 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.onSurface,
     lineHeight: 18,
+  },
+  forwardStatusRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  forwardStatusChip: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  forwardStatusChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(40, 101, 183, 0.08)',
+  },
+  forwardStatusChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.grey700,
+  },
+  forwardStatusChipTextActive: {
+    color: colors.primary,
+  },
+  forwardTargetRow: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    marginBottom: 8,
+    backgroundColor: 'rgba(40, 101, 183, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(40, 101, 183, 0.1)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  forwardTargetText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    color: colors.onSurface,
   },
   historyRow: {
     borderRadius: 10,

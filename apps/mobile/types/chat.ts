@@ -216,6 +216,20 @@ export interface MessageReaction {
   user_name?: string | null;
 }
 
+export interface MessageVersion {
+  type: string;
+  message?: string | null;
+  date: string;
+}
+
+export interface MessageContentForward {
+  source_message_id: string;
+  source_chat_id: string;
+  source_type: string;
+  source_worker_id?: string | null;
+  source_message_key?: MessageKey | null;
+}
+
 export interface MessageContentTemplate {
   hydratedTitleText?: string | null;
   hydratedContentText?: string | null;
@@ -276,11 +290,12 @@ export interface MessageContent {
   audio?: MessageContentAudio | null;
   document?: MessageContentDocument | null;
   reactions?: MessageReaction[] | null;
-  version?: unknown;
+  version?: MessageVersion[] | null;
   context_info?: MessageContextInfo | null;
   template?: MessageContentTemplate | null;
   pin?: unknown;
   ephemeral?: unknown;
+  forward?: MessageContentForward | null;
 }
 
 export interface MessageSummary {

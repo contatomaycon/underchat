@@ -21,6 +21,8 @@ export function serializeContactFilters(
     'filter_label_template_id',
     filters.filter_label_template_id
   );
+  appendQueryField(query, 'filter_channel_id', filters.filter_channel_id);
+  appendQueryField(query, 'filter_is_valided', filters.filter_is_valided);
   appendQueryField(query, 'filter_phone_ddi', filters.filter_phone_ddi);
   appendQueryField(query, 'filter_phone', filters.filter_phone);
   appendQueryField(query, 'filter_name', filters.filter_name);
