@@ -316,6 +316,7 @@ type MessageActionKey =
   | 'forward'
   | 'react'
   | 'edit'
+  | 'view_edits'
   | 'delete';
 
 type MessageAction = {
@@ -328,6 +329,12 @@ type MessageAction = {
 
 type MessageOverlayAnchor = {
   showReactions: boolean;
+};
+
+type MessageEditHistoryItem = {
+  text: string;
+  date: string;
+  isOriginal: boolean;
 };
 
 type ForwardStatusType = 'in_chat' | 'queue' | 'all' | null;
@@ -1317,11 +1324,58 @@ async function forceDownloadToDevice(
 
 function getLatestMessageText(msg: ListMessageResult): string {
   const c = msg.content;
+  const versions = c?.version;
+  if (versions && versions.length > 0) {
+    const sortedVersions = [...versions].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    const latestVersion = sortedVersions[0]?.message?.trim();
+    if (latestVersion) return latestVersion;
+  }
+
   if (c?.message) return c.message;
   if (c?.image?.caption) return c.image.caption;
   if (c?.video?.caption) return c.video.caption;
   if (c?.audio?.url && c?.message) return c.message;
   return '';
+}
+
+function hasMessageVersions(message: ListMessageResult): boolean {
+  return !!(message.content?.version && message.content.version.length > 0);
+}
+
+function getMessageEditHistory(
+  message: ListMessageResult
+): MessageEditHistoryItem[] {
+  const content = message.content;
+  if (!content) return [];
+
+  const history: MessageEditHistoryItem[] = [];
+  const versions = content.version ?? [];
+  const sortedVersions = [...versions].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  for (const version of sortedVersions) {
+    const text = version.message?.trim();
+    if (!text) continue;
+    history.push({
+      text,
+      date: version.date,
+      isOriginal: false,
+    });
+  }
+
+  const originalText = content.message?.trim();
+  if (originalText) {
+    history.push({
+      text: originalText,
+      date: message.date,
+      isOriginal: true,
+    });
+  }
+
+  return history;
 }
 
 function readNonEmptyString(value: unknown): string | null {
@@ -3425,6 +3479,7 @@ function MessageBubble({
     content?.type === EMessageType.contacts;
   const isForwarded = isForwardedMessage(content);
   const showForwardedIndicator = isForwarded && !isSystem && !isAnnotation;
+  const hasEditedVersions = hasMessageVersions(msg);
   const reactionsSummary = getReactionsSummary(content?.reactions);
   const showReactionsSummary =
     reactionsSummary.length > 0 &&
@@ -3617,6 +3672,17 @@ function MessageBubble({
             isDocument && styles.bubbleMetaDocument,
           ]}
         >
+          {!msg.deleted && hasEditedVersions ? (
+            <Text
+              style={[
+                styles.bubbleEditedBadge,
+                fromMe ? styles.bubbleEditedBadgeRight : styles.bubbleEditedBadgeLeft,
+              ]}
+              numberOfLines={1}
+            >
+              {pt.chat_edited}
+            </Text>
+          ) : null}
           {timeStr ? (
             <Text
               style={[
@@ -3820,6 +3886,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     useState<ListMessageResult | null>(null);
   const [editingMessageText, setEditingMessageText] = useState('');
   const [savingEditedMessage, setSavingEditedMessage] = useState(false);
+  const [viewingEditHistoryMessage, setViewingEditHistoryMessage] =
+    useState<ListMessageResult | null>(null);
   const [forwardModalVisible, setForwardModalVisible] = useState(false);
   const [forwardSourceMessage, setForwardSourceMessage] =
     useState<ListMessageResult | null>(null);
@@ -6205,16 +6273,22 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (!target) return [];
 
     const fromMe = target.type_user !== ETypeUserChat.client;
+    const canViewEditHistory =
+      hasMessageVersions(target) &&
+      !isHistoryReadonly &&
+      !shouldObfuscateContent &&
+      target.content?.type !== EMessageType.annotation &&
+      target.content?.type !== EMessageType.system;
     const canInteract =
       canInteractWithMessage(target) &&
       !isHistoryReadonly &&
       !shouldObfuscateContent;
 
-    if (!canInteract) return [];
+    if (!canInteract && !canViewEditHistory) return [];
 
     const actions: MessageAction[] = [];
 
-    if (canComposeInChat) {
+    if (canComposeInChat && canInteract) {
       actions.push({
         key: 'reply',
         label: pt.reply,
@@ -6229,7 +6303,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
-    if (shouldShowCopyAction(target)) {
+    if (canInteract && shouldShowCopyAction(target)) {
       actions.push({
         key: 'copy',
         label: pt.copy,
@@ -6241,7 +6315,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
-    if (shouldShowDownloadAction(target)) {
+    if (canInteract && shouldShowDownloadAction(target)) {
       actions.push({
         key: 'download',
         label: pt.download,
@@ -6253,7 +6327,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
-    if (canForwardMessage(target)) {
+    if (canInteract && canForwardMessage(target)) {
       actions.push({
         key: 'forward',
         label: pt.forward,
@@ -6266,7 +6340,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
-    if (canEditMessage(target, fromMe)) {
+    if (canInteract && canEditMessage(target, fromMe)) {
       actions.push({
         key: 'edit',
         label: pt.edit,
@@ -6279,7 +6353,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
-    if (fromMe && target.content?.type !== EMessageType.system) {
+    if (canViewEditHistory) {
+      actions.push({
+        key: 'view_edits',
+        label: pt.chat_view_edits,
+        icon: 'time-outline',
+        onPress: () => {
+          setViewingEditHistoryMessage(target);
+          closeMessageOverlay();
+        },
+      });
+    }
+
+    if (canInteract && fromMe && target.content?.type !== EMessageType.system) {
       actions.push({
         key: 'delete',
         label: pt.delete,
@@ -6325,6 +6411,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     messageActionTarget,
     shouldObfuscateContent,
   ]);
+
+  const canOpenActionsForMessage = useCallback(
+    (message: ListMessageResult): boolean => {
+      if (isHistoryReadonly || shouldObfuscateContent) return false;
+
+      if (
+        hasMessageVersions(message) &&
+        message.content?.type !== EMessageType.annotation &&
+        message.content?.type !== EMessageType.system
+      ) {
+        return true;
+      }
+
+      return canInteractWithMessage(message);
+    },
+    [isHistoryReadonly, shouldObfuscateContent]
+  );
 
   const handleSubmitForward = useCallback(async () => {
     if (!forwardSourceMessage || forwardSelectedIds.length === 0) return;
@@ -6395,7 +6498,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           ...entry,
           content: {
             ...(entry.content ?? { type: EMessageType.text }),
-            message: editedText,
             version: [
               ...previousVersions,
               {
@@ -8172,13 +8274,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                         item.message.message_id
                     }
                     canInteract={
-                      canInteractWithMessage(item.message) &&
-                      !isHistoryReadonly &&
-                      !shouldObfuscateContent
+                      canOpenActionsForMessage(item.message)
                     }
                     onOpenActions={(message) => {
                       setMessageActionTarget(message);
-                      setMessageOverlayAnchor({ showReactions: true });
+                      setMessageOverlayAnchor({
+                        showReactions: canInteractWithMessage(message),
+                      });
                       setReactionPickerVisible(false);
                     }}
                     onPressQuoted={
@@ -8979,6 +9081,71 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={viewingEditHistoryMessage !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewingEditHistoryMessage(null)}
+      >
+        <View style={styles.editHistoryOverlay}>
+          <Pressable
+            style={styles.editHistoryBackdrop}
+            onPress={() => setViewingEditHistoryMessage(null)}
+          />
+          <View style={styles.editHistoryCard}>
+            <View style={styles.editHistoryHeader}>
+              <Text style={styles.editHistoryTitle}>{pt.chat_edit_history}</Text>
+              <Pressable onPress={() => setViewingEditHistoryMessage(null)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              style={styles.editHistoryList}
+              contentContainerStyle={styles.editHistoryListContent}
+            >
+              {viewingEditHistoryMessage
+                ? getMessageEditHistory(viewingEditHistoryMessage).map(
+                    (item, index) => (
+                      <View
+                        key={`edit-history-${index}-${item.date}`}
+                        style={[
+                          styles.editHistoryItem,
+                          index === 0 &&
+                            !item.isOriginal &&
+                            styles.editHistoryItemCurrent,
+                          item.isOriginal && styles.editHistoryItemOriginal,
+                        ]}
+                      >
+                        <View style={styles.editHistoryItemHeader}>
+                          <Text style={styles.editHistoryItemLabel}>
+                            {item.isOriginal
+                              ? pt.chat_original_message
+                              : pt.chat_edited_version}
+                          </Text>
+                          <Text style={styles.editHistoryItemDate}>
+                            {formatMessageTime(item.date)}
+                          </Text>
+                        </View>
+                        <Text style={styles.editHistoryItemText}>{item.text}</Text>
+                      </View>
+                    )
+                  )
+                : null}
+            </ScrollView>
+
+            <View style={styles.bottomSheetFooter}>
+              <Pressable
+                style={styles.primaryBtn}
+                onPress={() => setViewingEditHistoryMessage(null)}
+              >
+                <Text style={styles.primaryBtnText}>{pt.close}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <Modal
@@ -10482,6 +10649,16 @@ const styles = StyleSheet.create({
   },
   bubbleTime: {
     fontSize: 11,
+  },
+  bubbleEditedBadge: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  bubbleEditedBadgeLeft: {
+    color: colors.grey600,
+  },
+  bubbleEditedBadgeRight: {
+    color: colors.bubbleSentTime,
   },
   bubbleTimeLeft: {
     color: colors.grey600,
@@ -12118,6 +12295,83 @@ const styles = StyleSheet.create({
   bottomSheetOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
+  },
+  editHistoryOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+  },
+  editHistoryBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  editHistoryCard: {
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '76%',
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.16)',
+  },
+  editHistoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  editHistoryTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.onSurface,
+    lineHeight: 24,
+  },
+  editHistoryList: {
+    maxHeight: 390,
+  },
+  editHistoryListContent: {
+    gap: 10,
+    paddingBottom: 8,
+  },
+  editHistoryItem: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.grey200,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  editHistoryItemCurrent: {
+    backgroundColor: 'rgba(40, 101, 183, 0.08)',
+    borderColor: 'rgba(40, 101, 183, 0.2)',
+  },
+  editHistoryItemOriginal: {
+    backgroundColor: 'rgba(47, 43, 61, 0.02)',
+  },
+  editHistoryItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  editHistoryItemLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.grey700,
+  },
+  editHistoryItemDate: {
+    fontSize: 12,
+    color: colors.grey600,
+  },
+  editHistoryItemText: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: colors.onSurface,
   },
   bottomSheetBackdrop: {
     ...StyleSheet.absoluteFillObject,
