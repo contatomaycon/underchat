@@ -31,6 +31,7 @@ export class RandomMessageItemCreatorUseCase {
   ];
   private readonly IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
   private readonly VIDEO_EXTENSIONS = ['mp4', 'webm'];
+  private readonly DOCUMENT_EXTENSIONS = ['pdf'];
   private readonly AUDIO_EXTENSIONS = [
     'mp3',
     'wav',
@@ -102,6 +103,10 @@ export class RandomMessageItemCreatorUseCase {
 
     if (this.VIDEO_EXTENSIONS.includes(ext)) {
       return EMessageType.video;
+    }
+
+    if (this.DOCUMENT_EXTENSIONS.includes(ext)) {
+      return EMessageType.document;
     }
 
     if (this.AUDIO_EXTENSIONS.includes(ext)) {
@@ -223,6 +228,20 @@ export class RandomMessageItemCreatorUseCase {
         ...uploadResult,
         mimetype: converted.mimetype,
         duration: converted.duration ?? null,
+        width: null,
+        height: null,
+      };
+    }
+
+    if (messageType === EMessageType.document) {
+      const result = await this.storageService.uploadDocument(file, accountId);
+      if (!result) {
+        return null as any;
+      }
+      return {
+        ...result,
+        mimetype: result.mimetype ?? null,
+        duration: null,
         width: null,
         height: null,
       };

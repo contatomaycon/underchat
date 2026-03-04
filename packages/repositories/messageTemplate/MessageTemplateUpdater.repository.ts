@@ -16,6 +16,10 @@ export class MessageTemplateUpdaterRepository {
   ): Partial<typeof messageTemplate.$inferInsert> {
     const inputUpdate: Partial<typeof messageTemplate.$inferInsert> = {};
 
+    if (input?.channel_id !== undefined) {
+      inputUpdate.channel_id = input.channel_id ?? null;
+    }
+
     if (input?.command !== undefined && input.command !== null) {
       inputUpdate.command = input.command;
     }

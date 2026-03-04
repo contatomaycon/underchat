@@ -77,6 +77,10 @@ const messageTypeOptions = computed(() => [
     value: EMessageType.audio,
     title: t('message_type_audio'),
   },
+  {
+    value: EMessageType.document,
+    title: t('message_type_document'),
+  },
 ]);
 
 const itemsStatus = ref([
@@ -108,9 +112,12 @@ const previewDialog = ref<{
 
 const showTextInput = computed(() => selectedType.value === EMessageType.text);
 const showFileInput = computed(() =>
-  [EMessageType.image, EMessageType.video, EMessageType.audio].includes(
-    selectedType.value
-  )
+  [
+    EMessageType.image,
+    EMessageType.video,
+    EMessageType.audio,
+    EMessageType.document,
+  ].includes(selectedType.value)
 );
 
 const showMediaMessageInput = computed(() => {
@@ -128,6 +135,10 @@ const acceptedFileTypes = computed(() => {
 
   if (selectedType.value === EMessageType.audio) {
     return ACCEPTED_AUDIO_TYPES;
+  }
+
+  if (selectedType.value === EMessageType.document) {
+    return '*/*';
   }
 
   return '';
@@ -161,6 +172,10 @@ function isAllowedFile(file: File): boolean {
       ACCEPTED_AUDIO_EXTENSIONS.includes(`.${ext}`) ||
       ACCEPTED_AUDIO_MIME_TYPES.includes(file.type)
     );
+  }
+
+  if (selectedType.value === EMessageType.document) {
+    return true;
   }
 
   return false;
@@ -220,6 +235,11 @@ const openPreview = (src?: string | null) => {
   const target = src || filePreview.value?.src;
 
   if (!target) return;
+
+  if (selectedType.value === EMessageType.document) {
+    window.open(target, '_blank');
+    return;
+  }
 
   previewDialog.value = {
     open: true,

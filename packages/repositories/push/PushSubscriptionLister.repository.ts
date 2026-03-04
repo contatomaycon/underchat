@@ -15,6 +15,8 @@ export class PushSubscriptionListerRepository {
       .select({
         push_subscription_id: pushSubscription.push_subscription_id,
         user_id: pushSubscription.user_id,
+        provider: pushSubscription.provider,
+        platform: pushSubscription.platform,
         endpoint: pushSubscription.endpoint,
         p256dh: pushSubscription.p256dh,
         auth: pushSubscription.auth,

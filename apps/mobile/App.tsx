@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { AppState, type AppStateStatus } from 'react-native';
 import { LoginScreen } from './screens/LoginScreen';
 import {
   getToken,
@@ -26,6 +27,14 @@ import {
 } from './socket/chatSocket';
 import { ensureOnlinePresence } from './socket/presence';
 import { pt } from './locales/pt';
+import type { ListChatsResult } from './types/chat';
+import { emitAppResume } from './utils/appResumeBus';
+import {
+  cleanupPushNotifications,
+  enableMobilePushNotifications,
+  initializePushNotifications,
+} from './services/pushNotifications';
+import { navigationRef, navigateToChatRoom } from './navigation/navigationRef';
 
 function getUserAccountId(user: unknown): string | null {
   if (!user || typeof user !== 'object') return null;
@@ -57,11 +66,22 @@ function getUserId(user: unknown): string | null {
   );
 }
 
+function isUserNotificationEnabled(user: unknown): boolean {
+  if (!user || typeof user !== 'object') return false;
+  const chatUser = (user as { chat_user?: unknown }).chat_user;
+  if (!chatUser || typeof chatUser !== 'object') return false;
+  return (chatUser as { notifications?: unknown }).notifications === true;
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [canViewChatbotTab, setCanViewChatbotTab] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [navigationReady, setNavigationReady] = useState(false);
+  const [pendingNotificationChat, setPendingNotificationChat] =
+    useState<ListChatsResult | null>(null);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,6 +160,29 @@ export default function App() {
   }, [authenticated]);
 
   useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void getUser()
+      .then(async (user) => {
+        if (cancelled) return;
+        if (!isUserNotificationEnabled(user)) return;
+        await enableMobilePushNotifications().catch(() => ({
+          ok: false,
+          reason: 'server_error' as const,
+        }));
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated]);
+
+  useEffect(() => {
     let cancelled = false;
     let offChannelsUpdated: (() => void) | null = null;
     let offUserPresence: (() => void) | null = null;
@@ -194,6 +237,64 @@ export default function App() {
   }, [authenticated]);
 
   useEffect(() => {
+    void initializePushNotifications({
+      onChatTap: (chat) => {
+        setPendingNotificationChat(chat);
+      },
+    });
+
+    return () => {
+      cleanupPushNotifications();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (authenticated) return;
+    setNavigationReady(false);
+  }, [authenticated]);
+
+  useEffect(() => {
+    if (!authenticated || !navigationReady || !pendingNotificationChat) {
+      return;
+    }
+
+    const navigated = navigateToChatRoom(pendingNotificationChat);
+    if (navigated) {
+      setPendingNotificationChat(null);
+    }
+  }, [authenticated, navigationReady, pendingNotificationChat]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const previousAppState = appStateRef.current;
+      appStateRef.current = nextAppState;
+
+      const becameActive =
+        (previousAppState === 'background' ||
+          previousAppState === 'inactive') &&
+        nextAppState === 'active';
+
+      if (!becameActive || !authenticated) {
+        return;
+      }
+
+      emitAppResume();
+
+      void getUser()
+        .then(async (user) => {
+          const accountId = getUserAccountId(user);
+          if (!accountId) return;
+          await initializeChatSocket(accountId).catch(() => {});
+        })
+        .catch(() => {});
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [authenticated]);
+
+  useEffect(() => {
     const onUnauthorized = () => {
       setAuthenticated(false);
       setCanViewChatbotTab(false);
@@ -228,7 +329,10 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ChatFilterProvider canViewChatbotTab={canViewChatbotTab}>
-          <NavigationContainer>
+          <NavigationContainer
+            ref={navigationRef}
+            onReady={() => setNavigationReady(true)}
+          >
             <RootNavigator />
             <StatusBar style="dark" />
           </NavigationContainer>

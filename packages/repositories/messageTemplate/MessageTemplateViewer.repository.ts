@@ -17,6 +17,7 @@ export class MessageTemplateViewerRepository {
     const result = await this.dbRo
       .select({
         message_template_id: messageTemplate.message_template_id,
+        channel_id: messageTemplate.channel_id,
         account: {
           account_id: account.account_id,
           name: account.name,

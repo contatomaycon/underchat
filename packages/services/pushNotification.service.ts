@@ -15,6 +15,9 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { vapidEnvironment } from '@core/config/environments';
 
+const EXPO_PUSH_API_URL = 'https://exp.host/--/api/v2/push/send';
+const CHAT_NOTIFICATION_ANDROID_CHANNEL = 'underchat-messages';
+
 @injectable()
 export class PushNotificationService {
   private vapidKeys: {
@@ -69,10 +72,6 @@ export class PushNotificationService {
     userId: string,
     payload: IPushNotificationPayload
   ): Promise<{ sent: number; failed: number }> {
-    if (!this.vapidKeys) {
-      return { sent: 0, failed: 0 };
-    }
-
     const subscriptions =
       await this.pushSubscriptionListerRepository.listByUserId(userId);
 
@@ -94,26 +93,20 @@ export class PushNotificationService {
     let failed = 0;
 
     const promises = subscriptions.map(async (subscription) => {
-      try {
-        await webPush.sendNotification(
-          {
-            endpoint: subscription.endpoint,
-            keys: {
-              p256dh: subscription.p256dh,
-              auth: subscription.auth,
-            },
-          },
-          notificationPayload
-        );
-        sent++;
-      } catch (error: any) {
-        failed++;
+      const sentOk =
+        subscription.provider === 'expo'
+          ? await this.sendExpoNotification(subscription.endpoint, payload)
+          : await this.sendWebPushNotification(
+              subscription.endpoint,
+              notificationPayload,
+              subscription.p256dh,
+              subscription.auth
+            );
 
-        if (error.statusCode === 410 || error.statusCode === 404) {
-          await this.pushSubscriptionDeleterRepository.deleteByEndpoint(
-            subscription.endpoint
-          );
-        }
+      if (sentOk) {
+        sent++;
+      } else {
+        failed++;
       }
     });
 
@@ -130,10 +123,6 @@ export class PushNotificationService {
     chat: IChat,
     message: IChatMessage
   ): Promise<void> {
-    if (!this.vapidKeys) {
-      return;
-    }
-
     if (message.type_user === 'operator') {
       return;
     }
@@ -143,10 +132,7 @@ export class PushNotificationService {
       return;
     }
 
-    if (
-      chat.status !== EChatStatus.in_chat &&
-      chat.status !== EChatStatus.queue
-    ) {
+    if (!this.isChatStatusEligible(chat.status)) {
       return;
     }
 
@@ -175,6 +161,8 @@ export class PushNotificationService {
       data: {
         chatId: message.chat_id,
         messageId: message.message_id,
+        notificationType: 'chat_message',
+        chatSnapshot: this.buildChatSnapshot(chat),
       },
     };
 
@@ -208,6 +196,10 @@ export class PushNotificationService {
     accountId: string,
     chat: IChat
   ): Promise<boolean> {
+    if (!this.isChatStatusEligible(chat.status)) {
+      return false;
+    }
+
     const userChannels =
       await this.userChannelChannelsListerRepository.listChannelsWithNamesByUserAndAccount(
         userId,
@@ -263,7 +255,10 @@ export class PushNotificationService {
       (userSectors.length === 0 && !chat.sector?.id) ||
       (canListAllChatsInSector && !chat.sector?.id);
 
-    if (chat.status === EChatStatus.in_chat) {
+    if (
+      chat.status === EChatStatus.in_chat ||
+      this.isChatbotStatus(chat.status)
+    ) {
       if (chat.user?.id === userId) return true;
       if (hasPermissionToViewAll) return true;
       return canListAllChatsInSector && isChatInUserSectors;
@@ -289,5 +284,146 @@ export class PushNotificationService {
     }
 
     return false;
+  }
+
+  private isChatStatusEligible(status: EChatStatus): boolean {
+    return (
+      status === EChatStatus.queue ||
+      status === EChatStatus.in_chat ||
+      this.isChatbotStatus(status)
+    );
+  }
+
+  private isChatbotStatus(status: EChatStatus): boolean {
+    return (
+      status === EChatStatus.ura ||
+      status === EChatStatus.ura_output ||
+      status === EChatStatus.ura_schedule ||
+      status === EChatStatus.ura_webhook
+    );
+  }
+
+  private buildChatSnapshot(chat: IChat): Record<string, unknown> {
+    return {
+      chat_id: chat.chat_id,
+      account: chat.account,
+      worker: chat.worker,
+      sector: chat.sector ?? null,
+      user: chat.user ?? null,
+      contact: chat.contact ?? null,
+      photo: chat.photo ?? null,
+      name: chat.name ?? null,
+      phone: chat.phone,
+      status: chat.status,
+      date: chat.date,
+      summary: chat.summary ?? null,
+      started_at: chat.started_at ?? null,
+      closed_at: chat.closed_at ?? null,
+      protocol_ura: chat.protocol_ura ?? null,
+      protocol_start: chat.protocol_start ?? null,
+      protocol_transfer: chat.protocol_transfer ?? null,
+      label: chat.label ?? null,
+      forward_to_output_chatbot: chat.forward_to_output_chatbot ?? null,
+    };
+  }
+
+  private async sendWebPushNotification(
+    endpoint: string,
+    notificationPayload: string,
+    p256dh: string | null,
+    auth: string | null
+  ): Promise<boolean> {
+    if (!this.vapidKeys) {
+      return false;
+    }
+
+    if (!p256dh || !auth) {
+      return false;
+    }
+
+    try {
+      await webPush.sendNotification(
+        {
+          endpoint,
+          keys: {
+            p256dh,
+            auth,
+          },
+        },
+        notificationPayload
+      );
+      return true;
+    } catch (error: any) {
+      if (error.statusCode === 410 || error.statusCode === 404) {
+        await this.pushSubscriptionDeleterRepository.deleteByEndpoint(
+          endpoint,
+          'webpush'
+        );
+      }
+      return false;
+    }
+  }
+
+  private async sendExpoNotification(
+    token: string,
+    payload: IPushNotificationPayload
+  ): Promise<boolean> {
+    if (
+      !token.startsWith('ExponentPushToken[') &&
+      !token.startsWith('ExpoPushToken[')
+    ) {
+      return false;
+    }
+
+    try {
+      const response = await fetch(EXPO_PUSH_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          to: token,
+          title: payload.title,
+          body: payload.body,
+          sound: 'default',
+          priority: 'high',
+          channelId: CHAT_NOTIFICATION_ANDROID_CHANNEL,
+          data: payload.data ?? {},
+        }),
+      });
+
+      const body = (await response.json().catch(() => null)) as {
+        data?:
+          | {
+              status?: 'ok' | 'error';
+              details?: { error?: string };
+            }
+          | Array<{
+              status?: 'ok' | 'error';
+              details?: { error?: string };
+            }>;
+      } | null;
+
+      if (!response.ok || !body?.data) {
+        return false;
+      }
+
+      const tickets = Array.isArray(body.data) ? body.data : [body.data];
+      const hasDeviceNotRegistered = tickets.some(
+        (ticket) => ticket?.details?.error === 'DeviceNotRegistered'
+      );
+
+      if (hasDeviceNotRegistered) {
+        await this.pushSubscriptionDeleterRepository.deleteByEndpoint(
+          token,
+          'expo'
+        );
+      }
+
+      return tickets.some((ticket) => ticket?.status === 'ok');
+    } catch {
+      return false;
+    }
   }
 }

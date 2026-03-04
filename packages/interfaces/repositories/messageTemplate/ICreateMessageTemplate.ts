@@ -1,5 +1,6 @@
 export interface ICreateMessageTemplate {
   account_id: string;
+  channel_id?: string | null;
   message: string;
   command: string;
   attachment_url?: string | null;

@@ -18,6 +18,7 @@ import {
   EditMessageTemplateParamsRequest,
   UpdateMessageTemplateRequest,
 } from '@core/schema/messageTemplate/editMessageTemplate/request.schema';
+import { ListMessageTemplateChannelsResponse } from '@core/schema/messageTemplate/listMessageTemplateChannels/response.schema';
 
 export const useMessageTemplateStore = defineStore('message-template', {
   state: () => ({
@@ -266,6 +267,24 @@ export const useMessageTemplateStore = defineStore('message-template', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async listMessageTemplateChannels(): Promise<ListMessageTemplateChannelsResponse> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListMessageTemplateChannelsResponse>
+        >('/message-template/channels');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        return [];
       }
     },
   },

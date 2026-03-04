@@ -157,6 +157,25 @@ export interface MessageForwardResponse {
   results: MessageForwardResultItem[];
 }
 
+export type PushSubscriptionProvider = 'webpush' | 'expo';
+export type PushSubscriptionPlatform = 'web' | 'ios' | 'android';
+
+export type RegisterPushSubscriptionPayload = {
+  provider?: PushSubscriptionProvider;
+  platform?: PushSubscriptionPlatform;
+  endpoint: string;
+  keys?: {
+    p256dh: string;
+    auth: string;
+  };
+  user_agent?: string;
+};
+
+export type DeletePushSubscriptionPayload = {
+  endpoint: string;
+  provider?: PushSubscriptionProvider;
+};
+
 export type ListChatsParams = {
   status: string | string[];
   current_page?: number;
@@ -326,15 +345,21 @@ export async function createMessage(
 }
 
 export async function listQuickMessageTemplates(
-  command?: string | null
+  command?: string | null,
+  channelId?: string | null
 ): Promise<QuickMessageTemplate[]> {
   const normalizedCommand =
     typeof command === 'string' ? command.trim() : undefined;
+  const normalizedChannelId =
+    typeof channelId === 'string' && channelId.trim().length > 0
+      ? channelId.trim()
+      : undefined;
 
   const res = await apiGet<ListQuickMessageTemplatesResponse>(
     '/chat/quick-message-templates',
     {
       command: normalizedCommand,
+      channel_id: normalizedChannelId,
     }
   );
 
@@ -404,6 +429,24 @@ export async function forwardMessage(
 
   if (!res?.status) return null;
   return res.data ?? null;
+}
+
+export async function registerPushSubscription(
+  payload: RegisterPushSubscriptionPayload
+): Promise<boolean> {
+  const res = await apiPost<{
+    push_subscription_id: string;
+    public_key?: string | null;
+  }>('/push/subscribe', payload);
+
+  return !!res?.status;
+}
+
+export async function deletePushSubscription(
+  payload: DeletePushSubscriptionPayload
+): Promise<boolean> {
+  const res = await apiDelete<null>('/push/unsubscribe', payload);
+  return !!res?.status;
 }
 
 export async function createMessageWithFormData(

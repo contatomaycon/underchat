@@ -9,6 +9,7 @@ import { ICreateMessageTemplate } from '@core/interfaces/repositories/messageTem
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { WorkerService } from '@core/services/worker.service';
 
 @injectable()
 export class MessageTemplateCreatorUseCase {
@@ -32,6 +33,7 @@ export class MessageTemplateCreatorUseCase {
   ];
   private readonly IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
   private readonly VIDEO_EXTENSIONS = ['mp4', 'webm'];
+  private readonly DOCUMENT_EXTENSIONS = ['pdf'];
   private readonly AUDIO_EXTENSIONS = [
     'mp3',
     'wav',
@@ -50,8 +52,39 @@ export class MessageTemplateCreatorUseCase {
     @inject(StorageService)
     private readonly storageService: StorageService,
     @inject(ConverterService)
-    private readonly converterService: ConverterService
+    private readonly converterService: ConverterService,
+    @inject(WorkerService)
+    private readonly workerService: WorkerService
   ) {}
+
+  private normalizeChannelId(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const normalized = value.trim();
+
+    if (!normalized || normalized.toLowerCase() === 'null') {
+      return null;
+    }
+
+    return normalized;
+  }
+
+  private async validateChannelExists(
+    accountId: string,
+    channelId: string,
+    t: TFunction<'translation', undefined>
+  ): Promise<void> {
+    const channelExists = await this.workerService.existsWorkerById(
+      accountId,
+      channelId
+    );
+
+    if (!channelExists) {
+      throw new Error(t('worker_not_found'));
+    }
+  }
 
   private async validateAccountExists(
     accountId: string,
@@ -116,6 +149,10 @@ export class MessageTemplateCreatorUseCase {
 
     if (this.VIDEO_EXTENSIONS.includes(ext)) {
       return EMessageType.video;
+    }
+
+    if (this.DOCUMENT_EXTENSIONS.includes(ext)) {
+      return EMessageType.document;
     }
 
     if (this.AUDIO_EXTENSIONS.includes(ext)) {
@@ -259,6 +296,20 @@ export class MessageTemplateCreatorUseCase {
       };
     }
 
+    if (messageType === EMessageType.document) {
+      const result = await this.storageService.uploadDocument(file, accountId);
+      if (!result) {
+        return null as any;
+      }
+      return {
+        ...result,
+        mimetype: result.mimetype ?? null,
+        duration: null,
+        width: null,
+        height: null,
+      };
+    }
+
     throw new Error('Invalid message type for attachment upload');
   }
 
@@ -269,6 +320,12 @@ export class MessageTemplateCreatorUseCase {
   ): Promise<boolean> {
     await this.validateAccountExists(accountId, t);
     await this.validateMessageStatusExists(input.message_status_id.value, t);
+
+    const channelId = this.normalizeChannelId(input.channel_id?.value);
+
+    if (channelId) {
+      await this.validateChannelExists(accountId, channelId, t);
+    }
 
     const messageType = this.resolveMessageType(
       input.type?.value,
@@ -310,6 +367,7 @@ export class MessageTemplateCreatorUseCase {
 
     const inputWithAttachment: ICreateMessageTemplate = {
       account_id: accountId,
+      channel_id: channelId,
       message: normalizedMessage,
       command: input.command.value,
       attachment_url: attachmentUrl ? attachmentUrl.url : null,

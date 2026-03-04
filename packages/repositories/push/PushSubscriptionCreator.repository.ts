@@ -23,6 +23,7 @@ export class PushSubscriptionCreatorRepository {
       .where(
         and(
           eq(pushSubscription.user_id, input.user_id),
+          eq(pushSubscription.provider, input.provider),
           eq(pushSubscription.endpoint, input.endpoint),
           isNull(pushSubscription.deleted_at)
         )
@@ -34,10 +35,12 @@ export class PushSubscriptionCreatorRepository {
       await this.dbRw
         .update(pushSubscription)
         .set({
-          p256dh: input.p256dh,
-          auth: input.auth,
+          platform: input.platform,
+          p256dh: input.p256dh ?? null,
+          auth: input.auth ?? null,
           user_agent: input.user_agent,
           updated_at: new Date().toISOString(),
+          deleted_at: null,
         })
         .where(
           eq(
@@ -56,9 +59,11 @@ export class PushSubscriptionCreatorRepository {
     await this.dbRw.insert(pushSubscription).values({
       push_subscription_id: pushSubscriptionId,
       user_id: input.user_id,
+      provider: input.provider,
+      platform: input.platform,
       endpoint: input.endpoint,
-      p256dh: input.p256dh,
-      auth: input.auth,
+      p256dh: input.p256dh ?? null,
+      auth: input.auth ?? null,
       user_agent: input.user_agent,
     });
 

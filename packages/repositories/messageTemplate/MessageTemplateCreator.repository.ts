@@ -21,6 +21,7 @@ export class MessageTemplateCreatorRepository {
       .values({
         message_template_id: messageTemplateId,
         account_id: input.account_id,
+        channel_id: input.channel_id ?? null,
         message_status_id: input.message_status_id,
         command: input.command,
         message: input.message,

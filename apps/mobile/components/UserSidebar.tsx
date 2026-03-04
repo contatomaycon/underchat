@@ -32,6 +32,11 @@ import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { AppAvatar } from './AppAvatar';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import {
+  disableMobilePushNotifications,
+  enableMobilePushNotifications,
+  unsubscribeMobilePushOnLogout,
+} from '../services/pushNotifications';
 
 type SidebarStatus = 'online' | 'busy' | 'do_not_disturb';
 type PhotoPickerSource = 'camera' | 'gallery';
@@ -341,9 +346,46 @@ export function UserSidebar({
       setNotifications(nextValue);
       setNotificationSaving(true);
 
-      const ok = await persistProfile({ notifications: nextValue });
-      if (!ok) {
+      let pushOk = false;
+
+      if (nextValue) {
+        const result = await enableMobilePushNotifications();
+        pushOk = result.ok;
+
+        if (!result.ok) {
+          setNotifications(previous);
+          setNotificationSaving(false);
+          Alert.alert(
+            pt.warning_title,
+            result.reason === 'permission_denied'
+              ? pt.notification_permission_denied
+              : pt.notification_enable_error
+          );
+          return;
+        }
+      } else {
+        pushOk = await disableMobilePushNotifications();
+        if (!pushOk) {
+          setNotifications(previous);
+          setNotificationSaving(false);
+          Alert.alert(pt.error_title, pt.notification_disable_error);
+          return;
+        }
+      }
+
+      const profileUpdated = await persistProfile({ notifications: nextValue });
+
+      if (!profileUpdated) {
         setNotifications(previous);
+
+        if (nextValue) {
+          await disableMobilePushNotifications().catch(() => false);
+        } else if (!nextValue && pushOk) {
+          await enableMobilePushNotifications().catch(() => ({
+            ok: false,
+            reason: 'server_error' as const,
+          }));
+        }
       }
 
       setNotificationSaving(false);
@@ -468,6 +510,7 @@ export function UserSidebar({
 
   const handleLogout = useCallback(async () => {
     setLogoutLoading(true);
+    await unsubscribeMobilePushOnLogout().catch(() => {});
     await clearAuth();
     emitAuthUnauthorized();
     setLogoutLoading(false);

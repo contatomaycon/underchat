@@ -156,6 +156,11 @@ export const pt = {
   do_not_disturb: 'Não perturbe',
   settings: 'Configurações',
   notification: 'Notificação',
+  notification_permission_denied:
+    'Permissão de notificação negada. Ative nas configurações do dispositivo.',
+  notification_enable_error:
+    'Não foi possível ativar as notificações neste dispositivo.',
+  notification_disable_error: 'Não foi possível desativar as notificações.',
   max_length_200: 'O tamanho máximo é de 200 caracteres',
   no_contacts_found: 'Nenhum contato encontrado.',
   today: 'Hoje',

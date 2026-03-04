@@ -901,6 +901,7 @@ export class ChatMessageCreatorUseCase {
     const quickTemplateData = await this.resolveQuickMessageTemplate(
       t,
       accountId,
+      chat,
       body
     );
     const {
@@ -1082,6 +1083,7 @@ export class ChatMessageCreatorUseCase {
   private async resolveQuickMessageTemplate(
     t: TFunction<'translation', undefined>,
     accountId: string,
+    chat: IChat,
     body: CreateMessageChatsBody
   ): Promise<{
     templateType: EMessageType | null;
@@ -1127,6 +1129,10 @@ export class ChatMessageCreatorUseCase {
     );
 
     if (template?.account?.account_id !== accountId) {
+      throw new Error(t('message_template_not_found'));
+    }
+
+    if (template?.channel_id && template.channel_id !== chat.worker.id) {
       throw new Error(t('message_template_not_found'));
     }
 

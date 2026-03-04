@@ -5,6 +5,7 @@
     "lib": ["ES2022"],
     "moduleResolution": "bundler",
     "declaration": true,
+    "rootDir": "../../",
     "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,

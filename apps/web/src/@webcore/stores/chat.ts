@@ -4606,11 +4606,13 @@ export const useChatStore = defineStore('chat', {
     },
 
     async listQuickMessageTemplates(
-      command?: string | null
+      command?: string | null,
+      channelId?: string | null
     ): Promise<ListQuickMessageTemplatesResponse[]> {
       try {
         const request: ListQuickMessageTemplatesRequest = {
           command: command ?? null,
+          channel_id: channelId ?? null,
         };
 
         const response = await axios.get<

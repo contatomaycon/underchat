@@ -59,6 +59,11 @@ type FilePreview = {
   src: string;
 };
 
+type ChannelOption = {
+  value: string | null;
+  text: string;
+};
+
 const messageTypeOptions = computed(() => [
   {
     value: EMessageType.text,
@@ -75,6 +80,10 @@ const messageTypeOptions = computed(() => [
   {
     value: EMessageType.audio,
     title: t('message_type_audio'),
+  },
+  {
+    value: EMessageType.document,
+    title: t('message_type_document'),
   },
 ]);
 
@@ -94,6 +103,8 @@ const message = ref<string | null>(null);
 const message_status_id = ref<string | null>(null);
 const auto_send = ref<boolean>(false);
 const command = ref<string | null>(null);
+const channel_id = ref<string | null>(null);
+const channelOptions = ref<ChannelOption[]>([]);
 const attachmentFile = ref<File | null>(null);
 const filePreview = ref<FilePreview | null>(null);
 const existingAttachmentUrl = ref<string | null>(null);
@@ -125,9 +136,12 @@ const showTextInput = computed(() => {
 });
 
 const showFileInput = computed(() => {
-  return [EMessageType.image, EMessageType.video, EMessageType.audio].includes(
-    selectedType.value
-  );
+  return [
+    EMessageType.image,
+    EMessageType.video,
+    EMessageType.audio,
+    EMessageType.document,
+  ].includes(selectedType.value);
 });
 
 const showMediaMessageInput = computed(() => {
@@ -144,10 +158,28 @@ const acceptedFileTypes = computed(() => {
   if (selectedType.value === EMessageType.audio) {
     return ACCEPTED_AUDIO_TYPES;
   }
+  if (selectedType.value === EMessageType.document) {
+    return '*/*';
+  }
   return '';
 });
 
 const refFormEditMessageTemplate = ref<VForm>();
+
+const loadChannelOptions = async () => {
+  const workers = await messageTemplateStore.listMessageTemplateChannels();
+
+  channelOptions.value = [
+    {
+      value: null,
+      text: `${t('all')} ${t('channels')}`,
+    },
+    ...(workers ?? []).map((worker) => ({
+      value: worker.id,
+      text: worker.name,
+    })),
+  ];
+};
 
 function getExt(filename: string): string {
   const i = filename.lastIndexOf('.');
@@ -173,6 +205,9 @@ function isAllowedFile(file: File): boolean {
       ACCEPTED_AUDIO_EXTENSIONS.includes(`.${ext}`) ||
       ACCEPTED_AUDIO_MIME_TYPES.includes(file.type)
     );
+  }
+  if (selectedType.value === EMessageType.document) {
+    return true;
   }
   return false;
 }
@@ -217,11 +252,18 @@ const onFileChange = (files: File[] | File | null) => {
 };
 
 const openPreview = (src: string, caption?: string, type?: EMessageType) => {
+  const previewType = type || selectedType.value;
+
+  if (previewType === EMessageType.document) {
+    window.open(src, '_blank');
+    return;
+  }
+
   previewDialog.value = {
     open: true,
     src,
     caption: caption && caption.trim() ? caption.trim() : null,
-    type: type || selectedType.value,
+    type: previewType,
   };
 };
 
@@ -337,6 +379,11 @@ const updateMessageTemplate = async () => {
       selectedType.value === EMessageType.audio ? '' : (message.value ?? '');
     form.append('message', normalizedMessage);
     form.append('command', command.value ?? '');
+    if (channel_id.value) {
+      form.append('channel_id', channel_id.value);
+    } else {
+      form.append('channel_id', 'null');
+    }
     form.append('message_status_id', message_status_id.value ?? '');
     form.append('type', selectedType.value);
     form.append('auto_send', auto_send.value ? 'true' : 'false');
@@ -413,6 +460,7 @@ const resetForm = () => {
   message_status_id.value = null;
   auto_send.value = false;
   command.value = null;
+  channel_id.value = null;
   attachmentFile.value = null;
   fileSizeError.value = null;
   if (filePreview.value?.src) {
@@ -446,12 +494,14 @@ watch(
   [isVisible, messageTemplateId],
   async ([visible, id]) => {
     if (visible && id) {
+      await loadChannelOptions();
       resetForm();
       const messageTemplate =
         await messageTemplateStore.getMessageTemplateById(id);
       if (messageTemplate) {
         message.value = messageTemplate.message;
         command.value = messageTemplate.command;
+        channel_id.value = messageTemplate.channel_id ?? null;
         message_status_id.value =
           messageTemplate.message_status?.message_status_id ?? null;
         auto_send.value = messageTemplate.auto_send ?? false;
@@ -465,6 +515,10 @@ watch(
   },
   { immediate: true }
 );
+
+onMounted(() => {
+  void loadChannelOptions();
+});
 
 onBeforeUnmount(() => {
   if (filePreview.value?.src) {
@@ -740,6 +794,36 @@ onBeforeUnmount(() => {
                     </div>
                     <VIcon icon="tabler-player-play-filled" size="20" />
                   </div>
+                  <div
+                    v-else-if="selectedType === EMessageType.document"
+                    class="d-flex align-center gap-2 pa-2"
+                    style="
+                      background: rgba(var(--v-theme-surface-variant), 0.1);
+                      border-radius: 8px;
+                      max-width: 200px;
+                    "
+                    @click="
+                      openPreview(
+                        filePreview.src,
+                        message || undefined,
+                        EMessageType.document
+                      )
+                    "
+                  >
+                    <VIcon icon="tabler-file" size="24" />
+                    <div class="flex-grow-1" style="min-width: 0">
+                      <div class="text-caption text-truncate">
+                        {{ filePreview.file.name }}
+                      </div>
+                      <div
+                        class="text-caption text-medium-emphasis"
+                        style="font-size: 0.7rem"
+                      >
+                        {{ $t('click_to_preview') }}
+                      </div>
+                    </div>
+                    <VIcon icon="tabler-external-link" size="20" />
+                  </div>
                 </VCard>
               </VCol>
             </template>
@@ -753,6 +837,18 @@ onBeforeUnmount(() => {
                   requiredValidator(command, $t('shortcut_required')),
                   noSlashRule,
                 ]"
+              />
+            </VCol>
+
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('channel') }}:</VLabel>
+              <AppSelectSearch
+                v-model="channel_id"
+                :items="channelOptions"
+                :placeholder="$t('channel')"
+                :clearable="false"
+                item-value="value"
+                item-title="text"
               />
             </VCol>
 

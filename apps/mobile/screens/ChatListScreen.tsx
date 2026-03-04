@@ -72,6 +72,7 @@ import {
   readChatUserStatus,
 } from '../utils/chatUserStatus';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import { addAppResumeListener } from '../utils/appResumeBus';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -1113,6 +1114,13 @@ export function ChatListScreen({ route, navigation }: Props) {
       };
     }, [canReceiveChatNotification, currentUserId, scheduleRealtimeReload])
   );
+
+  useEffect(() => {
+    return addAppResumeListener(() => {
+      if (!isFocused || !isAuthContextResolved) return;
+      scheduleRealtimeReload();
+    });
+  }, [isAuthContextResolved, isFocused, scheduleRealtimeReload]);
 
   const handleCloseProfileSidebar = useCallback(() => {
     if (profileSidebarReopenTimerRef.current) {

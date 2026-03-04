@@ -34,7 +34,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -138,6 +138,7 @@ import {
   type WhatsAppTextToken,
 } from '../utils/whatsAppTextFormat';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import { addAppResumeListener } from '../utils/appResumeBus';
 
 type EmojiDatasetEntry = {
   unified?: string;
@@ -4215,6 +4216,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const { chat, mode = 'default' } = route.params;
   const isHistoryReadonly = mode === 'history_readonly';
   const { setChatCounts, clearAdvancedFilters } = useChatFilter();
+  const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<MessageWithSeparator> | null>(null);
   const openedMessageSwipeableRef = useRef<Swipeable | null>(null);
@@ -5522,6 +5524,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       setTypingIndicator,
     ])
   );
+
+  useEffect(() => {
+    return addAppResumeListener(() => {
+      if (!isFocused) return;
+      void loadMessages();
+      void syncMessagesStatus(true);
+    });
+  }, [isFocused, loadMessages, syncMessagesStatus]);
 
   const isInChatStatus = chatInfo.status === 'in_chat';
   const canComposeInChat = !isHistoryReadonly && isInChatStatus;
@@ -8751,7 +8761,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const messageValue = replaceTagsInQuickMessage(template.message);
 
       if (template.type === EMessageType.text) {
-        return await sendTextPayload(messageValue);
+        return await sendTextPayload(messageValue, {
+          quickMessageTemplateId: template.message_template_id,
+        });
       }
 
       if (!template.attachment_url) return false;
@@ -8834,7 +8846,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
       void (async () => {
         setQuickMessageLoading(true);
-        const templates = await listQuickMessageTemplates(searchTerm || null);
+        const templates = await listQuickMessageTemplates(
+          searchTerm || null,
+          chatInfo.worker?.id ?? null
+        );
         if (quickMessageSearchRequestRef.current !== requestId) return;
         setQuickMessageTemplates(templates);
         setQuickMessageLoading(false);

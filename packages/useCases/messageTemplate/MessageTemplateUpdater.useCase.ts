@@ -8,6 +8,7 @@ import { ConverterService } from '@core/services/converter';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { IUpdateMessageTemplate } from '@core/interfaces/repositories/messageTemplate/IUpdateMessageTemplate';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { WorkerService } from '@core/services/worker.service';
 
 @injectable()
 export class MessageTemplateUpdaterUseCase {
@@ -17,8 +18,49 @@ export class MessageTemplateUpdaterUseCase {
     @inject(StorageService)
     private readonly storageService: StorageService,
     @inject(ConverterService)
-    private readonly converterService: ConverterService
+    private readonly converterService: ConverterService,
+    @inject(WorkerService)
+    private readonly workerService: WorkerService
   ) {}
+
+  private normalizeChannelIdForUpdate(
+    value: unknown
+  ): string | null | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (value === null) {
+      return null;
+    }
+
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+
+    if (!normalized || normalized.toLowerCase() === 'null') {
+      return null;
+    }
+
+    return normalized;
+  }
+
+  private async validateChannelExists(
+    accountId: string,
+    channelId: string,
+    t: TFunction<'translation', undefined>
+  ): Promise<void> {
+    const channelExists = await this.workerService.existsWorkerById(
+      accountId,
+      channelId
+    );
+
+    if (!channelExists) {
+      throw new Error(t('worker_not_found'));
+    }
+  }
 
   private async validateAttachment(
     file: UploadFileRequest,
@@ -73,6 +115,12 @@ export class MessageTemplateUpdaterUseCase {
     );
     await this.ensureMessageStatusIsValid(t, body);
 
+    const channelId = this.normalizeChannelIdForUpdate(body.channel_id?.value);
+
+    if (channelId) {
+      await this.validateChannelExists(accountId, channelId, t);
+    }
+
     const effectiveMessageType = this.resolveMessageType(
       body.type?.value,
       currentTemplate.type
@@ -90,6 +138,7 @@ export class MessageTemplateUpdaterUseCase {
 
     const inputWithAttachment: IUpdateMessageTemplate = {
       message_template_id: messageTemplateId,
+      channel_id: channelId,
       message:
         effectiveMessageType === EMessageType.audio ? '' : body.message?.value,
       command: body.command?.value,
@@ -209,6 +258,10 @@ export class MessageTemplateUpdaterUseCase {
       return this.uploadAudioAttachment(file, accountId);
     }
 
+    if (messageType === EMessageType.document) {
+      return this.uploadDocumentAttachment(file, accountId);
+    }
+
     return null;
   }
 
@@ -322,6 +375,32 @@ export class MessageTemplateUpdaterUseCase {
       ...uploadResult,
       mimetype: converted.mimetype,
       duration: converted.duration ?? null,
+      width: null,
+      height: null,
+    };
+  }
+
+  private async uploadDocumentAttachment(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const result = await this.storageService.uploadDocument(file, accountId);
+    if (!result) {
+      return null;
+    }
+
+    return {
+      ...result,
+      mimetype: result.mimetype ?? null,
+      duration: null,
       width: null,
       height: null,
     };

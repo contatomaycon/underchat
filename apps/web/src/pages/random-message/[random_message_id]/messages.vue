@@ -231,6 +231,7 @@ const getMessageTypeLabel = (type?: string | null): string => {
   if (type === EMessageType.image) return t('message_type_image');
   if (type === EMessageType.video) return t('message_type_video');
   if (type === EMessageType.audio) return t('message_type_audio');
+  if (type === EMessageType.document) return t('message_type_document');
 
   return type;
 };

@@ -62,6 +62,7 @@ export class RandomMessageItemUpdaterUseCase {
 
   private readonly IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
   private readonly VIDEO_EXTENSIONS = ['mp4', 'webm'];
+  private readonly DOCUMENT_EXTENSIONS = ['pdf'];
   private readonly AUDIO_EXTENSIONS = [
     'mp3',
     'wav',
@@ -86,6 +87,10 @@ export class RandomMessageItemUpdaterUseCase {
 
     if (this.VIDEO_EXTENSIONS.includes(ext)) {
       return EMessageType.video;
+    }
+
+    if (this.DOCUMENT_EXTENSIONS.includes(ext)) {
+      return EMessageType.document;
     }
 
     if (this.AUDIO_EXTENSIONS.includes(ext)) {
@@ -241,6 +246,10 @@ export class RandomMessageItemUpdaterUseCase {
       return this.uploadAudioAttachment(file, accountId);
     }
 
+    if (messageType === EMessageType.document) {
+      return this.uploadDocumentAttachment(file, accountId);
+    }
+
     return null;
   }
 
@@ -354,6 +363,32 @@ export class RandomMessageItemUpdaterUseCase {
       ...uploadResult,
       mimetype: converted.mimetype,
       duration: converted.duration ?? null,
+      width: null,
+      height: null,
+    };
+  }
+
+  private async uploadDocumentAttachment(
+    file: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        mimetype?: string | null;
+        duration?: number | null;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const result = await this.storageService.uploadDocument(file, accountId);
+    if (!result) {
+      return null;
+    }
+
+    return {
+      ...result,
+      mimetype: result.mimetype ?? null,
+      duration: null,
       width: null,
       height: null,
     };

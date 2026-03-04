@@ -4041,7 +4041,8 @@ watch(msg, async (val) => {
     showQuickMessageList.value = true;
 
     const templates = await chatStore.listQuickMessageTemplates(
-      searchTerm || null
+      searchTerm || null,
+      chatStore.activeChat?.worker?.id ?? null
     );
     quickMessageTemplates.value = templates;
   } else {
@@ -4201,27 +4202,37 @@ const sendQuickMessage = async () => {
 
   const hash = createMessageHash();
   const messageValue = replaceTagsInMessage(template.message) || null;
+  const quickMediaContent = {
+    url: template.attachment_url,
+    mimetype: template.mimetype || null,
+    ...(messageValue
+      ? {
+          caption: messageValue,
+        }
+      : {}),
+    ...(template.type === 'video' && {
+      duration: template.duration ?? null,
+      width: template.width ?? null,
+      height: template.height ?? null,
+    }),
+    ...(template.type === 'audio' && {
+      duration: template.duration ?? null,
+    }),
+    ...(template.type === 'image' && {
+      width: template.width ?? null,
+      height: template.height ?? null,
+    }),
+  };
 
   const content: ContentMessageChat = {
     type: template.type as EMessageType,
     message: messageValue,
-    [template.type]: {
-      url: template.attachment_url,
-      caption: messageValue,
-      mimetype: template.mimetype || null,
-      ...(template.type === 'video' && {
-        duration: template.duration ?? null,
-        width: template.width ?? null,
-        height: template.height ?? null,
-      }),
-      ...(template.type === 'audio' && {
-        duration: template.duration ?? null,
-      }),
-      ...(template.type === 'image' && {
-        width: template.width ?? null,
-        height: template.height ?? null,
-      }),
-    },
+    [template.type]: quickMediaContent,
+    ...(template.type === 'document'
+      ? {
+          document: quickMediaContent,
+        }
+      : {}),
   };
 
   await registerLocalMessage(content, hash);
@@ -4251,6 +4262,13 @@ const sendQuickMessage = async () => {
     });
   } else if (template.type === 'audio') {
     success = await chatStore.createMessageWithAudios(formData, {
+      skipLoading: true,
+      onUploadProgress: (progress) => {
+        markUploadProgress(hash, progress);
+      },
+    });
+  } else if (template.type === 'document') {
+    success = await chatStore.createMessageWithDocuments(formData, {
       skipLoading: true,
       onUploadProgress: (progress) => {
         markUploadProgress(hash, progress);

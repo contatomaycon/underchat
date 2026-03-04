@@ -86,6 +86,7 @@ export class MessageTemplateListerRepository {
     const queryBuilder = this.dbRo
       .select({
         message_template_id: messageTemplate.message_template_id,
+        channel_id: messageTemplate.channel_id,
         message: messageTemplate.message,
         command: messageTemplate.command,
         type: messageTemplate.type,
@@ -129,6 +130,7 @@ export class MessageTemplateListerRepository {
 
     return result.map((message) => ({
       message_template_id: message.message_template_id,
+      channel_id: message.channel_id ?? null,
       account: {
         account_id: message.account?.account_id,
         name: message.account?.name,

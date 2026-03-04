@@ -1,19 +1,11 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { ChatStackNavigator } from './ChatStack';
-import type { ChatTab } from './types';
+import type { ChatTab, RootTabParamList } from './types';
 import { colors } from '../theme/colors';
 import { useChatFilter } from '../context/ChatFilterContext';
 
-type TabParamList = {
-  New: { tab: ChatTab; entry: 'contacts' };
-  InChat: { tab: ChatTab };
-  Queue: { tab: ChatTab };
-  Closed: { tab: ChatTab };
-  Chatbot: { tab: ChatTab };
-};
-
-const Tab = createBottomTabNavigator<TabParamList>();
+const Tab = createBottomTabNavigator<RootTabParamList>();
 
 export function RootNavigator() {
   const { hasAppliedAdvancedFilters, canViewChatbotTab, chatCounts } =
@@ -30,7 +22,7 @@ export function RootNavigator() {
   const closedBadge = toBadgeValue(chatCounts.closed);
 
   const buildTabListeners = (
-    routeName: keyof TabParamList,
+    routeName: keyof RootTabParamList,
     tab: ChatTab,
     entry: 'chat_list' | 'contacts' = 'chat_list'
   ) => {

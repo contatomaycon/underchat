@@ -1,10 +1,10 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { container } from 'tsyringe';
-import { PushSubscriptionDeleterRepository } from '@core/repositories/push/PushSubscriptionDeleter.repository';
 import { DeletePushSubscriptionRequest } from '@core/schema/push/deleteSubscription/request.schema';
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { PushSubscriptionDeleterUseCase } from '@core/useCases/push/PushSubscriptionDeleter.useCase';
 
 export async function deleteSubscription(
   request: FastifyRequest<{
@@ -12,15 +12,24 @@ export async function deleteSubscription(
   }>,
   reply: FastifyReply
 ): Promise<void> {
-  const { t } = request;
-  const pushSubscriptionDeleterRepository = container.resolve(
-    PushSubscriptionDeleterRepository
+  const { t, tokenJwtData } = request;
+  const pushSubscriptionDeleterUseCase = container.resolve(
+    PushSubscriptionDeleterUseCase
   );
 
   try {
-    const { endpoint } = request.body;
+    const result = await pushSubscriptionDeleterUseCase.execute({
+      userId: tokenJwtData.user_id,
+      endpoint: request.body.endpoint,
+      provider: request.body.provider,
+    });
 
-    await pushSubscriptionDeleterRepository.hardDeleteByEndpoint(endpoint);
+    if (!result.ok && result.reason === 'invalid_payload') {
+      return sendResponse(reply, {
+        message: 'Invalid push subscription payload.',
+        httpStatusCode: EHTTPStatusCode.bad_request,
+      });
+    }
 
     return sendResponse(reply, {
       message: t('push_subscription_deleted_successfully'),

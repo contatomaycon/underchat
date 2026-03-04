@@ -8,6 +8,18 @@ export const createMessageTemplateRequestSchema = Type.Object({
   command: Type.Object({
     value: Type.String(),
   }),
+  channel_id: Type.Optional(
+    Type.Object({
+      value: Type.Optional(
+        Type.Union([
+          Type.String({ format: 'uuid' }),
+          Type.Null(),
+          Type.Literal(''),
+          Type.Literal('null'),
+        ])
+      ),
+    })
+  ),
   attachment_url: Type.Optional(
     Type.Union([uploadFileRequestSchema, Type.Null()])
   ),

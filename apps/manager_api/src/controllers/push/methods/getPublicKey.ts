@@ -1,20 +1,22 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { container } from 'tsyringe';
-import { PushNotificationService } from '@core/services/pushNotification.service';
 import { GetPushPublicKeyResponse } from '@core/schema/push/getPublicKey/response.schema';
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { handleControllerError } from '@core/common/functions/handleControllerError';
+import { PushPublicKeyViewerUseCase } from '@core/useCases/push/PushPublicKeyViewer.useCase';
 
 export async function getPublicKey(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
   const { t } = request;
-  const pushNotificationService = container.resolve(PushNotificationService);
+  const pushPublicKeyViewerUseCase = container.resolve(
+    PushPublicKeyViewerUseCase
+  );
 
   try {
-    const publicKey = pushNotificationService.getPublicKey();
+    const publicKey = pushPublicKeyViewerUseCase.execute();
 
     if (!publicKey) {
       return sendResponse(reply, {

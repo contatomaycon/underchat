@@ -45,6 +45,11 @@ const openVideo = () => {
   viewerOpen.value = true;
 };
 
+const openDocument = () => {
+  if (!props.template.attachment_url) return;
+  window.open(props.template.attachment_url, '_blank');
+};
+
 const toggleAudioPlay = () => {
   if (!props.template.attachment_url) return;
 
@@ -179,6 +184,26 @@ const userPhoto = computed(() => {
 const hasPhoto = computed(() => {
   return !!chatStore.user?.info.photo;
 });
+
+const documentLabel = computed(() => {
+  const url = props.template.attachment_url;
+
+  if (!url) {
+    return t('message_type_document');
+  }
+
+  try {
+    const { pathname } = new URL(url);
+    const fileName = pathname.split('/').pop();
+
+    return fileName ? decodeURIComponent(fileName) : t('message_type_document');
+  } catch {
+    const clean = url.split(/[?#]/)[0] || '';
+    const fileName = clean.split('/').pop();
+
+    return fileName ? decodeURIComponent(fileName) : t('message_type_document');
+  }
+});
 </script>
 
 <template>
@@ -309,6 +334,29 @@ const hasPhoto = computed(() => {
               <p
                 v-if="replacedMessage"
                 class="audio-caption mt-2"
+                :style="{
+                  color: 'rgb(var(--v-theme-title))',
+                }"
+              >
+                <span v-html="formatWhatsAppText(replacedMessage)"></span>
+              </p>
+            </div>
+
+            <div
+              v-if="template.type === 'document' && template.attachment_url"
+              class="document-bubble document-bubble--right"
+              @click="openDocument"
+            >
+              <div class="d-flex align-center gap-2">
+                <VIcon size="20">tabler-file</VIcon>
+                <span class="document-label text-truncate">{{
+                  documentLabel
+                }}</span>
+                <VIcon size="18">tabler-external-link</VIcon>
+              </div>
+              <p
+                v-if="replacedMessage"
+                class="document-caption mt-2"
                 :style="{
                   color: 'rgb(var(--v-theme-title))',
                 }"
@@ -613,6 +661,35 @@ const hasPhoto = computed(() => {
   }
 
   .audio-caption {
+    font-size: 0.95rem;
+    line-height: 1.25rem;
+    white-space: pre-line;
+    margin-bottom: 0 !important;
+  }
+
+  .document-bubble {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-inline-size: 300px;
+    inline-size: 100%;
+    border-radius: 10px;
+    background: rgba(var(--v-theme-on-surface), 0.04);
+    padding: 10px;
+    cursor: pointer;
+  }
+
+  .document-bubble--right {
+    border-start-start-radius: 6px;
+  }
+
+  .document-label {
+    font-size: 0.9rem;
+    line-height: 1.2rem;
+    font-weight: 500;
+  }
+
+  .document-caption {
     font-size: 0.95rem;
     line-height: 1.25rem;
     white-space: pre-line;

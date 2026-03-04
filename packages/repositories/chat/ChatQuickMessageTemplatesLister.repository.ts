@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { messageTemplate, messageStatus } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, asc, eq, ilike, isNull, SQLWrapper } from 'drizzle-orm';
+import { and, asc, eq, ilike, isNull, or, SQLWrapper } from 'drizzle-orm';
 import { EMessageStatus } from '@core/common/enums/EMessageStatus';
 import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
 import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
@@ -25,6 +25,17 @@ export class ChatQuickMessageTemplatesListerRepository {
 
     if (query.command) {
       filters.push(ilike(messageTemplate.command, `${query.command}%`));
+    }
+
+    if (query.channel_id) {
+      filters.push(
+        or(
+          eq(messageTemplate.channel_id, query.channel_id),
+          isNull(messageTemplate.channel_id)
+        ) as SQLWrapper
+      );
+    } else {
+      filters.push(isNull(messageTemplate.channel_id));
     }
 
     const result = await this.dbRo

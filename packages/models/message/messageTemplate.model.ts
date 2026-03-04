@@ -9,7 +9,7 @@ import {
   index,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { messageStatus, account } from '@core/models';
+import { messageStatus, account, worker } from '@core/models';
 
 export const messageTemplate = pgTable(
   'message_template',
@@ -18,6 +18,7 @@ export const messageTemplate = pgTable(
     account_id: uuid()
       .references(() => account.account_id)
       .notNull(),
+    channel_id: uuid().references(() => worker.worker_id),
     message_status_id: uuid()
       .references(() => messageStatus.message_status_id)
       .notNull(),
@@ -42,11 +43,17 @@ export const messageTemplate = pgTable(
   },
   (table) => [
     index('message_template_account_id_idx').on(table.account_id),
+    index('message_template_channel_id_idx').on(table.channel_id),
     index('message_template_message_status_id_idx').on(table.message_status_id),
     index('message_template_command_idx').on(table.command),
     index('message_template_deleted_at_idx').on(table.deleted_at),
     index('message_template_account_id_deleted_at_idx').on(
       table.account_id,
+      table.deleted_at
+    ),
+    index('message_template_account_id_channel_id_deleted_at_idx').on(
+      table.account_id,
+      table.channel_id,
       table.deleted_at
     ),
   ]
@@ -58,6 +65,10 @@ export const messageTemplateRelations = relations(
     mta: one(account, {
       fields: [messageTemplate.account_id],
       references: [account.account_id],
+    }),
+    mtw: one(worker, {
+      fields: [messageTemplate.channel_id],
+      references: [worker.worker_id],
     }),
     mts: one(messageStatus, {
       fields: [messageTemplate.message_status_id],

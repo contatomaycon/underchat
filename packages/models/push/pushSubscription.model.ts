@@ -16,9 +16,11 @@ export const pushSubscription = pgTable(
     user_id: uuid()
       .references(() => user.user_id)
       .notNull(),
+    provider: varchar({ length: 20 }).default('webpush').notNull(),
+    platform: varchar({ length: 20 }),
     endpoint: text().notNull(),
-    p256dh: text().notNull(),
-    auth: text().notNull(),
+    p256dh: text(),
+    auth: text(),
     user_agent: varchar({ length: 500 }),
     created_at: timestamp({
       mode: 'string',
