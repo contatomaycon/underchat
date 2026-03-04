@@ -23,6 +23,15 @@ export class PermissionAssignmentUserViewerRepository {
         WHERE pa.user_id = '${userId}' AND pra.permission_action_id IS NOT NULL
         UNION
         SELECT DISTINCT
+            paa.action AS action
+        FROM "permission_assignment" pa
+        JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
+        JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
+        JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
+        JOIN "permission_action" paa ON paa.permission_action_group_id = pag.permission_action_group_id
+        WHERE pa.user_id = '${userId}' AND pra.permission_action_group_id IS NOT NULL
+        UNION
+        SELECT DISTINCT
             pag.action AS action
         FROM "permission_assignment" pa
         JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id

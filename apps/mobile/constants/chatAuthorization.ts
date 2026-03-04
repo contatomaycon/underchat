@@ -1,18 +1,27 @@
 import type { ListChatsResult } from '../types/chat';
 import type { UserChannel } from '../storage/authStorage';
 
-const CHATBOT_STATUSES = new Set([
-  'ura',
-  'ura_output',
-  'ura_schedule',
-  'ura_webhook',
-]);
-
 export const CHAT_ACCESS_PERMISSIONS = [
   'full_access',
   'full_access_group',
   'chat_group',
   'chat_access',
+] as const;
+
+export const CHATBOT_INPUT_READ_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'view_chatbot_messages',
+  'chatbot_group',
+  'chatbot_access',
+] as const;
+
+export const CHAT_MODULE_ACCESS_PERMISSIONS = [
+  ...CHAT_ACCESS_PERMISSIONS,
+  'view_chatbot_messages',
+  'chatbot_group',
+  'chatbot_access',
 ] as const;
 
 export const CONTACTS_MODULE_PERMISSIONS = CHAT_ACCESS_PERMISSIONS;
@@ -42,6 +51,8 @@ export const VIEW_CHATBOT_TAB_PERMISSIONS = [
   'full_access_group',
   'chat_group',
   'view_chatbot_messages',
+  'chatbot_group',
+  'chatbot_access',
 ] as const;
 
 export const PICK_QUEUE_CHAT_PERMISSIONS = [
@@ -139,6 +150,10 @@ export function hasChatAccessPermission(permissions: string[]): boolean {
   return hasAnyPermission(permissions, CHAT_ACCESS_PERMISSIONS);
 }
 
+export function hasChatModuleAccessPermission(permissions: string[]): boolean {
+  return hasAnyPermission(permissions, CHAT_MODULE_ACCESS_PERMISSIONS);
+}
+
 export function hasContactsModuleAccess(permissions: string[]): boolean {
   return hasAnyPermission(permissions, CONTACTS_MODULE_PERMISSIONS);
 }
@@ -229,6 +244,10 @@ export function canViewChat(
     canListAllChatsWithoutSectorLimit(permissions);
   const canViewBySector = canListAllChatsInSector(permissions);
   const hasPermissionToViewAll = canViewAllByGroup || canViewAllWithoutSector;
+  const canViewChatbotInputMessages = hasAnyPermission(
+    permissions,
+    CHATBOT_INPUT_READ_PERMISSIONS
+  );
   const chatUserId = resolveChatUserId(chat);
   const isOwnChat = !!userId && !!chatUserId && chatUserId === userId;
   const chatSectorId = resolveChatSectorId(chat);
@@ -245,7 +264,23 @@ export function canViewChat(
     return canViewBySector && isChatInUserSectors;
   }
 
-  if (CHATBOT_STATUSES.has(chat.status)) {
+  if (chat.status === 'ura') {
+    if (canViewChatbotInputMessages) {
+      return true;
+    }
+
+    if (hasPermissionToViewAll || isOwnChat) {
+      return true;
+    }
+
+    return canViewBySector && isChatInUserSectors;
+  }
+
+  if (
+    chat.status === 'ura_output' ||
+    chat.status === 'ura_webhook' ||
+    chat.status === 'ura_schedule'
+  ) {
     if (hasPermissionToViewAll || isOwnChat) {
       return true;
     }

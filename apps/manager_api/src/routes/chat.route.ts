@@ -7,6 +7,7 @@ import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 import {
   chatPermissions,
+  chatReadPermissions,
   forwardToOutputChatbotPermissions,
   kanbanPermissions,
 } from '@/permissions';
@@ -59,7 +60,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, chatPermissions),
+        server.authenticateJwt(request, reply, chatReadPermissions),
       planGuard,
       planStatus,
     ],
@@ -103,7 +104,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.listMessageChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, chatPermissions),
+        server.authenticateJwt(request, reply, chatReadPermissions),
       planGuard,
       planStatus,
     ],
@@ -114,7 +115,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.searchMessages,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, chatPermissions),
+        server.authenticateJwt(request, reply, chatReadPermissions),
       planGuard,
       planStatus,
     ],
@@ -224,7 +225,7 @@ export default function chatRoutes(server: FastifyInstance) {
     handler: chatController.searchChats,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, chatPermissions),
+        server.authenticateJwt(request, reply, chatReadPermissions),
       planGuard,
       planStatus,
     ],

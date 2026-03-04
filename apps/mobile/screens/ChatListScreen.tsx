@@ -1019,7 +1019,35 @@ export function ChatListScreen({ route, navigation }: Props) {
       }
 
       const status = readString((chatData as { status?: unknown }).status);
+      const chatName = readString((chatData as { name?: unknown }).name);
+      const chatPhone = readString((chatData as { phone?: unknown }).phone);
       const sectorId = resolveSocketChatSectorId(chatData);
+      const workerId = resolveSocketChatWorkerId(chatData);
+
+      if (status) {
+        const visibilityChat = {
+          chat_id: chatId,
+          account: { id: '', name: '' },
+          worker: { id: workerId ?? '', name: '' },
+          sector: sectorId ? { id: sectorId, name: '' } : null,
+          user: chatUserId ? { id: chatUserId, name: '' } : null,
+          name: chatName,
+          phone: chatPhone ?? '',
+          status: status as ListChatsResult['status'],
+          date: readString((chatData as { date?: unknown }).date) ?? '',
+        } as ListChatsResult;
+
+        if (
+          canViewChat(visibilityChat, {
+            permissions: socketPermissions,
+            userId: currentUserId,
+            userSectors,
+            userChannels,
+          })
+        ) {
+          return true;
+        }
+      }
 
       if (status === 'queue' && !sectorId && !chatUserId) {
         return true;

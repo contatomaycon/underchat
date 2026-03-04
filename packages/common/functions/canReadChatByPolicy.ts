@@ -1,5 +1,6 @@
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
@@ -68,6 +69,18 @@ export function canReadChatByPolicy({
 
   const isOwnChat = chat.user?.id === userId;
   if (isOwnChat) {
+    return true;
+  }
+
+  const hasChatbotInputReadPermission = hasAnyPermission(actions, [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatbotPermissions.chatbot_group,
+    EChatbotPermissions.chatbot_access,
+    EChatPermissions.view_chatbot_messages,
+  ]);
+  if (chat.status === EChatStatus.ura && hasChatbotInputReadPermission) {
     return true;
   }
 

@@ -193,11 +193,9 @@ export type ListChatsParams = {
 
 function buildChatQuery(
   params: ListChatsParams
-): Record<string, string | number> {
-  const q: Record<string, string | number> = {
-    status: Array.isArray(params.status)
-      ? params.status.join(',')
-      : params.status,
+): Record<string, string | number | string[] | number[]> {
+  const q: Record<string, string | number | string[] | number[]> = {
+    status: params.status,
     current_page: params.current_page ?? 1,
     per_page: params.per_page ?? 25,
   };
@@ -816,16 +814,14 @@ export async function searchChats(
 ): Promise<SearchChatsResponse | null> {
   const currentPage = params.current_page ?? 1;
   const perPage = params.per_page ?? 50;
-  const q: Record<string, string | number> = {
+  const q: Record<string, string | number | string[] | number[]> = {
     search: params.search ?? '',
     current_page: currentPage,
     per_page: perPage,
   };
 
   if (params.status !== null && params.status !== undefined) {
-    q.status = Array.isArray(params.status)
-      ? params.status.join(',')
-      : params.status;
+    q.status = params.status;
   }
 
   appendQueryField(

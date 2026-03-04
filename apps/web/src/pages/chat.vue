@@ -32,6 +32,7 @@ import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
 import { can } from '@/@layouts/plugins/casl';
@@ -96,6 +97,9 @@ definePage({
       EGeneralPermissions.full_access_group,
       EChatPermissions.chat_group,
       EChatPermissions.chat_access,
+      EChatPermissions.view_chatbot_messages,
+      EChatbotPermissions.chatbot_group,
+      EChatbotPermissions.chatbot_access,
     ],
   },
 });
@@ -4281,7 +4285,7 @@ const sendQuickMessage = async () => {
       savedLinkPreview,
       savedReply || undefined,
       isAutoSend || resolvedMessage === hydratedTemplateMessage
-        ? template.message_template_id ?? null
+        ? (template.message_template_id ?? null)
         : null
     );
     finalizeSend();
@@ -4985,6 +4989,15 @@ const handleGlobalChatUpdate = async (e: Event) => {
       perm === EChatPermissions.chat_group ||
       perm === EChatPermissions.list_all_chats_without_sector_limit
   );
+  const canViewChatbotInputMessages = permissions.some(
+    (perm: EPermissionsRoles) =>
+      perm === EGeneralPermissions.full_access ||
+      perm === EGeneralPermissions.full_access_group ||
+      perm === EChatPermissions.chat_group ||
+      perm === EChatPermissions.view_chatbot_messages ||
+      perm === EChatbotPermissions.chatbot_group ||
+      perm === EChatbotPermissions.chatbot_access
+  );
 
   const userSectors: string[] = canListAllChatsWithoutSectorLimit
     ? []
@@ -5004,6 +5017,10 @@ const handleGlobalChatUpdate = async (e: Event) => {
     }
 
     if (chat.user?.id === chatStore.user?.user_id) {
+      return true;
+    }
+
+    if (chat.status === EChatStatus.ura && canViewChatbotInputMessages) {
       return true;
     }
 

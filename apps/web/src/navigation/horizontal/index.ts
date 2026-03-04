@@ -38,6 +38,9 @@ export default [
       EGeneralPermissions.full_access_group,
       EChatPermissions.chat_group,
       EChatPermissions.chat_access,
+      EChatPermissions.view_chatbot_messages,
+      EChatbotPermissions.chatbot_group,
+      EChatbotPermissions.chatbot_access,
     ],
   },
   {

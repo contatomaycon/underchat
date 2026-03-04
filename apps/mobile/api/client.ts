@@ -15,6 +15,8 @@ type ApiEnvelopeWithMessage<T> = {
   data?: T;
   message?: unknown;
 };
+type QueryParamScalar = string | number;
+type QueryParamValue = QueryParamScalar | QueryParamScalar[] | null | undefined;
 
 export type ApiDetailedResponse<T> = {
   status: boolean;
@@ -78,7 +80,7 @@ async function buildAuthHeaders(
 
 export async function apiGet<T>(
   path: string,
-  params?: Record<string, string | number | undefined>
+  params?: Record<string, QueryParamValue>
 ): Promise<{ status: boolean; data: T } | null> {
   const headers = await buildAuthHeaders('application/json');
   if (!headers) return null;
@@ -90,7 +92,21 @@ export async function apiGet<T>(
   );
   if (params) {
     for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined) url.searchParams.set(k, String(v));
+      if (typeof v === 'undefined' || v === null) continue;
+
+      if (Array.isArray(v)) {
+        const definedItems = v.filter(
+          (item): item is QueryParamScalar =>
+            typeof item !== 'undefined' && item !== null
+        );
+
+        for (const item of definedItems) {
+          url.searchParams.append(k, String(item));
+        }
+        continue;
+      }
+
+      url.searchParams.set(k, String(v));
     }
   }
 

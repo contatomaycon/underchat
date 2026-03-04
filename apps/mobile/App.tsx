@@ -15,7 +15,7 @@ import {
 } from './storage/authStorage';
 import {
   canViewChatbotTab as checkCanViewChatbotTab,
-  hasChatAccessPermission,
+  hasChatModuleAccessPermission,
 } from './constants/chatAuthorization';
 import { ChatFilterProvider } from './context/ChatFilterContext';
 import { RootNavigator } from './navigation/RootNavigator';
@@ -98,7 +98,7 @@ export default function App() {
       }
 
       const permissions = await getPermissions();
-      if (!hasChatAccessPermission(permissions)) {
+      if (!hasChatModuleAccessPermission(permissions)) {
         await clearAuth();
         if (!cancelled) {
           setAuthenticated(false);
@@ -141,7 +141,7 @@ export default function App() {
       .then(async (permissions) => {
         if (cancelled) return;
 
-        if (!hasChatAccessPermission(permissions)) {
+        if (!hasChatModuleAccessPermission(permissions)) {
           await clearAuth();
           if (cancelled) return;
           setAuthenticated(false);

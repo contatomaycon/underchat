@@ -1,7 +1,7 @@
 import type { ContactListFilters } from '../types/contact';
 
 export function appendQueryField(
-  target: Record<string, string | number>,
+  target: Record<string, string | number | string[] | number[]>,
   key: string,
   value: string | number | null | undefined
 ): void {

@@ -19,6 +19,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { can } from '@layouts/plugins/casl';
 import { refDebounced } from '@vueuse/core';
 import { EColor } from '@core/common/enums/EColor';
@@ -583,6 +584,8 @@ const chatbotFilterPermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
   EChatPermissions.chat_group,
+  EChatbotPermissions.chatbot_group,
+  EChatbotPermissions.chatbot_access,
   EChatPermissions.view_chatbot_messages,
 ];
 
@@ -3865,7 +3868,10 @@ defineExpose({
             >
               <VIcon size="16" class="me-1">tabler-device-mobile</VIcon>
               {{ selectedOpenConversationWorkerOption.name }}
-              <span v-if="selectedOpenConversationWorkerOption.number" class="ms-1 text-caption">
+              <span
+                v-if="selectedOpenConversationWorkerOption.number"
+                class="ms-1 text-caption"
+              >
                 ({{ selectedOpenConversationWorkerOption.number }})
               </span>
             </VChip>
