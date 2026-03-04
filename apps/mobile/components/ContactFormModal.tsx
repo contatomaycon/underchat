@@ -120,6 +120,7 @@ export function ContactFormModal({
 }: ContactFormModalProps) {
   const [loadingInitial, setLoadingInitial] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
   const [pickerKind, setPickerKind] = useState<PickerKind>(null);
 
   const [labelOptions, setLabelOptions] = useState<Option[]>([]);
@@ -196,6 +197,7 @@ export function ContactFormModal({
     setDocument('');
     setPhotoUri(null);
     setPhotoBlob(null);
+    setRemovingPhoto(false);
     setEmailDecrypted(false);
     setPhoneDecrypted(false);
     setDocumentDecrypted(false);
@@ -558,12 +560,15 @@ export function ContactFormModal({
   };
 
   const handleDeletePhoto = async () => {
+    if (removingPhoto) return;
+
     if (!isEditMode || !contactId) {
       setPhotoUri(null);
       setPhotoBlob(null);
       return;
     }
 
+    setRemovingPhoto(true);
     setSaving(true);
     try {
       const ok = await deleteChatContactPhoto(contactId);
@@ -575,6 +580,7 @@ export function ContactFormModal({
       setPhotoBlob(null);
     } finally {
       setSaving(false);
+      setRemovingPhoto(false);
     }
   };
 
@@ -825,8 +831,13 @@ export function ContactFormModal({
                       </View>
                       {photoUri ? (
                         <Pressable
-                          style={[styles.secondaryBtn, styles.photoRemoveBtn]}
+                          style={[
+                            styles.secondaryBtn,
+                            styles.photoRemoveBtn,
+                            removingPhoto && styles.disabledBtn,
+                          ]}
                           onPress={handleDeletePhoto}
+                          disabled={removingPhoto}
                         >
                           <Text style={styles.secondaryBtnText}>
                             {pt.remove_photo}

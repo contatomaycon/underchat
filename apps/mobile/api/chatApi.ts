@@ -984,12 +984,8 @@ export async function createChatContact(
 
   appendFormValue(formData, 'chat_id', payload.chat_id ?? null);
 
-  if (payload.user_id !== undefined) {
-    if (payload.user_id === null || payload.user_id.trim() === '') {
-      formData.append('user_id', '');
-    } else {
-      formData.append('user_id', payload.user_id.trim());
-    }
+  if (typeof payload.user_id === 'string' && payload.user_id.trim() !== '') {
+    formData.append('user_id', payload.user_id.trim());
   }
 
   if (payload.ignore) {
