@@ -12,6 +12,7 @@ interface MessageData {
     | EMessageType.image
     | EMessageType.audio
     | EMessageType.video
+    | EMessageType.document
     | null;
   text: string;
   attachmentFile: File | null;
@@ -114,6 +115,10 @@ const messageTypeOptions = computed(() => [
     value: EMessageType.video,
     title: t('message_type_video'),
   },
+  {
+    value: EMessageType.document,
+    title: t('message_type_document'),
+  },
 ]);
 
 const continueOptions = computed(() => [
@@ -143,6 +148,9 @@ const acceptedFileTypes = computed(() => {
   if (messageData.value.messageType === EMessageType.audio) {
     return `${ACCEPTED_AUDIO_MIME_TYPES.join(',')},${ACCEPTED_AUDIO_EXTENSIONS.join(',')}`;
   }
+  if (messageData.value.messageType === EMessageType.document) {
+    return '*/*';
+  }
   return '';
 });
 
@@ -150,7 +158,8 @@ const showAttachment = computed(() => {
   return (
     messageData.value.messageType === EMessageType.image ||
     messageData.value.messageType === EMessageType.audio ||
-    messageData.value.messageType === EMessageType.video
+    messageData.value.messageType === EMessageType.video ||
+    messageData.value.messageType === EMessageType.document
   );
 });
 
@@ -163,6 +172,9 @@ const attachmentDisplayName = computed(() => {
   }
   if (messageData.value.messageType === EMessageType.audio) {
     return t('chatbot_message_audio');
+  }
+  if (messageData.value.messageType === EMessageType.document) {
+    return t('chatbot_message_document');
   }
   return '';
 });
@@ -210,6 +222,9 @@ function isAllowedFile(file: File): boolean {
       ACCEPTED_AUDIO_EXTENSIONS.includes(`.${ext}`) ||
       ACCEPTED_AUDIO_MIME_TYPES.includes(file.type)
     );
+  }
+  if (messageData.value.messageType === EMessageType.document) {
+    return true;
   }
   return false;
 }
@@ -275,6 +290,7 @@ const removeFile = () => {
 
 const openPreview = () => {
   if (!filePreview.value || !messageData.value.messageType) return;
+  if (messageData.value.messageType === EMessageType.document) return;
   previewDialog.value = {
     open: true,
     src: filePreview.value,
@@ -406,8 +422,18 @@ watch(
 
 <template>
   <div class="chatbot-message-node">
-    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
-    <Handle id="source" type="source" :position="Position.Bottom" class="handle-source" />
+    <Handle
+      id="target"
+      type="target"
+      :position="Position.Top"
+      class="handle-target"
+    />
+    <Handle
+      id="source"
+      type="source"
+      :position="Position.Bottom"
+      class="handle-source"
+    />
 
     <VCard class="message-card" elevation="2">
       <VCardTitle
@@ -581,6 +607,32 @@ watch(
                   size="18"
                   class="flex-shrink-0"
                 />
+              </div>
+              <div
+                v-else-if="messageData.messageType === EMessageType.document"
+                class="d-flex align-center gap-2 pa-2"
+                style="
+                  background: rgba(var(--v-theme-surface-variant), 0.1);
+                  border-radius: 8px;
+                  width: 100%;
+                "
+              >
+                <VIcon
+                  icon="tabler-file-text"
+                  size="20"
+                  class="flex-shrink-0"
+                />
+                <div
+                  class="flex-grow-1 d-flex align-center gap-1"
+                  style="min-width: 0; flex: 1; overflow: hidden"
+                >
+                  <span
+                    class="text-caption text-truncate"
+                    style="flex: 0 1 auto"
+                  >
+                    {{ attachmentDisplayName }}
+                  </span>
+                </div>
               </div>
             </VCard>
           </div>

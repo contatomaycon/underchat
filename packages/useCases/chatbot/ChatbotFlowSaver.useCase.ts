@@ -12,7 +12,7 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
-type MediaType = 'image' | 'video' | 'audio';
+type MediaType = 'image' | 'video' | 'audio' | 'document';
 
 @injectable()
 export class ChatbotFlowSaverUseCase {
@@ -445,7 +445,7 @@ export class ChatbotFlowSaverUseCase {
       this.validateTextMessage(t, node, data, errors);
     }
 
-    if (['image', 'audio', 'video'].includes(data.messageType)) {
+    if (['image', 'audio', 'video', 'document'].includes(data.messageType)) {
       this.validateMediaMessage(t, node, data, hasAttachmentFile, errors);
     }
 
@@ -817,6 +817,10 @@ export class ChatbotFlowSaverUseCase {
       return !!input[`audio_${nodeId}`];
     }
 
+    if (messageType === EMessageType.document) {
+      return !!input[`document_${nodeId}`];
+    }
+
     return false;
   }
 
@@ -1098,6 +1102,12 @@ export class ChatbotFlowSaverUseCase {
       return audioMatch[1];
     }
 
+    const documentRegex = /^document_(.+)$/;
+    const documentMatch = documentRegex.exec(fieldName);
+    if (documentMatch) {
+      return documentMatch[1];
+    }
+
     return null;
   }
 
@@ -1143,6 +1153,7 @@ export class ChatbotFlowSaverUseCase {
       this.processMediaFile(fieldName, value, nodeId, 'image', mediaFiles);
       this.processMediaFile(fieldName, value, nodeId, 'video', mediaFiles);
       this.processMediaFile(fieldName, value, nodeId, 'audio', mediaFiles);
+      this.processMediaFile(fieldName, value, nodeId, 'document', mediaFiles);
     }
 
     return mediaFiles;
@@ -1234,6 +1245,33 @@ export class ChatbotFlowSaverUseCase {
     };
   }
 
+  private async processDocumentNode(
+    node: any,
+    data: any,
+    document: UploadFileRequest,
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<any> {
+    await this.validateFileSize(document, t);
+    const uploadResult = await this.storageService.uploadDocument(
+      document,
+      accountId
+    );
+
+    if (!uploadResult) {
+      throw new Error('Failed to upload document');
+    }
+
+    return {
+      ...node,
+      data: {
+        ...data,
+        attachmentUrl: uploadResult.url,
+        attachmentMimetype: uploadResult.mimetype,
+      },
+    };
+  }
+
   private async processMediaFiles(
     t: TFunction<'translation', undefined>,
     requestData: SaveChatbotFlowRequestData,
@@ -1295,6 +1333,21 @@ export class ChatbotFlowSaverUseCase {
           data,
           mediaFile.file,
           messageType,
+          t,
+          accountId
+        );
+        processedNodes.push(processedNode);
+        continue;
+      }
+
+      if (
+        messageType === EMessageType.document &&
+        mediaFile.type === 'document'
+      ) {
+        const processedNode = await this.processDocumentNode(
+          node,
+          data,
+          mediaFile.file,
           t,
           accountId
         );

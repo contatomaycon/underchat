@@ -1594,6 +1594,18 @@ export class ChatbotFlowRunnerService {
       });
     }
 
+    if (messageType === 'document' && attachmentUrl) {
+      return this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.document,
+        message: text || undefined,
+        typeUser: ETypeUserChat.bot,
+        documentUrl: attachmentUrl,
+        documentMimetype: attachmentMimetype || undefined,
+      });
+    }
+
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,

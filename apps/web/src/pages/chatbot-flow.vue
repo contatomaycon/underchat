@@ -1512,6 +1512,11 @@ const handleSave = async () => {
 
       if (messageType === 'audio') {
         formData.append(`audio_${node.id}`, attachmentFile);
+        continue;
+      }
+
+      if (messageType === 'document') {
+        formData.append(`document_${node.id}`, attachmentFile);
       }
     }
 
