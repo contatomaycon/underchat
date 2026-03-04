@@ -51,6 +51,13 @@ export const listMessageChats = async (
       });
     }
 
+    if (error instanceof Error && error.message === t('chat_access_denied')) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.forbidden,
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

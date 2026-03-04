@@ -39,6 +39,20 @@ export const searchMessages = async (
       data: response,
     });
   } catch (error) {
+    if (error instanceof Error && error.message === t('chat_not_found')) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.not_found,
+      });
+    }
+
+    if (error instanceof Error && error.message === t('chat_access_denied')) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.forbidden,
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

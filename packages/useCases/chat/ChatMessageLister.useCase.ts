@@ -12,11 +12,8 @@ import {
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ChatService } from '@core/services/chat.service';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { TFunction } from 'i18next';
-import { IChat } from '@core/common/interfaces/IChat';
+import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
 
 @injectable()
 export class ChatMessageListerUseCase {
@@ -26,72 +23,6 @@ export class ChatMessageListerUseCase {
     @inject(ChatService)
     private readonly chatService: ChatService
   ) {}
-
-  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
-  private canViewChatsInSector(actions: IJwtGroupHierarchy[]): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-      EChatPermissions.list_all_chats_in_sector,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
-  private canListAllChatsWithoutSectorLimit(
-    actions: IJwtGroupHierarchy[]
-  ): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-      EChatPermissions.list_all_chats_without_sector_limit,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
-  private canAccessChat(
-    chat: IChat,
-    userId: string,
-    actions: IJwtGroupHierarchy[],
-    userSectors: string[],
-    userChannels: { id: string; name: string }[] = []
-  ): boolean {
-    if (userChannels.length > 0) {
-      const channelIds = userChannels.map((c) => c.id);
-      if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
-        return false;
-      }
-    }
-
-    const canViewOthers = this.canViewOthersChats(actions);
-    const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
-    if (canViewOthers || canListAll) return true;
-    const isOwnChat = chat.user?.id === userId;
-    if (isOwnChat) return true;
-    const canViewInSector = this.canViewChatsInSector(actions);
-    if (!canViewInSector) return false;
-    if (
-      userSectors.length > 0 &&
-      chat.sector?.id &&
-      userSectors.includes(chat.sector.id)
-    )
-      return true;
-    if (userSectors.length === 0 && !chat.sector?.id) return true;
-    if (canViewInSector && !chat.sector?.id) return true;
-    return false;
-  }
 
   private async getChatMessage(
     accountId: string,
@@ -169,7 +100,15 @@ export class ChatMessageListerUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    if (!this.canAccessChat(chat, userId, actions, userSectors, userChannels)) {
+    if (
+      !canReadChatByPolicy({
+        chat,
+        userId,
+        actions,
+        userSectors,
+        userChannels,
+      })
+    ) {
       throw new Error(t('chat_access_denied'));
     }
 

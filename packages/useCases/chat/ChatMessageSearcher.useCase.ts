@@ -16,9 +16,7 @@ import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.s
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { IContent } from '@core/common/interfaces/IChatMessage';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
+import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
 
 @injectable()
 export class ChatMessageSearcherUseCase {
@@ -28,40 +26,6 @@ export class ChatMessageSearcherUseCase {
     @inject(ChatService)
     private readonly chatService: ChatService
   ) {}
-
-  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
-  private canViewChatsInSector(actions: IJwtGroupHierarchy[]): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-      EChatPermissions.list_all_chats_in_sector,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
-  private canListAllChatsWithoutSectorLimit(
-    actions: IJwtGroupHierarchy[]
-  ): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-      EChatPermissions.list_all_chats_without_sector_limit,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
 
   async execute(
     t: TFunction<'translation', undefined>,
@@ -82,29 +46,14 @@ export class ChatMessageSearcherUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    if (userChannels.length > 0) {
-      const channelIds = userChannels.map((c) => c.id);
-      if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
-        throw new Error(t('chat_access_denied'));
-      }
-    }
-
-    const canViewOthers = this.canViewOthersChats(actions);
-    const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
-    const canViewInSector = this.canViewChatsInSector(actions);
-    const isOwnChat = chat.user?.id === userId;
-    const isChatInUserSectors =
-      (userSectors.length > 0 &&
-        chat.sector?.id &&
-        userSectors.includes(chat.sector.id)) ||
-      (userSectors.length === 0 && !chat.sector?.id) ||
-      (canViewInSector && !chat.sector?.id);
-
     if (
-      !canViewOthers &&
-      !canListAll &&
-      !isOwnChat &&
-      !(canViewInSector && isChatInUserSectors)
+      !canReadChatByPolicy({
+        chat,
+        userId,
+        actions,
+        userSectors,
+        userChannels,
+      })
     ) {
       throw new Error(t('chat_access_denied'));
     }
