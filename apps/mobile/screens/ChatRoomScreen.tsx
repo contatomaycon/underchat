@@ -37,6 +37,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Swipeable } from 'react-native-gesture-handler';
 import type { ChatStackParamList } from '../navigation/types';
 import {
   type ListChatsResult,
@@ -437,6 +438,10 @@ const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_CONTACTS_SELECTED = 10;
+const MESSAGE_SWIPE_REPLY_ACTION_WIDTH = 84;
+const MESSAGE_SWIPE_REPLY_THRESHOLD = 44;
+const MESSAGE_SWIPE_FRICTION = 1.8;
+const MESSAGE_SWIPE_DRAG_OFFSET = 18;
 const EMOJI_PICKER_DISMISS_DY_THRESHOLD = 24;
 const EMOJI_PICKER_DISMISS_VY_THRESHOLD = 0.55;
 type DownloadKind = 'image' | 'video' | 'document';
@@ -4212,6 +4217,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const { setChatCounts, clearAdvancedFilters } = useChatFilter();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<MessageWithSeparator> | null>(null);
+  const openedMessageSwipeableRef = useRef<Swipeable | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micPressActiveRef = useRef(false);
   const micStartXRef = useRef<number | null>(null);
@@ -6738,6 +6744,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setReactionCategory('recent');
   }, []);
 
+  const closeOpenedMessageSwipeable = useCallback(() => {
+    openedMessageSwipeableRef.current?.close();
+    openedMessageSwipeableRef.current = null;
+  }, []);
+
   const emojiEntriesSorted = useMemo(() => {
     return [...EMOJI_DATASET].sort((a, b) => {
       const orderA = typeof a.sort_order === 'number' ? a.sort_order : 999999;
@@ -6872,6 +6883,30 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ]
   );
 
+  const handleReplyFromMessage = useCallback(
+    (message: ListMessageResult) => {
+      if (!canComposeInChat || isHistoryReadonly || shouldObfuscateContent) {
+        return;
+      }
+      if (!canInteractWithMessage(message)) return;
+
+      closeOpenedMessageSwipeable();
+      closeMessageOverlay();
+      setComposerEmojiPickerVisible(false);
+      setReplyMessageTarget(message);
+      requestAnimationFrame(() => {
+        messageInputRef.current?.focus();
+      });
+    },
+    [
+      canComposeInChat,
+      closeMessageOverlay,
+      closeOpenedMessageSwipeable,
+      isHistoryReadonly,
+      shouldObfuscateContent,
+    ]
+  );
+
   const messageActions = useMemo<MessageAction[]>(() => {
     const target = messageActionTarget;
     if (!target) return [];
@@ -6898,11 +6933,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         label: pt.reply,
         icon: 'arrow-undo-outline',
         onPress: () => {
-          setReplyMessageTarget(target);
-          closeMessageOverlay();
-          requestAnimationFrame(() => {
-            messageInputRef.current?.focus();
-          });
+          handleReplyFromMessage(target);
         },
       });
     }
@@ -7009,6 +7040,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     canComposeInChat,
     chatInfo.chat_id,
     closeMessageOverlay,
+    handleReplyFromMessage,
     handleCopyMessageContent,
     handleDownloadMessage,
     isHistoryReadonly,
@@ -8881,17 +8913,27 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleChatBodyTouchStart = useCallback(() => {
     dismissKeyboard();
+    closeOpenedMessageSwipeable();
     if (composerEmojiPickerVisible) {
       closeComposerEmojiPicker();
     }
-  }, [closeComposerEmojiPicker, composerEmojiPickerVisible]);
+  }, [
+    closeComposerEmojiPicker,
+    closeOpenedMessageSwipeable,
+    composerEmojiPickerVisible,
+  ]);
 
   const handleMessageListScrollBeginDrag = useCallback(() => {
     dismissKeyboard();
+    closeOpenedMessageSwipeable();
     if (composerEmojiPickerVisible) {
       closeComposerEmojiPicker();
     }
-  }, [closeComposerEmojiPicker, composerEmojiPickerVisible]);
+  }, [
+    closeComposerEmojiPicker,
+    closeOpenedMessageSwipeable,
+    composerEmojiPickerVisible,
+  ]);
 
   const composerEmojiDismissPanResponder = useMemo(
     () =>
@@ -9129,8 +9171,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 );
                 const canGoToQuoted =
                   !!quotedTargetId && messageIdSet.has(quotedTargetId);
+                const canSwipeReply =
+                  canComposeInChat &&
+                  !isHistoryReadonly &&
+                  !shouldObfuscateContent &&
+                  canInteractWithMessage(item.message);
 
-                return (
+                const bubble = (
                   <MessageBubble
                     msg={item.message}
                     fromMe={item.message.type_user !== ETypeUserChat.client}
@@ -9143,6 +9190,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     }
                     canInteract={canOpenActionsForMessage(item.message)}
                     onOpenActions={(message) => {
+                      closeOpenedMessageSwipeable();
                       setMessageActionTarget(message);
                       setMessageOverlayAnchor({
                         showReactions: canInteractWithMessage(message),
@@ -9164,6 +9212,86 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     disableTemplateButtons={!canComposeInChat || sending}
                     obfuscateContent={shouldObfuscateContent}
                   />
+                );
+
+                if (!canSwipeReply) {
+                  return bubble;
+                }
+
+                let rowSwipeable: Swipeable | null = null;
+
+                return (
+                  <Swipeable
+                    ref={(instance) => {
+                      rowSwipeable = instance;
+                    }}
+                    friction={MESSAGE_SWIPE_FRICTION}
+                    leftThreshold={MESSAGE_SWIPE_REPLY_THRESHOLD}
+                    overshootLeft={false}
+                    dragOffsetFromLeftEdge={MESSAGE_SWIPE_DRAG_OFFSET}
+                    containerStyle={styles.messageSwipeContainer}
+                    onSwipeableWillOpen={(direction) => {
+                      if (direction !== 'left') return;
+                      if (
+                        openedMessageSwipeableRef.current &&
+                        openedMessageSwipeableRef.current !== rowSwipeable
+                      ) {
+                        openedMessageSwipeableRef.current.close();
+                      }
+                    }}
+                    onSwipeableOpen={(direction) => {
+                      if (direction !== 'left') return;
+                      openedMessageSwipeableRef.current = rowSwipeable;
+                      rowSwipeable?.close();
+                      handleReplyFromMessage(item.message);
+                    }}
+                    onSwipeableClose={(direction) => {
+                      if (
+                        direction === 'left' &&
+                        openedMessageSwipeableRef.current === rowSwipeable
+                      ) {
+                        openedMessageSwipeableRef.current = null;
+                      }
+                    }}
+                    renderLeftActions={(progress, dragX) => {
+                      const translateX = dragX.interpolate({
+                        inputRange: [0, MESSAGE_SWIPE_REPLY_ACTION_WIDTH],
+                        outputRange: [-MESSAGE_SWIPE_REPLY_ACTION_WIDTH, 0],
+                        extrapolate: 'clamp',
+                      });
+                      const opacity = progress.interpolate({
+                        inputRange: [0, 0.35, 1],
+                        outputRange: [0.1, 0.65, 1],
+                        extrapolate: 'clamp',
+                      });
+
+                      return (
+                        <Animated.View
+                          style={[
+                            styles.messageSwipeRightAction,
+                            {
+                              width: MESSAGE_SWIPE_REPLY_ACTION_WIDTH,
+                              opacity,
+                              transform: [{ translateX }],
+                            },
+                          ]}
+                        >
+                          <View style={styles.messageSwipeRightActionInner}>
+                            <Ionicons
+                              name="arrow-undo-outline"
+                              size={18}
+                              color={colors.primary}
+                            />
+                            <Text style={styles.messageSwipeRightActionText}>
+                              {pt.reply}
+                            </Text>
+                          </View>
+                        </Animated.View>
+                      );
+                    }}
+                  >
+                    {bubble}
+                  </Swipeable>
                 );
               }}
               onScrollToIndexFailed={handleScrollToIndexFailed}
@@ -11730,6 +11858,30 @@ const styles = StyleSheet.create({
   },
   bubbleWrap: {
     marginVertical: 5,
+  },
+  messageSwipeContainer: {
+    overflow: 'visible',
+  },
+  messageSwipeRightAction: {
+    marginVertical: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  messageSwipeRightActionInner: {
+    width: 64,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  messageSwipeRightActionText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
   },
   bubbleWrapLeft: {
     alignItems: 'flex-start',

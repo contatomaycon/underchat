@@ -102,6 +102,13 @@ function isMaskedValue(value: string | null | undefined): boolean {
   return !!value && value.includes('*');
 }
 
+function isProbablyMaskedPhone(value: string | null | undefined): boolean {
+  if (!value) return false;
+  if (isMaskedValue(value)) return true;
+  const digits = value.replace(/\D/g, '');
+  return digits.length > 0 && digits.length < 10;
+}
+
 function normalizeDocumentForDisplay(
   value: string | null | undefined,
   documentTypeId: ContactDocumentTypeId | string | null | undefined
@@ -151,8 +158,16 @@ export function ContactFormModal({
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
 
   const [emailDecrypted, setEmailDecrypted] = useState(false);
+  const [emailMaskedValue, setEmailMaskedValue] = useState<string | null>(null);
+  const [emailVisible, setEmailVisible] = useState(true);
   const [phoneDecrypted, setPhoneDecrypted] = useState(false);
+  const [phoneMaskedValue, setPhoneMaskedValue] = useState<string | null>(null);
+  const [phoneVisible, setPhoneVisible] = useState(true);
   const [documentDecrypted, setDocumentDecrypted] = useState(false);
+  const [documentMaskedValue, setDocumentMaskedValue] = useState<string | null>(
+    null
+  );
+  const [documentVisible, setDocumentVisible] = useState(true);
 
   const isEditMode = mode === 'edit';
   const canLoadContact = isEditMode && !!contactId;
@@ -199,8 +214,14 @@ export function ContactFormModal({
     setPhotoBlob(null);
     setRemovingPhoto(false);
     setEmailDecrypted(false);
+    setEmailMaskedValue(null);
+    setEmailVisible(true);
     setPhoneDecrypted(false);
+    setPhoneMaskedValue(null);
+    setPhoneVisible(true);
     setDocumentDecrypted(false);
+    setDocumentMaskedValue(null);
+    setDocumentVisible(true);
   };
 
   useEffect(() => {
@@ -262,21 +283,32 @@ export function ContactFormModal({
           setLastName(contact.last_name ?? '');
           setNickname(contact.nickname ?? '');
           setBirthdayIso(normalizeBirthdayIso(contact.birthday));
-          setEmail(contact.email_partial ?? '');
+          const displayEmail = contact.email_partial ?? '';
+          const isMaskedEmail = isMaskedValue(displayEmail);
+          setEmail(displayEmail);
+          setEmailMaskedValue(isMaskedEmail ? displayEmail : null);
+          setEmailVisible(!isMaskedEmail);
+          setEmailDecrypted(false);
           setPhoneDdi(contact.phone_ddi ?? '55');
-          setPhone(
-            formatPhoneForDisplay(
-              contact.phone_partial ?? '',
-              contact.phone_ddi ?? null
-            )
+          const displayPhone = formatPhoneForDisplay(
+            contact.phone_partial ?? '',
+            contact.phone_ddi ?? null
           );
+          const isMaskedPhone = isProbablyMaskedPhone(displayPhone);
+          setPhone(displayPhone);
+          setPhoneMaskedValue(isMaskedPhone ? displayPhone : null);
+          setPhoneVisible(!isMaskedPhone);
+          setPhoneDecrypted(false);
           setNotes(contact.notes ?? '');
-          setDocument(
-            normalizeDocumentForDisplay(
-              contact.document_partial ?? '',
-              initialDocumentTypeId
-            )
+          const displayDocument = normalizeDocumentForDisplay(
+            contact.document_partial ?? '',
+            initialDocumentTypeId
           );
+          const isMaskedDocument = isMaskedValue(displayDocument);
+          setDocument(displayDocument);
+          setDocumentMaskedValue(isMaskedDocument ? displayDocument : null);
+          setDocumentVisible(!isMaskedDocument);
+          setDocumentDecrypted(false);
           setPhotoUri(resolveImageUri(contact.photo) ?? null);
         } else {
           resetForm();
@@ -319,6 +351,12 @@ export function ContactFormModal({
     () => getDocumentMaskMaxLength(documentTypeId),
     [documentTypeId]
   );
+  const canToggleEmailVisibility =
+    isEditMode && (isMaskedValue(email) || !!emailMaskedValue);
+  const canTogglePhoneVisibility =
+    isEditMode && (isProbablyMaskedPhone(phone) || !!phoneMaskedValue);
+  const canToggleDocumentVisibility =
+    isEditMode && (isMaskedValue(document) || !!documentMaskedValue);
   const birthdayDisplay = useMemo(
     () => formatBirthdayDisplay(birthdayIso),
     [birthdayIso]
@@ -605,29 +643,89 @@ export function ContactFormModal({
 
   const revealEmail = async () => {
     if (!contactId) return;
+    if (!emailMaskedValue && isMaskedValue(email)) {
+      setEmailMaskedValue(email);
+    }
     const decrypted = await getChatContactEmailDecrypted(contactId);
     if (decrypted) {
       setEmail(decrypted);
       setEmailDecrypted(true);
+      setEmailVisible(true);
     }
+  };
+
+  const hideEmail = () => {
+    if (!emailMaskedValue) return;
+    setEmail(emailMaskedValue);
+    setEmailDecrypted(false);
+    setEmailVisible(false);
+  };
+
+  const toggleEmailVisibility = async () => {
+    if (emailVisible) {
+      hideEmail();
+      return;
+    }
+
+    await revealEmail();
   };
 
   const revealPhone = async () => {
     if (!contactId) return;
+    if (!phoneMaskedValue && isProbablyMaskedPhone(phone)) {
+      setPhoneMaskedValue(phone);
+    }
     const decrypted = await getChatContactPhoneDecrypted(contactId);
     if (decrypted) {
       setPhone(formatPhoneForDisplay(decrypted, phoneDdi));
       setPhoneDecrypted(true);
+      setPhoneVisible(true);
     }
+  };
+
+  const hidePhone = () => {
+    if (!phoneMaskedValue) return;
+    setPhone(phoneMaskedValue);
+    setPhoneDecrypted(false);
+    setPhoneVisible(false);
+  };
+
+  const togglePhoneVisibility = async () => {
+    if (phoneVisible) {
+      hidePhone();
+      return;
+    }
+
+    await revealPhone();
   };
 
   const revealDocument = async () => {
     if (!contactId) return;
+    if (!documentMaskedValue && isMaskedValue(document)) {
+      setDocumentMaskedValue(document);
+    }
     const decrypted = await getChatContactDocumentDecrypted(contactId);
     if (decrypted) {
       setDocument(formatDocumentByType(decrypted, documentTypeId));
       setDocumentDecrypted(true);
+      setDocumentVisible(true);
     }
+  };
+
+  const hideDocument = () => {
+    if (!documentMaskedValue) return;
+    setDocument(documentMaskedValue);
+    setDocumentDecrypted(false);
+    setDocumentVisible(false);
+  };
+
+  const toggleDocumentVisibility = async () => {
+    if (documentVisible) {
+      hideDocument();
+      return;
+    }
+
+    await revealDocument();
   };
 
   const handleSave = async () => {
@@ -638,8 +736,12 @@ export function ContactFormModal({
       document,
       documentTypeId
     );
+    const skipEmailUpdate =
+      (canToggleEmailVisibility && !emailVisible) ||
+      (isMaskedValue(email) && !emailDecrypted);
     const skipDocumentUpdate =
-      isEditMode && isMaskedValue(document) && !documentDecrypted;
+      (canToggleDocumentVisibility && !documentVisible) ||
+      (isMaskedValue(document) && !documentDecrypted);
 
     if (!normalizedName) {
       Alert.alert(pt.warning_title, pt.name_required);
@@ -677,12 +779,11 @@ export function ContactFormModal({
     setSaving(true);
     try {
       if (isEditMode && contactId) {
-        const emailValue =
-          isMaskedValue(email) && !emailDecrypted
-            ? undefined
-            : email.trim() || null;
-        const phoneValue =
-          isMaskedValue(phone) && !phoneDecrypted ? undefined : normalizedPhone;
+        const emailValue = skipEmailUpdate ? undefined : email.trim() || null;
+        const skipPhoneUpdate =
+          (canTogglePhoneVisibility && !phoneVisible) ||
+          (isMaskedValue(phone) && !phoneDecrypted);
+        const phoneValue = skipPhoneUpdate ? undefined : normalizedPhone;
         const documentValue = skipDocumentUpdate
           ? undefined
           : normalizedDocument || null;
@@ -912,16 +1013,17 @@ export function ContactFormModal({
                           placeholderTextColor={colors.grey500}
                           keyboardType="email-address"
                           autoCapitalize="none"
+                          editable={!canToggleEmailVisibility || emailVisible}
                         />
-                        {isEditMode &&
-                        isMaskedValue(email) &&
-                        !emailDecrypted ? (
+                        {canToggleEmailVisibility ? (
                           <Pressable
                             style={styles.actionBtn}
-                            onPress={revealEmail}
+                            onPress={toggleEmailVisibility}
                           >
                             <Ionicons
-                              name="eye-outline"
+                              name={
+                                emailVisible ? 'eye-off-outline' : 'eye-outline'
+                              }
                               size={18}
                               color={colors.primary}
                             />
@@ -961,20 +1063,21 @@ export function ContactFormModal({
                           onChangeText={(value) =>
                             setPhone(formatLocalPhone(value))
                           }
+                          editable={!canTogglePhoneVisibility || phoneVisible}
                           keyboardType="phone-pad"
                           maxLength={15}
                           placeholder="(00) 00000-0000"
                           placeholderTextColor={colors.grey500}
                         />
-                        {isEditMode &&
-                        isMaskedValue(phone) &&
-                        !phoneDecrypted ? (
+                        {canTogglePhoneVisibility ? (
                           <Pressable
                             style={styles.actionBtn}
-                            onPress={revealPhone}
+                            onPress={togglePhoneVisibility}
                           >
                             <Ionicons
-                              name="eye-outline"
+                              name={
+                                phoneVisible ? 'eye-off-outline' : 'eye-outline'
+                              }
                               size={18}
                               color={colors.primary}
                             />
@@ -1012,6 +1115,9 @@ export function ContactFormModal({
                               formatDocumentByType(value, documentTypeId)
                             )
                           }
+                          editable={
+                            !canToggleDocumentVisibility || documentVisible
+                          }
                           keyboardType={
                             Platform.OS === 'ios' ? 'number-pad' : 'numeric'
                           }
@@ -1020,15 +1126,17 @@ export function ContactFormModal({
                           placeholder={documentPlaceholder}
                           placeholderTextColor={colors.grey500}
                         />
-                        {isEditMode &&
-                        isMaskedValue(document) &&
-                        !documentDecrypted ? (
+                        {canToggleDocumentVisibility ? (
                           <Pressable
                             style={styles.actionBtn}
-                            onPress={revealDocument}
+                            onPress={toggleDocumentVisibility}
                           >
                             <Ionicons
-                              name="eye-outline"
+                              name={
+                                documentVisible
+                                  ? 'eye-off-outline'
+                                  : 'eye-outline'
+                              }
                               size={18}
                               color={colors.primary}
                             />
