@@ -19,12 +19,44 @@ import { extractUserChannelIds } from '@core/common/functions/extractUserChannel
 
 @injectable()
 export class ChatSearcherUseCase {
+  private readonly allowedSortByFields = new Set<string>([
+    'summary.last_message',
+    'account.name',
+    'worker.name',
+    'name',
+    'phone',
+    'status',
+    'date',
+    'user.name',
+    'sector.name',
+    'started_at',
+    'closed_at',
+  ]);
+
   constructor(
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(ChatUserService)
     private readonly chatUserService: ChatUserService
   ) {}
+
+  private sanitizeSort(
+    sortBy: string | null | undefined,
+    sortOrder: string | null | undefined
+  ): { sortBy: string; sortOrder: 'asc' | 'desc' } {
+    const normalizedSortBy =
+      sortBy && this.allowedSortByFields.has(sortBy)
+        ? sortBy
+        : 'summary.last_message';
+
+    const normalizedSortOrder =
+      sortOrder === 'asc' || sortOrder === 'desc' ? sortOrder : 'desc';
+
+    return {
+      sortBy: normalizedSortBy,
+      sortOrder: normalizedSortOrder,
+    };
+  }
 
   private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
     const permissions = [
@@ -999,6 +1031,9 @@ export class ChatSearcherUseCase {
         sortOrder = 'desc';
       }
     }
+    const sanitizedSort = this.sanitizeSort(sortField, sortOrder);
+    const normalizedSortBy = sanitizedSort.sortBy;
+    const normalizedSortOrder = sanitizedSort.sortOrder;
 
     const getSortField = (field: string) => {
       const fieldMap: Record<string, string> = {
@@ -1017,14 +1052,14 @@ export class ChatSearcherUseCase {
       return fieldMap[field] || 'summary.last_date';
     };
 
-    const getSortConfig = () => {
-      const field = getSortField(sortField);
+    const getSortConfig = (fieldValue: string, orderValue: 'asc' | 'desc') => {
+      const field = getSortField(fieldValue);
 
       if (field === 'account.name.keyword') {
         return [
           {
             'account.name.keyword': {
-              order: sortOrder,
+              order: orderValue,
               nested: {
                 path: 'account',
               },
@@ -1037,7 +1072,7 @@ export class ChatSearcherUseCase {
         return [
           {
             'worker.name.keyword': {
-              order: sortOrder,
+              order: orderValue,
               nested: {
                 path: 'worker',
               },
@@ -1050,7 +1085,7 @@ export class ChatSearcherUseCase {
         return [
           {
             'user.name.keyword': {
-              order: sortOrder,
+              order: orderValue,
               nested: {
                 path: 'user',
               },
@@ -1063,7 +1098,7 @@ export class ChatSearcherUseCase {
         return [
           {
             'sector.name.keyword': {
-              order: sortOrder,
+              order: orderValue,
               nested: {
                 path: 'sector',
               },
@@ -1076,7 +1111,7 @@ export class ChatSearcherUseCase {
         return [
           {
             'summary.last_date': {
-              order: sortOrder,
+              order: orderValue,
               nested: {
                 path: 'summary',
               },
@@ -1085,13 +1120,13 @@ export class ChatSearcherUseCase {
         ];
       }
 
-      return [{ [field]: { order: sortOrder } }];
+      return [{ [field]: { order: orderValue } }];
     };
 
     const queryElastic: any = {
       from: (currentPage - 1) * perPage,
       size: perPage,
-      sort: getSortConfig(),
+      sort: getSortConfig(normalizedSortBy, normalizedSortOrder),
       query: {
         bool: {
           must: mustClauses,
@@ -1736,7 +1771,7 @@ export class ChatSearcherUseCase {
     };
 
     const [
-      result,
+      initialResult,
       queueCountResult,
       inChatCountResult,
       chatbotCountResult,
@@ -1776,47 +1811,17 @@ export class ChatSearcherUseCase {
       this.elasticDatabaseService.select(EElasticIndex.chat, myChatsCountQuery),
     ]);
 
+    let result = initialResult;
     if (!result) {
-      const pagings = setPaginationData(0, 0, perPage, currentPage);
-
-      return {
-        pagings,
-        results: [],
-        counts: {
-          total: 0,
-          queue: 0,
-          in_chat: 0,
-          chatbot: 0,
-          schedule: 0,
-          closed: 0,
-          my_chats: 0,
-          in_chat_mine: 0,
-          chatbot_input: 0,
-          chatbot_output: 0,
-          chatbot_schedule: 0,
-          chatbot_webhook: 0,
-        },
+      const fallbackQueryElastic = {
+        ...queryElastic,
+        sort: getSortConfig('summary.last_message', 'desc'),
       };
+      result = await this.elasticDatabaseService.select(
+        EElasticIndex.chat,
+        fallbackQueryElastic
+      );
     }
-
-    const chats = result.hits.hits.map((hit) => {
-      const source = hit._source as ListChatsResult;
-      if (!source.chat_id && hit._id) {
-        source.chat_id = hit._id;
-      }
-      if (Array.isArray(source.summary)) {
-        source.summary = source.summary[0] ?? null;
-      }
-      return source;
-    }) as ListChatsResult[];
-    const total = result.hits.total as { value: number; relation: string };
-
-    const pagings = setPaginationData(
-      chats.length,
-      total.value,
-      perPage,
-      currentPage
-    );
 
     const queueTotal =
       (queueCountResult?.hits?.total as { value: number })?.value || 0;
@@ -1839,6 +1844,48 @@ export class ChatSearcherUseCase {
     const myChatsTotal =
       (myChatsCountResult?.hits?.total as { value: number })?.value || 0;
     const totalCount = queueTotal + inChatTotal;
+
+    if (!result) {
+      const pagings = setPaginationData(0, 0, perPage, currentPage);
+
+      return {
+        pagings,
+        results: [],
+        counts: {
+          total: totalCount,
+          queue: queueTotal,
+          in_chat: inChatTotal,
+          chatbot: chatbotTotal,
+          schedule: scheduleTotal,
+          closed: closedTotal,
+          my_chats: myChatsTotal,
+          in_chat_mine: inChatMineTotal,
+          chatbot_input: chatbotInputTotal,
+          chatbot_output: chatbotOutputTotal,
+          chatbot_schedule: scheduleTotal,
+          chatbot_webhook: chatbotWebhookTotal,
+        },
+      };
+    }
+
+    const chats = result.hits.hits.map((hit) => {
+      const source = hit._source as ListChatsResult;
+      if (!source.chat_id && hit._id) {
+        source.chat_id = hit._id;
+      }
+      if (Array.isArray(source.summary)) {
+        source.summary = source.summary[0] ?? null;
+      }
+      return source;
+    }) as ListChatsResult[];
+    const total = result.hits.total as { value: number; relation: string };
+
+    const pagings = setPaginationData(
+      chats.length,
+      total.value,
+      perPage,
+      currentPage
+    );
 
     return {
       pagings,

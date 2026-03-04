@@ -22,6 +22,20 @@ import { extractUserChannelIds } from '@core/common/functions/extractUserChannel
 
 @injectable()
 export class ChatListerUseCase {
+  private readonly allowedSortByFields = new Set<string>([
+    'summary.last_message',
+    'account.name',
+    'worker.name',
+    'name',
+    'phone',
+    'status',
+    'date',
+    'user.name',
+    'sector.name',
+    'started_at',
+    'closed_at',
+  ]);
+
   constructor(
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
@@ -259,6 +273,19 @@ export class ChatListerUseCase {
     }
 
     if (statusArray.length > 1) {
+      const isChatbotMultiStatus =
+        statusArray.length > 0 &&
+        statusArray.every((currentStatus) =>
+          this.isChatbotSortStatus(currentStatus)
+        );
+
+      if (isChatbotMultiStatus) {
+        return {
+          sortBy: preferences.sortByChatbotOrder,
+          sortOrder: preferences.sortChatbotOrder,
+        };
+      }
+
       return {
         sortBy: preferences.sortByChatOrder,
         sortOrder: preferences.sortInChatOrder,
@@ -296,6 +323,32 @@ export class ChatListerUseCase {
     return {
       sortBy: 'summary.last_message',
       sortOrder: 'desc',
+    };
+  }
+
+  private isChatbotSortStatus(status: string): boolean {
+    return (
+      status === EChatStatus.ura ||
+      status === EChatStatus.ura_output ||
+      status === EChatStatus.ura_schedule ||
+      status === EChatStatus.ura_webhook
+    );
+  }
+
+  private sanitizeSort(
+    sortBy: string,
+    sortOrder: string
+  ): { sortBy: string; sortOrder: 'asc' | 'desc' } {
+    const normalizedSortBy = this.allowedSortByFields.has(sortBy)
+      ? sortBy
+      : 'summary.last_message';
+
+    const normalizedSortOrder =
+      sortOrder === 'asc' || sortOrder === 'desc' ? sortOrder : 'desc';
+
+    return {
+      sortBy: normalizedSortBy,
+      sortOrder: normalizedSortOrder,
     };
   }
 
@@ -410,6 +463,78 @@ export class ChatListerUseCase {
     }
 
     return 0;
+  }
+
+  private mapResultHitsToChats(
+    hits: Array<{ _id?: string; _source?: unknown }>
+  ): ListChatsResult[] {
+    return hits.reduce<ListChatsResult[]>((acc, hit) => {
+      if (!hit._source) {
+        return acc;
+      }
+
+      const source = hit._source as ListChatsResult;
+
+      if (!source.chat_id && hit._id) {
+        source.chat_id = hit._id;
+      }
+
+      if (Array.isArray(source.summary)) {
+        source.summary = source.summary[0] ?? null;
+      }
+
+      acc.push(source);
+      return acc;
+    }, []);
+  }
+
+  private buildCountsFromCountResults(
+    countResults: any[]
+  ): ListChatsResponse['counts'] {
+    const [
+      queueCountResult,
+      inChatCountResult,
+      chatbotCountResult,
+      scheduleCountResult,
+      inChatMineCountResult,
+      chatbotInputCountResult,
+      chatbotOutputCountResult,
+      chatbotWebhookCountResult,
+      myChatsCountResult,
+    ] = countResults;
+
+    const queueTotal = this.getHitsTotal(queueCountResult?.hits?.total);
+    const inChatTotal = this.getHitsTotal(inChatCountResult?.hits?.total);
+    const chatbotTotal = this.getHitsTotal(chatbotCountResult?.hits?.total);
+    const scheduleTotal = this.getHitsTotal(scheduleCountResult?.hits?.total);
+    const inChatMineTotal = this.getHitsTotal(
+      inChatMineCountResult?.hits?.total
+    );
+    const chatbotInputTotal = this.getHitsTotal(
+      chatbotInputCountResult?.hits?.total
+    );
+    const chatbotOutputTotal = this.getHitsTotal(
+      chatbotOutputCountResult?.hits?.total
+    );
+    const chatbotWebhookTotal = this.getHitsTotal(
+      chatbotWebhookCountResult?.hits?.total
+    );
+    const myChatsTotal = this.getHitsTotal(myChatsCountResult?.hits?.total);
+    const totalCount = queueTotal + inChatTotal;
+
+    return {
+      total: totalCount,
+      queue: queueTotal,
+      in_chat: inChatTotal,
+      chatbot: chatbotTotal,
+      schedule: scheduleTotal,
+      my_chats: myChatsTotal,
+      in_chat_mine: inChatMineTotal,
+      chatbot_input: chatbotInputTotal,
+      chatbot_output: chatbotOutputTotal,
+      chatbot_schedule: scheduleTotal,
+      chatbot_webhook: chatbotWebhookTotal,
+    };
   }
 
   private buildStatusFilter(statuses: EChatStatus[]): IElasticsearchBoolClause {
@@ -1007,12 +1132,14 @@ export class ChatListerUseCase {
     }
 
     const userPreferences = await this.getUserSortPreferences(userId);
-    const { sortBy, sortOrder } = this.getSortForStatus(
-      query.status,
-      null,
-      userPreferences
-    );
+    const { sortBy: rawSortBy, sortOrder: rawSortOrder } =
+      this.getSortForStatus(query.status, null, userPreferences);
+    const { sortBy, sortOrder } = this.sanitizeSort(rawSortBy, rawSortOrder);
     const sort = this.buildElasticsearchSort(sortBy, sortOrder);
+    const fallbackSort = this.buildElasticsearchSort(
+      'summary.last_message',
+      'desc'
+    );
 
     const queryElastic = {
       from: (currentPage - 1) * perPage,
@@ -1339,7 +1466,7 @@ export class ChatListerUseCase {
       buildMyChatsCountFilter(),
     ];
 
-    const [result, ...countResults] = await Promise.all([
+    const [initialResult, ...countResults] = await Promise.all([
       this.elasticDatabaseService.select(EElasticIndex.chat, queryElastic),
       ...countFilters.map((countFilter) =>
         this.elasticDatabaseService.select(
@@ -1349,17 +1476,19 @@ export class ChatListerUseCase {
       ),
     ]);
 
-    const [
-      queueCountResult,
-      inChatCountResult,
-      chatbotCountResult,
-      scheduleCountResult,
-      inChatMineCountResult,
-      chatbotInputCountResult,
-      chatbotOutputCountResult,
-      chatbotWebhookCountResult,
-      myChatsCountResult,
-    ] = countResults;
+    let result = initialResult;
+    if (!result) {
+      const fallbackQueryElastic = {
+        ...queryElastic,
+        sort: fallbackSort,
+      };
+      result = await this.elasticDatabaseService.select(
+        EElasticIndex.chat,
+        fallbackQueryElastic
+      );
+    }
+
+    const counts = this.buildCountsFromCountResults(countResults);
 
     if (!result) {
       const pagings = setPaginationData(0, 0, perPage, currentPage);
@@ -1367,32 +1496,11 @@ export class ChatListerUseCase {
       return {
         pagings,
         results: [],
-        counts: {
-          total: 0,
-          queue: 0,
-          in_chat: 0,
-          chatbot: 0,
-          schedule: 0,
-          my_chats: 0,
-          in_chat_mine: 0,
-          chatbot_input: 0,
-          chatbot_output: 0,
-          chatbot_schedule: 0,
-          chatbot_webhook: 0,
-        },
+        counts,
       };
     }
 
-    const chats = result.hits.hits.map((hit) => {
-      const source = hit._source as ListChatsResult;
-      if (!source.chat_id && hit._id) {
-        source.chat_id = hit._id;
-      }
-      if (Array.isArray(source.summary)) {
-        source.summary = source.summary[0] ?? null;
-      }
-      return source;
-    }) as ListChatsResult[];
+    const chats = this.mapResultHitsToChats(result.hits.hits);
     const total = this.getHitsTotal(result.hits.total);
 
     const pagings = setPaginationData(
@@ -1402,41 +1510,10 @@ export class ChatListerUseCase {
       currentPage
     );
 
-    const queueTotal = this.getHitsTotal(queueCountResult?.hits?.total);
-    const inChatTotal = this.getHitsTotal(inChatCountResult?.hits?.total);
-    const chatbotTotal = this.getHitsTotal(chatbotCountResult?.hits?.total);
-    const scheduleTotal = this.getHitsTotal(scheduleCountResult?.hits?.total);
-    const inChatMineTotal = this.getHitsTotal(
-      inChatMineCountResult?.hits?.total
-    );
-    const chatbotInputTotal = this.getHitsTotal(
-      chatbotInputCountResult?.hits?.total
-    );
-    const chatbotOutputTotal = this.getHitsTotal(
-      chatbotOutputCountResult?.hits?.total
-    );
-    const chatbotWebhookTotal = this.getHitsTotal(
-      chatbotWebhookCountResult?.hits?.total
-    );
-    const myChatsTotal = this.getHitsTotal(myChatsCountResult?.hits?.total);
-    const totalCount = queueTotal + inChatTotal;
-
     return {
       pagings,
       results: chats,
-      counts: {
-        total: totalCount,
-        queue: queueTotal,
-        in_chat: inChatTotal,
-        chatbot: chatbotTotal,
-        schedule: scheduleTotal,
-        my_chats: myChatsTotal,
-        in_chat_mine: inChatMineTotal,
-        chatbot_input: chatbotInputTotal,
-        chatbot_output: chatbotOutputTotal,
-        chatbot_schedule: scheduleTotal,
-        chatbot_webhook: chatbotWebhookTotal,
-      },
+      counts,
     };
   }
 }
