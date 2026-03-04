@@ -79,7 +79,8 @@
         }
       ],
       "expo-video",
-      "expo-sharing"
+      "expo-sharing",
+      "@react-native-community/datetimepicker"
     ],
     "updates": {
       "enabled": false,

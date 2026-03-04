@@ -14,6 +14,10 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -46,8 +50,19 @@ import {
   isValidCpf,
   normalizeDocumentDigits,
 } from '../utils/contactDocument';
+import {
+  birthdayIsoToDate,
+  dateToBirthdayIso,
+  formatBirthdayDisplay,
+  normalizeBirthdayIso,
+} from '../utils/date';
 import { resolveImageUri } from '../utils/imageUri';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import {
+  formatChannelPhoneLabel,
+  formatLocalPhone,
+  formatPhoneForDisplay,
+} from '../utils/phoneFormat';
 
 type ContactFormMode = 'create' | 'edit';
 type PickerKind =
@@ -87,26 +102,6 @@ function isMaskedValue(value: string | null | undefined): boolean {
   return !!value && value.includes('*');
 }
 
-function formatPhone(value: string | null | undefined): string {
-  if (!value) return '';
-
-  const numbers = value.replace(/\D/g, '').slice(0, 11);
-  if (numbers.length <= 2) return numbers;
-  if (numbers.length <= 6) {
-    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
-  }
-  if (numbers.length <= 10) {
-    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
-  }
-  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
-}
-
-function normalizePhoneForDisplay(value: string | null | undefined): string {
-  if (!value) return '';
-  if (value.includes('*')) return value;
-  return formatPhone(value);
-}
-
 function normalizeDocumentForDisplay(
   value: string | null | undefined,
   documentTypeId: ContactDocumentTypeId | string | null | undefined
@@ -114,6 +109,33 @@ function normalizeDocumentForDisplay(
   if (!value) return '';
   if (value.includes('*')) return value;
   return formatDocumentByType(value, documentTypeId);
+}
+
+const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
+
+function extractImageExtensionFromAsset(
+  asset: ImagePicker.ImagePickerAsset
+): string | null {
+  const fromFileName = asset.fileName?.match(/\.([a-z0-9]{2,5})$/i)?.[1];
+  if (fromFileName) return fromFileName.toLowerCase();
+
+  const fromUri = asset.uri?.match(/\.([a-z0-9]{2,5})(?:\?|#|$)/i)?.[1];
+  if (fromUri) return fromUri.toLowerCase();
+
+  if (asset.mimeType?.startsWith('image/')) {
+    const fromMime = asset.mimeType.replace('image/', '').toLowerCase();
+    if (fromMime === 'jpg') return 'jpeg';
+    return fromMime;
+  }
+
+  return null;
+}
+
+function toImageMimeType(extension: string): string {
+  if (extension === 'jpg' || extension === 'jpeg') {
+    return 'image/jpeg';
+  }
+  return `image/${extension}`;
 }
 
 export function ContactFormModal({
@@ -143,7 +165,9 @@ export function ContactFormModal({
   const [name, setName] = useState('');
   const [lastName, setLastName] = useState('');
   const [nickname, setNickname] = useState('');
-  const [birthday, setBirthday] = useState('');
+  const [birthdayIso, setBirthdayIso] = useState<string | null>(null);
+  const [birthdayPickerVisible, setBirthdayPickerVisible] = useState(false);
+  const [birthdayDraftDate, setBirthdayDraftDate] = useState<Date>(new Date());
   const [email, setEmail] = useState('');
   const [phoneDdi, setPhoneDdi] = useState('55');
   const [phone, setPhone] = useState('');
@@ -189,7 +213,9 @@ export function ContactFormModal({
     setName('');
     setLastName('');
     setNickname('');
-    setBirthday('');
+    setBirthdayIso(null);
+    setBirthdayPickerVisible(false);
+    setBirthdayDraftDate(new Date());
     setEmail('');
     setPhoneDdi('55');
     setPhone('');
@@ -233,7 +259,9 @@ export function ContactFormModal({
         setChannelOptions(
           (channels ?? []).map((item: ChatContactChannelsItem) => ({
             value: item.channel_id,
-            label: item.number ? `${item.name} (${item.number})` : item.name,
+            label: item.number
+              ? `${item.name} (${formatChannelPhoneLabel(item.number)})`
+              : item.name,
           }))
         );
 
@@ -258,10 +286,15 @@ export function ContactFormModal({
           setName(contact.name ?? '');
           setLastName(contact.last_name ?? '');
           setNickname(contact.nickname ?? '');
-          setBirthday(contact.birthday ?? '');
+          setBirthdayIso(normalizeBirthdayIso(contact.birthday));
           setEmail(contact.email_partial ?? '');
           setPhoneDdi(contact.phone_ddi ?? '55');
-          setPhone(normalizePhoneForDisplay(contact.phone_partial ?? ''));
+          setPhone(
+            formatPhoneForDisplay(
+              contact.phone_partial ?? '',
+              contact.phone_ddi ?? null
+            )
+          );
           setNotes(contact.notes ?? '');
           setDocument(
             normalizeDocumentForDisplay(
@@ -292,6 +325,7 @@ export function ContactFormModal({
   useEffect(() => {
     if (!visible) {
       setPickerKind(null);
+      setBirthdayPickerVisible(false);
     }
   }, [visible]);
 
@@ -309,6 +343,10 @@ export function ContactFormModal({
   const documentMaskMaxLength = useMemo(
     () => getDocumentMaskMaxLength(documentTypeId),
     [documentTypeId]
+  );
+  const birthdayDisplay = useMemo(
+    () => formatBirthdayDisplay(birthdayIso),
+    [birthdayIso]
   );
   const documentPlaceholder = useMemo(() => {
     if (documentTypeId === CONTACT_DOCUMENT_TYPE.cpf) {
@@ -418,6 +456,7 @@ export function ContactFormModal({
 
   const openPicker = (kind: Exclude<PickerKind, null>) => {
     dismissKeyboard();
+    setBirthdayPickerVisible(false);
     setPickerKind(kind);
   };
 
@@ -430,7 +469,72 @@ export function ContactFormModal({
       closePicker();
       return;
     }
+
+    if (Platform.OS === 'ios' && birthdayPickerVisible) {
+      setBirthdayPickerVisible(false);
+      return;
+    }
+
     onClose();
+  };
+
+  const openBirthdayPicker = () => {
+    dismissKeyboard();
+
+    const initialDate = birthdayIsoToDate(birthdayIso) ?? new Date();
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: initialDate,
+        mode: 'date',
+        display: 'calendar',
+        onChange: (event, date) => {
+          if (event.type !== 'set' || !date) return;
+          setBirthdayIso(dateToBirthdayIso(date));
+        },
+      });
+      return;
+    }
+
+    setBirthdayDraftDate(initialDate);
+    setBirthdayPickerVisible(true);
+  };
+
+  const handleBirthdayIosChange = (
+    _event: DateTimePickerEvent,
+    date?: Date
+  ) => {
+    if (!date) return;
+    setBirthdayDraftDate(date);
+  };
+
+  const handleBirthdayCancel = () => {
+    setBirthdayPickerVisible(false);
+  };
+
+  const handleBirthdayConfirm = () => {
+    setBirthdayIso(dateToBirthdayIso(birthdayDraftDate));
+    setBirthdayPickerVisible(false);
+  };
+
+  const setPhotoFromAsset = (asset: ImagePicker.ImagePickerAsset) => {
+    const uri = asset.uri;
+    if (!uri) return;
+
+    setPhotoUri(uri);
+
+    const rawExtension = extractImageExtensionFromAsset(asset);
+    const extension =
+      rawExtension && ALLOWED_IMAGE_EXTENSIONS.has(rawExtension)
+        ? rawExtension
+        : 'jpg';
+    const mimeType = toImageMimeType(extension);
+    const fileName = `contact-photo-${Date.now()}.${extension}`;
+
+    setPhotoBlob({
+      uri,
+      name: fileName,
+      type: mimeType,
+    } as unknown as Blob);
   };
 
   const handlePickImage = async () => {
@@ -441,21 +545,32 @@ export function ContactFormModal({
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [1, 1],
       quality: 0.9,
     });
 
     if (result.canceled || !result.assets?.length) return;
-    const uri = result.assets[0].uri;
-    setPhotoUri(uri);
+    setPhotoFromAsset(result.assets[0]);
+  };
 
-    try {
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      setPhotoBlob(blob);
-    } catch {
-      setPhotoBlob(null);
+  const handleTakePhoto = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(pt.warning_title, pt.camera_permission_denied);
+      return;
     }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+
+    if (result.canceled || !result.assets?.length) return;
+    setPhotoFromAsset(result.assets[0]);
   };
 
   const handleDeletePhoto = async () => {
@@ -511,7 +626,7 @@ export function ContactFormModal({
     if (!contactId) return;
     const decrypted = await getChatContactPhoneDecrypted(contactId);
     if (decrypted) {
-      setPhone(formatPhone(decrypted));
+      setPhone(formatPhoneForDisplay(decrypted, phoneDdi));
       setPhoneDecrypted(true);
     }
   };
@@ -593,7 +708,7 @@ export function ContactFormModal({
             phone_ddi: normalizedPhoneDdi,
             phone: phoneValue,
             nickname: nickname.trim() || null,
-            birthday: birthday.trim() || null,
+            birthday: birthdayIso,
             notes: notes || null,
             contact_document_type_id: documentTypeId,
             document: documentValue,
@@ -618,7 +733,7 @@ export function ContactFormModal({
             phone_ddi: normalizedPhoneDdi,
             phone: normalizedPhone,
             nickname: nickname.trim() || null,
-            birthday: birthday.trim() || null,
+            birthday: birthdayIso,
             notes: notes || null,
             contact_document_type_id: documentTypeId,
             document: normalizedDocument || null,
@@ -700,18 +815,33 @@ export function ContactFormModal({
                         iconColor={colors.grey500}
                       />
                     </View>
-                    <View style={styles.photoButtons}>
-                      <Pressable
-                        style={styles.secondaryBtn}
-                        onPress={handlePickImage}
+                    <View style={styles.photoActionsGrid}>
+                      <View
+                        style={[
+                          styles.photoActionColumn,
+                          !photoUri && styles.photoActionColumnFull,
+                        ]}
                       >
-                        <Text style={styles.secondaryBtnText}>
-                          {pt.select_photo}
-                        </Text>
-                      </Pressable>
-                      {photoUri ? (
                         <Pressable
                           style={styles.secondaryBtn}
+                          onPress={handlePickImage}
+                        >
+                          <Text style={styles.secondaryBtnText}>
+                            {pt.select_photo}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={styles.secondaryBtn}
+                          onPress={handleTakePhoto}
+                        >
+                          <Text style={styles.secondaryBtnText}>
+                            {pt.open_camera}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      {photoUri ? (
+                        <Pressable
+                          style={[styles.secondaryBtn, styles.photoRemoveBtn]}
                           onPress={handleDeletePhoto}
                         >
                           <Text style={styles.secondaryBtnText}>
@@ -761,13 +891,20 @@ export function ContactFormModal({
                   <View style={styles.row}>
                     <View style={[styles.field, styles.half]}>
                       <Text style={styles.label}>{pt.birthday}</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={birthday}
-                        onChangeText={setBirthday}
-                        placeholder="YYYY-MM-DD"
-                        placeholderTextColor={colors.grey500}
-                      />
+                      <Pressable
+                        style={styles.inputPressable}
+                        onPress={openBirthdayPicker}
+                      >
+                        <Text
+                          style={[
+                            styles.inputPressableText,
+                            !birthdayDisplay &&
+                              styles.inputPressablePlaceholder,
+                          ]}
+                        >
+                          {birthdayDisplay || 'DD/MM/YYYY'}
+                        </Text>
+                      </Pressable>
                     </View>
                     <View style={[styles.field, styles.half]}>
                       <Text style={styles.label}>{pt.email}</Text>
@@ -826,7 +963,9 @@ export function ContactFormModal({
                         <TextInput
                           style={styles.inputWithActionField}
                           value={phone}
-                          onChangeText={(value) => setPhone(formatPhone(value))}
+                          onChangeText={(value) =>
+                            setPhone(formatLocalPhone(value))
+                          }
                           keyboardType="phone-pad"
                           maxLength={15}
                           placeholder="(00) 00000-0000"
@@ -878,6 +1017,10 @@ export function ContactFormModal({
                               formatDocumentByType(value, documentTypeId)
                             )
                           }
+                          keyboardType={
+                            Platform.OS === 'ios' ? 'number-pad' : 'numeric'
+                          }
+                          inputMode="numeric"
                           maxLength={documentMaskMaxLength}
                           placeholder={documentPlaceholder}
                           placeholderTextColor={colors.grey500}
@@ -1050,6 +1193,45 @@ export function ContactFormModal({
           </View>
         </TouchableWithoutFeedback>
 
+        {Platform.OS === 'ios' && birthdayPickerVisible ? (
+          <Pressable
+            style={styles.pickerOverlay}
+            onPress={handleBirthdayCancel}
+          >
+            <Pressable
+              style={styles.datePickerCard}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <View style={styles.datePickerHeader}>
+                <Pressable
+                  style={styles.datePickerHeaderAction}
+                  onPress={handleBirthdayCancel}
+                >
+                  <Text style={styles.datePickerHeaderActionText}>
+                    {pt.cancel}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={styles.datePickerHeaderAction}
+                  onPress={handleBirthdayConfirm}
+                >
+                  <Text style={styles.datePickerHeaderActionText}>
+                    {pt.done}
+                  </Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={birthdayDraftDate}
+                mode="date"
+                display="inline"
+                onChange={handleBirthdayIosChange}
+                minimumDate={new Date(1900, 0, 1)}
+                maximumDate={new Date(2100, 11, 31)}
+              />
+            </Pressable>
+          </Pressable>
+        ) : null}
+
         {pickerKind !== null ? (
           <Pressable style={styles.pickerOverlay} onPress={closePicker}>
             <Pressable
@@ -1155,6 +1337,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 12,
     gap: 10,
+    alignItems: 'center',
   },
   photoContainer: {
     width: 84,
@@ -1169,9 +1352,21 @@ const styles = StyleSheet.create({
     width: 84,
     height: 84,
   },
-  photoButtons: {
+  photoActionsGrid: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'stretch',
+  },
+  photoActionColumn: {
     flex: 1,
     gap: 8,
+  },
+  photoActionColumnFull: {
+    flex: 1,
+  },
+  photoRemoveBtn: {
+    width: 112,
     justifyContent: 'center',
   },
   secondaryBtn: {
@@ -1179,8 +1374,10 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     borderRadius: 8,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
   },
   secondaryBtnText: {
     color: colors.primary,
@@ -1213,6 +1410,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     color: colors.onSurface,
     fontSize: 14,
+  },
+  inputPressable: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+  },
+  inputPressableText: {
+    color: colors.onSurface,
+    fontSize: 14,
+  },
+  inputPressablePlaceholder: {
+    color: colors.grey500,
   },
   inputWithAction: {
     height: 44,
@@ -1334,6 +1546,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: 12,
     maxHeight: 360,
+  },
+  datePickerCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.grey200,
+  },
+  datePickerHeaderAction: {
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+  },
+  datePickerHeaderActionText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   pickerHeader: {
     flexDirection: 'row',

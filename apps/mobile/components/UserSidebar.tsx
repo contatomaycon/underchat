@@ -415,13 +415,13 @@ export function UserSidebar({
       const pickerResult =
         source === 'camera'
           ? await ImagePicker.launchCameraAsync({
-              mediaTypes: ['images'],
+              mediaTypes: 'images',
               allowsEditing: true,
               aspect: [1, 1],
               quality: 0.9,
             })
           : await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ['images'],
+              mediaTypes: 'images',
               allowsEditing: true,
               aspect: [1, 1],
               quality: 0.9,
@@ -630,9 +630,9 @@ export function UserSidebar({
                       ) : null}
                     </View>
 
-                  <View style={[styles.section, styles.settingsSection]}>
-                    <Text style={styles.sectionTitle}>{pt.settings}</Text>
-                    <View style={styles.settingRow}>
+                    <View style={[styles.section, styles.settingsSection]}>
+                      <Text style={styles.sectionTitle}>{pt.settings}</Text>
+                      <View style={styles.settingRow}>
                         <View style={styles.settingLabelWrap}>
                           <Ionicons
                             name="notifications-outline"

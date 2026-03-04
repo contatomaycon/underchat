@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
+import { formatChannelPhoneLabel } from '../utils/phoneFormat';
 import {
   listTransferOptions,
   startChatWithContact,
@@ -126,7 +127,9 @@ export function ContactStartConversationModal({
     if (pickerKind === 'worker') {
       return workers.map((item) => ({
         value: item.id,
-        label: item.number ? `${item.name} (${item.number})` : item.name,
+        label: item.number
+          ? `${item.name} (${formatChannelPhoneLabel(item.number)})`
+          : item.name,
       }));
     }
     if (pickerKind === 'sector') {
@@ -230,7 +233,7 @@ export function ContactStartConversationModal({
                     <Text style={styles.selectorText} numberOfLines={1}>
                       {selectedWorker
                         ? selectedWorker.number
-                          ? `${selectedWorker.name} (${selectedWorker.number})`
+                          ? `${selectedWorker.name} (${formatChannelPhoneLabel(selectedWorker.number)})`
                           : selectedWorker.name
                         : pt.select_channel}
                     </Text>

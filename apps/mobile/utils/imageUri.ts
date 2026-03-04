@@ -16,11 +16,21 @@ function rewriteHostForAndroid(uri: string): string {
 
 export function resolveImageUri(uri: string | null | undefined): string | null {
   if (!uri || uri === 'null') return null;
-  if (uri.startsWith('http://') || uri.startsWith('https://')) {
-    return rewriteHostForAndroid(uri);
+  const normalized = uri.trim();
+  if (!normalized) return null;
+
+  if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+    return rewriteHostForAndroid(normalized);
   }
+
+  // Keep absolute local/special URIs unchanged (file://, content://, ph://, data:, blob:, etc.)
+  if (/^[a-z][a-z0-9+\-.]*:/i.test(normalized)) {
+    return normalized;
+  }
+
   const base = BACKEND_URL || '';
-  if (!base) return uri;
-  const full = base + (uri.startsWith('/') ? uri : `/${uri}`);
+  if (!base) return normalized;
+  const full =
+    base + (normalized.startsWith('/') ? normalized : `/${normalized}`);
   return rewriteHostForAndroid(full);
 }

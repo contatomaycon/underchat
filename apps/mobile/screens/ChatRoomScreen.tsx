@@ -7685,7 +7685,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: 'images',
       quality: 0.8,
       allowsMultipleSelection: false,
     });
@@ -7745,7 +7745,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['videos'],
+      mediaTypes: 'videos',
       quality: 0.8,
       allowsMultipleSelection: false,
     });
@@ -8501,7 +8501,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
+      mediaTypes: 'images',
       quality: 0.8,
       videoMaxDuration: 120,
     });
