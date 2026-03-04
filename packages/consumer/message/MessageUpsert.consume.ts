@@ -3097,6 +3097,13 @@ export class MessageUpsertConsume {
     return !isFromMe && !data.from_history_sync && !data.webhook_message_type;
   }
 
+  private shouldSkipOutsideHoursForChatStatus(chat: IChat | null): boolean {
+    return (
+      !!chat &&
+      (chat.status === EChatStatus.in_chat || chat.status === EChatStatus.queue)
+    );
+  }
+
   private resolveOutsideHoursContext(
     data: IUpsertMessage,
     workerConfigFields: Awaited<
@@ -3331,10 +3338,11 @@ export class MessageUpsertConsume {
           ]
         );
 
-        const outsideHoursContext =
-          getChat?.status === EChatStatus.in_chat
-            ? null
-            : this.resolveOutsideHoursContext(data, workerConfigFields);
+        const outsideHoursContext = this.shouldSkipOutsideHoursForChatStatus(
+          getChat
+        )
+          ? null
+          : this.resolveOutsideHoursContext(data, workerConfigFields);
 
         const defaultInputChatbotId =
           chatbotsConfig.enabled && chatbotsConfig.chatbot_id
@@ -3395,6 +3403,10 @@ export class MessageUpsertConsume {
             shouldSendOutsideHoursAndContinue && outsideHoursContext
               ? {
                   beforeExecute: async (chat) => {
+                    if (this.shouldSkipOutsideHoursForChatStatus(chat)) {
+                      return;
+                    }
+
                     await this.sendOutsideHoursMessageWithDebounce(
                       t,
                       data,
@@ -3423,6 +3435,10 @@ export class MessageUpsertConsume {
             shouldSendOutsideHoursAndContinue && outsideHoursContext
               ? {
                   beforeExecute: async (chat) => {
+                    if (this.shouldSkipOutsideHoursForChatStatus(chat)) {
+                      return;
+                    }
+
                     await this.sendOutsideHoursMessageWithDebounce(
                       t,
                       data,
@@ -3458,6 +3474,10 @@ export class MessageUpsertConsume {
             shouldSendOutsideHoursAndContinue && outsideHoursContext
               ? {
                   beforeExecute: async (chat) => {
+                    if (this.shouldSkipOutsideHoursForChatStatus(chat)) {
+                      return;
+                    }
+
                     await this.sendOutsideHoursMessageWithDebounce(
                       t,
                       data,
@@ -3485,7 +3505,10 @@ export class MessageUpsertConsume {
               jidAlt
             ));
 
-          if (currentChat) {
+          if (
+            currentChat &&
+            !this.shouldSkipOutsideHoursForChatStatus(currentChat)
+          ) {
             await this.sendOutsideHoursMessageWithDebounce(
               t,
               data,
