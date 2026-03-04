@@ -13,10 +13,9 @@
     "forceConsistentCasingInFileNames": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "baseUrl": ".",
     "typeRoots": ["./node_modules/@types", "../../packages/common/types"],
     "paths": {
-      "@/*": ["src/*"],
+      "@/*": ["./src/*"],
       "@core/*": ["../../packages/*"],
       "@elastic/elasticsearch/lib/api/types": [
         "../../node_modules/@elastic/elasticsearch/lib/api/types"

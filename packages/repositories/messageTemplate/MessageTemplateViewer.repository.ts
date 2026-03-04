@@ -1,5 +1,10 @@
 import * as schema from '@core/models';
-import { messageTemplate, messageStatus, account } from '@core/models';
+import {
+  messageTemplate,
+  messageTemplateChannel,
+  messageStatus,
+  account,
+} from '@core/models';
 import { ViewMessageTemplateResponse } from '@core/schema/messageTemplate/viewMessageTemplate/response.schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -55,12 +60,27 @@ export class MessageTemplateViewerRepository {
       return null;
     }
 
+    const channels = await this.dbRo
+      .select({
+        channel_id: messageTemplateChannel.channel_id,
+      })
+      .from(messageTemplateChannel)
+      .where(eq(messageTemplateChannel.message_template_id, messageTemplateId))
+      .execute();
+
     const row = result[0] as ViewMessageTemplateResponse & {
       type?: string | null;
+      channel_id?: string | null;
     };
 
     return {
       ...row,
+      channel_ids:
+        channels.length > 0
+          ? channels.map((channel) => channel.channel_id)
+          : row.channel_id
+            ? [row.channel_id]
+            : [],
       type: row.type ?? 'text',
     } as ViewMessageTemplateResponse;
   };

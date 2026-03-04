@@ -57,32 +57,60 @@ export class MessageTemplateCreatorUseCase {
     private readonly workerService: WorkerService
   ) {}
 
-  private normalizeChannelId(value: unknown): string | null {
-    if (typeof value !== 'string') {
-      return null;
+  private extractChannelIds(value: unknown): string[] {
+    if (value === null || value === undefined) {
+      return [];
     }
 
-    const normalized = value.trim();
+    if (typeof value === 'string') {
+      const normalized = value.trim();
 
-    if (!normalized || normalized.toLowerCase() === 'null') {
-      return null;
+      if (!normalized || normalized.toLowerCase() === 'null') {
+        return [];
+      }
+
+      return [normalized];
     }
 
-    return normalized;
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => this.extractChannelIds(item));
+    }
+
+    if (typeof value === 'object') {
+      const asRecord = value as Record<string, unknown>;
+
+      if ('value' in asRecord) {
+        return this.extractChannelIds(asRecord.value);
+      }
+
+      return Object.values(asRecord).flatMap((item) =>
+        this.extractChannelIds(item)
+      );
+    }
+
+    return [];
   }
 
-  private async validateChannelExists(
+  private normalizeChannelIds(value: unknown): string[] {
+    const normalized = this.extractChannelIds(value);
+
+    return [...new Set(normalized)];
+  }
+
+  private async validateChannels(
     accountId: string,
-    channelId: string,
+    channelIds: string[],
     t: TFunction<'translation', undefined>
   ): Promise<void> {
-    const channelExists = await this.workerService.existsWorkerById(
-      accountId,
-      channelId
-    );
+    for (const channelId of channelIds) {
+      const channelExists = await this.workerService.existsWorkerById(
+        accountId,
+        channelId
+      );
 
-    if (!channelExists) {
-      throw new Error(t('worker_not_found'));
+      if (!channelExists) {
+        throw new Error(t('worker_not_found'));
+      }
     }
   }
 
@@ -321,11 +349,9 @@ export class MessageTemplateCreatorUseCase {
     await this.validateAccountExists(accountId, t);
     await this.validateMessageStatusExists(input.message_status_id.value, t);
 
-    const channelId = this.normalizeChannelId(input.channel_id?.value);
+    const channelIds = this.normalizeChannelIds(input.channel_ids);
 
-    if (channelId) {
-      await this.validateChannelExists(accountId, channelId, t);
-    }
+    await this.validateChannels(accountId, channelIds, t);
 
     const messageType = this.resolveMessageType(
       input.type?.value,
@@ -367,7 +393,7 @@ export class MessageTemplateCreatorUseCase {
 
     const inputWithAttachment: ICreateMessageTemplate = {
       account_id: accountId,
-      channel_id: channelId,
+      channel_ids: channelIds,
       message: normalizedMessage,
       command: input.command.value,
       attachment_url: attachmentUrl ? attachmentUrl.url : null,

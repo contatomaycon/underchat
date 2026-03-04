@@ -1,6 +1,6 @@
 export interface IUpdateMessageTemplate {
   message_template_id: string;
-  channel_id?: string | null;
+  channel_ids?: string[];
   message?: string | null;
   command?: string | null;
   attachment_url?: string | null;

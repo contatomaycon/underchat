@@ -58,7 +58,7 @@ type FilePreview = {
 };
 
 type ChannelOption = {
-  value: string | null;
+  value: string;
   text: string;
 };
 
@@ -98,7 +98,7 @@ const itemsAutoSend = ref([
 const selectedType = ref<EMessageType>(EMessageType.text);
 const message = ref<string | null>(null);
 const command = ref<string | null>(null);
-const channel_id = ref<string | null>(null);
+const channel_ids = ref<string[]>([]);
 const message_status_id = ref<string | null>(EMessageStatus.active);
 const auto_send = ref<boolean>(false);
 const channelOptions = ref<ChannelOption[]>([]);
@@ -164,16 +164,10 @@ const refFormAddMessageTemplate = ref<VForm>();
 const loadChannelOptions = async () => {
   const workers = await messageTemplateStore.listMessageTemplateChannels();
 
-  channelOptions.value = [
-    {
-      value: null,
-      text: `${t('all')} ${t('channels')}`,
-    },
-    ...(workers ?? []).map((worker) => ({
-      value: worker.id,
-      text: worker.name,
-    })),
-  ];
+  channelOptions.value = (workers ?? []).map((worker) => ({
+    value: worker.id,
+    text: worker.name,
+  }));
 };
 
 function getExt(filename: string): string {
@@ -363,8 +357,8 @@ const addMessageTemplate = async () => {
       selectedType.value === EMessageType.audio ? '' : (message.value ?? '');
     form.append('message', normalizedMessage);
     form.append('command', command.value ?? '');
-    if (channel_id.value) {
-      form.append('channel_id', channel_id.value);
+    for (let index = 0; index < channel_ids.value.length; index += 1) {
+      form.append('channel_ids', channel_ids.value[index]);
     }
     form.append('message_status_id', message_status_id.value ?? '');
     form.append('type', selectedType.value);
@@ -439,7 +433,7 @@ const resetForm = () => {
   message_status_id.value = EMessageStatus.active;
   auto_send.value = false;
   command.value = null;
-  channel_id.value = null;
+  channel_ids.value = [];
   attachmentFile.value = null;
   fileSizeError.value = null;
   if (filePreview.value?.src) {
@@ -787,12 +781,15 @@ onBeforeUnmount(() => {
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('channel') }}:</VLabel>
               <AppSelectSearch
-                v-model="channel_id"
+                v-model="channel_ids"
                 :items="channelOptions"
                 :placeholder="$t('channel')"
-                :clearable="false"
+                :clearable="true"
                 item-value="value"
                 item-title="text"
+                multiple
+                chips
+                closable-chips
               />
             </VCol>
 

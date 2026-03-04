@@ -60,7 +60,7 @@ type FilePreview = {
 };
 
 type ChannelOption = {
-  value: string | null;
+  value: string;
   text: string;
 };
 
@@ -103,7 +103,7 @@ const message = ref<string | null>(null);
 const message_status_id = ref<string | null>(null);
 const auto_send = ref<boolean>(false);
 const command = ref<string | null>(null);
-const channel_id = ref<string | null>(null);
+const channel_ids = ref<string[]>([]);
 const channelOptions = ref<ChannelOption[]>([]);
 const attachmentFile = ref<File | null>(null);
 const filePreview = ref<FilePreview | null>(null);
@@ -169,16 +169,10 @@ const refFormEditMessageTemplate = ref<VForm>();
 const loadChannelOptions = async () => {
   const workers = await messageTemplateStore.listMessageTemplateChannels();
 
-  channelOptions.value = [
-    {
-      value: null,
-      text: `${t('all')} ${t('channels')}`,
-    },
-    ...(workers ?? []).map((worker) => ({
-      value: worker.id,
-      text: worker.name,
-    })),
-  ];
+  channelOptions.value = (workers ?? []).map((worker) => ({
+    value: worker.id,
+    text: worker.name,
+  }));
 };
 
 function getExt(filename: string): string {
@@ -379,10 +373,12 @@ const updateMessageTemplate = async () => {
       selectedType.value === EMessageType.audio ? '' : (message.value ?? '');
     form.append('message', normalizedMessage);
     form.append('command', command.value ?? '');
-    if (channel_id.value) {
-      form.append('channel_id', channel_id.value);
+    if (channel_ids.value.length === 0) {
+      form.append('channel_ids', 'null');
     } else {
-      form.append('channel_id', 'null');
+      for (let index = 0; index < channel_ids.value.length; index += 1) {
+        form.append('channel_ids', channel_ids.value[index]);
+      }
     }
     form.append('message_status_id', message_status_id.value ?? '');
     form.append('type', selectedType.value);
@@ -460,7 +456,7 @@ const resetForm = () => {
   message_status_id.value = null;
   auto_send.value = false;
   command.value = null;
-  channel_id.value = null;
+  channel_ids.value = [];
   attachmentFile.value = null;
   fileSizeError.value = null;
   if (filePreview.value?.src) {
@@ -501,7 +497,7 @@ watch(
       if (messageTemplate) {
         message.value = messageTemplate.message;
         command.value = messageTemplate.command;
-        channel_id.value = messageTemplate.channel_id ?? null;
+        channel_ids.value = messageTemplate.channel_ids ?? [];
         message_status_id.value =
           messageTemplate.message_status?.message_status_id ?? null;
         auto_send.value = messageTemplate.auto_send ?? false;
@@ -843,12 +839,15 @@ onBeforeUnmount(() => {
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('channel') }}:</VLabel>
               <AppSelectSearch
-                v-model="channel_id"
+                v-model="channel_ids"
                 :items="channelOptions"
                 :placeholder="$t('channel')"
-                :clearable="false"
+                :clearable="true"
                 item-value="value"
                 item-title="text"
+                multiple
+                chips
+                closable-chips
               />
             </VCol>
 

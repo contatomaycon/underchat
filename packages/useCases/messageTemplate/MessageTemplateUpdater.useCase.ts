@@ -23,42 +23,86 @@ export class MessageTemplateUpdaterUseCase {
     private readonly workerService: WorkerService
   ) {}
 
-  private normalizeChannelIdForUpdate(
-    value: unknown
-  ): string | null | undefined {
+  private extractChannelIds(value: unknown): string[] {
+    if (value === null || value === undefined) {
+      return [];
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+
+      if (!normalized || normalized.toLowerCase() === 'null') {
+        return [];
+      }
+
+      return [normalized];
+    }
+
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => this.extractChannelIds(item));
+    }
+
+    if (typeof value === 'object') {
+      const asRecord = value as Record<string, unknown>;
+
+      if ('value' in asRecord) {
+        return this.extractChannelIds(asRecord.value);
+      }
+
+      return Object.values(asRecord).flatMap((item) =>
+        this.extractChannelIds(item)
+      );
+    }
+
+    return [];
+  }
+
+  private normalizeChannelIdsForUpdate(value: unknown): string[] | undefined {
     if (value === undefined) {
       return undefined;
     }
 
     if (value === null) {
-      return null;
+      return [];
     }
 
-    if (typeof value !== 'string') {
+    const normalized = this.extractChannelIds(value);
+
+    if (!normalized.length) {
+      if (typeof value === 'string' || value === null) {
+        return [];
+      }
+
+      if (typeof value === 'object' && value !== null) {
+        const hasNullValueField =
+          'value' in (value as Record<string, unknown>) &&
+          (value as Record<string, unknown>).value === null;
+
+        if (hasNullValueField) {
+          return [];
+        }
+      }
+
       return undefined;
     }
 
-    const normalized = value.trim();
-
-    if (!normalized || normalized.toLowerCase() === 'null') {
-      return null;
-    }
-
-    return normalized;
+    return [...new Set(normalized)];
   }
 
-  private async validateChannelExists(
+  private async validateChannels(
     accountId: string,
-    channelId: string,
+    channelIds: string[],
     t: TFunction<'translation', undefined>
   ): Promise<void> {
-    const channelExists = await this.workerService.existsWorkerById(
-      accountId,
-      channelId
-    );
+    for (const channelId of channelIds) {
+      const channelExists = await this.workerService.existsWorkerById(
+        accountId,
+        channelId
+      );
 
-    if (!channelExists) {
-      throw new Error(t('worker_not_found'));
+      if (!channelExists) {
+        throw new Error(t('worker_not_found'));
+      }
     }
   }
 
@@ -115,10 +159,10 @@ export class MessageTemplateUpdaterUseCase {
     );
     await this.ensureMessageStatusIsValid(t, body);
 
-    const channelId = this.normalizeChannelIdForUpdate(body.channel_id?.value);
+    const channelIds = this.normalizeChannelIdsForUpdate(body.channel_ids);
 
-    if (channelId) {
-      await this.validateChannelExists(accountId, channelId, t);
+    if (channelIds) {
+      await this.validateChannels(accountId, channelIds, t);
     }
 
     const effectiveMessageType = this.resolveMessageType(
@@ -138,7 +182,7 @@ export class MessageTemplateUpdaterUseCase {
 
     const inputWithAttachment: IUpdateMessageTemplate = {
       message_template_id: messageTemplateId,
-      channel_id: channelId,
+      channel_ids: channelIds,
       message:
         effectiveMessageType === EMessageType.audio ? '' : body.message?.value,
       command: body.command?.value,

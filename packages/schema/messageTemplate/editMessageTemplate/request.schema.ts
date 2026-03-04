@@ -10,17 +10,19 @@ export type EditMessageTemplateParamsRequest = Static<
 >;
 
 export const updateMessageTemplateRequestSchema = Type.Object({
-  channel_id: Type.Optional(
-    Type.Object({
-      value: Type.Optional(
-        Type.Union([
-          Type.String({ format: 'uuid' }),
+  channel_ids: Type.Optional(
+    Type.Union([
+      Type.Array(Type.String({ format: 'uuid' })),
+      Type.String(),
+      Type.Null(),
+      Type.Object({
+        value: Type.Union([
+          Type.Array(Type.String({ format: 'uuid' })),
+          Type.String(),
           Type.Null(),
-          Type.Literal(''),
-          Type.Literal('null'),
-        ])
-      ),
-    })
+        ]),
+      }),
+    ])
   ),
   message: Type.Object({
     value: Type.Optional(Type.Union([Type.String(), Type.Null()])),

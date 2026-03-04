@@ -1,5 +1,10 @@
 import * as schema from '@core/models';
-import { messageTemplate, messageStatus, account } from '@core/models';
+import {
+  messageTemplate,
+  messageTemplateChannel,
+  messageStatus,
+  account,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -8,6 +13,7 @@ import {
   count,
   desc,
   eq,
+  inArray,
   isNull,
   SQL,
   SQLWrapper,
@@ -128,9 +134,34 @@ export class MessageTemplateListerRepository {
       return [] as ListMessageTemplateResponse[];
     }
 
+    const messageTemplateIds = result.map(
+      (message) => message.message_template_id
+    );
+
+    const channelsByTemplateRows = await this.dbRo
+      .select({
+        message_template_id: messageTemplateChannel.message_template_id,
+        channel_id: messageTemplateChannel.channel_id,
+      })
+      .from(messageTemplateChannel)
+      .where(
+        inArray(messageTemplateChannel.message_template_id, messageTemplateIds)
+      )
+      .execute();
+
+    const channelsByTemplate = new Map<string, string[]>();
+
+    for (const row of channelsByTemplateRows) {
+      const current = channelsByTemplate.get(row.message_template_id) ?? [];
+      current.push(row.channel_id);
+      channelsByTemplate.set(row.message_template_id, current);
+    }
+
     return result.map((message) => ({
       message_template_id: message.message_template_id,
-      channel_id: message.channel_id ?? null,
+      channel_ids:
+        channelsByTemplate.get(message.message_template_id) ??
+        (message.channel_id ? [message.channel_id] : []),
       account: {
         account_id: message.account?.account_id,
         name: message.account?.name,

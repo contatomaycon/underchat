@@ -1,8 +1,12 @@
 import * as schema from '@core/models';
-import { messageTemplate, messageStatus } from '@core/models';
+import {
+  messageTemplate,
+  messageTemplateChannel,
+  messageStatus,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, asc, eq, ilike, isNull, or, SQLWrapper } from 'drizzle-orm';
+import { and, asc, eq, ilike, isNull, SQLWrapper, sql } from 'drizzle-orm';
 import { EMessageStatus } from '@core/common/enums/EMessageStatus';
 import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
 import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
@@ -29,13 +33,37 @@ export class ChatQuickMessageTemplatesListerRepository {
 
     if (query.channel_id) {
       filters.push(
-        or(
-          eq(messageTemplate.channel_id, query.channel_id),
-          isNull(messageTemplate.channel_id)
-        ) as SQLWrapper
+        sql`(
+          EXISTS (
+            SELECT 1
+            FROM ${messageTemplateChannel}
+            WHERE ${messageTemplateChannel.message_template_id} = ${messageTemplate.message_template_id}
+              AND ${messageTemplateChannel.channel_id} = ${query.channel_id}
+          )
+          OR (
+            NOT EXISTS (
+              SELECT 1
+              FROM ${messageTemplateChannel}
+              WHERE ${messageTemplateChannel.message_template_id} = ${messageTemplate.message_template_id}
+            )
+            AND (
+              ${messageTemplate.channel_id} IS NULL
+              OR ${messageTemplate.channel_id} = ${query.channel_id}
+            )
+          )
+        )` as SQLWrapper
       );
     } else {
-      filters.push(isNull(messageTemplate.channel_id));
+      filters.push(
+        sql`(
+          NOT EXISTS (
+            SELECT 1
+            FROM ${messageTemplateChannel}
+            WHERE ${messageTemplateChannel.message_template_id} = ${messageTemplate.message_template_id}
+          )
+          AND ${messageTemplate.channel_id} IS NULL
+        )` as SQLWrapper
+      );
     }
 
     const result = await this.dbRo

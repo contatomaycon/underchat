@@ -1,6 +1,6 @@
 import { ICreateMessageTemplate } from '@core/interfaces/repositories/messageTemplate/ICreateMessageTemplate';
 import * as schema from '@core/models';
-import { messageTemplate } from '@core/models';
+import { messageTemplate, messageTemplateChannel } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
@@ -21,7 +21,7 @@ export class MessageTemplateCreatorRepository {
       .values({
         message_template_id: messageTemplateId,
         account_id: input.account_id,
-        channel_id: input.channel_id ?? null,
+        channel_id: null,
         message_status_id: input.message_status_id,
         command: input.command,
         message: input.message,
@@ -37,6 +37,19 @@ export class MessageTemplateCreatorRepository {
 
     if (!result) {
       return null;
+    }
+
+    if (input.channel_ids?.length) {
+      await this.dbRw
+        .insert(messageTemplateChannel)
+        .values(
+          input.channel_ids.map((channelId) => ({
+            message_template_id: messageTemplateId,
+            channel_id: channelId,
+          }))
+        )
+        .onConflictDoNothing()
+        .execute();
     }
 
     return messageTemplateId;

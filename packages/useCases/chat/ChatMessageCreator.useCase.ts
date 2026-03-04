@@ -1132,7 +1132,10 @@ export class ChatMessageCreatorUseCase {
       throw new Error(t('message_template_not_found'));
     }
 
-    if (template?.channel_id && template.channel_id !== chat.worker.id) {
+    if (
+      template?.channel_ids?.length &&
+      !template.channel_ids.includes(chat.worker.id)
+    ) {
       throw new Error(t('message_template_not_found'));
     }
 

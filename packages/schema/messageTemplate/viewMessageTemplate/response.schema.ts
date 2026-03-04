@@ -12,9 +12,7 @@ const accountSchema = Type.Object({
 
 export const viewMessageTemplateResponseSchema = Type.Object({
   message_template_id: Type.String({ format: 'uuid' }),
-  channel_id: Type.Optional(
-    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
-  ),
+  channel_ids: Type.Optional(Type.Array(Type.String({ format: 'uuid' }))),
   account: accountSchema,
   message_status: Type.Union([messageStatusSchema, Type.Null()]),
   command: Type.String(),

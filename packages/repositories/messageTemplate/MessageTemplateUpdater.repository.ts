@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { messageTemplate } from '@core/models';
+import { messageTemplate, messageTemplateChannel } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
@@ -16,8 +16,8 @@ export class MessageTemplateUpdaterRepository {
   ): Partial<typeof messageTemplate.$inferInsert> {
     const inputUpdate: Partial<typeof messageTemplate.$inferInsert> = {};
 
-    if (input?.channel_id !== undefined) {
-      inputUpdate.channel_id = input.channel_id ?? null;
+    if (input.channel_ids !== undefined) {
+      inputUpdate.channel_id = null;
     }
 
     if (input?.command !== undefined && input.command !== null) {
@@ -76,6 +76,31 @@ export class MessageTemplateUpdaterRepository {
       .set(updateInput)
       .where(eq(messageTemplate.message_template_id, input.message_template_id))
       .execute();
+
+    if (input.channel_ids !== undefined) {
+      await this.dbRw
+        .delete(messageTemplateChannel)
+        .where(
+          eq(
+            messageTemplateChannel.message_template_id,
+            input.message_template_id
+          )
+        )
+        .execute();
+
+      if (input.channel_ids.length > 0) {
+        await this.dbRw
+          .insert(messageTemplateChannel)
+          .values(
+            input.channel_ids.map((channelId) => ({
+              message_template_id: input.message_template_id,
+              channel_id: channelId,
+            }))
+          )
+          .onConflictDoNothing()
+          .execute();
+      }
+    }
 
     return result.rowCount === 1;
   };
