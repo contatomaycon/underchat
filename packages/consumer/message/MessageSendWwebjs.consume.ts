@@ -32,7 +32,7 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { webcrypto } from 'node:crypto';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
-import { ChatMessageService } from '@core/services/chatMessage.service';
+import { MessageKeyLookupService } from '@core/services/messageKeyLookup.service';
 import { buildForwardExtraOptions } from '@core/services/wwebjs/util/buildForwardExtraOptions';
 
 interface IPartitionCommitState {
@@ -104,8 +104,8 @@ export class MessageSendWwebjsConsume {
     private readonly wwebjsMessageStatusStoriesService: WwebjsMessageStatusStoriesService,
     @inject(WwebjsProfileService)
     private readonly wwebjsProfileService: WwebjsProfileService,
-    @inject(ChatMessageService)
-    private readonly chatMessageService: ChatMessageService,
+    @inject(MessageKeyLookupService)
+    private readonly messageKeyLookupService: MessageKeyLookupService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
@@ -847,10 +847,11 @@ export class MessageSendWwebjsConsume {
 
     const deadline = Date.now() + this.FORWARD_SOURCE_KEY_MAX_WAIT_MS;
     while (Date.now() <= deadline) {
-      const sourceKey = await this.chatMessageService.getMessageKeyByMessageId(
-        accountId,
-        sourceMessageId
-      );
+      const sourceKey =
+        await this.messageKeyLookupService.getMessageKeyByMessageId(
+          accountId,
+          sourceMessageId
+        );
 
       if (sourceKey) {
         this.mergeForwardSourceKey(
