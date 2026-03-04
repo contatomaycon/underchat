@@ -8732,7 +8732,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           linkPreviewPayload = await generateLinkPreview(firstUrl);
         }
 
-        const newMsg = await createMessage(
+        const result = await createMessage(
           chatInfo.chat_id,
           EMessageType.text,
           text,
@@ -8742,15 +8742,22 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             : undefined,
           options?.quickMessageTemplateId
         );
-        if (newMsg) {
-          pendingScrollToBottomRef.current = true;
-          setShowScrollToBottomButton(false);
-          setMessages((prev) => mergeMessageLists(prev, newMsg));
-          requestAnimationFrame(() => {
-            scrollToBottomWithRetries(10);
-          });
-          return true;
+        if (!result.ok) {
+          return false;
         }
+
+        pendingScrollToBottomRef.current = true;
+        setShowScrollToBottomButton(false);
+        const createdMessage = result.message;
+        if (createdMessage) {
+          setMessages((prev) => mergeMessageLists(prev, createdMessage));
+        } else {
+          await syncLatestMessages();
+        }
+        requestAnimationFrame(() => {
+          scrollToBottomWithRetries(10);
+        });
+        return true;
       } finally {
         setSending(false);
       }
@@ -8762,6 +8769,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       replyMessageTarget?.message_id,
       sending,
       scrollToBottomWithRetries,
+      syncLatestMessages,
     ]
   );
 

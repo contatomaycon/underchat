@@ -310,7 +310,7 @@ export async function createMessage(
   messageQuotedId?: string | null,
   linkPreview?: MessageContentLinkPreview | null,
   quickMessageTemplateId?: string | null
-): Promise<ListMessageResult | null> {
+): Promise<{ ok: boolean; message: ListMessageResult | null }> {
   const payload: {
     type: string;
     message: string;
@@ -340,8 +340,15 @@ export async function createMessage(
     payload.quick_message_template_id = quickMessageTemplateId.trim();
   }
 
-  const res = await apiPost<ListMessageResult>(`/chat/${chatId}`, payload);
-  return res?.data ?? null;
+  const res = await apiPost<ListMessageResult | null>(
+    `/chat/${chatId}`,
+    payload
+  );
+  if (!res) {
+    return { ok: false, message: null };
+  }
+
+  return { ok: true, message: res.data ?? null };
 }
 
 export async function listQuickMessageTemplates(
