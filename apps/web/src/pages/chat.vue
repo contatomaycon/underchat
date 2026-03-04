@@ -1554,7 +1554,8 @@ const createTextMessageBody = (
   hash: string,
   messageText?: string,
   linkPreviewData?: ViewLinkPreviewResponse | null,
-  replyMessage?: ListMessageResult | null
+  replyMessage?: ListMessageResult | null,
+  quickMessageTemplateId?: string | null
 ): CreateMessageChatsBody => {
   const messageValue = messageText ?? msg.value;
   const preview = linkPreviewData ?? linkPreview.value;
@@ -1572,6 +1573,10 @@ const createTextMessageBody = (
 
   if (replyId) {
     inputCreateMessage.message_quoted_id = replyId;
+  }
+
+  if (quickMessageTemplateId) {
+    inputCreateMessage.quick_message_template_id = quickMessageTemplateId;
   }
 
   return inputCreateMessage;
@@ -2066,7 +2071,8 @@ const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
 const sendTextMessage = async (
   messageText?: string,
   linkPreviewData?: ViewLinkPreviewResponse | null,
-  replyMessage?: ListMessageResult | null
+  replyMessage?: ListMessageResult | null,
+  quickMessageTemplateId?: string | null
 ): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
   const hash = createMessageHash();
@@ -2091,7 +2097,8 @@ const sendTextMessage = async (
     hash,
     messageValue,
     preview,
-    replyMessage || null
+    replyMessage || null,
+    quickMessageTemplateId
   );
   const success = await chatStore.createMessage(messageBody);
 
@@ -3918,7 +3925,14 @@ const onRecordAudio = () => {
   startAudioRecording();
 };
 
-const onSendText = () => sendMessage();
+const onSendText = () => {
+  if (selectedQuickMessage.value) {
+    void sendQuickMessage();
+    return;
+  }
+
+  void sendMessage();
+};
 
 const removeDocument = (index: number) => {
   selectedDocuments.value.splice(index, 1);
@@ -4022,6 +4036,11 @@ watch(
   (newChatId, oldChatId) => {
     persistMessageDraft(oldChatId, msg.value);
 
+    selectedQuickMessage.value = null;
+    showQuickMessageList.value = false;
+    quickMessageTemplates.value = [];
+    quickMessageSearch.value = '';
+
     const nextDraft = getMessageDraft(newChatId);
     if (msg.value !== nextDraft) {
       msg.value = nextDraft;
@@ -4035,6 +4054,13 @@ watch(
 watch(msg, async (val) => {
   persistMessageDraft(chatStore.activeChat?.chat_id, val);
 
+  if (selectedQuickMessage.value) {
+    showQuickMessageList.value = false;
+    quickMessageTemplates.value = [];
+    quickMessageSearch.value = '';
+    return;
+  }
+
   if (typeof val === 'string' && val.startsWith('/')) {
     const searchTerm = val.slice(1).trim();
     quickMessageSearch.value = searchTerm;
@@ -4044,6 +4070,9 @@ watch(msg, async (val) => {
       searchTerm || null,
       chatStore.activeChat?.worker?.id ?? null
     );
+    if (selectedQuickMessage.value) {
+      return;
+    }
     quickMessageTemplates.value = templates;
   } else {
     showQuickMessageList.value = false;
@@ -4131,14 +4160,17 @@ const replaceTagsInMessage = (message: string | null): string => {
 
   let replaced = message;
 
-  replaced = replaced.replaceAll('{{ greeting }}', greeting);
-  replaced = replaced.replaceAll('{{ name }}', contactName);
-  replaced = replaced.replaceAll('{{ protocol }}', protocol);
-  replaced = replaced.replaceAll('{{ date }}', date);
-  replaced = replaced.replaceAll('{{ time }}', time);
-  replaced = replaced.replaceAll('{{ account_name }}', accountName);
-  replaced = replaced.replaceAll('{{ phone }}', phone);
-  replaced = replaced.replaceAll('{{ channel_name }}', channelName);
+  replaced = replaced.replaceAll(/\{\{\s*greeting\s*\}\}/gi, greeting);
+  replaced = replaced.replaceAll(/\{\{\s*name\s*\}\}/gi, contactName);
+  replaced = replaced.replaceAll(/\{\{\s*protocol\s*\}\}/gi, protocol);
+  replaced = replaced.replaceAll(/\{\{\s*protocolo\s*\}\}/gi, protocol);
+  replaced = replaced.replaceAll(/\{\{\s*date\s*\}\}/gi, date);
+  replaced = replaced.replaceAll(/\{\{\s*time\s*\}\}/gi, time);
+  replaced = replaced.replaceAll(/\{\{\s*account_name\s*\}\}/gi, accountName);
+  replaced = replaced.replaceAll(/\{\{\s*accountname\s*\}\}/gi, accountName);
+  replaced = replaced.replaceAll(/\{\{\s*phone\s*\}\}/gi, phone);
+  replaced = replaced.replaceAll(/\{\{\s*channel_name\s*\}\}/gi, channelName);
+  replaced = replaced.replaceAll(/\{\{\s*channelname\s*\}\}/gi, channelName);
 
   return replaced;
 };
@@ -4155,14 +4187,34 @@ const selectQuickMessage = async (
 
   selectedQuickMessage.value = template;
   showQuickMessageList.value = false;
-  msg.value = '';
+  quickMessageTemplates.value = [];
+  quickMessageSearch.value = '';
+  msg.value = replaceTagsInMessage(template.message);
 };
+
+const canSendSelectedQuickMessage = computed(() => {
+  const template = selectedQuickMessage.value;
+  if (!template) return false;
+
+  if (!chatStore.activeChat?.worker?.id || isQueueOrUraStatus.value) {
+    return false;
+  }
+
+  if (template.type === EMessageType.text) {
+    return msg.value.trim().length > 0;
+  }
+
+  return !!template.attachment_url;
+});
 
 const createQuickMessageFormData = (
   type: string,
   messageValue: string | null,
   hash: string,
-  template: typeof selectedQuickMessage.value
+  template: typeof selectedQuickMessage.value,
+  options?: {
+    includeEmptyMessage?: boolean;
+  }
 ): FormData => {
   const formData = new FormData();
   formData.append('type', type);
@@ -4170,6 +4222,8 @@ const createQuickMessageFormData = (
 
   if (messageValue) {
     formData.append('message', messageValue);
+  } else if (options?.includeEmptyMessage) {
+    formData.append('message', '');
   }
 
   if (template?.message_template_id) {
@@ -4185,14 +4239,52 @@ const sendQuickMessage = async () => {
   if (isQueueOrUraStatus.value) return;
 
   const template = selectedQuickMessage.value;
+  const isAutoSend = template.auto_send === true;
+  const hydratedTemplateMessage = replaceTagsInMessage(template.message);
+  const resolvedMessage = isAutoSend ? hydratedTemplateMessage : msg.value;
+  const messageValue =
+    resolvedMessage.trim().length > 0 ? resolvedMessage : null;
+  const shouldIncludeEmptyMessage =
+    !isAutoSend &&
+    template.type !== EMessageType.text &&
+    resolvedMessage.trim().length === 0;
 
-  selectedQuickMessage.value = null;
-  showQuickMessageList.value = false;
+  if (template.type === EMessageType.text) {
+    if (!messageValue) {
+      return;
+    }
 
-  if (template.type === 'text') {
-    msg.value = replaceTagsInMessage(template.message);
-    await nextTick();
-    onSendText();
+    const savedReply = chatStore.messageReply;
+    const savedLinkPreview = linkPreview.value
+      ? { ...linkPreview.value }
+      : null;
+
+    chatStore.clearMessageReply();
+    selectedQuickMessage.value = null;
+    showQuickMessageList.value = false;
+    quickMessageTemplates.value = [];
+    quickMessageSearch.value = '';
+
+    msg.value = '';
+    linkPreview.value = null;
+    isLoadingLinkPreview.value = false;
+
+    clearSelectedVideos();
+    clearSelectedAudios();
+    clearSelectedContacts();
+    selectedPhotos.value = [];
+    selectedDocuments.value = [];
+    selectedLocation.value = null;
+
+    await sendTextMessage(
+      messageValue,
+      savedLinkPreview,
+      savedReply || undefined,
+      isAutoSend || resolvedMessage === hydratedTemplateMessage
+        ? template.message_template_id ?? null
+        : null
+    );
+    finalizeSend();
     return;
   }
 
@@ -4200,8 +4292,17 @@ const sendQuickMessage = async () => {
     return;
   }
 
+  chatStore.clearMessageReply();
+  selectedQuickMessage.value = null;
+  showQuickMessageList.value = false;
+  quickMessageTemplates.value = [];
+  quickMessageSearch.value = '';
+
+  msg.value = '';
+  linkPreview.value = null;
+  isLoadingLinkPreview.value = false;
+
   const hash = createMessageHash();
-  const messageValue = replaceTagsInMessage(template.message) || null;
   const quickMediaContent = {
     url: template.attachment_url,
     mimetype: template.mimetype || null,
@@ -4241,7 +4342,10 @@ const sendQuickMessage = async () => {
     template.type,
     messageValue,
     hash,
-    template
+    template,
+    {
+      includeEmptyMessage: shouldIncludeEmptyMessage,
+    }
   );
 
   let success = false;
@@ -4286,6 +4390,11 @@ const sendQuickMessage = async () => {
 const cancelQuickMessage = () => {
   selectedQuickMessage.value = null;
   showQuickMessageList.value = false;
+  quickMessageTemplates.value = [];
+  quickMessageSearch.value = '';
+  msg.value = '';
+  linkPreview.value = null;
+  isLoadingLinkPreview.value = false;
 };
 
 let previousLoadingState = false;
@@ -5994,7 +6103,7 @@ onBeforeUnmount(() => {
               <VCardText>
                 <ChatQuickMessagePreview
                   :template="selectedQuickMessage"
-                  @send="sendQuickMessage"
+                  :message-override="msg"
                 />
               </VCardText>
             </VCard>
@@ -6013,7 +6122,7 @@ onBeforeUnmount(() => {
               :auto-grow="true"
               rows="1"
               :max-rows="8"
-              :disabled="isQueueStatus || isUraStatus || !!selectedQuickMessage"
+              :disabled="isQueueStatus || isUraStatus"
               :readonly="hasSelectedAudios"
               @keydown.enter.exact.prevent="onSendText"
               @paste="handlePaste"
@@ -6186,6 +6295,7 @@ onBeforeUnmount(() => {
                 transform: translateY(-50%);
                 z-index: 10;
               "
+              :disabled="!canSendSelectedQuickMessage"
               @click="sendQuickMessage"
             >
               <VIcon size="22">tabler-send</VIcon>

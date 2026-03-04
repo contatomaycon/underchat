@@ -119,6 +119,7 @@ export class AccountSettingsService {
       t,
       {
         skipGenerateInvoiceCheck: isManual,
+        useCurrentEffectiveDate: isManual,
       }
     );
   };

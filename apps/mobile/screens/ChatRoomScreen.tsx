@@ -4409,6 +4409,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [quickMessageLoading, setQuickMessageLoading] = useState(false);
   const [selectedQuickMessage, setSelectedQuickMessage] =
     useState<QuickMessageTemplate | null>(null);
+  const [quickMessageInputDirty, setQuickMessageInputDirty] = useState(false);
   const [sendingQuickMessage, setSendingQuickMessage] = useState(false);
   const [sending, setSending] = useState(false);
   const [viewer, setViewer] = useState<MediaViewerState>({
@@ -4587,6 +4588,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setQuickMessageTemplates([]);
     setQuickMessageLoading(false);
     setSelectedQuickMessage(null);
+    setQuickMessageInputDirty(false);
+    setInput('');
     setSendingQuickMessage(false);
     setLoading(true);
     setHighlightedMessageId(null);
@@ -8681,9 +8684,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         /\{\{\s*account_name\s*\}\}/gi,
         accountName
       );
+      replaced = replaced.replaceAll(
+        /\{\{\s*accountname\s*\}\}/gi,
+        accountName
+      );
       replaced = replaced.replaceAll(/\{\{\s*phone\s*\}\}/gi, phone);
       replaced = replaced.replaceAll(
         /\{\{\s*channel_name\s*\}\}/gi,
+        channelName
+      );
+      replaced = replaced.replaceAll(
+        /\{\{\s*channelname\s*\}\}/gi,
         channelName
       );
 
@@ -8755,13 +8766,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   );
 
   const sendQuickMessageTemplate = useCallback(
-    async (template: QuickMessageTemplate) => {
+    async (template: QuickMessageTemplate, messageOverride?: string | null) => {
       if (!canComposeInChat || sendingQuickMessage) return false;
 
-      const messageValue = replaceTagsInQuickMessage(template.message);
+      const hasMessageOverride = typeof messageOverride === 'string';
+      const messageValue = hasMessageOverride
+        ? messageOverride
+        : replaceTagsInQuickMessage(template.message);
 
       if (template.type === EMessageType.text) {
-        return await sendTextPayload(messageValue, {
+        const normalizedMessage = messageValue.trim();
+        if (!normalizedMessage) return false;
+
+        return await sendTextPayload(normalizedMessage, {
           quickMessageTemplateId: template.message_template_id,
         });
       }
@@ -8779,6 +8796,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const normalizedMessage = messageValue.trim();
       if (normalizedMessage) {
         formData.append('message', normalizedMessage);
+      } else if (hasMessageOverride) {
+        formData.append('message', '');
       }
 
       return await submitFormDataMessage(formData);
@@ -8797,6 +8816,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       setShowQuickMessageList(false);
       if (template.auto_send) {
         setInput('');
+        setQuickMessageInputDirty(false);
         setQuickMessageTemplates([]);
         setSelectedQuickMessage(null);
         setSendingQuickMessage(true);
@@ -8809,60 +8829,62 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
 
       setSelectedQuickMessage(template);
-      setInput('');
+      setInput(replaceTagsInQuickMessage(template.message));
+      setQuickMessageInputDirty(false);
       setQuickMessageTemplates([]);
       setComposerEmojiPickerVisible(false);
       Keyboard.dismiss();
     },
-    [sendQuickMessageTemplate]
+    [replaceTagsInQuickMessage, sendQuickMessageTemplate]
   );
-
-  const handleSendSelectedQuickMessage = useCallback(async () => {
-    if (!selectedQuickMessage || sendingQuickMessage) return;
-    setSendingQuickMessage(true);
-    try {
-      const sent = await sendQuickMessageTemplate(selectedQuickMessage);
-      if (sent) {
-        setSelectedQuickMessage(null);
-      }
-    } finally {
-      setSendingQuickMessage(false);
-    }
-  }, [selectedQuickMessage, sendQuickMessageTemplate, sendingQuickMessage]);
 
   const handleCancelQuickMessage = useCallback(() => {
     setSelectedQuickMessage(null);
+    setInput('');
+    setQuickMessageInputDirty(false);
   }, []);
 
-  const handleComposerInputChange = useCallback((value: string) => {
-    setInput(value);
+  const handleComposerInputChange = useCallback(
+    (value: string) => {
+      setInput(value);
 
-    if (value.startsWith('/')) {
-      const searchTerm = value.slice(1).trim();
-      const requestId = quickMessageSearchRequestRef.current + 1;
-      quickMessageSearchRequestRef.current = requestId;
-
-      setShowQuickMessageList(true);
-
-      void (async () => {
-        setQuickMessageLoading(true);
-        const templates = await listQuickMessageTemplates(
-          searchTerm || null,
-          chatInfo.worker?.id ?? null
-        );
-        if (quickMessageSearchRequestRef.current !== requestId) return;
-        setQuickMessageTemplates(templates);
+      if (selectedQuickMessage) {
+        setQuickMessageInputDirty(true);
+        quickMessageSearchRequestRef.current += 1;
+        setShowQuickMessageList(false);
+        setQuickMessageTemplates([]);
         setQuickMessageLoading(false);
-      })();
+        return;
+      }
 
-      return;
-    }
+      if (value.startsWith('/')) {
+        const searchTerm = value.slice(1).trim();
+        const requestId = quickMessageSearchRequestRef.current + 1;
+        quickMessageSearchRequestRef.current = requestId;
 
-    quickMessageSearchRequestRef.current += 1;
-    setShowQuickMessageList(false);
-    setQuickMessageTemplates([]);
-    setQuickMessageLoading(false);
-  }, []);
+        setShowQuickMessageList(true);
+
+        void (async () => {
+          setQuickMessageLoading(true);
+          const templates = await listQuickMessageTemplates(
+            searchTerm || null,
+            chatInfo.worker?.id ?? null
+          );
+          if (quickMessageSearchRequestRef.current !== requestId) return;
+          setQuickMessageTemplates(templates);
+          setQuickMessageLoading(false);
+        })();
+
+        return;
+      }
+
+      quickMessageSearchRequestRef.current += 1;
+      setShowQuickMessageList(false);
+      setQuickMessageTemplates([]);
+      setQuickMessageLoading(false);
+    },
+    [chatInfo.worker?.id, selectedQuickMessage]
+  );
 
   const handleTemplateButtonPress = useCallback(
     (button: MessageTemplateButton, _message: ListMessageResult) => {
@@ -8875,6 +8897,42 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   );
 
   const handleSend = async () => {
+    if (selectedQuickMessage) {
+      if (
+        sending ||
+        sendingQuickMessage ||
+        isRecordingVoice ||
+        sendingCapturedMedia ||
+        !canComposeInChat
+      ) {
+        return;
+      }
+
+      if (
+        selectedQuickMessage.type === EMessageType.text &&
+        input.trim().length === 0
+      ) {
+        return;
+      }
+
+      setSendingQuickMessage(true);
+      try {
+        const sent = await sendQuickMessageTemplate(
+          selectedQuickMessage,
+          input
+        );
+        if (sent) {
+          setSelectedQuickMessage(null);
+          setInput('');
+          setQuickMessageInputDirty(false);
+        }
+      } finally {
+        setSendingQuickMessage(false);
+      }
+
+      return;
+    }
+
     const text = input.trim();
     if (
       !text ||
@@ -8895,7 +8953,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const canFocusInput =
     canComposeInChat &&
     !sending &&
-    !selectedQuickMessage &&
     !sendingQuickMessage &&
     !sendingCapturedMedia &&
     !isPreparingRecording &&
@@ -8915,6 +8972,43 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const showRecordingComposer =
     isRecordingVoice && (isRecordingLocked || !isMicPressActive);
   const canShowIconActions = !hasInputText && !showRecordingComposer;
+  const hydratedSelectedQuickMessageText = useMemo(() => {
+    if (!selectedQuickMessage) return '';
+    return replaceTagsInQuickMessage(selectedQuickMessage.message);
+  }, [replaceTagsInQuickMessage, selectedQuickMessage]);
+  const quickMessagePreviewText = useMemo(() => {
+    if (!selectedQuickMessage) return '';
+    if (quickMessageInputDirty) {
+      return input;
+    }
+    return input || hydratedSelectedQuickMessageText;
+  }, [
+    hydratedSelectedQuickMessageText,
+    input,
+    quickMessageInputDirty,
+    selectedQuickMessage,
+  ]);
+  const canSendSelectedQuickMessage = useMemo(() => {
+    if (!selectedQuickMessage) return false;
+    if (!canComposeInChat || sending || sendingQuickMessage) return false;
+
+    if (selectedQuickMessage.type === EMessageType.text) {
+      return input.trim().length > 0;
+    }
+
+    return !!selectedQuickMessage.attachment_url;
+  }, [
+    canComposeInChat,
+    input,
+    selectedQuickMessage,
+    sending,
+    sendingQuickMessage,
+  ]);
+  const shouldShowComposerSendButton =
+    hasInputText || selectedQuickMessage !== null;
+  const isComposerSendDisabled = selectedQuickMessage
+    ? !canSendSelectedQuickMessage || sending || sendingQuickMessage
+    : !hasInputText || sending || sendingQuickMessage;
 
   const focusComposerInput = useCallback(() => {
     if (!canFocusInput) return;
@@ -8997,13 +9091,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     });
   }, [canFocusInput]);
 
-  const handleSelectComposerEmoji = useCallback((emoji: string) => {
-    setInput((previous) => `${previous}${emoji}`);
-    setRecentReactionEmojis((previous) => {
-      const next = [emoji, ...previous.filter((item) => item !== emoji)];
-      return next.slice(0, 40);
-    });
-  }, []);
+  const handleSelectComposerEmoji = useCallback(
+    (emoji: string) => {
+      if (selectedQuickMessage) {
+        setQuickMessageInputDirty(true);
+      }
+
+      setInput((previous) => `${previous}${emoji}`);
+      setRecentReactionEmojis((previous) => {
+        const next = [emoji, ...previous.filter((item) => item !== emoji)];
+        return next.slice(0, 40);
+      });
+    },
+    [selectedQuickMessage]
+  );
 
   return (
     <KeyboardAvoidingView
@@ -9609,8 +9710,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 }
               >
                 <Text style={styles.quickMessagePreviewText}>
-                  {replaceTagsInQuickMessage(selectedQuickMessage.message) ||
-                    pt.quick_message_no_text}
+                  {quickMessagePreviewText || pt.quick_message_no_text}
                 </Text>
               </ScrollView>
 
@@ -9620,22 +9720,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   onPress={handleCancelQuickMessage}
                 >
                   <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.primaryBtn,
-                    sendingQuickMessage && styles.sendBtnDisabled,
-                  ]}
-                  onPress={() => {
-                    void handleSendSelectedQuickMessage();
-                  }}
-                  disabled={sendingQuickMessage}
-                >
-                  {sendingQuickMessage ? (
-                    <ActivityIndicator size="small" color={colors.onPrimary} />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>{pt.send}</Text>
-                  )}
                 </Pressable>
               </View>
             </View>
@@ -9810,7 +9894,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     maxLength={65535}
                     editable={
                       canComposeInChat &&
-                      !selectedQuickMessage &&
                       !sendingQuickMessage &&
                       !sending &&
                       !sendingCapturedMedia &&
@@ -9894,15 +9977,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   ) : null}
                 </View>
 
-                {hasInputText ? (
+                {shouldShowComposerSendButton ? (
                   <Pressable
                     style={[
                       styles.sendBtn,
-                      (!hasInputText || sending || sendingQuickMessage) &&
-                        styles.sendBtnDisabled,
+                      isComposerSendDisabled && styles.sendBtnDisabled,
                     ]}
                     onPress={handleSend}
-                    disabled={!hasInputText || sending || sendingQuickMessage}
+                    disabled={isComposerSendDisabled}
                   >
                     <Ionicons name="send" size={22} color="#fff" />
                   </Pressable>

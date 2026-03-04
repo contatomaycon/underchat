@@ -281,18 +281,19 @@ export class ChatMessageCreatorUseCase {
   }
 
   private normalizeMessage(
-    message?: string | { value?: string }
+    message?: string | { value?: string } | null
   ): string | null {
-    if (
-      message &&
-      typeof message === 'object' &&
-      'value' in message &&
-      message.value
-    ) {
-      return message.value;
+    const rawValue = this.extractFieldValue(message);
+    if (rawValue === null) {
+      return null;
     }
 
-    return message as string | null;
+    const normalizedValue = String(rawValue);
+    if (normalizedValue === 'null' || normalizedValue === 'undefined') {
+      return null;
+    }
+
+    return normalizedValue;
   }
 
   private normalizeDurationField(value: unknown): number | null {
@@ -581,8 +582,14 @@ export class ChatMessageCreatorUseCase {
     body: CreateMessageChatsBody,
     templateMessage: string | null
   ) {
+    const hasMessageField = Object.prototype.hasOwnProperty.call(
+      body,
+      'message'
+    );
+    const messageSource = hasMessageField ? body.message : templateMessage;
+
     return {
-      message: this.normalizeMessage(templateMessage || body.message),
+      message: this.normalizeMessage(messageSource),
       images: this.normalizeImagesArray(body.images),
       documents: this.normalizeDocumentsArray(body.documents),
       videos: this.normalizeVideosArray(body.videos),

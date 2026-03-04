@@ -124,12 +124,14 @@ export function replaceMessageTags(options: ReplaceMessageTagsOptions): string {
 
   const accountName = chat.account?.name || '';
   replaced = replaced.replaceAll(/\{\{\s*account_name\s*\}\}/gi, accountName);
+  replaced = replaced.replaceAll(/\{\{\s*accountname\s*\}\}/gi, accountName);
 
   const phone = getPhoneFormatted(chat);
   replaced = replaced.replaceAll(/\{\{\s*phone\s*\}\}/gi, phone);
 
   const channelName = chat.worker?.name || '';
   replaced = replaced.replaceAll(/\{\{\s*channel_name\s*\}\}/gi, channelName);
+  replaced = replaced.replaceAll(/\{\{\s*channelname\s*\}\}/gi, channelName);
 
   const sector = sectorName || chat.sector?.name || '';
   replaced = replaced.replaceAll(/\{\{\s*sector\s*\}\}/gi, sector);

@@ -10,10 +10,7 @@ import type { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQu
 
 const props = defineProps<{
   template: ListQuickMessageTemplatesResponse;
-}>();
-
-const emit = defineEmits<{
-  send: [];
+  messageOverride?: string | null;
 }>();
 
 const chatStore = useChatStore();
@@ -150,19 +147,26 @@ const replaceTagsInMessage = (message: string | null): string => {
 
   let replaced = message;
 
-  replaced = replaced.replaceAll('{{ greeting }}', greeting);
-  replaced = replaced.replaceAll('{{ name }}', contactName);
-  replaced = replaced.replaceAll('{{ protocol }}', protocol);
-  replaced = replaced.replaceAll('{{ date }}', date);
-  replaced = replaced.replaceAll('{{ time }}', time);
-  replaced = replaced.replaceAll('{{ account_name }}', accountName);
-  replaced = replaced.replaceAll('{{ phone }}', phone);
-  replaced = replaced.replaceAll('{{ channel_name }}', channelName);
+  replaced = replaced.replaceAll(/\{\{\s*greeting\s*\}\}/gi, greeting);
+  replaced = replaced.replaceAll(/\{\{\s*name\s*\}\}/gi, contactName);
+  replaced = replaced.replaceAll(/\{\{\s*protocol\s*\}\}/gi, protocol);
+  replaced = replaced.replaceAll(/\{\{\s*protocolo\s*\}\}/gi, protocol);
+  replaced = replaced.replaceAll(/\{\{\s*date\s*\}\}/gi, date);
+  replaced = replaced.replaceAll(/\{\{\s*time\s*\}\}/gi, time);
+  replaced = replaced.replaceAll(/\{\{\s*account_name\s*\}\}/gi, accountName);
+  replaced = replaced.replaceAll(/\{\{\s*accountname\s*\}\}/gi, accountName);
+  replaced = replaced.replaceAll(/\{\{\s*phone\s*\}\}/gi, phone);
+  replaced = replaced.replaceAll(/\{\{\s*channel_name\s*\}\}/gi, channelName);
+  replaced = replaced.replaceAll(/\{\{\s*channelname\s*\}\}/gi, channelName);
 
   return replaced;
 };
 
 const replacedMessage = computed(() => {
+  if (props.messageOverride !== null && props.messageOverride !== undefined) {
+    return props.messageOverride;
+  }
+
   return replaceTagsInMessage(props.template.message);
 });
 

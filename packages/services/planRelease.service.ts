@@ -579,15 +579,28 @@ export class PlanReleaseService {
     return accountGenerateInvoice === true;
   };
 
+  private readonly getCurrentDateInSaoPaulo = (): string => {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+
+    return formatter.format(new Date());
+  };
+
   createInvoiceForPayment = async (
     accountPaymentId: string,
     paymentAsaasId: string,
     t?: TFunction<'translation', undefined>,
     options?: {
       skipGenerateInvoiceCheck?: boolean;
+      useCurrentEffectiveDate?: boolean;
     }
   ): Promise<void> => {
     const skipGenerateInvoiceCheck = options?.skipGenerateInvoiceCheck === true;
+    const useCurrentEffectiveDate = options?.useCurrentEffectiveDate === true;
 
     const paymentData =
       await this.planReleaseRepository.findAccountPaymentById(accountPaymentId);
@@ -656,9 +669,11 @@ export class PlanReleaseService {
       return;
     }
 
-    const effectiveDate = paymentData.payment_date
-      ? new Date(paymentData.payment_date).toISOString().split('T')[0]
-      : new Date().toISOString().split('T')[0];
+    const effectiveDate = useCurrentEffectiveDate
+      ? this.getCurrentDateInSaoPaulo()
+      : paymentData.payment_date
+        ? new Date(paymentData.payment_date).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0];
 
     const serviceDescription = this.sanitizeTextForInvoice(
       `Nota fiscal da Fatura ${paymentAsaasId}. Descrição dos Serviços: ${planData.name}`
