@@ -157,6 +157,31 @@ export async function apiPostForm<T>(
   return parseJsonSafe<T>(res);
 }
 
+export async function apiPostFormWithMessage<T>(
+  path: string,
+  body: FormData
+): Promise<ApiDetailedResponse<T> | null> {
+  const headers = await buildAuthHeaders();
+  if (!headers) return null;
+
+  const url = path.startsWith('http')
+    ? path
+    : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body,
+  });
+
+  if (res.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  return parseJsonDetailed<T>(res);
+}
+
 export async function apiPatch<T>(
   path: string,
   body: unknown
@@ -255,6 +280,31 @@ export async function apiPatchForm<T>(
   }
 
   return parseJsonSafe<T>(res);
+}
+
+export async function apiPatchFormWithMessage<T>(
+  path: string,
+  body: FormData
+): Promise<ApiDetailedResponse<T> | null> {
+  const headers = await buildAuthHeaders();
+  if (!headers) return null;
+
+  const url = path.startsWith('http')
+    ? path
+    : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers,
+    body,
+  });
+
+  if (res.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  return parseJsonDetailed<T>(res);
 }
 
 export async function apiDelete<T>(

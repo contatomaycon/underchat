@@ -3,9 +3,10 @@ import {
   apiGet,
   apiPatch,
   apiPatchWithMessage,
-  apiPatchForm,
+  apiPatchFormWithMessage,
   apiPost,
   apiPostForm,
+  apiPostFormWithMessage,
   apiPut,
 } from './client';
 import {
@@ -951,7 +952,7 @@ function normalizePhoneValue(value: string | null | undefined): string | null {
 export async function createChatContact(
   payload: CreateChatContactPayload,
   photoFile?: File | Blob | null
-): Promise<boolean> {
+): Promise<{ ok: boolean; message: string | null }> {
   const formData = new FormData();
 
   appendArrayValues(formData, 'channel_ids', payload.channel_ids);
@@ -995,16 +996,22 @@ export async function createChatContact(
     formData.append('ignore', payload.ignore);
   }
 
-  const res = await apiPostForm<boolean>('/chat/contacts', formData);
-  return !!res?.status;
+  const res = await apiPostFormWithMessage<boolean>('/chat/contacts', formData);
+  return {
+    ok: res?.status === true,
+    message: res?.message ?? null,
+  };
 }
 
 export async function updateChatContact(
   payload: UpdateChatContactPayload,
   photoFile?: File | Blob | null
-): Promise<boolean> {
+): Promise<{ ok: boolean; message: string | null }> {
   if (!payload.contact_id || payload.contact_id.trim().length === 0) {
-    return false;
+    return {
+      ok: false,
+      message: null,
+    };
   }
 
   const formData = new FormData();
@@ -1085,12 +1092,15 @@ export async function updateChatContact(
     }
   }
 
-  const res = await apiPatchForm<boolean>(
+  const res = await apiPatchFormWithMessage<boolean>(
     `/chat/contacts/${payload.contact_id}`,
     formData
   );
 
-  return !!res?.status;
+  return {
+    ok: res?.status === true,
+    message: res?.message ?? null,
+  };
 }
 
 export async function validateChatContact(contactId: string): Promise<boolean> {

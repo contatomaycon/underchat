@@ -111,33 +111,6 @@ function normalizeDocumentForDisplay(
   return formatDocumentByType(value, documentTypeId);
 }
 
-const ALLOWED_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
-
-function extractImageExtensionFromAsset(
-  asset: ImagePicker.ImagePickerAsset
-): string | null {
-  const fromFileName = asset.fileName?.match(/\.([a-z0-9]{2,5})$/i)?.[1];
-  if (fromFileName) return fromFileName.toLowerCase();
-
-  const fromUri = asset.uri?.match(/\.([a-z0-9]{2,5})(?:\?|#|$)/i)?.[1];
-  if (fromUri) return fromUri.toLowerCase();
-
-  if (asset.mimeType?.startsWith('image/')) {
-    const fromMime = asset.mimeType.replace('image/', '').toLowerCase();
-    if (fromMime === 'jpg') return 'jpeg';
-    return fromMime;
-  }
-
-  return null;
-}
-
-function toImageMimeType(extension: string): string {
-  if (extension === 'jpg' || extension === 'jpeg') {
-    return 'image/jpeg';
-  }
-  return `image/${extension}`;
-}
-
 export function ContactFormModal({
   visible,
   mode,
@@ -521,14 +494,25 @@ export function ContactFormModal({
     if (!uri) return;
 
     setPhotoUri(uri);
-
-    const rawExtension = extractImageExtensionFromAsset(asset);
-    const extension =
-      rawExtension && ALLOWED_IMAGE_EXTENSIONS.has(rawExtension)
-        ? rawExtension
-        : 'jpg';
-    const mimeType = toImageMimeType(extension);
-    const fileName = `contact-photo-${Date.now()}.${extension}`;
+    const mimeType =
+      typeof asset.mimeType === 'string' && asset.mimeType.trim().length > 0
+        ? asset.mimeType.trim()
+        : 'image/jpeg';
+    const fileNameRaw =
+      typeof asset.fileName === 'string' ? asset.fileName.trim() : '';
+    const hasExtension = /\.[a-z0-9]{2,5}$/i.test(fileNameRaw);
+    const fallbackExtension = mimeType.includes('png')
+      ? 'png'
+      : mimeType.includes('webp')
+        ? 'webp'
+        : mimeType.includes('gif')
+          ? 'gif'
+          : mimeType.includes('heic') || mimeType.includes('heif')
+            ? 'heic'
+            : 'jpg';
+    const fileName = hasExtension
+      ? fileNameRaw
+      : `contact-photo-${Date.now()}.${fallbackExtension}`;
 
     setPhotoBlob({
       uri,
@@ -697,7 +681,7 @@ export function ContactFormModal({
           ? undefined
           : normalizedDocument || null;
 
-        const ok = await updateChatContact(
+        const result = await updateChatContact(
           {
             contact_id: contactId,
             label_template_ids: selectedLabels,
@@ -718,12 +702,12 @@ export function ContactFormModal({
           photoBlob
         );
 
-        if (!ok) {
-          Alert.alert(pt.error_title, pt.contact_edit_error);
+        if (!result.ok) {
+          Alert.alert(pt.error_title, result.message ?? pt.contact_edit_error);
           return;
         }
       } else {
-        const ok = await createChatContact(
+        const result = await createChatContact(
           {
             label_template_ids: selectedLabels,
             channel_ids: selectedChannels,
@@ -743,8 +727,8 @@ export function ContactFormModal({
           photoBlob
         );
 
-        if (!ok) {
-          Alert.alert(pt.error_title, pt.contact_add_error);
+        if (!result.ok) {
+          Alert.alert(pt.error_title, result.message ?? pt.contact_add_error);
           return;
         }
       }
