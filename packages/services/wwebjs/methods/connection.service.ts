@@ -113,8 +113,11 @@ export class WwebjsConnectionService {
   private qrReadSessionActive = false;
   private qrReadSessionLocked = false;
   private disconnectRetryTimer: NodeJS.Timeout | undefined;
+  private teardownPromise: Promise<void> = Promise.resolve();
   private currentPromise: Promise<IBaileysConnectionState> | undefined;
   private pendingResolve: ((s: IBaileysConnectionState) => void) | undefined;
+  private connectionAttemptSequence = 0;
+  private activeConnectionAttemptId: number | undefined;
   private lastPayload: string | null = null;
   private qrHash: string | undefined;
   private typeConnection: EBaileysConnectionType =
@@ -250,11 +253,21 @@ export class WwebjsConnectionService {
     if (this.connecting && this.currentPromise) {
       this.logConnectionEvent('connect_short_circuit', {
         reason: 'already_connecting',
+        active_attempt_id: this.activeConnectionAttemptId,
       });
       return this.currentPromise;
     }
 
-    if (forceNew && (!this.connecting || fromDisconnectRestart)) {
+    if (forceNew && this.connecting) {
+      this.logConnectionEvent('connect_short_circuit', {
+        reason: 'force_new_ignored_while_connecting',
+        from_disconnect_restart: fromDisconnectRestart,
+        active_attempt_id: this.activeConnectionAttemptId,
+      });
+      return this.currentPromise ?? this.state();
+    }
+
+    if (forceNew && !this.connecting) {
       this.cancelAttempt(false);
     }
 
@@ -414,18 +427,53 @@ export class WwebjsConnectionService {
   private startConnection(
     fromDisconnectRestart = false
   ): Promise<IBaileysConnectionState> {
+    const attemptId = ++this.connectionAttemptSequence;
+
     this.prepareFolder();
     this.clearDisconnectRetryTimer();
     this.connecting = true;
+    this.activeConnectionAttemptId = attemptId;
     if (!fromDisconnectRestart) {
       this.retryCount = 0;
     }
-    this.currentPromise = this.createAndWaitClient().finally(() => {
-      this.connecting = false;
-      this.currentPromise = undefined;
+    this.logConnectionEvent('connection_attempt_started', {
+      attempt_id: attemptId,
+      from_disconnect_restart: fromDisconnectRestart,
+      connection_type: this.typeConnection,
     });
+    this.currentPromise = this.waitForPendingTeardown()
+      .then(() => this.createAndWaitClient(attemptId))
+      .finally(() => {
+        this.connecting = false;
+        this.currentPromise = undefined;
+        if (this.activeConnectionAttemptId === attemptId) {
+          this.activeConnectionAttemptId = undefined;
+        }
+      });
 
     return this.currentPromise;
+  }
+
+  private waitForPendingTeardown(): Promise<void> {
+    return this.teardownPromise.catch(() => undefined);
+  }
+
+  private queueTeardown(
+    operation: string,
+    teardown: () => Promise<void>
+  ): void {
+    this.teardownPromise = this.teardownPromise
+      .catch(() => undefined)
+      .then(async () => {
+        this.logConnectionEvent('connection_teardown_started', {
+          operation,
+          active_attempt_id: this.activeConnectionAttemptId,
+        });
+        await teardown();
+        this.logConnectionEvent('connection_teardown_finished', {
+          operation,
+        });
+      });
   }
 
   private prepareFolder(): void {
@@ -621,13 +669,18 @@ export class WwebjsConnectionService {
     this.scheduleNextReconnectAttempt(false);
   }
 
-  private handleInitializeError(message: string, client: Client): void {
+  private async handleInitializeError(
+    message: string,
+    client: Client,
+    attemptId?: number
+  ): Promise<void> {
     if (!this.isActiveClient(client)) {
       this.logConnectionEvent(
         'initialize_error',
         {
           reason: message,
           stale_client: true,
+          attempt_id: attemptId,
         },
         'warn'
       );
@@ -641,6 +694,7 @@ export class WwebjsConnectionService {
       'initialize_error',
       {
         reason: message,
+        attempt_id: attemptId,
       },
       'error'
     );
@@ -650,10 +704,20 @@ export class WwebjsConnectionService {
     this.pendingResolve = undefined;
     this.clearDisconnectRetryTimer();
 
-    if (this.client) {
-      this.client.destroy().catch(() => {});
+    this.queueTeardown('initialize_error', async () => {
+      if (!this.client || !this.isActiveClient(client)) {
+        return;
+      }
+
+      try {
+        await this.client.destroy();
+      } catch {}
+
       this.client = undefined;
-    }
+      this.clearChromiumProfileLock();
+    });
+
+    await this.waitForPendingTeardown();
 
     if (this.isChromiumProfileLockedError(message)) {
       this.clearChromiumProfileLock();
@@ -673,7 +737,9 @@ export class WwebjsConnectionService {
     });
   }
 
-  private createAndWaitClient(): Promise<IBaileysConnectionState> {
+  private createAndWaitClient(
+    attemptId: number
+  ): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve) => {
       this.pendingResolve = resolve;
 
@@ -732,6 +798,9 @@ export class WwebjsConnectionService {
       const client = new ClientCtor(clientOptions);
 
       this.client = client;
+      this.logConnectionEvent('client_initialized', {
+        attempt_id: attemptId,
+      });
 
       client.on('qr', async (qr: string) => {
         if (!this.isActiveClient(client)) {
@@ -760,6 +829,7 @@ export class WwebjsConnectionService {
         this.qrGenerationCount += 1;
         this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
         this.logConnectionEvent('qr_generated', {
+          attempt_id: attemptId,
           attempt: this.qrGenerationCount,
           max_attempts: MAX_QR_GENERATIONS,
           connection_type: this.typeConnection,
@@ -826,6 +896,7 @@ export class WwebjsConnectionService {
         void this.notifyWorkerStatusSafely(payload, 'ready');
         void this.logConnectionIpInLocal(client, proxy);
         this.logConnectionEvent('connected_ready', {
+          attempt_id: attemptId,
           worker_status_id: payload.worker_status_id,
           has_phone: Boolean(payload.phone),
         });
@@ -846,6 +917,7 @@ export class WwebjsConnectionService {
         this.healthCheckService.stop();
         this.setStatus(Status.disconnected, statusCode);
         this.logConnectionEvent('disconnected', {
+          attempt_id: attemptId,
           reason: reason || 'Wwebjs disconnected',
           mapped_code: statusCode,
           from_disconnect_restart: false,
@@ -943,6 +1015,7 @@ export class WwebjsConnectionService {
 
         this.setStatus(Status.disconnected, ECodeMessage.badSession);
         this.logConnectionEvent('auth_failure', {
+          attempt_id: attemptId,
           reason: 'auth_failure_event',
           mapped_code: ECodeMessage.badSession,
         });
@@ -957,9 +1030,19 @@ export class WwebjsConnectionService {
         void this.notifyWorkerStatusSafely(payload, 'auth_failure');
         this.pendingResolve?.(this.state());
         this.pendingResolve = undefined;
-        client.destroy().catch(() => {});
+        this.queueTeardown('auth_failure', async () => {
+          if (!this.client || !this.isActiveClient(client)) {
+            return;
+          }
+
+          try {
+            await this.client.destroy();
+          } catch {}
+
+          this.client = undefined;
+          this.clearChromiumProfileLock();
+        });
         this.incomingMessageService.unbind();
-        this.client = undefined;
         this.scheduleNextReconnectAttempt();
       });
 
@@ -973,7 +1056,7 @@ export class WwebjsConnectionService {
 
       client.initialize().catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
-        this.handleInitializeError(msg, client);
+        void this.handleInitializeError(msg, client, attemptId);
       });
     });
   }
@@ -1308,8 +1391,18 @@ export class WwebjsConnectionService {
     this.incomingMessageService.unbind();
 
     if (!skipDestroy && this.client) {
-      this.client.destroy().catch(() => {});
-      this.client = undefined;
+      this.queueTeardown('cancel_attempt', async () => {
+        if (!this.client) {
+          return;
+        }
+
+        try {
+          await this.client.destroy();
+        } catch {}
+
+        this.client = undefined;
+        this.clearChromiumProfileLock();
+      });
     }
   }
 

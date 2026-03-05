@@ -239,17 +239,9 @@ export class WwebjsHealthCheckService {
       return;
     }
 
-    try {
-      this.reconnectAction?.({
-        initial_connection: true,
-        requested_by_user: false,
-        from_disconnect_restart: true,
-      });
-    } catch (error) {
-      console.error('[WwebjsHealthCheck] Bootstrap reconnect trigger failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    console.log(
+      '[WwebjsHealthCheck] Restorable session found. Waiting connection service orchestrator.'
+    );
   }
 
   private hasBootstrapConfig(): boolean {

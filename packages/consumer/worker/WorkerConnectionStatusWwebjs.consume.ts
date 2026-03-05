@@ -66,6 +66,8 @@ export class WorkerConnectionStatusWwebjsConsume {
   private async handleOnline(
     data: StatusConnectionWorkerRequest
   ): Promise<void> {
+    this.stopConnectionRetry();
+
     if (this.wwebjsService.isConnected()) {
       await this.publishConnectedStatus();
       return;
@@ -100,7 +102,10 @@ export class WorkerConnectionStatusWwebjsConsume {
       return;
     }
 
-    this.startConnectionRetry(data);
+    await this.connectWithService(data, {
+      fromDisconnectRestart: false,
+      requestedByUser: true,
+    });
   }
 
   private handleRecreating(): void {
@@ -140,9 +145,57 @@ export class WorkerConnectionStatusWwebjsConsume {
         type: EBaileysConnectionType.qrcode,
       };
 
-      this.startConnectionRetry(defaultConnectionRequest, {
+      await this.connectWithService(defaultConnectionRequest, {
         fromDisconnectRestart: true,
+        requestedByUser: false,
       });
+    }
+  }
+
+  private async connectWithService(
+    data: StatusConnectionWorkerRequest,
+    options: {
+      fromDisconnectRestart: boolean;
+      requestedByUser: boolean;
+    }
+  ): Promise<void> {
+    this.logConnectionEvent('connection_connect_invoked', {
+      from_disconnect_restart: options.fromDisconnectRestart,
+      requested_by_user: options.requestedByUser,
+      connection_type: data.type,
+      has_phone_connection: Boolean(data.phone_connection),
+      delegated_retry_owner: 'connection_service',
+    });
+
+    try {
+      const state = await this.wwebjsService.connect({
+        initial_connection: true,
+        allow_restore: true,
+        force_new: options.fromDisconnectRestart,
+        requested_by_user: options.requestedByUser,
+        from_disconnect_restart: options.fromDisconnectRestart,
+        type: data.type as EBaileysConnectionType,
+        phone_connection: data.phone_connection,
+      });
+
+      this.logConnectionEvent('connection_connect_result', {
+        status: state?.status,
+        code: state?.code,
+        has_qr: Boolean(state?.qrcode),
+        delegated_retry_owner: 'connection_service',
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      this.logConnectionEvent(
+        'connection_connect_error',
+        {
+          reason: errorMessage,
+          delegated_retry_owner: 'connection_service',
+        },
+        'error'
+      );
     }
   }
 
