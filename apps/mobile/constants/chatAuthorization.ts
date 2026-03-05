@@ -97,6 +97,13 @@ export const FORWARD_TO_OUTPUT_CHATBOT_PERMISSIONS = [
   'forward_to_output_chatbot',
 ] as const;
 
+export const DISABLE_SEND_MESSAGE_ON_FINISH_ATTENDANCE_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'disable_send_message_on_finish_attendance',
+] as const;
+
 export type ChatAuthorizationContext = {
   permissions: string[];
   userId: string | null;
@@ -199,6 +206,15 @@ export function canToggleForwardToOutputChatbot(
   permissions: string[]
 ): boolean {
   return hasAnyPermission(permissions, FORWARD_TO_OUTPUT_CHATBOT_PERMISSIONS);
+}
+
+export function canDisableSendMessageOnFinishAttendance(
+  permissions: string[]
+): boolean {
+  return hasAnyPermission(
+    permissions,
+    DISABLE_SEND_MESSAGE_ON_FINISH_ATTENDANCE_PERMISSIONS
+  );
 }
 
 export function canViewOthersChats(permissions: string[]): boolean {

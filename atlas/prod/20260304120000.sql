@@ -1,0 +1,2 @@
+-- Insert permission action: disable send message on finish attendance
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES ('9cb0bcef-7139-4c4a-abdd-25f43c68907c', '019a930d-c6f6-766d-9c83-914b7faa4337', '019a930d-c6f6-766d-9c83-b9db2f0d1aae', 'disable_send_message_on_finish_attendance', 'Desabilitar mensagem ao finalizar atendimento', 'Permite desabilitar o envio de mensagem automática ao finalizar atendimento');

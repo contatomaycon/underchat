@@ -167,6 +167,7 @@ export interface WorkerConfigForChat {
   show_worker_name: boolean;
   show_attendee_name: boolean;
   show_protocol_in_chat: boolean;
+  send_message_on_finish_attendance_enabled: boolean;
   allow_attendance_only_online: boolean;
   simultaneous_attendance: number | null;
   simultaneous_attendance_enabled: boolean;

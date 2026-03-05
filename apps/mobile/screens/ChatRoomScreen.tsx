@@ -26,6 +26,7 @@ import {
   Easing,
   Alert,
   Keyboard,
+  Switch,
   type StyleProp,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -125,6 +126,7 @@ import {
   canCloseChatWithoutAttending,
   canPickQueueChat,
   canReopenChat,
+  canDisableSendMessageOnFinishAttendance,
   canToggleForwardToOutputChatbot,
 } from '../constants/chatAuthorization';
 import { useChatFilter } from '../context/ChatFilterContext';
@@ -4277,6 +4279,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [isHeaderPhoneDecrypted, setIsHeaderPhoneDecrypted] = useState(false);
   const [isHeaderPhoneLoading, setIsHeaderPhoneLoading] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [closeServiceModalVisible, setCloseServiceModalVisible] =
+    useState(false);
+  const [
+    closeServiceSendMessageOnFinishAttendance,
+    setCloseServiceSendMessageOnFinishAttendance,
+  ] = useState(true);
   const [protocolModalVisible, setProtocolModalVisible] = useState(false);
   const [labelModalVisible, setLabelModalVisible] = useState(false);
   const [isLoadingLabelModal, setIsLoadingLabelModal] = useState(false);
@@ -5604,6 +5612,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     !isHistoryReadonly &&
     (isInChatStatus ||
       (isQueueOrUraStatus && canCloseChatWithoutAttending(permissionList)));
+  const canDisableSendMessageOnFinishAttendanceAction =
+    canDisableSendMessageOnFinishAttendance(permissionList);
+  const shouldShowCloseServiceSendMessageToggle =
+    workerConfigForChat?.send_message_on_finish_attendance_enabled === true &&
+    canDisableSendMessageOnFinishAttendanceAction;
   const canTransferAction = !isHistoryReadonly && isInChatStatus;
   const canLabelAction = !isHistoryReadonly && isInChatStatus;
   const canToggleForwardToOutputAction =
@@ -5636,7 +5649,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const chatId = readNonEmptyString(chatInfo.chat_id);
     if (!chatId) return;
 
-    const result = await updateChatStatusDetailed(chatId, 'closed');
+    const result = await updateChatStatusDetailed(
+      chatId,
+      'closed',
+      shouldShowCloseServiceSendMessageToggle
+        ? {
+            send_message_on_finish_attendance:
+              closeServiceSendMessageOnFinishAttendance,
+          }
+        : undefined
+    );
     if (!result.ok) {
       Alert.alert(
         pt.error_title,
@@ -5645,25 +5667,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       return;
     }
 
+    setCloseServiceModalVisible(false);
     Alert.alert(pt.success_title, pt.close_service_success);
     navigation.goBack();
-  }, [chatInfo.chat_id, navigation]);
+  }, [
+    chatInfo.chat_id,
+    closeServiceSendMessageOnFinishAttendance,
+    navigation,
+    shouldShowCloseServiceSendMessageToggle,
+  ]);
 
   const handleCloseService = useCallback(() => {
-    Alert.alert(pt.close_service, pt.close_service_confirmation, [
-      {
-        text: pt.cancel,
-        style: 'cancel',
-      },
-      {
-        text: pt.close_service,
-        style: 'destructive',
-        onPress: () => {
-          void confirmCloseService();
-        },
-      },
-    ]);
-  }, [confirmCloseService]);
+    setCloseServiceSendMessageOnFinishAttendance(true);
+    setCloseServiceModalVisible(true);
+  }, []);
 
   const syncGlobalChatCounts = useCallback(async () => {
     const response = await searchChats({
@@ -10756,6 +10773,69 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       </Modal>
 
       <Modal
+        visible={closeServiceModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCloseServiceModalVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setCloseServiceModalVisible(false)}
+          />
+          <View style={[styles.bottomSheetCard, styles.annotationSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.close_service}</Text>
+              <Pressable onPress={() => setCloseServiceModalVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.closeServiceMessage}>
+              {pt.close_service_confirmation}
+            </Text>
+
+            {shouldShowCloseServiceSendMessageToggle ? (
+              <View style={styles.closeServiceToggleRow}>
+                <View style={styles.closeServiceToggleTextWrap}>
+                  <Text style={styles.closeServiceToggleLabel}>
+                    {pt.close_service_send_message_toggle_label}
+                  </Text>
+                  <Text style={styles.closeServiceToggleDescription}>
+                    {pt.close_service_send_message_toggle_description}
+                  </Text>
+                </View>
+                <Switch
+                  value={closeServiceSendMessageOnFinishAttendance}
+                  onValueChange={setCloseServiceSendMessageOnFinishAttendance}
+                  trackColor={{
+                    false: colors.grey400,
+                    true: colors.primary,
+                  }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.bottomSheetFooter}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => setCloseServiceModalVisible(false)}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.closeServiceConfirmBtn}
+                onPress={dismissKeyboardAnd(() => void confirmCloseService())}
+              >
+                <Text style={styles.primaryBtnText}>{pt.close_service}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={protocolModalVisible}
         transparent
         animationType="slide"
@@ -14132,6 +14212,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.onPrimary,
+  },
+  closeServiceConfirmBtn: {
+    minHeight: 40,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.error,
+  },
+  closeServiceMessage: {
+    fontSize: 14,
+    color: colors.onSurface,
+    lineHeight: 20,
+  },
+  closeServiceToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  closeServiceToggleTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  closeServiceToggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  closeServiceToggleDescription: {
+    marginTop: 2,
+    fontSize: 12,
+    color: colors.grey700,
+    lineHeight: 16,
   },
   modalLoadingWrap: {
     alignItems: 'center',

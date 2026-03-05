@@ -7,6 +7,7 @@ export const updateChatStatusParamsSchema = Type.Object({
 
 export const updateChatStatusBodySchema = Type.Object({
   status: Type.String({ enum: Object.values(EChatStatus) }),
+  send_message_on_finish_attendance: Type.Optional(Type.Boolean()),
 });
 
 export type UpdateChatStatusParams = Static<

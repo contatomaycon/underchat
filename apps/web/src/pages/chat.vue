@@ -29,7 +29,6 @@ import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
 import ChatProtocolBadgeDialog from '@/components/chat/ChatProtocolBadgeDialog.vue';
 import ChatQueueStatusBanner from '@/components/chat/ChatQueueStatusBanner.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
-import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
@@ -477,17 +476,26 @@ const handleReopenChat = async () => {
 };
 
 const isCloseServiceDialogOpen = ref(false);
+const closeServiceSendMessageOnFinishAttendance = ref(true);
 
 const handleCloseService = () => {
+  closeServiceSendMessageOnFinishAttendance.value = true;
   isCloseServiceDialogOpen.value = true;
 };
 
 const confirmCloseService = async () => {
   if (!chatStore.activeChat?.chat_id) return;
+  isCloseServiceDialogOpen.value = false;
 
   await chatStore.updateChatStatus(
     chatStore.activeChat.chat_id,
-    EChatStatus.closed
+    EChatStatus.closed,
+    shouldShowCloseServiceSendMessageToggle.value
+      ? {
+          send_message_on_finish_attendance:
+            closeServiceSendMessageOnFinishAttendance.value,
+        }
+      : undefined
   );
 };
 
@@ -1021,6 +1029,22 @@ const canToggleForwardToOutputChatbot = computed(() => {
     EChatPermissions.chat_group,
     EChatPermissions.forward_to_output_chatbot,
   ]);
+});
+
+const canDisableSendMessageOnFinishAttendance = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.disable_send_message_on_finish_attendance,
+  ]);
+});
+
+const shouldShowCloseServiceSendMessageToggle = computed(() => {
+  return (
+    workerConfigForChat.value?.send_message_on_finish_attendance_enabled ===
+      true && canDisableSendMessageOnFinishAttendance.value
+  );
 });
 
 const isForwardToOutputChatbotActive = computed(
@@ -6487,12 +6511,46 @@ onBeforeUnmount(() => {
     </VCard>
   </VDialog>
 
-  <VDialogHandler
-    v-model="isCloseServiceDialogOpen"
-    :title="t('close_service')"
-    :message="t('close_service_confirmation')"
-    @confirm="confirmCloseService"
-  />
+  <VDialog v-model="isCloseServiceDialogOpen" persistent class="v-dialog-sm">
+    <DialogCloseBtn @click="isCloseServiceDialogOpen = false" />
+
+    <VCard :title="t('close_service')">
+      <VCardText>{{ t('close_service_confirmation') }}</VCardText>
+
+      <VCardText v-if="shouldShowCloseServiceSendMessageToggle">
+        <div class="d-flex align-center justify-space-between gap-4">
+          <div>
+            <div class="text-body-1 font-weight-medium">
+              {{ t('close_service_send_message_toggle_title') }}
+            </div>
+            <div class="text-body-2 text-medium-emphasis">
+              {{ t('close_service_send_message_toggle_description') }}
+            </div>
+          </div>
+
+          <VSwitch
+            v-model="closeServiceSendMessageOnFinishAttendance"
+            color="primary"
+            hide-details
+            inset
+          />
+        </div>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end gap-3 flex-wrap">
+        <VBtn
+          color="secondary"
+          variant="tonal"
+          @click="isCloseServiceDialogOpen = false"
+        >
+          {{ t('cancel') }}
+        </VBtn>
+        <VBtn @click="confirmCloseService">
+          {{ t('confirm') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 
   <VDialog v-model="isTransferModalOpen" max-width="600">
     <DialogCloseBtn @click="isTransferModalOpen = false" />

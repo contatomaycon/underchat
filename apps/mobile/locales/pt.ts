@@ -292,6 +292,10 @@ export const pt = {
   attend_service: 'Atender',
   close_service: 'Encerrar atendimento',
   close_service_confirmation: 'Deseja realmente encerrar este atendimento?',
+  close_service_send_message_toggle_label:
+    'Enviar mensagem ao finalizar atendimento',
+  close_service_send_message_toggle_description:
+    'Desative para encerrar sem enviar a mensagem automática de finalização.',
   close_service_success: 'Atendimento encerrado com sucesso.',
   reply: 'Responder',
   replying_to: 'Respondendo mensagem',

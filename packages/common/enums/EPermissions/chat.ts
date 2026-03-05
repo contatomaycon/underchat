@@ -8,6 +8,7 @@ export enum EChatPermissions {
   view_chatbot_messages = 'view_chatbot_messages',
   close_chat_without_attending = 'close_chat_without_attending',
   reopen_chat = 'reopen_chat',
+  disable_send_message_on_finish_attendance = 'disable_send_message_on_finish_attendance',
   attendance_history = 'attendance_history',
   forward_to_output_chatbot = 'forward_to_output_chatbot',
   generate_message_with_ai = 'generate_message_with_ai',

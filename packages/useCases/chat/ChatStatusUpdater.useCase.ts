@@ -352,6 +352,19 @@ export class ChatStatusUpdaterUseCase {
     return hasRequiredPermission(actions, permissions);
   }
 
+  private canDisableSendMessageOnFinishAttendance(
+    actions: IJwtGroupHierarchy[]
+  ): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.disable_send_message_on_finish_attendance,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   private async validateAccess(
     chat: IChat,
     userId: string,
@@ -563,6 +576,15 @@ export class ChatStatusUpdaterUseCase {
       user = await this.prepareUserForInChat(userId);
     }
 
+    const requestedDisableSendMessageOnFinishAttendance =
+      body.send_message_on_finish_attendance === false;
+    const canDisableSendMessageOnFinishAttendance =
+      this.canDisableSendMessageOnFinishAttendance(actions);
+    const shouldSendMessageOnFinishAttendance = !(
+      requestedDisableSendMessageOnFinishAttendance &&
+      canDisableSendMessageOnFinishAttendance
+    );
+
     const updatedChat = this.buildUpdatedChat(
       chat,
       finalStatus,
@@ -604,7 +626,10 @@ export class ChatStatusUpdaterUseCase {
       chat
     );
 
-    if (finalStatus === EChatStatus.closed) {
+    if (
+      finalStatus === EChatStatus.closed &&
+      shouldSendMessageOnFinishAttendance
+    ) {
       const closedStatusResult = await this.handleClosedStatus(
         t,
         accountId,

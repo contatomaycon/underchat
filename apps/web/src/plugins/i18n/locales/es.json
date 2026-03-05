@@ -665,6 +665,8 @@
   "chat_status_update_error": "Error al actualizar el estado del chat. Por favor, inténtalo de nuevo.",
   "close_service": "Cerrar Servicio",
   "close_service_confirmation": "¿Está seguro de que desea cerrar este servicio?",
+  "close_service_send_message_toggle_title": "Enviar mensaje al finalizar atención",
+  "close_service_send_message_toggle_description": "Desactive para cerrar sin enviar el mensaje automático de finalización.",
   "chat_closed_successfully": "Servicio cerrado con éxito",
   "is_typing": "está escribiendo...",
   "is_recording_audio": "está grabando audio...",

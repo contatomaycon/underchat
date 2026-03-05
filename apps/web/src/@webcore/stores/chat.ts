@@ -3404,7 +3404,13 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async updateChatStatus(chatId: string, status: string): Promise<boolean> {
+    async updateChatStatus(
+      chatId: string,
+      status: string,
+      options?: {
+        send_message_on_finish_attendance?: boolean;
+      }
+    ): Promise<boolean> {
       try {
         this.loading = true;
         this.pendingStatusUpdateChatId = chatId;
@@ -3417,7 +3423,11 @@ export const useChatStore = defineStore('chat', {
 
         const response = await axios.patch<IApiResponse<IChat>>(
           `/chat/${chatId}/status`,
-          { status }
+          {
+            status,
+            send_message_on_finish_attendance:
+              options?.send_message_on_finish_attendance,
+          }
         );
 
         const data = response?.data;

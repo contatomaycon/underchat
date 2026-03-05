@@ -109,6 +109,11 @@ export class WorkerConfigForChatViewerRepository {
       )
         ? true
         : false,
+      send_message_on_finish_attendance_enabled: configMap.has(
+        EWorkerConfigType.send_message_on_finish_attendance
+      )
+        ? true
+        : false,
       allow_attendance_only_online: configMap.has(
         EWorkerConfigType.allow_attendance_only_online
       )

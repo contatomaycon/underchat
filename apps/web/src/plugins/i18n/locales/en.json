@@ -665,6 +665,8 @@
   "chat_status_update_error": "Error updating chat status. Please try again.",
   "close_service": "Close Service",
   "close_service_confirmation": "Are you sure you want to close this service?",
+  "close_service_send_message_toggle_title": "Send message when finishing attendance",
+  "close_service_send_message_toggle_description": "Turn off to close without sending the automatic finish message.",
   "chat_closed_successfully": "Service closed successfully",
   "is_typing": "is typing...",
   "is_recording_audio": "is recording audio...",

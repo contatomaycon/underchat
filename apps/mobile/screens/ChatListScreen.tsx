@@ -11,6 +11,7 @@ import {
   Modal,
   Animated,
   Platform,
+  Switch,
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +27,7 @@ import {
   searchChats,
   clearChatSummary,
   updateChatStatus,
+  viewWorkerConfigForChat,
   transferChat,
   listTransferOptions,
   listTransferUsers,
@@ -49,11 +51,15 @@ import {
   canViewChat,
   canListAllChatsWithoutSectorLimit,
   canCloseChatWithoutAttending,
+  canDisableSendMessageOnFinishAttendance,
 } from '../constants/chatAuthorization';
-import { AdvancedFilterModal } from '../components/AdvancedFilterModal';
-import type { AdvancedFilterValues } from '../components/AdvancedFilterModal';
+import {
+  AdvancedFilterModal,
+  type AdvancedFilterValues,
+} from '../components/AdvancedFilterModal';
 import { UserSidebar } from '../components/UserSidebar';
 import { AppAvatar } from '../components/AppAvatar';
+import type { WorkerConfigForChat } from '../types/contact';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -576,6 +582,20 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [isTransferring, setIsTransferring] = useState(false);
   const [labelInfoModalVisible, setLabelInfoModalVisible] = useState(false);
   const [labelInfoNames, setLabelInfoNames] = useState<string[]>([]);
+  const [closeServiceModalVisible, setCloseServiceModalVisible] =
+    useState(false);
+  const [closeServiceTargetChat, setCloseServiceTargetChat] =
+    useState<ListChatsResult | null>(null);
+  const [closeServiceWorkerConfig, setCloseServiceWorkerConfig] =
+    useState<WorkerConfigForChat | null>(null);
+  const [
+    isLoadingCloseServiceWorkerConfig,
+    setIsLoadingCloseServiceWorkerConfig,
+  ] = useState(false);
+  const [
+    closeServiceSendMessageOnFinishAttendance,
+    setCloseServiceSendMessageOnFinishAttendance,
+  ] = useState(true);
   const locallyClearedSummaryChatIdsRef = useRef<Set<string>>(new Set());
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -583,6 +603,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   const loadingRef = useRef(false);
   const isLoadingMoreRef = useRef(false);
   const openedSwipeableRef = useRef<Swipeable | null>(null);
+  const closeServiceConfigRequestRef = useRef(0);
   const profileSidebarReopenTimerRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
@@ -1510,36 +1531,86 @@ export function ChatListScreen({ route, navigation }: Props) {
     transferType,
   ]);
 
-  const handleCloseChat = useCallback(
-    (chat: ListChatsResult) => {
-      openedSwipeableRef.current?.close();
-      Alert.alert(pt.close_service, pt.close_service_confirmation, [
-        {
-          text: pt.cancel,
-          style: 'cancel',
-        },
-        {
-          text: pt.close_service,
-          style: 'destructive',
-          onPress: () => {
-            updateChatStatus(chat.chat_id, 'closed')
-              .then((ok) => {
-                if (!ok) {
-                  Alert.alert(pt.error_title, pt.chat_status_update_error);
-                  return;
-                }
-                Alert.alert(pt.success_title, pt.close_service_success);
-                void load();
-              })
-              .catch(() => {
-                Alert.alert(pt.error_title, pt.chat_status_update_error);
-              });
-          },
-        },
-      ]);
-    },
-    [load]
-  );
+  const canDisableSendMessageOnFinishAttendanceAction =
+    canDisableSendMessageOnFinishAttendance(socketPermissions);
+  const shouldShowCloseServiceSendMessageToggle =
+    closeServiceWorkerConfig?.send_message_on_finish_attendance_enabled ===
+      true && canDisableSendMessageOnFinishAttendanceAction;
+
+  const closeCloseServiceModal = useCallback(() => {
+    closeServiceConfigRequestRef.current += 1;
+    setCloseServiceModalVisible(false);
+    setCloseServiceTargetChat(null);
+    setCloseServiceWorkerConfig(null);
+    setIsLoadingCloseServiceWorkerConfig(false);
+    setCloseServiceSendMessageOnFinishAttendance(true);
+  }, []);
+
+  const confirmCloseChat = useCallback(async () => {
+    const chatId = closeServiceTargetChat?.chat_id;
+    if (!chatId) return;
+
+    try {
+      const ok = await updateChatStatus(
+        chatId,
+        'closed',
+        shouldShowCloseServiceSendMessageToggle
+          ? {
+              send_message_on_finish_attendance:
+                closeServiceSendMessageOnFinishAttendance,
+            }
+          : undefined
+      );
+      if (!ok) {
+        Alert.alert(pt.error_title, pt.chat_status_update_error);
+        return;
+      }
+
+      closeCloseServiceModal();
+      Alert.alert(pt.success_title, pt.close_service_success);
+      void load();
+    } catch {
+      Alert.alert(pt.error_title, pt.chat_status_update_error);
+    }
+  }, [
+    closeCloseServiceModal,
+    closeServiceSendMessageOnFinishAttendance,
+    closeServiceTargetChat?.chat_id,
+    load,
+    shouldShowCloseServiceSendMessageToggle,
+  ]);
+
+  const handleCloseChat = useCallback((chat: ListChatsResult) => {
+    openedSwipeableRef.current?.close();
+    setCloseServiceSendMessageOnFinishAttendance(true);
+    setCloseServiceTargetChat(chat);
+    setCloseServiceWorkerConfig(null);
+    setCloseServiceModalVisible(true);
+
+    const workerId = readString(chat.worker?.id);
+    if (!workerId) {
+      setIsLoadingCloseServiceWorkerConfig(false);
+      return;
+    }
+
+    const requestId = closeServiceConfigRequestRef.current + 1;
+    closeServiceConfigRequestRef.current = requestId;
+    setIsLoadingCloseServiceWorkerConfig(true);
+
+    viewWorkerConfigForChat(workerId)
+      .then((config) => {
+        if (closeServiceConfigRequestRef.current !== requestId) return;
+        setCloseServiceWorkerConfig(config);
+      })
+      .catch(() => {
+        if (closeServiceConfigRequestRef.current !== requestId) return;
+        setCloseServiceWorkerConfig(null);
+      })
+      .finally(() => {
+        if (closeServiceConfigRequestRef.current !== requestId) return;
+        setIsLoadingCloseServiceWorkerConfig(false);
+      });
+  }, []);
 
   const handleAttendQueueChat = useCallback(
     async (chat: ListChatsResult) => {
@@ -1866,6 +1937,76 @@ export function ChatListScreen({ route, navigation }: Props) {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={closeServiceModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeCloseServiceModal}
+      >
+        <View style={styles.transferOverlay}>
+          <Pressable
+            style={styles.transferBackdrop}
+            onPress={closeCloseServiceModal}
+          />
+          <View style={styles.closeServiceCard}>
+            <View style={styles.transferHeaderRow}>
+              <Text style={styles.transferTitle}>{pt.close_service}</Text>
+              <Pressable onPress={closeCloseServiceModal} hitSlop={12}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.closeServiceMessage}>
+              {pt.close_service_confirmation}
+            </Text>
+
+            {isLoadingCloseServiceWorkerConfig ? (
+              <View style={styles.transferLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : shouldShowCloseServiceSendMessageToggle ? (
+              <View style={styles.closeServiceToggleRow}>
+                <View style={styles.closeServiceToggleTextWrap}>
+                  <Text style={styles.closeServiceToggleLabel}>
+                    {pt.close_service_send_message_toggle_label}
+                  </Text>
+                  <Text style={styles.closeServiceToggleDescription}>
+                    {pt.close_service_send_message_toggle_description}
+                  </Text>
+                </View>
+                <Switch
+                  value={closeServiceSendMessageOnFinishAttendance}
+                  onValueChange={setCloseServiceSendMessageOnFinishAttendance}
+                  trackColor={{
+                    false: colors.grey400,
+                    true: colors.primary,
+                  }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.transferActionsRow}>
+              <Pressable
+                style={styles.transferCancelBtn}
+                onPress={closeCloseServiceModal}
+              >
+                <Text style={styles.transferCancelText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.closeServiceConfirmBtn}
+                onPress={dismissKeyboardAnd(() => void confirmCloseChat())}
+              >
+                <Text style={styles.transferSubmitText}>
+                  {pt.close_service}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={transferModalVisible}
         transparent
@@ -2762,6 +2903,48 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     maxHeight: '88%',
+  },
+  closeServiceCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+  },
+  closeServiceMessage: {
+    fontSize: 14,
+    color: colors.onSurface,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  closeServiceToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 8,
+  },
+  closeServiceToggleTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  closeServiceToggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  closeServiceToggleDescription: {
+    marginTop: 2,
+    fontSize: 12,
+    color: colors.grey700,
+    lineHeight: 16,
+  },
+  closeServiceConfirmBtn: {
+    borderRadius: 8,
+    minHeight: 40,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.error,
+    minWidth: 104,
   },
   transferPickerCard: {
     backgroundColor: colors.surface,
