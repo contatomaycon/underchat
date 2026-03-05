@@ -248,6 +248,23 @@ const shouldApplyPerFilterSort = computed(
   () => !hasAppliedAdvancedFilters.value && !hasSearchTerm.value
 );
 
+const isChatForCurrentUser = (
+  chat: ListChatsResult,
+  userId: string
+): boolean => {
+  if (chat.user?.id === userId) {
+    return true;
+  }
+
+  if (!Array.isArray(chat.secondary_users)) {
+    return false;
+  }
+
+  return chat.secondary_users.some(
+    (secondaryUser) => secondaryUser?.id === userId
+  );
+};
+
 const filteredInChat = computed(() => {
   if (activeFilter.value === 'in_chat') {
     if (!shouldApplyPerFilterSort.value) {
@@ -329,7 +346,9 @@ const filteredMyChats = computed(() => {
         ...chatStore.listScheduled,
         ...chatStore.listClosed,
       ];
-      const myChats = allChats.filter((chat) => chat.user?.id === userId);
+      const myChats = allChats.filter((chat) =>
+        isChatForCurrentUser(chat, userId)
+      );
       const sortField = sortMyChatsField.value ?? 'summary.last_message';
       const sortOrder = sortMyChatsOrder.value ?? 'desc';
       if (!shouldApplyPerFilterSort.value) {
@@ -339,7 +358,9 @@ const filteredMyChats = computed(() => {
     }
 
     const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
-    const myChats = allChats.filter((chat) => chat.user?.id === userId);
+    const myChats = allChats.filter((chat) =>
+      isChatForCurrentUser(chat, userId)
+    );
     const sortField = sortMyChatsField.value ?? 'summary.last_message';
     const sortOrder = sortMyChatsOrder.value ?? 'desc';
     if (!shouldApplyPerFilterSort.value) {
@@ -496,7 +517,7 @@ const myChatsCount = computed(() => {
       ...chatStore.listScheduled,
       ...chatStore.listClosed,
     ];
-    return allChats.filter((chat) => chat.user?.id === userId).length;
+    return allChats.filter((chat) => isChatForCurrentUser(chat, userId)).length;
   }
 
   if (chatStore.myChatsTotal !== null) {
@@ -504,7 +525,7 @@ const myChatsCount = computed(() => {
   }
 
   const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
-  return allChats.filter((chat) => chat.user?.id === userId).length;
+  return allChats.filter((chat) => isChatForCurrentUser(chat, userId)).length;
 });
 
 const chatbotCount = computed(() => {

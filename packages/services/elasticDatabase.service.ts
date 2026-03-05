@@ -1428,14 +1428,83 @@ export class ElasticDatabaseService {
   ): Promise<Record<string, unknown>> => {
     try {
       const mappingResponse = await this.client.indices.getMapping({ index });
-      const indexMappings = this.asRecord(mappingResponse[index]);
-      const mappings = this.asRecord(indexMappings?.mappings);
+      let mergedProperties: Record<string, unknown> = {};
 
-      return this.getProperties(mappings);
+      for (const indexMapping of Object.values(mappingResponse)) {
+        const indexMappingsRecord = this.asRecord(indexMapping);
+        const mappings = this.asRecord(indexMappingsRecord?.mappings);
+        const properties = this.getProperties(mappings);
+
+        mergedProperties = this.mergeProperties(mergedProperties, properties);
+      }
+
+      return mergedProperties;
     } catch {
       return {};
     }
   };
+
+  private mergeFieldDefinitions(
+    currentField: unknown,
+    incomingField: unknown
+  ): unknown {
+    const currentRecord = this.asRecord(currentField);
+    const incomingRecord = this.asRecord(incomingField);
+
+    if (!currentRecord || !incomingRecord) {
+      return currentField ?? incomingField;
+    }
+
+    const mergedField: Record<string, unknown> = {
+      ...currentRecord,
+    };
+
+    const currentProperties = this.getProperties(currentRecord);
+    const incomingProperties = this.getProperties(incomingRecord);
+    if (Object.keys(incomingProperties).length > 0) {
+      mergedField.properties = this.mergeProperties(
+        currentProperties,
+        incomingProperties
+      );
+    }
+
+    const currentSubFields = this.getSubFields(currentRecord);
+    const incomingSubFields = this.getSubFields(incomingRecord);
+    if (Object.keys(incomingSubFields).length > 0) {
+      mergedField.fields = this.mergeProperties(
+        currentSubFields,
+        incomingSubFields
+      );
+    }
+
+    return mergedField;
+  }
+
+  private mergeProperties(
+    currentProperties: Record<string, unknown>,
+    incomingProperties: Record<string, unknown>
+  ): Record<string, unknown> {
+    const mergedProperties: Record<string, unknown> = {
+      ...currentProperties,
+    };
+
+    for (const [fieldName, incomingField] of Object.entries(
+      incomingProperties
+    )) {
+      const currentField = mergedProperties[fieldName];
+      if (!currentField) {
+        mergedProperties[fieldName] = incomingField;
+        continue;
+      }
+
+      mergedProperties[fieldName] = this.mergeFieldDefinitions(
+        currentField,
+        incomingField
+      );
+    }
+
+    return mergedProperties;
+  }
 
   private buildAdditiveFieldMapping(
     desiredField: unknown,
@@ -1520,10 +1589,16 @@ export class ElasticDatabaseService {
 
   private isMappingConflictError(error: unknown): boolean {
     const message = String(error);
+    const hasTypeChangeConflict = message.includes(
+      'cannot be changed from type'
+    );
+    const hasNestedMergeConflict =
+      message.includes("can't merge a non-nested mapping") ||
+      message.includes("can't merge a nested mapping");
 
     return (
       message.includes('illegal_argument_exception') &&
-      message.includes('cannot be changed from type')
+      (hasTypeChangeConflict || hasNestedMergeConflict)
     );
   }
 
