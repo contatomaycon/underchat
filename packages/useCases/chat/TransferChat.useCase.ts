@@ -425,6 +425,10 @@ export class TransferChatUseCase {
       throw new Error(t('chat_only_primary_can_transfer'));
     }
 
+    if (body.user_id && chat.user?.id && body.user_id === chat.user.id) {
+      throw new Error(t('chat_cannot_transfer_to_current_primary'));
+    }
+
     const targetWorker = await this.resolveTargetWorker(
       t,
       accountId,

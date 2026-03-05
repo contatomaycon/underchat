@@ -661,6 +661,9 @@ const isTransferring = ref(false);
 const transferAnnotationText = ref('');
 const transferKeepInChat = ref(false);
 const isTransferAnnotationEmojiOpen = ref(false);
+const activePrimaryUserIdForTransfer = computed(
+  () => chatStore.activeChat?.user?.id ?? null
+);
 
 const isLabelModalOpen = ref(false);
 
@@ -814,12 +817,14 @@ const loadTransferUsers = async (channelId?: string | null) => {
   try {
     const chatId = chatStore.activeChat?.chat_id;
     const users = await chatStore.listTransferUsers(chatId, channelId);
-    transferUsers.value = users.map((user) => ({
-      value: user.id,
-      title: user.name,
-      photo: user.photo || null,
-      status: user.status || null,
-    }));
+    transferUsers.value = users
+      .filter((user) => user.id !== activePrimaryUserIdForTransfer.value)
+      .map((user) => ({
+        value: user.id,
+        title: user.name,
+        photo: user.photo || null,
+        status: user.status || null,
+      }));
   } catch (error) {
     transferUsers.value = [];
   } finally {
@@ -861,12 +866,14 @@ const loadTransferSectorUsers = async (
       chatId,
       channelId
     );
-    transferSectorUsers.value = users.map((user) => ({
-      value: user.id,
-      title: user.name,
-      photo: user.photo || null,
-      status: user.status,
-    }));
+    transferSectorUsers.value = users
+      .filter((user) => user.id !== activePrimaryUserIdForTransfer.value)
+      .map((user) => ({
+        value: user.id,
+        title: user.name,
+        photo: user.photo || null,
+        status: user.status,
+      }));
   } catch (error) {
     transferSectorUsers.value = [];
   } finally {
@@ -979,6 +986,14 @@ const handleTransfer = async () => {
         : transferType.value === 'sector'
           ? selectedTransferSectorUser.value || null
           : null;
+    if (userId && userId === activePrimaryUserIdForTransfer.value) {
+      chatStore.showSnackbar(
+        t('cannot_transfer_to_current_primary'),
+        EColor.error
+      );
+      return;
+    }
+
     const sectorId =
       transferType.value === 'sector' ? selectedTransferSector.value : null;
     const workerId = selectedTransferChannel.value;

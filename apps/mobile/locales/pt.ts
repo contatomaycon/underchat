@@ -304,6 +304,8 @@ export const pt = {
     'Entre na conversa para responder este atendimento.',
   only_primary_can_transfer:
     'Somente o atendente primário pode transferir este atendimento.',
+  cannot_transfer_to_current_primary:
+    'Não é possível transferir para o atendente primário atual.',
   only_primary_can_close:
     'Somente o atendente primário pode encerrar este atendimento.',
   attend_service: 'Atender',

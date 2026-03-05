@@ -201,6 +201,7 @@
   "chat_not_found": "Chat não encontrado!",
   "chat_access_denied": "Acesso negado ao chat!",
   "chat_only_primary_can_transfer": "Somente o atendente primário pode transferir o atendimento!",
+  "chat_cannot_transfer_to_current_primary": "Não é possível transferir para o atendente primário atual!",
   "chat_only_primary_can_close": "Somente o atendente primário pode encerrar o atendimento!",
   "chat_join_required": "Entre na conversa para responder este atendimento!",
   "chat_join_only_in_chat": "Só é possível entrar na conversa em atendimentos em andamento!",

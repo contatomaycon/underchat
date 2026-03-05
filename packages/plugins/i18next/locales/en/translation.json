@@ -202,6 +202,7 @@
   "chat_not_found": "Chat not found!",
   "chat_access_denied": "Access denied to chat!",
   "chat_only_primary_can_transfer": "Only the primary attendant can transfer this chat!",
+  "chat_cannot_transfer_to_current_primary": "You cannot transfer to the current primary attendant!",
   "chat_only_primary_can_close": "Only the primary attendant can close this chat!",
   "chat_join_required": "Join the conversation before replying to this chat!",
   "chat_join_only_in_chat": "You can only join chats that are currently in progress!",

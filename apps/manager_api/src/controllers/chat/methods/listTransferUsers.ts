@@ -19,6 +19,7 @@ export const listTransferUsers = async (
   try {
     const response = await chatTransferUsersListerUseCase.execute(
       tokenJwtData.account_id,
+      tokenJwtData.user_id,
       request.query.chat_id,
       request.query.channel_id
     );

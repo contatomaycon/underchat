@@ -5,6 +5,7 @@ import {
   apiPatchWithMessage,
   apiPatchFormWithMessage,
   apiPost,
+  apiPostWithMessage,
   apiPostForm,
   apiPostFormWithMessage,
   apiPut,
@@ -557,8 +558,10 @@ export async function updateChatStatusDetailed(
 export async function transferChat(
   chatId: string,
   payload: TransferChatPayload
-): Promise<boolean> {
-  if (!chatId || chatId.trim().length === 0) return false;
+): Promise<{ ok: boolean; message: string | null }> {
+  if (!chatId || chatId.trim().length === 0) {
+    return { ok: false, message: null };
+  }
 
   const body: TransferChatPayload = {
     worker_id: payload.worker_id,
@@ -568,12 +571,15 @@ export async function transferChat(
     keep_in_chat: payload.keep_in_chat === true,
   };
 
-  const res = await apiPost<{ chat_id: string; status: boolean }>(
+  const res = await apiPostWithMessage<{ chat_id: string; status: boolean }>(
     `/chat/${chatId}/transfer`,
     body
   );
 
-  return !!res?.status;
+  return {
+    ok: res?.status === true,
+    message: res?.message ?? null,
+  };
 }
 
 export async function joinChat(

@@ -35,6 +35,25 @@ export const transferChat = async (
       data: response,
     });
   } catch (error) {
+    if (error instanceof Error) {
+      if (
+        error.message === t('chat_only_primary_can_transfer') ||
+        error.message === t('chat_access_denied')
+      ) {
+        return sendResponse(reply, {
+          message: error.message,
+          httpStatusCode: EHTTPStatusCode.forbidden,
+        });
+      }
+
+      if (error.message === t('chat_cannot_transfer_to_current_primary')) {
+        return sendResponse(reply, {
+          message: error.message,
+          httpStatusCode: EHTTPStatusCode.bad_request,
+        });
+      }
+    }
+
     handleControllerError(error, reply, t);
   }
 };

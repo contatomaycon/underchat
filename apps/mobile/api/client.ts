@@ -203,6 +203,35 @@ export async function apiPost<T>(
   return parseJsonSafe<T>(res);
 }
 
+export async function apiPostWithMessage<T>(
+  path: string,
+  body: unknown
+): Promise<ApiDetailedResponse<T> | null> {
+  const headers = await buildAuthHeaders('application/json');
+  if (!headers) return null;
+
+  const url = path.startsWith('http')
+    ? path
+    : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  if (await handleAttendanceBlocked(res)) {
+    return null;
+  }
+
+  return parseJsonDetailed<T>(res);
+}
+
 export async function apiPostForm<T>(
   path: string,
   body: FormData

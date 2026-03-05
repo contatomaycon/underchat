@@ -17,6 +17,7 @@ export class ChatTransferSectorUsersListerUseCase {
 
   async execute(
     accountId: string,
+    actorUserId: string,
     sectorId: string,
     chatId?: string,
     channelId?: string
@@ -26,15 +27,25 @@ export class ChatTransferSectorUsersListerUseCase {
       sectorId
     );
 
+    const chat = chatId
+      ? await this.chatService.findChatByChatId(accountId, chatId)
+      : null;
+
     let targetChannelId = channelId;
 
-    if (!targetChannelId && chatId) {
-      const chat = await this.chatService.findChatByChatId(accountId, chatId);
+    if (!targetChannelId) {
       targetChannelId = chat?.worker?.id;
     }
 
+    const shouldExcludeCurrentPrimary =
+      !!chat?.user?.id && chat.user.id === actorUserId;
+
     if (!targetChannelId) {
-      return sectorUsers;
+      if (!shouldExcludeCurrentPrimary) {
+        return sectorUsers;
+      }
+
+      return sectorUsers.filter((user) => user.id !== chat?.user?.id);
     }
 
     const userIdsWithAccess =
@@ -48,6 +59,12 @@ export class ChatTransferSectorUsersListerUseCase {
     }
 
     const allowedSet = new Set(userIdsWithAccess);
-    return sectorUsers.filter((u) => allowedSet.has(u.id));
+    const allowedUsers = sectorUsers.filter((user) => allowedSet.has(user.id));
+
+    if (!shouldExcludeCurrentPrimary) {
+      return allowedUsers;
+    }
+
+    return allowedUsers.filter((user) => user.id !== chat?.user?.id);
   }
 }

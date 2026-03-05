@@ -202,6 +202,7 @@
   "chat_not_found": "¡Chat no encontrado!",
   "chat_access_denied": "¡Acceso denegado al chat!",
   "chat_only_primary_can_transfer": "¡Solo el atendente primario puede transferir este chat!",
+  "chat_cannot_transfer_to_current_primary": "¡No se puede transferir al atendente primario actual!",
   "chat_only_primary_can_close": "¡Solo el atendente primario puede cerrar este chat!",
   "chat_join_required": "¡Únase a la conversación antes de responder este chat!",
   "chat_join_only_in_chat": "¡Solo puede unirse a chats que están en curso!",

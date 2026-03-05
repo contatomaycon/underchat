@@ -1361,7 +1361,9 @@ export function ChatListScreen({ route, navigation }: Props) {
         });
 
         setTransferChannels(channels);
-        setTransferUsers(users);
+        setTransferUsers(
+          users.filter((user) => user.id !== (chat.user?.id ?? null))
+        );
         setTransferSectors(sectors);
       } catch {
         Alert.alert(pt.error_title, pt.chat_transfer_error);
@@ -1382,7 +1384,11 @@ export function ChatListScreen({ route, navigation }: Props) {
 
     listTransferUsers(chatId, selectedTransferChannelId ?? undefined)
       .then((users) => {
-        setTransferUsers(users);
+        setTransferUsers(
+          users.filter(
+            (user) => user.id !== (transferTargetChat?.user?.id ?? null)
+          )
+        );
       })
       .catch(() => {
         setTransferUsers([]);
@@ -1391,6 +1397,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     selectedTransferChannelId,
     transferModalVisible,
     transferTargetChat?.chat_id,
+    transferTargetChat?.user?.id,
   ]);
 
   useEffect(() => {
@@ -1413,7 +1420,11 @@ export function ChatListScreen({ route, navigation }: Props) {
       selectedTransferChannelId ?? undefined
     )
       .then((users) => {
-        setTransferSectorUsers(users);
+        setTransferSectorUsers(
+          users.filter(
+            (user) => user.id !== (transferTargetChat?.user?.id ?? null)
+          )
+        );
       })
       .catch(() => {
         setTransferSectorUsers([]);
@@ -1426,6 +1437,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     selectedTransferSectorId,
     transferModalVisible,
     transferTargetChat?.chat_id,
+    transferTargetChat?.user?.id,
     transferType,
   ]);
 
@@ -1530,25 +1542,39 @@ export function ChatListScreen({ route, navigation }: Props) {
       return;
     }
 
+    const targetUserId =
+      transferType === 'user'
+        ? selectedTransferUserId
+        : transferType === 'sector'
+          ? selectedTransferSectorUserId
+          : null;
+    const currentPrimaryUserId = transferTargetChat?.user?.id ?? null;
+    if (
+      targetUserId &&
+      currentPrimaryUserId &&
+      targetUserId === currentPrimaryUserId
+    ) {
+      Alert.alert(pt.warning_title, pt.cannot_transfer_to_current_primary);
+      return;
+    }
+
     const payload: TransferChatPayload = {
       worker_id: selectedTransferChannelId,
-      user_id:
-        transferType === 'user'
-          ? selectedTransferUserId
-          : transferType === 'sector'
-            ? selectedTransferSectorUserId
-            : null,
+      user_id: targetUserId,
       sector_id: transferType === 'sector' ? selectedTransferSectorId : null,
       annotation: transferAnnotation.trim() || null,
       keep_in_chat: transferKeepInChat,
     };
 
     setIsTransferring(true);
-    const ok = await transferChat(chatId, payload);
+    const transferResult = await transferChat(chatId, payload);
     setIsTransferring(false);
 
-    if (!ok) {
-      Alert.alert(pt.error_title, pt.chat_transfer_error);
+    if (!transferResult.ok) {
+      Alert.alert(
+        pt.error_title,
+        transferResult.message ?? pt.chat_transfer_error
+      );
       return;
     }
 
