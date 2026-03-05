@@ -754,12 +754,8 @@ export class MessageUpsertConsume {
       return true;
     }
 
-    const userId = data.message?.key?.fromMe
-      ? getChat.worker.id
-      : (getChat.user?.id ?? '');
-    const userName = data.message?.key?.fromMe
-      ? getChat.worker.name
-      : (getChat.user?.name ?? '');
+    const userId = getChat.user?.id ?? '';
+    const userName = getChat.user?.name ?? '';
     const emoji = reactionMsg.text ?? '';
 
     const existingReactions = targetMessage.content?.reactions || [];

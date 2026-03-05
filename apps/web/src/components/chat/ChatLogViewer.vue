@@ -655,23 +655,33 @@ const shouldFormatMessage = (message: ListMessageResult): boolean => {
   );
 };
 
+const DEFAULT_AVATAR = '/images/svg/avatar-default.svg';
+
+const resolveNonEmptyPhoto = (photo?: string | null): string | null => {
+  if (typeof photo !== 'string') return null;
+  const normalizedPhoto = photo.trim();
+  return normalizedPhoto.length > 0 ? normalizedPhoto : null;
+};
+
 const resolvePhoto = (message: ListMessageResult): string => {
   if (isTypeUser(message)) {
-    if (message.content?.contact?.photo) {
-      return message.content.contact.photo;
-    }
-    if (props.clientPhoto) {
-      return props.clientPhoto;
-    }
-    return '/images/svg/avatar-default.svg';
+    const contactPhoto = resolveNonEmptyPhoto(message.content?.contact?.photo);
+    if (contactPhoto) return contactPhoto;
+
+    const clientPhoto = resolveNonEmptyPhoto(props.clientPhoto);
+    if (clientPhoto) return clientPhoto;
+
+    return DEFAULT_AVATAR;
   }
-  if (message.user?.photo) return message.user.photo;
-  return '/images/svg/avatar-default.svg';
+  const attendantPhoto = resolveNonEmptyPhoto(message.user?.photo);
+  if (attendantPhoto) return attendantPhoto;
+
+  return DEFAULT_AVATAR;
 };
 
 const isPhotoExist = (message: ListMessageResult): boolean => {
   const photo = resolvePhoto(message);
-  return Boolean(photo && photo !== '/images/svg/avatar-default.svg');
+  return Boolean(photo && photo !== DEFAULT_AVATAR);
 };
 
 const formatDateSeparator = (dateString: string): string => {

@@ -9,4 +9,5 @@ export interface ICreateMessageParams {
   message: string | null;
   messageQuotedId: string | null;
   quotedMessage: IQuotedMessage | null;
+  authorUser?: IChat['user'] | null;
 }

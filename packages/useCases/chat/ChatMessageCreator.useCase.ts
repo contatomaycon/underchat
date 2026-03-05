@@ -51,21 +51,67 @@ export class ChatMessageCreatorUseCase {
     private readonly userService: UserService
   ) {}
 
-  private async resolveSenderName(
-    chat: IChat,
-    typeUser: ETypeUserChat,
-    userId: string
-  ): Promise<string | null> {
-    if (typeUser !== ETypeUserChat.operator) {
+  private normalizeChatUser(
+    user?: { id: string; name: string; photo?: string | null } | null
+  ): IChat['user'] | null {
+    if (!user?.id || !user?.name) {
       return null;
     }
 
-    if (chat.user?.id && chat.user.id === userId && chat.user.name) {
-      return chat.user.name;
+    return {
+      id: user.id,
+      name: user.name,
+      photo: user.photo ?? null,
+    };
+  }
+
+  private findChatUserById(chat: IChat, userId: string): IChat['user'] | null {
+    if (chat.user?.id === userId) {
+      return this.normalizeChatUser(chat.user);
     }
 
-    const user = await this.userService.viewUserNamePhoto(userId);
-    return user?.name ?? null;
+    const secondaryUsers = Array.isArray(chat.secondary_users)
+      ? chat.secondary_users
+      : [];
+    const secondaryUser = secondaryUsers.find((user) => user?.id === userId);
+
+    return this.normalizeChatUser(secondaryUser);
+  }
+
+  private async resolveSenderContext(
+    chat: IChat,
+    typeUser: ETypeUserChat,
+    userId: string
+  ): Promise<{ senderUser: IChat['user'] | null; senderName: string | null }> {
+    if (typeUser !== ETypeUserChat.operator) {
+      return {
+        senderUser: null,
+        senderName: null,
+      };
+    }
+
+    const userData = await this.userService.viewUserNamePhoto(userId);
+    if (userData) {
+      const senderUser = this.normalizeChatUser(userData);
+      return {
+        senderUser,
+        senderName: senderUser?.name ?? null,
+      };
+    }
+
+    const participantUser = this.findChatUserById(chat, userId);
+    if (participantUser) {
+      return {
+        senderUser: participantUser,
+        senderName: participantUser.name,
+      };
+    }
+
+    const primaryUser = this.normalizeChatUser(chat.user);
+    return {
+      senderUser: primaryUser,
+      senderName: primaryUser?.name ?? null,
+    };
   }
 
   private canAccessChat(
@@ -583,6 +629,7 @@ export class ChatMessageCreatorUseCase {
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
+      senderUser: messageContext.senderUser,
       contactIds: contactData.contacts,
     });
   }
@@ -615,6 +662,7 @@ export class ChatMessageCreatorUseCase {
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
+      senderUser: messageContext.senderUser,
       latitude: locationData.latitude,
       longitude: locationData.longitude,
       name: locationData.name,
@@ -649,6 +697,7 @@ export class ChatMessageCreatorUseCase {
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
+      senderUser: messageContext.senderUser,
       documents:
         documentData.documents.length > 0 ? documentData.documents : undefined,
       documentUrl: documentData.isQuickMessage
@@ -691,6 +740,7 @@ export class ChatMessageCreatorUseCase {
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
+      senderUser: messageContext.senderUser,
       videos: videoData.videos.length > 0 ? videoData.videos : undefined,
       videoUrl: videoData.isQuickMessage
         ? videoData.quickMessageUrl
@@ -749,6 +799,7 @@ export class ChatMessageCreatorUseCase {
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
+      senderUser: messageContext.senderUser,
       audios: audioData.audios.length > 0 ? audioData.audios : undefined,
       audioUrl: audioData.isQuickMessage
         ? audioData.quickMessageUrl
@@ -793,6 +844,7 @@ export class ChatMessageCreatorUseCase {
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
+      senderUser: messageContext.senderUser,
       images: imageData.images.length > 0 ? imageData.images : undefined,
       imageUrl: imageData.isQuickMessage
         ? imageData.quickMessageUrl
@@ -829,6 +881,7 @@ export class ChatMessageCreatorUseCase {
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
+      senderUser: messageContext.senderUser,
       linkPreview,
     });
   }
@@ -855,7 +908,11 @@ export class ChatMessageCreatorUseCase {
       throw new Error(t('chat_access_denied'));
     }
 
-    const senderName = await this.resolveSenderName(chat, typeUser, userId);
+    const { senderUser, senderName } = await this.resolveSenderContext(
+      chat,
+      typeUser,
+      userId
+    );
 
     const quickTemplateData = await this.resolveQuickMessageTemplate(
       t,
@@ -881,6 +938,14 @@ export class ChatMessageCreatorUseCase {
     }
 
     const normalizedFields = this.normalizeMessageFields(body, templateMessage);
+    const messageContext: IMessageContext = {
+      t,
+      hash: normalizedFields.hash,
+      typeUser,
+      senderName,
+      senderUser,
+      senderUserId: userId,
+    };
 
     const actionResult = await this.processActionMessages(
       type,
@@ -888,7 +953,7 @@ export class ChatMessageCreatorUseCase {
       chat,
       params.chat_id,
       accountId,
-      { t, hash: normalizedFields.hash, typeUser, senderName }
+      messageContext
     );
     if (actionResult !== null) {
       return actionResult;
@@ -897,16 +962,11 @@ export class ChatMessageCreatorUseCase {
     let result = false;
 
     if (normalizedFields.contacts.length > 0) {
-      result = await this.sendContactMessage(
-        { t, hash: normalizedFields.hash, typeUser, senderName },
-        chat,
-        accountId,
-        {
-          message: normalizedFields.message,
-          messageQuotedId: normalizedFields.messageQuotedId,
-          contacts: normalizedFields.contacts,
-        }
-      );
+      result = await this.sendContactMessage(messageContext, chat, accountId, {
+        message: normalizedFields.message,
+        messageQuotedId: normalizedFields.messageQuotedId,
+        contacts: normalizedFields.contacts,
+      });
     }
 
     if (
@@ -916,7 +976,7 @@ export class ChatMessageCreatorUseCase {
       normalizedFields.locationLongitude !== null
     ) {
       result = await this.sendLocationMessage(
-        { t, hash: normalizedFields.hash, typeUser, senderName },
+        messageContext,
         chat,
         accountId,
         {
@@ -934,7 +994,7 @@ export class ChatMessageCreatorUseCase {
 
     if (!result && type === EMessageType.document) {
       result = await this.sendDocumentMessage(
-        { t, hash: normalizedFields.hash, typeUser, senderName },
+        messageContext,
         chat,
         accountId,
         {
@@ -952,7 +1012,7 @@ export class ChatMessageCreatorUseCase {
 
     if (!result && type === EMessageType.video) {
       result = await this.sendVideoMessage(
-        { t, hash: normalizedFields.hash, typeUser, senderName },
+        messageContext,
         chat,
         accountId,
         {
@@ -974,7 +1034,7 @@ export class ChatMessageCreatorUseCase {
 
     if (!result && type === EMessageType.audio) {
       result = await this.sendAudioMessage(
-        { t, hash: normalizedFields.hash, typeUser, senderName },
+        messageContext,
         chat,
         accountId,
         {
@@ -1000,7 +1060,7 @@ export class ChatMessageCreatorUseCase {
         (isQuickMessage && quickMessageUrl && type === EMessageType.image))
     ) {
       result = await this.sendImageMessage(
-        { t, hash: normalizedFields.hash, typeUser, senderName },
+        messageContext,
         chat,
         accountId,
         {
@@ -1020,7 +1080,7 @@ export class ChatMessageCreatorUseCase {
 
     if (!result) {
       result = await this.sendTextMessage(
-        { t, hash: normalizedFields.hash, typeUser, senderName },
+        messageContext,
         chat,
         accountId,
         {
@@ -1125,8 +1185,16 @@ export class ChatMessageCreatorUseCase {
       throw new Error(messageContext.t('message_not_found'));
     }
 
-    const userId = chatContext.chat.worker.id ?? '';
-    const userName = chatContext.chat.worker.name ?? '';
+    const userId =
+      messageContext.senderUser?.id ??
+      messageContext.senderUserId ??
+      chatContext.chat.user?.id ??
+      '';
+    const userName =
+      messageContext.senderUser?.name ??
+      messageContext.senderName ??
+      chatContext.chat.user?.name ??
+      '';
 
     const updatedMessage = await this.updateMessageReaction(
       targetMessage,
@@ -1148,7 +1216,8 @@ export class ChatMessageCreatorUseCase {
       chatContext.chatId,
       updatedMessage,
       messageContext.hash,
-      messageContext.typeUser
+      messageContext.typeUser,
+      messageContext.senderUser
     );
 
     await Promise.all([
@@ -1170,7 +1239,8 @@ export class ChatMessageCreatorUseCase {
     chatId: string,
     targetMessage: IChatMessage,
     hash: string | null,
-    typeUser: ETypeUserChat
+    typeUser: ETypeUserChat,
+    senderUser?: IChat['user'] | null
   ): IChatMessage {
     return {
       message_id: uuidv7(),
@@ -1186,7 +1256,7 @@ export class ChatMessageCreatorUseCase {
       type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
-      user: chat.user,
+      user: senderUser ?? chat.user ?? null,
       phone: chat.phone,
       summary: {
         is_sent: false,
@@ -1232,7 +1302,8 @@ export class ChatMessageCreatorUseCase {
       chatId,
       updatedMessage,
       context.hash,
-      context.typeUser
+      context.typeUser,
+      context.senderUser
     );
 
     await Promise.all([
@@ -1293,7 +1364,8 @@ export class ChatMessageCreatorUseCase {
     chatId: string,
     targetMessage: IChatMessage,
     hash: string | null,
-    typeUser: ETypeUserChat
+    typeUser: ETypeUserChat,
+    senderUser?: IChat['user'] | null
   ): IChatMessage {
     return {
       message_id: uuidv7(),
@@ -1309,7 +1381,7 @@ export class ChatMessageCreatorUseCase {
       type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
-      user: chat.user,
+      user: senderUser ?? chat.user ?? null,
       phone: chat.phone,
       summary: {
         is_sent: false,

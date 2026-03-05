@@ -10,6 +10,7 @@ import { ChatService } from '@core/services/chat.service';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { ContactService } from '@core/services/contact.service';
 import { StartChatWithContactUseCase } from '@core/useCases/chat/StartChatWithContact.useCase';
+import { UserService } from '@core/services/user.service';
 import {
   ForwardMessageBody,
   ForwardMessageParams,
@@ -44,9 +45,55 @@ export class ChatMessageForwarderUseCase {
     private readonly chatMessageService: ChatMessageService,
     @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(UserService)
+    private readonly userService: UserService,
     @inject(StartChatWithContactUseCase)
     private readonly startChatWithContactUseCase: StartChatWithContactUseCase
   ) {}
+
+  private normalizeChatUser(
+    user?: { id: string; name: string; photo?: string | null } | null
+  ): IChat['user'] | null {
+    if (!user?.id || !user?.name) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      name: user.name,
+      photo: user.photo ?? null,
+    };
+  }
+
+  private findChatUserById(chat: IChat, userId: string): IChat['user'] | null {
+    if (chat.user?.id === userId) {
+      return this.normalizeChatUser(chat.user);
+    }
+
+    const secondaryUsers = Array.isArray(chat.secondary_users)
+      ? chat.secondary_users
+      : [];
+    const secondaryUser = secondaryUsers.find((user) => user?.id === userId);
+
+    return this.normalizeChatUser(secondaryUser);
+  }
+
+  private async resolveActorUser(
+    chat: IChat,
+    userId: string
+  ): Promise<IChat['user'] | null> {
+    const userData = await this.userService.viewUserNamePhoto(userId);
+    if (userData) {
+      return this.normalizeChatUser(userData);
+    }
+
+    const participantUser = this.findChatUserById(chat, userId);
+    if (participantUser) {
+      return participantUser;
+    }
+
+    return this.normalizeChatUser(chat.user);
+  }
 
   private canAccessChat(
     chat: IChat,
@@ -160,7 +207,8 @@ export class ChatMessageForwarderUseCase {
   private buildForwardedMessage(
     sourceMessage: IChatMessage,
     sourceContent: NonNullable<IChatMessage['content']>,
-    targetChat: IChat
+    targetChat: IChat,
+    actorUser: IChat['user'] | null
   ): IChatMessage {
     return {
       message_id: uuidv7(),
@@ -173,7 +221,7 @@ export class ChatMessageForwarderUseCase {
       type_user: ETypeUserChat.operator,
       account: targetChat.account,
       worker: targetChat.worker,
-      user: targetChat.user,
+      user: actorUser,
       phone: targetChat.phone,
       content: this.buildForwardedContent(sourceMessage, sourceContent),
       summary: {
@@ -223,6 +271,7 @@ export class ChatMessageForwarderUseCase {
     targetChat: IChat;
     targetType: ForwardTargetType;
     targetContactId?: string | null;
+    actorUser: IChat['user'] | null;
   }): Promise<ForwardMessageResult> {
     const {
       t,
@@ -231,6 +280,7 @@ export class ChatMessageForwarderUseCase {
       targetChat,
       targetType,
       targetContactId = null,
+      actorUser,
     } = input;
 
     if (!targetChat.worker?.id) {
@@ -260,7 +310,8 @@ export class ChatMessageForwarderUseCase {
       const messageToForward = this.buildForwardedMessage(
         sourceMessage,
         sourceContent,
-        targetChat
+        targetChat,
+        actorUser
       );
 
       const published =
@@ -308,6 +359,7 @@ export class ChatMessageForwarderUseCase {
     actions: IJwtGroupHierarchy[];
     userSectors: string[];
     userChannels: { id: string; name: string }[];
+    actorUser: IChat['user'] | null;
   }): Promise<ForwardMessageResult> {
     const {
       t,
@@ -320,6 +372,7 @@ export class ChatMessageForwarderUseCase {
       actions,
       userSectors,
       userChannels,
+      actorUser,
     } = input;
 
     if (targetChatId === sourceChatId) {
@@ -368,6 +421,7 @@ export class ChatMessageForwarderUseCase {
       sourceContent,
       targetChat,
       targetType: 'chat',
+      actorUser,
     });
   }
 
@@ -383,6 +437,7 @@ export class ChatMessageForwarderUseCase {
     actions: IJwtGroupHierarchy[];
     userSectors: string[];
     userChannels: { id: string; name: string }[];
+    actorUser: IChat['user'] | null;
   }): Promise<ForwardMessageResult> {
     const {
       t,
@@ -396,6 +451,7 @@ export class ChatMessageForwarderUseCase {
       actions,
       userSectors,
       userChannels,
+      actorUser,
     } = input;
 
     if (!this.hasChannelAccess(workerId, userChannels)) {
@@ -503,6 +559,7 @@ export class ChatMessageForwarderUseCase {
       targetChat,
       targetType: 'contact',
       targetContactId,
+      actorUser,
     });
   }
 
@@ -558,6 +615,7 @@ export class ChatMessageForwarderUseCase {
     }
 
     const sourceContent = this.ensureSourceCanBeForwarded(t, sourceMessage);
+    const actorUser = await this.resolveActorUser(sourceChat, userId);
 
     const results: ForwardMessageResult[] = [];
     let sent = 0;
@@ -574,6 +632,7 @@ export class ChatMessageForwarderUseCase {
         actions,
         userSectors,
         userChannels,
+        actorUser,
       });
 
       if (result.status === 'sent') {
@@ -608,6 +667,7 @@ export class ChatMessageForwarderUseCase {
           actions,
           userSectors,
           userChannels,
+          actorUser,
         });
 
         if (result.status === 'sent') {

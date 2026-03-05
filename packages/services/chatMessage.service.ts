@@ -143,7 +143,7 @@ export class ChatMessageService {
       return text;
     }
 
-    const attendeeName = senderName?.trim() || chat.user?.name;
+    const attendeeName = senderName?.trim();
     if (!attendeeName) {
       return text;
     }
@@ -161,6 +161,18 @@ export class ChatMessageService {
     }
 
     return `${prefix}${text}`;
+  }
+
+  private resolveAuthorUser(
+    chat: IChat,
+    typeUser: ETypeUserChat,
+    senderUser?: IChat['user'] | null
+  ): IChat['user'] | null {
+    if (typeUser === ETypeUserChat.operator) {
+      return senderUser ?? chat.user ?? null;
+    }
+
+    return chat.user ?? null;
   }
 
   private formatMessageForWhatsApp(
@@ -478,6 +490,7 @@ export class ChatMessageService {
       quotedMessage,
       hash,
       typeUser,
+      authorUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -490,7 +503,7 @@ export class ChatMessageService {
       type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
-      user: chat.user,
+      user: authorUser ?? chat.user ?? null,
       phone: chat.phone,
       summary: {
         is_sent: false,
@@ -523,6 +536,7 @@ export class ChatMessageService {
       quotedMessage,
       hash,
       typeUser,
+      authorUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -535,7 +549,7 @@ export class ChatMessageService {
       type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
-      user: chat.user,
+      user: authorUser ?? chat.user ?? null,
       phone: chat.phone,
       summary: {
         is_sent: false,
@@ -579,6 +593,7 @@ export class ChatMessageService {
       quotedMessage,
       videoDuration,
       typeUser,
+      authorUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -591,7 +606,7 @@ export class ChatMessageService {
       type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
-      user: chat.user,
+      user: authorUser ?? chat.user ?? null,
       phone: chat.phone,
       summary: {
         is_sent: false,
@@ -643,6 +658,7 @@ export class ChatMessageService {
       isViewOnce,
       isPtt,
       typeUser,
+      authorUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -655,7 +671,7 @@ export class ChatMessageService {
       type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
-      user: chat.user,
+      user: authorUser ?? chat.user ?? null,
       phone: chat.phone,
       summary: {
         is_sent: false,
@@ -700,6 +716,7 @@ export class ChatMessageService {
       quotedMessage,
       hash,
       typeUser,
+      authorUser,
     } = params;
     return {
       message_id: uuidv7(),
@@ -712,7 +729,7 @@ export class ChatMessageService {
       type_user: typeUser,
       account: chat.account,
       worker: chat.worker,
-      user: chat.user,
+      user: authorUser ?? chat.user ?? null,
       phone: chat.phone,
       summary: {
         is_sent: false,
@@ -1022,6 +1039,7 @@ export class ChatMessageService {
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
       senderName?: string | null;
+      authorUser: IChat['user'] | null;
     }
   ): Promise<boolean> {
     const formattedMessage = await this.formatOperatorTextWithAttendeeName(
@@ -1053,6 +1071,7 @@ export class ChatMessageService {
       quotedMessage: messageContext.quotedMessage,
       hash: messageContext.normalizedHash,
       typeUser: messageContext.typeUser,
+      authorUser: messageContext.authorUser,
     });
 
     return this.publishMessage(textMessage);
@@ -1176,6 +1195,7 @@ export class ChatMessageService {
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
       senderName?: string | null;
+      authorUser: IChat['user'] | null;
     }
   ): Promise<boolean> {
     let imageData: UploadFileResponse | null = null;
@@ -1216,6 +1236,7 @@ export class ChatMessageService {
       quotedMessage: messageContext.quotedMessage,
       hash: messageContext.normalizedHash,
       typeUser: messageContext.typeUser,
+      authorUser: messageContext.authorUser,
     });
 
     return this.publishMessage(imageMessage);
@@ -1234,6 +1255,7 @@ export class ChatMessageService {
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
       senderName?: string | null;
+      authorUser: IChat['user'] | null;
     }
   ): Promise<boolean> {
     let videoData:
@@ -1285,6 +1307,7 @@ export class ChatMessageService {
         quotedMessage: messageContext.quotedMessage,
         videoDuration: finalDuration,
         typeUser: messageContext.typeUser,
+        authorUser: messageContext.authorUser,
       },
       messageContext.normalizedHash
     );
@@ -1305,6 +1328,7 @@ export class ChatMessageService {
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
       senderName?: string | null;
+      authorUser: IChat['user'] | null;
     }
   ): Promise<boolean> {
     let audioData:
@@ -1356,6 +1380,7 @@ export class ChatMessageService {
         isViewOnce: audioOptions.audioViewOnce ?? false,
         isPtt: audioOptions.audioPtt ?? false,
         typeUser: messageContext.typeUser,
+        authorUser: messageContext.authorUser,
       },
       messageContext.normalizedHash
     );
@@ -1376,6 +1401,7 @@ export class ChatMessageService {
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
       senderName?: string | null;
+      authorUser: IChat['user'] | null;
     }
   ): Promise<boolean> {
     let documentData: UploadFileResponse | null = null;
@@ -1417,6 +1443,7 @@ export class ChatMessageService {
       quotedMessage: messageContext.quotedMessage,
       hash: messageContext.normalizedHash,
       typeUser: messageContext.typeUser,
+      authorUser: messageContext.authorUser,
     });
 
     return this.publishMessage(documentMessage);
@@ -1434,6 +1461,7 @@ export class ChatMessageService {
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
       senderName?: string | null;
+      authorUser: IChat['user'] | null;
     }
   ): Promise<boolean> {
     const formattedMessage = await this.formatOperatorTextWithAttendeeName(
@@ -1455,7 +1483,7 @@ export class ChatMessageService {
       type_user: messageContext.typeUser,
       account: chatData.account,
       worker: chatData.worker,
-      user: chatData.user,
+      user: messageContext.authorUser,
       phone: chatData.phone,
       summary: {
         is_sent: false,
@@ -1533,6 +1561,7 @@ export class ChatMessageService {
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
       senderName?: string | null;
+      authorUser: IChat['user'] | null;
     }
   ): Promise<boolean> {
     if (contactOptions.contactIds.length === 0) {
@@ -1593,7 +1622,7 @@ export class ChatMessageService {
         type_user: messageContext.typeUser,
         account: chatData.account,
         worker: chatData.worker,
-        user: chatData.user,
+        user: messageContext.authorUser,
         phone: chatData.phone,
         summary: {
           is_sent: false,
@@ -1645,6 +1674,7 @@ export class ChatMessageService {
       hash,
       typeUser,
       senderName,
+      senderUser,
     } = options;
 
     let chatData: IChat | null = null;
@@ -1670,6 +1700,7 @@ export class ChatMessageService {
 
     const quotedId = messageQuotedId ?? null;
     const normalizedHash = hash ?? null;
+    const authorUser = this.resolveAuthorUser(chatData, typeUser, senderUser);
 
     if (
       type === EMessageType.text ||
@@ -1688,6 +1719,7 @@ export class ChatMessageService {
           normalizedHash,
           typeUser,
           senderName,
+          authorUser,
         }
       );
     }
@@ -1706,6 +1738,7 @@ export class ChatMessageService {
           normalizedHash,
           typeUser,
           senderName,
+          authorUser,
         }
       );
     }
@@ -1724,6 +1757,7 @@ export class ChatMessageService {
           normalizedHash,
           typeUser,
           senderName,
+          authorUser,
         }
       );
     }
@@ -1742,6 +1776,7 @@ export class ChatMessageService {
           normalizedHash,
           typeUser,
           senderName,
+          authorUser,
         }
       );
     }
@@ -1760,6 +1795,7 @@ export class ChatMessageService {
           normalizedHash,
           typeUser,
           senderName,
+          authorUser,
         }
       );
     }
@@ -1777,6 +1813,7 @@ export class ChatMessageService {
           normalizedHash,
           typeUser,
           senderName,
+          authorUser,
         }
       );
     }
@@ -1795,6 +1832,7 @@ export class ChatMessageService {
           normalizedHash,
           typeUser,
           senderName,
+          authorUser,
         }
       );
     }

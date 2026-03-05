@@ -12,6 +12,7 @@ export interface ISendMessageOptions {
   hash?: string | null;
   typeUser: ETypeUserChat;
   senderName?: string | null;
+  senderUser?: IChat['user'] | null;
   linkPreview?: any;
 }
 

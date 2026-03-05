@@ -253,24 +253,33 @@ const resolveFeedbackIcon = (
   return { icon: 'tabler-check', color: undefined };
 };
 
+const DEFAULT_AVATAR = '/images/svg/avatar-default.svg';
+
+const resolveNonEmptyPhoto = (photo?: string | null): string | null => {
+  if (typeof photo !== 'string') return null;
+  const normalizedPhoto = photo.trim();
+  return normalizedPhoto.length > 0 ? normalizedPhoto : null;
+};
+
 const resolvePhoto = (message: ListMessageResult): string => {
   if (isTypeUser(message)) {
-    if (chatStore.activeChat?.contact?.photo) {
-      return chatStore.activeChat.contact.photo;
-    }
+    const contactPhoto = resolveNonEmptyPhoto(chatStore.activeChat?.contact?.photo);
+    if (contactPhoto) return contactPhoto;
 
-    if (chatStore.activeChat?.photo) {
-      return chatStore.activeChat.photo;
-    }
+    const chatPhoto = resolveNonEmptyPhoto(chatStore.activeChat?.photo);
+    if (chatPhoto) return chatPhoto;
   }
-  if (!isTypeUser(message) && message.user?.photo) return message.user.photo;
-  if (!isTypeUser(message) && chatStore.user?.info.photo)
-    return chatStore.user.info.photo;
-  return '/images/svg/avatar-default.svg';
+
+  if (!isTypeUser(message)) {
+    const attendantPhoto = resolveNonEmptyPhoto(message.user?.photo);
+    if (attendantPhoto) return attendantPhoto;
+  }
+
+  return DEFAULT_AVATAR;
 };
 
 const isPhotoExist = (message: ListMessageResult): boolean =>
-  !!resolvePhoto(message);
+  resolvePhoto(message) !== DEFAULT_AVATAR;
 
 const resolvePreviewImage = (lp?: LinkPreview): string => {
   if (!lp) return '';
