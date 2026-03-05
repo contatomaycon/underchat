@@ -4,33 +4,36 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import {
-  TransferChatParams,
-  TransferChatBody,
-} from '@core/schema/chat/transferChat/request.schema';
-import { TransferChatUseCase } from '@core/useCases/chat/TransferChat.useCase';
+  JoinChatParams,
+  JoinChatBody,
+} from '@core/schema/chat/joinChat/request.schema';
+import { JoinChatUseCase } from '@core/useCases/chat/JoinChat.useCase';
 
-export const transferChat = async (
+export const joinChat = async (
   request: FastifyRequest<{
-    Params: TransferChatParams;
-    Body: TransferChatBody;
+    Params: JoinChatParams;
+    Body: JoinChatBody;
   }>,
   reply: FastifyReply
 ) => {
-  const transferChatUseCase = container.resolve(TransferChatUseCase);
+  const joinChatUseCase = container.resolve(JoinChatUseCase);
   const { t, tokenJwtData } = request;
+  const body = (request.body ?? undefined) as JoinChatBody;
 
   try {
-    const response = await transferChatUseCase.execute(
+    const response = await joinChatUseCase.execute(
       t,
       tokenJwtData.account_id,
       request.params,
-      request.body,
+      body,
       tokenJwtData.user_id,
+      tokenJwtData.actions,
+      tokenJwtData.sectors,
       tokenJwtData.channels
     );
 
     return sendResponse(reply, {
-      message: t('chat_transfer_success'),
+      message: t('chat_join_success'),
       httpStatusCode: EHTTPStatusCode.ok,
       data: response,
     });

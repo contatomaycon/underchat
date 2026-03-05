@@ -91,6 +91,16 @@ function parseChatSnapshot(value: unknown): ListChatsResult | null {
           photo: readString(parsed.user.photo),
         }
       : null,
+    secondary_users: Array.isArray(parsed.secondary_users)
+      ? parsed.secondary_users
+          .filter((item): item is Record<string, unknown> => isRecord(item))
+          .map((item) => ({
+            id: readString(item.id) ?? '',
+            name: readString(item.name) ?? '',
+            photo: readString(item.photo),
+          }))
+          .filter((item) => item.id.length > 0)
+      : [],
     contact: isRecord(parsed.contact)
       ? {
           id: readString(parsed.contact.id) ?? '',
@@ -119,17 +129,29 @@ function parseChatSnapshot(value: unknown): ListChatsResult | null {
     started_at: readString(parsed.started_at),
     closed_at: readString(parsed.closed_at),
     protocol_ura: Array.isArray(parsed.protocol_ura)
-      ? parsed.protocol_ura.filter((item): item is string => typeof item === 'string')
+      ? parsed.protocol_ura.filter(
+          (item): item is string => typeof item === 'string'
+        )
       : null,
     protocol_start: Array.isArray(parsed.protocol_start)
-      ? parsed.protocol_start.filter((item): item is string => typeof item === 'string')
+      ? parsed.protocol_start.filter(
+          (item): item is string => typeof item === 'string'
+        )
       : null,
     protocol_transfer: Array.isArray(parsed.protocol_transfer)
-      ? parsed.protocol_transfer.filter((item): item is string => typeof item === 'string')
+      ? parsed.protocol_transfer.filter(
+          (item): item is string => typeof item === 'string'
+        )
       : null,
     label: Array.isArray(parsed.label)
       ? (parsed.label.filter(
-          (item): item is { label_template_id: string; label: string; color: string } =>
+          (
+            item
+          ): item is {
+            label_template_id: string;
+            label: string;
+            color: string;
+          } =>
             isRecord(item) &&
             typeof item.label_template_id === 'string' &&
             typeof item.label === 'string' &&
@@ -163,9 +185,9 @@ function getProjectId(): string | null {
     return fromEasConfig;
   }
 
-  const expoConfig = Constants.expoConfig as
-    | { extra?: { eas?: { projectId?: unknown } } }
-    | null;
+  const expoConfig = Constants.expoConfig as {
+    extra?: { eas?: { projectId?: unknown } };
+  } | null;
   return readString(expoConfig?.extra?.eas?.projectId);
 }
 
@@ -232,7 +254,8 @@ export async function initializePushNotifications(options: {
     }
   );
 
-  const initialResponse = await Notifications.getLastNotificationResponseAsync();
+  const initialResponse =
+    await Notifications.getLastNotificationResponseAsync();
   if (initialResponse) {
     const data = initialResponse.notification.request.content.data;
     const chat = parseChatSnapshot(

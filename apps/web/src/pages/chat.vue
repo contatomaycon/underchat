@@ -64,6 +64,10 @@ import {
 import { IChat } from '@core/common/interfaces/IChat';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import {
+  isChatParticipant,
+  isChatPrimary,
+} from '@core/common/functions/chatParticipants';
+import {
   ISelectedPhotoPreview,
   ISelectedDocumentPreview,
   ISelectedVideoPreview,
@@ -305,7 +309,7 @@ const cannotAttendDueToLimit = computed(() => {
 
   const currentInChatCount = chatStore.listInChat.filter(
     (chat) =>
-      chat.user?.id === chatStore.user?.user_id &&
+      isChatParticipant(chat as unknown as IChat, chatStore.user?.user_id) &&
       chat.worker?.id === chatStore.activeChat?.worker?.id
   ).length;
 
@@ -317,6 +321,49 @@ const canAttendChat = computed(() => {
   if (cannotAttendDueToStatus.value) return false;
   if (cannotAttendDueToLimit.value) return false;
   return true;
+});
+
+const isCurrentUserParticipantInActiveChat = computed(() => {
+  const activeChat = chatStore.activeChat as IChat | null;
+  if (!activeChat) {
+    return false;
+  }
+
+  return isChatParticipant(activeChat, chatStore.user?.user_id);
+});
+
+const isCurrentUserPrimaryInActiveChat = computed(() => {
+  const activeChat = chatStore.activeChat as IChat | null;
+  if (!activeChat) {
+    return false;
+  }
+
+  return isChatPrimary(activeChat, chatStore.user?.user_id);
+});
+
+const canJoinConversation = computed(() => {
+  const activeChat = chatStore.activeChat as IChat | null;
+  if (!activeChat) {
+    return false;
+  }
+
+  if (activeChat.status !== EChatStatus.in_chat) {
+    return false;
+  }
+
+  return !isCurrentUserParticipantInActiveChat.value;
+});
+
+const canComposeInActiveChat = computed(() => {
+  if (!chatStore.activeChat?.chat_id) {
+    return false;
+  }
+
+  if (isQueueStatus.value || isUraStatus.value || isClosedStatus.value) {
+    return false;
+  }
+
+  return isCurrentUserParticipantInActiveChat.value;
 });
 
 const canReopenChatPermission = computed(() => {
@@ -433,6 +480,14 @@ watch(
 );
 
 const isAttendReopenLoading = ref(false);
+const isJoinConversationLoading = ref(false);
+const queueBannerActionLoading = computed(() => {
+  if (canJoinConversation.value) {
+    return isJoinConversationLoading.value;
+  }
+
+  return isAttendReopenLoading.value;
+});
 
 const handleAttendChat = async () => {
   if (!chatStore.activeChat?.chat_id || isAttendReopenLoading.value) return;
@@ -475,10 +530,34 @@ const handleReopenChat = async () => {
   }
 };
 
+const handleJoinConversation = async () => {
+  if (!chatStore.activeChat?.chat_id || isJoinConversationLoading.value) return;
+
+  isJoinConversationLoading.value = true;
+  try {
+    const joined = await chatStore.joinChat(chatStore.activeChat.chat_id);
+    if (!joined) {
+      return;
+    }
+
+    chatStore.showSnackbar(t('join_conversation_success'), EColor.success);
+    await openChat(chatStore.activeChat.chat_id, {
+      forceReload: true,
+    });
+  } finally {
+    isJoinConversationLoading.value = false;
+  }
+};
+
 const isCloseServiceDialogOpen = ref(false);
 const closeServiceSendMessageOnFinishAttendance = ref(true);
 
 const handleCloseService = () => {
+  if (isInChatStatus.value && !isCurrentUserPrimaryInActiveChat.value) {
+    chatStore.showSnackbar(t('only_primary_can_close'), EColor.warning);
+    return;
+  }
+
   closeServiceSendMessageOnFinishAttendance.value = true;
   isCloseServiceDialogOpen.value = true;
 };
@@ -580,6 +659,7 @@ const isLoadingTransferSectors = ref(false);
 const isLoadingTransferSectorUsers = ref(false);
 const isTransferring = ref(false);
 const transferAnnotationText = ref('');
+const transferKeepInChat = ref(false);
 const isTransferAnnotationEmojiOpen = ref(false);
 
 const isLabelModalOpen = ref(false);
@@ -823,6 +903,7 @@ watch(selectedTransferChannel, async (channelId) => {
 watch(isTransferModalOpen, (isOpen) => {
   if (!isOpen) {
     transferAnnotationText.value = '';
+    transferKeepInChat.value = false;
   }
 });
 
@@ -852,6 +933,7 @@ watch(isTransferModalOpen, async (isOpen) => {
         transferSectorUsers.value = [];
         transferWorkerConfigForChat.value = null;
         transferAnnotationText.value = '';
+        transferKeepInChat.value = false;
         isTransferAnnotationEmojiOpen.value = false;
         loadTransferChannels();
         loadTransferSectors();
@@ -859,6 +941,7 @@ watch(isTransferModalOpen, async (isOpen) => {
     });
   } else {
     transferAnnotationText.value = '';
+    transferKeepInChat.value = false;
     selectedTransferChannel.value = null;
     transferWorkerConfigForChat.value = null;
   }
@@ -866,6 +949,11 @@ watch(isTransferModalOpen, async (isOpen) => {
 
 const handleTransfer = async () => {
   if (!chatStore.activeChat?.chat_id) return;
+
+  if (!isCurrentUserPrimaryInActiveChat.value) {
+    chatStore.showSnackbar(t('only_primary_can_transfer'), EColor.warning);
+    return;
+  }
 
   if (!selectedTransferChannel.value) {
     chatStore.showSnackbar(t('channel_required'), EColor.error);
@@ -902,7 +990,8 @@ const handleTransfer = async () => {
       sectorId,
       annotation,
       leftSidebarRef.value?.hasAppliedAdvancedFilters ?? false,
-      workerId
+      workerId,
+      transferKeepInChat.value
     );
 
     if (success) {
@@ -912,6 +1001,9 @@ const handleTransfer = async () => {
       const selectedChannel = selectedTransferChannelOption.value;
       let nextUser: IChat['user'] | null = activeChat.user ?? null;
       let nextSector: IChat['sector'] | null = activeChat.sector ?? null;
+      let nextSecondaryUsers = Array.isArray(activeChat.secondary_users)
+        ? activeChat.secondary_users.filter((user) => !!user?.id)
+        : [];
       const nextWorker: IChat['worker'] = selectedChannel
         ? {
             id: selectedChannel.value,
@@ -961,12 +1053,42 @@ const handleTransfer = async () => {
         nextSector = null;
       }
 
+      nextSecondaryUsers = nextSecondaryUsers.filter(
+        (secondaryUser) =>
+          secondaryUser?.id && secondaryUser.id !== nextUser?.id
+      );
+
+      if (!transferKeepInChat.value && activeChat.user?.id) {
+        nextSecondaryUsers = nextSecondaryUsers.filter(
+          (secondaryUser) => secondaryUser.id !== activeChat.user?.id
+        );
+      }
+
+      if (
+        transferKeepInChat.value &&
+        activeChat.user?.id &&
+        activeChat.user.id !== nextUser?.id
+      ) {
+        const hasActorAsSecondary = nextSecondaryUsers.some(
+          (secondaryUser) => secondaryUser.id === activeChat.user?.id
+        );
+
+        if (!hasActorAsSecondary) {
+          nextSecondaryUsers.push({
+            id: activeChat.user.id,
+            name: activeChat.user.name,
+            photo: activeChat.user.photo ?? null,
+          });
+        }
+      }
+
       chatStore.addChat(
         {
           ...activeChat,
           worker: nextWorker,
           status: EChatStatus.queue,
           user: nextUser,
+          secondary_users: nextSecondaryUsers,
           sector: nextSector,
         },
         true
@@ -999,7 +1121,7 @@ const canCloseChatWithoutAttending = computed(() => {
 
 const canShowCloseButton = computed(() => {
   if (isInChatStatus.value) {
-    return true;
+    return isCurrentUserPrimaryInActiveChat.value;
   }
 
   if (isQueueOrUraStatus.value && canCloseChatWithoutAttending.value) {
@@ -1010,7 +1132,7 @@ const canShowCloseButton = computed(() => {
 });
 
 const canTransfer = computed(() => {
-  return true;
+  return isInChatStatus.value && isCurrentUserPrimaryInActiveChat.value;
 });
 
 const canViewAttendanceHistory = computed(() => {
@@ -2241,8 +2363,13 @@ const finalizeSend = async () => {
 const sendMessage = async () => {
   if (!canSendMessage()) return;
   if (!hasActiveChat()) return;
-  if (isQueueStatus.value) return;
-  if (isUraStatus.value) return;
+  if (!canComposeInActiveChat.value) {
+    chatStore.showSnackbar(
+      t('must_join_conversation_to_reply'),
+      EColor.warning
+    );
+    return;
+  }
 
   const savedMsg = msg.value;
   const savedLinkPreview = linkPreview.value ? { ...linkPreview.value } : null;
@@ -2363,7 +2490,10 @@ const openChat = async (
 
   if (
     chatStore.activeChat?.status === EChatStatus.in_chat &&
-    chatStore.activeChat?.user?.id === chatStore.user?.user_id &&
+    isChatParticipant(
+      chatStore.activeChat as unknown as IChat,
+      chatStore.user?.user_id
+    ) &&
     !options?.skipClearSummary
   ) {
     await chatStore.clearChatSummary(chatId);
@@ -2433,7 +2563,7 @@ const openAttach = (
     | 'location'
     | 'annotation'
 ) => {
-  if (isUraStatus.value) return;
+  if (!canComposeInActiveChat.value) return;
 
   switch (type) {
     case 'document':
@@ -4224,7 +4354,7 @@ const canSendSelectedQuickMessage = computed(() => {
   const template = selectedQuickMessage.value;
   if (!template) return false;
 
-  if (!chatStore.activeChat?.worker?.id || isQueueOrUraStatus.value) {
+  if (!chatStore.activeChat?.worker?.id || !canComposeInActiveChat.value) {
     return false;
   }
 
@@ -4264,7 +4394,13 @@ const createQuickMessageFormData = (
 const sendQuickMessage = async () => {
   if (!selectedQuickMessage.value) return;
   if (!hasActiveChat()) return;
-  if (isQueueOrUraStatus.value) return;
+  if (!canComposeInActiveChat.value) {
+    chatStore.showSnackbar(
+      t('must_join_conversation_to_reply'),
+      EColor.warning
+    );
+    return;
+  }
 
   const template = selectedQuickMessage.value;
   const isAutoSend = template.auto_send === true;
@@ -5040,7 +5176,7 @@ const handleGlobalChatUpdate = async (e: Event) => {
       return true;
     }
 
-    if (chat.user?.id === chatStore.user?.user_id) {
+    if (isChatParticipant(chat, chatStore.user?.user_id)) {
       return true;
     }
 
@@ -5051,7 +5187,9 @@ const handleGlobalChatUpdate = async (e: Event) => {
     if (
       chat.status === EChatStatus.queue &&
       !chat.sector?.id &&
-      !chat.user?.id
+      !chat.user?.id &&
+      (!Array.isArray(chat.secondary_users) ||
+        chat.secondary_users.length === 0)
     ) {
       return true;
     }
@@ -5074,7 +5212,8 @@ const handleGlobalChatUpdate = async (e: Event) => {
   chatStore.addChat(chatData);
 
   const isActiveChatForUser =
-    (chatData as any)._active && chatData.user?.id === chatStore.user?.user_id;
+    (chatData as any)._active &&
+    isChatParticipant(chatData, chatStore.user?.user_id);
 
   if (isActiveChatForUser) {
     const previousActiveChatId = chatStore.activeChat?.chat_id;
@@ -6086,6 +6225,7 @@ onBeforeUnmount(() => {
           <ChatQueueStatusBanner
             :is-queue-status="isQueueOrUraStatus"
             :is-closed-status="isClosedStatus"
+            :show-join-button="canJoinConversation"
             :can-attend-chat="canAttendChat"
             :can-reopen-chat="canReopenChat"
             :can-reopen-chat-permission="canReopenChatPermission"
@@ -6093,9 +6233,10 @@ onBeforeUnmount(() => {
             :cannot-attend-due-to-limit="cannotAttendDueToLimit"
             :worker-config-for-chat="workerConfigForChat"
             :loading="isLoadingWorkerConfig"
-            :action-loading="isAttendReopenLoading"
+            :action-loading="queueBannerActionLoading"
             @attend="handleAttendChat"
             @reopen="handleReopenChat"
+            @join="handleJoinConversation"
           />
 
           <VCard
@@ -6163,7 +6304,7 @@ onBeforeUnmount(() => {
               :auto-grow="true"
               rows="1"
               :max-rows="8"
-              :disabled="isQueueStatus || isUraStatus"
+              :disabled="!canComposeInActiveChat"
               :readonly="hasSelectedAudios"
               @keydown.enter.exact.prevent="onSendText"
               @paste="handlePaste"
@@ -6173,9 +6314,7 @@ onBeforeUnmount(() => {
                   offset="8"
                   :close-on-content-click="true"
                   location="top start"
-                  :disabled="
-                    !!selectedQuickMessage || isQueueStatus || isUraStatus
-                  "
+                  :disabled="!!selectedQuickMessage || !canComposeInActiveChat"
                 >
                   <template #activator="{ props }">
                     <IconBtn
@@ -6183,7 +6322,7 @@ onBeforeUnmount(() => {
                       class="composer-btn"
                       aria-label="Anexar"
                       :disabled="
-                        !!selectedQuickMessage || isQueueStatus || isUraStatus
+                        !!selectedQuickMessage || !canComposeInActiveChat
                       "
                     >
                       <VIcon size="22">tabler-plus</VIcon>
@@ -6196,7 +6335,7 @@ onBeforeUnmount(() => {
                     class="attach-menu"
                   >
                     <VListItem
-                      :disabled="isQueueStatus || isUraStatus"
+                      :disabled="!canComposeInActiveChat"
                       @click="openAttach('document')"
                     >
                       <template #prepend
@@ -6205,7 +6344,7 @@ onBeforeUnmount(() => {
                       <VListItemTitle>Documentos</VListItemTitle>
                     </VListItem>
                     <VListItem
-                      :disabled="isQueueStatus || isUraStatus"
+                      :disabled="!canComposeInActiveChat"
                       @click="openAttach('photo')"
                     >
                       <template #prepend
@@ -6214,7 +6353,7 @@ onBeforeUnmount(() => {
                       <VListItemTitle>Fotos</VListItemTitle>
                     </VListItem>
                     <VListItem
-                      :disabled="isQueueStatus || isUraStatus"
+                      :disabled="!canComposeInActiveChat"
                       @click="openAttach('video')"
                     >
                       <template #prepend
@@ -6223,7 +6362,7 @@ onBeforeUnmount(() => {
                       <VListItemTitle>Vídeos</VListItemTitle>
                     </VListItem>
                     <VListItem
-                      :disabled="isQueueStatus || isUraStatus"
+                      :disabled="!canComposeInActiveChat"
                       @click="openAttach('audio')"
                     >
                       <template #prepend
@@ -6232,7 +6371,7 @@ onBeforeUnmount(() => {
                       <VListItemTitle>Áudio</VListItemTitle>
                     </VListItem>
                     <VListItem
-                      :disabled="isQueueStatus || isUraStatus"
+                      :disabled="!canComposeInActiveChat"
                       @click="openAttach('contact')"
                     >
                       <template #prepend
@@ -6241,7 +6380,7 @@ onBeforeUnmount(() => {
                       <VListItemTitle>Contato</VListItemTitle>
                     </VListItem>
                     <VListItem
-                      :disabled="isQueueStatus || isUraStatus"
+                      :disabled="!canComposeInActiveChat"
                       @click="openAttach('location')"
                     >
                       <template #prepend
@@ -6250,7 +6389,7 @@ onBeforeUnmount(() => {
                       <VListItemTitle>Localização</VListItemTitle>
                     </VListItem>
                     <VListItem
-                      :disabled="isQueueStatus || isUraStatus"
+                      :disabled="!canComposeInActiveChat"
                       @click="openAttach('annotation')"
                     >
                       <template #prepend
@@ -6298,7 +6437,7 @@ onBeforeUnmount(() => {
                     v-if="!hasAttachmentsOrContent && !selectedQuickMessage"
                     class="composer-btn mic-btn"
                     aria-label="Gravar áudio"
-                    :disabled="isQueueStatus || isUraStatus"
+                    :disabled="!canComposeInActiveChat"
                     @click="onRecordAudio"
                   >
                     <VIcon size="22">tabler-microphone</VIcon>
@@ -6312,7 +6451,7 @@ onBeforeUnmount(() => {
                     variant="flat"
                     rounded="pill"
                     aria-label="Enviar mensagem"
-                    :disabled="!hasActiveChat() || isQueueStatus || isUraStatus"
+                    :disabled="!hasActiveChat() || !canComposeInActiveChat"
                     @click="onSendText"
                   >
                     <VIcon size="22">tabler-send</VIcon>
@@ -6626,6 +6765,18 @@ onBeforeUnmount(() => {
               item-value="value"
               item-title="title"
             />
+          </VCol>
+
+          <VCol cols="12">
+            <VCheckbox
+              v-model="transferKeepInChat"
+              density="compact"
+              hide-details
+              :label="t('keep_in_chat')"
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ t('keep_in_chat_description') }}
+            </div>
           </VCol>
 
           <VCol v-if="transferType === 'user'" cols="12">

@@ -26,10 +26,8 @@ import { UserService } from '@core/services/user.service';
 import { IMessageContext } from '@core/common/interfaces/IMessageContext';
 import { IChatContext } from '@core/common/interfaces/IChatContext';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
+import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -70,40 +68,6 @@ export class ChatMessageCreatorUseCase {
     return user?.name ?? null;
   }
 
-  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
-  private canViewChatsInSector(actions: IJwtGroupHierarchy[]): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-      EChatPermissions.list_all_chats_in_sector,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
-  private canListAllChatsWithoutSectorLimit(
-    actions: IJwtGroupHierarchy[]
-  ): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-      EChatPermissions.list_all_chats_without_sector_limit,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
   private canAccessChat(
     chat: IChat,
     userId: string,
@@ -111,6 +75,9 @@ export class ChatMessageCreatorUseCase {
     userSectors: string[],
     userChannels: { id: string; name: string }[] = []
   ): boolean {
+    void actions;
+    void userSectors;
+
     if (userChannels.length > 0) {
       const channelIds = userChannels.map((c) => c.id);
       if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
@@ -118,22 +85,7 @@ export class ChatMessageCreatorUseCase {
       }
     }
 
-    const canViewOthers = this.canViewOthersChats(actions);
-    const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
-    if (canViewOthers || canListAll) return true;
-    const isOwnChat = chat.user?.id === userId;
-    if (isOwnChat) return true;
-    const canViewInSector = this.canViewChatsInSector(actions);
-    if (!canViewInSector) return false;
-    if (
-      userSectors.length > 0 &&
-      chat.sector?.id &&
-      userSectors.includes(chat.sector.id)
-    )
-      return true;
-    if (userSectors.length === 0 && !chat.sector?.id) return true;
-    if (canViewInSector && !chat.sector?.id) return true;
-    return false;
+    return isChatParticipant(chat, userId);
   }
 
   private async getChat(

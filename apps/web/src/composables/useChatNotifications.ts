@@ -15,6 +15,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { useChatNotificationToast } from './useChatNotificationToast';
 import axiosAuth from '@/@webcore/axios';
+import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 const MAX_LINE_LENGTH = 70;
 
@@ -120,7 +121,10 @@ function canReceiveMessageNotification(
     (canListAllChatsInSector && !chat.sector?.id);
 
   if (chat.status === EChatStatus.in_chat) {
-    if (hasPermissionToViewAll || chat.user?.id === chatStore.user?.user_id) {
+    if (
+      hasPermissionToViewAll ||
+      isChatParticipant(chat, chatStore.user?.user_id)
+    ) {
       return true;
     }
     return canListAllChatsInSector && isChatInUserSectors;
@@ -131,8 +135,12 @@ function canReceiveMessageNotification(
   }
 
   if (chat.status === EChatStatus.queue) {
-    if (chat.user?.id) {
-      return chat.user.id === chatStore.user?.user_id;
+    const hasParticipants =
+      !!chat.user?.id ||
+      (Array.isArray(chat.secondary_users) && chat.secondary_users.length > 0);
+
+    if (hasParticipants) {
+      return isChatParticipant(chat, chatStore.user?.user_id);
     }
 
     const userSectors = getSectors();

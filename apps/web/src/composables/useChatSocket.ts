@@ -17,6 +17,7 @@ import type { IChat } from '@core/common/interfaces/IChat';
 import type { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import { useChatNotifications } from '@/composables/useChatNotifications';
+import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 let isInitialized = false;
 let initializingPromise: Promise<void> | null = null;
@@ -218,7 +219,7 @@ const createChatSocket = () => {
       if (
         isActiveChat &&
         chatData.status === EChatStatus.in_chat &&
-        chatData.user?.id === chatStore.user?.user_id
+        isChatParticipant(chatData, chatStore.user?.user_id)
       ) {
         chatStore.clearActiveChatUnreadCountLocally();
       }
@@ -226,7 +227,7 @@ const createChatSocket = () => {
       if (
         isChatOrKanbanRoute() &&
         (chatData as any)._active &&
-        chatData.user?.id === chatStore.user?.user_id
+        isChatParticipant(chatData, chatStore.user?.user_id)
       ) {
         if (chatStore.activeChat?.chat_id !== chatData.chat_id) {
           chatStore.setActiveChat(chatData.chat_id);
@@ -371,7 +372,7 @@ const createChatSocket = () => {
             if (
               isActiveChat &&
               data.status === EChatStatus.in_chat &&
-              data.user?.id === chatStore.user?.user_id
+              isChatParticipant(data, chatStore.user?.user_id)
             ) {
               chatStore.clearActiveChatUnreadCountLocally();
             }

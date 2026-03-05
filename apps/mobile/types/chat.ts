@@ -48,6 +48,7 @@ export interface ListChatsResult {
   worker: ChatWorker;
   sector?: { id: string; name: string; color?: string } | null;
   user?: ChatUser | null;
+  secondary_users?: ChatUser[] | null;
   contact?: ChatContact | null;
   photo?: string | null;
   name: string | null;

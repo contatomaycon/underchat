@@ -14,6 +14,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { vapidEnvironment } from '@core/config/environments';
+import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 const EXPO_PUSH_API_URL = 'https://exp.host/--/api/v2/push/send';
 const CHAT_NOTIFICATION_ANDROID_CHANNEL = 'underchat-messages';
@@ -259,7 +260,7 @@ export class PushNotificationService {
       chat.status === EChatStatus.in_chat ||
       this.isChatbotStatus(chat.status)
     ) {
-      if (chat.user?.id === userId) return true;
+      if (isChatParticipant(chat, userId)) return true;
       if (hasPermissionToViewAll) return true;
       return canListAllChatsInSector && isChatInUserSectors;
     }
@@ -269,8 +270,15 @@ export class PushNotificationService {
     }
 
     if (chat.status === EChatStatus.queue) {
-      if (chat.user?.id) {
-        return chat.user.id === userId;
+      if (isChatParticipant(chat, userId)) {
+        return true;
+      }
+
+      if (
+        chat.user?.id ||
+        (Array.isArray(chat.secondary_users) && chat.secondary_users.length > 0)
+      ) {
+        return false;
       }
 
       if (userSectors.length > 0) {
@@ -310,6 +318,7 @@ export class PushNotificationService {
       worker: chat.worker,
       sector: chat.sector ?? null,
       user: chat.user ?? null,
+      secondary_users: chat.secondary_users ?? [],
       contact: chat.contact ?? null,
       photo: chat.photo ?? null,
       name: chat.name ?? null,

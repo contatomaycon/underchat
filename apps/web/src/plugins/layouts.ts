@@ -1,5 +1,5 @@
 import type { App } from 'vue';
-import type { PartialDeep } from 'type-fest/source/partial-deep';
+import type { PartialDeep } from 'type-fest';
 import { createLayouts } from '@layouts';
 import { layoutConfig } from '@themeConfig';
 import '@layouts/styles/index.scss';

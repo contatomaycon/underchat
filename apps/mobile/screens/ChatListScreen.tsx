@@ -49,6 +49,8 @@ import {
   canUseUserAndSectorFilters as checkUserSectorFilters,
   canPickQueueChat,
   canViewChat,
+  isChatParticipant,
+  isChatPrimary,
   canListAllChatsWithoutSectorLimit,
   canCloseChatWithoutAttending,
   canDisableSendMessageOnFinishAttendance,
@@ -141,6 +143,18 @@ function resolveSocketChatId(data: SocketChatPayload): string | null {
 function resolveSocketChatUserId(data: SocketChatPayload): string | null {
   const user = (data as { user?: unknown }).user;
   return resolveUserId(user);
+}
+
+function resolveSocketChatSecondaryUserIds(data: SocketChatPayload): string[] {
+  const secondaryUsers = (data as { secondary_users?: unknown })
+    .secondary_users;
+  if (!Array.isArray(secondaryUsers)) {
+    return [];
+  }
+
+  return secondaryUsers
+    .map((secondaryUser) => resolveUserId(secondaryUser))
+    .filter((secondaryUserId): secondaryUserId is string => !!secondaryUserId);
 }
 
 function resolveSocketChatSectorId(data: SocketChatPayload): string | null {
@@ -554,6 +568,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [transferType, setTransferType] =
     useState<TransferDestinationType | null>(null);
   const [transferAnnotation, setTransferAnnotation] = useState('');
+  const [transferKeepInChat, setTransferKeepInChat] = useState(false);
   const [transferChannels, setTransferChannels] = useState<
     TransferChannelOption[]
   >([]);
@@ -627,7 +642,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         profileSidebarReopenTimerRef.current = null;
       }
     };
-  }, []);
+  }, [currentUserId]);
 
   const applyLocallyClearedUnreadOverrides = useCallback(
     (items: ListChatsResult[]): ListChatsResult[] => {
@@ -1035,7 +1050,13 @@ export function ChatListScreen({ route, navigation }: Props) {
       }
 
       const chatUserId = resolveSocketChatUserId(chatData);
-      if (chatUserId && currentUserId && chatUserId === currentUserId) {
+      const chatSecondaryUserIds = resolveSocketChatSecondaryUserIds(chatData);
+      const isParticipant =
+        !!currentUserId &&
+        ((!!chatUserId && chatUserId === currentUserId) ||
+          chatSecondaryUserIds.includes(currentUserId));
+
+      if (isParticipant) {
         return true;
       }
 
@@ -1052,6 +1073,11 @@ export function ChatListScreen({ route, navigation }: Props) {
           worker: { id: workerId ?? '', name: '' },
           sector: sectorId ? { id: sectorId, name: '' } : null,
           user: chatUserId ? { id: chatUserId, name: '' } : null,
+          secondary_users: chatSecondaryUserIds.map((secondaryUserId) => ({
+            id: secondaryUserId,
+            name: '',
+            photo: null,
+          })),
           name: chatName,
           phone: chatPhone ?? '',
           status: status as ListChatsResult['status'],
@@ -1070,7 +1096,12 @@ export function ChatListScreen({ route, navigation }: Props) {
         }
       }
 
-      if (status === 'queue' && !sectorId && !chatUserId) {
+      if (
+        status === 'queue' &&
+        !sectorId &&
+        !chatUserId &&
+        chatSecondaryUserIds.length === 0
+      ) {
         return true;
       }
 
@@ -1231,11 +1262,8 @@ export function ChatListScreen({ route, navigation }: Props) {
       return;
     }
 
-    const chatUserId = resolveUserId(chat.user);
     const shouldClearSummary =
-      chat.status === 'in_chat' &&
-      !!currentUserId &&
-      chatUserId === currentUserId;
+      chat.status === 'in_chat' && isChatParticipant(chat, currentUserId);
 
     if (shouldClearSummary) {
       locallyClearedSummaryChatIdsRef.current.add(chat.chat_id);
@@ -1279,6 +1307,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     setTransferTargetChat(null);
     setTransferType(null);
     setTransferAnnotation('');
+    setTransferKeepInChat(false);
     setTransferChannels([]);
     setTransferUsers([]);
     setTransferSectors([]);
@@ -1293,12 +1322,18 @@ export function ChatListScreen({ route, navigation }: Props) {
 
   const openTransferModal = useCallback(
     async (chat: ListChatsResult) => {
+      if (chat.status === 'in_chat' && !isChatPrimary(chat, currentUserId)) {
+        Alert.alert(pt.warning_title, pt.only_primary_can_transfer);
+        return;
+      }
+
       dismissKeyboard();
       setTransferTargetChat(chat);
       setTransferModalVisible(true);
       setTransferPickerKind(null);
       setTransferType(null);
       setTransferAnnotation('');
+      setTransferKeepInChat(false);
       setTransferChannels([]);
       setTransferUsers([]);
       setTransferSectors([]);
@@ -1335,7 +1370,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         setIsLoadingTransferOptions(false);
       }
     },
-    [closeTransferModal]
+    [closeTransferModal, currentUserId]
   );
 
   useEffect(() => {
@@ -1505,6 +1540,7 @@ export function ChatListScreen({ route, navigation }: Props) {
             : null,
       sector_id: transferType === 'sector' ? selectedTransferSectorId : null,
       annotation: transferAnnotation.trim() || null,
+      keep_in_chat: transferKeepInChat,
     };
 
     setIsTransferring(true);
@@ -1527,6 +1563,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     selectedTransferSectorUserId,
     selectedTransferUserId,
     transferAnnotation,
+    transferKeepInChat,
     transferTargetChat?.chat_id,
     transferType,
   ]);
@@ -1581,6 +1618,11 @@ export function ChatListScreen({ route, navigation }: Props) {
   ]);
 
   const handleCloseChat = useCallback((chat: ListChatsResult) => {
+    if (chat.status === 'in_chat' && !isChatPrimary(chat, currentUserId)) {
+      Alert.alert(pt.warning_title, pt.only_primary_can_close);
+      return;
+    }
+
     openedSwipeableRef.current?.close();
     setCloseServiceSendMessageOnFinishAttendance(true);
     setCloseServiceTargetChat(chat);
@@ -2190,6 +2232,23 @@ export function ChatListScreen({ route, navigation }: Props) {
                   maxLength={300}
                 />
 
+                <View style={styles.transferKeepInChatRow}>
+                  <View style={styles.transferKeepInChatTextWrap}>
+                    <Text style={styles.transferKeepInChatLabel}>
+                      {pt.keep_in_chat}
+                    </Text>
+                    <Text style={styles.transferKeepInChatDescription}>
+                      {pt.keep_in_chat_description}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={transferKeepInChat}
+                    onValueChange={setTransferKeepInChat}
+                    trackColor={{ false: colors.grey300, true: colors.primary }}
+                    thumbColor={colors.onPrimary}
+                  />
+                </View>
+
                 <View style={styles.transferActionsRow}>
                   <Pressable
                     style={styles.transferCancelBtn}
@@ -2316,10 +2375,15 @@ export function ChatListScreen({ route, navigation }: Props) {
 
             const isInChatItem = item.status === 'in_chat';
             const isQueueItem = item.status === 'queue';
+            const isPrimaryInChatItem = isChatPrimary(item, currentUserId);
             const canAttendQueueItem =
               isQueueItem && (canPickAnyQueueChat || index === 0);
             const canCloseQueueItem =
               isQueueItem && canCloseChatWithoutAttending(socketPermissions);
+            const canTransferItem =
+              isQueueItem || (isInChatItem && isPrimaryInChatItem);
+            const canCloseItem =
+              (isInChatItem && isPrimaryInChatItem) || canCloseQueueItem;
             const canSwipe =
               canOpenByVisibility &&
               !isQueueItemLocked &&
@@ -2340,10 +2404,6 @@ export function ChatListScreen({ route, navigation }: Props) {
                 }
               />
             );
-
-            if (!canSwipe) {
-              return row;
-            }
 
             const closeSwipeLabel =
               pt.close_service.split(' ')[0] || pt.close_service;
@@ -2367,7 +2427,7 @@ export function ChatListScreen({ route, navigation }: Props) {
               },
               {
                 key: 'transfer',
-                visible: true,
+                visible: canTransferItem,
                 style: styles.swipeTransferBtn,
                 label: pt.transfer,
                 onPress: () => {
@@ -2377,7 +2437,7 @@ export function ChatListScreen({ route, navigation }: Props) {
               },
               {
                 key: 'close',
-                visible: isInChatItem || canCloseQueueItem,
+                visible: canCloseItem,
                 style: styles.swipeCloseBtn,
                 label: closeSwipeLabel,
                 onPress: () => {
@@ -2385,6 +2445,10 @@ export function ChatListScreen({ route, navigation }: Props) {
                 },
               },
             ].filter((action) => action.visible);
+
+            if (!canSwipe || queueActions.length === 0) {
+              return row;
+            }
 
             const maxActionsWidth = Math.max(
               140,
@@ -3006,6 +3070,29 @@ const styles = StyleSheet.create({
     color: colors.onSurface,
     backgroundColor: colors.inputBg,
     textAlignVertical: 'top',
+  },
+  transferKeepInChatRow: {
+    marginTop: 10,
+    marginBottom: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  transferKeepInChatTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  transferKeepInChatLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  transferKeepInChatDescription: {
+    marginTop: 2,
+    fontSize: 12,
+    color: colors.grey700,
+    lineHeight: 16,
   },
   transferActionsRow: {
     flexDirection: 'row',

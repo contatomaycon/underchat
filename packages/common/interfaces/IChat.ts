@@ -60,6 +60,7 @@ export interface IChat {
   worker: IWorker;
   sector?: ISector | null;
   user?: IUser | null;
+  secondary_users?: IUser[] | null;
   contact?: IContact | null;
   photo?: string | null;
   name: string | null;

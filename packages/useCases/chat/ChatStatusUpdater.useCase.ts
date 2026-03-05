@@ -28,6 +28,10 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { PresenceService } from '@core/services/presence.service';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
 import { IUpsertMessageEnvelope } from '@core/common/interfaces/IUpsertMessage';
+import {
+  isChatParticipant,
+  isChatPrimary,
+} from '@core/common/functions/chatParticipants';
 
 interface IClosedStatusProtocolResult {
   protocol: string | null;
@@ -403,9 +407,13 @@ export class ChatStatusUpdaterUseCase {
       return;
     }
 
-    if (chat.user?.id && chat.user.id === userId) return;
+    if (isChatParticipant(chat, userId)) return;
 
-    if (chat.user?.id && chat.user.id !== userId) {
+    const hasParticipants =
+      !!chat.user?.id ||
+      (Array.isArray(chat.secondary_users) && chat.secondary_users.length > 0);
+
+    if (hasParticipants) {
       throw new Error('chat_access_denied');
     }
 
@@ -502,6 +510,20 @@ export class ChatStatusUpdaterUseCase {
 
     const status = body.status as EChatStatus;
     const currentDate = new Date().toISOString();
+    const isPrimaryAttendant = isChatPrimary(chat, userId);
+    const isParticipantAttendant = isChatParticipant(chat, userId);
+
+    if (status === EChatStatus.closed && chat.user?.id && !isPrimaryAttendant) {
+      throw new Error(t('chat_only_primary_can_close'));
+    }
+
+    if (
+      status === EChatStatus.in_chat &&
+      chat.status === EChatStatus.in_chat &&
+      !isParticipantAttendant
+    ) {
+      throw new Error(t('chat_join_required'));
+    }
 
     let user: IChat['user'] | null | undefined;
     let startedAt: string | null | undefined;
@@ -569,7 +591,8 @@ export class ChatStatusUpdaterUseCase {
 
     if (
       finalStatus === EChatStatus.in_chat &&
-      chat.status !== EChatStatus.closed
+      chat.status !== EChatStatus.closed &&
+      chat.status !== EChatStatus.in_chat
     ) {
       await this.validateInChatAttendance(t, accountId, chat.worker.id, userId);
 

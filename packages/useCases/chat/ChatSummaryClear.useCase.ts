@@ -6,6 +6,7 @@ import { ChatService } from '@core/services/chat.service';
 import { ClearChatSummaryParams } from '@core/schema/chat/clearChatSummary/request.schema';
 import { IClearChatSummaryMessage } from '@core/common/interfaces/IClearChatSummaryMessage';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 @injectable()
 export class ChatSummaryClearUseCase {
@@ -46,7 +47,7 @@ export class ChatSummaryClearUseCase {
         return false;
       }
 
-      if (chat.user?.id !== userId) {
+      if (!isChatParticipant(chat, userId)) {
         return false;
       }
 

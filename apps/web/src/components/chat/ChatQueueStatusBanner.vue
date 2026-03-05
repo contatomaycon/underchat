@@ -11,6 +11,7 @@ const props = defineProps<{
   canAttendChat: boolean;
   canReopenChat: boolean;
   canReopenChatPermission: boolean;
+  showJoinButton?: boolean;
   cannotAttendDueToStatus: boolean;
   cannotAttendDueToLimit: boolean;
   workerConfigForChat: ViewWorkerConfigForChatResponse | null;
@@ -21,9 +22,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   attend: [];
   reopen: [];
+  join: [];
 }>();
 
 const message = computed(() => {
+  if (props.showJoinButton) {
+    return t('must_join_conversation_to_reply');
+  }
+
   if (props.isClosedStatus) {
     if (props.cannotAttendDueToStatus) {
       return t('attendance_only_online_required');
@@ -60,6 +66,10 @@ const message = computed(() => {
 });
 
 const buttonText = computed(() => {
+  if (props.showJoinButton) {
+    return t('join_conversation');
+  }
+
   if (props.isClosedStatus) {
     return t('reopen', 'Reabrir');
   }
@@ -67,6 +77,10 @@ const buttonText = computed(() => {
 });
 
 const showButton = computed(() => {
+  if (props.showJoinButton) {
+    return true;
+  }
+
   if (props.isClosedStatus) {
     return true;
   }
@@ -85,6 +99,10 @@ const tooltipText = computed(() => {
 
 const handleClick = () => {
   if (props.actionLoading) return;
+  if (props.showJoinButton) {
+    emit('join');
+    return;
+  }
   if (props.isClosedStatus) {
     emit('reopen');
     return;
@@ -95,7 +113,7 @@ const handleClick = () => {
 
 <template>
   <div
-    v-if="isQueueStatus || isClosedStatus || loading"
+    v-if="isQueueStatus || isClosedStatus || showJoinButton || loading"
     class="d-flex align-center justify-space-between pa-4 bg-surface rounded mb-2"
   >
     <template v-if="loading">
@@ -121,7 +139,9 @@ const handleClick = () => {
                 :loading="props.actionLoading"
                 :disabled="
                   props.actionLoading ||
-                  (props.isClosedStatus && !props.canReopenChat)
+                  (!props.showJoinButton &&
+                    props.isClosedStatus &&
+                    !props.canReopenChat)
                 "
                 @click="handleClick"
               >
@@ -137,7 +157,9 @@ const handleClick = () => {
           :loading="props.actionLoading"
           :disabled="
             props.actionLoading ||
-            (props.isClosedStatus && !props.canReopenChat)
+            (!props.showJoinButton &&
+              props.isClosedStatus &&
+              !props.canReopenChat)
           "
           @click="handleClick"
         >

@@ -81,6 +81,7 @@ import {
   generateLinkPreview,
   updateChatStatusDetailed,
   transferChat,
+  joinChat,
   listTransferOptions,
   listTransferUsers,
   listTransferSectors,
@@ -128,6 +129,8 @@ import {
   canReopenChat,
   canDisableSendMessageOnFinishAttendance,
   canToggleForwardToOutputChatbot,
+  isChatParticipant,
+  isChatPrimary,
 } from '../constants/chatAuthorization';
 import { useChatFilter } from '../context/ChatFilterContext';
 import { AppAvatar } from '../components/AppAvatar';
@@ -4321,6 +4324,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [transferPickerKind, setTransferPickerKind] =
     useState<TransferPickerKind>(null);
   const [transferAnnotation, setTransferAnnotation] = useState('');
+  const [transferKeepInChat, setTransferKeepInChat] = useState(false);
   const [selectedTransferChannelId, setSelectedTransferChannelId] = useState<
     string | null
   >(null);
@@ -5311,6 +5315,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const chatId = chatInfo.chat_id;
     if (!chatId) return;
     if (loading) return;
+    if (chatInfo.status !== 'in_chat') return;
+    if (!isChatParticipant(chatInfo, currentUserId)) return;
     if (clearSummaryAttemptedForChatRef.current === chatId) return;
     clearSummaryAttemptedForChatRef.current = chatId;
     void clearChatSummary(chatId).then((didClear) => {
@@ -5327,7 +5333,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         };
       });
     });
-  }, [loading, chatInfo.chat_id]);
+  }, [loading, chatInfo, currentUserId]);
 
   const handleSocketMessage = useCallback(
     (payload: SocketMessagePayload) => {
@@ -5424,6 +5430,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           };
         }
 
+        if (Array.isArray(incoming.secondary_users)) {
+          next.secondary_users = incoming.secondary_users as NonNullable<
+            typeof prev.secondary_users
+          >;
+        }
+
         if (incoming.sector && typeof incoming.sector === 'object') {
           next.sector = {
             ...(next.sector ?? {}),
@@ -5460,7 +5472,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         if (
           next.status === 'in_chat' &&
           !!currentUserId &&
-          resolveUserId(next.user) === currentUserId &&
+          isChatParticipant(next, currentUserId) &&
           next.summary
         ) {
           next.summary = {
@@ -5480,8 +5492,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           ? (payloadAny.user as { id?: unknown; user_id?: unknown })
           : null;
       const payloadUserId = resolveUserId(payloadUser);
+      const payloadSecondaryUserIds = Array.isArray(payloadAny.secondary_users)
+        ? payloadAny.secondary_users
+            .map((secondaryUser) => resolveUserId(secondaryUser))
+            .filter(
+              (secondaryUserId): secondaryUserId is string => !!secondaryUserId
+            )
+        : [];
+      const isPayloadParticipant =
+        !!currentUserId &&
+        ((!!payloadUserId && payloadUserId === currentUserId) ||
+          payloadSecondaryUserIds.includes(currentUserId));
 
-      if (isActive && payloadUserId && currentUserId === payloadUserId) {
+      if (isActive && isPayloadParticipant) {
         loadMessages();
       }
     },
@@ -5545,7 +5568,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [isFocused, loadMessages, syncMessagesStatus]);
 
   const isInChatStatus = chatInfo.status === 'in_chat';
-  const canComposeInChat = !isHistoryReadonly && isInChatStatus;
+  const isCurrentUserParticipantInChat = isChatParticipant(
+    chatInfo,
+    currentUserId
+  );
+  const isCurrentUserPrimaryInChat = isChatPrimary(chatInfo, currentUserId);
+  const canComposeInChat =
+    !isHistoryReadonly && isInChatStatus && isCurrentUserParticipantInChat;
+  const canJoinConversationAction =
+    !isHistoryReadonly && isInChatStatus && !isCurrentUserParticipantInChat;
   const canAttendByPermission = canPickQueueChat(permissionList);
   const canReopenByPermission = canReopenChat(permissionList);
   const simultaneousAttendanceLimit =
@@ -5579,16 +5610,26 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     !cannotAttendDueToStatus &&
     !cannotAttendDueToLimit;
   const showAttendReopenBanner =
-    !isHistoryReadonly && (isQueueOrUraStatus || isClosedStatus);
-  const attendReopenBannerMessage = isClosedStatus
-    ? pt.chat_closed_message
-    : pt.chat_queue_message;
-  const attendReopenButtonLabel = isClosedStatus ? pt.reopen : pt.attend;
-  const isAttendReopenActionAllowed = isClosedStatus
-    ? canReopenChatAction
-    : canAttendChatAction;
+    !isHistoryReadonly &&
+    (isQueueOrUraStatus || isClosedStatus || canJoinConversationAction);
+  const attendReopenBannerMessage = canJoinConversationAction
+    ? pt.must_join_conversation_to_reply
+    : isClosedStatus
+      ? pt.chat_closed_message
+      : pt.chat_queue_message;
+  const attendReopenButtonLabel = canJoinConversationAction
+    ? pt.join_conversation
+    : isClosedStatus
+      ? pt.reopen
+      : pt.attend;
+  const isAttendReopenActionAllowed = canJoinConversationAction
+    ? true
+    : isClosedStatus
+      ? canReopenChatAction
+      : canAttendChatAction;
   const attendReopenBlockedReason = (() => {
     if (!showAttendReopenBanner || isAttendReopenActionAllowed) return null;
+    if (canJoinConversationAction) return null;
     if (cannotAttendDueToStatus) return pt.attendance_only_online_required;
     if (cannotAttendDueToLimit && simultaneousAttendanceLimit !== null) {
       return pt.simultaneous_attendance_limit_message.replace(
@@ -5610,15 +5651,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     canViewAttendanceHistory(permissionList);
   const canShowCloseButton =
     !isHistoryReadonly &&
-    (isInChatStatus ||
+    ((isInChatStatus && isCurrentUserPrimaryInChat) ||
       (isQueueOrUraStatus && canCloseChatWithoutAttending(permissionList)));
   const canDisableSendMessageOnFinishAttendanceAction =
     canDisableSendMessageOnFinishAttendance(permissionList);
   const shouldShowCloseServiceSendMessageToggle =
     workerConfigForChat?.send_message_on_finish_attendance_enabled === true &&
     canDisableSendMessageOnFinishAttendanceAction;
-  const canTransferAction = !isHistoryReadonly && isInChatStatus;
-  const canLabelAction = !isHistoryReadonly && isInChatStatus;
+  const canTransferAction =
+    !isHistoryReadonly && isInChatStatus && isCurrentUserPrimaryInChat;
+  const canLabelAction =
+    !isHistoryReadonly && isInChatStatus && isCurrentUserParticipantInChat;
   const canToggleForwardToOutputAction =
     !isHistoryReadonly &&
     (isInChatStatus || isQueueOrUraStatus) &&
@@ -5649,6 +5692,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const chatId = readNonEmptyString(chatInfo.chat_id);
     if (!chatId) return;
 
+    if (isInChatStatus && !isCurrentUserPrimaryInChat) {
+      Alert.alert(pt.warning_title, pt.only_primary_can_close);
+      return;
+    }
+
     const result = await updateChatStatusDetailed(
       chatId,
       'closed',
@@ -5673,6 +5721,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [
     chatInfo.chat_id,
     closeServiceSendMessageOnFinishAttendance,
+    isCurrentUserPrimaryInChat,
+    isInChatStatus,
     navigation,
     shouldShowCloseServiceSendMessageToggle,
   ]);
@@ -5728,6 +5778,27 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       return;
     }
 
+    if (canJoinConversationAction) {
+      setIsAttendReopenLoading(true);
+      const joinResult = await joinChat(chatId);
+      setIsAttendReopenLoading(false);
+
+      if (!joinResult.ok || !joinResult.chat) {
+        Alert.alert(pt.error_title, pt.join_conversation_error);
+        return;
+      }
+
+      const updatedChat: ListChatsResult = {
+        ...chatInfo,
+        ...joinResult.chat,
+      };
+
+      setChatInfo(updatedChat);
+      await syncGlobalChatCounts();
+      Alert.alert(pt.success_title, pt.join_conversation_success);
+      return;
+    }
+
     setIsAttendReopenLoading(true);
     const result = await updateChatStatusDetailed(chatId, 'in_chat');
     setIsAttendReopenLoading(false);
@@ -5777,6 +5848,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     navigation.replace('ChatRoom', { chat: updatedChat });
   }, [
     attendReopenBlockedReason,
+    canJoinConversationAction,
     chatInfo.chat_id,
     chatInfo,
     clearAdvancedFilters,
@@ -6136,6 +6208,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (!transferModalVisible) {
       setTransferType(null);
       setTransferAnnotation('');
+      setTransferKeepInChat(false);
       setSelectedTransferChannelId(null);
       setSelectedTransferUserId(null);
       setSelectedTransferSectorId(null);
@@ -6151,6 +6224,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       setIsLoadingTransferSectorUsers(false);
       return;
     }
+
+    setTransferKeepInChat(false);
 
     setIsLoadingTransferChannels(true);
     setIsLoadingTransferSectors(true);
@@ -6296,6 +6371,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const submitTransfer = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
     if (!chatId) return;
+
+    if (!isCurrentUserPrimaryInChat) {
+      Alert.alert(pt.warning_title, pt.only_primary_can_transfer);
+      return;
+    }
+
     if (!selectedTransferChannelId) {
       Alert.alert(pt.warning_title, pt.channel_required);
       return;
@@ -6319,6 +6400,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             : null,
       sector_id: transferType === 'sector' ? selectedTransferSectorId : null,
       annotation: transferAnnotation.trim() || null,
+      keep_in_chat: transferKeepInChat,
     };
 
     setIsTransferring(true);
@@ -6335,11 +6417,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [
     chatInfo.chat_id,
     navigation,
+    isCurrentUserPrimaryInChat,
     selectedTransferChannelId,
     selectedTransferSectorId,
     selectedTransferSectorUserId,
     selectedTransferUserId,
     transferAnnotation,
+    transferKeepInChat,
     transferType,
   ]);
 
@@ -11312,6 +11396,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   placeholderTextColor={colors.grey500}
                   multiline
                   maxLength={300}
+                />
+              </View>
+
+              <View style={styles.closeServiceToggleRow}>
+                <View style={styles.closeServiceToggleTextWrap}>
+                  <Text style={styles.closeServiceToggleLabel}>
+                    {pt.keep_in_chat}
+                  </Text>
+                  <Text style={styles.closeServiceToggleDescription}>
+                    {pt.keep_in_chat_description}
+                  </Text>
+                </View>
+                <Switch
+                  value={transferKeepInChat}
+                  onValueChange={setTransferKeepInChat}
+                  trackColor={{ false: colors.grey300, true: colors.primary }}
+                  thumbColor={colors.onPrimary}
                 />
               </View>
             </ScrollView>

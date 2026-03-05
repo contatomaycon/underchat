@@ -153,6 +153,60 @@ function resolveChatUserId(chat: ListChatsResult): string | null {
   );
 }
 
+function resolveSecondaryUsers(chat: ListChatsResult): Array<{ id: string }> {
+  const users = chat.secondary_users;
+  if (!Array.isArray(users)) {
+    return [];
+  }
+
+  return users
+    .map((user) => {
+      const id = normalizeIdentifier(user?.id);
+      if (!id) {
+        return null;
+      }
+
+      return { id };
+    })
+    .filter((user): user is { id: string } => !!user);
+}
+
+export function isChatPrimary(
+  chat: ListChatsResult,
+  userId: string | null
+): boolean {
+  if (!userId) {
+    return false;
+  }
+
+  return resolveChatUserId(chat) === normalizeIdentifier(userId);
+}
+
+export function isChatSecondary(
+  chat: ListChatsResult,
+  userId: string | null
+): boolean {
+  if (!userId) {
+    return false;
+  }
+
+  const normalizedUserId = normalizeIdentifier(userId);
+  if (!normalizedUserId) {
+    return false;
+  }
+
+  return resolveSecondaryUsers(chat).some(
+    (secondaryUser) => secondaryUser.id === normalizedUserId
+  );
+}
+
+export function isChatParticipant(
+  chat: ListChatsResult,
+  userId: string | null
+): boolean {
+  return isChatPrimary(chat, userId) || isChatSecondary(chat, userId);
+}
+
 export function hasChatAccessPermission(permissions: string[]): boolean {
   return hasAnyPermission(permissions, CHAT_ACCESS_PERMISSIONS);
 }
@@ -264,8 +318,7 @@ export function canViewChat(
     permissions,
     CHATBOT_INPUT_READ_PERMISSIONS
   );
-  const chatUserId = resolveChatUserId(chat);
-  const isOwnChat = !!userId && !!chatUserId && chatUserId === userId;
+  const isOwnChat = isChatParticipant(chat, userId);
   const chatSectorId = resolveChatSectorId(chat);
   const isChatInUserSectors =
     (userSectors.length > 0 &&

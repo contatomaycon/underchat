@@ -652,7 +652,8 @@ export const useChatStore = defineStore('chat', {
           ? this.activeChat
           : this.findChatInLists(chat.chat_id);
       const previousStatus = previousChat?.status ?? null;
-      const previousUserId = previousChat?.user?.id ?? null;
+      const previousWasParticipant =
+        this.isCurrentUserParticipant(previousChat);
       const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
       const wasInInChat = this.listInChat.some(
         (c) => c.chat_id === chat.chat_id
@@ -699,9 +700,9 @@ export const useChatStore = defineStore('chat', {
       if (previousStatus) {
         this.updateMyChatsTotalFromTransition(
           previousStatus,
-          previousUserId,
+          previousWasParticipant,
           '',
-          null
+          false
         );
       }
 
@@ -733,6 +734,83 @@ export const useChatStore = defineStore('chat', {
       }
       const result = !!chat.sector?.id;
       return result;
+    },
+
+    normalizeSecondaryUsers(
+      users:
+        | ListChatsResult['secondary_users']
+        | IChat['secondary_users']
+        | null
+        | undefined
+    ): NonNullable<ListChatsResult['secondary_users']> {
+      if (!Array.isArray(users)) {
+        return [];
+      }
+
+      return users
+        .filter((user) => !!user?.id)
+        .map((user) => ({
+          id: user.id,
+          name: user.name,
+          photo: user.photo ?? null,
+        }));
+    },
+
+    isCurrentUserPrimary(
+      chat:
+        | Pick<ListChatsResult, 'user'>
+        | Pick<IChat, 'user'>
+        | null
+        | undefined
+    ): boolean {
+      const currentUserId = this.user?.user_id ?? null;
+      if (!currentUserId || !chat?.user?.id) {
+        return false;
+      }
+
+      return chat.user.id === currentUserId;
+    },
+
+    isCurrentUserParticipant(
+      chat:
+        | Pick<ListChatsResult, 'user' | 'secondary_users'>
+        | Pick<IChat, 'user' | 'secondary_users'>
+        | null
+        | undefined
+    ): boolean {
+      if (!chat) {
+        return false;
+      }
+
+      if (this.isCurrentUserPrimary(chat)) {
+        return true;
+      }
+
+      const currentUserId = this.user?.user_id ?? null;
+      if (!currentUserId) {
+        return false;
+      }
+
+      return this.normalizeSecondaryUsers(chat.secondary_users).some(
+        (secondaryUser) => secondaryUser.id === currentUserId
+      );
+    },
+
+    hasAnyParticipants(
+      chat:
+        | Pick<ListChatsResult, 'user' | 'secondary_users'>
+        | Pick<IChat, 'user' | 'secondary_users'>
+        | null
+        | undefined
+    ): boolean {
+      if (!chat) {
+        return false;
+      }
+
+      return (
+        !!chat.user?.id ||
+        this.normalizeSecondaryUsers(chat.secondary_users).length > 0
+      );
     },
 
     resolveChatSnapshot(
@@ -778,6 +856,12 @@ export const useChatStore = defineStore('chat', {
           snapshot.sector
         ),
         user: resolveOptionalPartialNull(incomingChat.user, snapshot.user),
+        secondary_users: this.normalizeSecondaryUsers(
+          resolveOptionalPartialNull(
+            incomingChat.secondary_users,
+            snapshot.secondary_users
+          )
+        ),
         contact: resolveOptionalPartialNull(
           incomingChat.contact,
           snapshot.contact
@@ -838,14 +922,16 @@ export const useChatStore = defineStore('chat', {
         }
       }
 
-      const chatUserId = resolvedChat.user?.id ?? null;
+      const isCurrentUserParticipant =
+        this.isCurrentUserParticipant(resolvedChat);
+      const hasParticipants = this.hasAnyParticipants(resolvedChat);
 
-      if (chatUserId && chatUserId !== this.user?.user_id) {
+      if (hasParticipants && !isCurrentUserParticipant) {
         this.removeChatIfNotAuthorized(resolvedChat);
         return false;
       }
 
-      if (chatUserId) {
+      if (hasParticipants) {
         return true;
       }
 
@@ -932,7 +1018,7 @@ export const useChatStore = defineStore('chat', {
       if (resolvedChat.status === EChatStatus.in_chat) {
         if (
           !hasPermissionToViewAll &&
-          resolvedChat.user?.id !== this.user?.user_id
+          !this.isCurrentUserParticipant(resolvedChat)
         ) {
           const userSectors = getSectors();
           const isAlreadyVisible =
@@ -976,9 +1062,10 @@ export const useChatStore = defineStore('chat', {
       const previousStatus = isActiveChat
         ? (this.activeChat?.status ?? previousChat?.status ?? null)
         : (previousChat?.status ?? null);
-      const previousUserId = isActiveChat
-        ? (this.activeChat?.user?.id ?? previousChat?.user?.id ?? null)
-        : (previousChat?.user?.id ?? null);
+      const previousWasParticipant = isActiveChat
+        ? this.isCurrentUserParticipant(this.activeChat ?? previousChat)
+        : this.isCurrentUserParticipant(previousChat);
+      const nextIsParticipant = this.isCurrentUserParticipant(resolvedChat);
 
       const input: ListChatsResult = {
         chat_id: resolvedChat.chat_id,
@@ -987,6 +1074,9 @@ export const useChatStore = defineStore('chat', {
         worker: resolvedChat.worker,
         sector: resolvedChat.sector,
         user: resolvedChat.user,
+        secondary_users: this.normalizeSecondaryUsers(
+          resolvedChat.secondary_users
+        ),
         contact: resolvedChat.contact,
         photo: resolvedChat.photo,
         name: resolvedChat.name,
@@ -1050,9 +1140,9 @@ export const useChatStore = defineStore('chat', {
 
       this.updateMyChatsTotalFromTransition(
         previousStatus,
-        previousUserId,
+        previousWasParticipant,
         resolvedChat.status,
-        resolvedChat.user?.id ?? null
+        nextIsParticipant
       );
 
       if (!shouldSkipEvents && !wasInAnyList) {
@@ -1111,6 +1201,7 @@ export const useChatStore = defineStore('chat', {
         worker: input.worker,
         sector: input.sector,
         user: input.user,
+        secondary_users: this.normalizeSecondaryUsers(input.secondary_users),
         contact: input.contact,
         photo: input.photo,
         name: input.name,
@@ -1198,23 +1289,17 @@ export const useChatStore = defineStore('chat', {
 
     updateMyChatsTotalFromTransition(
       previousStatus: string | null,
-      previousUserId: string | null,
+      previousWasParticipant: boolean,
       nextStatus: string,
-      nextUserId: string | null
+      nextIsParticipant: boolean
     ): void {
       if (this.myChatsTotal === null) {
         return;
       }
 
-      const currentUserId = this.user?.user_id ?? null;
-      if (!currentUserId) {
-        return;
-      }
-
       const wasMyChat =
-        previousUserId === currentUserId && this.isMyChatStatus(previousStatus);
-      const isMyChatNow =
-        nextUserId === currentUserId && this.isMyChatStatus(nextStatus);
+        previousWasParticipant && this.isMyChatStatus(previousStatus);
+      const isMyChatNow = nextIsParticipant && this.isMyChatStatus(nextStatus);
 
       if (wasMyChat === isMyChatNow) {
         return;
@@ -1598,7 +1683,7 @@ export const useChatStore = defineStore('chat', {
         if (hasPermissionToViewAll) {
           return true;
         }
-        if (chat.user?.id === this.user?.user_id) {
+        if (this.isCurrentUserParticipant(chat)) {
           return true;
         }
         return (
@@ -1606,7 +1691,7 @@ export const useChatStore = defineStore('chat', {
         );
       }
 
-      const isOwnChat = chat.user?.id === this.user?.user_id;
+      const isOwnChat = this.isCurrentUserParticipant(chat);
 
       if (this.isChatbotStatus(chat.status)) {
         if (hasPermissionToViewAll || isOwnChat) {
@@ -1719,7 +1804,7 @@ export const useChatStore = defineStore('chat', {
         wasInClosed || previousStatus === EChatStatus.closed;
 
       if (wasInInChat) {
-        const isStillMine = chat.user?.id === this.user?.user_id;
+        const isStillMine = this.isCurrentUserParticipant(chat);
 
         if (!isStillMine && !hasPermissionToViewAll) {
           const userChannels = getChannels();
@@ -3463,6 +3548,9 @@ export const useChatStore = defineStore('chat', {
               worker: data.data.worker,
               sector: data.data.sector,
               user: data.data.user,
+              secondary_users: this.normalizeSecondaryUsers(
+                data.data.secondary_users
+              ),
               contact: data.data.contact,
               photo: data.data.photo,
               name: data.data.name,
@@ -3475,6 +3563,7 @@ export const useChatStore = defineStore('chat', {
               protocol_start: data.data.protocol_start ?? null,
               protocol_transfer: data.data.protocol_transfer ?? null,
               label: data.data.label ?? null,
+              forward_to_output_chatbot: data.data.forward_to_output_chatbot,
             };
 
             this.activeChat = this.createUpdatedActiveChat(input, true);
@@ -3515,7 +3604,8 @@ export const useChatStore = defineStore('chat', {
       sectorId?: string | null,
       annotation?: string | null,
       hasAppliedAdvancedFilters = false,
-      workerId?: string | null
+      workerId?: string | null,
+      keepInChat = false
     ): Promise<boolean> {
       void hasAppliedAdvancedFilters;
       try {
@@ -3529,6 +3619,7 @@ export const useChatStore = defineStore('chat', {
           user_id: userId ?? undefined,
           sector_id: sectorId ?? undefined,
           annotation: annotation?.trim() ?? undefined,
+          keep_in_chat: keepInChat,
         });
 
         this.loading = false;
@@ -3554,6 +3645,49 @@ export const useChatStore = defineStore('chat', {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
 
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
+
+    async joinChat(chatId: string): Promise<boolean> {
+      if (!chatId) {
+        return false;
+      }
+
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<ListChatsResult>>(
+          `/chat/${chatId}/join`,
+          {}
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('join_conversation_error');
+          this.showSnackbar(errorMessage, EColor.error);
+          return false;
+        }
+
+        this.addChat(data.data as unknown as IChat, true);
+
+        if (this.activeChat?.chat_id === chatId) {
+          this.activeChat = this.createUpdatedActiveChat(data.data, true);
+        }
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t('join_conversation_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
@@ -3947,6 +4081,7 @@ export const useChatStore = defineStore('chat', {
         worker: chat.worker,
         sector: chat.sector,
         user: chat.user,
+        secondary_users: this.normalizeSecondaryUsers(chat.secondary_users),
         contact: chat.contact,
         photo: chat.photo,
         name: chat.name,
@@ -5337,6 +5472,9 @@ export const useChatStore = defineStore('chat', {
               worker: this.activeChat.worker,
               sector: this.activeChat.sector,
               user: this.activeChat.user,
+              secondary_users: this.normalizeSecondaryUsers(
+                this.activeChat.secondary_users
+              ),
               contact: this.activeChat.contact,
               photo: this.activeChat.photo,
               name: this.activeChat.name,

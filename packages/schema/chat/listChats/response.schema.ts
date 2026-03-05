@@ -51,6 +51,9 @@ export const listChatsResultSchema = Type.Object({
   worker: workerSchema,
   sector: Type.Optional(Type.Union([Type.Null(), sectorSchema])),
   user: Type.Optional(Type.Union([Type.Null(), userSchema])),
+  secondary_users: Type.Optional(
+    Type.Union([Type.Array(userSchema), Type.Null()])
+  ),
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   name: Type.Union([Type.String(), Type.Null()]),

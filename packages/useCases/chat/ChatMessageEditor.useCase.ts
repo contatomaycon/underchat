@@ -10,6 +10,7 @@ import { MessageVersion } from '@core/schema/chat/listMessageChats/response.sche
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 @injectable()
 export class ChatMessageEditorUseCase {
@@ -27,6 +28,7 @@ export class ChatMessageEditorUseCase {
     accountId: string,
     params: EditMessageParams,
     body: EditMessageBody,
+    userId: string,
     userChannels: { id: string; name: string }[] = []
   ): Promise<boolean> {
     const message = await this.chatService.findMessageByMessageId(
@@ -47,6 +49,19 @@ export class ChatMessageEditorUseCase {
 
     if (message.chat_id !== params.chat_id) {
       throw new Error(t('message_chat_mismatch'));
+    }
+
+    const chat = await this.chatService.findChatByChatId(
+      accountId,
+      params.chat_id
+    );
+
+    if (!chat) {
+      throw new Error(t('chat_not_found'));
+    }
+
+    if (!isChatParticipant(chat, userId)) {
+      throw new Error(t('chat_access_denied'));
     }
 
     if (message.content?.type !== EMessageType.text) {

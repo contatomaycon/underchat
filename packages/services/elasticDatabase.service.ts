@@ -1395,8 +1395,146 @@ export class ElasticDatabaseService {
     }
   };
 
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    return value as Record<string, unknown>;
+  }
+
+  private getProperties(value: unknown): Record<string, unknown> {
+    const record = this.asRecord(value);
+    if (!record) {
+      return {};
+    }
+
+    const properties = this.asRecord(record.properties);
+    return properties ?? {};
+  }
+
+  private getSubFields(value: unknown): Record<string, unknown> {
+    const record = this.asRecord(value);
+    if (!record) {
+      return {};
+    }
+
+    const fields = this.asRecord(record.fields);
+    return fields ?? {};
+  }
+
+  private getCurrentIndexProperties = async (
+    index: string
+  ): Promise<Record<string, unknown>> => {
+    try {
+      const mappingResponse = await this.client.indices.getMapping({ index });
+      const indexMappings = this.asRecord(mappingResponse[index]);
+      const mappings = this.asRecord(indexMappings?.mappings);
+
+      return this.getProperties(mappings);
+    } catch {
+      return {};
+    }
+  };
+
+  private buildAdditiveFieldMapping(
+    desiredField: unknown,
+    currentField: unknown
+  ): Record<string, unknown> | null {
+    const desiredProperties = this.getProperties(desiredField);
+    const currentProperties = this.getProperties(currentField);
+
+    const hasDesiredProperties = Object.keys(desiredProperties).length > 0;
+    const hasCurrentProperties = Object.keys(currentProperties).length > 0;
+
+    if (hasDesiredProperties && hasCurrentProperties) {
+      const nestedProperties = this.buildAdditiveProperties(
+        desiredProperties,
+        currentProperties
+      );
+
+      const desiredSubFields = this.getSubFields(desiredField);
+      const currentSubFields = this.getSubFields(currentField);
+      const nestedSubFields = this.buildAdditiveProperties(
+        desiredSubFields,
+        currentSubFields
+      );
+
+      const patch: Record<string, unknown> = {};
+
+      if (Object.keys(nestedProperties).length > 0) {
+        patch.properties = nestedProperties;
+      }
+
+      if (Object.keys(nestedSubFields).length > 0) {
+        patch.fields = nestedSubFields;
+      }
+
+      return Object.keys(patch).length > 0 ? patch : null;
+    }
+
+    if (hasDesiredProperties !== hasCurrentProperties) {
+      return null;
+    }
+
+    const desiredSubFields = this.getSubFields(desiredField);
+    const currentSubFields = this.getSubFields(currentField);
+    const nestedSubFields = this.buildAdditiveProperties(
+      desiredSubFields,
+      currentSubFields
+    );
+
+    if (Object.keys(nestedSubFields).length > 0) {
+      return { fields: nestedSubFields };
+    }
+
+    return null;
+  }
+
+  private buildAdditiveProperties(
+    desiredProperties: Record<string, unknown>,
+    currentProperties: Record<string, unknown>
+  ): Record<string, unknown> {
+    const additive: Record<string, unknown> = {};
+
+    for (const [fieldName, desiredField] of Object.entries(desiredProperties)) {
+      const currentField = currentProperties[fieldName];
+
+      if (!currentField) {
+        additive[fieldName] = desiredField;
+        continue;
+      }
+
+      const additiveFieldPatch = this.buildAdditiveFieldMapping(
+        desiredField,
+        currentField
+      );
+
+      if (additiveFieldPatch) {
+        additive[fieldName] = additiveFieldPatch;
+      }
+    }
+
+    return additive;
+  }
+
+  private isMappingConflictError(error: unknown): boolean {
+    const message = String(error);
+
+    return (
+      message.includes('illegal_argument_exception') &&
+      message.includes('cannot be changed from type')
+    );
+  }
+
   indices = async (index: string, mappings: object): Promise<boolean> => {
     const exists = await this.client.indices.exists({ index });
+    const mappingBody = (
+      mappings as {
+        mappings?: Record<string, unknown>;
+      }
+    )?.mappings;
+    const desiredProperties = this.getProperties(mappingBody);
 
     if (!exists) {
       try {
@@ -1408,9 +1546,39 @@ export class ElasticDatabaseService {
           { ignore: [400] }
         );
 
-        return result.acknowledged;
+        if (!result.acknowledged) {
+          return false;
+        }
       } catch (error) {
         throw new Error(`Failed to create index: ${error}`);
+      }
+    }
+
+    if (exists && Object.keys(desiredProperties).length > 0) {
+      const currentProperties = await this.getCurrentIndexProperties(index);
+      const additiveProperties = this.buildAdditiveProperties(
+        desiredProperties,
+        currentProperties
+      );
+
+      if (Object.keys(additiveProperties).length === 0) {
+        return true;
+      }
+
+      try {
+        await this.client.indices.putMapping({
+          index,
+          properties: additiveProperties as any,
+        });
+      } catch (error) {
+        if (this.isMappingConflictError(error)) {
+          metricsCount('elastic.indices.put_mapping.conflict', 1, {
+            index,
+          });
+          return true;
+        }
+
+        throw new Error(`Failed to update index mapping: ${error}`);
       }
     }
 

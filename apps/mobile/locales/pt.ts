@@ -256,6 +256,9 @@ export const pt = {
   transfer_type_sector: 'Setor',
   transfer_annotation: 'Anotação',
   transfer_annotation_placeholder: 'Digite uma anotação opcional',
+  keep_in_chat: 'Manter-se na conversa',
+  keep_in_chat_description:
+    'Ao transferir, você continua como atendente secundário.',
   transfer_successfully: 'Atendimento transferido com sucesso!',
   chat_transfer_error: 'Erro ao transferir atendimento.',
   channel_required: 'Selecione um canal.',
@@ -294,6 +297,15 @@ export const pt = {
   chat_closed_message: 'Para reabrir o atendimento clique em reabrir',
   attend: 'Atender',
   reopen: 'Reabrir',
+  join_conversation: 'Entrar na conversa',
+  join_conversation_success: 'Você entrou na conversa com sucesso.',
+  join_conversation_error: 'Não foi possível entrar na conversa.',
+  must_join_conversation_to_reply:
+    'Entre na conversa para responder este atendimento.',
+  only_primary_can_transfer:
+    'Somente o atendente primário pode transferir este atendimento.',
+  only_primary_can_close:
+    'Somente o atendente primário pode encerrar este atendimento.',
   attend_service: 'Atender',
   close_service: 'Encerrar atendimento',
   close_service_confirmation: 'Deseja realmente encerrar este atendimento?',

@@ -21,6 +21,7 @@ import { editMessageSchema } from '@core/schema/chat/editMessage';
 import { forwardMessageSchema } from '@core/schema/chat/forwardMessage';
 import { updateChatStatusSchema } from '@core/schema/chat/updateChatStatus';
 import { clearChatSummarySchema } from '@core/schema/chat/clearChatSummary';
+import { joinChatSchema } from '@core/schema/chat/joinChat';
 import { startChatWithContactSchema } from '@core/schema/chat/startChatWithContact';
 import { searchMessagesSchema } from '@core/schema/chat/searchMessages';
 import { transferChatSchema } from '@core/schema/chat/transferChat';
@@ -201,6 +202,17 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat/:chat_id/clear-summary', {
     schema: clearChatSummarySchema,
     handler: chatController.clearChatSummary,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chat/:chat_id/join', {
+    schema: joinChatSchema,
+    handler: chatController.joinChat,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

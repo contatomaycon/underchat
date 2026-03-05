@@ -105,6 +105,74 @@ export class ChatSearcherUseCase {
     return hasRequiredPermission(actions, permissions);
   }
 
+  private buildParticipantFilter(userId: string): IElasticsearchBoolClause {
+    return {
+      bool: {
+        should: [
+          {
+            nested: {
+              path: 'user',
+              query: {
+                term: {
+                  'user.id': userId,
+                },
+              },
+            },
+          },
+          {
+            nested: {
+              path: 'secondary_users',
+              query: {
+                term: {
+                  'secondary_users.id': userId,
+                },
+              },
+            },
+          },
+        ],
+        minimum_should_match: 1,
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
+  private buildParticipantExistsFilter(): IElasticsearchBoolClause {
+    return {
+      bool: {
+        should: [
+          {
+            nested: {
+              path: 'user',
+              query: {
+                exists: {
+                  field: 'user.id',
+                },
+              },
+            },
+          },
+          {
+            nested: {
+              path: 'secondary_users',
+              query: {
+                exists: {
+                  field: 'secondary_users.id',
+                },
+              },
+            },
+          },
+        ],
+        minimum_should_match: 1,
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
+  private buildNoParticipantFilter(): IElasticsearchBoolClause {
+    return {
+      bool: {
+        must_not: [this.buildParticipantExistsFilter()],
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
   private buildClosedVisibilityForSector(
     userId: string,
     userSectors: string[]
@@ -148,35 +216,10 @@ export class ChatSearcherUseCase {
     return {
       bool: {
         should: [
-          {
-            nested: {
-              path: 'user',
-              query: {
-                term: {
-                  'user.id': userId,
-                },
-              },
-            },
-          },
+          this.buildParticipantFilter(userId),
           {
             bool: {
-              must: [
-                {
-                  bool: {
-                    must_not: {
-                      nested: {
-                        path: 'user',
-                        query: {
-                          exists: {
-                            field: 'user.id',
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-                closedSectorFilter,
-              ],
+              must: [this.buildNoParticipantFilter(), closedSectorFilter],
             },
           } as unknown as IElasticsearchBoolClause,
         ],
@@ -190,16 +233,7 @@ export class ChatSearcherUseCase {
     userSectors: string[]
   ): IElasticsearchBoolClause {
     const inChatShould: unknown[] = [
-      {
-        nested: {
-          path: 'user',
-          query: {
-            term: {
-              'user.id': userId,
-            },
-          },
-        },
-      },
+      this.buildParticipantFilter(userId),
       {
         bool: {
           must_not: {
@@ -312,33 +346,10 @@ export class ChatSearcherUseCase {
     return {
       bool: {
         should: [
-          {
-            nested: {
-              path: 'user',
-              query: {
-                term: {
-                  'user.id': userId,
-                },
-              },
-            },
-          },
+          this.buildParticipantFilter(userId),
           {
             bool: {
-              must: [
-                {
-                  bool: {
-                    must_not: {
-                      nested: {
-                        path: 'user',
-                        query: {
-                          match_all: {},
-                        },
-                      },
-                    },
-                  },
-                },
-                queueSectorClause,
-              ],
+              must: [this.buildNoParticipantFilter(), queueSectorClause],
             },
           } as unknown as IElasticsearchBoolClause,
         ],
@@ -418,16 +429,7 @@ export class ChatSearcherUseCase {
           ? query.filter_user_id
           : userId;
 
-      const userFilter = {
-        nested: {
-          path: 'user',
-          query: {
-            term: {
-              'user.id': effectiveFilterUserId,
-            },
-          },
-        },
-      };
+      const userFilter = this.buildParticipantFilter(effectiveFilterUserId);
       filterClauses.push(userFilter);
       baseFiltersForCounts.push(userFilter);
     }
@@ -726,16 +728,7 @@ export class ChatSearcherUseCase {
                   status: [EChatStatus.queue, EChatStatus.in_chat],
                 },
               } as unknown as IElasticsearchBoolClause,
-              {
-                nested: {
-                  path: 'user',
-                  query: {
-                    term: {
-                      'user.id': userId,
-                    },
-                  },
-                },
-              },
+              this.buildParticipantFilter(userId),
             ],
           },
         } as unknown as IElasticsearchBoolClause;
@@ -780,16 +773,7 @@ export class ChatSearcherUseCase {
           const inChatLikeVisibilityClause: IElasticsearchBoolClause =
             canViewInSector
               ? this.buildInChatVisibilityIncludingNoSector(userId, userSectors)
-              : ({
-                  nested: {
-                    path: 'user',
-                    query: {
-                      term: {
-                        'user.id': userId,
-                      },
-                    },
-                  },
-                } as unknown as IElasticsearchBoolClause);
+              : this.buildParticipantFilter(userId);
 
           if (unrestrictedChatbotInputStatuses.length === 0) {
             filterClauses.push(inChatLikeVisibilityClause);
@@ -835,48 +819,17 @@ export class ChatSearcherUseCase {
               this.buildClosedVisibilityForSector(userId, userSectors)
             );
           } else {
-            filterClauses.push({
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
-                  },
-                },
-              },
-            });
+            filterClauses.push(this.buildParticipantFilter(userId));
           }
         } else if (!canListAll) {
           const closedVisibility: IElasticsearchBoolClause = {
             bool: {
               should: [
-                {
-                  nested: {
-                    path: 'user',
-                    query: {
-                      term: {
-                        'user.id': userId,
-                      },
-                    },
-                  },
-                },
+                this.buildParticipantFilter(userId),
                 {
                   bool: {
                     must: [
-                      {
-                        bool: {
-                          must_not: {
-                            nested: {
-                              path: 'user',
-                              query: {
-                                exists: {
-                                  field: 'user.id',
-                                },
-                              },
-                            },
-                          },
-                        },
-                      },
+                      this.buildNoParticipantFilter(),
                       userSectors.length > 0
                         ? ({
                             nested: {
@@ -1222,33 +1175,10 @@ export class ChatSearcherUseCase {
       const queueVisibility: IElasticsearchBoolClause = {
         bool: {
           should: [
-            {
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
-                  },
-                },
-              },
-            },
+            this.buildParticipantFilter(userId),
             {
               bool: {
-                must: [
-                  {
-                    bool: {
-                      must_not: {
-                        nested: {
-                          path: 'user',
-                          query: {
-                            match_all: {},
-                          },
-                        },
-                      },
-                    },
-                  },
-                  queueSectorClause,
-                ],
+                must: [this.buildNoParticipantFilter(), queueSectorClause],
               },
             } as unknown as IElasticsearchBoolClause,
           ],
@@ -1305,16 +1235,7 @@ export class ChatSearcherUseCase {
       return [
         ...baseFiltersForCounts,
         statusFilter,
-        {
-          nested: {
-            path: 'user',
-            query: {
-              term: {
-                'user.id': userId,
-              },
-            },
-          },
-        } as unknown as IElasticsearchBoolClause,
+        this.buildParticipantFilter(userId),
       ];
     };
 
@@ -1323,16 +1244,7 @@ export class ChatSearcherUseCase {
 
     const buildInChatMineCountFilter = (): IElasticsearchBoolClause[] => [
       ...buildInChatLikeCountFilter([EChatStatus.in_chat]),
-      {
-        nested: {
-          path: 'user',
-          query: {
-            term: {
-              'user.id': userId,
-            },
-          },
-        },
-      } as unknown as IElasticsearchBoolClause,
+      this.buildParticipantFilter(userId),
     ];
 
     const buildChatbotCountFilter = (): IElasticsearchBoolClause[] => {
@@ -1353,16 +1265,7 @@ export class ChatSearcherUseCase {
       const inChatLikeVisibilityClause: IElasticsearchBoolClause =
         canViewInSector
           ? this.buildInChatVisibilityIncludingNoSector(userId, userSectors)
-          : ({
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
-                  },
-                },
-              },
-            } as unknown as IElasticsearchBoolClause);
+          : this.buildParticipantFilter(userId);
 
       return [
         ...baseFiltersForCounts,
@@ -1434,33 +1337,11 @@ export class ChatSearcherUseCase {
           const closedVisibilityForCount: IElasticsearchBoolClause = {
             bool: {
               should: [
-                {
-                  nested: {
-                    path: 'user',
-                    query: {
-                      term: {
-                        'user.id': userId,
-                      },
-                    },
-                  },
-                },
+                this.buildParticipantFilter(userId),
                 {
                   bool: {
                     must: [
-                      {
-                        bool: {
-                          must_not: {
-                            nested: {
-                              path: 'user',
-                              query: {
-                                exists: {
-                                  field: 'user.id',
-                                },
-                              },
-                            },
-                          },
-                        },
-                      },
+                      this.buildNoParticipantFilter(),
                       {
                         nested: {
                           path: 'sector',
@@ -1497,49 +1378,18 @@ export class ChatSearcherUseCase {
               status: EChatStatus.closed,
             },
           } as unknown as IElasticsearchBoolClause,
-          {
-            nested: {
-              path: 'user',
-              query: {
-                term: {
-                  'user.id': userId,
-                },
-              },
-            },
-          } as unknown as IElasticsearchBoolClause,
+          this.buildParticipantFilter(userId),
         ];
       }
 
       const closedVisibility: IElasticsearchBoolClause = {
         bool: {
           should: [
-            {
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
-                  },
-                },
-              },
-            },
+            this.buildParticipantFilter(userId),
             {
               bool: {
                 must: [
-                  {
-                    bool: {
-                      must_not: {
-                        nested: {
-                          path: 'user',
-                          query: {
-                            exists: {
-                              field: 'user.id',
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
+                  this.buildNoParticipantFilter(),
                   userSectors.length > 0
                     ? ({
                         nested: {
@@ -1593,16 +1443,7 @@ export class ChatSearcherUseCase {
                 status: [EChatStatus.queue, EChatStatus.in_chat],
               },
             } as unknown as IElasticsearchBoolClause,
-            {
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
-                  },
-                },
-              },
-            },
+            this.buildParticipantFilter(userId),
           ],
         },
       } as unknown as IElasticsearchBoolClause;
@@ -1875,6 +1716,9 @@ export class ChatSearcherUseCase {
       }
       if (Array.isArray(source.summary)) {
         source.summary = source.summary[0] ?? null;
+      }
+      if (!Array.isArray(source.secondary_users)) {
+        source.secondary_users = [];
       }
       return source;
     }) as ListChatsResult[];

@@ -30,6 +30,7 @@ import {
 import Redis from 'ioredis';
 import { safeRedisGet } from '@core/plugins/redis';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -48,6 +49,54 @@ export class ChatService {
     @inject(ChatQuickMessageTemplatesListerRepository)
     private readonly chatQuickMessageTemplatesListerRepository: ChatQuickMessageTemplatesListerRepository
   ) {}
+
+  private normalizeChatData(chat: IChat | null): IChat | null {
+    if (!chat) {
+      return null;
+    }
+
+    const normalizedChat = chat;
+
+    if (Array.isArray(normalizedChat.summary)) {
+      normalizedChat.summary = normalizedChat.summary[0] as IChat['summary'];
+    }
+
+    if (!Array.isArray(normalizedChat.secondary_users)) {
+      normalizedChat.secondary_users = [];
+    }
+
+    return normalizedChat;
+  }
+
+  private buildParticipantFilter(userId: string): Record<string, unknown> {
+    return {
+      bool: {
+        should: [
+          {
+            nested: {
+              path: 'user',
+              query: {
+                term: {
+                  'user.id': userId,
+                },
+              },
+            },
+          },
+          {
+            nested: {
+              path: 'secondary_users',
+              query: {
+                term: {
+                  'secondary_users.id': userId,
+                },
+              },
+            },
+          },
+        ],
+        minimum_should_match: 1,
+      },
+    };
+  }
 
   saveMessageChat = async (messageChat: IChatMessage): Promise<boolean> => {
     const mappings = mensageMappings();
@@ -331,6 +380,9 @@ export class ChatService {
       worker: chat.worker,
       sector: chat.sector,
       user: chat.user,
+      secondary_users: Array.isArray(chat.secondary_users)
+        ? chat.secondary_users
+        : [],
       contact: chat.contact,
       photo: chat.photo,
       name: chat.name,
@@ -489,6 +541,11 @@ export class ChatService {
         ctx._source.user = patch.user;
         changed = true;
       }
+
+      if (patch.containsKey('secondary_users')) {
+        ctx._source.secondary_users = patch.secondary_users;
+        changed = true;
+      }
       
       if (patch.containsKey('contact')) {
         ctx._source.contact = patch.contact;
@@ -626,6 +683,8 @@ export class ChatService {
 
     const hasStatusUpdate = patch.status !== null && patch.status !== undefined;
     const hasUserUpdate = patch.user !== null && patch.user !== undefined;
+    const hasSecondaryUsersUpdate =
+      patch.secondary_users !== null && patch.secondary_users !== undefined;
     const hasStatusAndUserUpdate = hasStatusUpdate && hasUserUpdate;
 
     if (
@@ -647,6 +706,7 @@ export class ChatService {
       domain = 'status';
     } else if (
       hasUserUpdate ||
+      hasSecondaryUsersUpdate ||
       (patch.sector !== null && patch.sector !== undefined)
     ) {
       domain = 'assignment';
@@ -687,6 +747,12 @@ export class ChatService {
 
     if (patch.user !== null && patch.user !== undefined) {
       upsert.user = patch.user;
+    }
+
+    if (patch.secondary_users !== null && patch.secondary_users !== undefined) {
+      upsert.secondary_users = patch.secondary_users;
+    } else {
+      upsert.secondary_users = [];
     }
 
     if (patch.contact !== null && patch.contact !== undefined) {
@@ -813,11 +879,7 @@ export class ChatService {
     const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
     const chat = hit?._source ?? null;
 
-    if (chat && Array.isArray(chat.summary)) {
-      chat.summary = chat.summary[0] as IChat['summary'];
-    }
-
-    return chat;
+    return this.normalizeChatData(chat);
   };
 
   updateChatStatus = async (
@@ -1025,14 +1087,7 @@ export class ChatService {
               },
             },
             {
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
-                  },
-                },
-              },
+              ...this.buildParticipantFilter(userId),
             },
             {
               term: {
@@ -1095,14 +1150,7 @@ export class ChatService {
               },
             },
             {
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
-                  },
-                },
-              },
+              ...this.buildParticipantFilter(userId),
             },
             {
               term: {
@@ -1521,7 +1569,7 @@ export class ChatService {
     const cache = await safeRedisGet(this.redis, cacheKey);
 
     if (cache) {
-      return JSON.parse(cache) as IChat;
+      return this.normalizeChatData(JSON.parse(cache) as IChat);
     }
 
     const candidates = buildCandidates(phone);
@@ -1609,14 +1657,10 @@ export class ChatService {
     );
 
     const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
-    const chat = hit?._source ?? null;
+    const chat = this.normalizeChatData(hit?._source ?? null);
 
     if (!chat) {
       return null;
-    }
-
-    if (chat && Array.isArray(chat.summary)) {
-      chat.summary = chat.summary[0] as IChat['summary'];
     }
 
     await this.cacheChat(chat);
@@ -1734,17 +1778,16 @@ export class ChatService {
 
     const chats = hits
       .map((hit: ElasticHit<IChat>) => {
-        const chat = hit._source;
-        if (chat && Array.isArray(chat.summary)) {
-          chat.summary = chat.summary[0] as IChat['summary'];
-        }
-        return chat;
+        const chat = hit._source ?? null;
+        return this.normalizeChatData(chat);
       })
-      .filter((chat): chat is IChat => chat !== undefined);
+      .filter((chat): chat is IChat => chat !== null && chat !== undefined);
 
     if (userId && chats.length > 0) {
-      const userChats = chats.filter((chat) => chat.user?.id === userId);
-      const otherChats = chats.filter((chat) => chat.user?.id !== userId);
+      const userChats = chats.filter((chat) => isChatParticipant(chat, userId));
+      const otherChats = chats.filter(
+        (chat) => !isChatParticipant(chat, userId)
+      );
 
       return [...userChats, ...otherChats];
     }
@@ -1794,14 +1837,13 @@ export class ChatService {
 
     const chats =
       result?.hits?.hits?.map((hit) => {
-        const chat = (hit as ElasticHit<IChat>)._source;
-        if (chat && Array.isArray(chat.summary)) {
-          chat.summary = chat.summary[0] as IChat['summary'];
-        }
-        return chat;
+        const chat = (hit as ElasticHit<IChat>)._source ?? null;
+        return this.normalizeChatData(chat);
       }) ?? [];
 
-    return chats.filter((chat): chat is IChat => chat !== undefined);
+    return chats.filter(
+      (chat): chat is IChat => chat !== null && chat !== undefined
+    );
   };
 
   findMessageByMessageId = async (

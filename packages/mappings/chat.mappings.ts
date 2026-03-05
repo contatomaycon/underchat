@@ -80,6 +80,20 @@ export const chatMappings = () => {
             },
           },
         },
+        secondary_users: {
+          type: 'nested',
+          properties: {
+            id: {
+              type: 'keyword',
+            },
+            name: {
+              type: 'text',
+            },
+            photo: {
+              type: 'text',
+            },
+          },
+        },
         contact: {
           type: 'nested',
           properties: {

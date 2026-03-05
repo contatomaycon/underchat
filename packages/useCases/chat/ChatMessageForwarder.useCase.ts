@@ -6,9 +6,6 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { ChatService } from '@core/services/chat.service';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { ContactService } from '@core/services/contact.service';
@@ -21,6 +18,7 @@ import {
   ForwardMessageResponse,
   ForwardMessageResult,
 } from '@core/schema/chat/forwardMessage/response.schema';
+import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 type ForwardTargetType = 'chat' | 'contact';
 
@@ -50,40 +48,6 @@ export class ChatMessageForwarderUseCase {
     private readonly startChatWithContactUseCase: StartChatWithContactUseCase
   ) {}
 
-  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
-  private canViewChatsInSector(actions: IJwtGroupHierarchy[]): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-      EChatPermissions.list_all_chats_in_sector,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
-  private canListAllChatsWithoutSectorLimit(
-    actions: IJwtGroupHierarchy[]
-  ): boolean {
-    const permissions = [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EChatPermissions.chat_group,
-      EChatPermissions.list_all_chats_without_sector_limit,
-    ];
-
-    return hasRequiredPermission(actions, permissions);
-  }
-
   private canAccessChat(
     chat: IChat,
     userId: string,
@@ -91,6 +55,9 @@ export class ChatMessageForwarderUseCase {
     userSectors: string[],
     userChannels: { id: string; name: string }[] = []
   ): boolean {
+    void actions;
+    void userSectors;
+
     if (userChannels.length > 0) {
       const channelIds = userChannels.map((c) => c.id);
       if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
@@ -98,26 +65,7 @@ export class ChatMessageForwarderUseCase {
       }
     }
 
-    const canViewOthers = this.canViewOthersChats(actions);
-    const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
-    if (canViewOthers || canListAll) return true;
-
-    const isOwnChat = chat.user?.id === userId;
-    if (isOwnChat) return true;
-
-    const canViewInSector = this.canViewChatsInSector(actions);
-    if (!canViewInSector) return false;
-
-    if (
-      userSectors.length > 0 &&
-      chat.sector?.id &&
-      userSectors.includes(chat.sector.id)
-    )
-      return true;
-    if (userSectors.length === 0 && !chat.sector?.id) return true;
-    if (canViewInSector && !chat.sector?.id) return true;
-
-    return false;
+    return isChatParticipant(chat, userId);
   }
 
   private ensureSourceCanBeForwarded(

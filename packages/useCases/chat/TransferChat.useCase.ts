@@ -23,6 +23,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { createChatCacheKey } from '@core/common/functions/createCacheKey';
+import { isChatPrimary } from '@core/common/functions/chatParticipants';
 
 @injectable()
 export class TransferChatUseCase {
@@ -248,16 +249,55 @@ export class TransferChatUseCase {
     user: IChat['user'] | null | undefined,
     sector: IChat['sector'] | null | undefined,
     shouldClearUser: boolean,
-    shouldClearSector: boolean
+    shouldClearSector: boolean,
+    secondaryUsers: IChat['secondary_users'] | null
   ): IChat {
     return {
       ...chat,
       worker,
       status: EChatStatus.queue,
       user: shouldClearUser ? null : (user ?? chat.user),
+      secondary_users: secondaryUsers,
       sector: shouldClearSector ? null : (sector ?? chat.sector),
       forward_to_output_chatbot: true,
     };
+  }
+
+  private buildSecondaryUsersForTransfer(input: {
+    chat: IChat;
+    actorUserId: string;
+    actorUser: IChat['user'] | null;
+    keepInChat: boolean;
+    nextPrimaryUser: IChat['user'] | null;
+  }): IChat['secondary_users'] | null {
+    const { chat, actorUserId, actorUser, keepInChat, nextPrimaryUser } = input;
+    const primaryUserId = nextPrimaryUser?.id ?? null;
+    const byId = new Map<string, NonNullable<IChat['user']>>();
+
+    const existingSecondaryUsers = Array.isArray(chat.secondary_users)
+      ? chat.secondary_users
+      : [];
+
+    for (const secondaryUser of existingSecondaryUsers) {
+      if (!secondaryUser?.id || secondaryUser.id === primaryUserId) {
+        continue;
+      }
+
+      if (!keepInChat && secondaryUser.id === actorUserId) {
+        continue;
+      }
+      byId.set(secondaryUser.id, secondaryUser);
+    }
+
+    if (keepInChat && actorUser?.id && actorUser.id !== primaryUserId) {
+      byId.set(actorUser.id, actorUser);
+    }
+
+    if (byId.size === 0) {
+      return [];
+    }
+
+    return Array.from(byId.values());
   }
 
   private async buildChatWithProtocol(
@@ -361,6 +401,7 @@ export class TransferChatUseCase {
     accountId: string,
     params: TransferChatParams,
     body: TransferChatBody,
+    actorUserId: string,
     userChannels: { id: string; name: string }[] = []
   ): Promise<{ chat_id: string; status: boolean }> {
     const chat = await this.chatService.findChatByChatId(
@@ -378,6 +419,10 @@ export class TransferChatUseCase {
       if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
         throw new Error(t('chat_access_denied'));
       }
+    }
+
+    if (!isChatPrimary(chat, actorUserId)) {
+      throw new Error(t('chat_only_primary_can_transfer'));
     }
 
     const targetWorker = await this.resolveTargetWorker(
@@ -405,6 +450,7 @@ export class TransferChatUseCase {
 
     let user = this.buildUserFromData(body, userData);
     let sector = this.buildSectorFromData(body, sectorData);
+    const keepInChat = body.keep_in_chat === true;
 
     const isChannelOnlyTransfer =
       isChannelChanged && !body.user_id && !body.sector_id;
@@ -432,13 +478,37 @@ export class TransferChatUseCase {
 
     await this.validateTransferTarget(t, workerConfigFields, body);
 
+    const nextPrimaryUser: IChat['user'] | null = shouldClearUser
+      ? null
+      : (user ?? chat.user ?? null);
+
+    const actorUserData = keepInChat
+      ? await this.userService.viewUserNamePhoto(actorUserId)
+      : null;
+    const actorUser = actorUserData
+      ? {
+          id: actorUserData.id,
+          name: actorUserData.name,
+          photo: actorUserData.photo,
+        }
+      : null;
+
+    const secondaryUsers = this.buildSecondaryUsersForTransfer({
+      chat,
+      actorUserId,
+      actorUser,
+      keepInChat,
+      nextPrimaryUser,
+    });
+
     const updatedChat = this.buildUpdatedChatForTransfer(
       chat,
       targetWorker,
       user,
       sector,
       shouldClearUser,
-      shouldClearSector
+      shouldClearSector,
+      secondaryUsers
     );
 
     const saved = await this.chatService.saveChat(updatedChat);

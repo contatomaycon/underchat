@@ -9,7 +9,7 @@ interface Props {
   stats: string;
   height: number;
   series: unknown[];
-  chartOptions: unknown;
+  chartOptions: any;
 }
 
 const props = withDefaults(defineProps<Props>(), {

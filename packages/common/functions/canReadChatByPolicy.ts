@@ -5,6 +5,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { extractUserChannelIds } from '@core/common/functions/extractUserChannelIds';
+import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 type IUserChannelLike = {
   id?: string;
@@ -67,7 +68,7 @@ export function canReadChatByPolicy({
     return true;
   }
 
-  const isOwnChat = chat.user?.id === userId;
+  const isOwnChat = isChatParticipant(chat, userId);
   if (isOwnChat) {
     return true;
   }
@@ -108,7 +109,11 @@ export function canReadChatByPolicy({
     return false;
   }
 
-  if (chat.user?.id && chat.user.id !== userId) {
+  const hasParticipants =
+    !!chat.user?.id ||
+    (Array.isArray(chat.secondary_users) && chat.secondary_users.length > 0);
+
+  if (hasParticipants && !isOwnChat) {
     return false;
   }
 

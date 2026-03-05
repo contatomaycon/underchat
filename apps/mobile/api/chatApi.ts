@@ -87,6 +87,7 @@ export interface TransferChatPayload {
   user_id?: string | null;
   sector_id?: string | null;
   annotation?: string | null;
+  keep_in_chat?: boolean;
 }
 
 export interface TransferUserOption {
@@ -564,6 +565,7 @@ export async function transferChat(
     user_id: payload.user_id ?? undefined,
     sector_id: payload.sector_id ?? undefined,
     annotation: payload.annotation?.trim() || undefined,
+    keep_in_chat: payload.keep_in_chat === true,
   };
 
   const res = await apiPost<{ chat_id: string; status: boolean }>(
@@ -572,6 +574,31 @@ export async function transferChat(
   );
 
   return !!res?.status;
+}
+
+export async function joinChat(
+  chatId: string
+): Promise<{ ok: boolean; chat: ListChatsResult | null }> {
+  if (!chatId || chatId.trim().length === 0) {
+    return {
+      ok: false,
+      chat: null,
+    };
+  }
+
+  const res = await apiPost<ListChatsResult>(`/chat/${chatId}/join`, {});
+
+  if (!res?.status || !res.data) {
+    return {
+      ok: false,
+      chat: null,
+    };
+  }
+
+  return {
+    ok: true,
+    chat: res.data,
+  };
 }
 
 type SearchMessagesRawResponse = {
