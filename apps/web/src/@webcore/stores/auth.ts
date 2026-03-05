@@ -27,6 +27,7 @@ import { AuthForgotPasswordSendCodeRequest } from '@core/schema/auth/forgotPassw
 import { AuthForgotPasswordSendCodeResponse } from '@core/schema/auth/forgotPassword/sendCode/response.schema';
 import { AuthForgotPasswordVerifyCodeRequest } from '@core/schema/auth/forgotPassword/verifyCode/request.schema';
 import { AuthForgotPasswordVerifyCodeResponse } from '@core/schema/auth/forgotPassword/verifyCode/response.schema';
+import { UserAttendanceGuardStatus } from '@core/schema/user/attendanceHours/shared.schema';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -54,6 +55,23 @@ export const useAuthStore = defineStore('auth', {
     updatePlanStatus(isActive: boolean) {
       this.planIsActive = isActive;
       persistPlanStatus(isActive);
+    },
+    async initializeAttendanceGuard(
+      attendanceGuard: UserAttendanceGuardStatus | null | undefined
+    ): Promise<void> {
+      if (!attendanceGuard) {
+        return;
+      }
+
+      try {
+        const { useAttendanceGuardStore } =
+          await import('@webcore/stores/attendanceGuard');
+        const attendanceGuardStore = useAttendanceGuardStore();
+        attendanceGuardStore.applyStatus(attendanceGuard);
+        attendanceGuardStore.attachListeners();
+      } catch {
+        // ignore
+      }
     },
     async login(login: string, password: string): Promise<boolean> {
       const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
@@ -114,6 +132,7 @@ export const useAuthStore = defineStore('auth', {
         setChannels(data.data.channels ?? []);
         persistPlanStatus(this.planIsActive);
         updateAbilityPermissions(this.permissions);
+        await this.initializeAttendanceGuard(data.data.attendance_guard);
 
         return true;
       } catch (error) {
@@ -166,6 +185,7 @@ export const useAuthStore = defineStore('auth', {
         setChannels(data.data.channels ?? []);
         persistPlanStatus(this.planIsActive);
         updateAbilityPermissions(this.permissions);
+        await this.initializeAttendanceGuard(data.data.attendance_guard);
 
         return true;
       } catch (error) {

@@ -1047,5 +1047,13 @@
   "webhook_mapping_transfer_sector_required": "When transferring to sector, sector is required.",
   "webhook_mapping_transfer_user_required": "When transferring to user, user is required.",
   "webhook_mapping_chatbot_required": "When type is chatbot, input chatbot is required.",
-  "webhook_mapping_message_required": "Message is required."
+  "webhook_mapping_message_required": "Message is required.",
+  "user_attendance_hours_view_success": "User attendance hours loaded successfully!",
+  "user_attendance_hours_update_success": "User attendance hours updated successfully!",
+  "user_attendance_hours_status_view_success": "Attendance hours status loaded successfully!",
+  "user_attendance_hours_invalid_weekday": "Invalid weekday for attendance hours.",
+  "user_attendance_hours_invalid_time_range": "Invalid time range for {{day}}. Provide a start time lower than end time.",
+  "user_attendance_hours_rule_conflict": "There is a schedule conflict on {{day}}. Adjust windows so they do not overlap.",
+  "user_attendance_hours_login_blocked": "Outside attendance hours. Today's windows: {{windows}}.",
+  "user_attendance_hours_blocked_use": "Outside attendance hours. Today's windows: {{windows}}."
 }

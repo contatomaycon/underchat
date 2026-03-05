@@ -19,6 +19,7 @@ import { IJwtPermissionsWithPlan } from '@core/common/interfaces/IJwtPermissions
 import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutPrefix';
 import Redis from 'ioredis';
 import { UserService } from '@core/services/user.service';
+import { USER_ATTENDANCE_HOURS_BLOCK_REASON } from '@core/common/functions/userAttendanceHours';
 
 async function handleApiKeyCacheWithCachedValue(
   redis: Redis,
@@ -105,6 +106,8 @@ async function authenticateJwt(
   const { t } = request;
   const { Redis } = request.server;
   const routePath = routePathWithoutPrefix(request);
+  const shouldBypassAttendanceGuard =
+    routePath === '/user/me/attendance-hours/status';
 
   try {
     const decoded: {
@@ -174,6 +177,27 @@ async function authenticateJwt(
         message: t('not_authorized'),
         httpStatusCode: EHTTPStatusCode.unauthorized,
       });
+    }
+
+    if (!shouldBypassAttendanceGuard) {
+      const userService = container.resolve(UserService);
+      const attendanceGuard = await userService.getAttendanceGuardStatus(
+        decoded.user_id,
+        decoded.account_id
+      );
+
+      if (attendanceGuard.is_blocked_now) {
+        return sendResponse(reply, {
+          message: t('user_attendance_hours_blocked_use', {
+            windows: attendanceGuard.today_windows_label ?? '--',
+          }),
+          httpStatusCode: EHTTPStatusCode.forbidden,
+          data: {
+            reason: USER_ATTENDANCE_HOURS_BLOCK_REASON,
+            attendance_guard: attendanceGuard,
+          },
+        });
+      }
     }
 
     const responseAuth = await handleApiKeyCacheWithCachedValue(

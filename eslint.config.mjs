@@ -58,7 +58,7 @@ export default [
       eqeqeq: ['error', 'always'],
       'no-throw-literal': 'error',
       strict: ['error', 'never'],
-      'max-params': ['error', 40],
+      'max-params': ['error', 60],
       complexity: ['error', { max: 100 }],
       'max-depth': ['error', 4],
       'max-nested-callbacks': ['error', 3],

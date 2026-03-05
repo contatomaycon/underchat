@@ -30,6 +30,9 @@ import { listUserChannelsSchema } from '@core/schema/user/listUserChannels';
 import { viewUserChannelsSchema } from '@core/schema/user/viewUserChannels';
 import { listUserAccountsSchema } from '@core/schema/user/listUserAccounts';
 import { sessionLoginSchema } from '@core/schema/user/sessionLogin';
+import { viewAttendanceHoursSchema } from '@core/schema/user/viewAttendanceHours';
+import { updateAttendanceHoursSchema } from '@core/schema/user/updateAttendanceHours';
+import { viewAttendanceHoursStatusSchema } from '@core/schema/user/viewAttendanceHoursStatus';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -64,6 +67,34 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/user/me/attendance-hours/status', {
+    schema: viewAttendanceHoursStatusSchema,
+    handler: userController.viewAttendanceHoursStatus,
+    preHandler: [(request, reply) => server.authenticateJwt(request, reply, [])],
+  });
+
+  server.get('/user/:user_id/attendance-hours', {
+    schema: viewAttendanceHoursSchema,
+    handler: userController.viewAttendanceHours,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.put('/user/:user_id/attendance-hours', {
+    schema: updateAttendanceHoursSchema,
+    handler: userController.updateAttendanceHours,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userUpdatePermissions),
       planGuard,
       planStatus,
     ],

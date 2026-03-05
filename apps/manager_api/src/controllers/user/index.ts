@@ -21,6 +21,9 @@ import { viewUserChannels } from './methods/viewUserChannels';
 import { listUserAccounts } from './methods/listUserAccounts';
 import { viewUserSectors } from './methods/viewUserSectors';
 import { sessionLogin } from './methods/sessionLogin';
+import { viewAttendanceHours } from './methods/viewAttendanceHours';
+import { updateAttendanceHours } from './methods/updateAttendanceHours';
+import { viewAttendanceHoursStatus } from './methods/viewAttendanceHoursStatus';
 
 @injectable()
 class UserController {
@@ -46,6 +49,9 @@ class UserController {
   public viewUserChannels = viewUserChannels;
   public listUserAccounts = listUserAccounts;
   public sessionLogin = sessionLogin;
+  public viewAttendanceHours = viewAttendanceHours;
+  public updateAttendanceHours = updateAttendanceHours;
+  public viewAttendanceHoursStatus = viewAttendanceHoursStatus;
 }
 
 export default UserController;

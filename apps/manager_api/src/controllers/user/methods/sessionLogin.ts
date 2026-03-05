@@ -5,6 +5,8 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { SessionLoginRequest } from '@core/schema/user/sessionLogin/request.schema';
 import { UserSessionLoginUseCase } from '@core/useCases/user/UserSessionLogin.useCase';
+import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
+import { USER_ATTENDANCE_HOURS_BLOCK_REASON } from '@core/common/functions/userAttendanceHours';
 
 export const sessionLogin = async (
   request: FastifyRequest<{
@@ -36,6 +38,17 @@ export const sessionLogin = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
+    if (error instanceof UserAttendanceHoursBlockedError) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.forbidden,
+        data: {
+          reason: USER_ATTENDANCE_HOURS_BLOCK_REASON,
+          attendance_guard: error.attendanceGuard,
+        },
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

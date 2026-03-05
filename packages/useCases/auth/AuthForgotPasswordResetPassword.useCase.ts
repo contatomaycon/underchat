@@ -16,6 +16,7 @@ import Redis from 'ioredis';
 import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
 import { randomUUID } from 'node:crypto';
 import { AuthRepository } from '@core/repositories/auth/Auth.repository';
+import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
 
 @injectable()
 export class AuthForgotPasswordResetPasswordUseCase {
@@ -141,6 +142,20 @@ export class AuthForgotPasswordResetPasswordUseCase {
       throw new Error(t('account_blocked_contact_support'));
     }
 
+    const attendanceGuard = await this.userService.getAttendanceGuardStatus(
+      userId,
+      accountId
+    );
+
+    if (attendanceGuard.is_blocked_now) {
+      throw new UserAttendanceHoursBlockedError(
+        t('user_attendance_hours_login_blocked', {
+          windows: attendanceGuard.today_windows_label ?? '--',
+        }),
+        attendanceGuard
+      );
+    }
+
     const hadDuplicateLogin = await this.handleDuplicateLogin(
       userId,
       accountId
@@ -186,6 +201,7 @@ export class AuthForgotPasswordResetPasswordUseCase {
       sectors,
       channels,
       plan_is_active: planIsActive,
+      attendance_guard: attendanceGuard,
     };
   }
 }

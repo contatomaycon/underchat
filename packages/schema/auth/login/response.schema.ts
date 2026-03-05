@@ -6,6 +6,7 @@ import { ELanguage } from '@core/common/enums/ELanguage';
 import { ENavbar } from '@core/common/enums/ENavbar';
 import { ESkin } from '@core/common/enums/ESkin';
 import { Static, Type } from '@sinclair/typebox';
+import { userAttendanceGuardStatusSchema } from '@core/schema/user/attendanceHours/shared.schema';
 
 export const chatsUserResponseSchema = Type.Object({
   chat_user_id: Type.String(),
@@ -97,6 +98,7 @@ export const authLoginResponseSchema = Type.Object({
   sectors: Type.Array(Type.String()),
   channels: Type.Array(userChannelResponseSchema),
   plan_is_active: Type.Boolean(),
+  attendance_guard: userAttendanceGuardStatusSchema,
 });
 
 export type AuthLoginResponse = Static<typeof authLoginResponseSchema>;

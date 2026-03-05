@@ -7,3 +7,4 @@ export * from './userInfo.model';
 export * from './userCard.model';
 export * from './userCustomer.model';
 export * from './userChannel.model';
+export * from './userAttendanceHoursRule.model';

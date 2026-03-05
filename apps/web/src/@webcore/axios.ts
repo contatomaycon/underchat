@@ -11,6 +11,7 @@ import { getI18n } from '@/plugins/i18n';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { RefreshTokenResponse } from '@core/schema/auth/refrehToken/response.schema';
 import { normalizeBaseUrl } from './utils/helpers';
+import { UserAttendanceHoursBlockedData } from '@core/schema/user/attendanceHours/shared.schema';
 
 const createAxiosInstance = () => {
   const baseUrl = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
@@ -78,6 +79,14 @@ const refreshSession = async (): Promise<string | null> => {
 };
 
 const logoutAndRedirect = async () => {
+  try {
+    const { useAttendanceGuardStore } =
+      await import('@webcore/stores/attendanceGuard');
+    useAttendanceGuardStore().shutdown();
+  } catch {
+    // ignore
+  }
+
   clearAllData();
   router.push({ name: 'login' });
 };
@@ -140,6 +149,24 @@ axiosAuth.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
+
+    if (error.response?.status === 403) {
+      const blockedData = error?.response?.data
+        ?.data as UserAttendanceHoursBlockedData;
+
+      if (blockedData?.reason === 'user_attendance_hours_blocked') {
+        try {
+          const { useAttendanceGuardStore } =
+            await import('@webcore/stores/attendanceGuard');
+          useAttendanceGuardStore().applyBlockedError(
+            blockedData,
+            error?.response?.data?.message ?? null
+          );
+        } catch {
+          // ignore
+        }
+      }
+    }
 
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;

@@ -1,12 +1,59 @@
 import { BACKEND_URL } from '../config';
 import { getToken, clearAuth } from '../storage/authStorage';
-import { emitAuthUnauthorized } from '../utils/authEvents';
+import {
+  emitAttendanceBlocked,
+  emitAuthUnauthorized,
+} from '../utils/authEvents';
+import type { AttendanceBlockedPayload } from '../types/attendanceHours';
 
 const BASE = `${BACKEND_URL}/v1`;
 
 async function handleUnauthorized(): Promise<void> {
   await clearAuth();
   emitAuthUnauthorized();
+}
+
+async function handleAttendanceBlocked(response: Response): Promise<boolean> {
+  if (response.status !== 403) {
+    return false;
+  }
+
+  try {
+    const body = (await response.json()) as {
+      message?: unknown;
+      data?: {
+        reason?: unknown;
+        attendance_guard?: unknown;
+      };
+    };
+
+    if (body?.data?.reason !== 'user_attendance_hours_blocked') {
+      return false;
+    }
+
+    if (
+      !body?.data?.attendance_guard ||
+      typeof body.data.attendance_guard !== 'object'
+    ) {
+      return false;
+    }
+
+    const payload: AttendanceBlockedPayload = {
+      reason: 'user_attendance_hours_blocked',
+      attendance_guard: body.data
+        .attendance_guard as AttendanceBlockedPayload['attendance_guard'],
+      message:
+        typeof body.message === 'string' && body.message.trim().length > 0
+          ? body.message
+          : null,
+    };
+
+    emitAttendanceBlocked(payload);
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 type ApiEnvelope<T> = { status: boolean; data: T };
@@ -120,6 +167,10 @@ export async function apiGet<T>(
     return null;
   }
 
+  if (await handleAttendanceBlocked(res)) {
+    return null;
+  }
+
   return parseJsonSafe<T>(res);
 }
 
@@ -142,6 +193,10 @@ export async function apiPost<T>(
 
   if (res.status === 401) {
     await handleUnauthorized();
+    return null;
+  }
+
+  if (await handleAttendanceBlocked(res)) {
     return null;
   }
 
@@ -170,6 +225,10 @@ export async function apiPostForm<T>(
     return null;
   }
 
+  if (await handleAttendanceBlocked(res)) {
+    return null;
+  }
+
   return parseJsonSafe<T>(res);
 }
 
@@ -192,6 +251,10 @@ export async function apiPostFormWithMessage<T>(
 
   if (res.status === 401) {
     await handleUnauthorized();
+    return null;
+  }
+
+  if (await handleAttendanceBlocked(res)) {
     return null;
   }
 
@@ -220,6 +283,10 @@ export async function apiPatch<T>(
     return null;
   }
 
+  if (await handleAttendanceBlocked(res)) {
+    return null;
+  }
+
   return parseJsonSafe<T>(res);
 }
 
@@ -242,6 +309,10 @@ export async function apiPatchWithMessage<T>(
 
   if (res.status === 401) {
     await handleUnauthorized();
+    return null;
+  }
+
+  if (await handleAttendanceBlocked(res)) {
     return null;
   }
 
@@ -270,6 +341,10 @@ export async function apiPut<T>(
     return null;
   }
 
+  if (await handleAttendanceBlocked(res)) {
+    return null;
+  }
+
   return parseJsonSafe<T>(res);
 }
 
@@ -295,6 +370,10 @@ export async function apiPatchForm<T>(
     return null;
   }
 
+  if (await handleAttendanceBlocked(res)) {
+    return null;
+  }
+
   return parseJsonSafe<T>(res);
 }
 
@@ -317,6 +396,10 @@ export async function apiPatchFormWithMessage<T>(
 
   if (res.status === 401) {
     await handleUnauthorized();
+    return null;
+  }
+
+  if (await handleAttendanceBlocked(res)) {
     return null;
   }
 
@@ -349,6 +432,10 @@ export async function apiDelete<T>(
 
   if (res.status === 401) {
     await handleUnauthorized();
+    return null;
+  }
+
+  if (await handleAttendanceBlocked(res)) {
     return null;
   }
 

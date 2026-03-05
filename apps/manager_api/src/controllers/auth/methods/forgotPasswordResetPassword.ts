@@ -6,6 +6,8 @@ import { container } from 'tsyringe';
 import { AuthForgotPasswordResetPasswordRequest } from '@core/schema/auth/forgotPassword/resetPassword/request.schema';
 import { AuthForgotPasswordResetPasswordUseCase } from '@core/useCases/auth/AuthForgotPasswordResetPassword.useCase';
 import { generalEnvironment } from '@core/config/environments';
+import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
+import { USER_ATTENDANCE_HOURS_BLOCK_REASON } from '@core/common/functions/userAttendanceHours';
 
 export const forgotPasswordResetPassword = async (
   request: FastifyRequest<{
@@ -60,6 +62,17 @@ export const forgotPasswordResetPassword = async (
       data: response,
     });
   } catch (error) {
+    if (error instanceof UserAttendanceHoursBlockedError) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.forbidden,
+        data: {
+          reason: USER_ATTENDANCE_HOURS_BLOCK_REASON,
+          attendance_guard: error.attendanceGuard,
+        },
+      });
+    }
+
     if (error instanceof Error && error.message.includes('jwt')) {
       return sendResponse(reply, {
         message: t('forgot_password_token_invalid'),

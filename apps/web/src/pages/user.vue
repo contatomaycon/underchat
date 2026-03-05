@@ -133,13 +133,18 @@ const loadAccounts = async () => {
   }
 };
 
-const handleAccountIdChange = (value: string | number | boolean | null) => {
-  if (value === null || value === undefined) {
+type SelectValue = string | number | boolean | null;
+type SelectModelValue = SelectValue | SelectValue[];
+
+const handleAccountIdChange = (value: SelectModelValue) => {
+  const singleValue = Array.isArray(value) ? (value[0] ?? null) : value;
+
+  if (singleValue === null || singleValue === undefined) {
     options.value.account_id = undefined;
-  } else if (value === '' || value === 0) {
+  } else if (singleValue === '' || singleValue === 0) {
     options.value.account_id = 'all';
   } else {
-    options.value.account_id = String(value);
+    options.value.account_id = String(singleValue);
   }
   options.value.page = 1;
 };
@@ -153,6 +158,8 @@ const userToEdit = ref<string | null>(null);
 
 const isAssignRoleDialogShow = ref(false);
 const userToAssignRole = ref<string | null>(null);
+const isAttendanceHoursDialogShow = ref(false);
+const userToAttendanceHours = ref<string | null>(null);
 
 const photoViewerOpen = ref(false);
 const photoViewerSrc = ref<string>('');
@@ -264,6 +271,10 @@ const handleRoleAssigned = async () => {
   await userStore.listUsers(query.value);
 };
 
+const handleAttendanceHoursUpdated = async () => {
+  await userStore.listUsers(query.value);
+};
+
 const openEditDialog = (id: string) => {
   userToEdit.value = id;
 
@@ -273,6 +284,11 @@ const openEditDialog = (id: string) => {
 const openAssignRoleDialog = (id: string) => {
   userToAssignRole.value = id;
   isAssignRoleDialogShow.value = true;
+};
+
+const openAttendanceHoursDialog = (id: string) => {
+  userToAttendanceHours.value = id;
+  isAttendanceHoursDialogShow.value = true;
 };
 
 const openPhotoViewer = (photoUrl: string | null) => {
@@ -633,6 +649,20 @@ watch(
                   />
                 </IconBtn>
 
+                <IconBtn v-if="$canPermission(permissionsEdit)">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('attendance_hours_action') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-clock"
+                    @click="openAttendanceHoursDialog(item.user_id)"
+                  />
+                </IconBtn>
+
                 <IconBtn
                   v-if="
                     $canPermission(permissionsDelete) &&
@@ -703,6 +733,13 @@ watch(
         v-model="isAssignRoleDialogShow"
         :user-id="userToAssignRole"
         @role-assigned="handleRoleAssigned"
+      />
+
+      <AppUserAttendanceHours
+        v-if="isAttendanceHoursDialogShow"
+        v-model="isAttendanceHoursDialogShow"
+        :user-id="userToAttendanceHours"
+        @updated="handleAttendanceHoursUpdated"
       />
     </VCard>
 

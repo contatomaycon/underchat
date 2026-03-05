@@ -15,6 +15,7 @@ import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import Redis from 'ioredis';
 import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
 import { randomUUID } from 'node:crypto';
+import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
 
 @injectable()
 export class AuthLoginUseCase {
@@ -125,6 +126,20 @@ export class AuthLoginUseCase {
       throw new Error(t('account_blocked_contact_support'));
     }
 
+    const attendanceGuard = await this.userService.getAttendanceGuardStatus(
+      result.user_id,
+      result.account_id
+    );
+
+    if (attendanceGuard.is_blocked_now) {
+      throw new UserAttendanceHoursBlockedError(
+        t('user_attendance_hours_login_blocked', {
+          windows: attendanceGuard.today_windows_label ?? '--',
+        }),
+        attendanceGuard
+      );
+    }
+
     const hadDuplicateLogin = await this.handleDuplicateLogin(
       result.user_id,
       result.account_id
@@ -175,6 +190,7 @@ export class AuthLoginUseCase {
       sectors,
       channels,
       plan_is_active: planIsActive,
+      attendance_guard: attendanceGuard,
     };
   }
 }

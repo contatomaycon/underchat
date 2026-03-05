@@ -60,9 +60,20 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IChat } from '@core/common/interfaces/IChat';
 import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
 import { ListAllUsersResponse } from '@core/schema/user/listAllUsers/response.schema';
+import {
+  IUserAttendanceGuardStatus,
+  IUserAttendanceHoursRule,
+} from '@core/common/interfaces/IUserAttendanceHours';
+import { createUserAttendanceRulesCacheKey } from '@core/common/functions/createCacheKey';
+import { calculateUserAttendanceGuardStatus } from '@core/common/functions/userAttendanceHours';
+import { UserAttendanceHoursRulesViewerRepository } from '@core/repositories/user/UserAttendanceHoursRulesViewer.repository';
+import { UserAttendanceHoursRulesUpdaterTransactionRepository } from '@core/repositories/user/UserAttendanceHoursRulesUpdaterTransaction.repository';
+import Redis from 'ioredis';
 
 @injectable()
 export class UserService {
+  private readonly userAttendanceRulesCacheTtlSeconds = 300;
+
   constructor(
     @inject(EncryptService)
     private readonly encryptService: EncryptService,
@@ -143,8 +154,64 @@ export class UserService {
     @inject(UserChannelsUpdaterTransactionRepository)
     private readonly userChannelsUpdaterTransactionRepository: UserChannelsUpdaterTransactionRepository,
     @inject(ForgotPasswordViewerRepository)
-    private readonly forgotPasswordViewerRepository: ForgotPasswordViewerRepository
+    private readonly forgotPasswordViewerRepository: ForgotPasswordViewerRepository,
+    @inject(UserAttendanceHoursRulesViewerRepository)
+    private readonly userAttendanceHoursRulesViewerRepository: UserAttendanceHoursRulesViewerRepository,
+    @inject(UserAttendanceHoursRulesUpdaterTransactionRepository)
+    private readonly userAttendanceHoursRulesUpdaterTransactionRepository: UserAttendanceHoursRulesUpdaterTransactionRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
+
+  private async getUserAttendanceRulesWithCache(
+    userId: string,
+    accountId: string
+  ): Promise<IUserAttendanceHoursRule[]> {
+    const cacheKey = createUserAttendanceRulesCacheKey(accountId, userId);
+
+    try {
+      const cached = await this.redis.get(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached) as IUserAttendanceHoursRule[];
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore cache read failures and fall back to database.
+    }
+
+    const rules =
+      await this.userAttendanceHoursRulesViewerRepository.listUserAttendanceHoursRules(
+        userId,
+        accountId
+      );
+
+    try {
+      await this.redis.set(
+        cacheKey,
+        JSON.stringify(rules),
+        'EX',
+        this.userAttendanceRulesCacheTtlSeconds
+      );
+    } catch {
+      // Ignore cache write failures.
+    }
+
+    return rules;
+  }
+
+  private async invalidateUserAttendanceRulesCache(
+    userId: string,
+    accountId: string
+  ): Promise<void> {
+    const cacheKey = createUserAttendanceRulesCacheKey(accountId, userId);
+
+    try {
+      await this.redis.del(cacheKey);
+    } catch {
+      // Ignore cache invalidation failures.
+    }
+  }
 
   listUsers = async (
     perPage: number,
@@ -777,6 +844,42 @@ export class UserService {
       userId,
       sectorIds
     );
+  };
+
+  viewAttendanceHoursRules = async (
+    userId: string,
+    accountId: string
+  ): Promise<IUserAttendanceHoursRule[]> => {
+    return this.getUserAttendanceRulesWithCache(userId, accountId);
+  };
+
+  updateAttendanceHoursRules = async (
+    userId: string,
+    accountId: string,
+    rules: IUserAttendanceHoursRule[]
+  ): Promise<boolean> => {
+    const updated =
+      await this.userAttendanceHoursRulesUpdaterTransactionRepository.replaceUserAttendanceHoursRules(
+        userId,
+        accountId,
+        rules
+      );
+
+    if (updated) {
+      await this.invalidateUserAttendanceRulesCache(userId, accountId);
+    }
+
+    return updated;
+  };
+
+  getAttendanceGuardStatus = async (
+    userId: string,
+    accountId: string,
+    nowDate?: Date
+  ): Promise<IUserAttendanceGuardStatus> => {
+    const rules = await this.getUserAttendanceRulesWithCache(userId, accountId);
+
+    return calculateUserAttendanceGuardStatus(rules, nowDate ?? new Date());
   };
 
   existsUserEmailById = async (userEmail: string): Promise<boolean> => {

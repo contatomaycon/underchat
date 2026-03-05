@@ -19,7 +19,10 @@ import {
 } from './constants/chatAuthorization';
 import { ChatFilterProvider } from './context/ChatFilterContext';
 import { RootNavigator } from './navigation/RootNavigator';
-import { addAuthUnauthorizedListener } from './utils/authEvents';
+import {
+  addAttendanceBlockedListener,
+  addAuthUnauthorizedListener,
+} from './utils/authEvents';
 import {
   cleanupChatSocket,
   initializeChatSocket,
@@ -35,6 +38,12 @@ import {
   initializePushNotifications,
 } from './services/pushNotifications';
 import { navigationRef, navigateToChatRoom } from './navigation/navigationRef';
+import { getAttendanceHoursStatus } from './api/attendanceHoursApi';
+import type {
+  AttendanceBlockedPayload,
+  AttendanceGuardStatus,
+} from './types/attendanceHours';
+import { AttendanceGuardLockModal } from './components/AttendanceGuardLockModal';
 
 function getUserAccountId(user: unknown): string | null {
   if (!user || typeof user !== 'object') return null;
@@ -81,7 +90,93 @@ export default function App() {
   const [navigationReady, setNavigationReady] = useState(false);
   const [pendingNotificationChat, setPendingNotificationChat] =
     useState<ListChatsResult | null>(null);
+  const [attendanceGuardStatus, setAttendanceGuardStatus] =
+    useState<AttendanceGuardStatus | null>(null);
+  const [attendanceLocked, setAttendanceLocked] = useState(false);
+  const [attendanceLockMessage, setAttendanceLockMessage] = useState<
+    string | null
+  >(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const attendanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attendanceOffsetMsRef = useRef(0);
+  const authenticatedRef = useRef(false);
+
+  const clearAttendanceTimer = (): void => {
+    if (!attendanceTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(attendanceTimerRef.current);
+    attendanceTimerRef.current = null;
+  };
+
+  const resetAttendanceLock = (): void => {
+    clearAttendanceTimer();
+    attendanceOffsetMsRef.current = 0;
+    setAttendanceGuardStatus(null);
+    setAttendanceLocked(false);
+    setAttendanceLockMessage(null);
+  };
+
+  const applyAttendanceStatus = (
+    status: AttendanceGuardStatus,
+    message?: string | null
+  ): void => {
+    setAttendanceGuardStatus(status);
+    setAttendanceLocked(status.is_blocked_now);
+    setAttendanceLockMessage(message ?? null);
+
+    const serverNowMs = Date.parse(status.server_now);
+    attendanceOffsetMsRef.current = Number.isFinite(serverNowMs)
+      ? serverNowMs - Date.now()
+      : 0;
+
+    clearAttendanceTimer();
+
+    const nextTransitionAt = status.next_transition_at;
+    if (!nextTransitionAt) {
+      return;
+    }
+
+    const nextTransitionMs = Date.parse(nextTransitionAt);
+    if (!Number.isFinite(nextTransitionMs)) {
+      return;
+    }
+
+    const delay = Math.max(
+      750,
+      nextTransitionMs - (Date.now() + attendanceOffsetMsRef.current) + 150
+    );
+
+    attendanceTimerRef.current = setTimeout(() => {
+      if (!authenticatedRef.current) {
+        return;
+      }
+
+      void getAttendanceHoursStatus().then((nextStatus) => {
+        if (!nextStatus || !authenticatedRef.current) {
+          return;
+        }
+
+        applyAttendanceStatus(nextStatus, null);
+      });
+    }, delay);
+  };
+
+  const refreshAttendanceStatus = async (
+    message?: string | null
+  ): Promise<void> => {
+    if (!authenticatedRef.current) {
+      return;
+    }
+
+    const status = await getAttendanceHoursStatus();
+    if (!status) {
+      return;
+    }
+
+    applyAttendanceStatus(status, message ?? null);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +222,17 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    authenticatedRef.current = authenticated;
+
+    if (!authenticated) {
+      resetAttendanceLock();
+      return;
+    }
+
+    void refreshAttendanceStatus();
+  }, [authenticated]);
 
   useEffect(() => {
     let cancelled = false;
@@ -279,6 +385,7 @@ export default function App() {
       }
 
       emitAppResume();
+      void refreshAttendanceStatus();
 
       void getUser()
         .then(async (user) => {
@@ -304,7 +411,20 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const onAttendanceBlocked = (payload: AttendanceBlockedPayload) => {
+      if (!authenticatedRef.current) {
+        return;
+      }
+
+      applyAttendanceStatus(payload.attendance_guard, payload.message ?? null);
+    };
+
+    return addAttendanceBlockedListener(onAttendanceBlocked);
+  }, []);
+
+  useEffect(() => {
     return () => {
+      clearAttendanceTimer();
       cleanupChatSocket().catch(() => {});
     };
   }, []);
@@ -334,6 +454,11 @@ export default function App() {
             onReady={() => setNavigationReady(true)}
           >
             <RootNavigator />
+            <AttendanceGuardLockModal
+              visible={attendanceLocked}
+              status={attendanceGuardStatus}
+              message={attendanceLockMessage}
+            />
             <StatusBar style="dark" />
           </NavigationContainer>
         </ChatFilterProvider>

@@ -3,6 +3,7 @@ import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { sessionLoginRequestSchema } from './request.schema';
 import { sessionLoginResponseSchema } from './response.schema';
+import { userAttendanceHoursBlockedDataSchema } from '@core/schema/user/attendanceHours/shared.schema';
 
 export const sessionLoginSchema = {
   description: 'Login na sessão do usuário',
@@ -41,6 +42,15 @@ export const sessionLoginSchema = {
         data: Type.Null(),
       },
       { description: 'Unauthorized' }
+    ),
+    403: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ default: false }),
+        message: Type.String(),
+        data: userAttendanceHoursBlockedDataSchema,
+      },
+      { description: 'Forbidden' }
     ),
     500: Type.Object(
       {

@@ -1,4 +1,5 @@
 import { BACKEND_URL } from '../config';
+import type { AttendanceGuardStatus } from '../types/attendanceHours';
 
 export interface AuthLoginRequest {
   login: string;
@@ -13,6 +14,7 @@ export interface AuthLoginResponse {
   sectors: string[];
   channels: Array<{ id: string; name: string }>;
   plan_is_active: boolean;
+  attendance_guard: AttendanceGuardStatus;
 }
 
 interface ApiResponse<T> {

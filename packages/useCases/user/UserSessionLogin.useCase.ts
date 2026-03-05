@@ -14,6 +14,7 @@ import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
 import { randomUUID } from 'node:crypto';
 import { AuthService } from '@core/services/auth.service';
 import Redis from 'ioredis';
+import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
 
 @injectable()
 export class UserSessionLoginUseCase {
@@ -135,6 +136,20 @@ export class UserSessionLoginUseCase {
       throw new Error(t('user_without_access_group'));
     }
 
+    const attendanceGuard = await this.userService.getAttendanceGuardStatus(
+      targetUserId,
+      userAccountId
+    );
+
+    if (attendanceGuard.is_blocked_now) {
+      throw new UserAttendanceHoursBlockedError(
+        t('user_attendance_hours_login_blocked', {
+          windows: attendanceGuard.today_windows_label ?? '--',
+        }),
+        attendanceGuard
+      );
+    }
+
     const hadDuplicateLogin = await this.handleDuplicateLogin(
       targetUserId,
       userAccountId
@@ -180,6 +195,7 @@ export class UserSessionLoginUseCase {
       sectors,
       channels,
       plan_is_active: planIsActive,
+      attendance_guard: attendanceGuard,
     };
   }
 }

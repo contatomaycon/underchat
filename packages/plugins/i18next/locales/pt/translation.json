@@ -1047,5 +1047,13 @@
   "webhook_mapping_transfer_sector_required": "Ao transferir para setor, o setor é obrigatório.",
   "webhook_mapping_transfer_user_required": "Ao transferir para usuário, o usuário é obrigatório.",
   "webhook_mapping_chatbot_required": "Quando o tipo for chatbot, o chatbot de entrada é obrigatório.",
-  "webhook_mapping_message_required": "A mensagem é obrigatória."
+  "webhook_mapping_message_required": "A mensagem é obrigatória.",
+  "user_attendance_hours_view_success": "Horário de atendimento do usuário obtido com sucesso!",
+  "user_attendance_hours_update_success": "Horário de atendimento do usuário atualizado com sucesso!",
+  "user_attendance_hours_status_view_success": "Status do horário de atendimento obtido com sucesso!",
+  "user_attendance_hours_invalid_weekday": "Dia da semana inválido para horário de atendimento.",
+  "user_attendance_hours_invalid_time_range": "Faixa de horário inválida para {{day}}. Informe um intervalo com início menor que o fim.",
+  "user_attendance_hours_rule_conflict": "Existe conflito de horários no dia {{day}}. Ajuste as faixas para não sobrepor.",
+  "user_attendance_hours_login_blocked": "Fora do horário de atendimento. Horários de hoje: {{windows}}.",
+  "user_attendance_hours_blocked_use": "Fora do horário de atendimento. Horários de hoje: {{windows}}."
 }

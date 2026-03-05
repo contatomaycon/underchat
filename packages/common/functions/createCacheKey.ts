@@ -57,6 +57,21 @@ export function createJwtSessionKey(accountId: string, userId: string): string {
   return joinParts(['jwtSession', accountId, userId]);
 }
 
+export function createUserAttendanceRulesCacheKey(
+  accountId: string,
+  userId: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!userId) {
+    throw new Error('user id is required');
+  }
+
+  return joinParts(['userAttendanceRules', accountId, userId]);
+}
+
 export function createChatCacheKey(
   accountId: string,
   workerId: string,

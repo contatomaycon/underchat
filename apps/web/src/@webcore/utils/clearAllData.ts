@@ -22,6 +22,14 @@ export const resetAllPiniaStores = (): void => {
     const isSetupStore = store._isSetupStore === true;
     if (isSetupStore) return;
 
+    if (typeof store.shutdown === 'function') {
+      try {
+        store.shutdown();
+      } catch {
+        // ignore
+      }
+    }
+
     if (typeof store.$reset === 'function') {
       try {
         store.$reset();

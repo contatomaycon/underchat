@@ -12,6 +12,11 @@ export const pt = {
     'Credenciais de login inválidas. Verifique seu e-mail/usuário e senha.',
   chat_permission_denied:
     'Seu usuário não possui permissão para acessar o chat.',
+  attendance_guard_locked_title: 'Fora do horário de atendimento',
+  attendance_guard_locked_description:
+    'Seu acesso está bloqueado temporariamente por horário de atendimento.',
+  attendance_guard_today_windows: 'Horários de hoje',
+  attendance_guard_next_unlock: 'Próxima liberação',
   network_error:
     'Erro de conexão. Verifique a rede e a URL do backend (EXPO_PUBLIC_BACKEND_URL).',
   app_title: 'Underchat',

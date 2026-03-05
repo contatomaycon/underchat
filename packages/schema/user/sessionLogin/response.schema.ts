@@ -4,6 +4,7 @@ import {
   accountInfoResponseSchema,
 } from '@core/schema/masterSession/login/response.schema';
 import { userChannelResponseSchema } from '@core/schema/auth/login/response.schema';
+import { userAttendanceGuardStatusSchema } from '@core/schema/user/attendanceHours/shared.schema';
 
 export const sessionLoginResponseSchema = Type.Object({
   user: userResponseSchema,
@@ -13,6 +14,7 @@ export const sessionLoginResponseSchema = Type.Object({
   sectors: Type.Array(Type.String()),
   channels: Type.Array(userChannelResponseSchema),
   plan_is_active: Type.Boolean(),
+  attendance_guard: userAttendanceGuardStatusSchema,
 });
 
 export type SessionLoginResponse = Static<typeof sessionLoginResponseSchema>;

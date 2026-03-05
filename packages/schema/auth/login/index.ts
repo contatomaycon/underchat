@@ -3,6 +3,7 @@ import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { authLoginResponseSchema } from './response.schema';
 import { authLoginRequestSchema } from './request.schema';
+import { userAttendanceHoursBlockedDataSchema } from '@core/schema/user/attendanceHours/shared.schema';
 
 export const loginSchema = {
   description: 'Autentica o usuário e gera um token de acesso JWT',
@@ -36,6 +37,15 @@ export const loginSchema = {
         data: Type.Null(),
       },
       { description: 'Unauthorized' }
+    ),
+    403: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ default: false }),
+        message: Type.String(),
+        data: userAttendanceHoursBlockedDataSchema,
+      },
+      { description: 'Forbidden' }
     ),
     500: Type.Object(
       {

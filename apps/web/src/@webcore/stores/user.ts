@@ -31,6 +31,9 @@ import { ListUserRolesResponse } from '@core/schema/user/listUserRoles/response.
 import { ListUserSectorsResponse } from '@core/schema/user/listUserSectors/response.schema';
 import { ListUserChannelsResponse } from '@core/schema/user/listUserChannels/response.schema';
 import { ListUserAccountsResponse } from '@core/schema/user/listUserAccounts/response.schema';
+import { ViewAttendanceHoursResponse } from '@core/schema/user/viewAttendanceHours/response.schema';
+import { UpdateAttendanceHoursRequest } from '@core/schema/user/updateAttendanceHours/request.schema';
+import { UpdateAttendanceHoursResponse } from '@core/schema/user/updateAttendanceHours/response.schema';
 
 export const useUsersStore = defineStore('users', {
   state: () => ({
@@ -1021,6 +1024,95 @@ export const useUsersStore = defineStore('users', {
         return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('user_sectors_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async viewUserAttendanceHours(
+      userId: string
+    ): Promise<ViewAttendanceHoursResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ViewAttendanceHoursResponse>
+        >(`/user/${userId}/attendance-hours`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('user_attendance_hours_view_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'user_attendance_hours_view_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async updateUserAttendanceHours(
+      userId: string,
+      payload: UpdateAttendanceHoursRequest
+    ): Promise<UpdateAttendanceHoursResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.put<
+          IApiResponse<UpdateAttendanceHoursResponse>
+        >(`/user/${userId}/attendance-hours`, payload);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('user_attendance_hours_update_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ||
+            this.i18n.global.t('user_attendance_hours_update_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'user_attendance_hours_update_error'
+        );
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
