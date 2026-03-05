@@ -199,24 +199,6 @@ export class WorkerConnectionStatusWwebjsConsume {
     }
   }
 
-  private startConnectionRetry(
-    data: StatusConnectionWorkerRequest,
-    options?: { fromDisconnectRestart?: boolean }
-  ): void {
-    this.stopConnectionRetry();
-    this.activeConnectionRequest = data;
-    this.connectionRetryAttempt = 0;
-    this.restartAfterDisconnect = options?.fromDisconnectRestart ?? false;
-    this.logConnectionEvent('connection_retry_started', {
-      status: data.status,
-      connection_type: data.type,
-      from_disconnect_restart: this.restartAfterDisconnect,
-      remove_session: data.remove_session === true,
-      has_phone_connection: Boolean(data.phone_connection),
-    });
-    this.runConnectionAttempt();
-  }
-
   private stopConnectionRetry(): void {
     const hadActiveRetry =
       Boolean(this.connectionRetryTimer) ||
