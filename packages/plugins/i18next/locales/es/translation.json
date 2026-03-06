@@ -604,6 +604,7 @@
   "attendance_hours_update_success": "¡Horario de atención actualizado con éxito!",
   "attendance_hours_at_least_one_day_required": "Debe habilitar al menos un día para activar el horario de atención.",
   "attendance_hours_invalid_day_window": "Horario inválido para {{day}}. Ingrese un intervalo válido con inicio menor que fin.",
+  "attendance_hours_rule_conflict": "Existe conflicto de horarios en {{day}}. Ajuste los intervalos para que no se superpongan.",
   "attendance_hours_queue_sector_required": "Seleccione un sector cuando el destino fuera de horario sea cola de espera.",
   "attendance_hours_default_outside_hours_message": "Hola {{ name }}, nuestro horario de atención está cerrado en este momento. Te responderemos tan pronto estemos disponibles.",
   "chatbot_flow_save_success": "¡Flujo del chatbot guardado con éxito!",

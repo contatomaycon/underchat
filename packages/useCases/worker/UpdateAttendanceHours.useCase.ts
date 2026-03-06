@@ -6,8 +6,10 @@ import { SectorService } from '@core/services/sector.service';
 import { UpdateAttendanceHoursRequest } from '@core/schema/worker/updateAttendanceHours/request.schema';
 import {
   ATTENDANCE_HOURS_DEFAULT_TIMEZONE,
-  isAttendanceDayWindowValid,
-  hasAtLeastOneEnabledAttendanceDay,
+  findConflictingAttendanceHoursRules,
+  hasAtLeastOneAttendanceHoursRule,
+  isAttendanceHoursRuleWindowValid,
+  normalizeAttendanceHoursRules,
 } from '@core/common/functions/attendanceHoursConfig';
 import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
 
@@ -40,15 +42,7 @@ export class UpdateAttendanceHoursUseCase {
       outside_hours_action: outsideHoursAction,
       message_only_destination_status: destinationStatus,
       message_only_queue_sector_id: queueSectorId,
-      days: {
-        monday: body.days.monday,
-        tuesday: body.days.tuesday,
-        wednesday: body.days.wednesday,
-        thursday: body.days.thursday,
-        friday: body.days.friday,
-        saturday: body.days.saturday,
-        sunday: body.days.sunday,
-      },
+      rules: normalizeAttendanceHoursRules(body.rules),
     };
   }
 
@@ -56,23 +50,27 @@ export class UpdateAttendanceHoursUseCase {
     t: TFunction<'translation', undefined>,
     config: IAttendanceHoursConfig
   ): void {
-    if (!hasAtLeastOneEnabledAttendanceDay(config)) {
+    if (!hasAtLeastOneAttendanceHoursRule(config)) {
       throw new Error(t('attendance_hours_at_least_one_day_required'));
     }
 
-    const weekdays = Object.keys(config.days) as Array<
-      keyof typeof config.days
-    >;
-
-    for (const weekday of weekdays) {
-      const dayConfig = config.days[weekday];
-      if (!isAttendanceDayWindowValid(dayConfig)) {
+    for (const rule of config.rules) {
+      if (!isAttendanceHoursRuleWindowValid(rule)) {
         throw new Error(
           t('attendance_hours_invalid_day_window', {
-            day: t(weekday),
+            day: t(rule.weekday),
           })
         );
       }
+    }
+
+    const conflict = findConflictingAttendanceHoursRules(config.rules);
+    if (conflict) {
+      throw new Error(
+        t('attendance_hours_rule_conflict', {
+          day: t(conflict.first.weekday),
+        })
+      );
     }
   }
 

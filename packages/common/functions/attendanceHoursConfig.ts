@@ -1,9 +1,8 @@
 import moment from 'moment-timezone';
 import {
   AttendanceWeekday,
-  IAttendanceDayConfig,
-  IAttendanceDaysConfig,
   IAttendanceHoursConfig,
+  IAttendanceHoursRule,
   MessageOnlyDestinationStatus,
   OutsideHoursAction,
 } from '../interfaces/IAttendanceHours';
@@ -25,6 +24,16 @@ const WEEKDAY_ORDER: AttendanceWeekday[] = [
   'saturday',
   'sunday',
 ];
+
+const WEEKDAY_ORDER_INDEX: Record<AttendanceWeekday, number> = {
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+  sunday: 7,
+};
 
 const DAY_INDEX_MAP: Record<number, AttendanceWeekday> = {
   0: 'sunday',
@@ -49,34 +58,70 @@ const normalizeTime = (value: unknown): string | null => {
   return trimmed;
 };
 
-const normalizeDay = (value: unknown): IAttendanceDayConfig => {
+export const isAttendanceHoursWeekday = (
+  value: unknown
+): value is AttendanceWeekday =>
+  typeof value === 'string' &&
+  WEEKDAY_ORDER.includes(value as AttendanceWeekday);
+
+const normalizeRule = (value: unknown): IAttendanceHoursRule | null => {
   if (!value || typeof value !== 'object') {
-    return {
-      enabled: false,
-      start_time: null,
-      end_time: null,
-    };
+    return null;
   }
 
-  const day = value as Partial<IAttendanceDayConfig>;
+  const rule = value as Partial<IAttendanceHoursRule>;
+  const weekdayCandidate =
+    typeof rule.weekday === 'string' ? rule.weekday.trim().toLowerCase() : '';
+
+  if (!isAttendanceHoursWeekday(weekdayCandidate)) {
+    return null;
+  }
+
+  const start_time = normalizeTime(rule.start_time);
+  const end_time = normalizeTime(rule.end_time);
+
+  if (!start_time || !end_time) {
+    return null;
+  }
 
   return {
-    enabled: day.enabled === true,
-    start_time: normalizeTime(day.start_time),
-    end_time: normalizeTime(day.end_time),
+    weekday: weekdayCandidate,
+    start_time,
+    end_time,
   };
 };
 
-export const buildDefaultAttendanceDays = (): IAttendanceDaysConfig => {
-  return {
-    monday: { enabled: false, start_time: '09:00', end_time: '18:00' },
-    tuesday: { enabled: false, start_time: '09:00', end_time: '18:00' },
-    wednesday: { enabled: false, start_time: '09:00', end_time: '18:00' },
-    thursday: { enabled: false, start_time: '09:00', end_time: '18:00' },
-    friday: { enabled: false, start_time: '09:00', end_time: '18:00' },
-    saturday: { enabled: false, start_time: '09:00', end_time: '18:00' },
-    sunday: { enabled: false, start_time: '09:00', end_time: '18:00' },
-  };
+export const sortAttendanceHoursRules = (
+  rules: IAttendanceHoursRule[]
+): IAttendanceHoursRule[] => {
+  return [...rules].sort((first, second) => {
+    const weekdayDiff =
+      WEEKDAY_ORDER_INDEX[first.weekday] - WEEKDAY_ORDER_INDEX[second.weekday];
+
+    if (weekdayDiff !== 0) {
+      return weekdayDiff;
+    }
+
+    if (first.start_time !== second.start_time) {
+      return first.start_time.localeCompare(second.start_time);
+    }
+
+    return first.end_time.localeCompare(second.end_time);
+  });
+};
+
+export const normalizeAttendanceHoursRules = (
+  rules: unknown
+): IAttendanceHoursRule[] => {
+  if (!Array.isArray(rules)) {
+    return [];
+  }
+
+  const normalizedRules = rules
+    .map(normalizeRule)
+    .filter((rule): rule is IAttendanceHoursRule => rule !== null);
+
+  return sortAttendanceHoursRules(normalizedRules);
 };
 
 export const buildDefaultAttendanceHoursConfig = (): IAttendanceHoursConfig => {
@@ -86,7 +131,7 @@ export const buildDefaultAttendanceHoursConfig = (): IAttendanceHoursConfig => {
     message_only_destination_status:
       ATTENDANCE_HOURS_DEFAULT_MESSAGE_ONLY_DESTINATION,
     message_only_queue_sector_id: null,
-    days: buildDefaultAttendanceDays(),
+    rules: [],
   };
 };
 
@@ -125,30 +170,22 @@ export const parseAttendanceHoursConfig = (
         ? parsed.message_only_queue_sector_id.trim()
         : null;
 
-    const daysRaw =
-      parsed.days && typeof parsed.days === 'object' ? parsed.days : {};
-
-    const days = WEEKDAY_ORDER.reduce<IAttendanceDaysConfig>((acc, weekday) => {
-      acc[weekday] = normalizeDay(
-        (daysRaw as Record<string, unknown>)[weekday]
-      );
-      return acc;
-    }, buildDefaultAttendanceDays());
+    const rules = normalizeAttendanceHoursRules(parsed.rules);
 
     return {
       timezone,
       outside_hours_action: outsideHoursAction,
       message_only_destination_status: destinationStatus,
       message_only_queue_sector_id: messageOnlyQueueSectorId,
-      days,
+      rules,
     };
   } catch {
     return defaults;
   }
 };
 
-const toMinutes = (time: string | null): number | null => {
-  if (!time || !TIME_REGEX.test(time)) {
+const toMinutes = (time: string): number | null => {
+  if (!TIME_REGEX.test(time)) {
     return null;
   }
 
@@ -160,15 +197,11 @@ const toMinutes = (time: string | null): number | null => {
   return hours * 60 + minutes;
 };
 
-export const isAttendanceDayWindowValid = (
-  day: IAttendanceDayConfig
+export const isAttendanceHoursRuleWindowValid = (
+  rule: Pick<IAttendanceHoursRule, 'start_time' | 'end_time'>
 ): boolean => {
-  if (!day.enabled) {
-    return true;
-  }
-
-  const startMinutes = toMinutes(day.start_time);
-  const endMinutes = toMinutes(day.end_time);
+  const startMinutes = toMinutes(rule.start_time);
+  const endMinutes = toMinutes(rule.end_time);
 
   if (startMinutes === null || endMinutes === null) {
     return false;
@@ -177,23 +210,68 @@ export const isAttendanceDayWindowValid = (
   return startMinutes < endMinutes;
 };
 
-export const hasAtLeastOneEnabledAttendanceDay = (
-  config: IAttendanceHoursConfig
-): boolean => {
-  return WEEKDAY_ORDER.some((weekday) => config.days[weekday].enabled === true);
+export const findConflictingAttendanceHoursRules = (
+  rules: IAttendanceHoursRule[]
+): {
+  first: IAttendanceHoursRule;
+  second: IAttendanceHoursRule;
+} | null => {
+  const sortedRules = sortAttendanceHoursRules(rules);
+
+  for (let i = 0; i < sortedRules.length; i++) {
+    const first = sortedRules[i];
+    const firstStart = toMinutes(first.start_time);
+    const firstEnd = toMinutes(first.end_time);
+
+    if (firstStart === null || firstEnd === null) {
+      continue;
+    }
+
+    for (let j = i + 1; j < sortedRules.length; j++) {
+      const second = sortedRules[j];
+      if (first.weekday !== second.weekday) {
+        continue;
+      }
+
+      const secondStart = toMinutes(second.start_time);
+      const secondEnd = toMinutes(second.end_time);
+
+      if (secondStart === null || secondEnd === null) {
+        continue;
+      }
+
+      const hasConflict = firstStart <= secondEnd && secondStart <= firstEnd;
+      if (hasConflict) {
+        return { first, second };
+      }
+    }
+  }
+
+  return null;
 };
+
+export const hasAtLeastOneAttendanceHoursRule = (
+  config: IAttendanceHoursConfig
+): boolean => config.rules.length > 0;
 
 export const isAttendanceHoursConfigEnabledValid = (
   config: IAttendanceHoursConfig
 ): boolean => {
-  if (!hasAtLeastOneEnabledAttendanceDay(config)) {
+  if (!hasAtLeastOneAttendanceHoursRule(config)) {
     return false;
   }
 
-  for (const weekday of WEEKDAY_ORDER) {
-    if (!isAttendanceDayWindowValid(config.days[weekday])) {
+  for (const rule of config.rules) {
+    if (
+      !isAttendanceHoursWeekday(rule.weekday) ||
+      !isAttendanceHoursRuleWindowValid(rule)
+    ) {
       return false;
     }
+  }
+
+  if (findConflictingAttendanceHoursRules(config.rules)) {
+    return false;
   }
 
   if (
@@ -214,24 +292,25 @@ export const isNowWithinAttendanceHours = (
   const timezone = config.timezone?.trim() || ATTENDANCE_HOURS_DEFAULT_TIMEZONE;
   const now = moment.tz(nowDate, timezone);
   const weekday = DAY_INDEX_MAP[now.day()];
-
-  const dayConfig = config.days[weekday];
-  if (!dayConfig || !dayConfig.enabled) {
-    return false;
-  }
-
-  const startMinutes = toMinutes(dayConfig.start_time);
-  const endMinutes = toMinutes(dayConfig.end_time);
-
-  if (
-    startMinutes === null ||
-    endMinutes === null ||
-    startMinutes >= endMinutes
-  ) {
-    return false;
-  }
-
   const currentMinutes = now.hour() * 60 + now.minute();
 
-  return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  const todayRules = config.rules.filter((rule) => rule.weekday === weekday);
+  if (todayRules.length === 0) {
+    return false;
+  }
+
+  return todayRules.some((rule) => {
+    const startMinutes = toMinutes(rule.start_time);
+    const endMinutes = toMinutes(rule.end_time);
+
+    if (
+      startMinutes === null ||
+      endMinutes === null ||
+      startMinutes >= endMinutes
+    ) {
+      return false;
+    }
+
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  });
 };

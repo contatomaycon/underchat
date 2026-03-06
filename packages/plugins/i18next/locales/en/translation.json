@@ -604,6 +604,7 @@
   "attendance_hours_update_success": "Attendance hours updated successfully!",
   "attendance_hours_at_least_one_day_required": "You must enable at least one day to activate attendance hours.",
   "attendance_hours_invalid_day_window": "Invalid time range for {{day}}. Enter a valid interval where start is before end.",
+  "attendance_hours_rule_conflict": "There is a schedule conflict on {{day}}. Adjust windows so they do not overlap.",
   "attendance_hours_queue_sector_required": "Select a sector when outside-hours destination is waiting queue.",
   "attendance_hours_default_outside_hours_message": "Hello {{ name }}, we are currently outside our service hours. We will get back to you as soon as we are available.",
   "chatbot_flow_save_success": "Chatbot flow saved successfully!",

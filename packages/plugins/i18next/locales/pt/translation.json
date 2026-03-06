@@ -603,6 +603,7 @@
   "attendance_hours_update_success": "Horário de atendimento atualizado com sucesso!",
   "attendance_hours_at_least_one_day_required": "É necessário habilitar pelo menos um dia para ativar o horário de atendimento.",
   "attendance_hours_invalid_day_window": "Horário inválido para {{day}}. Informe um intervalo válido com início menor que o fim.",
+  "attendance_hours_rule_conflict": "Existe conflito de horários no dia {{day}}. Ajuste as faixas para não sobrepor.",
   "attendance_hours_queue_sector_required": "Selecione um setor quando o destino fora do horário for aguardando atendimento.",
   "attendance_hours_default_outside_hours_message": "Olá {{ name }}, nosso horário de atendimento está encerrado no momento. Retornaremos assim que estivermos disponíveis.",
   "chatbot_flow_save_success": "Fluxo do chatbot salvo com sucesso!",

@@ -242,10 +242,16 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   attendance_hours: false,
 });
 
-type AttendanceWeekday = keyof UpdateAttendanceHoursRequest['days'];
-type AttendanceDayConfig =
-  UpdateAttendanceHoursRequest['days'][AttendanceWeekday];
+type AttendanceRulePayload = UpdateAttendanceHoursRequest['rules'][number];
+type AttendanceWeekday = AttendanceRulePayload['weekday'];
 type ChatbotWorkingHoursWeekday = AttendanceWeekday;
+
+interface AttendanceHoursRuleForm {
+  id: string;
+  weekday: AttendanceWeekday | null;
+  start_time: string;
+  end_time: string;
+}
 
 interface ChatbotWorkingHoursRuleForm {
   id: string;
@@ -273,41 +279,31 @@ const attendanceWeekdays: AttendanceWeekday[] = [
 ];
 const chatbotWorkingHoursWeekdays = attendanceWeekdays;
 
-const createDefaultAttendanceDay = (): AttendanceDayConfig => ({
-  enabled: false,
-  start_time: ATTENDANCE_DEFAULT_START,
-  end_time: ATTENDANCE_DEFAULT_END,
-});
+const attendanceWeekdayOrderMap = attendanceWeekdays.reduce<
+  Record<AttendanceWeekday, number>
+>(
+  (acc, weekday, index) => {
+    acc[weekday] = index;
+    return acc;
+  },
+  {} as Record<AttendanceWeekday, number>
+);
 
-const createDefaultAttendanceDays =
-  (): UpdateAttendanceHoursRequest['days'] => ({
-    monday: createDefaultAttendanceDay(),
-    tuesday: createDefaultAttendanceDay(),
-    wednesday: createDefaultAttendanceDay(),
-    thursday: createDefaultAttendanceDay(),
-    friday: createDefaultAttendanceDay(),
-    saturday: createDefaultAttendanceDay(),
-    sunday: createDefaultAttendanceDay(),
-  });
+const createAttendanceHoursRuleId = (): string => {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
 
-const normalizeAttendanceDay = (
-  day: AttendanceDayConfig | undefined
-): AttendanceDayConfig => ({
-  enabled: day?.enabled === true,
-  start_time: day?.start_time ?? ATTENDANCE_DEFAULT_START,
-  end_time: day?.end_time ?? ATTENDANCE_DEFAULT_END,
-});
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
 
-const normalizeAttendanceDays = (
-  days: UpdateAttendanceHoursRequest['days'] | undefined
-): UpdateAttendanceHoursRequest['days'] => ({
-  monday: normalizeAttendanceDay(days?.monday),
-  tuesday: normalizeAttendanceDay(days?.tuesday),
-  wednesday: normalizeAttendanceDay(days?.wednesday),
-  thursday: normalizeAttendanceDay(days?.thursday),
-  friday: normalizeAttendanceDay(days?.friday),
-  saturday: normalizeAttendanceDay(days?.saturday),
-  sunday: normalizeAttendanceDay(days?.sunday),
+const createDefaultAttendanceRule = (
+  rule?: Partial<AttendanceRulePayload>
+): AttendanceHoursRuleForm => ({
+  id: createAttendanceHoursRuleId(),
+  weekday: rule?.weekday ?? 'monday',
+  start_time: rule?.start_time ?? ATTENDANCE_DEFAULT_START,
+  end_time: rule?.end_time ?? ATTENDANCE_DEFAULT_END,
 });
 
 const workerConfigForm = reactive<WorkerConfigForm>(
@@ -486,9 +482,7 @@ const chatbotWorkingHoursLastSavedRules = ref<ChatbotWorkingHoursRuleForm[]>(
 const attendanceHoursModalOpen = ref(false);
 const isSavingAttendanceHours = ref(false);
 const attendanceHoursEnabledInModal = ref<boolean>(false);
-const attendanceDaysInModal = reactive<UpdateAttendanceHoursRequest['days']>(
-  createDefaultAttendanceDays()
-);
+const attendanceRulesInModal = ref<AttendanceHoursRuleForm[]>([]);
 const attendanceOutsideHoursMessage = ref<string>('');
 const attendanceOutsideHoursAction =
   ref<UpdateAttendanceHoursRequest['outside_hours_action']>('message_only');
@@ -544,24 +538,122 @@ const chatbotWorkingHoursWeekdayOptions = computed(() =>
   }))
 );
 
-const attendanceHasAtLeastOneDayEnabled = computed(() =>
-  attendanceWeekdays.some((weekday) => attendanceDaysInModal[weekday].enabled)
+const attendanceWeekdayOptions = computed(() =>
+  attendanceWeekdays.map((weekday) => ({
+    title: t(weekday),
+    value: weekday,
+  }))
 );
 
-const attendanceFirstInvalidWeekday = computed<AttendanceWeekday | null>(() => {
-  for (const weekday of attendanceWeekdays) {
-    const day = attendanceDaysInModal[weekday];
-    if (!day.enabled) continue;
+const toAttendanceHoursMinutes = (time: string): number | null => {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
+  if (!match) {
+    return null;
+  }
 
-    const start = day.start_time || '';
-    const end = day.end_time || '';
-    if (!start || !end || start >= end) {
-      return weekday;
+  const hours = Number.parseInt(match[1], 10);
+  const minutes = Number.parseInt(match[2], 10);
+
+  return hours * 60 + minutes;
+};
+
+const attendanceHasAtLeastOneRule = computed(
+  () => attendanceRulesInModal.value.length > 0
+);
+
+const attendanceFirstRuleWithMissingFields =
+  computed<AttendanceHoursRuleForm | null>(() => {
+    for (const rule of attendanceRulesInModal.value) {
+      if (!rule.weekday || !rule.start_time || !rule.end_time) {
+        return rule;
+      }
+    }
+
+    return null;
+  });
+
+const attendanceFirstInvalidTimeRangeRule =
+  computed<AttendanceHoursRuleForm | null>(() => {
+    for (const rule of attendanceRulesInModal.value) {
+      if (!rule.weekday || !rule.start_time || !rule.end_time) {
+        continue;
+      }
+
+      const start = toAttendanceHoursMinutes(rule.start_time);
+      const end = toAttendanceHoursMinutes(rule.end_time);
+
+      if (start === null || end === null || start >= end) {
+        return rule;
+      }
+    }
+
+    return null;
+  });
+
+const attendanceConflict = computed<{
+  first: AttendanceHoursRuleForm;
+  second: AttendanceHoursRuleForm;
+} | null>(() => {
+  const sortedRules = [...attendanceRulesInModal.value].sort(
+    (first, second) => {
+      const firstWeekday = first.weekday
+        ? attendanceWeekdayOrderMap[first.weekday]
+        : 999;
+      const secondWeekday = second.weekday
+        ? attendanceWeekdayOrderMap[second.weekday]
+        : 999;
+
+      if (firstWeekday !== secondWeekday) {
+        return firstWeekday - secondWeekday;
+      }
+
+      if (first.start_time !== second.start_time) {
+        return first.start_time.localeCompare(second.start_time);
+      }
+
+      return first.end_time.localeCompare(second.end_time);
+    }
+  );
+
+  for (let i = 0; i < sortedRules.length; i++) {
+    const first = sortedRules[i];
+
+    if (!first.weekday) continue;
+
+    const firstStart = toAttendanceHoursMinutes(first.start_time);
+    const firstEnd = toAttendanceHoursMinutes(first.end_time);
+    if (firstStart === null || firstEnd === null) continue;
+
+    for (let j = i + 1; j < sortedRules.length; j++) {
+      const second = sortedRules[j];
+      if (!second.weekday || second.weekday !== first.weekday) {
+        continue;
+      }
+
+      const secondStart = toAttendanceHoursMinutes(second.start_time);
+      const secondEnd = toAttendanceHoursMinutes(second.end_time);
+      if (secondStart === null || secondEnd === null) continue;
+
+      const hasConflict = firstStart <= secondEnd && secondStart <= firstEnd;
+      if (hasConflict) {
+        return {
+          first,
+          second,
+        };
+      }
     }
   }
 
   return null;
 });
+
+const attendanceFirstInvalidWeekday = computed<AttendanceWeekday | null>(
+  () => attendanceFirstInvalidTimeRangeRule.value?.weekday ?? null
+);
+
+const attendanceConflictWeekday = computed<AttendanceWeekday | null>(
+  () => attendanceConflict.value?.first.weekday ?? null
+);
 
 const attendanceRequiresQueueSector = computed(
   () =>
@@ -569,23 +661,56 @@ const attendanceRequiresQueueSector = computed(
     attendanceMessageOnlyDestinationStatus.value === 'queue'
 );
 
-const attendanceConfigReadyToEnable = computed(() => {
-  if (!attendanceHasAtLeastOneDayEnabled.value) {
-    return false;
+const attendanceScheduleValidationMessage = computed<string | null>(() => {
+  if (!attendanceHasAtLeastOneRule.value) {
+    return t('attendance_hours_validation_required_rules');
+  }
+
+  if (attendanceFirstRuleWithMissingFields.value) {
+    return t('attendance_hours_validation_required_fields');
   }
 
   if (attendanceFirstInvalidWeekday.value) {
-    return false;
+    return t('attendance_hours_validation_invalid_time_range', {
+      day: t(attendanceFirstInvalidWeekday.value),
+    });
+  }
+
+  if (attendanceConflictWeekday.value) {
+    return t('attendance_hours_validation_conflict', {
+      day: t(attendanceConflictWeekday.value),
+    });
+  }
+
+  return null;
+});
+
+const attendanceRulesErrorMessageInModal = computed<string | null>(() => {
+  if (!attendanceHoursEnabledInModal.value) {
+    return null;
+  }
+
+  return attendanceScheduleValidationMessage.value;
+});
+
+const attendanceBlockingMessage = computed<string | null>(() => {
+  const scheduleMessage = attendanceScheduleValidationMessage.value;
+  if (scheduleMessage) {
+    return scheduleMessage;
   }
 
   if (
     attendanceRequiresQueueSector.value &&
     !attendanceMessageOnlyQueueSectorId.value
   ) {
-    return false;
+    return t('attendance_hours_validation_queue_sector_required');
   }
 
-  return true;
+  return null;
+});
+
+const attendanceConfigReadyToEnable = computed(() => {
+  return !attendanceBlockingMessage.value;
 });
 
 const createChatbotWorkingHoursRuleId = (): string =>
@@ -930,10 +1055,31 @@ function applyAttendanceHoursState(
 ): void {
   attendanceAvailableSectors.value = config?.available_sectors ?? [];
 
-  const normalizedDays = normalizeAttendanceDays(
-    config?.attendance_hours?.days
-  );
-  Object.assign(attendanceDaysInModal, normalizedDays);
+  attendanceRulesInModal.value = (config?.attendance_hours?.rules ?? [])
+    .map((rule) =>
+      createDefaultAttendanceRule({
+        weekday: rule.weekday,
+        start_time: rule.start_time,
+        end_time: rule.end_time,
+      })
+    )
+    .sort((first, second) => {
+      const firstWeekday = first.weekday
+        ? attendanceWeekdayOrderMap[first.weekday]
+        : 999;
+      const secondWeekday = second.weekday
+        ? attendanceWeekdayOrderMap[second.weekday]
+        : 999;
+      if (firstWeekday !== secondWeekday) {
+        return firstWeekday - secondWeekday;
+      }
+
+      if (first.start_time !== second.start_time) {
+        return first.start_time.localeCompare(second.start_time);
+      }
+
+      return first.end_time.localeCompare(second.end_time);
+    });
 
   attendanceOutsideHoursAction.value =
     config?.attendance_hours?.outside_hours_action ?? 'message_only';
@@ -972,6 +1118,29 @@ const applyChatbotState = (config?: ChatbotConfigResponse | null): void => {
 };
 
 const validateAttendanceHoursForm = (enabled: boolean): boolean => {
+  if (!enabled) {
+    if (
+      attendanceRequiresQueueSector.value &&
+      !attendanceMessageOnlyQueueSectorId.value
+    ) {
+      channelStore.showSnackbar(
+        t('attendance_hours_validation_queue_sector_required'),
+        EColor.warning
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  if (attendanceScheduleValidationMessage.value) {
+    channelStore.showSnackbar(
+      attendanceScheduleValidationMessage.value,
+      EColor.warning
+    );
+    return false;
+  }
+
   if (
     attendanceRequiresQueueSector.value &&
     !attendanceMessageOnlyQueueSectorId.value
@@ -983,30 +1152,36 @@ const validateAttendanceHoursForm = (enabled: boolean): boolean => {
     return false;
   }
 
-  if (!enabled) {
-    return true;
-  }
-
-  if (!attendanceHasAtLeastOneDayEnabled.value) {
-    channelStore.showSnackbar(
-      t('attendance_hours_validation_at_least_one_day'),
-      EColor.warning
-    );
-    return false;
-  }
-
-  if (attendanceFirstInvalidWeekday.value) {
-    channelStore.showSnackbar(
-      t('attendance_hours_validation_invalid_day', {
-        day: t(attendanceFirstInvalidWeekday.value),
-      }),
-      EColor.warning
-    );
-    return false;
-  }
-
   return true;
 };
+
+const buildAttendanceRulesPayload = (): UpdateAttendanceHoursRequest['rules'] =>
+  attendanceRulesInModal.value
+    .filter(
+      (
+        rule
+      ): rule is AttendanceHoursRuleForm & { weekday: AttendanceWeekday } =>
+        !!rule.weekday
+    )
+    .map((rule) => ({
+      weekday: rule.weekday,
+      start_time: rule.start_time,
+      end_time: rule.end_time,
+    }))
+    .sort((first, second) => {
+      const firstWeekday = attendanceWeekdayOrderMap[first.weekday];
+      const secondWeekday = attendanceWeekdayOrderMap[second.weekday];
+
+      if (firstWeekday !== secondWeekday) {
+        return firstWeekday - secondWeekday;
+      }
+
+      if (first.start_time !== second.start_time) {
+        return first.start_time.localeCompare(second.start_time);
+      }
+
+      return first.end_time.localeCompare(second.end_time);
+    });
 
 const buildAttendanceHoursPayload = (
   enabled: boolean
@@ -1018,7 +1193,7 @@ const buildAttendanceHoursPayload = (
   message_only_queue_sector_id: attendanceRequiresQueueSector.value
     ? attendanceMessageOnlyQueueSectorId.value
     : null,
-  days: normalizeAttendanceDays(attendanceDaysInModal),
+  rules: buildAttendanceRulesPayload(),
   text: attendanceOutsideHoursMessage.value.trim(),
 });
 
@@ -1971,6 +2146,16 @@ const closeAttendanceHoursModal = () => {
   attendanceHoursModalOpen.value = false;
 };
 
+const addAttendanceHoursRule = () => {
+  attendanceRulesInModal.value.push(createDefaultAttendanceRule());
+};
+
+const removeAttendanceHoursRule = (ruleId: string) => {
+  attendanceRulesInModal.value = attendanceRulesInModal.value.filter(
+    (rule) => rule.id !== ruleId
+  );
+};
+
 const toggleAttendanceHoursStatus = async () => {
   if (!channelId.value) return;
 
@@ -1997,10 +2182,6 @@ const toggleAttendanceHoursStatus = async () => {
   } finally {
     isSavingAttendanceHours.value = false;
   }
-};
-
-const toggleAttendanceHoursStatusInModal = () => {
-  attendanceHoursEnabledInModal.value = !attendanceHoursEnabledInModal.value;
 };
 
 const saveAttendanceHours = async () => {
@@ -2407,24 +2588,7 @@ const getToggleTooltip = (key: WorkerConfigField): string | undefined => {
       return undefined;
     }
 
-    if (!attendanceHasAtLeastOneDayEnabled.value) {
-      return t('toggle_disabled_attendance_hours_tooltip');
-    }
-
-    if (attendanceFirstInvalidWeekday.value) {
-      return t('attendance_hours_validation_invalid_day', {
-        day: t(attendanceFirstInvalidWeekday.value),
-      });
-    }
-
-    if (
-      attendanceRequiresQueueSector.value &&
-      !attendanceMessageOnlyQueueSectorId.value
-    ) {
-      return t('attendance_hours_validation_queue_sector_required');
-    }
-
-    return undefined;
+    return attendanceBlockingMessage.value ?? undefined;
   }
 
   return undefined;
@@ -4992,21 +5156,13 @@ onMounted(async () => {
     </VCard>
   </VDialog>
 
-  <VDialog v-model="attendanceHoursModalOpen" max-width="760" persistent>
+  <VDialog v-model="attendanceHoursModalOpen" max-width="900" persistent>
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">
         <span>{{ $t('channel_general_config_attendance_hours_title') }}</span>
-        <div class="d-flex align-center gap-2">
-          <VSwitch
-            :model-value="attendanceHoursEnabledInModal"
-            color="primary"
-            :disabled="isSavingAttendanceHours"
-            @click="toggleAttendanceHoursStatusInModal"
-          />
-          <IconBtn @click="closeAttendanceHoursModal">
-            <VIcon icon="tabler-x" />
-          </IconBtn>
-        </div>
+        <IconBtn @click="closeAttendanceHoursModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
       </VCardTitle>
 
       <VCardText>
@@ -5018,52 +5174,111 @@ onMounted(async () => {
           }}
         </div>
 
-        <VRow dense class="mb-2">
-          <VCol
-            v-for="weekday in attendanceWeekdays"
-            :key="weekday"
-            cols="12"
-            class="mb-2"
+        <div
+          class="d-flex justify-space-between align-center mb-4 flex-wrap gap-2"
+        >
+          <VSwitch
+            v-model="attendanceHoursEnabledInModal"
+            :label="$t('attendance_hours_enabled_label')"
+            color="primary"
+            :disabled="isSavingAttendanceHours"
+          />
+          <VBtn
+            color="primary"
+            variant="tonal"
+            :disabled="
+              isSavingAttendanceHours || !attendanceHoursEnabledInModal
+            "
+            @click="addAttendanceHoursRule"
           >
-            <VRow dense class="align-center">
-              <VCol cols="12" md="4">
-                <VSwitch
-                  v-model="attendanceDaysInModal[weekday].enabled"
-                  :label="t(weekday)"
-                  color="primary"
-                  hide-details
-                  :disabled="!attendanceHoursEnabledInModal"
-                />
-              </VCol>
-              <VCol cols="6" md="4">
-                <VTextField
-                  v-model="attendanceDaysInModal[weekday].start_time"
-                  type="time"
-                  :label="$t('attendance_hours_start_time')"
-                  density="comfortable"
-                  hide-details
-                  :disabled="
-                    !attendanceHoursEnabledInModal ||
-                    !attendanceDaysInModal[weekday].enabled
-                  "
-                />
-              </VCol>
-              <VCol cols="6" md="4">
-                <VTextField
-                  v-model="attendanceDaysInModal[weekday].end_time"
-                  type="time"
-                  :label="$t('attendance_hours_end_time')"
-                  density="comfortable"
-                  hide-details
-                  :disabled="
-                    !attendanceHoursEnabledInModal ||
-                    !attendanceDaysInModal[weekday].enabled
-                  "
-                />
-              </VCol>
-            </VRow>
+            {{ $t('attendance_hours_add_rule') }}
+          </VBtn>
+        </div>
+
+        <VAlert
+          v-if="
+            attendanceHoursEnabledInModal && attendanceRulesInModal.length === 0
+          "
+          type="info"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ $t('attendance_hours_empty_state') }}
+        </VAlert>
+
+        <VAlert
+          v-if="!attendanceHoursEnabledInModal"
+          type="info"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ $t('attendance_hours_disabled_hint') }}
+        </VAlert>
+
+        <VRow
+          v-for="rule in attendanceRulesInModal"
+          :key="rule.id"
+          dense
+          class="mb-2 align-center"
+        >
+          <VCol cols="12" md="4">
+            <VSelect
+              v-model="rule.weekday"
+              :items="attendanceWeekdayOptions"
+              item-title="title"
+              item-value="value"
+              :label="$t('attendance_hours_day_label')"
+              density="comfortable"
+              hide-details
+              :disabled="
+                isSavingAttendanceHours || !attendanceHoursEnabledInModal
+              "
+            />
+          </VCol>
+          <VCol cols="5" md="3">
+            <VTextField
+              v-model="rule.start_time"
+              type="time"
+              :label="$t('attendance_hours_start_label')"
+              density="comfortable"
+              hide-details
+              :disabled="
+                isSavingAttendanceHours || !attendanceHoursEnabledInModal
+              "
+            />
+          </VCol>
+          <VCol cols="5" md="3">
+            <VTextField
+              v-model="rule.end_time"
+              type="time"
+              :label="$t('attendance_hours_end_label')"
+              density="comfortable"
+              hide-details
+              :disabled="
+                isSavingAttendanceHours || !attendanceHoursEnabledInModal
+              "
+            />
+          </VCol>
+          <VCol cols="2" md="2" class="d-flex justify-end">
+            <IconBtn
+              :disabled="
+                isSavingAttendanceHours || !attendanceHoursEnabledInModal
+              "
+              @click="removeAttendanceHoursRule(rule.id)"
+            >
+              <VIcon icon="tabler-trash" />
+            </IconBtn>
           </VCol>
         </VRow>
+
+        <VAlert
+          v-if="attendanceRulesErrorMessageInModal"
+          type="error"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ attendanceRulesErrorMessageInModal }}
+        </VAlert>
 
         <VDivider class="my-4" />
 

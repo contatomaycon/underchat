@@ -1,15 +1,17 @@
 import { Static, Type } from '@sinclair/typebox';
 
-const attendanceDaySchema = Type.Object({
-  enabled: Type.Boolean(),
-  start_time: Type.Union([
-    Type.String({ pattern: '^([01]\\d|2[0-3]):([0-5]\\d)$' }),
-    Type.Null(),
+const attendanceRuleSchema = Type.Object({
+  weekday: Type.Union([
+    Type.Literal('monday'),
+    Type.Literal('tuesday'),
+    Type.Literal('wednesday'),
+    Type.Literal('thursday'),
+    Type.Literal('friday'),
+    Type.Literal('saturday'),
+    Type.Literal('sunday'),
   ]),
-  end_time: Type.Union([
-    Type.String({ pattern: '^([01]\\d|2[0-3]):([0-5]\\d)$' }),
-    Type.Null(),
-  ]),
+  start_time: Type.String({ pattern: '^([01]\\d|2[0-3]):([0-5]\\d)$' }),
+  end_time: Type.String({ pattern: '^([01]\\d|2[0-3]):([0-5]\\d)$' }),
 });
 
 export const updateAttendanceHoursParamsSchema = Type.Object({
@@ -30,15 +32,7 @@ export const updateAttendanceHoursRequestSchema = Type.Object({
   message_only_queue_sector_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),
-  days: Type.Object({
-    monday: attendanceDaySchema,
-    tuesday: attendanceDaySchema,
-    wednesday: attendanceDaySchema,
-    thursday: attendanceDaySchema,
-    friday: attendanceDaySchema,
-    saturday: attendanceDaySchema,
-    sunday: attendanceDaySchema,
-  }),
+  rules: Type.Array(attendanceRuleSchema),
   text: Type.Optional(Type.String({ maxLength: 2000 })),
 });
 
