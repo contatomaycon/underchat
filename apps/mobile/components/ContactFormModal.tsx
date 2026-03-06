@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -861,7 +862,12 @@ export function ContactFormModal({
       transparent
       onRequestClose={handleRequestClose}
     >
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoiding}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
+        <View style={styles.overlay}>
         <Pressable
           style={styles.modalBackdrop}
           onPress={dismissKeyboardAnd(handleRequestClose)}
@@ -1297,31 +1303,35 @@ export function ContactFormModal({
           </Pressable>
         ) : null}
 
-        <SelectSheet
-          visible={pickerKind !== null}
-          title={currentPickerTitle}
-          options={pickerItems}
-          multiple={isMultiPicker}
-          selectedValue={selectedPickerValue}
-          selectedValues={selectedPickerValues}
-          emptyText={pt.no_results_found}
-          searchPlaceholder={pt.select_search_placeholder}
-          showClear
-          clearLabel={pt.clear_filter}
-          showDone={isMultiPicker}
-          doneLabel={pt.done}
-          onClear={clearPickerSelection}
-          onDone={closePicker}
-          onRequestClose={closePicker}
-          onSelectValue={toggleOption}
-          onToggleValue={toggleOption}
-        />
-      </View>
+          <SelectSheet
+            visible={pickerKind !== null}
+            title={currentPickerTitle}
+            options={pickerItems}
+            multiple={isMultiPicker}
+            selectedValue={selectedPickerValue}
+            selectedValues={selectedPickerValues}
+            emptyText={pt.no_results_found}
+            searchPlaceholder={pt.select_search_placeholder}
+            showClear
+            clearLabel={pt.clear_filter}
+            showDone={isMultiPicker}
+            doneLabel={pt.done}
+            onClear={clearPickerSelection}
+            onDone={closePicker}
+            onRequestClose={closePicker}
+            onSelectValue={toggleOption}
+            onToggleValue={toggleOption}
+          />
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoiding: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',

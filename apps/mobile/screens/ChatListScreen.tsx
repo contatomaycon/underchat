@@ -1,4 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+  createRef,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
 import {
   Alert,
   ActivityIndicator,
@@ -9,6 +16,7 @@ import {
   Pressable,
   TextInput,
   Modal,
+  KeyboardAvoidingView,
   Animated,
   Platform,
   Switch,
@@ -16,7 +24,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
-import { Swipeable } from 'react-native-gesture-handler';
+import ReanimatedSwipeable, {
+  SwipeDirection,
+  type SwipeableMethods,
+} from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatStackParamList } from '../navigation/types';
 import type { ChatListCounts, ListChatsResult } from '../types/chat';
@@ -628,7 +639,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   );
   const loadingRef = useRef(false);
   const isLoadingMoreRef = useRef(false);
-  const openedSwipeableRef = useRef<Swipeable | null>(null);
+  const openedSwipeableRef = useRef<SwipeableMethods | null>(null);
   const closeServiceConfigRequestRef = useRef(0);
   const profileSidebarReopenTimerRef = useRef<ReturnType<
     typeof setTimeout
@@ -2155,157 +2166,168 @@ export function ChatListScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={closeTransferModal}
       >
-        <View style={styles.transferOverlay}>
-          <Pressable
-            style={styles.transferBackdrop}
-            onPress={dismissKeyboardAnd(closeTransferModal)}
-          />
-          <View style={styles.transferCard}>
-            <View style={styles.transferHeaderRow}>
-              <Text style={styles.transferTitle}>{pt.transfer_to}</Text>
-              <Pressable
-                onPress={dismissKeyboardAnd(closeTransferModal)}
-                hitSlop={12}
-              >
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
-
-            {isLoadingTransferOptions ? (
-              <View style={styles.transferLoadingWrap}>
-                <ActivityIndicator size="small" color={colors.primary} />
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoiding}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+        >
+          <View style={styles.transferOverlay}>
+            <Pressable
+              style={styles.transferBackdrop}
+              onPress={dismissKeyboardAnd(closeTransferModal)}
+            />
+            <View style={styles.transferCard}>
+              <View style={styles.transferHeaderRow}>
+                <Text style={styles.transferTitle}>{pt.transfer_to}</Text>
+                <Pressable
+                  onPress={dismissKeyboardAnd(closeTransferModal)}
+                  hitSlop={12}
+                >
+                  <Ionicons name="close" size={22} color={colors.onSurface} />
+                </Pressable>
               </View>
-            ) : (
-              <>
-                <SelectField
-                  label={pt.channel}
-                  valueLabel={selectedTransferChannelLabel}
-                  placeholder={pt.transfer_select_channel}
-                  onPress={dismissKeyboardAnd(() =>
-                    setTransferPickerKind('channel')
-                  )}
-                  containerStyle={styles.transferSelectContainer}
-                />
 
-                <SelectField
-                  label={pt.transfer_to}
-                  valueLabel={selectedTransferTypeLabel}
-                  placeholder={pt.transfer_to_placeholder}
-                  onPress={dismissKeyboardAnd(() =>
-                    setTransferPickerKind('type')
-                  )}
-                  containerStyle={styles.transferSelectContainer}
-                />
-
-                {transferType === 'user' ? (
+              {isLoadingTransferOptions ? (
+                <View style={styles.transferLoadingWrap}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : (
+                <>
                   <SelectField
-                    label={pt.attendant}
-                    valueLabel={selectedTransferUserLabel}
-                    placeholder={pt.transfer_select_user}
+                    label={pt.channel}
+                    valueLabel={selectedTransferChannelLabel}
+                    placeholder={pt.transfer_select_channel}
                     onPress={dismissKeyboardAnd(() =>
-                      setTransferPickerKind('user')
+                      setTransferPickerKind('channel')
                     )}
                     containerStyle={styles.transferSelectContainer}
                   />
-                ) : null}
 
-                {transferType === 'sector' ? (
-                  <>
-                    <SelectField
-                      label={pt.sector}
-                      valueLabel={selectedTransferSectorLabel}
-                      placeholder={pt.transfer_select_sector}
-                      onPress={dismissKeyboardAnd(() =>
-                        setTransferPickerKind('sector')
-                      )}
-                      containerStyle={styles.transferSelectContainer}
-                    />
-
-                    <SelectField
-                      label={pt.transfer_sector_user_optional}
-                      valueLabel={selectedTransferSectorUserLabel}
-                      placeholder={pt.transfer_select_sector_user}
-                      onPress={dismissKeyboardAnd(() =>
-                        setTransferPickerKind('sector_user')
-                      )}
-                      disabled={!selectedTransferSectorId}
-                      loading={isLoadingTransferSectorUsers}
-                      containerStyle={styles.transferSelectContainer}
-                    />
-                  </>
-                ) : null}
-
-                <Text style={styles.transferFieldLabel}>
-                  {pt.transfer_annotation}
-                </Text>
-                <TextInput
-                  style={styles.transferAnnotationInput}
-                  value={transferAnnotation}
-                  onChangeText={setTransferAnnotation}
-                  placeholder={pt.transfer_annotation_placeholder}
-                  placeholderTextColor={colors.grey500}
-                  multiline
-                  maxLength={300}
-                />
-
-                <View style={styles.transferKeepInChatRow}>
-                  <View style={styles.transferKeepInChatTextWrap}>
-                    <Text style={styles.transferKeepInChatLabel}>
-                      {pt.keep_in_chat}
-                    </Text>
-                    <Text style={styles.transferKeepInChatDescription}>
-                      {pt.keep_in_chat_description}
-                    </Text>
-                  </View>
-                  <Switch
-                    value={transferKeepInChat}
-                    onValueChange={setTransferKeepInChat}
-                    trackColor={{ false: colors.grey300, true: colors.primary }}
-                    thumbColor={colors.onPrimary}
-                  />
-                </View>
-
-                <View style={styles.transferActionsRow}>
-                  <Pressable
-                    style={styles.transferCancelBtn}
-                    onPress={dismissKeyboardAnd(closeTransferModal)}
-                    disabled={isTransferring}
-                  >
-                    <Text style={styles.transferCancelText}>{pt.cancel}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.transferSubmitBtn}
-                    onPress={dismissKeyboardAnd(() => {
-                      void submitTransfer();
-                    })}
-                    disabled={isTransferring}
-                  >
-                    {isTransferring ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={colors.onPrimary}
-                      />
-                    ) : (
-                      <Text style={styles.transferSubmitText}>
-                        {pt.transfer}
-                      </Text>
+                  <SelectField
+                    label={pt.transfer_to}
+                    valueLabel={selectedTransferTypeLabel}
+                    placeholder={pt.transfer_to_placeholder}
+                    onPress={dismissKeyboardAnd(() =>
+                      setTransferPickerKind('type')
                     )}
-                  </Pressable>
-                </View>
-              </>
-            )}
+                    containerStyle={styles.transferSelectContainer}
+                  />
+
+                  {transferType === 'user' ? (
+                    <SelectField
+                      label={pt.attendant}
+                      valueLabel={selectedTransferUserLabel}
+                      placeholder={pt.transfer_select_user}
+                      onPress={dismissKeyboardAnd(() =>
+                        setTransferPickerKind('user')
+                      )}
+                      containerStyle={styles.transferSelectContainer}
+                    />
+                  ) : null}
+
+                  {transferType === 'sector' ? (
+                    <>
+                      <SelectField
+                        label={pt.sector}
+                        valueLabel={selectedTransferSectorLabel}
+                        placeholder={pt.transfer_select_sector}
+                        onPress={dismissKeyboardAnd(() =>
+                          setTransferPickerKind('sector')
+                        )}
+                        containerStyle={styles.transferSelectContainer}
+                      />
+
+                      <SelectField
+                        label={pt.transfer_sector_user_optional}
+                        valueLabel={selectedTransferSectorUserLabel}
+                        placeholder={pt.transfer_select_sector_user}
+                        onPress={dismissKeyboardAnd(() =>
+                          setTransferPickerKind('sector_user')
+                        )}
+                        disabled={!selectedTransferSectorId}
+                        loading={isLoadingTransferSectorUsers}
+                        containerStyle={styles.transferSelectContainer}
+                      />
+                    </>
+                  ) : null}
+
+                  <Text style={styles.transferFieldLabel}>
+                    {pt.transfer_annotation}
+                  </Text>
+                  <TextInput
+                    style={styles.transferAnnotationInput}
+                    value={transferAnnotation}
+                    onChangeText={setTransferAnnotation}
+                    placeholder={pt.transfer_annotation_placeholder}
+                    placeholderTextColor={colors.grey500}
+                    multiline
+                    maxLength={300}
+                  />
+
+                  <View style={styles.transferKeepInChatRow}>
+                    <View style={styles.transferKeepInChatTextWrap}>
+                      <Text style={styles.transferKeepInChatLabel}>
+                        {pt.keep_in_chat}
+                      </Text>
+                      <Text style={styles.transferKeepInChatDescription}>
+                        {pt.keep_in_chat_description}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={transferKeepInChat}
+                      onValueChange={setTransferKeepInChat}
+                      trackColor={{
+                        false: colors.grey300,
+                        true: colors.primary,
+                      }}
+                      thumbColor={colors.onPrimary}
+                    />
+                  </View>
+
+                  <View style={styles.transferActionsRow}>
+                    <Pressable
+                      style={styles.transferCancelBtn}
+                      onPress={dismissKeyboardAnd(closeTransferModal)}
+                      disabled={isTransferring}
+                    >
+                      <Text style={styles.transferCancelText}>{pt.cancel}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.transferSubmitBtn}
+                      onPress={dismissKeyboardAnd(() => {
+                        void submitTransfer();
+                      })}
+                      disabled={isTransferring}
+                    >
+                      {isTransferring ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.onPrimary}
+                        />
+                      ) : (
+                        <Text style={styles.transferSubmitText}>
+                          {pt.transfer}
+                        </Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </View>
           </View>
-        </View>
-        <SelectSheet
-          visible={transferPickerKind !== null}
-          title={transferPickerTitle}
-          options={transferPickerOptions}
-          selectedValue={selectedTransferPickerValue}
-          emptyText={pt.no_results_found}
-          searchPlaceholder={pt.select_search_placeholder}
-          onRequestClose={dismissKeyboardAnd(() => setTransferPickerKind(null))}
-          onSelectValue={handleSelectTransferPickerValue}
-        />
+          <SelectSheet
+            visible={transferPickerKind !== null}
+            title={transferPickerTitle}
+            options={transferPickerOptions}
+            selectedValue={selectedTransferPickerValue}
+            emptyText={pt.no_results_found}
+            searchPlaceholder={pt.select_search_placeholder}
+            onRequestClose={dismissKeyboardAnd(() =>
+              setTransferPickerKind(null)
+            )}
+            onSelectValue={handleSelectTransferPickerValue}
+          />
+        </KeyboardAvoidingView>
       </Modal>
       {loading ? (
         <ChatListSkeleton />
@@ -2436,57 +2458,46 @@ export function ChatListScreen({ route, navigation }: Props) {
             const actionWidth = Math.floor(
               maxActionsWidth / Math.max(queueActions.length, 1)
             );
-            let rowSwipeable: Swipeable | null = null;
+            const rowSwipeableRef = createRef<SwipeableMethods | null>();
 
             return (
-              <Swipeable
-                ref={(instance) => {
-                  rowSwipeable = instance;
-                }}
+              <ReanimatedSwipeable
+                ref={rowSwipeableRef}
                 friction={1.6}
                 rightThreshold={32}
                 overshootRight={false}
                 containerStyle={styles.swipeableContainer}
                 childrenContainerStyle={styles.swipeableChildrenContainer}
                 onSwipeableWillOpen={(direction) => {
-                  if (direction !== 'right') return;
+                  if (direction !== SwipeDirection.RIGHT) return;
                   if (
                     openedSwipeableRef.current &&
-                    openedSwipeableRef.current !== rowSwipeable
+                    openedSwipeableRef.current !== rowSwipeableRef.current
                   ) {
                     openedSwipeableRef.current.close();
                   }
                 }}
                 onSwipeableOpen={(direction) => {
-                  if (direction !== 'right') return;
-                  openedSwipeableRef.current = rowSwipeable;
+                  if (direction !== SwipeDirection.RIGHT) return;
+                  openedSwipeableRef.current = rowSwipeableRef.current;
                 }}
                 onSwipeableClose={(direction) => {
-                  if (direction === 'right' && openedSwipeableRef.current) {
+                  if (
+                    direction === SwipeDirection.RIGHT &&
+                    openedSwipeableRef.current
+                  ) {
                     openedSwipeableRef.current = null;
                   }
                 }}
-                renderRightActions={(progress, dragX) => {
+                renderRightActions={(_progress, _translation) => {
                   const actionsWidth = actionWidth * queueActions.length;
-                  const translateX = dragX.interpolate({
-                    inputRange: [-actionsWidth, 0],
-                    outputRange: [0, actionsWidth],
-                    extrapolate: 'clamp',
-                  });
-                  const opacity = progress.interpolate({
-                    inputRange: [0, 0.4, 1],
-                    outputRange: [0.1, 0.75, 1],
-                    extrapolate: 'clamp',
-                  });
 
                   return (
-                    <Animated.View
+                    <View
                       style={[
                         styles.swipeActionsAnimated,
                         {
                           width: actionsWidth,
-                          opacity,
-                          transform: [{ translateX }],
                         },
                       ]}
                     >
@@ -2512,12 +2523,12 @@ export function ChatListScreen({ route, navigation }: Props) {
                           </Pressable>
                         ))}
                       </View>
-                    </Animated.View>
+                    </View>
                   );
                 }}
               >
                 {row}
-              </Swipeable>
+              </ReanimatedSwipeable>
             );
           }}
           renderSectionHeader={({ section }) => (
@@ -2931,6 +2942,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  keyboardAvoiding: {
+    flex: 1,
   },
   transferOverlay: {
     flex: 1,

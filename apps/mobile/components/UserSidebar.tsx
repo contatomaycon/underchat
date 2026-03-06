@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -522,7 +523,12 @@ export function UserSidebar({
         transparent
         onRequestClose={closeSidebar}
       >
-        <View style={styles.overlay}>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoiding}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        >
+          <View style={styles.overlay}>
           <Pressable
             style={styles.backdrop}
             onPress={dismissKeyboardAnd(closeSidebar)}
@@ -739,13 +745,13 @@ export function UserSidebar({
             </View>
           </TouchableWithoutFeedback>
         </View>
-        {photoModalVisible ? (
-          <View style={styles.photoOverlayLayer}>
-            <Pressable
-              style={styles.photoOverlayBackdrop}
-              onPress={dismissKeyboardAnd(closePhotoModal)}
-            />
-            <View style={styles.photoCard}>
+          {photoModalVisible ? (
+            <View style={styles.photoOverlayLayer}>
+              <Pressable
+                style={styles.photoOverlayBackdrop}
+                onPress={dismissKeyboardAnd(closePhotoModal)}
+              />
+              <View style={styles.photoCard}>
               <View style={styles.photoHeader}>
                 <Text style={styles.photoTitle}>{pt.profile_photo}</Text>
                 <Pressable
@@ -806,15 +812,19 @@ export function UserSidebar({
                   </Pressable>
                 ) : null}
               </View>
+              </View>
             </View>
-          </View>
-        ) : null}
+          ) : null}
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoiding: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     flexDirection: 'row',

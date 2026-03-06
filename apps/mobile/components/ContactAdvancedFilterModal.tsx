@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -303,13 +304,21 @@ export function ContactAdvancedFilterModal({
       animationType="slide"
       onRequestClose={handleRequestClose}
     >
-      <View style={styles.overlay}>
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={dismissKeyboardAnd(handleRequestClose)}
-        />
-        <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
-          <View style={styles.modal}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoiding}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
+        <View style={styles.overlay}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={dismissKeyboardAnd(handleRequestClose)}
+          />
+          <TouchableWithoutFeedback
+            onPress={dismissKeyboard}
+            accessible={false}
+          >
+            <View style={styles.modal}>
             <View style={styles.header}>
               <Text style={styles.title}>{pt.advanced_filters}</Text>
               <Pressable
@@ -512,40 +521,44 @@ export function ContactAdvancedFilterModal({
                 )}
               </Pressable>
             </View>
-          </View>
-        </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
 
-        <SelectSheet
-          visible={pickerKind !== null}
-          title={currentPickerLabel}
-          options={pickerItems}
-          selectedValue={
-            pickerKind === 'label'
-              ? filterLabel
-              : pickerKind === 'phoneDdi'
-                ? filterPhoneDdi
-                : pickerKind === 'user'
-                  ? filterUserId
-                  : pickerKind === 'sortField'
-                    ? sortField
-                    : pickerKind === 'sortOrder'
-                      ? sortOrder
-                      : null
-          }
-          emptyText={pt.no_results_found}
-          searchPlaceholder={pt.select_search_placeholder}
-          showClear
-          clearLabel={pt.clear_filter}
-          onClear={clearPickerValue}
-          onRequestClose={closePicker}
-          onSelectValue={selectPickerValue}
-        />
-      </View>
+          <SelectSheet
+            visible={pickerKind !== null}
+            title={currentPickerLabel}
+            options={pickerItems}
+            selectedValue={
+              pickerKind === 'label'
+                ? filterLabel
+                : pickerKind === 'phoneDdi'
+                  ? filterPhoneDdi
+                  : pickerKind === 'user'
+                    ? filterUserId
+                    : pickerKind === 'sortField'
+                      ? sortField
+                      : pickerKind === 'sortOrder'
+                        ? sortOrder
+                        : null
+            }
+            emptyText={pt.no_results_found}
+            searchPlaceholder={pt.select_search_placeholder}
+            showClear
+            clearLabel={pt.clear_filter}
+            onClear={clearPickerValue}
+            onRequestClose={closePicker}
+            onSelectValue={selectPickerValue}
+          />
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoiding: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

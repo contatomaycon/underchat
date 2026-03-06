@@ -7,6 +7,7 @@ import {
   TouchableWithoutFeedback,
   ScrollView,
   TextInput,
+  KeyboardAvoidingView,
   StyleSheet,
   ActivityIndicator,
   Animated,
@@ -348,13 +349,21 @@ export function AdvancedFilterModal({
       transparent
       onRequestClose={handleRequestClose}
     >
-      <View style={styles.modalOverlay}>
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={dismissKeyboardAnd(handleRequestClose)}
-        />
-        <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
-          <View style={styles.modalCard}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoiding}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={dismissKeyboardAnd(handleRequestClose)}
+          />
+          <TouchableWithoutFeedback
+            onPress={dismissKeyboard}
+            accessible={false}
+          >
+            <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{pt.advanced_filters}</Text>
               <Pressable
@@ -539,28 +548,32 @@ export function AdvancedFilterModal({
                 )}
               </Pressable>
             </View>
-          </View>
-        </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
 
-        <SelectSheet
-          visible={pickerKind !== null}
-          title={getCurrentLabel()}
-          options={pickerOptions}
-          selectedValue={selectedPickerValue}
-          emptyText={pt.no_results_found}
-          searchPlaceholder={pt.select_search_placeholder}
-          showClear
-          clearLabel={pt.clear_filter}
-          onClear={clearPickerValue}
-          onRequestClose={closePicker}
-          onSelectValue={selectPickerValue}
-        />
-      </View>
+          <SelectSheet
+            visible={pickerKind !== null}
+            title={getCurrentLabel()}
+            options={pickerOptions}
+            selectedValue={selectedPickerValue}
+            emptyText={pt.no_results_found}
+            searchPlaceholder={pt.select_search_placeholder}
+            showClear
+            clearLabel={pt.clear_filter}
+            onClear={clearPickerValue}
+            onRequestClose={closePicker}
+            onSelectValue={selectPickerValue}
+          />
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoiding: {
+    flex: 1,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
