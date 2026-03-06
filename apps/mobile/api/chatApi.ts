@@ -231,12 +231,70 @@ function buildChatQuery(
   return q;
 }
 
+type ListChatsRawResponse = {
+  results?: ListChatsResponse['results'];
+  counts?: ChatListCounts;
+  pagings?: {
+    current_page: number;
+    total_pages: number;
+    per_page: number;
+    count: number;
+    total: number;
+  };
+  current_page?: number;
+  total_pages?: number;
+  per_page?: number;
+  count?: number;
+  total?: number;
+};
+
+function normalizeListChatsResponse(
+  data: ListChatsRawResponse,
+  params: ListChatsParams
+): ListChatsResponse {
+  const currentPage = params.current_page ?? 1;
+  const perPage = params.per_page ?? 25;
+  const pagings = data.pagings ?? {
+    current_page: data.current_page ?? currentPage,
+    total_pages: data.total_pages ?? 1,
+    per_page: data.per_page ?? perPage,
+    count: data.count ?? (data.results ?? []).length,
+    total: data.total ?? (data.results ?? []).length,
+  };
+
+  const rawCounts = data.counts;
+
+  return {
+    results: data.results ?? [],
+    counts: rawCounts ?? {
+      total: pagings.total ?? 0,
+      queue: 0,
+      in_chat: 0,
+      chatbot: 0,
+      schedule: 0,
+      my_chats: 0,
+      closed: 0,
+      in_chat_mine: 0,
+      chatbot_input: 0,
+      chatbot_output: 0,
+      chatbot_schedule: 0,
+      chatbot_webhook: 0,
+    },
+    current_page: pagings.current_page,
+    total_pages: pagings.total_pages,
+    per_page: pagings.per_page,
+    count: pagings.count,
+    total: pagings.total,
+  };
+}
+
 export async function listChats(
   params: ListChatsParams
 ): Promise<ListChatsResponse | null> {
   const q = buildChatQuery(params);
-  const res = await apiGet<ListChatsResponse>('/chat', q);
-  return res?.data ?? null;
+  const res = await apiGet<ListChatsRawResponse>('/chat', q);
+  if (!res?.data) return null;
+  return normalizeListChatsResponse(res.data, params);
 }
 
 export async function listMyChats(

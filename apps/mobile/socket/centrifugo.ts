@@ -7,7 +7,8 @@ import {
   type Subscription,
   SubscriptionState,
 } from 'centrifuge';
-import { apiPost } from '../api/client';
+import { BACKEND_URL } from '../config';
+import { getToken } from '../storage/authStorage';
 
 export type { Subscription };
 
@@ -16,12 +17,18 @@ type AuthTokenResponse = {
   url: string;
 };
 
+type ApiEnvelope<T> = {
+  status?: boolean;
+  data?: T;
+};
+
 let centrifugeClient: Centrifuge | null = null;
 let tokenGenerationPromise: Promise<AuthTokenResponse> | null = null;
 let cachedToken: { token: string; url: string; expiresAt: number } | null =
   null;
 
 const TOKEN_CACHE_MARGIN_MS = 5 * 60 * 1000;
+const CENTRIFUGO_AUTH_TOKEN_PATH = '/v1/centrifugo/auth/token';
 
 const channelHandlers = new Map<
   string,
@@ -33,6 +40,36 @@ const channelStreamPositions = new Map<
   { offset: number; epoch: string }
 >();
 const recoveryFailedListeners = new Set<(channel: string) => void>();
+
+const requestCentrifugoAuthToken = async (): Promise<AuthTokenResponse> => {
+  const token = await getToken();
+  if (!token || !BACKEND_URL) {
+    throw new Error('Unable to request Centrifugo token');
+  }
+
+  const response = await fetch(`${BACKEND_URL}${CENTRIFUGO_AUTH_TOKEN_PATH}`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Accept-Language': 'pt',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: '{}',
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to request Centrifugo token');
+  }
+
+  const payload = (await response.json()) as ApiEnvelope<AuthTokenResponse>;
+  const authData = payload?.data;
+  if (!payload?.status || !authData?.token || !authData?.url) {
+    throw new Error('Invalid Centrifugo auth response');
+  }
+
+  return authData;
+};
 
 const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
   const now = Date.now();
@@ -47,22 +84,15 @@ const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
 
   tokenGenerationPromise = (async () => {
     try {
-      const response = await apiPost<AuthTokenResponse>(
-        '/centrifugo/auth/token',
-        {}
-      );
-
-      if (!response?.data?.token || !response?.data?.url) {
-        throw new Error('Failed to generate Centrifugo token');
-      }
+      const response = await requestCentrifugoAuthToken();
 
       cachedToken = {
-        token: response.data.token,
-        url: response.data.url,
+        token: response.token,
+        url: response.url,
         expiresAt: now + 24 * 60 * 60 * 1000,
       };
 
-      return response.data;
+      return response;
     } finally {
       tokenGenerationPromise = null;
     }

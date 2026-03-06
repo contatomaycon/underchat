@@ -13,6 +13,7 @@ import {
   Text,
   StyleSheet,
   SectionList,
+  RefreshControl,
   Pressable,
   TextInput,
   Modal,
@@ -101,6 +102,7 @@ import {
   normalizeChatCounts,
   syncGlobalChatCounts,
 } from '../utils/chatCountsSync';
+import { formatBadgeCount } from '../utils/countFormat';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 import { addAppResumeListener } from '../utils/appResumeBus';
 
@@ -257,10 +259,6 @@ function formatDate(dateStr: string | null | undefined): string {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
-function formatCount(value: number): string {
-  return value > 99 ? '99+' : String(Math.max(0, value));
-}
-
 function limitText(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
@@ -373,9 +371,7 @@ function ChatRow({
           </Text>
           {unread > 0 ? (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {unread > 99 ? '99+' : unread}
-              </Text>
+              <Text style={styles.badgeText}>{formatBadgeCount(unread)}</Text>
             </View>
           ) : null}
         </View>
@@ -581,6 +577,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [canPickAnyQueueChat, setCanPickAnyQueueChat] = useState(false);
   const [profileSidebarVisible, setProfileSidebarVisible] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMorePages, setHasMorePages] = useState(false);
   const [isUserResolved, setIsUserResolved] = useState(false);
   const [isPermissionsResolved, setIsPermissionsResolved] = useState(false);
@@ -785,7 +782,13 @@ export function ChatListScreen({ route, navigation }: Props) {
     isChannelsResolved;
 
   const load = useCallback(
-    async (append = false) => {
+    async (
+      append = false,
+      options?: {
+        silentLoading?: boolean;
+      }
+    ) => {
+      const silentLoading = options?.silentLoading ?? false;
       if (append) {
         const { currentPage, totalPages } = paginationRef.current;
         if (
@@ -798,16 +801,17 @@ export function ChatListScreen({ route, navigation }: Props) {
         setIsLoadingMore(true);
         isLoadingMoreRef.current = true;
       } else {
-        setLoading(true);
+        if (!silentLoading) {
+          setLoading(true);
+        }
         loadingRef.current = true;
         paginationRef.current = { currentPage: 1, totalPages: 1 };
         setHasMorePages(false);
       }
 
       const targetPage = append ? paginationRef.current.currentPage + 1 : 1;
-      const chatbotStatuses =
-        chatbotFilters.length > 0 ? chatbotFilters : ['ura'];
-      const status = tab === 'chatbot' ? chatbotStatuses : CHAT_STATUS[tab];
+      const chatbotStatus = chatbotFilters[0] ?? 'ura';
+      const status = tab === 'chatbot' ? chatbotStatus : CHAT_STATUS[tab];
       const hasSearchText = (search ?? '').trim().length > 0;
       const useSearch = hasAppliedAdvancedFilters || hasSearchText;
       const inChatFilterUserId =
@@ -877,8 +881,8 @@ export function ChatListScreen({ route, navigation }: Props) {
 
             syncChatCounts(res.counts);
           } else {
-            applyPagination(1, 1);
             if (!append) {
+              applyPagination(1, 1);
               setQueue([]);
               setInChat([]);
             }
@@ -907,8 +911,8 @@ export function ChatListScreen({ route, navigation }: Props) {
             );
             syncChatCounts(res.counts);
           } else {
-            applyPagination(1, 1);
             if (!append) {
+              applyPagination(1, 1);
               setQueue([]);
               setInChat([]);
             }
@@ -926,8 +930,8 @@ export function ChatListScreen({ route, navigation }: Props) {
             syncChatCounts(res.counts);
             if (!append) setInChat([]);
           } else {
-            applyPagination(1, 1);
             if (!append) {
+              applyPagination(1, 1);
               setQueue([]);
               setInChat([]);
             }
@@ -950,8 +954,8 @@ export function ChatListScreen({ route, navigation }: Props) {
             syncChatCounts(res.counts);
             if (!append) setQueue([]);
           } else {
-            applyPagination(1, 1);
             if (!append) {
+              applyPagination(1, 1);
               setQueue([]);
               setInChat([]);
             }
@@ -981,8 +985,8 @@ export function ChatListScreen({ route, navigation }: Props) {
 
             syncChatCounts(res.counts);
           } else {
-            applyPagination(1, 1);
             if (!append) {
+              applyPagination(1, 1);
               setQueue([]);
               setInChat([]);
             }
@@ -1000,7 +1004,9 @@ export function ChatListScreen({ route, navigation }: Props) {
           setIsLoadingMore(false);
           isLoadingMoreRef.current = false;
         } else {
-          setLoading(false);
+          if (!silentLoading) {
+            setLoading(false);
+          }
           loadingRef.current = false;
         }
       }
@@ -1026,6 +1032,17 @@ export function ChatListScreen({ route, navigation }: Props) {
 
     void load(true);
   }, [hasMorePages, isLoadingMore, load, loading]);
+
+  const handleRefresh = useCallback(() => {
+    if (loading || isLoadingMore || isRefreshing) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    void load(false, { silentLoading: true }).finally(() => {
+      setIsRefreshing(false);
+    });
+  }, [isLoadingMore, isRefreshing, load, loading]);
 
   const canReceiveChatNotification = useCallback(
     (chatData: SocketChatPayload): boolean => {
@@ -1877,7 +1894,7 @@ export function ChatListScreen({ route, navigation }: Props) {
               active && styles.quickFilterChipBadgeTextActive,
             ]}
           >
-            {formatCount(count)}
+            {formatBadgeCount(count)}
           </Text>
         </View>
       </View>
@@ -2521,6 +2538,13 @@ export function ChatListScreen({ route, navigation }: Props) {
           )}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          }
           ListFooterComponent={
             isLoadingMore ? <ChatListLoadMoreSkeleton /> : null
           }
@@ -2653,10 +2677,10 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   quickFilterChipBadge: {
-    minWidth: 18,
+    minWidth: 22,
     height: 18,
     borderRadius: 9,
-    paddingHorizontal: 5,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.grey100,
@@ -2665,7 +2689,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.onPrimary,
   },
   quickFilterChipBadgeText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     color: colors.onSurface,
   },
@@ -2779,7 +2803,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   badge: {
-    minWidth: 20,
+    minWidth: 22,
     height: 20,
     borderRadius: 10,
     backgroundColor: colors.error,
@@ -2788,7 +2812,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   badgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     color: colors.onError,
   },

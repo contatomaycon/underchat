@@ -98,12 +98,10 @@ export function ChatFilterProvider({
 
   const toggleChatbotFilter = useCallback((filter: ChatbotFilterStatus) => {
     setChatbotFilters((current) => {
-      if (current.includes(filter)) {
-        if (current.length === 1) return current;
-        return current.filter((item) => item !== filter);
+      if (current.length === 1 && current[0] === filter) {
+        return current;
       }
-
-      return [...current, filter];
+      return [filter];
     });
   }, []);
 

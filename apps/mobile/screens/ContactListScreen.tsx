@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  RefreshControl,
   Pressable,
   StyleSheet,
   Text,
@@ -210,6 +211,7 @@ export function ContactListScreen({ navigation }: Props) {
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [filterVisible, setFilterVisible] = useState(false);
   const [formVisible, setFormVisible] = useState(false);
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
@@ -234,10 +236,17 @@ export function ContactListScreen({ navigation }: Props) {
   );
 
   const loadContacts = useCallback(
-    async (page: number, append: boolean) => {
+    async (
+      page: number,
+      append: boolean,
+      options?: {
+        showInitialLoader?: boolean;
+      }
+    ) => {
+      const showInitialLoader = options?.showInitialLoader ?? true;
       if (append) {
         setLoadingMore(true);
-      } else {
+      } else if (showInitialLoader) {
         setLoading(true);
       }
 
@@ -248,17 +257,31 @@ export function ContactListScreen({ navigation }: Props) {
           debouncedSearch || undefined,
           filters
         );
+        if (!response) {
+          if (!append) {
+            setContacts([]);
+            setCurrentPage(1);
+            setTotalPages(1);
+          }
+          return;
+        }
 
-        const results = response?.results ?? [];
+        const results = response.results ?? [];
         setContacts((previous) =>
           append ? mergeUniqueContacts(previous, results) : results
         );
-        setCurrentPage(response?.current_page ?? page);
-        setTotalPages(response?.total_pages ?? 1);
+        setCurrentPage(response.current_page ?? page);
+        setTotalPages(response.total_pages ?? 1);
+      } catch {
+        if (!append) {
+          setContacts([]);
+          setCurrentPage(1);
+          setTotalPages(1);
+        }
       } finally {
         if (append) {
           setLoadingMore(false);
-        } else {
+        } else if (showInitialLoader) {
           setLoading(false);
         }
       }
@@ -410,6 +433,14 @@ export function ContactListScreen({ navigation }: Props) {
     if (currentPage >= totalPages) return;
     void loadContacts(currentPage + 1, true);
   };
+
+  const handleRefresh = useCallback(() => {
+    if (loading || loadingMore || refreshing) return;
+    setRefreshing(true);
+    void loadContacts(1, false, { showInitialLoader: false }).finally(() => {
+      setRefreshing(false);
+    });
+  }, [loading, loadingMore, loadContacts, refreshing]);
 
   const handleOpenCreate = () => {
     dismissKeyboard();
@@ -582,6 +613,13 @@ export function ContactListScreen({ navigation }: Props) {
               data={contacts}
               keyExtractor={(item) => item.contact_id}
               keyboardDismissMode="on-drag"
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={handleRefresh}
+                  tintColor={colors.primary}
+                />
+              }
               onEndReached={handleLoadMore}
               onEndReachedThreshold={0.3}
               renderItem={({ item }) => (

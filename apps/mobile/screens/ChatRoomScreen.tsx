@@ -6085,19 +6085,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         setSearchLoadingMore(true);
       }
 
-      const response = await searchMessages(chatId, query, page, 50);
-      if (reset) {
-        setSearchResults(response.results);
-      } else {
-        setSearchResults((prev) => [...prev, ...response.results]);
-      }
-      setSearchCurrentPage(response.pagings.current_page);
-      setSearchTotalPages(response.pagings.total_pages);
-
-      if (reset) {
-        setSearchLoading(false);
-      } else {
-        setSearchLoadingMore(false);
+      try {
+        const response = await searchMessages(chatId, query, page, 50);
+        if (reset) {
+          setSearchResults(response.results);
+        } else {
+          setSearchResults((prev) => [...prev, ...response.results]);
+        }
+        setSearchCurrentPage(response.pagings.current_page);
+        setSearchTotalPages(response.pagings.total_pages);
+      } catch {
+        // Keep current results on transient failures.
+      } finally {
+        if (reset) {
+          setSearchLoading(false);
+        } else {
+          setSearchLoadingMore(false);
+        }
       }
     },
     [chatInfo.chat_id, debouncedSearchQuery]
@@ -6174,6 +6178,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         setAttendanceHistory([]);
         setAttendanceHistoryPage(1);
         setAttendanceHistoryTotalPages(0);
+        setAttendanceHistoryLoading(false);
+        setAttendanceHistoryLoadingMore(false);
         return;
       }
 
@@ -6215,34 +6221,43 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         query.filter_sector_id = sectorIds[0];
       }
 
-      const response = await searchChats(query);
-      if (!response) {
-        if (reset) {
-          setAttendanceHistory([]);
-          setAttendanceHistoryPage(1);
-          setAttendanceHistoryTotalPages(0);
-          if (!attendanceHistoryErrorAlertShownRef.current) {
-            attendanceHistoryErrorAlertShownRef.current = true;
-            Alert.alert(pt.error_title, pt.attendance_history_load_error);
+      try {
+        const response = await searchChats(query);
+        if (!response) {
+          if (reset) {
+            setAttendanceHistory([]);
+            setAttendanceHistoryPage(1);
+            setAttendanceHistoryTotalPages(0);
+            if (!attendanceHistoryErrorAlertShownRef.current) {
+              attendanceHistoryErrorAlertShownRef.current = true;
+              Alert.alert(pt.error_title, pt.attendance_history_load_error);
+            }
           }
+          return;
         }
-        return;
-      } else if (reset) {
-        setAttendanceHistory(response.results);
-        setAttendanceHistoryPage(response.current_page);
-        setAttendanceHistoryTotalPages(response.total_pages);
-        attendanceHistoryErrorAlertShownRef.current = false;
-      } else {
-        setAttendanceHistory((prev) => [...prev, ...response.results]);
-        setAttendanceHistoryPage(response.current_page);
-        setAttendanceHistoryTotalPages(response.total_pages);
-        attendanceHistoryErrorAlertShownRef.current = false;
-      }
 
-      if (reset) {
-        setAttendanceHistoryLoading(false);
-      } else {
-        setAttendanceHistoryLoadingMore(false);
+        if (reset) {
+          setAttendanceHistory(response.results);
+          setAttendanceHistoryPage(response.current_page);
+          setAttendanceHistoryTotalPages(response.total_pages);
+          attendanceHistoryErrorAlertShownRef.current = false;
+        } else {
+          setAttendanceHistory((prev) => [...prev, ...response.results]);
+          setAttendanceHistoryPage(response.current_page);
+          setAttendanceHistoryTotalPages(response.total_pages);
+          attendanceHistoryErrorAlertShownRef.current = false;
+        }
+      } catch {
+        if (reset && !attendanceHistoryErrorAlertShownRef.current) {
+          attendanceHistoryErrorAlertShownRef.current = true;
+          Alert.alert(pt.error_title, pt.attendance_history_load_error);
+        }
+      } finally {
+        if (reset) {
+          setAttendanceHistoryLoading(false);
+        } else {
+          setAttendanceHistoryLoadingMore(false);
+        }
       }
     },
     [
@@ -6859,9 +6874,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             filter_is_valided: 'true',
             filter_channel_id: selectedForwardChannelId,
           });
+          if (!response) {
+            if (!append) {
+              setForwardItems([]);
+              setForwardCurrentPage(1);
+              setForwardTotalPages(1);
+            }
+            return;
+          }
           const currentContactId = readNonEmptyString(chatInfo.contact?.id);
 
-          for (const contact of response?.results ?? []) {
+          for (const contact of response.results ?? []) {
             if (!contact.contact_id) continue;
             if (currentContactId && contact.contact_id === currentContactId) {
               continue;
@@ -6877,8 +6900,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             });
           }
 
-          setForwardCurrentPage(response?.current_page ?? page);
-          setForwardTotalPages(response?.total_pages ?? 1);
+          setForwardCurrentPage(response.current_page ?? page);
+          setForwardTotalPages(response.total_pages ?? 1);
         } else {
           const response = await searchChats({
             search,
@@ -6887,8 +6910,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             per_page: 20,
             filter_worker_id: selectedForwardChannelId,
           });
+          if (!response) {
+            if (!append) {
+              setForwardItems([]);
+              setForwardCurrentPage(1);
+              setForwardTotalPages(1);
+            }
+            return;
+          }
 
-          for (const chatItem of response?.results ?? []) {
+          for (const chatItem of response.results ?? []) {
             if (!chatItem.chat_id || chatItem.chat_id === chatInfo.chat_id)
               continue;
             const title = `${chatItem.name ?? chatItem.contact?.name ?? pt.contact} - ${chatItem.phone || chatItem.chat_id}`;
@@ -6898,8 +6929,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             });
           }
 
-          setForwardCurrentPage(response?.current_page ?? page);
-          setForwardTotalPages(response?.total_pages ?? 1);
+          setForwardCurrentPage(response.current_page ?? page);
+          setForwardTotalPages(response.total_pages ?? 1);
         }
 
         if (!append) {
@@ -6913,6 +6944,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           for (const item of targetItems) map.set(item.value, item);
           return Array.from(map.values());
         });
+      } catch {
+        if (!append) {
+          setForwardItems([]);
+          setForwardCurrentPage(1);
+          setForwardTotalPages(1);
+        }
       } finally {
         if (append) {
           setForwardLoadingMore(false);
@@ -8294,7 +8331,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           25,
           debouncedContactSearch
         );
-        const items = response?.results ?? [];
+        if (!response) {
+          if (!append) {
+            setContactPickerItems([]);
+            setContactPickerPage(1);
+            setContactPickerTotalPages(1);
+          }
+          return;
+        }
+        const items = response.results ?? [];
         if (append) {
           setContactPickerItems((previous) => {
             const map = new Map<string, ListChatContactResult>();
@@ -8309,8 +8354,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         } else {
           setContactPickerItems(items);
         }
-        setContactPickerPage(response?.current_page ?? page);
-        setContactPickerTotalPages(response?.total_pages ?? 1);
+        setContactPickerPage(response.current_page ?? page);
+        setContactPickerTotalPages(response.total_pages ?? 1);
+      } catch {
+        if (!append) {
+          setContactPickerItems([]);
+          setContactPickerPage(1);
+          setContactPickerTotalPages(1);
+        }
       } finally {
         if (append) {
           setLoadingMoreContactPicker(false);

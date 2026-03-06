@@ -4,6 +4,7 @@ import { ChatStackNavigator } from './ChatStack';
 import type { ChatTab, RootTabParamList } from './types';
 import { colors } from '../theme/colors';
 import { useChatFilter } from '../context/ChatFilterContext';
+import { formatBadgeCount } from '../utils/countFormat';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
@@ -11,15 +12,13 @@ export function RootNavigator() {
   const { hasAppliedAdvancedFilters, canViewChatbotTab, chatCounts } =
     useChatFilter();
 
-  const toBadgeValue = (
-    value: number | null | undefined
-  ): string | undefined => (value && value > 0 ? String(value) : undefined);
-
-  const inChatBadge = toBadgeValue(chatCounts.in_chat);
-  const queueBadge = toBadgeValue(chatCounts.queue);
+  const inChatBadge = formatBadgeCount(chatCounts.in_chat, { hideZero: true });
+  const queueBadge = formatBadgeCount(chatCounts.queue, { hideZero: true });
   const chatbotBadgeTotal = chatCounts.chatbot + chatCounts.schedule;
-  const chatbotBadge = toBadgeValue(chatbotBadgeTotal);
-  const closedBadge = toBadgeValue(chatCounts.closed);
+  const chatbotBadge = formatBadgeCount(chatbotBadgeTotal, {
+    hideZero: true,
+  });
+  const closedBadge = formatBadgeCount(chatCounts.closed, { hideZero: true });
 
   const buildTabListeners = (
     routeName: keyof RootTabParamList,
@@ -58,15 +57,15 @@ export function RootNavigator() {
           borderTopColor: colors.grey200,
         },
         tabBarBadgeStyle: {
-          minWidth: 16,
-          height: 16,
+          minWidth: 20,
+          height: 18,
           borderRadius: 999,
-          paddingHorizontal: 4,
+          paddingHorizontal: 5,
           paddingVertical: 0,
           textAlign: 'center',
           textAlignVertical: 'center',
           includeFontPadding: false,
-          fontSize: 9,
+          fontSize: 10,
           lineHeight: 12,
         },
       }}

@@ -10,11 +10,15 @@ Pré-requisitos:
 
 Comandos:
 
-- Gerar APK (distribuição interna): `cd /home/maycon/underchat/apps/mobile && pnpm run build:android:apk`
-- Gerar AAB (release/Play Store): `cd /home/maycon/underchat/apps/mobile && pnpm run build:android:aab`
+- Gerar APK (distribuição interna): `pnpm run build:android:apk`
+- Gerar AAB (release/Play Store): `pnpm run build:android:aab`
 - Gerar TestFligter
-  cd /home/maycon/underchat/apps/mobile && pnpm --filter mobile run eas:build:dev:ios
-  cd /home/maycon/underchat/apps/mobile && pnpm exec expo start --dev-client --tunnel
+  pnpm --filter mobile run eas:build:dev:ios
+  pnpm exec expo start --dev-client --tunnel
+
+- Android
+  pnpm run run:android
+  pnpm exec expo start --dev-client --android --tunnel
 
 Perfis EAS usados:
 
