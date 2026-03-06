@@ -25,6 +25,7 @@ export const pt = {
   show_password: 'Mostrar senha',
   hide_password: 'Ocultar senha',
   search_service: 'Pesquisar atendimento...',
+  select_search_placeholder: 'Buscar opção...',
   in_service: 'Em Atendimento',
   awaiting_service: 'Aguardando atendimento',
   new: 'Novo',

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Modal,
   Platform,
   Pressable,
@@ -32,6 +31,7 @@ import type {
   ContactSortOrder,
 } from '../types/contact';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import { SelectField, SelectSheet, type SelectOption } from './select';
 
 type PickerKind =
   | 'label'
@@ -184,7 +184,7 @@ export function ContactAdvancedFilterModal({
     }
   }, [visible]);
 
-  const pickerItems = useMemo(() => {
+  const pickerItems = useMemo<SelectOption[]>(() => {
     if (pickerKind === 'label') {
       return labels.map((item) => ({
         value: item.label_template_id,
@@ -329,44 +329,32 @@ export function ContactAdvancedFilterModal({
               }
             >
               <View style={styles.field}>
-                <Text style={styles.label}>{pt.filter_by_tag}</Text>
-                {loadingLabels ? (
-                  <View style={styles.loadingWrap}>
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  </View>
-                ) : (
-                  <Pressable
-                    style={styles.selector}
-                    onPress={() => openPicker('label')}
-                  >
-                    <Text numberOfLines={1} style={styles.selectorText}>
-                      {selectedLabelName}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={16}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
-                )}
+                <SelectField
+                  label={pt.filter_by_tag}
+                  valueLabel={
+                    selectedLabelName === pt.select_tag_filter
+                      ? null
+                      : selectedLabelName
+                  }
+                  placeholder={pt.select_tag_filter}
+                  onPress={() => openPicker('label')}
+                  loading={loadingLabels}
+                  disabled={loadingLabels}
+                />
               </View>
 
               <View style={styles.row}>
                 <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.phone_ddi}</Text>
-                  <Pressable
-                    style={styles.selector}
+                  <SelectField
+                    label={pt.phone_ddi}
+                    valueLabel={
+                      selectedPhoneDdiName === pt.select_phone_ddi
+                        ? null
+                        : selectedPhoneDdiName
+                    }
+                    placeholder={pt.select_phone_ddi}
                     onPress={() => openPicker('phoneDdi')}
-                  >
-                    <Text numberOfLines={1} style={styles.selectorText}>
-                      {selectedPhoneDdiName}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={16}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
+                  />
                 </View>
                 <View style={[styles.field, styles.half]}>
                   <Text style={styles.label}>{pt.phone}</Text>
@@ -463,60 +451,44 @@ export function ContactAdvancedFilterModal({
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>{pt.filter_by_attendant}</Text>
-                {loadingUsers ? (
-                  <View style={styles.loadingWrap}>
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  </View>
-                ) : (
-                  <Pressable
-                    style={styles.selector}
-                    onPress={() => openPicker('user')}
-                  >
-                    <Text numberOfLines={1} style={styles.selectorText}>
-                      {selectedUserName}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={16}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
-                )}
+                <SelectField
+                  label={pt.filter_by_attendant}
+                  valueLabel={
+                    selectedUserName === pt.select_attendant_filter
+                      ? null
+                      : selectedUserName
+                  }
+                  placeholder={pt.select_attendant_filter}
+                  onPress={() => openPicker('user')}
+                  loading={loadingUsers}
+                  disabled={loadingUsers}
+                />
               </View>
 
               <View style={styles.row}>
                 <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.sort_by}</Text>
-                  <Pressable
-                    style={styles.selector}
+                  <SelectField
+                    label={pt.sort_by}
+                    valueLabel={
+                      selectedSortFieldName === pt.select_sort_field
+                        ? null
+                        : selectedSortFieldName
+                    }
+                    placeholder={pt.select_sort_field}
                     onPress={() => openPicker('sortField')}
-                  >
-                    <Text numberOfLines={1} style={styles.selectorText}>
-                      {selectedSortFieldName}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={16}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
+                  />
                 </View>
                 <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.sort_order}</Text>
-                  <Pressable
-                    style={styles.selector}
+                  <SelectField
+                    label={pt.sort_order}
+                    valueLabel={
+                      selectedSortOrderName === pt.select_sort_order
+                        ? null
+                        : selectedSortOrderName
+                    }
+                    placeholder={pt.select_sort_order}
                     onPress={() => openPicker('sortOrder')}
-                  >
-                    <Text numberOfLines={1} style={styles.selectorText}>
-                      {selectedSortOrderName}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={16}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
+                  />
                 </View>
               </View>
             </ScrollView>
@@ -543,36 +515,31 @@ export function ContactAdvancedFilterModal({
           </View>
         </TouchableWithoutFeedback>
 
-        {pickerKind !== null ? (
-          <Pressable style={styles.pickerOverlay} onPress={closePicker}>
-            <Pressable
-              style={styles.pickerCard}
-              onPress={(event) => event.stopPropagation()}
-            >
-              <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle}>{currentPickerLabel}</Text>
-                <Pressable
-                  style={styles.clearButton}
-                  onPress={clearPickerValue}
-                >
-                  <Text style={styles.clearButtonText}>{pt.clear_filter}</Text>
-                </Pressable>
-              </View>
-              <FlatList
-                data={pickerItems}
-                keyExtractor={(item, index) => `${item.value}-${index}`}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={styles.pickerRow}
-                    onPress={() => selectPickerValue(item.value)}
-                  >
-                    <Text style={styles.pickerRowText}>{item.label}</Text>
-                  </Pressable>
-                )}
-              />
-            </Pressable>
-          </Pressable>
-        ) : null}
+        <SelectSheet
+          visible={pickerKind !== null}
+          title={currentPickerLabel}
+          options={pickerItems}
+          selectedValue={
+            pickerKind === 'label'
+              ? filterLabel
+              : pickerKind === 'phoneDdi'
+                ? filterPhoneDdi
+                : pickerKind === 'user'
+                  ? filterUserId
+                  : pickerKind === 'sortField'
+                    ? sortField
+                    : pickerKind === 'sortOrder'
+                      ? sortOrder
+                      : null
+          }
+          emptyText={pt.no_results_found}
+          searchPlaceholder={pt.select_search_placeholder}
+          showClear
+          clearLabel={pt.clear_filter}
+          onClear={clearPickerValue}
+          onRequestClose={closePicker}
+          onSelectValue={selectPickerValue}
+        />
       </View>
     </Modal>
   );
@@ -632,30 +599,6 @@ const styles = StyleSheet.create({
     color: colors.grey700,
     marginBottom: 4,
   },
-  loadingWrap: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: colors.grey300,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  selector: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: colors.grey300,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-  },
-  selectorText: {
-    flex: 1,
-    color: colors.onSurface,
-    fontSize: 14,
-    marginRight: 8,
-  },
   input: {
     height: 44,
     borderWidth: 1,
@@ -699,52 +642,5 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.7,
-  },
-  pickerOverlay: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  pickerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    maxHeight: 360,
-  },
-  pickerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-  },
-  pickerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.onSurface,
-  },
-  clearButton: {
-    padding: 4,
-  },
-  clearButtonText: {
-    fontSize: 13,
-    color: colors.primary,
-    fontWeight: '500',
-  },
-  pickerRow: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-  },
-  pickerRowText: {
-    color: colors.onSurface,
-    fontSize: 14,
   },
 });

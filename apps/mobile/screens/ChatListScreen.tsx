@@ -61,6 +61,11 @@ import {
   AdvancedFilterModal,
   type AdvancedFilterValues,
 } from '../components/AdvancedFilterModal';
+import {
+  SelectField,
+  SelectSheet,
+  type SelectOption,
+} from '../components/select';
 import { UserSidebar } from '../components/UserSidebar';
 import { AppAvatar } from '../components/AppAvatar';
 import type { WorkerConfigForChat } from '../types/contact';
@@ -1489,7 +1494,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     [transferPickerKind]
   );
 
-  const transferPickerOptions = useMemo(() => {
+  const transferPickerOptions = useMemo<SelectOption[]>(() => {
     if (transferPickerKind === 'channel') {
       return transferChannels;
     }
@@ -1524,6 +1529,34 @@ export function ChatListScreen({ route, navigation }: Props) {
     transferSectors,
     transferSectorUsers,
     transferUsers,
+  ]);
+
+  const transferPickerTitle = useMemo(() => {
+    if (transferPickerKind === 'channel') return pt.channel;
+    if (transferPickerKind === 'type') return pt.transfer_to;
+    if (transferPickerKind === 'user') return pt.attendant;
+    if (transferPickerKind === 'sector') return pt.sector;
+    if (transferPickerKind === 'sector_user') {
+      return pt.transfer_sector_user_optional;
+    }
+    return pt.select_option;
+  }, [transferPickerKind]);
+
+  const selectedTransferPickerValue = useMemo(() => {
+    if (transferPickerKind === 'channel') return selectedTransferChannelId;
+    if (transferPickerKind === 'type') return transferType;
+    if (transferPickerKind === 'user') return selectedTransferUserId;
+    if (transferPickerKind === 'sector') return selectedTransferSectorId;
+    if (transferPickerKind === 'sector_user')
+      return selectedTransferSectorUserId;
+    return null;
+  }, [
+    selectedTransferChannelId,
+    selectedTransferSectorId,
+    selectedTransferSectorUserId,
+    selectedTransferUserId,
+    transferPickerKind,
+    transferType,
   ]);
 
   const selectedTransferChannelLabel =
@@ -2144,145 +2177,61 @@ export function ChatListScreen({ route, navigation }: Props) {
               </View>
             ) : (
               <>
-                <Text style={styles.transferFieldLabel}>{pt.channel}</Text>
-                <Pressable
-                  style={styles.transferSelectField}
+                <SelectField
+                  label={pt.channel}
+                  valueLabel={selectedTransferChannelLabel}
+                  placeholder={pt.transfer_select_channel}
                   onPress={dismissKeyboardAnd(() =>
                     setTransferPickerKind('channel')
                   )}
-                >
-                  <Text
-                    style={[
-                      styles.transferSelectText,
-                      !selectedTransferChannelLabel &&
-                        styles.transferSelectPlaceholder,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {selectedTransferChannelLabel ?? pt.transfer_select_channel}
-                  </Text>
-                  <Ionicons
-                    name="chevron-down"
-                    size={18}
-                    color={colors.grey600}
-                  />
-                </Pressable>
+                  containerStyle={styles.transferSelectContainer}
+                />
 
-                <Text style={styles.transferFieldLabel}>{pt.transfer_to}</Text>
-                <Pressable
-                  style={styles.transferSelectField}
+                <SelectField
+                  label={pt.transfer_to}
+                  valueLabel={selectedTransferTypeLabel}
+                  placeholder={pt.transfer_to_placeholder}
                   onPress={dismissKeyboardAnd(() =>
                     setTransferPickerKind('type')
                   )}
-                >
-                  <Text
-                    style={[
-                      styles.transferSelectText,
-                      !selectedTransferTypeLabel &&
-                        styles.transferSelectPlaceholder,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {selectedTransferTypeLabel ?? pt.transfer_to_placeholder}
-                  </Text>
-                  <Ionicons
-                    name="chevron-down"
-                    size={18}
-                    color={colors.grey600}
-                  />
-                </Pressable>
+                  containerStyle={styles.transferSelectContainer}
+                />
 
                 {transferType === 'user' ? (
-                  <>
-                    <Text style={styles.transferFieldLabel}>
-                      {pt.attendant}
-                    </Text>
-                    <Pressable
-                      style={styles.transferSelectField}
-                      onPress={dismissKeyboardAnd(() =>
-                        setTransferPickerKind('user')
-                      )}
-                    >
-                      <Text
-                        style={[
-                          styles.transferSelectText,
-                          !selectedTransferUserLabel &&
-                            styles.transferSelectPlaceholder,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {selectedTransferUserLabel ?? pt.transfer_select_user}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={18}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
-                  </>
+                  <SelectField
+                    label={pt.attendant}
+                    valueLabel={selectedTransferUserLabel}
+                    placeholder={pt.transfer_select_user}
+                    onPress={dismissKeyboardAnd(() =>
+                      setTransferPickerKind('user')
+                    )}
+                    containerStyle={styles.transferSelectContainer}
+                  />
                 ) : null}
 
                 {transferType === 'sector' ? (
                   <>
-                    <Text style={styles.transferFieldLabel}>{pt.sector}</Text>
-                    <Pressable
-                      style={styles.transferSelectField}
+                    <SelectField
+                      label={pt.sector}
+                      valueLabel={selectedTransferSectorLabel}
+                      placeholder={pt.transfer_select_sector}
                       onPress={dismissKeyboardAnd(() =>
                         setTransferPickerKind('sector')
                       )}
-                    >
-                      <Text
-                        style={[
-                          styles.transferSelectText,
-                          !selectedTransferSectorLabel &&
-                            styles.transferSelectPlaceholder,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {selectedTransferSectorLabel ??
-                          pt.transfer_select_sector}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={18}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
+                      containerStyle={styles.transferSelectContainer}
+                    />
 
-                    <Text style={styles.transferFieldLabel}>
-                      {pt.transfer_sector_user_optional}
-                    </Text>
-                    <Pressable
-                      style={styles.transferSelectField}
+                    <SelectField
+                      label={pt.transfer_sector_user_optional}
+                      valueLabel={selectedTransferSectorUserLabel}
+                      placeholder={pt.transfer_select_sector_user}
                       onPress={dismissKeyboardAnd(() =>
                         setTransferPickerKind('sector_user')
                       )}
                       disabled={!selectedTransferSectorId}
-                    >
-                      <Text
-                        style={[
-                          styles.transferSelectText,
-                          !selectedTransferSectorUserLabel &&
-                            styles.transferSelectPlaceholder,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {selectedTransferSectorUserLabel ??
-                          pt.transfer_select_sector_user}
-                      </Text>
-                      {isLoadingTransferSectorUsers ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.primary}
-                        />
-                      ) : (
-                        <Ionicons
-                          name="chevron-down"
-                          size={18}
-                          color={colors.grey600}
-                        />
-                      )}
-                    </Pressable>
+                      loading={isLoadingTransferSectorUsers}
+                      containerStyle={styles.transferSelectContainer}
+                    />
                   </>
                 ) : null}
 
@@ -2347,56 +2296,16 @@ export function ChatListScreen({ route, navigation }: Props) {
             )}
           </View>
         </View>
-      </Modal>
-
-      <Modal
-        visible={transferPickerKind !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTransferPickerKind(null)}
-      >
-        <View style={styles.transferOverlay}>
-          <Pressable
-            style={styles.transferBackdrop}
-            onPress={dismissKeyboardAnd(() => setTransferPickerKind(null))}
-          />
-          <View style={styles.transferPickerCard}>
-            <View style={styles.transferHeaderRow}>
-              <Text style={styles.transferTitle}>{pt.select_option}</Text>
-              <Pressable
-                onPress={dismissKeyboardAnd(() => setTransferPickerKind(null))}
-                hitSlop={12}
-              >
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
-            {transferPickerOptions.length === 0 ? (
-              <Text style={styles.transferEmptyText}>
-                {pt.no_conversations_found}
-              </Text>
-            ) : (
-              <SectionList
-                sections={[{ title: '', data: transferPickerOptions }]}
-                keyboardDismissMode="on-drag"
-                keyExtractor={(item) => item.value}
-                renderSectionHeader={() => null}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={styles.transferPickerOption}
-                    onPress={() => handleSelectTransferPickerValue(item.value)}
-                  >
-                    <Text
-                      style={styles.transferPickerOptionText}
-                      numberOfLines={1}
-                    >
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                )}
-              />
-            )}
-          </View>
-        </View>
+        <SelectSheet
+          visible={transferPickerKind !== null}
+          title={transferPickerTitle}
+          options={transferPickerOptions}
+          selectedValue={selectedTransferPickerValue}
+          emptyText={pt.no_results_found}
+          searchPlaceholder={pt.select_search_placeholder}
+          onRequestClose={dismissKeyboardAnd(() => setTransferPickerKind(null))}
+          onSelectValue={handleSelectTransferPickerValue}
+        />
       </Modal>
       {loading ? (
         <ChatListSkeleton />
@@ -3080,12 +2989,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.error,
     minWidth: 104,
   },
-  transferPickerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    maxHeight: '70%',
-    overflow: 'hidden',
-  },
   transferHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3108,25 +3011,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     marginTop: 8,
   },
-  transferSelectField: {
-    minHeight: 42,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.inputBg,
-    gap: 8,
-  },
-  transferSelectText: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.onSurface,
-  },
-  transferSelectPlaceholder: {
-    color: colors.grey500,
+  transferSelectContainer: {
+    marginTop: 8,
   },
   transferAnnotationInput: {
     minHeight: 72,
@@ -3196,20 +3082,5 @@ const styles = StyleSheet.create({
   transferSubmitText: {
     color: colors.onPrimary,
     fontWeight: '700',
-  },
-  transferPickerOption: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-  },
-  transferPickerOptionText: {
-    fontSize: 14,
-    color: colors.onSurface,
-  },
-  transferEmptyText: {
-    paddingHorizontal: 14,
-    paddingBottom: 14,
-    color: colors.grey600,
   },
 });

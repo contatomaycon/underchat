@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Modal,
   Platform,
   Pressable,
@@ -22,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { AppAvatar } from './AppAvatar';
+import { SelectField, SelectSheet, type SelectOption } from './select';
 import { getCountryDialCodeOptions } from '../constants/countryCodes';
 import {
   createChatContact,
@@ -74,11 +74,6 @@ type PickerKind =
   | 'ignore'
   | null;
 
-type Option = {
-  value: string;
-  label: string;
-};
-
 interface ContactFormModalProps {
   visible: boolean;
   mode: ContactFormMode;
@@ -130,9 +125,9 @@ export function ContactFormModal({
   const [removingPhoto, setRemovingPhoto] = useState(false);
   const [pickerKind, setPickerKind] = useState<PickerKind>(null);
 
-  const [labelOptions, setLabelOptions] = useState<Option[]>([]);
-  const [channelOptions, setChannelOptions] = useState<Option[]>([]);
-  const [userOptions, setUserOptions] = useState<Option[]>([]);
+  const [labelOptions, setLabelOptions] = useState<SelectOption[]>([]);
+  const [channelOptions, setChannelOptions] = useState<SelectOption[]>([]);
+  const [userOptions, setUserOptions] = useState<SelectOption[]>([]);
 
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
@@ -172,7 +167,7 @@ export function ContactFormModal({
   const isEditMode = mode === 'edit';
   const canLoadContact = isEditMode && !!contactId;
 
-  const documentTypeOptions = useMemo<Option[]>(
+  const documentTypeOptions = useMemo<SelectOption[]>(
     () => [
       { value: CONTACT_DOCUMENT_TYPE.cpf, label: pt.cpf },
       { value: CONTACT_DOCUMENT_TYPE.cnpj, label: pt.cnpj },
@@ -180,7 +175,7 @@ export function ContactFormModal({
     []
   );
 
-  const ignoreOptions = useMemo<Option[]>(
+  const ignoreOptions = useMemo<SelectOption[]>(
     () => [
       { value: CONTACT_IGNORE.not_ignore, label: pt.not_ignore },
       { value: CONTACT_IGNORE.ignore_automation, label: pt.ignore_automation },
@@ -188,7 +183,7 @@ export function ContactFormModal({
     ],
     []
   );
-  const countryCodeOptions = useMemo<Option[]>(
+  const countryCodeOptions = useMemo<SelectOption[]>(
     () => getCountryDialCodeOptions('pt-BR'),
     []
   );
@@ -379,7 +374,7 @@ export function ContactFormModal({
     }
   }, [document, documentTypeId]);
 
-  const pickerItems = useMemo(() => {
+  const pickerItems = useMemo<SelectOption[]>(() => {
     if (pickerKind === 'labels') return labelOptions;
     if (pickerKind === 'channels') return channelOptions;
     if (pickerKind === 'phoneDdi') return countryCodeOptions;
@@ -409,15 +404,19 @@ export function ContactFormModal({
 
   const isMultiPicker = pickerKind === 'labels' || pickerKind === 'channels';
 
-  const isOptionSelected = (value: string): boolean => {
-    if (pickerKind === 'labels') return selectedLabels.includes(value);
-    if (pickerKind === 'channels') return selectedChannels.includes(value);
-    if (pickerKind === 'phoneDdi') return phoneDdi === value;
-    if (pickerKind === 'user') return selectedUserId === value;
-    if (pickerKind === 'documentType') return documentTypeId === value;
-    if (pickerKind === 'ignore') return ignore === value;
-    return false;
-  };
+  const selectedPickerValue = useMemo(() => {
+    if (pickerKind === 'phoneDdi') return phoneDdi;
+    if (pickerKind === 'user') return selectedUserId;
+    if (pickerKind === 'documentType') return documentTypeId;
+    if (pickerKind === 'ignore') return ignore;
+    return null;
+  }, [documentTypeId, ignore, phoneDdi, pickerKind, selectedUserId]);
+
+  const selectedPickerValues = useMemo(() => {
+    if (pickerKind === 'labels') return selectedLabels;
+    if (pickerKind === 'channels') return selectedChannels;
+    return [];
+  }, [pickerKind, selectedChannels, selectedLabels]);
 
   const toggleOption = (value: string) => {
     if (pickerKind === 'labels') {
@@ -849,11 +848,11 @@ export function ContactFormModal({
 
   const selectedLabelsData = selectedLabels
     .map((id) => labelOptions.find((item) => item.value === id))
-    .filter(Boolean) as Option[];
+    .filter((item): item is SelectOption => Boolean(item));
 
   const selectedChannelsData = selectedChannels
     .map((id) => channelOptions.find((item) => item.value === id))
-    .filter(Boolean) as Option[];
+    .filter((item): item is SelectOption => Boolean(item));
 
   return (
     <Modal
@@ -1035,22 +1034,13 @@ export function ContactFormModal({
 
                   <View style={styles.row}>
                     <View style={[styles.field, styles.half]}>
-                      <Text style={styles.label}>
-                        {pt.phone_ddi} <Text style={styles.required}>*</Text>
-                      </Text>
-                      <Pressable
-                        style={styles.selector}
+                      <SelectField
+                        label={pt.phone_ddi}
+                        required
+                        valueLabel={selectedPhoneDdiName}
+                        placeholder={pt.select_phone_ddi}
                         onPress={() => openPicker('phoneDdi')}
-                      >
-                        <Text style={styles.selectorText} numberOfLines={1}>
-                          {selectedPhoneDdiName}
-                        </Text>
-                        <Ionicons
-                          name="chevron-down"
-                          size={16}
-                          color={colors.grey600}
-                        />
-                      </Pressable>
+                      />
                     </View>
                     <View style={[styles.field, styles.half]}>
                       <Text style={styles.label}>
@@ -1089,20 +1079,16 @@ export function ContactFormModal({
 
                   <View style={styles.row}>
                     <View style={[styles.field, styles.half]}>
-                      <Text style={styles.label}>{pt.document_type}</Text>
-                      <Pressable
-                        style={styles.selector}
+                      <SelectField
+                        label={pt.document_type}
+                        valueLabel={
+                          selectedDocumentTypeName === pt.select_option
+                            ? null
+                            : selectedDocumentTypeName
+                        }
+                        placeholder={pt.select_option}
                         onPress={() => openPicker('documentType')}
-                      >
-                        <Text style={styles.selectorText} numberOfLines={1}>
-                          {selectedDocumentTypeName}
-                        </Text>
-                        <Ionicons
-                          name="chevron-down"
-                          size={16}
-                          color={colors.grey600}
-                        />
-                      </Pressable>
+                      />
                     </View>
                     <View style={[styles.field, styles.half]}>
                       <Text style={styles.label}>{pt.document}</Text>
@@ -1147,56 +1133,38 @@ export function ContactFormModal({
                   </View>
 
                   <View style={styles.field}>
-                    <Text style={styles.label}>{pt.filter_by_attendant}</Text>
-                    <Pressable
-                      style={styles.selector}
+                    <SelectField
+                      label={pt.filter_by_attendant}
+                      valueLabel={
+                        selectedUserName === pt.select_attendant_filter
+                          ? null
+                          : selectedUserName
+                      }
+                      placeholder={pt.select_attendant_filter}
                       onPress={() => openPicker('user')}
-                    >
-                      <Text style={styles.selectorText} numberOfLines={1}>
-                        {selectedUserName}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={16}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
+                    />
                   </View>
 
                   <View style={styles.field}>
-                    <Text style={styles.label}>{pt.ignore}</Text>
-                    <Pressable
-                      style={styles.selector}
+                    <SelectField
+                      label={pt.ignore}
+                      valueLabel={selectedIgnoreName}
+                      placeholder={pt.select_option}
                       onPress={() => openPicker('ignore')}
-                    >
-                      <Text style={styles.selectorText} numberOfLines={1}>
-                        {selectedIgnoreName}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={16}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
+                    />
                   </View>
 
                   <View style={styles.field}>
-                    <Text style={styles.label}>{pt.filter_by_tag}</Text>
-                    <Pressable
-                      style={styles.selector}
-                      onPress={() => openPicker('labels')}
-                    >
-                      <Text style={styles.selectorText} numberOfLines={1}>
-                        {selectedLabelsData.length > 0
+                    <SelectField
+                      label={pt.filter_by_tag}
+                      valueLabel={
+                        selectedLabelsData.length > 0
                           ? `${selectedLabelsData.length} ${pt.selected_items}`
-                          : pt.select_tag_filter}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={16}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
+                          : null
+                      }
+                      placeholder={pt.select_tag_filter}
+                      onPress={() => openPicker('labels')}
+                    />
                     {selectedLabelsData.length > 0 ? (
                       <View style={styles.selectedWrap}>
                         {selectedLabelsData.map((item) => (
@@ -1224,22 +1192,16 @@ export function ContactFormModal({
                   </View>
 
                   <View style={styles.field}>
-                    <Text style={styles.label}>{pt.channel}</Text>
-                    <Pressable
-                      style={styles.selector}
-                      onPress={() => openPicker('channels')}
-                    >
-                      <Text style={styles.selectorText} numberOfLines={1}>
-                        {selectedChannelsData.length > 0
+                    <SelectField
+                      label={pt.channel}
+                      valueLabel={
+                        selectedChannelsData.length > 0
                           ? `${selectedChannelsData.length} ${pt.selected_items}`
-                          : pt.select_channel}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={16}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
+                          : null
+                      }
+                      placeholder={pt.select_channel}
+                      onPress={() => openPicker('channels')}
+                    />
                     {selectedChannelsData.length > 0 ? (
                       <View style={styles.selectedWrap}>
                         {selectedChannelsData.map((item) => (
@@ -1335,58 +1297,25 @@ export function ContactFormModal({
           </Pressable>
         ) : null}
 
-        {pickerKind !== null ? (
-          <Pressable style={styles.pickerOverlay} onPress={closePicker}>
-            <Pressable
-              style={styles.pickerCard}
-              onPress={(event) => event.stopPropagation()}
-            >
-              <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle}>{currentPickerTitle}</Text>
-                <View style={styles.pickerActions}>
-                  <Pressable
-                    style={styles.pickerActionBtn}
-                    onPress={clearPickerSelection}
-                  >
-                    <Text style={styles.pickerActionText}>
-                      {pt.clear_filter}
-                    </Text>
-                  </Pressable>
-                  {isMultiPicker ? (
-                    <Pressable
-                      style={styles.pickerActionBtn}
-                      onPress={closePicker}
-                    >
-                      <Text style={styles.pickerActionText}>{pt.done}</Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-              </View>
-              <FlatList
-                data={pickerItems}
-                keyExtractor={(item, index) => `${item.value}-${index}`}
-                renderItem={({ item }) => {
-                  const selected = isOptionSelected(item.value);
-                  return (
-                    <Pressable
-                      style={styles.pickerRow}
-                      onPress={() => toggleOption(item.value)}
-                    >
-                      <Text style={styles.pickerRowText}>{item.label}</Text>
-                      {selected ? (
-                        <Ionicons
-                          name="checkmark"
-                          size={18}
-                          color={colors.primary}
-                        />
-                      ) : null}
-                    </Pressable>
-                  );
-                }}
-              />
-            </Pressable>
-          </Pressable>
-        ) : null}
+        <SelectSheet
+          visible={pickerKind !== null}
+          title={currentPickerTitle}
+          options={pickerItems}
+          multiple={isMultiPicker}
+          selectedValue={selectedPickerValue}
+          selectedValues={selectedPickerValues}
+          emptyText={pt.no_results_found}
+          searchPlaceholder={pt.select_search_placeholder}
+          showClear
+          clearLabel={pt.clear_filter}
+          showDone={isMultiPicker}
+          doneLabel={pt.done}
+          onClear={clearPickerSelection}
+          onDone={closePicker}
+          onRequestClose={closePicker}
+          onSelectValue={toggleOption}
+          onToggleValue={toggleOption}
+        />
       </View>
     </Modal>
   );
@@ -1551,22 +1480,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  selector: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: colors.grey300,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  selectorText: {
-    flex: 1,
-    color: colors.onSurface,
-    fontSize: 14,
-  },
   selectedWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1645,11 +1558,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
-  pickerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    maxHeight: 360,
-  },
   datePickerCard: {
     backgroundColor: colors.surface,
     borderRadius: 12,
@@ -1672,48 +1580,5 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 14,
     fontWeight: '600',
-  },
-  pickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-  },
-  pickerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.onSurface,
-  },
-  pickerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pickerActionBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-  },
-  pickerActionText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  pickerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-  },
-  pickerRowText: {
-    color: colors.onSurface,
-    fontSize: 14,
-    flex: 1,
-    marginRight: 8,
   },
 });

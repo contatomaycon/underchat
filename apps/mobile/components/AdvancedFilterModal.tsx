@@ -9,7 +9,6 @@ import {
   TextInput,
   StyleSheet,
   ActivityIndicator,
-  FlatList,
   Animated,
   Platform,
 } from 'react-native';
@@ -27,6 +26,7 @@ import {
 } from '../api/chatApi';
 import { colors } from '../theme/colors';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import { SelectField, SelectSheet, type SelectOption } from './select';
 
 export interface AdvancedFilterValues {
   filter_label_template_id: string | null;
@@ -226,43 +226,45 @@ export function AdvancedFilterModal({
     onClose();
   };
 
-  const pickerOptions: { value: string; title: string }[] = [];
-  if (pickerKind === 'tag') {
-    for (let i = 0; i < tags.length; i++) {
-      pickerOptions.push({
-        value: tags[i].label_template_id,
-        title: tags[i].label,
-      });
+  const pickerOptions: SelectOption[] = (() => {
+    if (pickerKind === 'tag') {
+      return tags.map((tag) => ({
+        value: tag.label_template_id,
+        label: tag.label,
+      }));
     }
-  }
-  if (pickerKind === 'worker') {
-    for (let i = 0; i < workers.length; i++) {
-      pickerOptions.push({ value: workers[i].id, title: workers[i].name });
+    if (pickerKind === 'worker') {
+      return workers.map((worker) => ({
+        value: worker.id,
+        label: worker.name,
+      }));
     }
-  }
-  if (pickerKind === 'user') {
-    for (let i = 0; i < users.length; i++) {
-      pickerOptions.push({
-        value: users[i].user_id,
-        title: users[i].name ?? users[i].user_id,
-      });
+    if (pickerKind === 'user') {
+      return users.map((user) => ({
+        value: user.user_id,
+        label: user.name ?? user.user_id,
+      }));
     }
-  }
-  if (pickerKind === 'sector') {
-    for (let i = 0; i < sectors.length; i++) {
-      pickerOptions.push({ value: sectors[i].id, title: sectors[i].name });
+    if (pickerKind === 'sector') {
+      return sectors.map((sector) => ({
+        value: sector.id,
+        label: sector.name,
+      }));
     }
-  }
-  if (pickerKind === 'sort_field') {
-    for (let i = 0; i < SORT_FIELD_OPTIONS.length; i++) {
-      pickerOptions.push(SORT_FIELD_OPTIONS[i]);
+    if (pickerKind === 'sort_field') {
+      return SORT_FIELD_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.title,
+      }));
     }
-  }
-  if (pickerKind === 'sort_order') {
-    for (let i = 0; i < SORT_ORDER_OPTIONS.length; i++) {
-      pickerOptions.push(SORT_ORDER_OPTIONS[i]);
+    if (pickerKind === 'sort_order') {
+      return SORT_ORDER_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.title,
+      }));
     }
-  }
+    return [];
+  })();
 
   const getCurrentLabel = (): string => {
     if (pickerKind === 'tag') {
@@ -291,6 +293,16 @@ export function AdvancedFilterModal({
     }
     return '';
   };
+
+  const selectedPickerValue = (() => {
+    if (pickerKind === 'tag') return filterLabel;
+    if (pickerKind === 'worker') return filterWorker;
+    if (pickerKind === 'user') return filterUser;
+    if (pickerKind === 'sector') return filterSector;
+    if (pickerKind === 'sort_field') return sortField;
+    if (pickerKind === 'sort_order') return sortOrder;
+    return null;
+  })();
 
   const selectPickerValue = (value: string) => {
     if (pickerKind === 'tag') setFilterLabel(value);
@@ -362,95 +374,68 @@ export function AdvancedFilterModal({
               }
             >
               <View style={styles.field}>
-                <Text style={styles.label}>{pt.filter_by_tag}</Text>
                 {loadingTags ? (
                   <SkeletonRow />
                 ) : (
-                  <Pressable
-                    style={styles.selectTouch}
+                  <SelectField
+                    label={pt.filter_by_tag}
+                    valueLabel={
+                      tags.find((x) => x.label_template_id === filterLabel)
+                        ?.label ?? null
+                    }
+                    placeholder={pt.select_tag_filter}
                     onPress={() => openPicker('tag')}
-                  >
-                    <Text style={styles.selectText} numberOfLines={1}>
-                      {tags.find((x) => x.label_template_id === filterLabel)
-                        ?.label ?? pt.select_tag_filter}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={18}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
+                  />
                 )}
               </View>
 
               {canUseUserAndSectorFilters ? (
                 <View style={styles.field}>
-                  <Text style={styles.label}>{pt.filter_by_sector}</Text>
                   {loadingSectors ? (
                     <SkeletonRow />
                   ) : (
-                    <Pressable
-                      style={styles.selectTouch}
+                    <SelectField
+                      label={pt.filter_by_sector}
+                      valueLabel={
+                        sectors.find((x) => x.id === filterSector)?.name ?? null
+                      }
+                      placeholder={pt.select_sector_filter}
                       onPress={() => openPicker('sector')}
-                    >
-                      <Text style={styles.selectText} numberOfLines={1}>
-                        {sectors.find((x) => x.id === filterSector)?.name ??
-                          pt.select_sector_filter}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={18}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
+                    />
                   )}
                 </View>
               ) : null}
 
               <View style={styles.field}>
-                <Text style={styles.label}>{pt.filter_by_channel}</Text>
                 {loadingWorkers ? (
                   <SkeletonRow />
                 ) : (
-                  <Pressable
-                    style={styles.selectTouch}
+                  <SelectField
+                    label={pt.filter_by_channel}
+                    valueLabel={
+                      workers.find((x) => x.id === filterWorker)?.name ?? null
+                    }
+                    placeholder={pt.select_channel_filter}
                     onPress={() => openPicker('worker')}
-                  >
-                    <Text style={styles.selectText} numberOfLines={1}>
-                      {workers.find((x) => x.id === filterWorker)?.name ??
-                        pt.select_channel_filter}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={18}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
+                  />
                 )}
               </View>
 
               {canUseUserAndSectorFilters ? (
                 <View style={styles.field}>
-                  <Text style={styles.label}>{pt.filter_by_attendant}</Text>
                   {loadingUsers ? (
                     <SkeletonRow />
                   ) : (
-                    <Pressable
-                      style={styles.selectTouch}
+                    <SelectField
+                      label={pt.filter_by_attendant}
+                      valueLabel={
+                        users.find((x) => x.user_id === filterUser)?.name ??
+                        users.find((x) => x.user_id === filterUser)?.user_id ??
+                        null
+                      }
+                      placeholder={pt.select_attendant_filter}
                       onPress={() => openPicker('user')}
-                    >
-                      <Text style={styles.selectText} numberOfLines={1}>
-                        {users.find((x) => x.user_id === filterUser)?.name ??
-                          users.find((x) => x.user_id === filterUser)
-                            ?.user_id ??
-                          pt.select_attendant_filter}
-                      </Text>
-                      <Ionicons
-                        name="chevron-down"
-                        size={18}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
+                    />
                   )}
                 </View>
               ) : null}
@@ -512,38 +497,26 @@ export function AdvancedFilterModal({
               </View>
               <View style={styles.row}>
                 <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.sort_by}</Text>
-                  <Pressable
-                    style={styles.selectTouch}
+                  <SelectField
+                    label={pt.sort_by}
+                    valueLabel={
+                      SORT_FIELD_OPTIONS.find((x) => x.value === sortField)
+                        ?.title ?? null
+                    }
+                    placeholder={pt.select_sort_field}
                     onPress={() => openPicker('sort_field')}
-                  >
-                    <Text style={styles.selectText} numberOfLines={1}>
-                      {SORT_FIELD_OPTIONS.find((x) => x.value === sortField)
-                        ?.title ?? pt.select_sort_field}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={18}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
+                  />
                 </View>
                 <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.sort_order}</Text>
-                  <Pressable
-                    style={styles.selectTouch}
+                  <SelectField
+                    label={pt.sort_order}
+                    valueLabel={
+                      SORT_ORDER_OPTIONS.find((x) => x.value === sortOrder)
+                        ?.title ?? null
+                    }
+                    placeholder={pt.select_sort_order}
                     onPress={() => openPicker('sort_order')}
-                  >
-                    <Text style={styles.selectText} numberOfLines={1}>
-                      {SORT_ORDER_OPTIONS.find((x) => x.value === sortOrder)
-                        ?.title ?? pt.select_sort_order}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={18}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
+                  />
                 </View>
               </View>
             </ScrollView>
@@ -569,41 +542,19 @@ export function AdvancedFilterModal({
           </View>
         </TouchableWithoutFeedback>
 
-        {pickerKind !== null ? (
-          <Pressable style={styles.pickerOverlay} onPress={closePicker}>
-            <Pressable
-              style={styles.pickerCard}
-              onPress={(event) => event.stopPropagation()}
-            >
-              <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle} numberOfLines={1}>
-                  {getCurrentLabel()}
-                </Text>
-                <Pressable
-                  onPress={clearPickerValue}
-                  style={styles.clearPickerBtn}
-                >
-                  <Text style={styles.clearPickerText}>{pt.clear_filter}</Text>
-                </Pressable>
-              </View>
-              <FlatList
-                data={pickerOptions}
-                keyExtractor={(item) => item.value}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={styles.pickerRow}
-                    onPress={() => selectPickerValue(item.value)}
-                  >
-                    <Text style={styles.pickerRowText} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                  </Pressable>
-                )}
-                style={styles.pickerList}
-              />
-            </Pressable>
-          </Pressable>
-        ) : null}
+        <SelectSheet
+          visible={pickerKind !== null}
+          title={getCurrentLabel()}
+          options={pickerOptions}
+          selectedValue={selectedPickerValue}
+          emptyText={pt.no_results_found}
+          searchPlaceholder={pt.select_search_placeholder}
+          showClear
+          clearLabel={pt.clear_filter}
+          onClear={clearPickerValue}
+          onRequestClose={closePicker}
+          onSelectValue={selectPickerValue}
+        />
       </View>
     </Modal>
   );
@@ -681,21 +632,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: colors.grey300,
   },
-  selectTouch: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: 44,
-    borderWidth: 1,
-    borderColor: colors.grey300,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-  },
-  selectText: {
-    fontSize: 14,
-    color: colors.onSurface,
-    flex: 1,
-  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -731,56 +667,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.onPrimary,
     fontWeight: '600',
-  },
-  pickerOverlay: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  pickerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    maxHeight: 320,
-  },
-  pickerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-  },
-  pickerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.onSurface,
-    flex: 1,
-  },
-  clearPickerText: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: '500',
-  },
-  clearPickerBtn: {
-    padding: 4,
-  },
-  pickerList: {
-    maxHeight: 260,
-  },
-  pickerRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-  },
-  pickerRowText: {
-    fontSize: 14,
-    color: colors.onSurface,
   },
 });

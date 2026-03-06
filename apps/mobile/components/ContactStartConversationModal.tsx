@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Modal,
   Pressable,
   StyleSheet,
@@ -13,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { formatChannelPhoneLabel } from '../utils/phoneFormat';
+import { SelectField, SelectSheet, type SelectOption } from './select';
 import {
   listTransferOptions,
   startChatWithContact,
@@ -123,7 +123,7 @@ export function ContactStartConversationModal({
   const cannotOpenConversation =
     !!workerConfig?.allow_attendance_only_online && userStatus !== 'online';
 
-  const pickerItems = useMemo(() => {
+  const pickerItems = useMemo<SelectOption[]>(() => {
     if (pickerKind === 'worker') {
       return workers.map((item) => ({
         value: item.id,
@@ -222,45 +222,28 @@ export function ContactStartConversationModal({
               </View>
             ) : (
               <>
-                <View style={styles.field}>
-                  <Text style={styles.label}>
-                    {pt.channel} <Text style={styles.required}>*</Text>
-                  </Text>
-                  <Pressable
-                    style={styles.selector}
-                    onPress={() => openPicker('worker')}
-                  >
-                    <Text style={styles.selectorText} numberOfLines={1}>
-                      {selectedWorker
-                        ? selectedWorker.number
-                          ? `${selectedWorker.name} (${formatChannelPhoneLabel(selectedWorker.number)})`
-                          : selectedWorker.name
-                        : pt.select_channel}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={16}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
-                </View>
+                <SelectField
+                  label={pt.channel}
+                  required
+                  valueLabel={
+                    selectedWorker
+                      ? selectedWorker.number
+                        ? `${selectedWorker.name} (${formatChannelPhoneLabel(selectedWorker.number)})`
+                        : selectedWorker.name
+                      : null
+                  }
+                  placeholder={pt.select_channel}
+                  onPress={() => openPicker('worker')}
+                  containerStyle={styles.field}
+                />
 
-                <View style={styles.field}>
-                  <Text style={styles.label}>{pt.sector}</Text>
-                  <Pressable
-                    style={styles.selector}
-                    onPress={() => openPicker('sector')}
-                  >
-                    <Text style={styles.selectorText} numberOfLines={1}>
-                      {selectedSector?.name ?? pt.select_sector}
-                    </Text>
-                    <Ionicons
-                      name="chevron-down"
-                      size={16}
-                      color={colors.grey600}
-                    />
-                  </Pressable>
-                </View>
+                <SelectField
+                  label={pt.sector}
+                  valueLabel={selectedSector?.name ?? null}
+                  placeholder={pt.select_sector}
+                  onPress={() => openPicker('sector')}
+                  containerStyle={styles.field}
+                />
 
                 {loadingConfig ? (
                   <View style={styles.inlineLoadingWrap}>
@@ -307,50 +290,30 @@ export function ContactStartConversationModal({
           </View>
         </View>
 
-        {pickerKind !== null ? (
-          <Pressable style={styles.pickerOverlay} onPress={closePicker}>
-            <Pressable
-              style={styles.pickerCard}
-              onPress={(event) => event.stopPropagation()}
-            >
-              <View style={styles.pickerHeader}>
-                <Text style={styles.pickerTitle}>{currentPickerTitle}</Text>
-                {pickerKind === 'sector' ? (
-                  <Pressable
-                    style={styles.clearPickerBtn}
-                    onPress={() => {
-                      setSelectedSectorId(null);
-                      closePicker();
-                    }}
-                  >
-                    <Text style={styles.clearPickerText}>
-                      {pt.clear_filter}
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-              <FlatList
-                data={pickerItems}
-                keyExtractor={(item) => item.value}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={styles.pickerRow}
-                    onPress={() => {
-                      if (pickerKind === 'worker') {
-                        setSelectedWorkerId(item.value);
-                      } else if (pickerKind === 'sector') {
-                        setSelectedSectorId(item.value);
-                      }
-                      closePicker();
-                    }}
-                  >
-                    <Text style={styles.pickerRowText}>{item.label}</Text>
-                  </Pressable>
-                )}
-              />
-            </Pressable>
-          </Pressable>
-        ) : null}
+        <SelectSheet
+          visible={pickerKind !== null}
+          title={currentPickerTitle}
+          options={pickerItems}
+          selectedValue={
+            pickerKind === 'worker' ? selectedWorkerId : selectedSectorId
+          }
+          emptyText={pt.no_results_found}
+          searchPlaceholder={pt.select_search_placeholder}
+          showClear={pickerKind === 'sector'}
+          clearLabel={pt.clear_filter}
+          onClear={() => {
+            setSelectedSectorId(null);
+          }}
+          onRequestClose={closePicker}
+          onSelectValue={(value) => {
+            if (pickerKind === 'worker') {
+              setSelectedWorkerId(value);
+            } else if (pickerKind === 'sector') {
+              setSelectedSectorId(value);
+            }
+            closePicker();
+          }}
+        />
       </View>
     </Modal>
   );
@@ -401,30 +364,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   field: {
-    gap: 4,
-  },
-  label: {
-    fontSize: 12,
-    color: colors.grey700,
-  },
-  required: {
-    color: colors.error,
-  },
-  selector: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: colors.grey300,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-  },
-  selectorText: {
-    flex: 1,
-    color: colors.onSurface,
-    fontSize: 14,
-    marginRight: 8,
+    marginBottom: 2,
   },
   warningText: {
     fontSize: 13,
@@ -464,52 +404,5 @@ const styles = StyleSheet.create({
   },
   disabledBtn: {
     opacity: 0.65,
-  },
-  pickerOverlay: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  pickerCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    maxHeight: 340,
-  },
-  pickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-  },
-  pickerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.onSurface,
-  },
-  clearPickerBtn: {
-    padding: 4,
-  },
-  clearPickerText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  pickerRow: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey200,
-  },
-  pickerRowText: {
-    color: colors.onSurface,
-    fontSize: 14,
   },
 });
