@@ -23,8 +23,9 @@
     },
     "android": {
       "package": "com.underchat.mobile",
+      "icon": "./assets/android-icon-safe.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/adaptive-icon-safe.png",
         "backgroundColor": "#ffffff"
       },
       "predictiveBackGestureEnabled": false,
