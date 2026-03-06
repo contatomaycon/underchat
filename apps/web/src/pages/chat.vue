@@ -33,6 +33,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
 import { can } from '@/@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
@@ -341,6 +342,27 @@ const isCurrentUserPrimaryInActiveChat = computed(() => {
   return isChatPrimary(activeChat, chatStore.user?.user_id);
 });
 
+const isCurrentUserMasterOrAdministrator = computed(() => {
+  const roleId = chatStore.user?.type?.user_type_id;
+  if (!roleId) {
+    return false;
+  }
+
+  const normalizedRoleId = roleId.trim().toLowerCase();
+
+  return (
+    normalizedRoleId === EPermissionRole.master ||
+    normalizedRoleId === EPermissionRole.administrator
+  );
+});
+
+const canManageInChatLifecycle = computed(() => {
+  return (
+    isCurrentUserPrimaryInActiveChat.value ||
+    isCurrentUserMasterOrAdministrator.value
+  );
+});
+
 const canJoinConversation = computed(() => {
   const activeChat = chatStore.activeChat as IChat | null;
   if (!activeChat) {
@@ -553,7 +575,7 @@ const isCloseServiceDialogOpen = ref(false);
 const closeServiceSendMessageOnFinishAttendance = ref(true);
 
 const handleCloseService = () => {
-  if (isInChatStatus.value && !isCurrentUserPrimaryInActiveChat.value) {
+  if (isInChatStatus.value && !canManageInChatLifecycle.value) {
     chatStore.showSnackbar(t('only_primary_can_close'), EColor.warning);
     return;
   }
@@ -957,7 +979,7 @@ watch(isTransferModalOpen, async (isOpen) => {
 const handleTransfer = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  if (!isCurrentUserPrimaryInActiveChat.value) {
+  if (!canManageInChatLifecycle.value) {
     chatStore.showSnackbar(t('only_primary_can_transfer'), EColor.warning);
     return;
   }
@@ -1136,7 +1158,7 @@ const canCloseChatWithoutAttending = computed(() => {
 
 const canShowCloseButton = computed(() => {
   if (isInChatStatus.value) {
-    return isCurrentUserPrimaryInActiveChat.value;
+    return canManageInChatLifecycle.value;
   }
 
   if (isQueueOrUraStatus.value && canCloseChatWithoutAttending.value) {
@@ -1147,7 +1169,7 @@ const canShowCloseButton = computed(() => {
 });
 
 const canTransfer = computed(() => {
-  return isInChatStatus.value && isCurrentUserPrimaryInActiveChat.value;
+  return isInChatStatus.value && canManageInChatLifecycle.value;
 });
 
 const canViewAttendanceHistory = computed(() => {

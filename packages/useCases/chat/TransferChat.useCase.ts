@@ -24,6 +24,7 @@ import Redis from 'ioredis';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { createChatCacheKey } from '@core/common/functions/createCacheKey';
 import { isChatPrimary } from '@core/common/functions/chatParticipants';
+import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 
 @injectable()
 export class TransferChatUseCase {
@@ -402,6 +403,7 @@ export class TransferChatUseCase {
     params: TransferChatParams,
     body: TransferChatBody,
     actorUserId: string,
+    permissionRoleId: string | null,
     userChannels: { id: string; name: string }[] = []
   ): Promise<{ chat_id: string; status: boolean }> {
     const chat = await this.chatService.findChatByChatId(
@@ -421,7 +423,11 @@ export class TransferChatUseCase {
       }
     }
 
-    if (!isChatPrimary(chat, actorUserId)) {
+    const canManageTransfer =
+      isChatPrimary(chat, actorUserId) ||
+      isMasterOrAdministratorRole(permissionRoleId);
+
+    if (!canManageTransfer) {
       throw new Error(t('chat_only_primary_can_transfer'));
     }
 

@@ -32,6 +32,7 @@ import {
   isChatParticipant,
   isChatPrimary,
 } from '@core/common/functions/chatParticipants';
+import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 
 interface IClosedStatusProtocolResult {
   protocol: string | null;
@@ -372,6 +373,7 @@ export class ChatStatusUpdaterUseCase {
   private async validateAccess(
     chat: IChat,
     userId: string,
+    permissionRoleId: string | null,
     actions: IJwtGroupHierarchy[],
     userSectors: string[],
     userChannels: { id: string; name: string }[] = []
@@ -381,6 +383,10 @@ export class ChatStatusUpdaterUseCase {
       if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
         throw new Error('chat_access_denied');
       }
+    }
+
+    if (isMasterOrAdministratorRole(permissionRoleId)) {
+      return;
     }
 
     const canViewOthers = this.canViewOthersChats(actions);
@@ -491,6 +497,7 @@ export class ChatStatusUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     userId: string,
+    permissionRoleId: string | null,
     userSectors: string[],
     params: UpdateChatStatusParams,
     body: UpdateChatStatusBody,
@@ -506,14 +513,28 @@ export class ChatStatusUpdaterUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    await this.validateAccess(chat, userId, actions, userSectors, userChannels);
+    await this.validateAccess(
+      chat,
+      userId,
+      permissionRoleId,
+      actions,
+      userSectors,
+      userChannels
+    );
 
     const status = body.status as EChatStatus;
     const currentDate = new Date().toISOString();
     const isPrimaryAttendant = isChatPrimary(chat, userId);
     const isParticipantAttendant = isChatParticipant(chat, userId);
+    const isMasterOrAdministrator =
+      isMasterOrAdministratorRole(permissionRoleId);
 
-    if (status === EChatStatus.closed && chat.user?.id && !isPrimaryAttendant) {
+    if (
+      status === EChatStatus.closed &&
+      chat.user?.id &&
+      !isPrimaryAttendant &&
+      !isMasterOrAdministrator
+    ) {
       throw new Error(t('chat_only_primary_can_close'));
     }
 

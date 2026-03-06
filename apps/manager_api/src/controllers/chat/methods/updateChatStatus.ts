@@ -24,6 +24,7 @@ export const updateChatStatus = async (
       t,
       tokenJwtData.account_id,
       tokenJwtData.user_id,
+      tokenJwtData.permission_role_id ?? null,
       tokenJwtData.sectors,
       request.params,
       request.body,
@@ -44,6 +45,22 @@ export const updateChatStatus = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
+    if (error instanceof Error) {
+      if (
+        error.message === t('chat_only_primary_can_close') ||
+        error.message === t('chat_access_denied') ||
+        error.message === 'chat_access_denied'
+      ) {
+        return sendResponse(reply, {
+          message:
+            error.message === 'chat_access_denied'
+              ? t('chat_access_denied')
+              : error.message,
+          httpStatusCode: EHTTPStatusCode.forbidden,
+        });
+      }
+    }
+
     handleControllerError(error, reply, t);
   }
 };

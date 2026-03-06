@@ -1,6 +1,9 @@
 import type { ListChatsResult } from '../types/chat';
 import type { UserChannel } from '../storage/authStorage';
 
+const MASTER_PERMISSION_ROLE_ID = '019a930d-c6f5-75af-82a5-8c20f9d0e6e2';
+const ADMINISTRATOR_PERMISSION_ROLE_ID = '019a930d-c6f5-75af-82a5-899cb84b6089';
+
 export const CHAT_ACCESS_PERMISSIONS = [
   'full_access',
   'full_access_group',
@@ -132,6 +135,40 @@ function normalizeIdentifier(value: unknown): string | null {
   }
 
   return null;
+}
+
+export function isMasterOrAdministratorRoleId(
+  permissionRoleId: string | null | undefined
+): boolean {
+  const normalizedRoleId = normalizeIdentifier(permissionRoleId)?.toLowerCase();
+  if (!normalizedRoleId) {
+    return false;
+  }
+
+  return (
+    normalizedRoleId === MASTER_PERMISSION_ROLE_ID ||
+    normalizedRoleId === ADMINISTRATOR_PERMISSION_ROLE_ID
+  );
+}
+
+export function resolveUserPermissionRoleId(user: unknown): string | null {
+  if (!user || typeof user !== 'object') {
+    return null;
+  }
+
+  const userData = user as {
+    permission_role_id?: unknown;
+    type?: { user_type_id?: unknown };
+  };
+
+  return (
+    normalizeIdentifier(userData.permission_role_id) ??
+    normalizeIdentifier(userData.type?.user_type_id)
+  );
+}
+
+export function isMasterOrAdministratorUser(user: unknown): boolean {
+  return isMasterOrAdministratorRoleId(resolveUserPermissionRoleId(user));
 }
 
 function resolveChatChannelId(chat: ListChatsResult): string | null {

@@ -51,6 +51,7 @@ import {
   canViewChat,
   isChatParticipant,
   isChatPrimary,
+  isMasterOrAdministratorUser,
   canListAllChatsWithoutSectorLimit,
   canCloseChatWithoutAttending,
   canDisableSendMessageOnFinishAttendance,
@@ -552,6 +553,10 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [userSectors, setUserSectors] = useState<string[]>([]);
   const [userChannels, setUserChannels] = useState<UserChannel[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [
+    isCurrentUserMasterOrAdministrator,
+    setIsCurrentUserMasterOrAdministrator,
+  ] = useState(false);
   const [canPickAnyQueueChat, setCanPickAnyQueueChat] = useState(false);
   const [profileSidebarVisible, setProfileSidebarVisible] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -729,6 +734,9 @@ export function ChatListScreen({ route, navigation }: Props) {
         const userId =
           user && typeof user === 'object' ? resolveUserId(user) : null;
         setCurrentUserId(userId);
+        setIsCurrentUserMasterOrAdministrator(
+          isMasterOrAdministratorUser(user)
+        );
       })
       .finally(() => {
         setIsUserResolved(true);
@@ -1322,7 +1330,11 @@ export function ChatListScreen({ route, navigation }: Props) {
 
   const openTransferModal = useCallback(
     async (chat: ListChatsResult) => {
-      if (chat.status === 'in_chat' && !isChatPrimary(chat, currentUserId)) {
+      const canManageInChatLifecycle =
+        isChatPrimary(chat, currentUserId) ||
+        isCurrentUserMasterOrAdministrator;
+
+      if (chat.status === 'in_chat' && !canManageInChatLifecycle) {
         Alert.alert(pt.warning_title, pt.only_primary_can_transfer);
         return;
       }
@@ -1372,7 +1384,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         setIsLoadingTransferOptions(false);
       }
     },
-    [closeTransferModal, currentUserId]
+    [closeTransferModal, currentUserId, isCurrentUserMasterOrAdministrator]
   );
 
   useEffect(() => {
@@ -1643,42 +1655,49 @@ export function ChatListScreen({ route, navigation }: Props) {
     shouldShowCloseServiceSendMessageToggle,
   ]);
 
-  const handleCloseChat = useCallback((chat: ListChatsResult) => {
-    if (chat.status === 'in_chat' && !isChatPrimary(chat, currentUserId)) {
-      Alert.alert(pt.warning_title, pt.only_primary_can_close);
-      return;
-    }
+  const handleCloseChat = useCallback(
+    (chat: ListChatsResult) => {
+      const canManageInChatLifecycle =
+        isChatPrimary(chat, currentUserId) ||
+        isCurrentUserMasterOrAdministrator;
 
-    openedSwipeableRef.current?.close();
-    setCloseServiceSendMessageOnFinishAttendance(true);
-    setCloseServiceTargetChat(chat);
-    setCloseServiceWorkerConfig(null);
-    setCloseServiceModalVisible(true);
+      if (chat.status === 'in_chat' && !canManageInChatLifecycle) {
+        Alert.alert(pt.warning_title, pt.only_primary_can_close);
+        return;
+      }
 
-    const workerId = readString(chat.worker?.id);
-    if (!workerId) {
-      setIsLoadingCloseServiceWorkerConfig(false);
-      return;
-    }
+      openedSwipeableRef.current?.close();
+      setCloseServiceSendMessageOnFinishAttendance(true);
+      setCloseServiceTargetChat(chat);
+      setCloseServiceWorkerConfig(null);
+      setCloseServiceModalVisible(true);
 
-    const requestId = closeServiceConfigRequestRef.current + 1;
-    closeServiceConfigRequestRef.current = requestId;
-    setIsLoadingCloseServiceWorkerConfig(true);
-
-    viewWorkerConfigForChat(workerId)
-      .then((config) => {
-        if (closeServiceConfigRequestRef.current !== requestId) return;
-        setCloseServiceWorkerConfig(config);
-      })
-      .catch(() => {
-        if (closeServiceConfigRequestRef.current !== requestId) return;
-        setCloseServiceWorkerConfig(null);
-      })
-      .finally(() => {
-        if (closeServiceConfigRequestRef.current !== requestId) return;
+      const workerId = readString(chat.worker?.id);
+      if (!workerId) {
         setIsLoadingCloseServiceWorkerConfig(false);
-      });
-  }, []);
+        return;
+      }
+
+      const requestId = closeServiceConfigRequestRef.current + 1;
+      closeServiceConfigRequestRef.current = requestId;
+      setIsLoadingCloseServiceWorkerConfig(true);
+
+      viewWorkerConfigForChat(workerId)
+        .then((config) => {
+          if (closeServiceConfigRequestRef.current !== requestId) return;
+          setCloseServiceWorkerConfig(config);
+        })
+        .catch(() => {
+          if (closeServiceConfigRequestRef.current !== requestId) return;
+          setCloseServiceWorkerConfig(null);
+        })
+        .finally(() => {
+          if (closeServiceConfigRequestRef.current !== requestId) return;
+          setIsLoadingCloseServiceWorkerConfig(false);
+        });
+    },
+    [currentUserId, isCurrentUserMasterOrAdministrator]
+  );
 
   const handleAttendQueueChat = useCallback(
     async (chat: ListChatsResult) => {
@@ -2402,14 +2421,15 @@ export function ChatListScreen({ route, navigation }: Props) {
             const isInChatItem = item.status === 'in_chat';
             const isQueueItem = item.status === 'queue';
             const isPrimaryInChatItem = isChatPrimary(item, currentUserId);
+            const canManageInChatItem =
+              isInChatItem &&
+              (isPrimaryInChatItem || isCurrentUserMasterOrAdministrator);
             const canAttendQueueItem =
               isQueueItem && (canPickAnyQueueChat || index === 0);
             const canCloseQueueItem =
               isQueueItem && canCloseChatWithoutAttending(socketPermissions);
-            const canTransferItem =
-              isQueueItem || (isInChatItem && isPrimaryInChatItem);
-            const canCloseItem =
-              (isInChatItem && isPrimaryInChatItem) || canCloseQueueItem;
+            const canTransferItem = isQueueItem || canManageInChatItem;
+            const canCloseItem = canManageInChatItem || canCloseQueueItem;
             const canSwipe =
               canOpenByVisibility &&
               !isQueueItemLocked &&

@@ -131,6 +131,7 @@ import {
   canToggleForwardToOutputChatbot,
   isChatParticipant,
   isChatPrimary,
+  isMasterOrAdministratorUser,
 } from '../constants/chatAuthorization';
 import { useChatFilter } from '../context/ChatFilterContext';
 import { AppAvatar } from '../components/AppAvatar';
@@ -4268,6 +4269,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [userSectors, setUserSectors] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [isCurrentUserMasterOrAdministrator, setIsCurrentUserMasterOrAdministrator] =
+    useState(false);
   const [currentUserStatus, setCurrentUserStatus] =
     useState<ChatUserStatus>('offline');
   const [inChatCountForWorker, setInChatCountForWorker] = useState(0);
@@ -4626,6 +4629,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const userName = resolveStoredUserName(user);
       setCurrentUserId(resolveUserId(user));
       setCurrentUserName(userName);
+      setIsCurrentUserMasterOrAdministrator(isMasterOrAdministratorUser(user));
       setCurrentUserStatus(resolveStoredUserStatus(user));
     });
 
@@ -5573,6 +5577,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     currentUserId
   );
   const isCurrentUserPrimaryInChat = isChatPrimary(chatInfo, currentUserId);
+  const canManageInChatLifecycle =
+    isCurrentUserPrimaryInChat || isCurrentUserMasterOrAdministrator;
   const canComposeInChat =
     !isHistoryReadonly && isInChatStatus && isCurrentUserParticipantInChat;
   const canJoinConversationAction =
@@ -5651,7 +5657,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     canViewAttendanceHistory(permissionList);
   const canShowCloseButton =
     !isHistoryReadonly &&
-    ((isInChatStatus && isCurrentUserPrimaryInChat) ||
+    ((isInChatStatus && canManageInChatLifecycle) ||
       (isQueueOrUraStatus && canCloseChatWithoutAttending(permissionList)));
   const canDisableSendMessageOnFinishAttendanceAction =
     canDisableSendMessageOnFinishAttendance(permissionList);
@@ -5659,7 +5665,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     workerConfigForChat?.send_message_on_finish_attendance_enabled === true &&
     canDisableSendMessageOnFinishAttendanceAction;
   const canTransferAction =
-    !isHistoryReadonly && isInChatStatus && isCurrentUserPrimaryInChat;
+    !isHistoryReadonly && isInChatStatus && canManageInChatLifecycle;
   const canLabelAction =
     !isHistoryReadonly && isInChatStatus && isCurrentUserParticipantInChat;
   const canToggleForwardToOutputAction =
@@ -5692,7 +5698,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const chatId = readNonEmptyString(chatInfo.chat_id);
     if (!chatId) return;
 
-    if (isInChatStatus && !isCurrentUserPrimaryInChat) {
+    if (isInChatStatus && !canManageInChatLifecycle) {
       Alert.alert(pt.warning_title, pt.only_primary_can_close);
       return;
     }
@@ -5721,7 +5727,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [
     chatInfo.chat_id,
     closeServiceSendMessageOnFinishAttendance,
-    isCurrentUserPrimaryInChat,
+    canManageInChatLifecycle,
     isInChatStatus,
     navigation,
     shouldShowCloseServiceSendMessageToggle,
@@ -6382,7 +6388,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const chatId = readNonEmptyString(chatInfo.chat_id);
     if (!chatId) return;
 
-    if (!isCurrentUserPrimaryInChat) {
+    if (!canManageInChatLifecycle) {
       Alert.alert(pt.warning_title, pt.only_primary_can_transfer);
       return;
     }
@@ -6437,7 +6443,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [
     chatInfo.chat_id,
     navigation,
-    isCurrentUserPrimaryInChat,
+    canManageInChatLifecycle,
     selectedTransferChannelId,
     selectedTransferSectorId,
     selectedTransferSectorUserId,

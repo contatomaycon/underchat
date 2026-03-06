@@ -26,6 +26,7 @@ export const transferChat = async (
       request.params,
       request.body,
       tokenJwtData.user_id,
+      tokenJwtData.permission_role_id ?? null,
       tokenJwtData.channels
     );
 
