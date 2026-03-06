@@ -42,11 +42,13 @@ import { addChatSocketListener } from '../socket/chatSocket';
 import type { ListChatsResult } from '../types/chat';
 import type { ChatStackParamList } from '../navigation/types';
 import { AppAvatar } from '../components/AppAvatar';
+import { useChatFilter } from '../context/ChatFilterContext';
 import {
   getChatUserStatusColor,
   normalizeChatUserStatus,
   readChatUserStatus,
 } from '../utils/chatUserStatus';
+import { syncGlobalChatCounts } from '../utils/chatCountsSync';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Contacts'>;
@@ -198,6 +200,7 @@ function ContactRow({
 }
 
 export function ContactListScreen({ navigation }: Props) {
+  const { setChatCounts } = useChatFilter();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
@@ -477,6 +480,7 @@ export function ContactListScreen({ navigation }: Props) {
   const handleConversationStarted = (chat: ListChatsResult) => {
     setSelectedContactForConversation(null);
     refreshContacts();
+    void syncGlobalChatCounts(setChatCounts);
     navigation.push('ChatRoom', { chat });
   };
 

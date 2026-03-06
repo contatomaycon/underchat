@@ -97,6 +97,10 @@ import {
   normalizeChatUserStatus,
   readChatUserStatus,
 } from '../utils/chatUserStatus';
+import {
+  normalizeChatCounts,
+  syncGlobalChatCounts,
+} from '../utils/chatCountsSync';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 import { addAppResumeListener } from '../utils/appResumeBus';
 
@@ -711,29 +715,9 @@ export function ChatListScreen({ route, navigation }: Props) {
 
   const syncChatCounts = useCallback(
     (counts?: Partial<ChatListCounts> | null) => {
-      if (!counts) return;
-
-      const schedule = counts.schedule ?? 0;
-      const chatbotInput = counts.chatbot_input ?? 0;
-      const chatbotOutput = counts.chatbot_output ?? 0;
-      const chatbotWebhook = counts.chatbot_webhook ?? 0;
-      const chatbotSchedule = counts.chatbot_schedule ?? schedule;
-      const inChatMine = counts.in_chat_mine ?? counts.my_chats ?? 0;
-
-      setChatCounts({
-        total: counts.total ?? 0,
-        queue: counts.queue ?? 0,
-        in_chat: counts.in_chat ?? 0,
-        chatbot: counts.chatbot ?? 0,
-        schedule,
-        my_chats: counts.my_chats ?? 0,
-        closed: counts.closed ?? 0,
-        in_chat_mine: inChatMine,
-        chatbot_input: chatbotInput,
-        chatbot_output: chatbotOutput,
-        chatbot_schedule: chatbotSchedule,
-        chatbot_webhook: chatbotWebhook,
-      });
+      const normalizedCounts = normalizeChatCounts(counts);
+      if (!normalizedCounts) return;
+      setChatCounts(normalizedCounts);
     },
     [setChatCounts]
   );
@@ -1778,6 +1762,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         ...chat,
         status: 'in_chat',
       };
+      void syncGlobalChatCounts(setChatCounts);
 
       const parentNavigation = navigation.getParent() as
         | {
@@ -1801,7 +1786,7 @@ export function ChatListScreen({ route, navigation }: Props) {
 
       navigation.push('ChatRoom', { chat: attendedChat });
     },
-    [navigation]
+    [navigation, setChatCounts]
   );
 
   const handleClearSearch = useCallback(() => {

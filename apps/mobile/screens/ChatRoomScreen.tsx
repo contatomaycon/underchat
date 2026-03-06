@@ -154,6 +154,7 @@ import {
 } from '../utils/whatsAppTextFormat';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 import { addAppResumeListener } from '../utils/appResumeBus';
+import { syncGlobalChatCounts } from '../utils/chatCountsSync';
 
 type EmojiDatasetEntry = {
   unified?: string;
@@ -5681,6 +5682,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     });
   }, [isFocused, loadMessages, syncMessagesStatus]);
 
+  useFocusEffect(
+    useCallback(() => {
+      void syncGlobalChatCounts(setChatCounts);
+    }, [setChatCounts])
+  );
+
   const isInChatStatus = chatInfo.status === 'in_chat';
   const isCurrentUserParticipantInChat = isChatParticipant(
     chatInfo,
@@ -5877,40 +5884,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setAttendantsInfoVisible(true);
   }, [attendantsInfoLoading, chatInfo.chat_id]);
 
-  const syncGlobalChatCounts = useCallback(async () => {
-    const response = await searchChats({
-      search: '',
-      status: 'in_chat',
-      current_page: 1,
-      per_page: 1,
-    });
-
-    const counts = response?.counts;
-    if (!counts) return;
-
-    const schedule = counts.schedule ?? 0;
-    const chatbotInput = counts.chatbot_input ?? 0;
-    const chatbotOutput = counts.chatbot_output ?? 0;
-    const chatbotWebhook = counts.chatbot_webhook ?? 0;
-    const chatbotSchedule = counts.chatbot_schedule ?? schedule;
-    const inChatMine = counts.in_chat_mine ?? counts.my_chats ?? 0;
-
-    setChatCounts({
-      total: counts.total ?? 0,
-      queue: counts.queue ?? 0,
-      in_chat: counts.in_chat ?? 0,
-      chatbot: counts.chatbot ?? 0,
-      schedule,
-      my_chats: counts.my_chats ?? 0,
-      closed: counts.closed ?? 0,
-      in_chat_mine: inChatMine,
-      chatbot_input: chatbotInput,
-      chatbot_output: chatbotOutput,
-      chatbot_schedule: chatbotSchedule,
-      chatbot_webhook: chatbotWebhook,
-    });
-  }, [setChatCounts]);
-
   const handleAttendOrReopen = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
     if (!chatId || isAttendReopenLoading) return;
@@ -5939,7 +5912,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       };
 
       setChatInfo(updatedChat);
-      await syncGlobalChatCounts();
+      await syncGlobalChatCounts(setChatCounts);
       Alert.alert(pt.success_title, pt.join_conversation_success);
       return;
     }
@@ -5968,7 +5941,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       clearAdvancedFilters();
     }
 
-    await syncGlobalChatCounts();
+    await syncGlobalChatCounts(setChatCounts);
 
     const parentNavigation = navigation.getParent() as
       | {
@@ -6001,7 +5974,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     isAttendReopenLoading,
     isClosedStatus,
     navigation,
-    syncGlobalChatCounts,
+    setChatCounts,
   ]);
 
   const handleToggleForwardToOutput = useCallback(async () => {
