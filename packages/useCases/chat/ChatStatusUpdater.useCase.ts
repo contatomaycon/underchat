@@ -370,10 +370,26 @@ export class ChatStatusUpdaterUseCase {
     return hasRequiredPermission(actions, permissions);
   }
 
+  private canManageInChatLifecycle(actions: IJwtGroupHierarchy[]): boolean {
+    if (!actions?.length) {
+      return false;
+    }
+
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.manage_in_chat_lifecycle,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   private async validateAccess(
     chat: IChat,
     userId: string,
     permissionRoleId: string | null,
+    requestedStatus: EChatStatus,
+    canManageInChatLifecycleByPermission: boolean,
     actions: IJwtGroupHierarchy[],
     userSectors: string[],
     userChannels: { id: string; name: string }[] = []
@@ -386,6 +402,14 @@ export class ChatStatusUpdaterUseCase {
     }
 
     if (isMasterOrAdministratorRole(permissionRoleId)) {
+      return;
+    }
+
+    if (
+      requestedStatus === EChatStatus.closed &&
+      chat.status === EChatStatus.in_chat &&
+      canManageInChatLifecycleByPermission
+    ) {
       return;
     }
 
@@ -513,27 +537,36 @@ export class ChatStatusUpdaterUseCase {
       throw new Error(t('chat_not_found'));
     }
 
+    const requestedStatus = body.status as EChatStatus;
+    const canManageInChatLifecycleByPermission =
+      this.canManageInChatLifecycle(actions);
+
     await this.validateAccess(
       chat,
       userId,
       permissionRoleId,
+      requestedStatus,
+      canManageInChatLifecycleByPermission,
       actions,
       userSectors,
       userChannels
     );
 
-    const status = body.status as EChatStatus;
+    const status = requestedStatus;
     const currentDate = new Date().toISOString();
     const isPrimaryAttendant = isChatPrimary(chat, userId);
     const isParticipantAttendant = isChatParticipant(chat, userId);
     const isMasterOrAdministrator =
       isMasterOrAdministratorRole(permissionRoleId);
+    const canManageInChatLifecycle =
+      isPrimaryAttendant ||
+      isMasterOrAdministrator ||
+      canManageInChatLifecycleByPermission;
 
     if (
       status === EChatStatus.closed &&
       chat.user?.id &&
-      !isPrimaryAttendant &&
-      !isMasterOrAdministrator
+      !canManageInChatLifecycle
     ) {
       throw new Error(t('chat_only_primary_can_close'));
     }

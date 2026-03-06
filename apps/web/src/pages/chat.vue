@@ -356,10 +356,19 @@ const isCurrentUserMasterOrAdministrator = computed(() => {
   );
 });
 
+const hasManageInChatLifecyclePermission = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.manage_in_chat_lifecycle,
+  ]);
+});
+
 const canManageInChatLifecycle = computed(() => {
   return (
     isCurrentUserPrimaryInActiveChat.value ||
-    isCurrentUserMasterOrAdministrator.value
+    isCurrentUserMasterOrAdministrator.value ||
+    hasManageInChatLifecyclePermission.value
   );
 });
 

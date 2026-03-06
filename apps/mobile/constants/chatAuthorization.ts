@@ -107,6 +107,12 @@ export const DISABLE_SEND_MESSAGE_ON_FINISH_ATTENDANCE_PERMISSIONS = [
   'disable_send_message_on_finish_attendance',
 ] as const;
 
+export const MANAGE_IN_CHAT_LIFECYCLE_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'manage_in_chat_lifecycle',
+] as const;
+
 export type ChatAuthorizationContext = {
   permissions: string[];
   userId: string | null;
@@ -306,6 +312,12 @@ export function canDisableSendMessageOnFinishAttendance(
     permissions,
     DISABLE_SEND_MESSAGE_ON_FINISH_ATTENDANCE_PERMISSIONS
   );
+}
+
+export function canManageInChatLifecyclePermission(
+  permissions: string[]
+): boolean {
+  return hasAnyPermission(permissions, MANAGE_IN_CHAT_LIFECYCLE_PERMISSIONS);
 }
 
 export function canViewOthersChats(permissions: string[]): boolean {

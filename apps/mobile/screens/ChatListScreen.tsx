@@ -55,6 +55,7 @@ import {
   canListAllChatsWithoutSectorLimit,
   canCloseChatWithoutAttending,
   canDisableSendMessageOnFinishAttendance,
+  canManageInChatLifecyclePermission,
 } from '../constants/chatAuthorization';
 import {
   AdvancedFilterModal,
@@ -1332,7 +1333,8 @@ export function ChatListScreen({ route, navigation }: Props) {
     async (chat: ListChatsResult) => {
       const canManageInChatLifecycle =
         isChatPrimary(chat, currentUserId) ||
-        isCurrentUserMasterOrAdministrator;
+        isCurrentUserMasterOrAdministrator ||
+        canManageInChatLifecyclePermission(socketPermissions);
 
       if (chat.status === 'in_chat' && !canManageInChatLifecycle) {
         Alert.alert(pt.warning_title, pt.only_primary_can_transfer);
@@ -1384,7 +1386,12 @@ export function ChatListScreen({ route, navigation }: Props) {
         setIsLoadingTransferOptions(false);
       }
     },
-    [closeTransferModal, currentUserId, isCurrentUserMasterOrAdministrator]
+    [
+      closeTransferModal,
+      currentUserId,
+      isCurrentUserMasterOrAdministrator,
+      socketPermissions,
+    ]
   );
 
   useEffect(() => {
@@ -1539,8 +1546,19 @@ export function ChatListScreen({ route, navigation }: Props) {
       ?.name ?? null;
 
   const submitTransfer = useCallback(async () => {
-    const chatId = transferTargetChat?.chat_id;
-    if (!chatId) return;
+    const transferChatTarget = transferTargetChat;
+    const chatId = transferChatTarget?.chat_id;
+    if (!transferChatTarget || !chatId) return;
+
+    const canManageInChatLifecycle =
+      isChatPrimary(transferChatTarget, currentUserId) ||
+      isCurrentUserMasterOrAdministrator ||
+      canManageInChatLifecyclePermission(socketPermissions);
+    if (transferChatTarget.status === 'in_chat' && !canManageInChatLifecycle) {
+      Alert.alert(pt.warning_title, pt.only_primary_can_transfer);
+      return;
+    }
+
     if (!selectedTransferChannelId) {
       Alert.alert(pt.warning_title, pt.channel_required);
       return;
@@ -1560,7 +1578,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         : transferType === 'sector'
           ? selectedTransferSectorUserId
           : null;
-    const currentPrimaryUserId = transferTargetChat?.user?.id ?? null;
+    const currentPrimaryUserId = transferChatTarget.user?.id ?? null;
     if (
       targetUserId &&
       currentPrimaryUserId &&
@@ -1602,8 +1620,11 @@ export function ChatListScreen({ route, navigation }: Props) {
     selectedTransferUserId,
     transferAnnotation,
     transferKeepInChat,
-    transferTargetChat?.chat_id,
+    transferTargetChat,
     transferType,
+    currentUserId,
+    isCurrentUserMasterOrAdministrator,
+    socketPermissions,
   ]);
 
   const canDisableSendMessageOnFinishAttendanceAction =
@@ -1659,7 +1680,8 @@ export function ChatListScreen({ route, navigation }: Props) {
     (chat: ListChatsResult) => {
       const canManageInChatLifecycle =
         isChatPrimary(chat, currentUserId) ||
-        isCurrentUserMasterOrAdministrator;
+        isCurrentUserMasterOrAdministrator ||
+        canManageInChatLifecyclePermission(socketPermissions);
 
       if (chat.status === 'in_chat' && !canManageInChatLifecycle) {
         Alert.alert(pt.warning_title, pt.only_primary_can_close);
@@ -1696,7 +1718,7 @@ export function ChatListScreen({ route, navigation }: Props) {
           setIsLoadingCloseServiceWorkerConfig(false);
         });
     },
-    [currentUserId, isCurrentUserMasterOrAdministrator]
+    [currentUserId, isCurrentUserMasterOrAdministrator, socketPermissions]
   );
 
   const handleAttendQueueChat = useCallback(
@@ -2423,7 +2445,9 @@ export function ChatListScreen({ route, navigation }: Props) {
             const isPrimaryInChatItem = isChatPrimary(item, currentUserId);
             const canManageInChatItem =
               isInChatItem &&
-              (isPrimaryInChatItem || isCurrentUserMasterOrAdministrator);
+              (isPrimaryInChatItem ||
+                isCurrentUserMasterOrAdministrator ||
+                canManageInChatLifecyclePermission(socketPermissions));
             const canAttendQueueItem =
               isQueueItem && (canPickAnyQueueChat || index === 0);
             const canCloseQueueItem =

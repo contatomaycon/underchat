@@ -7,6 +7,7 @@ export enum EChatPermissions {
   list_all_chats_without_sector_limit = 'list_all_chats_without_sector_limit',
   view_chatbot_messages = 'view_chatbot_messages',
   close_chat_without_attending = 'close_chat_without_attending',
+  manage_in_chat_lifecycle = 'manage_in_chat_lifecycle',
   reopen_chat = 'reopen_chat',
   disable_send_message_on_finish_attendance = 'disable_send_message_on_finish_attendance',
   attendance_history = 'attendance_history',

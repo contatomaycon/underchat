@@ -303,11 +303,11 @@ export const pt = {
   must_join_conversation_to_reply:
     'Entre na conversa para responder este atendimento.',
   only_primary_can_transfer:
-    'Somente o atendente primário, master ou administrador pode transferir este atendimento.',
+    'Somente o atendente primário, master/administrador ou usuário com permissão pode transferir este atendimento.',
   cannot_transfer_to_current_primary:
     'Não é possível transferir para o atendente primário atual.',
   only_primary_can_close:
-    'Somente o atendente primário, master ou administrador pode encerrar este atendimento.',
+    'Somente o atendente primário, master/administrador ou usuário com permissão pode encerrar este atendimento.',
   attend_service: 'Atender',
   close_service: 'Encerrar atendimento',
   close_service_confirmation: 'Deseja realmente encerrar este atendimento?',

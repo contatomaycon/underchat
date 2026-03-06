@@ -25,6 +25,10 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { createChatCacheKey } from '@core/common/functions/createCacheKey';
 import { isChatPrimary } from '@core/common/functions/chatParticipants';
 import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
+import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 
 @injectable()
 export class TransferChatUseCase {
@@ -244,6 +248,20 @@ export class TransferChatUseCase {
     }
   }
 
+  private canManageInChatLifecycle(actions: IJwtGroupHierarchy[]): boolean {
+    if (!actions?.length) {
+      return false;
+    }
+
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.manage_in_chat_lifecycle,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   private buildUpdatedChatForTransfer(
     chat: IChat,
     worker: IChat['worker'],
@@ -404,6 +422,7 @@ export class TransferChatUseCase {
     body: TransferChatBody,
     actorUserId: string,
     permissionRoleId: string | null,
+    actions: IJwtGroupHierarchy[],
     userChannels: { id: string; name: string }[] = []
   ): Promise<{ chat_id: string; status: boolean }> {
     const chat = await this.chatService.findChatByChatId(
@@ -425,7 +444,8 @@ export class TransferChatUseCase {
 
     const canManageTransfer =
       isChatPrimary(chat, actorUserId) ||
-      isMasterOrAdministratorRole(permissionRoleId);
+      isMasterOrAdministratorRole(permissionRoleId) ||
+      this.canManageInChatLifecycle(actions);
 
     if (!canManageTransfer) {
       throw new Error(t('chat_only_primary_can_transfer'));

@@ -132,6 +132,7 @@ import {
   isChatParticipant,
   isChatPrimary,
   isMasterOrAdministratorUser,
+  canManageInChatLifecyclePermission,
 } from '../constants/chatAuthorization';
 import { useChatFilter } from '../context/ChatFilterContext';
 import { AppAvatar } from '../components/AppAvatar';
@@ -5659,8 +5660,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     currentUserId
   );
   const isCurrentUserPrimaryInChat = isChatPrimary(chatInfo, currentUserId);
+  const hasManageInChatLifecyclePermission =
+    canManageInChatLifecyclePermission(permissionList);
   const canManageInChatLifecycle =
-    isCurrentUserPrimaryInChat || isCurrentUserMasterOrAdministrator;
+    isCurrentUserPrimaryInChat ||
+    isCurrentUserMasterOrAdministrator ||
+    hasManageInChatLifecyclePermission;
   const canComposeInChat =
     !isHistoryReadonly && isInChatStatus && isCurrentUserParticipantInChat;
   const canJoinConversationAction =
