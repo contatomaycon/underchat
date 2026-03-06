@@ -3501,10 +3501,7 @@ export class MessageUpsertConsume {
               jidAlt
             ));
 
-          if (
-            currentChat &&
-            !this.shouldSkipOutsideHoursForChatStatus(currentChat)
-          ) {
+          if (currentChat) {
             await this.sendOutsideHoursMessageWithDebounce(
               t,
               data,
