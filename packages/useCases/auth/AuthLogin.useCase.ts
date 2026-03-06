@@ -144,6 +144,7 @@ export class AuthLoginUseCase {
       result.user_id,
       result.account_id
     );
+    await this.invalidateUserJwtCache(result.account_id, result.user_id);
     const sessionId = randomUUID();
 
     const token = await reply.jwtSign(
