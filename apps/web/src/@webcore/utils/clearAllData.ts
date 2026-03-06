@@ -5,6 +5,27 @@ export const clearAllStorages = (): void => {
   sessionStorage.clear();
 };
 
+export const clearAllCookies = (): void => {
+  if (typeof document === 'undefined' || !document.cookie) {
+    return;
+  }
+
+  const cookies = document.cookie.split(';');
+
+  for (const cookieEntry of cookies) {
+    const separatorIndex = cookieEntry.indexOf('=');
+    const rawName =
+      separatorIndex >= 0 ? cookieEntry.slice(0, separatorIndex) : cookieEntry;
+    const cookieName = rawName.trim();
+
+    if (!cookieName) {
+      continue;
+    }
+
+    document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+  }
+};
+
 export const resetAllPiniaStores = (): void => {
   const pinia = getActivePinia();
 
@@ -19,15 +40,28 @@ export const resetAllPiniaStores = (): void => {
   }
 
   piniaInternal._s.forEach((store: any) => {
-    const isSetupStore = store._isSetupStore === true;
-    if (isSetupStore) return;
-
     if (typeof store.shutdown === 'function') {
       try {
         store.shutdown();
       } catch {
         // ignore
       }
+    }
+
+    const isSetupStore = store._isSetupStore === true;
+    if (isSetupStore) {
+      if (typeof store.resetState === 'function') {
+        try {
+          store.resetState();
+        } catch (error: any) {
+          console.warn(
+            `Erro ao resetar a setup store "${store.$id}" via resetState:`,
+            error
+          );
+        }
+      }
+
+      return;
     }
 
     if (typeof store.$reset === 'function') {
@@ -47,6 +81,7 @@ export const resetAllPiniaStores = (): void => {
 };
 
 export const clearAllData = (): void => {
-  clearAllStorages();
   resetAllPiniaStores();
+  clearAllStorages();
+  clearAllCookies();
 };

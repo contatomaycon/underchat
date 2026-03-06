@@ -5,7 +5,7 @@ import axios, {
   type AxiosRequestHeaders,
 } from 'axios';
 import { getToken, setToken, persistPlanStatus } from './localStorage/user';
-import { clearAllData } from './utils/clearAllData';
+import { teardownClientSession } from './utils/sessionTeardown';
 import { router } from '@/plugins/1.router';
 import { getI18n } from '@/plugins/i18n';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
@@ -79,15 +79,9 @@ const refreshSession = async (): Promise<string | null> => {
 };
 
 const logoutAndRedirect = async () => {
-  try {
-    const { useAttendanceGuardStore } =
-      await import('@webcore/stores/attendanceGuard');
-    useAttendanceGuardStore().shutdown();
-  } catch {
-    // ignore
-  }
-
-  clearAllData();
+  await teardownClientSession({
+    notifyPushServer: false,
+  });
   router.push({ name: 'login' });
 };
 

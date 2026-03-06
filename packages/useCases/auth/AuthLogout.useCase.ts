@@ -1,16 +1,20 @@
 import { injectable, inject } from 'tsyringe';
 import Redis from 'ioredis';
-import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
+import {
+  createJwtSessionKey,
+  createUserAttendanceRulesCacheKey,
+} from '@core/common/functions/createCacheKey';
+import { PresenceService } from '@core/services/presence.service';
 
 @injectable()
 export class AuthLogoutUseCase {
-  constructor(@inject('Redis') private readonly redis: Redis) {}
+  constructor(
+    @inject('Redis') private readonly redis: Redis,
+    @inject(PresenceService)
+    private readonly presenceService: PresenceService
+  ) {}
 
-  private async invalidateUserJwtCache(
-    accountId: string,
-    userId: string
-  ): Promise<void> {
-    const pattern = `jwtCache:${accountId}:${userId}*`;
+  private async scanAndDeleteByPattern(pattern: string): Promise<void> {
     const stream = this.redis.scanStream({
       match: pattern,
       count: 100,
@@ -33,9 +37,38 @@ export class AuthLogoutUseCase {
     }
   }
 
+  private async invalidateUserJwtCache(
+    accountId: string,
+    userId: string
+  ): Promise<void> {
+    const pattern = `jwtCache:${accountId}:${userId}*`;
+    await this.scanAndDeleteByPattern(pattern);
+  }
+
+  private async invalidateUserAttendanceRulesCache(
+    accountId: string,
+    userId: string
+  ): Promise<void> {
+    const cacheKey = createUserAttendanceRulesCacheKey(accountId, userId);
+    await this.redis.del(cacheKey);
+  }
+
+  private async invalidateUserPresenceCache(userId: string): Promise<void> {
+    await this.redis.del(
+      `presence:user:${userId}`,
+      `presence:account_id:${userId}`
+    );
+  }
+
   async execute(accountId: string, userId: string): Promise<void> {
     const sessionKey = createJwtSessionKey(accountId, userId);
-    await this.redis.del(sessionKey);
-    await this.invalidateUserJwtCache(accountId, userId);
+    await Promise.all([
+      this.redis.del(sessionKey),
+      this.invalidateUserJwtCache(accountId, userId),
+      this.invalidateUserAttendanceRulesCache(accountId, userId),
+    ]);
+
+    await this.presenceService.setUserOffline(userId);
+    await this.invalidateUserPresenceCache(userId);
   }
 }

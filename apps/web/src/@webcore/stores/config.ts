@@ -38,6 +38,13 @@ export const useConfigStore = defineStore('config', () => {
     isAppRTL,
   } = storeToRefs(useLayoutConfigStore());
 
+  const resetState = (): void => {
+    cookieColorScheme.value = 'light';
+    theme.value = themeConfig.app.theme;
+    isVerticalNavSemiDark.value = themeConfig.verticalNav.isVerticalNavSemiDark;
+    skin.value = themeConfig.app.skin;
+  };
+
   return {
     theme,
     isVerticalNavSemiDark,
@@ -50,6 +57,7 @@ export const useConfigStore = defineStore('config', () => {
     isVerticalNavCollapsed,
     footerType,
     isAppRTL,
+    resetState,
   };
 });
 

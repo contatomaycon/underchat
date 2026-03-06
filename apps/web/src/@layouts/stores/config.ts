@@ -96,6 +96,23 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
     );
   };
 
+  const resetState = (): void => {
+    navbarType.value = layoutConfig.navbar.type;
+    isNavbarBlurEnabled.value = layoutConfig.navbar.navbarBlur;
+    isVerticalNavCollapsed.value =
+      layoutConfig.verticalNav.isVerticalNavCollapsed;
+    appContentWidth.value = layoutConfig.app.contentWidth;
+    appContentLayoutNav.value = layoutConfig.app.contentLayoutNav;
+    appLogo.value = layoutConfig.app.logo;
+    appTitle.value = layoutConfig.app.title;
+    horizontalNavType.value = layoutConfig.horizontalNav.type;
+    horizontalNavPopoverOffset.value = layoutConfig.horizontalNav.popoverOffset;
+    footerType.value = layoutConfig.footer.type;
+    isAppRTL.value = false;
+    isLessThanOverlayNavBreakpoint.value = mql.matches;
+    windowScrollY.value = window.scrollY;
+  };
+
   return {
     appContentWidth,
     appContentLayoutNav,
@@ -111,5 +128,6 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
     isVerticalNavMini,
     appLogo,
     appTitle,
+    resetState,
   };
 });

@@ -20,22 +20,16 @@ import {
   updateChatUser,
   uploadUserPhoto,
 } from '../api/chatApi';
-import {
-  clearAuth,
-  getPermissions,
-  getUser,
-  patchUser,
-} from '../storage/authStorage';
-import { emitAuthUnauthorized } from '../utils/authEvents';
+import { getPermissions, getUser, patchUser } from '../storage/authStorage';
 import { hasChatAccessPermission } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { AppAvatar } from './AppAvatar';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import { teardownMobileSession } from '../utils/sessionTeardown';
 import {
   disableMobilePushNotifications,
   enableMobilePushNotifications,
-  unsubscribeMobilePushOnLogout,
 } from '../services/pushNotifications';
 
 type SidebarStatus = 'online' | 'busy' | 'do_not_disturb';
@@ -510,9 +504,11 @@ export function UserSidebar({
 
   const handleLogout = useCallback(async () => {
     setLogoutLoading(true);
-    await unsubscribeMobilePushOnLogout().catch(() => {});
-    await clearAuth();
-    emitAuthUnauthorized();
+    await teardownMobileSession({
+      notifyPushServer: true,
+      notifyServerLogout: true,
+      emitUnauthorized: true,
+    });
     setLogoutLoading(false);
     closeSidebar();
     onLogout?.();

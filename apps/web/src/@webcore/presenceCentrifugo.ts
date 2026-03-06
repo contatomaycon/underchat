@@ -6,8 +6,13 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { refreshPresenceForCurrentRoute } from './presence';
 import { setChannels } from './localStorage/user';
+import { teardownClientSession } from './utils/sessionTeardown';
 
 let initializedAccountId: string | null = null;
+
+export const resetUserPresenceSubscriptionState = (): void => {
+  initializedAccountId = null;
+};
 
 export const initUserPresenceSubscription = async (
   accountId: string
@@ -82,23 +87,17 @@ export const initUserPresenceSubscription = async (
 
     const { router } = await import('@/plugins/1.router');
     const { useAuthStore } = await import('@webcore/stores/auth');
-    const { clearAllData } = await import('./utils/clearAllData');
-    const { presenceOffline } = await import('./presence');
     const { getI18n } = await import('@/plugins/i18n');
     const { EColor } = await import('@core/common/enums/EColor');
-    const { unsubscribeFromPushNotifications } =
-      await import('@/composables/useChatNotifications');
 
     const authStore = useAuthStore();
     const i18n = getI18n();
 
-    await presenceOffline().catch(() => {});
-
-    await unsubscribeFromPushNotifications().catch(() => {});
-
     authStore.showSnackbar(i18n.global.t('session_ended'), EColor.warning);
 
-    clearAllData();
+    await teardownClientSession({
+      notifyPushServer: false,
+    });
 
     setTimeout(() => {
       router.replace({ name: 'login' }).catch(() => {});

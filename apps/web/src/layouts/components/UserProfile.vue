@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import axiosAuth from '@/@webcore/axios';
-import { clearAllData } from '@/@webcore/utils/clearAllData';
-import { presenceOffline } from '@/@webcore/presence';
 import { initUserPresenceSubscription } from '@/@webcore/presenceCentrifugo';
+import { teardownClientSession } from '@/@webcore/utils/sessionTeardown';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useProfileStore } from '@/@webcore/stores/profile';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
@@ -12,7 +10,6 @@ import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { useTheme } from 'vuetify';
 import { useAbility } from '@/plugins/0.casl/composables/useAbility';
-import { unsubscribeFromPushNotifications } from '@/composables/useChatNotifications';
 
 const router = useRouter();
 const chatStore = useChatStore();
@@ -624,15 +621,10 @@ const logout = async () => {
   isLoggingOut.value = true;
 
   try {
-    await presenceOffline().catch(() => {});
-
-    await unsubscribeFromPushNotifications().catch(() => {});
-
-    try {
-      await axiosAuth.post('/auth/logout');
-    } catch {}
-
-    clearAllData();
+    await teardownClientSession({
+      notifyServerLogout: true,
+      notifyPushServer: true,
+    });
 
     await nextTick(() => {
       router.replace({

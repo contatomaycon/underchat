@@ -20,6 +20,7 @@ declare global {
   const avatarText: typeof import('./src/@webcore/utils/formatters').avatarText
   const betweenValidator: typeof import('./src/@webcore/utils/validators').betweenValidator
   const calculatePasswordStrength: typeof import('./src/@webcore/utils/passwordStrength').calculatePasswordStrength
+  const clearAllCookies: typeof import('./src/@webcore/utils/clearAllData').clearAllCookies
   const clearAllData: typeof import('./src/@webcore/utils/clearAllData').clearAllData
   const clearAllStorages: typeof import('./src/@webcore/utils/clearAllData').clearAllStorages
   const computed: typeof import('vue').computed
@@ -167,6 +168,7 @@ declare global {
   const storeToRefs: typeof import('pinia').storeToRefs
   const syncRef: typeof import('@vueuse/core').syncRef
   const syncRefs: typeof import('@vueuse/core').syncRefs
+  const teardownClientSession: typeof import('./src/@webcore/utils/sessionTeardown').teardownClientSession
   const templateRef: typeof import('@vueuse/core').templateRef
   const throttledRef: typeof import('@vueuse/core').throttledRef
   const throttledWatch: typeof import('@vueuse/core').throttledWatch
@@ -435,6 +437,7 @@ declare module 'vue' {
     readonly avatarText: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['avatarText']>
     readonly betweenValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['betweenValidator']>
     readonly calculatePasswordStrength: UnwrapRef<typeof import('./src/@webcore/utils/passwordStrength')['calculatePasswordStrength']>
+    readonly clearAllCookies: UnwrapRef<typeof import('./src/@webcore/utils/clearAllData')['clearAllCookies']>
     readonly clearAllData: UnwrapRef<typeof import('./src/@webcore/utils/clearAllData')['clearAllData']>
     readonly clearAllStorages: UnwrapRef<typeof import('./src/@webcore/utils/clearAllData')['clearAllStorages']>
     readonly computed: UnwrapRef<typeof import('vue')['computed']>
@@ -572,6 +575,7 @@ declare module 'vue' {
     readonly storeToRefs: UnwrapRef<typeof import('pinia')['storeToRefs']>
     readonly syncRef: UnwrapRef<typeof import('@vueuse/core')['syncRef']>
     readonly syncRefs: UnwrapRef<typeof import('@vueuse/core')['syncRefs']>
+    readonly teardownClientSession: UnwrapRef<typeof import('./src/@webcore/utils/sessionTeardown')['teardownClientSession']>
     readonly templateRef: UnwrapRef<typeof import('@vueuse/core')['templateRef']>
     readonly throttledRef: UnwrapRef<typeof import('@vueuse/core')['throttledRef']>
     readonly throttledWatch: UnwrapRef<typeof import('@vueuse/core')['throttledWatch']>
