@@ -113,6 +113,13 @@ export const MANAGE_IN_CHAT_LIFECYCLE_PERMISSIONS = [
   'manage_in_chat_lifecycle',
 ] as const;
 
+export const VIEW_CHAT_ATTENDANTS_INFO_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'view_chat_attendants_info',
+] as const;
+
 export type ChatAuthorizationContext = {
   permissions: string[];
   userId: string | null;
@@ -318,6 +325,12 @@ export function canManageInChatLifecyclePermission(
   permissions: string[]
 ): boolean {
   return hasAnyPermission(permissions, MANAGE_IN_CHAT_LIFECYCLE_PERMISSIONS);
+}
+
+export function canViewChatAttendantsInfoPermission(
+  permissions: string[]
+): boolean {
+  return hasAnyPermission(permissions, VIEW_CHAT_ATTENDANTS_INFO_PERMISSIONS);
 }
 
 export function canViewOthersChats(permissions: string[]): boolean {

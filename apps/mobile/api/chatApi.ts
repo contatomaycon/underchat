@@ -106,6 +106,18 @@ export interface TransferSectorOption {
   color?: string | null;
 }
 
+export interface ChatAttendantInfo {
+  id: string;
+  name: string;
+  photo?: string | null;
+  entered_at?: string | null;
+}
+
+export interface ViewChatAttendantsResponse {
+  primary_user: ChatAttendantInfo | null;
+  secondary_users: ChatAttendantInfo[];
+}
+
 export interface SearchMessagesResult {
   message_id: string;
   date: string;
@@ -605,6 +617,24 @@ export async function joinChat(
     ok: true,
     chat: res.data,
   };
+}
+
+export async function viewChatAttendants(
+  chatId: string
+): Promise<ViewChatAttendantsResponse | null> {
+  if (!chatId || chatId.trim().length === 0) {
+    return null;
+  }
+
+  const res = await apiGet<ViewChatAttendantsResponse>(
+    `/chat/${chatId}/attendants`
+  );
+
+  if (!res?.status) {
+    return null;
+  }
+
+  return res.data ?? null;
 }
 
 type SearchMessagesRawResponse = {

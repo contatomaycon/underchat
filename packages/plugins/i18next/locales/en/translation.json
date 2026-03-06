@@ -201,6 +201,8 @@
   "chat_already_in_service_with_sector": "There is already a service in progress for this number with the sector {{sector}}!",
   "chat_not_found": "Chat not found!",
   "chat_access_denied": "Access denied to chat!",
+  "chat_attendants_info_permission_denied": "You do not have permission to view this chat attendant information!",
+  "chat_attendants_info_view_success": "Chat attendant information retrieved successfully!",
   "chat_only_primary_can_transfer": "Only the primary attendant, master/administrator, or a user with permission can transfer this chat!",
   "chat_cannot_transfer_to_current_primary": "You cannot transfer to the current primary attendant!",
   "chat_only_primary_can_close": "Only the primary attendant, master/administrator, or a user with permission can close this chat!",

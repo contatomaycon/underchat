@@ -10,6 +10,7 @@ import {
   chatReadPermissions,
   forwardToOutputChatbotPermissions,
   kanbanPermissions,
+  viewChatAttendantsPermissions,
 } from '@/permissions';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
@@ -52,6 +53,7 @@ import { listChatSectorsSchema } from '@core/schema/chat/listChatSectors';
 import { removeChatContactLabelTemplateSchema } from '@core/schema/chat/removeContactLabelTemplate';
 import { listChatContactChannelsSchema } from '@core/schema/chat/listContactChannels';
 import { viewChatContactChannelsByContactIdSchema } from '@core/schema/chat/viewContactChannelsByContactId';
+import { viewChatAttendantsSchema } from '@core/schema/chat/viewChatAttendants';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -106,6 +108,17 @@ export default function chatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatReadPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chat/:chat_id/attendants', {
+    schema: viewChatAttendantsSchema,
+    handler: chatController.viewChatAttendants,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, viewChatAttendantsPermissions),
       planGuard,
       planStatus,
     ],

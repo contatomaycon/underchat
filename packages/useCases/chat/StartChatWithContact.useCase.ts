@@ -428,6 +428,7 @@ export class StartChatWithContactUseCase {
             id: userData.id,
             name: userData.name,
             photo: userData.photo,
+            entered_at: currentDate,
           }
         : null,
       existingChat.started_at || currentDate,
@@ -518,6 +519,7 @@ export class StartChatWithContactUseCase {
             id: userData.id,
             name: userData.name,
             photo: userData.photo,
+            entered_at: currentDate,
           }
         : existingChat.user,
       contact: {
@@ -580,7 +582,12 @@ export class StartChatWithContactUseCase {
         name: requiredData.worker.name,
       },
       sector: requiredData.sector,
-      user: requiredData.user,
+      user: requiredData.user
+        ? {
+            ...requiredData.user,
+            entered_at: currentDate,
+          }
+        : null,
       contact: {
         id: contactData.contact.contact_id,
         name: contactData.contactName,

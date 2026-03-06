@@ -308,6 +308,14 @@ export const pt = {
     'Não é possível transferir para o atendente primário atual.',
   only_primary_can_close:
     'Somente o atendente primário, master/administrador ou usuário com permissão pode encerrar este atendimento.',
+  attendants_info: 'Informações dos atendentes',
+  attendants_info_error:
+    'Não foi possível carregar as informações dos atendentes.',
+  primary_attendant: 'Atendente primário',
+  primary_attendant_not_available: 'Atendente primário não identificado.',
+  secondary_attendants: 'Atendentes secundários',
+  no_secondary_attendants: 'Nenhum atendente secundário neste atendimento.',
+  entered_at_label: 'Entrou em',
   attend_service: 'Atender',
   close_service: 'Encerrar atendimento',
   close_service_confirmation: 'Deseja realmente encerrar este atendimento?',

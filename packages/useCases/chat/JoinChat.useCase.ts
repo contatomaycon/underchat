@@ -124,10 +124,12 @@ export class JoinChatUseCase {
       throw new Error(t('user_not_found'));
     }
 
+    const currentDate = new Date().toISOString();
     const joiningUser: NonNullable<IChat['user']> = {
       id: userData.id,
       name: userData.name,
       photo: userData.photo,
+      entered_at: currentDate,
     };
 
     const updatedChat: IChat = {

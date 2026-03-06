@@ -25,6 +25,7 @@ export interface ChatUser {
   id: string;
   name: string;
   photo?: string | null;
+  entered_at?: string | null;
 }
 
 export interface ChatContact {

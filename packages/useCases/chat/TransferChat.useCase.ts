@@ -116,18 +116,39 @@ export class TransferChatUseCase {
     }
   }
 
+  private findChatParticipantById(
+    chat: IChat,
+    userId: string
+  ): NonNullable<IChat['user']> | null {
+    if (chat.user?.id === userId) {
+      return chat.user;
+    }
+
+    const secondaryUsers = Array.isArray(chat.secondary_users)
+      ? chat.secondary_users
+      : [];
+
+    const secondaryUser = secondaryUsers.find((user) => user?.id === userId);
+    return secondaryUser ?? null;
+  }
+
   private buildUserFromData(
     body: TransferChatBody,
-    userData: Awaited<ReturnType<UserService['viewUserNamePhoto']>> | null
+    userData: Awaited<ReturnType<UserService['viewUserNamePhoto']>> | null,
+    chat: IChat,
+    currentDate: string
   ): IChat['user'] | null | undefined {
     if (!body.user_id) return undefined;
 
     if (!userData) return undefined;
 
+    const existingParticipant = this.findChatParticipantById(chat, userData.id);
+
     return {
       id: userData.id,
       name: userData.name,
       photo: userData.photo,
+      entered_at: existingParticipant?.entered_at ?? currentDate,
     };
   }
 
@@ -284,13 +305,14 @@ export class TransferChatUseCase {
 
   private buildSecondaryUsersForTransfer(input: {
     chat: IChat;
-    actorUserId: string;
-    actorUser: IChat['user'] | null;
     keepInChat: boolean;
     nextPrimaryUser: IChat['user'] | null;
+    currentDate: string;
   }): IChat['secondary_users'] | null {
-    const { chat, actorUserId, actorUser, keepInChat, nextPrimaryUser } = input;
-    const primaryUserId = nextPrimaryUser?.id ?? null;
+    const { chat, keepInChat, nextPrimaryUser, currentDate } = input;
+    const nextPrimaryUserId = nextPrimaryUser?.id ?? null;
+    const previousPrimaryUser = chat.user ?? null;
+    const previousPrimaryUserId = previousPrimaryUser?.id ?? null;
     const byId = new Map<string, NonNullable<IChat['user']>>();
 
     const existingSecondaryUsers = Array.isArray(chat.secondary_users)
@@ -298,18 +320,34 @@ export class TransferChatUseCase {
       : [];
 
     for (const secondaryUser of existingSecondaryUsers) {
-      if (!secondaryUser?.id || secondaryUser.id === primaryUserId) {
+      if (!secondaryUser?.id || secondaryUser.id === nextPrimaryUserId) {
         continue;
       }
 
-      if (!keepInChat && secondaryUser.id === actorUserId) {
+      if (!keepInChat && secondaryUser.id === previousPrimaryUserId) {
         continue;
       }
       byId.set(secondaryUser.id, secondaryUser);
     }
 
-    if (keepInChat && actorUser?.id && actorUser.id !== primaryUserId) {
-      byId.set(actorUser.id, actorUser);
+    if (
+      keepInChat &&
+      previousPrimaryUser?.id &&
+      previousPrimaryUser.id !== nextPrimaryUserId
+    ) {
+      const existingSecondary = byId.get(previousPrimaryUser.id);
+      const enteredAt =
+        previousPrimaryUser.entered_at ??
+        existingSecondary?.entered_at ??
+        chat.started_at ??
+        currentDate;
+
+      byId.set(previousPrimaryUser.id, {
+        id: previousPrimaryUser.id,
+        name: previousPrimaryUser.name ?? existingSecondary?.name ?? '',
+        photo: previousPrimaryUser.photo ?? existingSecondary?.photo ?? null,
+        entered_at: enteredAt,
+      });
     }
 
     if (byId.size === 0) {
@@ -472,13 +510,14 @@ export class TransferChatUseCase {
       body,
       accountId
     );
+    const currentDate = new Date().toISOString();
 
     const workerConfigFields =
       await this.workerService.viewWorkerConfigFieldsByWorkerId(
         targetWorker.id
       );
 
-    let user = this.buildUserFromData(body, userData);
+    let user = this.buildUserFromData(body, userData, chat, currentDate);
     let sector = this.buildSectorFromData(body, sectorData);
     const keepInChat = body.keep_in_chat === true;
 
@@ -512,23 +551,11 @@ export class TransferChatUseCase {
       ? null
       : (user ?? chat.user ?? null);
 
-    const actorUserData = keepInChat
-      ? await this.userService.viewUserNamePhoto(actorUserId)
-      : null;
-    const actorUser = actorUserData
-      ? {
-          id: actorUserData.id,
-          name: actorUserData.name,
-          photo: actorUserData.photo,
-        }
-      : null;
-
     const secondaryUsers = this.buildSecondaryUsersForTransfer({
       chat,
-      actorUserId,
-      actorUser,
       keepInChat,
       nextPrimaryUser,
+      currentDate,
     });
 
     const updatedChat = this.buildUpdatedChatForTransfer(

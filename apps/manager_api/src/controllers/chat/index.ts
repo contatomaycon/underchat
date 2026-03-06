@@ -17,6 +17,7 @@ import { searchMessages } from './methods/searchMessages';
 import { transferChat } from './methods/transferChat';
 import { searchChats } from './methods/searchChats';
 import { viewWorkerConfigForChat } from './methods/viewWorkerConfigForChat';
+import { viewChatAttendants } from './methods/viewChatAttendants';
 import { listTransferOptions } from './methods/listTransferOptions';
 import { listTransferUsers } from './methods/listTransferUsers';
 import { listTransferSectors } from './methods/listTransferSectors';
@@ -63,6 +64,7 @@ class ChatController {
   public transferChat = transferChat;
   public searchChats = searchChats;
   public viewWorkerConfigForChat = viewWorkerConfigForChat;
+  public viewChatAttendants = viewChatAttendants;
   public listTransferOptions = listTransferOptions;
   public listTransferUsers = listTransferUsers;
   public listTransferSectors = listTransferSectors;

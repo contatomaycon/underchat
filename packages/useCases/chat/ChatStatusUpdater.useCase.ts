@@ -310,7 +310,8 @@ export class ChatStatusUpdaterUseCase {
   }
 
   private async prepareUserForInChat(
-    userId: string
+    userId: string,
+    enteredAt: string
   ): Promise<IChat['user'] | null | undefined> {
     const userData = await this.userService.viewUserNamePhoto(userId);
 
@@ -322,6 +323,7 @@ export class ChatStatusUpdaterUseCase {
       id: userData.id,
       name: userData.name,
       photo: userData.photo,
+      entered_at: enteredAt,
     };
   }
 
@@ -602,7 +604,7 @@ export class ChatStatusUpdaterUseCase {
 
       await this.validateInChatAttendance(t, accountId, chat.worker.id, userId);
 
-      user = await this.prepareUserForInChat(userId);
+      user = await this.prepareUserForInChat(userId, currentDate);
       finalStatus = EChatStatus.in_chat;
     }
 
@@ -650,7 +652,7 @@ export class ChatStatusUpdaterUseCase {
     ) {
       await this.validateInChatAttendance(t, accountId, chat.worker.id, userId);
 
-      user = await this.prepareUserForInChat(userId);
+      user = await this.prepareUserForInChat(userId, currentDate);
     }
 
     const requestedDisableSendMessageOnFinishAttendance =

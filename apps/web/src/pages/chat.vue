@@ -40,6 +40,7 @@ import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
+import { ViewChatAttendantsResponse } from '@core/schema/chat/viewChatAttendants/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
@@ -364,6 +365,15 @@ const hasManageInChatLifecyclePermission = computed(() => {
   ]);
 });
 
+const hasViewChatAttendantsInfoPermission = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.view_chat_attendants_info,
+  ]);
+});
+
 const canManageInChatLifecycle = computed(() => {
   return (
     isCurrentUserPrimaryInActiveChat.value ||
@@ -582,6 +592,9 @@ const handleJoinConversation = async () => {
 
 const isCloseServiceDialogOpen = ref(false);
 const closeServiceSendMessageOnFinishAttendance = ref(true);
+const isAttendantsInfoDialogOpen = ref(false);
+const isLoadingAttendantsInfo = ref(false);
+const attendantsInfo = ref<ViewChatAttendantsResponse | null>(null);
 
 const handleCloseService = () => {
   if (isInChatStatus.value && !canManageInChatLifecycle.value) {
@@ -608,6 +621,68 @@ const confirmCloseService = async () => {
       : undefined
   );
 };
+
+const resolveAttendantPhoto = (photo?: string | null): string => {
+  if (typeof photo !== 'string') {
+    return '/images/svg/avatar-default.svg';
+  }
+
+  const normalizedPhoto = photo.trim();
+  if (!normalizedPhoto) {
+    return '/images/svg/avatar-default.svg';
+  }
+
+  return normalizedPhoto;
+};
+
+const hasAttendantPhoto = (photo?: string | null): boolean => {
+  if (typeof photo !== 'string') {
+    return false;
+  }
+
+  return photo.trim().length > 0;
+};
+
+const formatAttendantEnteredAt = (enteredAt?: string | null): string => {
+  if (!enteredAt) {
+    return '-';
+  }
+
+  const enteredAtDate = new Date(enteredAt);
+  if (Number.isNaN(enteredAtDate.getTime())) {
+    return '-';
+  }
+
+  return enteredAtDate.toLocaleString();
+};
+
+const openAttendantsInfoDialog = async () => {
+  const chatId = chatStore.activeChat?.chat_id;
+  if (!chatId || isLoadingAttendantsInfo.value) {
+    return;
+  }
+
+  isLoadingAttendantsInfo.value = true;
+  try {
+    const response = await chatStore.viewChatAttendants(chatId);
+    if (!response) {
+      return;
+    }
+
+    attendantsInfo.value = response;
+    isAttendantsInfoDialogOpen.value = true;
+  } finally {
+    isLoadingAttendantsInfo.value = false;
+  }
+};
+
+const attendantsPrimaryUser = computed(
+  () => attendantsInfo.value?.primary_user ?? null
+);
+
+const attendantsSecondaryUsers = computed(
+  () => attendantsInfo.value?.secondary_users ?? []
+);
 
 const handleActiveChatHeaderClick = () => {
   isActiveChatUserProfileSidebarOpen.value = true;
@@ -795,6 +870,8 @@ watch(
   () => chatStore.activeChat?.chat_id,
   () => {
     resetHeaderPhoneVisibility();
+    attendantsInfo.value = null;
+    isAttendantsInfoDialogOpen.value = false;
   }
 );
 
@@ -1044,12 +1121,18 @@ const handleTransfer = async () => {
       isTransferModalOpen.value = false;
 
       const activeChat = chatStore.activeChat as IChat;
+      const currentDate = new Date().toISOString();
       const selectedChannel = selectedTransferChannelOption.value;
       let nextUser: IChat['user'] | null = activeChat.user ?? null;
       let nextSector: IChat['sector'] | null = activeChat.sector ?? null;
       let nextSecondaryUsers = Array.isArray(activeChat.secondary_users)
         ? activeChat.secondary_users.filter((user) => !!user?.id)
         : [];
+      const secondaryUsersById = new Map(
+        nextSecondaryUsers
+          .filter((secondaryUser) => !!secondaryUser?.id)
+          .map((secondaryUser) => [secondaryUser.id, secondaryUser])
+      );
       const nextWorker: IChat['worker'] = selectedChannel
         ? {
             id: selectedChannel.value,
@@ -1061,11 +1144,15 @@ const handleTransfer = async () => {
         const selected = transferUsers.value.find(
           (user) => user.value === userId
         );
+        const existingSecondary = selected?.value
+          ? secondaryUsersById.get(selected.value)
+          : undefined;
         nextUser = selected
           ? {
               id: selected.value,
               name: selected.title,
               photo: selected.photo ?? null,
+              entered_at: existingSecondary?.entered_at ?? currentDate,
             }
           : null;
         nextSector = null;
@@ -1084,11 +1171,15 @@ const handleTransfer = async () => {
           const selectedUser = transferSectorUsers.value.find(
             (user) => user.value === userId
           );
+          const existingSecondary = selectedUser?.value
+            ? secondaryUsersById.get(selectedUser.value)
+            : undefined;
           nextUser = selectedUser
             ? {
                 id: selectedUser.value,
                 name: selectedUser.title,
                 photo: selectedUser.photo ?? null,
+                entered_at: existingSecondary?.entered_at ?? currentDate,
               }
             : null;
         } else {
@@ -1124,6 +1215,10 @@ const handleTransfer = async () => {
             id: activeChat.user.id,
             name: activeChat.user.name,
             photo: activeChat.user.photo ?? null,
+            entered_at:
+              activeChat.user.entered_at ??
+              activeChat.started_at ??
+              currentDate,
           });
         }
       }
@@ -1175,6 +1270,14 @@ const canShowCloseButton = computed(() => {
   }
 
   return false;
+});
+
+const canShowAttendantsInfoAction = computed(() => {
+  return !!chatStore.activeChat?.chat_id && hasViewChatAttendantsInfoPermission.value;
+});
+
+const canShowHeaderActionsMenu = computed(() => {
+  return canShowCloseButton.value || canShowAttendantsInfoAction.value;
 });
 
 const canTransfer = computed(() => {
@@ -5759,7 +5862,7 @@ onBeforeUnmount(() => {
               <VIcon icon="tabler-search" />
             </IconBtn>
             <VMenu
-              v-if="canShowCloseButton"
+              v-if="canShowHeaderActionsMenu"
               offset="8"
               :close-on-content-click="true"
               location="bottom end"
@@ -5771,7 +5874,23 @@ onBeforeUnmount(() => {
               </template>
 
               <VList density="comfortable" min-width="200">
-                <VListItem @click="handleCloseService">
+                <VListItem
+                  v-if="canShowAttendantsInfoAction"
+                  @click="openAttendantsInfoDialog"
+                >
+                  <template #prepend>
+                    <VIcon size="20" color="primary">tabler-users</VIcon>
+                  </template>
+                  <VListItemTitle class="font-weight-medium">
+                    {{ t('attendants_info') }}
+                  </VListItemTitle>
+                </VListItem>
+
+                <VDivider
+                  v-if="canShowAttendantsInfoAction && canShowCloseButton"
+                />
+
+                <VListItem v-if="canShowCloseButton" @click="handleCloseService">
                   <template #prepend>
                     <VIcon size="20" color="error">tabler-x</VIcon>
                   </template>
@@ -6692,6 +6811,110 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog
+    v-model="isAttendantsInfoDialogOpen"
+    max-width="520"
+    class="v-dialog-sm"
+  >
+    <DialogCloseBtn @click="isAttendantsInfoDialogOpen = false" />
+
+    <VCard :title="t('attendants_info')">
+      <VCardText>
+        <div v-if="isLoadingAttendantsInfo" class="attendants-info-loading">
+          <VSkeletonLoader type="list-item-avatar-two-line" />
+          <VSkeletonLoader type="list-item-avatar-two-line" />
+        </div>
+
+        <template v-else>
+          <div
+            v-if="attendantsPrimaryUser"
+            class="attendants-info-primary d-flex align-center"
+          >
+            <VAvatar
+              size="42"
+              :variant="
+                hasAttendantPhoto(attendantsPrimaryUser.photo)
+                  ? undefined
+                  : 'tonal'
+              "
+              class="me-3"
+            >
+              <VImg
+                :src="resolveAttendantPhoto(attendantsPrimaryUser.photo)"
+                :alt="attendantsPrimaryUser.name"
+              />
+            </VAvatar>
+            <div class="attendants-info-main">
+              <div class="d-flex align-center gap-2">
+                <span class="font-weight-medium">{{
+                  attendantsPrimaryUser.name
+                }}</span>
+                <VChip size="x-small" color="primary" variant="tonal">
+                  {{ t('primary_attendant') }}
+                </VChip>
+              </div>
+              <div class="text-body-2 text-medium-emphasis">
+                {{ t('entered_at_label') }}:
+                {{ formatAttendantEnteredAt(attendantsPrimaryUser.entered_at) }}
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="text-body-2 text-medium-emphasis">
+            {{ t('primary_attendant_not_available') }}
+          </div>
+
+          <VDivider class="my-4" />
+
+          <div
+            v-if="attendantsSecondaryUsers.length > 0"
+            class="d-flex flex-column gap-3"
+          >
+            <div class="text-body-2 font-weight-medium">
+              {{ t('secondary_attendants') }}
+            </div>
+
+            <div
+              v-for="secondaryUser in attendantsSecondaryUsers"
+              :key="secondaryUser.id"
+              class="attendants-info-secondary d-flex align-center"
+            >
+              <VAvatar
+                size="38"
+                :variant="
+                  hasAttendantPhoto(secondaryUser.photo) ? undefined : 'tonal'
+                "
+                class="me-3"
+              >
+                <VImg
+                  :src="resolveAttendantPhoto(secondaryUser.photo)"
+                  :alt="secondaryUser.name"
+                />
+              </VAvatar>
+              <div class="attendants-info-main">
+                <div class="font-weight-medium">{{ secondaryUser.name }}</div>
+                <div class="text-body-2 text-medium-emphasis">
+                  {{ t('entered_at_label') }}:
+                  {{ formatAttendantEnteredAt(secondaryUser.entered_at) }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="text-body-2 text-medium-emphasis">
+            {{ t('no_secondary_attendants') }}
+          </div>
+        </template>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end">
+        <VBtn color="secondary" variant="tonal" @click="isAttendantsInfoDialogOpen = false">
+          {{ t('close') }}
+        </VBtn>
       </VCardText>
     </VCard>
   </VDialog>
@@ -7922,6 +8145,29 @@ $chat-app-header-height: 76px;
   border-top-right-radius: 4px !important;
   border-bottom-right-radius: 4px !important;
   margin-left: 0 !important;
+}
+
+.attendants-info-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.attendants-info-primary {
+  border: 1px solid rgba(var(--v-theme-primary), 0.25);
+  background: rgba(var(--v-theme-primary), 0.05);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+}
+
+.attendants-info-secondary {
+  border-radius: 0.625rem;
+  background: rgba(var(--v-theme-on-surface), 0.03);
+  padding: 0.625rem 0.75rem;
+}
+
+.attendants-info-main {
+  min-width: 0;
 }
 
 // Mobile responsive header

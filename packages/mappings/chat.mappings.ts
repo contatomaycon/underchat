@@ -78,6 +78,9 @@ export const chatMappings = () => {
             photo: {
               type: 'text',
             },
+            entered_at: {
+              type: 'date',
+            },
           },
         },
         secondary_users: {
@@ -91,6 +94,9 @@ export const chatMappings = () => {
             },
             photo: {
               type: 'text',
+            },
+            entered_at: {
+              type: 'date',
             },
           },
         },

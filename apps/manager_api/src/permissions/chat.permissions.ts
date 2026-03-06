@@ -39,3 +39,10 @@ export const kanbanPermissions = [
   EChatPermissions.chat_group,
   EChatPermissions.chat_kanban,
 ];
+
+export const viewChatAttendantsPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EChatPermissions.chat_group,
+  EChatPermissions.view_chat_attendants_info,
+];

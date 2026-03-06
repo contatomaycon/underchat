@@ -20,6 +20,7 @@ interface IUser {
   id: string;
   name: string;
   photo?: string | null;
+  entered_at?: string | null;
 }
 
 interface IContact {

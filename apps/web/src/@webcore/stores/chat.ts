@@ -70,6 +70,7 @@ import { ListChatContactChannelsResponse } from '@core/schema/chat/listContactCh
 import { ListKanbanResponse } from '@core/schema/chat/listKanban/response.schema';
 import { ListKanbanQuery } from '@core/schema/chat/listKanban/request.schema';
 import { ForwardMessageResponse } from '@core/schema/chat/forwardMessage/response.schema';
+import { ViewChatAttendantsResponse } from '@core/schema/chat/viewChatAttendants/response.schema';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
@@ -763,6 +764,7 @@ export const useChatStore = defineStore('chat', {
           id: user.id,
           name: user.name,
           photo: user.photo ?? null,
+          entered_at: user.entered_at ?? null,
         }));
     },
 
@@ -3701,6 +3703,38 @@ export const useChatStore = defineStore('chat', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
+      }
+    },
+
+    async viewChatAttendants(
+      chatId: string
+    ): Promise<ViewChatAttendantsResponse | null> {
+      if (!chatId) {
+        return null;
+      }
+
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewChatAttendantsResponse>
+        >(`/chat/${chatId}/attendants`);
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('attendants_info_error');
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('attendants_info_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
       }
     },
 

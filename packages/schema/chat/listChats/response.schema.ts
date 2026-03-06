@@ -28,6 +28,7 @@ export const userSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  entered_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const contactSchema = Type.Object({

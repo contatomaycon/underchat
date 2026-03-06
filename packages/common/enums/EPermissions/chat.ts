@@ -1,6 +1,7 @@
 export enum EChatPermissions {
   chat_group = 'chat_group',
   chat_access = 'chat_access',
+  view_chat_attendants_info = 'view_chat_attendants_info',
   preview_chat = 'preview_chat',
   list_all_chats_in_sector = 'list_all_chats_in_sector',
   pick_queue_chat = 'pick_queue_chat',

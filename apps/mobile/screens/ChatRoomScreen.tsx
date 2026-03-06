@@ -82,6 +82,7 @@ import {
   updateChatStatusDetailed,
   transferChat,
   joinChat,
+  viewChatAttendants,
   listTransferOptions,
   listTransferUsers,
   listTransferSectors,
@@ -99,6 +100,7 @@ import {
   type TransferChatPayload,
   type TransferUserOption,
   type TransferSectorOption,
+  type ViewChatAttendantsResponse,
   type QuickMessageTemplate,
   listChatContacts,
   type ListChatContactResult,
@@ -133,6 +135,7 @@ import {
   isChatPrimary,
   isMasterOrAdministratorUser,
   canManageInChatLifecyclePermission,
+  canViewChatAttendantsInfoPermission,
 } from '../constants/chatAuthorization';
 import { useChatFilter } from '../context/ChatFilterContext';
 import { AppAvatar } from '../components/AppAvatar';
@@ -466,6 +469,7 @@ type ProtocolWithType = {
 };
 
 type ChatMenuActionKey =
+  | 'attendants_info'
   | 'protocol'
   | 'label'
   | 'attendance_history'
@@ -706,6 +710,17 @@ function formatSearchResultDate(dateString: string): string {
     return pt.yesterday;
   }
   return date.toLocaleDateString('pt-BR');
+}
+
+function formatAttendantEnteredAt(
+  enteredAt: string | null | undefined
+): string {
+  if (!enteredAt) return '-';
+
+  const date = new Date(enteredAt);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  return date.toLocaleString('pt-BR');
 }
 
 function calculateAttendanceTime(
@@ -4368,6 +4383,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [isHeaderPhoneDecrypted, setIsHeaderPhoneDecrypted] = useState(false);
   const [isHeaderPhoneLoading, setIsHeaderPhoneLoading] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [attendantsInfoVisible, setAttendantsInfoVisible] = useState(false);
+  const [attendantsInfoLoading, setAttendantsInfoLoading] = useState(false);
+  const [attendantsInfo, setAttendantsInfo] =
+    useState<ViewChatAttendantsResponse | null>(null);
   const [closeServiceModalVisible, setCloseServiceModalVisible] =
     useState(false);
   const [
@@ -4689,6 +4708,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setQuickMessageInputDirty(false);
     setInput('');
     setSendingQuickMessage(false);
+    setAttendantsInfoVisible(false);
+    setAttendantsInfoLoading(false);
+    setAttendantsInfo(null);
     setLoading(true);
     setHighlightedMessageId(null);
     setShowScrollToBottomButton(false);
@@ -5748,6 +5770,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       (isQueueOrUraStatus && canCloseChatWithoutAttending(permissionList)));
   const canDisableSendMessageOnFinishAttendanceAction =
     canDisableSendMessageOnFinishAttendance(permissionList);
+  const canViewChatAttendantsInfoAction =
+    canViewChatAttendantsInfoPermission(permissionList);
   const shouldShowCloseServiceSendMessageToggle =
     workerConfigForChat?.send_message_on_finish_attendance_enabled === true &&
     canDisableSendMessageOnFinishAttendanceAction;
@@ -5761,6 +5785,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     workerConfigForChat?.has_ura_output === true &&
     canToggleForwardToOutputChatbot(permissionList);
   const isForwardToOutputActive = chatInfo.forward_to_output_chatbot !== false;
+  const attendantsPrimaryUser = attendantsInfo?.primary_user ?? null;
+  const attendantsSecondaryUsers = Array.isArray(attendantsInfo?.secondary_users)
+    ? attendantsInfo.secondary_users
+    : [];
 
   const handleToggleHeaderPhoneVisibility = useCallback(async () => {
     const contactId = readNonEmptyString(chatInfo.contact?.id);
@@ -5824,6 +5852,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setCloseServiceSendMessageOnFinishAttendance(true);
     setCloseServiceModalVisible(true);
   }, []);
+
+  const openAttendantsInfo = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (!chatId || attendantsInfoLoading) return;
+
+    setAttendantsInfoLoading(true);
+    const response = await viewChatAttendants(chatId);
+    setAttendantsInfoLoading(false);
+
+    if (!response) {
+      Alert.alert(pt.error_title, pt.attendants_info_error);
+      return;
+    }
+
+    setAttendantsInfo(response);
+    setAttendantsInfoVisible(true);
+  }, [attendantsInfoLoading, chatInfo.chat_id]);
 
   const syncGlobalChatCounts = useCallback(async () => {
     const response = await searchChats({
@@ -6547,6 +6592,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const menuActions = useMemo<ChatMenuAction[]>(() => {
     const actions: ChatMenuAction[] = [];
 
+    if (canViewChatAttendantsInfoAction) {
+      actions.push({
+        key: 'attendants_info',
+        label: pt.attendants_info,
+        icon: 'people-outline',
+        onPress: () => {
+          void openAttendantsInfo();
+        },
+      });
+    }
+
     if (protocolList.length > 0) {
       actions.push({
         key: 'protocol',
@@ -6626,6 +6682,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     return actions;
   }, [
+    canViewChatAttendantsInfoAction,
     canLabelAction,
     canShowCloseButton,
     canToggleForwardToOutputAction,
@@ -6634,6 +6691,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     handleCloseService,
     handleToggleForwardToOutput,
     isForwardToOutputActive,
+    openAttendantsInfo,
     openLabelModal,
     protocolList.length,
   ]);
@@ -10974,6 +11032,109 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       </Modal>
 
       <Modal
+        visible={attendantsInfoVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAttendantsInfoVisible(false)}
+      >
+        <View style={styles.bottomSheetOverlay}>
+          <Pressable
+            style={styles.bottomSheetBackdrop}
+            onPress={() => setAttendantsInfoVisible(false)}
+          />
+          <View style={[styles.bottomSheetCard, styles.attendantsInfoSheetCard]}>
+            <View style={styles.bottomSheetHeader}>
+              <Text style={styles.bottomSheetTitle}>{pt.attendants_info}</Text>
+              <Pressable onPress={() => setAttendantsInfoVisible(false)}>
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            {attendantsInfoLoading ? (
+              <View style={styles.modalLoadingWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
+              <ScrollView
+                contentContainerStyle={styles.attendantsInfoContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                {attendantsPrimaryUser ? (
+                  <View style={styles.attendantsPrimaryCard}>
+                    <View style={styles.attendantsRowHeader}>
+                      <AppAvatar
+                        uri={attendantsPrimaryUser.photo ?? null}
+                        size={42}
+                        iconName="person"
+                        iconSize={20}
+                      />
+                      <View style={styles.attendantsUserMain}>
+                        <View style={styles.attendantsPrimaryTitleRow}>
+                          <Text style={styles.attendantsPrimaryName}>
+                            {attendantsPrimaryUser.name}
+                          </Text>
+                          <View style={styles.attendantsPrimaryBadge}>
+                            <Text style={styles.attendantsPrimaryBadgeText}>
+                              {pt.primary_attendant}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.attendantsEnteredAtText}>
+                          {pt.entered_at_label}:{' '}
+                          {formatAttendantEnteredAt(
+                            attendantsPrimaryUser.entered_at
+                          )}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>
+                    {pt.primary_attendant_not_available}
+                  </Text>
+                )}
+
+                <View style={styles.attendantsSectionDivider} />
+
+                <Text style={styles.attendantsSectionTitle}>
+                  {pt.secondary_attendants}
+                </Text>
+
+                {attendantsSecondaryUsers.length > 0 ? (
+                  attendantsSecondaryUsers.map((secondaryUser) => (
+                    <View
+                      key={secondaryUser.id}
+                      style={styles.attendantsSecondaryRow}
+                    >
+                      <AppAvatar
+                        uri={secondaryUser.photo ?? null}
+                        size={36}
+                        iconName="person"
+                        iconSize={18}
+                      />
+                      <View style={styles.attendantsUserMain}>
+                        <Text style={styles.attendantsSecondaryName}>
+                          {secondaryUser.name}
+                        </Text>
+                        <Text style={styles.attendantsEnteredAtText}>
+                          {pt.entered_at_label}:{' '}
+                          {formatAttendantEnteredAt(secondaryUser.entered_at)}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.emptyText}>
+                    {pt.no_secondary_attendants}
+                  </Text>
+                )}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={closeServiceModalVisible}
         transparent
         animationType="slide"
@@ -14377,6 +14538,81 @@ const styles = StyleSheet.create({
   },
   annotationSheetCard: {
     maxHeight: '62%',
+  },
+  attendantsInfoSheetCard: {
+    maxHeight: '78%',
+  },
+  attendantsInfoContent: {
+    gap: 10,
+    paddingBottom: 10,
+  },
+  attendantsPrimaryCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(40, 101, 183, 0.24)',
+    backgroundColor: 'rgba(40, 101, 183, 0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  attendantsRowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  attendantsUserMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  attendantsPrimaryTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  attendantsPrimaryName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.onSurface,
+  },
+  attendantsPrimaryBadge: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(40, 101, 183, 0.16)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  attendantsPrimaryBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  attendantsEnteredAtText: {
+    marginTop: 2,
+    fontSize: 12,
+    color: colors.grey700,
+  },
+  attendantsSectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.grey300,
+    marginVertical: 2,
+  },
+  attendantsSectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.grey700,
+  },
+  attendantsSecondaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(47, 43, 61, 0.03)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  attendantsSecondaryName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
   },
   locationSheetCard: {
     maxHeight: '90%',
