@@ -26,7 +26,11 @@ import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWork
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
+import { WwebjsDeliveryConfirmationService } from './deliveryConfirmation.service';
+import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 
+const ACK_ERROR = -1;
+const ACK_SERVER = 1;
 const ACK_DEVICE = 2;
 const ACK_READ = 3;
 const ACK_PLAYED = 4;
@@ -213,6 +217,9 @@ export class WwebjsIncomingMessageService {
   private readonly NAME_CACHE_PREFIX = 'name:jid:';
   private readonly NAME_CACHE_NO_NAME = '__no_name__';
   private readonly PROFILE_PIC_TIMEOUT_MS = 3000;
+  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 3;
+  private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
+  private readonly SEND_CONFIRMATION_BACKOFF_MS = [500, 1000];
   private readonly E2E_NOTIFICATION_DEDUPE_PREFIX = 'wwebjs:e2e:';
   private readonly E2E_NOTIFICATION_DEDUPE_TTL = 31536000;
   private readonly CIPHERTEXT_FANOUT_DEDUPE_PREFIX = 'wwebjs:ciphertext:';
@@ -227,7 +234,9 @@ export class WwebjsIncomingMessageService {
     @inject(WwebjsUpsertMediaEnricher)
     private readonly upsertMediaEnricher: WwebjsUpsertMediaEnricher,
     @inject(BalanceWorkerStatusGrpcClientService)
-    private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService
+    private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
+    @inject(WwebjsDeliveryConfirmationService)
+    private readonly deliveryConfirmation: WwebjsDeliveryConfirmationService
   ) {}
 
   bindTo(client: Client): void {
@@ -1533,7 +1542,11 @@ export class WwebjsIncomingMessageService {
 
       const text = callAction.show_message_text?.trim();
       if (callAction.show_message_on_call && text) {
-        const sentMessage = await client.sendMessage(jid, text);
+        const sentMessage = await this.sendMessageWithConfirmation(
+          client,
+          jid,
+          text
+        );
         const systemMessageUpsert = this.buildCallAutoReplySystemUpsert(
           jid,
           text,
@@ -1586,7 +1599,7 @@ export class WwebjsIncomingMessageService {
   }
 
   private mapAckToPatch(ack: number): MessageSummaryPatch | null {
-    if (ack < 1) return null;
+    if (ack < ACK_SERVER) return null;
     const patch: MessageSummaryPatch = { is_sent: true };
     if (ack >= ACK_DEVICE) {
       patch.is_delivered = true;
@@ -1603,6 +1616,15 @@ export class WwebjsIncomingMessageService {
 
     const messageId = getMessageIdSerialized(msg);
     if (!messageId) return;
+
+    if (ack === ACK_ERROR) {
+      this.deliveryConfirmation.markFailed(messageId);
+      return;
+    }
+
+    if (ack >= ACK_SERVER) {
+      this.deliveryConfirmation.markSent(messageId);
+    }
 
     const remoteJidRaw =
       getMessageRemoteFromId(msg) ||
@@ -1628,6 +1650,81 @@ export class WwebjsIncomingMessageService {
     const topic = this.kafkaServiceQueueService.updateMessageStatus();
     const kafkaKey = `${wwebjsEnvironment.wwebjsAccountId}:${messageId}:${MessageStatusService.hashPatch(patch)}`;
     await this.streamProducerService.send(topic, statusUpdate, kafkaKey);
+  }
+
+  private async sendMessageWithConfirmation(
+    client: Client,
+    jid: string,
+    text: string
+  ): Promise<Message> {
+    let lastError: unknown = null;
+    let lastMessageId: string | undefined;
+    let lastOutcome: 'failed' | 'timeout' = 'timeout';
+    let hadConfirmationFailure = false;
+
+    for (
+      let attempt = 1;
+      attempt <= this.SEND_CONFIRMATION_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      try {
+        const sentMessage = await client.sendMessage(jid, text, {
+          waitUntilMsgSent: true,
+        });
+        const sentMessageId = getMessageIdSerialized(sentMessage);
+        if (!sentMessageId) {
+          throw new Error(
+            'Wwebjs call auto-reply send returned message without id'
+          );
+        }
+
+        lastMessageId = sentMessageId;
+        const outcome = await this.deliveryConfirmation.waitForOutcome(
+          sentMessageId,
+          this.SEND_CONFIRMATION_TIMEOUT_MS
+        );
+
+        if (outcome === 'sent') {
+          return sentMessage;
+        }
+
+        hadConfirmationFailure = true;
+        lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
+        lastError =
+          outcome === 'failed'
+            ? new Error(
+                `Message delivery failed acknowledgement for ${sentMessageId}`
+              )
+            : new Error(
+                `Message delivery confirmation timeout for ${sentMessageId}`
+              );
+      } catch (error) {
+        lastError = error;
+      }
+
+      if (attempt < this.SEND_CONFIRMATION_MAX_ATTEMPTS) {
+        const backoffIndex = Math.min(
+          attempt - 1,
+          this.SEND_CONFIRMATION_BACKOFF_MS.length - 1
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.SEND_CONFIRMATION_BACKOFF_MS[backoffIndex])
+        );
+      }
+    }
+
+    if (hadConfirmationFailure) {
+      throw new MessageDeliveryConfirmationFailedError({
+        maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
+        lastMessageId,
+        lastOutcome,
+        cause: lastError,
+      });
+    }
+
+    throw (
+      (lastError as Error) ?? new Error('Wwebjs call auto-reply send failed')
+    );
   }
 
   unbind(): void {

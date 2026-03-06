@@ -39,6 +39,7 @@ import { commitOffset } from '@core/common/functions/commitOffset';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { MessageKeyLookupService } from '@core/services/messageKeyLookup.service';
+import { isMessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 
 interface IPartitionCommitState {
   nextContiguousOffset: number | null;
@@ -76,6 +77,7 @@ export class MessageSendConsume {
   private readonly FORWARD_SOURCE_KEY_MAX_WAIT_MS = 4000;
   private readonly FORWARD_SOURCE_KEY_POLL_INTERVAL_MS = 300;
   private readonly SYSTEM_QUEUE_KEY = 'system';
+  private readonly REDRIVE_COUNT_FIELD = '__baileys_redrive_count';
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
     new Map();
   private readonly inFlightTasks = new Set<Promise<void>>();
@@ -420,6 +422,24 @@ export class MessageSendConsume {
         return;
       } catch (error) {
         lastError = error;
+        if (isMessageDeliveryConfirmationFailedError(error)) {
+          console.warn('[MessageSend] Delivery confirmation failed', {
+            chat_id: envelope.chatId,
+            queue_key: envelope.queueKey,
+            partition: envelope.partition,
+            offset: envelope.offset,
+            attempt,
+            result: 'delivery_unconfirmed_to_dlq',
+            error: this.errorMessage(error),
+          });
+
+          await this.publishDlqWithRetry(
+            envelope,
+            error,
+            error.maxAttempts ?? attempt
+          );
+          return;
+        }
         const isLastAttempt = attempt === this.MAX_PROCESS_ATTEMPTS;
 
         console.warn('[MessageSend] Message processing failed', {
@@ -626,6 +646,7 @@ export class MessageSendConsume {
     error: unknown,
     attempts: number
   ): Promise<void> {
+    const redriveCount = this.extractRedriveCount(envelope.payload);
     const dlqPayload: IWorkerSendMessageDlq = {
       worker_id: baileysEnvironment.baileysWorkerId,
       topic: envelope.topic,
@@ -634,6 +655,7 @@ export class MessageSendConsume {
       chat_id: envelope.chatId,
       queue_key: envelope.queueKey,
       attempts,
+      redrive_count: redriveCount,
       error: this.errorMessage(error),
       payload: envelope.payload,
       raw_payload: envelope.rawPayload,
@@ -679,6 +701,26 @@ export class MessageSendConsume {
     }
 
     return String(error);
+  }
+
+  private extractRedriveCount(payload: unknown): number {
+    if (!payload || typeof payload !== 'object') {
+      return 0;
+    }
+
+    if (!(this.REDRIVE_COUNT_FIELD in payload)) {
+      return 0;
+    }
+
+    const value = (payload as Record<string, unknown>)[
+      this.REDRIVE_COUNT_FIELD
+    ];
+
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      return 0;
+    }
+
+    return Math.floor(value);
   }
 
   private getRandomDelay(): number {

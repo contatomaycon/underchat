@@ -39,6 +39,8 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { IBaileysPendingMessage } from '@core/common/interfaces/IBaileysPendingMessage';
 import { BaileysUpsertMediaEnricher } from './upsertMediaEnricher.service';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
+import { BaileysDeliveryConfirmationService } from './deliveryConfirmation.service';
+import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 
 @singleton()
 export class BaileysIncomingMessageService {
@@ -68,6 +70,9 @@ export class BaileysIncomingMessageService {
   private readonly MESSAGE_CACHE_TTL_SECONDS_DEFAULT = 60 * 60 * 8;
   private readonly MESSAGE_CACHE_TTL_SECONDS_POLL = 60 * 60 * 24 * 7;
   private readonly MESSAGE_CACHE_PREFIX = 'wa:msg:';
+  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 3;
+  private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
+  private readonly SEND_CONFIRMATION_BACKOFF_MS = [500, 1000];
   private readonly FORWARDABLE_CACHE_TYPES = new Set<EMessageType>([
     EMessageType.text,
     EMessageType.image,
@@ -92,7 +97,9 @@ export class BaileysIncomingMessageService {
     @inject(BaileysUpsertMediaEnricher)
     private readonly upsertMediaEnricher: BaileysUpsertMediaEnricher,
     @inject(BalanceWorkerStatusGrpcClientService)
-    private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService
+    private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
+    @inject(BaileysDeliveryConfirmationService)
+    private readonly deliveryConfirmation: BaileysDeliveryConfirmationService
   ) {
     this.startCleanupInterval();
     this.startQueueProcessor();
@@ -907,7 +914,11 @@ export class BaileysIncomingMessageService {
 
       const text = callAction.show_message_text?.trim();
       if (callAction.show_message_on_call && text) {
-        const sentMessage = await socket.sendMessage(jid, { text });
+        const sentMessage = await this.sendMessageWithConfirmation(
+          socket,
+          jid,
+          { text }
+        );
         const sentMessageId =
           sentMessage && typeof sentMessage.key?.id === 'string'
             ? sentMessage.key.id
@@ -961,6 +972,7 @@ export class BaileysIncomingMessageService {
     if (!events?.length) return;
 
     const promises = events.map((event) => {
+      this.trackDeliveryConfirmation(event.key, event.update?.status);
       const patch = this.mapStatusToPatch(event.update?.status);
       return this.applyStatusPatch(event.key, patch);
     });
@@ -968,11 +980,32 @@ export class BaileysIncomingMessageService {
     await Promise.allSettled(promises);
   }
 
+  private trackDeliveryConfirmation(
+    key: WAMessageKey | undefined,
+    status?: proto.WebMessageInfo.Status | null
+  ): void {
+    if (!key?.id || !key.fromMe || status === null || status === undefined) {
+      return;
+    }
+
+    if (status === proto.WebMessageInfo.Status.ERROR) {
+      this.deliveryConfirmation.markFailed(key.id);
+      return;
+    }
+
+    if (status >= proto.WebMessageInfo.Status.SERVER_ACK) {
+      this.deliveryConfirmation.markSent(key.id);
+    }
+  }
+
   private async handleMessageReceiptUpdate(events: MessageUserReceiptUpdate[]) {
     if (!events?.length) return;
 
     const promises = events.map((event) => {
       const patch = this.mapReceiptToPatch(event.receipt);
+      if (patch && event.key?.id && event.key.fromMe) {
+        this.deliveryConfirmation.markSent(event.key.id);
+      }
       return this.applyStatusPatch(event.key, patch);
     });
 
@@ -1130,12 +1163,88 @@ export class BaileysIncomingMessageService {
     await this.currentSocket.sendPresenceUpdate('paused', jid);
   }
 
+  private async sendMessageWithConfirmation(
+    socket: WASocket,
+    jid: string,
+    content: AnyMessageContent,
+    options?: {
+      quoted?: WAMessage;
+    }
+  ): Promise<WAMessage> {
+    let lastError: unknown = null;
+    let lastMessageId: string | undefined;
+    let lastOutcome: 'failed' | 'timeout' = 'timeout';
+    let hadConfirmationFailure = false;
+
+    for (
+      let attempt = 1;
+      attempt <= this.SEND_CONFIRMATION_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      try {
+        const sentMessage = await socket.sendMessage(jid, content, options);
+        const sentMessageId = sentMessage?.key?.id;
+        if (!sentMessageId) {
+          throw new Error('Baileys send returned message without key.id');
+        }
+
+        lastMessageId = sentMessageId;
+        const outcome = await this.deliveryConfirmation.waitForOutcome(
+          sentMessageId,
+          this.SEND_CONFIRMATION_TIMEOUT_MS
+        );
+
+        if (outcome === 'sent') {
+          return sentMessage;
+        }
+
+        hadConfirmationFailure = true;
+        lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
+        lastError =
+          outcome === 'failed'
+            ? new Error(
+                `Message delivery failed acknowledgement for ${sentMessageId}`
+              )
+            : new Error(
+                `Message delivery confirmation timeout for ${sentMessageId}`
+              );
+      } catch (error) {
+        lastError = error;
+      }
+
+      if (attempt < this.SEND_CONFIRMATION_MAX_ATTEMPTS) {
+        const backoffIndex = Math.min(
+          attempt - 1,
+          this.SEND_CONFIRMATION_BACKOFF_MS.length - 1
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.SEND_CONFIRMATION_BACKOFF_MS[backoffIndex])
+        );
+      }
+    }
+
+    if (hadConfirmationFailure) {
+      throw new MessageDeliveryConfirmationFailedError({
+        maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
+        lastMessageId,
+        lastOutcome,
+        cause: lastError,
+      });
+    }
+
+    throw (
+      (lastError as Error) ?? new Error('Baileys send with confirmation failed')
+    );
+  }
+
   async reply(jid: string, quoted: WAMessage, content: AnyMessageContent) {
     if (!this.currentSocket) {
       throw new Error('Socket not connected');
     }
 
-    return this.currentSocket.sendMessage(jid, content, { quoted });
+    return this.sendMessageWithConfirmation(this.currentSocket, jid, content, {
+      quoted,
+    });
   }
 
   updateRejectCallConfig(rejectCall: boolean): void {

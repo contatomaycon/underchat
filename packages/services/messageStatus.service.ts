@@ -108,6 +108,50 @@ export class MessageStatusService {
     return publishedMessage;
   }
 
+  async markMessageAsNotSent(
+    accountId: string,
+    messageId: string
+  ): Promise<IChatMessage | null> {
+    if (!accountId || !messageId) {
+      return null;
+    }
+
+    const existingMessage =
+      await this.findMessageByMessageIdWithRetry(messageId);
+    if (!existingMessage?.message_id) {
+      return null;
+    }
+
+    await this.markSummaryAsFailedAtomically(existingMessage.message_id);
+
+    const canonicalMessage = await this.findMessageByMessageIdWithRetry(
+      existingMessage.message_id
+    );
+
+    const channelAccountId =
+      canonicalMessage?.account?.id ?? existingMessage.account?.id ?? accountId;
+
+    const fallbackSummary = this.forceFailedSummary(existingMessage.summary);
+    const fallbackMessage: IChatMessage = {
+      ...existingMessage,
+      summary: fallbackSummary,
+    };
+
+    const publishedMessage = canonicalMessage
+      ? ({
+          ...canonicalMessage,
+          summary: this.forceFailedSummary(canonicalMessage.summary),
+        } as IChatMessage)
+      : fallbackMessage;
+
+    await this.publishCentrifugoImmediate(
+      chatAccountCentrifugo(channelAccountId),
+      publishedMessage
+    );
+
+    return publishedMessage;
+  }
+
   /**
    * Publishes message status update immediately without debounce or deduplication.
    * Uses the immediate publish method for critical real-time updates.
@@ -186,6 +230,19 @@ export class MessageStatusService {
     }
 
     return normalized;
+  }
+
+  private forceFailedSummary(
+    summary: IChatMessage['summary'] | null | undefined
+  ): IChatMessage['summary'] {
+    const normalized = this.normalizeSummaryState(summary);
+    return {
+      ...normalized,
+      is_sent: false,
+      is_delivered: false,
+      is_seen: false,
+      is_sent_to_internal: false,
+    };
   }
 
   private toNonEmptyString(value: unknown): string | undefined {
@@ -678,6 +735,11 @@ export class MessageStatusService {
       }
       
       def summary = ctx._source.summary;
+      if (summary.containsKey('is_sent_to_internal') && summary.is_sent_to_internal == false) {
+        ctx.op = 'noop';
+        return;
+      }
+
       def shouldUpdate = false;
       def changed = false;
       
@@ -733,6 +795,73 @@ export class MessageStatusService {
         ctx.op = 'noop';
       }
     `;
+  }
+
+  private buildMarkSummaryAsFailedScriptSource(): string {
+    return `
+      if (ctx._source == null) {
+        ctx.op = 'noop';
+        return;
+      }
+
+      if (ctx._source.summary == null) {
+        ctx._source.summary = [:];
+      }
+
+      def summary = ctx._source.summary;
+      def changed = false;
+
+      if (!summary.containsKey('is_sent') || summary.is_sent != false) {
+        summary.is_sent = false;
+        changed = true;
+      }
+
+      if (!summary.containsKey('is_delivered') || summary.is_delivered != false) {
+        summary.is_delivered = false;
+        changed = true;
+      }
+
+      if (!summary.containsKey('is_seen') || summary.is_seen != false) {
+        summary.is_seen = false;
+        changed = true;
+      }
+
+      if (!summary.containsKey('is_sent_to_internal') || summary.is_sent_to_internal != false) {
+        summary.is_sent_to_internal = false;
+        changed = true;
+      }
+
+      if (!changed) {
+        ctx.op = 'noop';
+      }
+    `;
+  }
+
+  private async markSummaryAsFailedAtomically(
+    messageId: string
+  ): Promise<void> {
+    if (this.isCircuitOpen()) {
+      throw new Error('Elasticsearch circuit breaker is open');
+    }
+
+    const scriptSource = this.buildMarkSummaryAsFailedScriptSource();
+    try {
+      await this.elasticDatabaseService.updateWithScriptOCC(
+        EElasticIndex.message,
+        messageId,
+        {
+          source: scriptSource,
+          params: {},
+        },
+        {
+          maxRetries: 5,
+        }
+      );
+      this.recordCircuitSuccess();
+    } catch (error) {
+      this.recordCircuitFailure();
+      throw error;
+    }
   }
 
   private async updateSummaryAtomically(

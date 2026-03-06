@@ -199,14 +199,24 @@ const mergeMessageDeliverySummary = (
     isSeen;
   const isSent =
     normalizedIncoming.is_sent || normalizedExisting.is_sent || isDelivered;
+  const hasDeliveryFailure =
+    normalizedIncoming.is_sent_to_internal === false ||
+    normalizedExisting.is_sent_to_internal === false;
+
+  if (hasDeliveryFailure) {
+    return {
+      is_sent: false,
+      is_delivered: false,
+      is_seen: false,
+      is_sent_to_internal: false,
+    };
+  }
 
   return {
     is_sent: isSent,
     is_delivered: isDelivered,
     is_seen: isSeen,
-    is_sent_to_internal:
-      normalizedIncoming.is_sent_to_internal ||
-      normalizedExisting.is_sent_to_internal,
+    is_sent_to_internal: true,
   };
 };
 

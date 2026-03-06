@@ -1815,6 +1815,71 @@ function normalizeSocketMessageToListMessage(
   };
 }
 
+function normalizeMessageSummary(
+  summary: ListMessageResult['summary'] | null | undefined
+): ListMessageResult['summary'] | null {
+  if (!summary) {
+    return null;
+  }
+
+  const isSeen = summary.is_seen === true;
+  const isDelivered = summary.is_delivered === true || isSeen;
+  const isSent = summary.is_sent === true || isDelivered;
+
+  return {
+    is_sent: isSent,
+    is_delivered: isDelivered,
+    is_seen: isSeen,
+    is_sent_to_internal: summary.is_sent_to_internal === true,
+  };
+}
+
+function mergeMessageSummary(
+  previous: ListMessageResult['summary'] | null | undefined,
+  incoming: ListMessageResult['summary'] | null | undefined
+): ListMessageResult['summary'] | null | undefined {
+  const normalizedPrevious = normalizeMessageSummary(previous);
+  const normalizedIncoming = normalizeMessageSummary(incoming);
+
+  if (!normalizedPrevious && !normalizedIncoming) {
+    return undefined;
+  }
+  if (!normalizedPrevious) {
+    return normalizedIncoming;
+  }
+  if (!normalizedIncoming) {
+    return normalizedPrevious;
+  }
+
+  const hasDeliveryFailure =
+    normalizedPrevious.is_sent_to_internal === false ||
+    normalizedIncoming.is_sent_to_internal === false;
+
+  if (hasDeliveryFailure) {
+    return {
+      is_sent: false,
+      is_delivered: false,
+      is_seen: false,
+      is_sent_to_internal: false,
+    };
+  }
+
+  const isSeen = normalizedPrevious.is_seen || normalizedIncoming.is_seen;
+  const isDelivered =
+    normalizedPrevious.is_delivered ||
+    normalizedIncoming.is_delivered ||
+    isSeen;
+  const isSent =
+    normalizedPrevious.is_sent || normalizedIncoming.is_sent || isDelivered;
+
+  return {
+    is_sent: isSent,
+    is_delivered: isDelivered,
+    is_seen: isSeen,
+    is_sent_to_internal: true,
+  };
+}
+
 function mergeMessageLists(
   current: ListMessageResult[],
   incoming: ListMessageResult
@@ -1835,10 +1900,7 @@ function mergeMessageLists(
         : previous.content;
     const mergedSummary =
       incoming.summary && typeof incoming.summary === 'object'
-        ? {
-            ...(previous.summary ?? {}),
-            ...incoming.summary,
-          }
+        ? mergeMessageSummary(previous.summary, incoming.summary)
         : previous.summary;
     const mergedMessageKey =
       incoming.message_key && typeof incoming.message_key === 'object'
@@ -3904,6 +3966,23 @@ function BubbleContent({
   return renderWithContextCards(null);
 }
 
+function resolveMessageFeedbackIcon(
+  message: ListMessageResult,
+  fromMe: boolean
+): { name: keyof typeof Ionicons.glyphMap; color: string } {
+  if (fromMe && message.summary?.is_sent_to_internal === false) {
+    return {
+      name: 'alert-circle',
+      color: colors.error,
+    };
+  }
+
+  return {
+    name: 'checkmark-done',
+    color: fromMe ? colors.bubbleSentTime : colors.grey600,
+  };
+}
+
 function MessageBubble({
   msg,
   fromMe,
@@ -4005,6 +4084,7 @@ function MessageBubble({
       content.quoted ||
       content.message ||
       content.template);
+  const feedbackIcon = resolveMessageFeedbackIcon(msg, fromMe);
 
   if (!content || !hasContent) {
     return (
@@ -4062,9 +4142,9 @@ function MessageBubble({
               </Text>
             ) : null}
             <Ionicons
-              name="checkmark-done"
+              name={feedbackIcon.name}
               size={14}
-              color={fromMe ? colors.bubbleSentTime : colors.grey600}
+              color={feedbackIcon.color}
             />
           </View>
         </View>
@@ -4186,9 +4266,9 @@ function MessageBubble({
             </Text>
           ) : null}
           <Ionicons
-            name="checkmark-done"
+            name={feedbackIcon.name}
             size={14}
-            color={fromMe ? colors.bubbleSentTime : colors.grey600}
+            color={feedbackIcon.color}
           />
         </View>
       </Pressable>
@@ -4269,8 +4349,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [userSectors, setUserSectors] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
-  const [isCurrentUserMasterOrAdministrator, setIsCurrentUserMasterOrAdministrator] =
-    useState(false);
+  const [
+    isCurrentUserMasterOrAdministrator,
+    setIsCurrentUserMasterOrAdministrator,
+  ] = useState(false);
   const [currentUserStatus, setCurrentUserStatus] =
     useState<ChatUserStatus>('offline');
   const [inChatCountForWorker, setInChatCountForWorker] = useState(0);
@@ -6413,7 +6495,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           ? selectedTransferSectorUserId
           : null;
     const currentPrimaryUserId = chatInfo.user?.id ?? null;
-    if (targetUserId && currentPrimaryUserId && targetUserId === currentPrimaryUserId) {
+    if (
+      targetUserId &&
+      currentPrimaryUserId &&
+      targetUserId === currentPrimaryUserId
+    ) {
       Alert.alert(pt.warning_title, pt.cannot_transfer_to_current_primary);
       return;
     }

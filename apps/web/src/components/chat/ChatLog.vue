@@ -244,7 +244,7 @@ const resolveFeedbackIcon = (
   if (isMessageUploadError(message))
     return { icon: 'tabler-alert-triangle', color: 'error' };
   if (message.summary?.is_sent_to_internal === false)
-    return { icon: 'tabler-clock', color: undefined };
+    return { icon: 'tabler-alert-triangle', color: 'error' };
 
   if (message.summary?.is_seen)
     return { icon: 'tabler-checks', color: 'primary' };
@@ -263,7 +263,9 @@ const resolveNonEmptyPhoto = (photo?: string | null): string | null => {
 
 const resolvePhoto = (message: ListMessageResult): string => {
   if (isTypeUser(message)) {
-    const contactPhoto = resolveNonEmptyPhoto(chatStore.activeChat?.contact?.photo);
+    const contactPhoto = resolveNonEmptyPhoto(
+      chatStore.activeChat?.contact?.photo
+    );
     if (contactPhoto) return contactPhoto;
 
     const chatPhoto = resolveNonEmptyPhoto(chatStore.activeChat?.photo);

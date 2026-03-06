@@ -11,6 +11,7 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { MessageStatusService } from '@core/services/messageStatus.service';
 
 @singleton()
 export class MessageSendWwebjsDlqConsume {
@@ -28,7 +29,9 @@ export class MessageSendWwebjsDlqConsume {
     @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    @inject(MessageStatusService)
+    private readonly messageStatusService: MessageStatusService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -91,6 +94,7 @@ export class MessageSendWwebjsDlqConsume {
             }
           );
 
+          await this.markMessageAsFailedToSend(data, 'global_redrive_limit');
           await this.commitNext(topic, partition, offset);
           return;
         }
@@ -117,6 +121,7 @@ export class MessageSendWwebjsDlqConsume {
             redrive_count: nextRedriveCount,
             error: this.errorMessage(error),
           });
+          await this.markMessageAsFailedToSend(data, 'redrive_publish_failed');
         } finally {
           await this.commitNext(topic, partition, offset);
         }
@@ -285,6 +290,56 @@ export class MessageSendWwebjsDlqConsume {
     }
 
     return String(error);
+  }
+
+  private async markMessageAsFailedToSend(
+    data: IWorkerSendMessageDlq,
+    reason: string
+  ): Promise<void> {
+    const messageId = this.extractMessageId(data.payload);
+    if (!messageId) {
+      console.warn(
+        '[MessageSendWwebjsDlq] Unable to hard-fail message: missing message_id',
+        {
+          worker_id: data.worker_id,
+          queue_key: data.queue_key,
+          reason,
+        }
+      );
+      return;
+    }
+
+    try {
+      await this.messageStatusService.markMessageAsNotSent(
+        wwebjsEnvironment.wwebjsAccountId,
+        messageId
+      );
+    } catch (error) {
+      console.error(
+        '[MessageSendWwebjsDlq] Failed to mark message as not sent',
+        {
+          worker_id: data.worker_id,
+          message_id: messageId,
+          queue_key: data.queue_key,
+          reason,
+          error: this.errorMessage(error),
+        }
+      );
+    }
+  }
+
+  private extractMessageId(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const value = (payload as { message_id?: unknown }).message_id;
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   private async commitNext(

@@ -11,6 +11,7 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { MessageStatusService } from '@core/services/messageStatus.service';
 
 @singleton()
 export class MessageSendDlqConsume {
@@ -18,15 +19,19 @@ export class MessageSendDlqConsume {
   private isRunning = false;
   private readonly partitionChains: Map<number, Promise<void>> = new Map();
   private readonly MAX_REDRIVE_ATTEMPTS = 5;
+  private readonly MAX_GLOBAL_REDRIVE_COUNT = 5;
   private readonly RETRY_BASE_MS = 500;
   private readonly RETRY_MAX_MS = 8000;
+  private readonly REDRIVE_COUNT_FIELD = '__baileys_redrive_count';
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
     @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    @inject(MessageStatusService)
+    private readonly messageStatusService: MessageStatusService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -72,8 +77,30 @@ export class MessageSendDlqConsume {
         this.partitionChains.get(partition) ?? Promise.resolve();
 
       const currentChain = previousChain.then(async () => {
+        const nextRedriveCount = this.resolveNextRedriveCount(data);
+
+        if (nextRedriveCount > this.MAX_GLOBAL_REDRIVE_COUNT) {
+          console.error(
+            '[MessageSendDlq] Message discarded after global redrive limit',
+            {
+              worker_id: data.worker_id,
+              queue_key: data.queue_key,
+              chat_id: data.chat_id,
+              partition: data.partition,
+              offset: data.offset,
+              attempts: data.attempts,
+              redrive_count: data.redrive_count ?? 0,
+              max_global_redrive_count: this.MAX_GLOBAL_REDRIVE_COUNT,
+            }
+          );
+
+          await this.markMessageAsFailedToSend(data, 'global_redrive_limit');
+          await this.commitNext(topic, partition, offset);
+          return;
+        }
+
         try {
-          await this.redriveWithRetry(data, redriveTopic);
+          await this.redriveWithRetry(data, redriveTopic, nextRedriveCount);
           console.info('[MessageSendDlq] Message requeued', {
             worker_id: data.worker_id,
             queue_key: data.queue_key,
@@ -81,6 +108,7 @@ export class MessageSendDlqConsume {
             partition: data.partition,
             offset: data.offset,
             attempts: data.attempts,
+            redrive_count: nextRedriveCount,
           });
         } catch (error) {
           console.error('[MessageSendDlq] Failed to requeue message', {
@@ -90,8 +118,10 @@ export class MessageSendDlqConsume {
             partition: data.partition,
             offset: data.offset,
             attempts: data.attempts,
+            redrive_count: nextRedriveCount,
             error: this.errorMessage(error),
           });
+          await this.markMessageAsFailedToSend(data, 'redrive_publish_failed');
         } finally {
           await this.commitNext(topic, partition, offset);
         }
@@ -166,14 +196,16 @@ export class MessageSendDlqConsume {
 
   private async redriveWithRetry(
     data: IWorkerSendMessageDlq,
-    redriveTopic: string
+    redriveTopic: string,
+    nextRedriveCount: number
   ): Promise<void> {
     const key = this.resolveRedriveKey(data);
+    const payload = this.createRedrivePayload(data.payload, nextRedriveCount);
     let lastError: unknown = null;
 
     for (let attempt = 1; attempt <= this.MAX_REDRIVE_ATTEMPTS; attempt++) {
       try {
-        await this.streamProducerService.send(redriveTopic, data.payload, key);
+        await this.streamProducerService.send(redriveTopic, payload, key);
         return;
       } catch (error) {
         lastError = error;
@@ -184,6 +216,31 @@ export class MessageSendDlqConsume {
     }
 
     throw lastError ?? new Error('Failed to requeue DLQ message');
+  }
+
+  private resolveNextRedriveCount(data: IWorkerSendMessageDlq): number {
+    const count =
+      typeof data.redrive_count === 'number' &&
+      Number.isFinite(data.redrive_count) &&
+      data.redrive_count >= 0
+        ? Math.floor(data.redrive_count)
+        : 0;
+
+    return count + 1;
+  }
+
+  private createRedrivePayload(
+    payload: unknown,
+    redriveCount: number
+  ): unknown {
+    if (!payload || typeof payload !== 'object') {
+      return payload;
+    }
+
+    return {
+      ...(payload as Record<string, unknown>),
+      [this.REDRIVE_COUNT_FIELD]: redriveCount,
+    };
   }
 
   private resolveRedriveKey(data: IWorkerSendMessageDlq): string | undefined {
@@ -233,6 +290,53 @@ export class MessageSendDlqConsume {
     }
 
     return String(error);
+  }
+
+  private async markMessageAsFailedToSend(
+    data: IWorkerSendMessageDlq,
+    reason: string
+  ): Promise<void> {
+    const messageId = this.extractMessageId(data.payload);
+    if (!messageId) {
+      console.warn(
+        '[MessageSendDlq] Unable to hard-fail message: missing message_id',
+        {
+          worker_id: data.worker_id,
+          queue_key: data.queue_key,
+          reason,
+        }
+      );
+      return;
+    }
+
+    try {
+      await this.messageStatusService.markMessageAsNotSent(
+        baileysEnvironment.baileysAccountId,
+        messageId
+      );
+    } catch (error) {
+      console.error('[MessageSendDlq] Failed to mark message as not sent', {
+        worker_id: data.worker_id,
+        message_id: messageId,
+        queue_key: data.queue_key,
+        reason,
+        error: this.errorMessage(error),
+      });
+    }
+  }
+
+  private extractMessageId(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const value = (payload as { message_id?: unknown }).message_id;
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
   }
 
   private async commitNext(

@@ -1449,7 +1449,7 @@ const resolveFeedbackIcon = (
     return { icon: 'tabler-file', color: undefined };
 
   if (message.summary?.is_sent_to_internal === false)
-    return { icon: 'tabler-clock', color: undefined };
+    return { icon: 'tabler-alert-triangle', color: 'error' };
 
   if (message.summary?.is_seen)
     return { icon: 'tabler-checks', color: 'primary' };

@@ -34,6 +34,7 @@ import { webcrypto } from 'node:crypto';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { MessageKeyLookupService } from '@core/services/messageKeyLookup.service';
 import { buildForwardExtraOptions } from '@core/services/wwebjs/util/buildForwardExtraOptions';
+import { isMessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 
 interface IPartitionCommitState {
   nextContiguousOffset: number | null;
@@ -418,6 +419,24 @@ export class MessageSendWwebjsConsume {
         return;
       } catch (error) {
         lastError = error;
+        if (isMessageDeliveryConfirmationFailedError(error)) {
+          console.warn('[MessageSendWwebjs] Delivery confirmation failed', {
+            chat_id: envelope.chatId,
+            queue_key: envelope.queueKey,
+            partition: envelope.partition,
+            offset: envelope.offset,
+            attempt,
+            result: 'delivery_unconfirmed_to_dlq',
+            error: this.errorMessage(error),
+          });
+
+          await this.publishDlqWithRetry(
+            envelope,
+            error,
+            error.maxAttempts ?? attempt
+          );
+          return;
+        }
         const terminalReason = this.resolveTerminalReason(error);
 
         if (terminalReason) {
