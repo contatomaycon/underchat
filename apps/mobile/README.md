@@ -60,6 +60,10 @@ Esse comando usa o perfil `production-ios` na seção `submit` do EAS.
 
 ## Android
 
+- Android
+  pnpm run run:android
+  pnpm exec expo start --dev-client --android --tunnel
+
 Comandos:
 
 - Gerar APK (distribuição interna): `pnpm --filter mobile run build:android:apk`

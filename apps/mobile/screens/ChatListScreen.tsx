@@ -116,6 +116,29 @@ const CHAT_STATUS = {
   chatbot: 'ura' as const,
 };
 
+type ChatListLoadTrigger =
+  | 'initial'
+  | 'focus'
+  | 'realtime'
+  | 'resume'
+  | 'manual_refresh'
+  | 'action'
+  | 'criteria_change';
+type PendingChatListLoadTrigger = Exclude<
+  ChatListLoadTrigger,
+  'manual_refresh'
+>;
+
+const FOCUS_RELOAD_COOLDOWN_MS = 10_000;
+const CHAT_LIST_TRIGGER_PRIORITY: Record<PendingChatListLoadTrigger, number> = {
+  initial: 6,
+  criteria_change: 5,
+  action: 4,
+  realtime: 3,
+  resume: 2,
+  focus: 1,
+};
+
 const CHATBOT_FILTER_OPTIONS: Array<{
   value: ChatbotFilterStatus;
   label: string;
@@ -638,8 +661,19 @@ export function ChatListScreen({ route, navigation }: Props) {
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
+  const scheduledReloadTriggerRef = useRef<PendingChatListLoadTrigger | null>(
+    null
+  );
   const loadingRef = useRef(false);
   const isLoadingMoreRef = useRef(false);
+  const hasLoadedOnceRef = useRef(false);
+  const wasFocusedRef = useRef(false);
+  const isFocusedRef = useRef(isFocused);
+  const isAuthContextResolvedRef = useRef(false);
+  const pendingReloadTriggerRef = useRef<PendingChatListLoadTrigger | null>(
+    null
+  );
+  const lastAutomaticReloadAtRef = useRef<number | null>(null);
   const openedSwipeableRef = useRef<SwipeableMethods | null>(null);
   const closeServiceConfigRequestRef = useRef(0);
   const profileSidebarReopenTimerRef = useRef<ReturnType<
@@ -651,12 +685,12 @@ export function ChatListScreen({ route, navigation }: Props) {
   });
 
   useEffect(() => {
-    loadingRef.current = loading;
-  }, [loading]);
-
-  useEffect(() => {
     isLoadingMoreRef.current = isLoadingMore;
   }, [isLoadingMore]);
+
+  useEffect(() => {
+    isFocusedRef.current = isFocused;
+  }, [isFocused]);
 
   useEffect(() => {
     return () => {
@@ -781,14 +815,15 @@ export function ChatListScreen({ route, navigation }: Props) {
     isSectorsResolved &&
     isChannelsResolved;
 
+  useEffect(() => {
+    isAuthContextResolvedRef.current = isAuthContextResolved;
+  }, [isAuthContextResolved]);
+
   const load = useCallback(
-    async (
-      append = false,
-      options?: {
-        silentLoading?: boolean;
-      }
-    ) => {
-      const silentLoading = options?.silentLoading ?? false;
+    async (options?: { append?: boolean; trigger?: ChatListLoadTrigger }) => {
+      const append = options?.append ?? false;
+      const trigger = options?.trigger ?? 'criteria_change';
+
       if (append) {
         const { currentPage, totalPages } = paginationRef.current;
         if (
@@ -801,9 +836,37 @@ export function ChatListScreen({ route, navigation }: Props) {
         setIsLoadingMore(true);
         isLoadingMoreRef.current = true;
       } else {
-        if (!silentLoading) {
+        if (trigger === 'focus' && hasLoadedOnceRef.current) {
+          const lastAutomaticReloadAt = lastAutomaticReloadAtRef.current;
+          if (
+            lastAutomaticReloadAt &&
+            Date.now() - lastAutomaticReloadAt < FOCUS_RELOAD_COOLDOWN_MS
+          ) {
+            return;
+          }
+        }
+
+        if (loadingRef.current) {
+          if (trigger !== 'manual_refresh') {
+            const pendingTrigger = trigger as PendingChatListLoadTrigger;
+            const currentPendingTrigger = pendingReloadTriggerRef.current;
+            if (
+              !currentPendingTrigger ||
+              CHAT_LIST_TRIGGER_PRIORITY[pendingTrigger] >=
+                CHAT_LIST_TRIGGER_PRIORITY[currentPendingTrigger]
+            ) {
+              pendingReloadTriggerRef.current = pendingTrigger;
+            }
+          }
+          return;
+        }
+
+        const shouldShowInitialSkeleton =
+          trigger === 'initial' && !hasLoadedOnceRef.current;
+        if (shouldShowInitialSkeleton) {
           setLoading(true);
         }
+
         loadingRef.current = true;
         paginationRef.current = { currentPage: 1, totalPages: 1 };
         setHasMorePages(false);
@@ -1004,10 +1067,28 @@ export function ChatListScreen({ route, navigation }: Props) {
           setIsLoadingMore(false);
           isLoadingMoreRef.current = false;
         } else {
-          if (!silentLoading) {
-            setLoading(false);
-          }
+          setLoading(false);
           loadingRef.current = false;
+          hasLoadedOnceRef.current = true;
+
+          if (
+            trigger === 'initial' ||
+            trigger === 'focus' ||
+            trigger === 'realtime' ||
+            trigger === 'resume'
+          ) {
+            lastAutomaticReloadAtRef.current = Date.now();
+          }
+
+          const pendingTrigger = pendingReloadTriggerRef.current;
+          pendingReloadTriggerRef.current = null;
+          if (
+            pendingTrigger &&
+            isFocusedRef.current &&
+            isAuthContextResolvedRef.current
+          ) {
+            void load({ trigger: pendingTrigger });
+          }
         }
       }
     },
@@ -1026,23 +1107,23 @@ export function ChatListScreen({ route, navigation }: Props) {
   );
 
   const handleLoadMore = useCallback(() => {
-    if (loading || isLoadingMore || !hasMorePages) {
+    if (loadingRef.current || isLoadingMoreRef.current || !hasMorePages) {
       return;
     }
 
-    void load(true);
-  }, [hasMorePages, isLoadingMore, load, loading]);
+    void load({ append: true, trigger: 'criteria_change' });
+  }, [hasMorePages, load]);
 
   const handleRefresh = useCallback(() => {
-    if (loading || isLoadingMore || isRefreshing) {
+    if (loadingRef.current || isLoadingMoreRef.current || isRefreshing) {
       return;
     }
 
     setIsRefreshing(true);
-    void load(false, { silentLoading: true }).finally(() => {
+    void load({ trigger: 'manual_refresh' }).finally(() => {
       setIsRefreshing(false);
     });
-  }, [isLoadingMore, isRefreshing, load, loading]);
+  }, [isRefreshing, load]);
 
   const canReceiveChatNotification = useCallback(
     (chatData: SocketChatPayload): boolean => {
@@ -1144,25 +1225,54 @@ export function ChatListScreen({ route, navigation }: Props) {
     [socketPermissions, queue, inChat, currentUserId, userSectors, userChannels]
   );
 
-  const scheduleRealtimeReload = useCallback(() => {
-    if (realtimeReloadTimer.current) {
-      return;
-    }
-    realtimeReloadTimer.current = setTimeout(() => {
-      realtimeReloadTimer.current = null;
-      load();
-    }, 250);
-  }, [load]);
+  const scheduleRealtimeReload = useCallback(
+    (trigger: PendingChatListLoadTrigger = 'realtime') => {
+      const currentScheduledTrigger = scheduledReloadTriggerRef.current;
+      if (
+        !currentScheduledTrigger ||
+        CHAT_LIST_TRIGGER_PRIORITY[trigger] >=
+          CHAT_LIST_TRIGGER_PRIORITY[currentScheduledTrigger]
+      ) {
+        scheduledReloadTriggerRef.current = trigger;
+      }
+
+      if (realtimeReloadTimer.current) {
+        return;
+      }
+
+      realtimeReloadTimer.current = setTimeout(() => {
+        realtimeReloadTimer.current = null;
+        const scheduledTrigger =
+          scheduledReloadTriggerRef.current ?? 'realtime';
+        scheduledReloadTriggerRef.current = null;
+        void load({ trigger: scheduledTrigger });
+      }, 250);
+    },
+    [load]
+  );
 
   useEffect(() => {
+    const wasFocused = wasFocusedRef.current;
+    wasFocusedRef.current = isFocused;
+
     if (!isFocused || !isAuthContextResolved) {
-      if (!isAuthContextResolved) {
+      if (!hasLoadedOnceRef.current) {
         setLoading(true);
       }
       return;
     }
 
-    load();
+    if (!hasLoadedOnceRef.current) {
+      void load({ trigger: 'initial' });
+      return;
+    }
+
+    if (!wasFocused) {
+      void load({ trigger: 'focus' });
+      return;
+    }
+
+    void load({ trigger: 'criteria_change' });
   }, [isFocused, isAuthContextResolved, load]);
 
   useFocusEffect(
@@ -1217,6 +1327,7 @@ export function ChatListScreen({ route, navigation }: Props) {
           clearTimeout(realtimeReloadTimer.current);
           realtimeReloadTimer.current = null;
         }
+        scheduledReloadTriggerRef.current = null;
       };
     }, [canReceiveChatNotification, currentUserId, scheduleRealtimeReload])
   );
@@ -1224,7 +1335,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   useEffect(() => {
     return addAppResumeListener(() => {
       if (!isFocused || !isAuthContextResolved) return;
-      scheduleRealtimeReload();
+      scheduleRealtimeReload('resume');
     });
   }, [isAuthContextResolved, isFocused, scheduleRealtimeReload]);
 
@@ -1655,7 +1766,7 @@ export function ChatListScreen({ route, navigation }: Props) {
 
     Alert.alert(pt.success_title, pt.transfer_successfully);
     closeTransferModal();
-    void load();
+    void load({ trigger: 'action' });
   }, [
     closeTransferModal,
     load,
@@ -1709,7 +1820,7 @@ export function ChatListScreen({ route, navigation }: Props) {
 
       closeCloseServiceModal();
       Alert.alert(pt.success_title, pt.close_service_success);
-      void load();
+      void load({ trigger: 'action' });
     } catch {
       Alert.alert(pt.error_title, pt.chat_status_update_error);
     }

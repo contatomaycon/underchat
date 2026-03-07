@@ -27,6 +27,8 @@ import {
   Alert,
   Keyboard,
   Switch,
+  NativeEventEmitter,
+  NativeModules,
   type StyleProp,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -73,6 +75,11 @@ import * as Location from 'expo-location';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
+import VideoTrimModule, {
+  showEditor,
+  isValidFile,
+  type Spec as VideoTrimSpec,
+} from 'react-native-video-trim';
 import {
   listMessages,
   createMessage,
@@ -406,6 +413,27 @@ function resolveMimeTypeFromExtension(extension: string): string {
   return 'audio/mp4';
 }
 
+function normalizeLocalFileUri(uri: string): string {
+  if (!uri) return uri;
+  if (/^[a-z][a-z0-9+\-.]*:/i.test(uri)) {
+    return uri;
+  }
+  if (uri.startsWith('/')) {
+    return `file://${uri}`;
+  }
+  return uri;
+}
+
+function resolveFileNameFromUri(uri: string, fallback: string): string {
+  if (!uri) return fallback;
+  const normalizedUri = uri.split('?')[0]?.split('#')[0] ?? uri;
+  const fromPath = normalizedUri.split('/').pop()?.trim();
+  if (!fromPath) return fallback;
+  const decoded = decodeURIComponent(fromPath);
+  if (decoded.length === 0) return fallback;
+  return decoded;
+}
+
 async function appendMediaToFormData(
   formData: FormData,
   fieldName: string,
@@ -454,6 +482,19 @@ const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
+const MAX_VIDEO_TRIM_DURATION_SECONDS = 120;
+const VIDEO_EDITOR_OPENING_MIN_VISIBLE_MS = 250;
+const ATTACHMENT_PICKER_TRANSITION_DELAY_MS = 350;
+const IMAGE_ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif']);
+const VIDEO_ALLOWED_EXTENSIONS = new Set([
+  'mp4',
+  'avi',
+  'flv',
+  'mkv',
+  'mov',
+  '3gp',
+]);
+const VIDEO_TRIM_EVENT_NAME = 'VideoTrim';
 const MAX_CONTACTS_SELECTED = 10;
 const MESSAGE_SWIPE_REPLY_ACTION_WIDTH = 84;
 const MESSAGE_SWIPE_REPLY_THRESHOLD = 44;
@@ -498,6 +539,7 @@ type MessageActionKey =
   | 'copy'
   | 'download'
   | 'forward'
+  | 'retry'
   | 'react'
   | 'edit'
   | 'view_edits'
@@ -1011,6 +1053,15 @@ function canInteractWithMessage(message: ListMessageResult): boolean {
   return true;
 }
 
+function isRetryableFailedVideoMessage(message: ListMessageResult): boolean {
+  if (isDeletedMessage(message)) return false;
+  if (message.type_user === ETypeUserChat.client) return false;
+  if (message.summary?.is_sent_to_internal !== false) return false;
+  if (message.content?.type !== EMessageType.video) return false;
+  if (!readNonEmptyString(message.hash)) return false;
+  return !!readNonEmptyString(message.content?.video?.url);
+}
+
 function isTextMessage(message: ListMessageResult): boolean {
   return message.content?.type === EMessageType.text;
 }
@@ -1108,6 +1159,12 @@ function getExtensionFromUrl(url: string): string | null {
   const fileName = withoutQuery.split('/').pop() ?? '';
   const match = fileName.match(/\.([a-zA-Z0-9]+)$/);
   return match ? match[1].toLowerCase() : null;
+}
+
+function extractFileExtension(name: string | null | undefined): string {
+  if (!name) return '';
+  const ext = name.split('.').pop()?.trim().toLowerCase();
+  return ext ?? '';
 }
 
 function resolveMediaUri(url: string | null | undefined): string | null {
@@ -1873,17 +1930,20 @@ function mergeMessageSummary(
     return normalizedPrevious;
   }
 
-  const hasDeliveryFailure =
-    normalizedPrevious.is_sent_to_internal === false ||
-    normalizedIncoming.is_sent_to_internal === false;
+  const previousFailed = normalizedPrevious.is_sent_to_internal === false;
+  const incomingFailed = normalizedIncoming.is_sent_to_internal === false;
 
-  if (hasDeliveryFailure) {
+  if (incomingFailed) {
     return {
       is_sent: false,
       is_delivered: false,
       is_seen: false,
       is_sent_to_internal: false,
     };
+  }
+
+  if (previousFailed) {
+    return normalizedIncoming;
   }
 
   const isSeen = normalizedPrevious.is_seen || normalizedIncoming.is_seen;
@@ -1906,9 +1966,18 @@ function mergeMessageLists(
   current: ListMessageResult[],
   incoming: ListMessageResult
 ): ListMessageResult[] {
-  const existingIndex = current.findIndex(
-    (message) => message.message_id === incoming.message_id
-  );
+  const incomingHash = readNonEmptyString(incoming.hash);
+  const existingIndexByHash = incomingHash
+    ? current.findIndex(
+        (message) => readNonEmptyString(message.hash) === incomingHash
+      )
+    : -1;
+  const existingIndex =
+    existingIndexByHash >= 0
+      ? existingIndexByHash
+      : current.findIndex(
+          (message) => message.message_id === incoming.message_id
+        );
 
   if (existingIndex >= 0) {
     const next = [...current];
@@ -1939,15 +2008,30 @@ function mergeMessageLists(
           }
         : previous.user;
 
-    next[existingIndex] = {
+    const merged = {
       ...previous,
       ...incoming,
       content: mergedContent,
       summary: mergedSummary,
       message_key: mergedMessageKey,
       user: mergedUser,
+      hash:
+        readNonEmptyString(incoming.hash) ?? readNonEmptyString(previous.hash),
     };
-    return next;
+    next[existingIndex] = merged;
+    const mergedHash = readNonEmptyString(merged.hash);
+    return next.filter((message, index) => {
+      if (index === existingIndex) return true;
+      if (message.message_id === merged.message_id) return false;
+      if (
+        mergedHash &&
+        readNonEmptyString(message.hash) &&
+        readNonEmptyString(message.hash) === mergedHash
+      ) {
+        return false;
+      }
+      return true;
+    });
   }
 
   const next = [...current, incoming];
@@ -2533,6 +2617,29 @@ type CameraCaptureDraft = {
   fileName: string;
   mimeType: string;
   durationSec: number | null;
+  fileSize?: number | null;
+};
+
+type VideoTrimSessionResult =
+  | {
+      kind: 'success';
+      outputPath: string;
+      startTime: number;
+      endTime: number;
+      duration: number;
+    }
+  | { kind: 'cancel' }
+  | { kind: 'error'; message: string };
+
+type PendingVideoUploadDraft = {
+  hash: string;
+  uri: string;
+  fileName: string;
+  mimeType: string;
+  durationSec: number | null;
+  fileSize: number | null;
+  replyMessageId: string | null;
+  localMessageId: string;
 };
 
 function formatMessageTime(dateStr: string | null | undefined): string {
@@ -2812,7 +2919,9 @@ function VideoMessagePreview({
   onLongPress?: () => void;
 }) {
   const [thumbnailLoadError, setThumbnailLoadError] = useState(false);
-  const shouldUseVideoFramePreview = !thumbnailUri || thumbnailLoadError;
+
+  const shouldUseVideoFramePreview =
+    Platform.OS !== 'android' && (!thumbnailUri || thumbnailLoadError);
 
   const previewPlayer = useVideoPlayer(
     shouldUseVideoFramePreview ? { uri: sourceUri } : null,
@@ -3991,17 +4100,33 @@ function BubbleContent({
 function resolveMessageFeedbackIcon(
   message: ListMessageResult,
   fromMe: boolean
-): { name: keyof typeof Ionicons.glyphMap; color: string } {
-  if (fromMe && message.summary?.is_sent_to_internal === false) {
+): { name: keyof typeof Ionicons.glyphMap; color: string } | null {
+  if (!fromMe) return null;
+
+  if (message.summary?.is_sent_to_internal === false) {
     return {
       name: 'alert-circle',
       color: colors.error,
     };
   }
 
+  if (message.summary?.is_seen === true) {
+    return {
+      name: 'checkmark-done',
+      color: colors.primary,
+    };
+  }
+
+  if (message.summary?.is_delivered === true) {
+    return {
+      name: 'checkmark-done',
+      color: colors.bubbleSentTime,
+    };
+  }
+
   return {
-    name: 'checkmark-done',
-    color: fromMe ? colors.bubbleSentTime : colors.grey600,
+    name: 'checkmark',
+    color: colors.bubbleSentTime,
   };
 }
 
@@ -4163,11 +4288,13 @@ function MessageBubble({
                 {timeStr}
               </Text>
             ) : null}
-            <Ionicons
-              name={feedbackIcon.name}
-              size={14}
-              color={feedbackIcon.color}
-            />
+            {feedbackIcon ? (
+              <Ionicons
+                name={feedbackIcon.name}
+                size={14}
+                color={feedbackIcon.color}
+              />
+            ) : null}
           </View>
         </View>
       </View>
@@ -4287,11 +4414,13 @@ function MessageBubble({
               {timeStr}
             </Text>
           ) : null}
-          <Ionicons
-            name={feedbackIcon.name}
-            size={14}
-            color={feedbackIcon.color}
-          />
+          {feedbackIcon ? (
+            <Ionicons
+              name={feedbackIcon.name}
+              size={14}
+              color={feedbackIcon.color}
+            />
+          ) : null}
         </View>
       </Pressable>
       {showReactionsSummary ? (
@@ -4343,7 +4472,27 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const isQueueOrUraStatusRef = useRef(false);
   const sendingCapturedMediaRef = useRef(false);
   const sendingVoiceRecordingRef = useRef(false);
+  const mediaPickerActiveRef = useRef(false);
   const documentPickerActiveRef = useRef(false);
+  const videoTrimSessionRef = useRef<{
+    settled: boolean;
+    resolve: (result: VideoTrimSessionResult) => void;
+  } | null>(null);
+  const videoEditorOpeningStartedAtRef = useRef<number | null>(null);
+  const videoEditorOpeningHideTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const pendingVideoUploadsRef = useRef<Map<string, PendingVideoUploadDraft>>(
+    new Map()
+  );
+  const sendPendingVideoDraftRef = useRef<
+    | ((
+        draft: PendingVideoUploadDraft,
+        options?: { isRetry?: boolean }
+      ) => Promise<boolean>)
+    | null
+  >(null);
+  const uploadingVideoHashesRef = useRef<Set<string>>(new Set());
   const quickMessageSearchRequestRef = useRef(0);
   const isRecordingVoiceRef = useRef(false);
   const isRecordingLockedRef = useRef(false);
@@ -4543,6 +4692,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     downloadName: '',
   });
   const [cameraPickerVisible, setCameraPickerVisible] = useState(false);
+  const [isOpeningVideoEditor, setIsOpeningVideoEditor] = useState(false);
   const [annotationModalVisible, setAnnotationModalVisible] = useState(false);
   const [annotationInput, setAnnotationInput] = useState('');
   const [sendingAnnotation, setSendingAnnotation] = useState(false);
@@ -7250,6 +7400,87 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ]
   );
 
+  const handleRetryFailedVideoMessage = useCallback(
+    async (message: ListMessageResult) => {
+      if (
+        !isRetryableFailedVideoMessage(message) ||
+        sendingCapturedMedia ||
+        sendingCapturedMediaRef.current
+      ) {
+        return;
+      }
+
+      const hash = readNonEmptyString(message.hash);
+      if (!hash) return;
+
+      const previousDraft = pendingVideoUploadsRef.current.get(hash);
+      const fallbackUri = readNonEmptyString(message.content?.video?.url);
+      const uri = normalizeLocalFileUri(
+        previousDraft?.uri ?? fallbackUri ?? ''
+      );
+      if (!uri) {
+        Alert.alert(pt.warning_title, pt.video_retry_source_missing);
+        return;
+      }
+
+      const localFile = new File(uri);
+      if (!localFile.exists) {
+        Alert.alert(pt.warning_title, pt.video_retry_source_missing);
+        return;
+      }
+
+      const fallbackName = resolveFileNameFromUri(
+        uri,
+        `video-${Date.now()}.mp4`
+      );
+      const fileName =
+        previousDraft?.fileName ||
+        readNonEmptyString(message.content?.video?.name) ||
+        fallbackName;
+      const extension = extractFileExtension(fileName);
+      if (!VIDEO_ALLOWED_EXTENSIONS.has(extension)) {
+        Alert.alert(pt.warning_title, pt.invalid_video_format);
+        return;
+      }
+
+      const fileSize =
+        previousDraft?.fileSize ??
+        (typeof localFile.size === 'number' ? localFile.size : null);
+      if (typeof fileSize === 'number' && fileSize > MAX_VIDEO_SIZE_BYTES) {
+        Alert.alert(pt.warning_title, pt.video_size_exceeded);
+        return;
+      }
+      const messageVideoDuration = message.content?.video?.duration;
+
+      const draft: PendingVideoUploadDraft = {
+        hash,
+        uri,
+        fileName,
+        mimeType:
+          previousDraft?.mimeType ||
+          readNonEmptyString(message.content?.video?.mimetype) ||
+          'video/mp4',
+        durationSec:
+          previousDraft?.durationSec ??
+          (typeof messageVideoDuration === 'number' &&
+          Number.isFinite(messageVideoDuration)
+            ? Math.max(1, Math.round(messageVideoDuration))
+            : null),
+        fileSize: fileSize ?? null,
+        replyMessageId:
+          previousDraft?.replyMessageId ??
+          readNonEmptyString(message.content?.message_quoted_id),
+        localMessageId: message.message_id,
+      };
+      pendingVideoUploadsRef.current.set(hash, draft);
+
+      const submitRetry = sendPendingVideoDraftRef.current;
+      if (!submitRetry) return;
+      await submitRetry(draft, { isRetry: true });
+    },
+    [sendingCapturedMedia]
+  );
+
   const messageActions = useMemo<MessageAction[]>(() => {
     const target = messageActionTarget;
     if (!target) return [];
@@ -7265,10 +7496,26 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       canInteractWithMessage(target) &&
       !isHistoryReadonly &&
       !shouldObfuscateContent;
+    const canRetryFailedVideo =
+      !isHistoryReadonly &&
+      !shouldObfuscateContent &&
+      isRetryableFailedVideoMessage(target);
 
-    if (!canInteract && !canViewEditHistory) return [];
+    if (!canInteract && !canViewEditHistory && !canRetryFailedVideo) return [];
 
     const actions: MessageAction[] = [];
+
+    if (canRetryFailedVideo) {
+      actions.push({
+        key: 'retry',
+        label: pt.retry,
+        icon: 'refresh-outline',
+        onPress: () => {
+          closeMessageOverlay();
+          void handleRetryFailedVideoMessage(target);
+        },
+      });
+    }
 
     if (canComposeInChat && canInteract) {
       actions.push({
@@ -7384,6 +7631,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     chatInfo.chat_id,
     closeMessageOverlay,
     handleReplyFromMessage,
+    handleRetryFailedVideoMessage,
     handleCopyMessageContent,
     handleDownloadMessage,
     isHistoryReadonly,
@@ -7400,6 +7648,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         message.content?.type !== EMessageType.annotation &&
         message.content?.type !== EMessageType.system
       ) {
+        return true;
+      }
+
+      if (isRetryableFailedVideoMessage(message)) {
         return true;
       }
 
@@ -8003,101 +8255,657 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ]
   );
 
+  const finishVideoTrimSession = useCallback(
+    (result: VideoTrimSessionResult) => {
+      const session = videoTrimSessionRef.current;
+      if (!session || session.settled) return;
+      session.settled = true;
+      videoTrimSessionRef.current = null;
+      session.resolve(result);
+    },
+    []
+  );
+
+  useEffect(() => {
+    const subscriptions: Array<{ remove: () => void }> = [];
+    const onFinish = (payload: {
+      outputPath: string;
+      startTime: number;
+      endTime: number;
+      duration: number;
+    }) => {
+      finishVideoTrimSession({
+        kind: 'success',
+        outputPath: payload.outputPath,
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        duration: payload.duration,
+      });
+    };
+    const onCancel = () => {
+      finishVideoTrimSession({ kind: 'cancel' });
+    };
+    const onError = (payload: { message?: string }) => {
+      finishVideoTrimSession({
+        kind: 'error',
+        message: payload?.message?.trim() || pt.video_trim_error,
+      });
+    };
+    const onHide = () => {
+      finishVideoTrimSession({ kind: 'cancel' });
+    };
+
+    const nativeVideoTrim = VideoTrimModule as Partial<VideoTrimSpec>;
+    if (typeof nativeVideoTrim.onFinishTrimming === 'function') {
+      subscriptions.push(nativeVideoTrim.onFinishTrimming(onFinish));
+      if (typeof nativeVideoTrim.onCancel === 'function') {
+        subscriptions.push(nativeVideoTrim.onCancel(onCancel));
+      }
+      if (typeof nativeVideoTrim.onCancelTrimming === 'function') {
+        subscriptions.push(nativeVideoTrim.onCancelTrimming(onCancel));
+      }
+      if (typeof nativeVideoTrim.onError === 'function') {
+        subscriptions.push(nativeVideoTrim.onError(onError));
+      }
+      if (typeof nativeVideoTrim.onHide === 'function') {
+        subscriptions.push(nativeVideoTrim.onHide(onHide));
+      }
+    } else if (NativeModules.VideoTrim) {
+      const emitter = new NativeEventEmitter(NativeModules.VideoTrim);
+      subscriptions.push(
+        emitter.addListener(VIDEO_TRIM_EVENT_NAME, (event: any) => {
+          switch (event?.name) {
+            case 'onFinishTrimming':
+              onFinish(event);
+              break;
+            case 'onCancel':
+            case 'onCancelTrimming':
+              onCancel();
+              break;
+            case 'onError':
+              onError(event);
+              break;
+            case 'onHide':
+              onHide();
+              break;
+            default:
+              break;
+          }
+        })
+      );
+    }
+
+    return () => {
+      for (const subscription of subscriptions) {
+        try {
+          subscription.remove();
+        } catch {}
+      }
+      finishVideoTrimSession({ kind: 'cancel' });
+    };
+  }, [finishVideoTrimSession]);
+
+  const buildVideoDraft = useCallback(
+    (input: {
+      uri: string;
+      fileName?: string | null;
+      mimeType?: string | null;
+      durationSec?: number | null;
+      fileSize?: number | null;
+    }): CameraCaptureDraft | null => {
+      const uri = normalizeLocalFileUri(input.uri);
+      if (!uri) return null;
+
+      const fallbackName = resolveFileNameFromUri(
+        uri,
+        `video-${Date.now()}.mp4`
+      );
+      const baseName = input.fileName?.trim() || fallbackName;
+      const extension =
+        extractFileExtension(baseName) || getExtensionFromUrl(uri) || 'mp4';
+      if (!VIDEO_ALLOWED_EXTENSIONS.has(extension)) {
+        Alert.alert(pt.warning_title, pt.invalid_video_format);
+        return null;
+      }
+
+      const hasKnownExtension = /\.[a-z0-9]{2,5}$/i.test(baseName);
+      const fileName = hasKnownExtension
+        ? baseName
+        : `${baseName}.${extension}`;
+      const fileSize = input.fileSize ?? null;
+      if (typeof fileSize === 'number' && fileSize > MAX_VIDEO_SIZE_BYTES) {
+        Alert.alert(pt.warning_title, pt.video_size_exceeded);
+        return null;
+      }
+
+      const durationSec =
+        typeof input.durationSec === 'number' &&
+        Number.isFinite(input.durationSec)
+          ? Math.max(1, Math.round(input.durationSec))
+          : null;
+
+      return {
+        uri,
+        kind: 'video',
+        fileName,
+        mimeType: input.mimeType || 'video/mp4',
+        durationSec,
+        fileSize,
+      };
+    },
+    []
+  );
+
+  const buildOptimisticVideoMessage = useCallback(
+    (draft: PendingVideoUploadDraft): ListMessageResult => {
+      const extension = extractFileExtension(draft.fileName);
+      return {
+        message_id: draft.localMessageId,
+        chat_id: chatInfo.chat_id,
+        type_user: ETypeUserChat.operator,
+        user:
+          currentUserId && currentUserName
+            ? { id: currentUserId, name: currentUserName }
+            : null,
+        content: {
+          type: EMessageType.video,
+          message_quoted_id: draft.replyMessageId,
+          video: {
+            url: draft.uri,
+            thumbnail: draft.uri,
+            caption: '',
+            name: draft.fileName,
+            mimetype: draft.mimeType,
+            extension: extension ? `.${extension}` : '.mp4',
+            size: draft.fileSize,
+            duration: draft.durationSec,
+          },
+        },
+        summary: {
+          is_sent: false,
+          is_delivered: false,
+          is_seen: false,
+          is_sent_to_internal: true,
+        },
+        date: new Date().toISOString(),
+        hash: draft.hash,
+      };
+    },
+    [chatInfo.chat_id, currentUserId, currentUserName]
+  );
+
+  const clearVideoEditorOpeningHideTimeout = useCallback(() => {
+    if (!videoEditorOpeningHideTimeoutRef.current) return;
+    clearTimeout(videoEditorOpeningHideTimeoutRef.current);
+    videoEditorOpeningHideTimeoutRef.current = null;
+  }, []);
+
+  const startVideoEditorOpening = useCallback(() => {
+    clearVideoEditorOpeningHideTimeout();
+    videoEditorOpeningStartedAtRef.current = Date.now();
+    setIsOpeningVideoEditor(true);
+  }, [clearVideoEditorOpeningHideTimeout]);
+
+  const stopVideoEditorOpening = useCallback(() => {
+    const openedAt = videoEditorOpeningStartedAtRef.current;
+    const elapsedMs =
+      typeof openedAt === 'number'
+        ? Math.max(0, Date.now() - openedAt)
+        : VIDEO_EDITOR_OPENING_MIN_VISIBLE_MS;
+    const remainingMs = Math.max(
+      0,
+      VIDEO_EDITOR_OPENING_MIN_VISIBLE_MS - elapsedMs
+    );
+
+    const hideOverlay = () => {
+      videoEditorOpeningStartedAtRef.current = null;
+      setIsOpeningVideoEditor(false);
+    };
+
+    clearVideoEditorOpeningHideTimeout();
+    if (remainingMs === 0) {
+      hideOverlay();
+      return;
+    }
+
+    videoEditorOpeningHideTimeoutRef.current = setTimeout(() => {
+      videoEditorOpeningHideTimeoutRef.current = null;
+      hideOverlay();
+    }, remainingMs);
+  }, [clearVideoEditorOpeningHideTimeout]);
+
+  useEffect(() => {
+    return () => {
+      clearVideoEditorOpeningHideTimeout();
+      videoEditorOpeningStartedAtRef.current = null;
+    };
+  }, [clearVideoEditorOpeningHideTimeout]);
+
+  const openVideoTrimEditor = useCallback(
+    async (uri: string): Promise<VideoTrimSessionResult> => {
+      const normalizedUri = normalizeLocalFileUri(uri);
+      if (!normalizedUri) {
+        return { kind: 'error', message: pt.video_trim_error };
+      }
+
+      try {
+        const validation = await isValidFile(normalizedUri);
+        if (!validation?.isValid) {
+          return { kind: 'error', message: pt.invalid_video_format };
+        }
+      } catch {}
+
+      if (videoTrimSessionRef.current) {
+        return { kind: 'error', message: pt.video_trim_busy };
+      }
+
+      return await new Promise<VideoTrimSessionResult>((resolve) => {
+        videoTrimSessionRef.current = {
+          settled: false,
+          resolve,
+        };
+
+        try {
+          showEditor(normalizedUri, {
+            type: 'video',
+            maxDuration: MAX_VIDEO_TRIM_DURATION_SECONDS,
+            minDuration: 1,
+            autoplay: true,
+            closeWhenFinish: true,
+            fullScreenModalIOS: true,
+            saveToPhoto: false,
+            openDocumentsOnFinish: false,
+            openShareSheetOnFinish: false,
+            cancelButtonText: pt.cancel,
+            saveButtonText: pt.done,
+            cancelTrimmingButtonText: pt.cancel,
+            headerText: pt.videos,
+            enableCancelDialog: false,
+            enableSaveDialog: false,
+            enableCancelTrimmingDialog: false,
+          });
+          requestAnimationFrame(() => {
+            stopVideoEditorOpening();
+          });
+        } catch {
+          videoTrimSessionRef.current = null;
+          resolve({ kind: 'error', message: pt.video_trim_error });
+        }
+      });
+    },
+    [stopVideoEditorOpening]
+  );
+
+  const sendPendingVideoDraft = useCallback(
+    async (
+      draft: PendingVideoUploadDraft,
+      options?: { isRetry?: boolean }
+    ): Promise<boolean> => {
+      if (isHistoryReadonly) return false;
+      if (uploadingVideoHashesRef.current.has(draft.hash)) return false;
+
+      uploadingVideoHashesRef.current.add(draft.hash);
+      pendingVideoUploadsRef.current.set(draft.hash, draft);
+      setSendingCapturedMedia(true);
+      setMessages((previous) =>
+        previous.map((entry) => {
+          if (readNonEmptyString(entry.hash) !== draft.hash) {
+            return entry;
+          }
+
+          return {
+            ...entry,
+            message_id: draft.localMessageId,
+            date: new Date().toISOString(),
+            summary: {
+              is_sent: false,
+              is_delivered: false,
+              is_seen: false,
+              is_sent_to_internal: true,
+            },
+            content: {
+              ...(entry.content ?? { type: EMessageType.video }),
+              type: EMessageType.video,
+              message_quoted_id: draft.replyMessageId,
+              video: {
+                ...(entry.content?.video ?? {}),
+                url: draft.uri,
+                thumbnail: draft.uri,
+                name: draft.fileName,
+                mimetype: draft.mimeType,
+                size: draft.fileSize,
+                duration: draft.durationSec,
+              },
+            },
+          };
+        })
+      );
+
+      try {
+        const formData = new FormData();
+        formData.append('type', EMessageType.video);
+        formData.append('hash', draft.hash);
+        if (draft.replyMessageId) {
+          formData.append('message_quoted_id', draft.replyMessageId);
+        }
+        await appendMediaToFormData(formData, 'videos', {
+          uri: draft.uri,
+          name: draft.fileName,
+          mimeType: draft.mimeType,
+        });
+        if (draft.durationSec != null) {
+          formData.append('video_duration', String(draft.durationSec));
+        }
+
+        const result = await createMessageWithFormData(
+          chatInfo.chat_id,
+          formData
+        );
+        if (!result.ok) {
+          setMessages((previous) =>
+            previous.map((entry) =>
+              readNonEmptyString(entry.hash) === draft.hash
+                ? {
+                    ...entry,
+                    summary: {
+                      is_sent: false,
+                      is_delivered: false,
+                      is_seen: false,
+                      is_sent_to_internal: false,
+                    },
+                  }
+                : entry
+            )
+          );
+          Alert.alert(pt.error_title, pt.send_error);
+          return false;
+        }
+
+        pendingScrollToBottomRef.current = true;
+        setShowScrollToBottomButton(false);
+        const createdMessage = result.message;
+        if (createdMessage) {
+          setMessages((previous) =>
+            mergeMessageLists(previous, createdMessage)
+          );
+        } else {
+          await syncLatestMessages();
+        }
+        pendingVideoUploadsRef.current.delete(draft.hash);
+        requestAnimationFrame(() => {
+          scrollToBottomWithRetries(10);
+        });
+        if (!options?.isRetry && draft.replyMessageId) {
+          setReplyMessageTarget(null);
+        }
+        return true;
+      } catch {
+        setMessages((previous) =>
+          previous.map((entry) =>
+            readNonEmptyString(entry.hash) === draft.hash
+              ? {
+                  ...entry,
+                  summary: {
+                    is_sent: false,
+                    is_delivered: false,
+                    is_seen: false,
+                    is_sent_to_internal: false,
+                  },
+                }
+              : entry
+          )
+        );
+        Alert.alert(pt.error_title, pt.send_error);
+        return false;
+      } finally {
+        uploadingVideoHashesRef.current.delete(draft.hash);
+        setSendingCapturedMedia(false);
+      }
+    },
+    [
+      chatInfo.chat_id,
+      isHistoryReadonly,
+      scrollToBottomWithRetries,
+      syncLatestMessages,
+    ]
+  );
+
+  useEffect(() => {
+    sendPendingVideoDraftRef.current = sendPendingVideoDraft;
+  }, [sendPendingVideoDraft]);
+
   const sendCapturedMediaDraft = useCallback(
     async (draft: CameraCaptureDraft) => {
-      if (sendingCapturedMedia || isHistoryReadonly) return;
+      if (
+        sendingCapturedMedia ||
+        sendingCapturedMediaRef.current ||
+        isHistoryReadonly
+      ) {
+        return;
+      }
+
+      if (draft.kind === 'video') {
+        const hash = createClientMessageHash();
+        const replyMessageId = replyMessageTarget?.message_id ?? null;
+        const pendingDraft: PendingVideoUploadDraft = {
+          hash,
+          uri: normalizeLocalFileUri(draft.uri),
+          fileName: draft.fileName,
+          mimeType: draft.mimeType,
+          durationSec: draft.durationSec,
+          fileSize: draft.fileSize ?? null,
+          replyMessageId,
+          localMessageId: `local-${hash}`,
+        };
+
+        pendingVideoUploadsRef.current.set(hash, pendingDraft);
+        setMessages((previous) =>
+          mergeMessageLists(previous, buildOptimisticVideoMessage(pendingDraft))
+        );
+        pendingScrollToBottomRef.current = true;
+        setShowScrollToBottomButton(false);
+        requestAnimationFrame(() => {
+          scrollToBottomWithRetries(10);
+        });
+        if (replyMessageId) {
+          setReplyMessageTarget(null);
+        }
+        await sendPendingVideoDraft(pendingDraft);
+        return;
+      }
 
       setSendingCapturedMedia(true);
       try {
         const formData = new FormData();
-        formData.append(
-          'type',
-          draft.kind === 'video' ? EMessageType.video : EMessageType.image
-        );
+        formData.append('type', EMessageType.image);
         formData.append('hash', createClientMessageHash());
-
-        if (draft.kind === 'video') {
-          await appendMediaToFormData(formData, 'videos', {
-            uri: draft.uri,
-            name: draft.fileName,
-            mimeType: draft.mimeType,
-          });
-          if (draft.durationSec != null) {
-            formData.append('video_duration', String(draft.durationSec));
-          }
-        } else {
-          await appendMediaToFormData(formData, 'images', {
-            uri: draft.uri,
-            name: draft.fileName,
-            mimeType: draft.mimeType,
-          });
-        }
+        await appendMediaToFormData(formData, 'images', {
+          uri: draft.uri,
+          name: draft.fileName,
+          mimeType: draft.mimeType,
+        });
 
         await submitFormDataMessage(formData);
       } finally {
         setSendingCapturedMedia(false);
       }
     },
-    [isHistoryReadonly, sendingCapturedMedia, submitFormDataMessage]
+    [
+      buildOptimisticVideoMessage,
+      isHistoryReadonly,
+      replyMessageTarget?.message_id,
+      scrollToBottomWithRetries,
+      sendPendingVideoDraft,
+      sendingCapturedMedia,
+      submitFormDataMessage,
+    ]
   );
 
   const extractExtension = useCallback((name: string | null | undefined) => {
-    if (!name) return '';
-    const ext = name.split('.').pop()?.trim().toLowerCase();
-    return ext ?? '';
+    return extractFileExtension(name);
   }, []);
 
+  const withAttachmentSheetDismissed = useCallback(
+    async (work: () => Promise<void>) => {
+      if (mediaPickerActiveRef.current) return;
+      mediaPickerActiveRef.current = true;
+      setCameraPickerVisible(false);
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, ATTACHMENT_PICKER_TRANSITION_DELAY_MS)
+      );
+
+      try {
+        await work();
+      } finally {
+        mediaPickerActiveRef.current = false;
+      }
+    },
+    []
+  );
+
+  const handleTrimmedVideoAsset = useCallback(
+    async (asset: ImagePicker.ImagePickerAsset) => {
+      if (!asset?.uri) return;
+      const initialDraft = buildVideoDraft({
+        uri: asset.uri,
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+        fileSize: typeof asset.fileSize === 'number' ? asset.fileSize : null,
+        durationSec:
+          typeof asset.duration === 'number' && Number.isFinite(asset.duration)
+            ? asset.duration / 1000
+            : null,
+      });
+      if (!initialDraft) return;
+
+      let trimResult: VideoTrimSessionResult = { kind: 'cancel' };
+      startVideoEditorOpening();
+      try {
+        trimResult = await openVideoTrimEditor(initialDraft.uri);
+      } finally {
+        stopVideoEditorOpening();
+      }
+      if (trimResult.kind === 'cancel') return;
+      if (trimResult.kind === 'error') {
+        Alert.alert(pt.error_title, trimResult.message || pt.video_trim_error);
+        return;
+      }
+
+      const trimmedUri = normalizeLocalFileUri(trimResult.outputPath);
+      const trimmedFile = new File(trimmedUri);
+      if (!trimmedFile.exists) {
+        Alert.alert(pt.error_title, pt.video_trim_error);
+        return;
+      }
+
+      const trimmedDurationSec =
+        typeof trimResult.duration === 'number' &&
+        Number.isFinite(trimResult.duration)
+          ? Math.max(
+              1,
+              Math.round(
+                trimResult.duration > 1000
+                  ? trimResult.duration / 1000
+                  : trimResult.duration
+              )
+            )
+          : initialDraft.durationSec;
+
+      const trimmedDraft = buildVideoDraft({
+        uri: trimmedUri,
+        fileName: trimmedFile.name || initialDraft.fileName,
+        mimeType: initialDraft.mimeType,
+        fileSize:
+          typeof trimmedFile.size === 'number' ? trimmedFile.size : null,
+        durationSec: trimmedDurationSec,
+      });
+      if (!trimmedDraft) return;
+
+      try {
+        const validation = await isValidFile(trimmedDraft.uri);
+        if (!validation?.isValid) {
+          Alert.alert(pt.warning_title, pt.invalid_video_format);
+          return;
+        }
+      } catch {
+        Alert.alert(pt.error_title, pt.video_trim_error);
+        return;
+      }
+
+      await sendCapturedMediaDraft(trimmedDraft);
+    },
+    [
+      buildVideoDraft,
+      openVideoTrimEditor,
+      sendCapturedMediaDraft,
+      startVideoEditorOpening,
+      stopVideoEditorOpening,
+    ]
+  );
+
   const handlePickPhotoCapture = useCallback(async () => {
-    setCameraPickerVisible(false);
-    if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
-      return;
-    }
-
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(pt.warning_title, pt.image_permission_denied);
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'images',
-      quality: 0.8,
-      allowsMultipleSelection: false,
-    });
-
-    if (result.canceled || !result.assets || result.assets.length === 0) {
-      return;
-    }
-
-    const asset = result.assets[0];
-    if (!asset?.uri) return;
-
-    const originalName = asset.fileName?.trim();
-    const fileName =
-      originalName && /\.[a-z0-9]{2,5}$/i.test(originalName)
-        ? originalName
-        : `image-${Date.now()}.jpg`;
-    const extension = extractExtension(fileName);
-    const allowedExtensions = new Set(['jpg', 'jpeg', 'png', 'gif']);
-    if (!allowedExtensions.has(extension)) {
-      Alert.alert(pt.warning_title, pt.invalid_image_format);
-      return;
-    }
-
     if (
-      typeof asset.fileSize === 'number' &&
-      asset.fileSize > MAX_IMAGE_SIZE_BYTES
+      !canComposeInChat ||
+      sendingCapturedMedia ||
+      sendingVoiceRecording ||
+      sendingCapturedMediaRef.current ||
+      sendingVoiceRecordingRef.current
     ) {
-      Alert.alert(pt.warning_title, pt.image_size_exceeded);
       return;
     }
 
-    await sendCapturedMediaDraft({
-      uri: asset.uri,
-      kind: 'image',
-      fileName,
-      mimeType: asset.mimeType || 'image/jpeg',
-      durationSec: null,
+    await withAttachmentSheetDismissed(async () => {
+      try {
+        const permission =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert(pt.warning_title, pt.image_permission_denied);
+          return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: 'images',
+          quality: 0.8,
+          allowsMultipleSelection: false,
+        });
+
+        if (result.canceled || !result.assets || result.assets.length === 0) {
+          return;
+        }
+
+        const asset = result.assets[0];
+        if (!asset?.uri) return;
+
+        const originalName = asset.fileName?.trim();
+        const fileName =
+          originalName && /\.[a-z0-9]{2,5}$/i.test(originalName)
+            ? originalName
+            : `image-${Date.now()}.jpg`;
+        const extension = extractExtension(fileName);
+        if (!IMAGE_ALLOWED_EXTENSIONS.has(extension)) {
+          Alert.alert(pt.warning_title, pt.invalid_image_format);
+          return;
+        }
+
+        if (
+          typeof asset.fileSize === 'number' &&
+          asset.fileSize > MAX_IMAGE_SIZE_BYTES
+        ) {
+          Alert.alert(pt.warning_title, pt.image_size_exceeded);
+          return;
+        }
+
+        await sendCapturedMediaDraft({
+          uri: asset.uri,
+          kind: 'image',
+          fileName,
+          mimeType: asset.mimeType || 'image/jpeg',
+          durationSec: null,
+          fileSize: typeof asset.fileSize === 'number' ? asset.fileSize : null,
+        });
+      } catch {
+        Alert.alert(pt.error_title, pt.media_picker_open_error);
+      }
     });
   }, [
     canComposeInChat,
@@ -8105,76 +8913,104 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     sendCapturedMediaDraft,
     sendingCapturedMedia,
     sendingVoiceRecording,
+    withAttachmentSheetDismissed,
   ]);
 
+  const pickVideoFromLibrary = useCallback(async () => {
+    if (sendingCapturedMediaRef.current || sendingVoiceRecordingRef.current) {
+      return;
+    }
+
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(pt.warning_title, pt.image_permission_denied);
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'videos',
+        quality: 0.8,
+        allowsMultipleSelection: false,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      await handleTrimmedVideoAsset(result.assets[0]);
+    } catch {
+      Alert.alert(pt.error_title, pt.media_picker_open_error);
+    }
+  }, [handleTrimmedVideoAsset]);
+
+  const captureVideoFromCamera = useCallback(async () => {
+    if (sendingCapturedMediaRef.current || sendingVoiceRecordingRef.current) {
+      return;
+    }
+
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(pt.warning_title, pt.camera_permission_denied);
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: 'videos',
+        quality: 0.8,
+        videoMaxDuration: 120,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      await handleTrimmedVideoAsset(result.assets[0]);
+    } catch {
+      Alert.alert(pt.error_title, pt.media_picker_open_error);
+    }
+  }, [handleTrimmedVideoAsset]);
+
   const handlePickVideoCapture = useCallback(async () => {
-    setCameraPickerVisible(false);
-    if (!canComposeInChat || sendingCapturedMedia || sendingVoiceRecording) {
-      return;
-    }
-
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(pt.warning_title, pt.image_permission_denied);
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'videos',
-      quality: 0.8,
-      allowsMultipleSelection: false,
-    });
-
-    if (result.canceled || !result.assets || result.assets.length === 0) {
-      return;
-    }
-
-    const asset = result.assets[0];
-    if (!asset?.uri) return;
-
-    const originalName = asset.fileName?.trim();
-    const fileName =
-      originalName && /\.[a-z0-9]{2,5}$/i.test(originalName)
-        ? originalName
-        : `video-${Date.now()}.mp4`;
-    const extension = extractExtension(fileName);
-    const allowedExtensions = new Set([
-      'mp4',
-      'avi',
-      'flv',
-      'mkv',
-      'mov',
-      '3gp',
-    ]);
-    if (!allowedExtensions.has(extension)) {
-      Alert.alert(pt.warning_title, pt.invalid_video_format);
-      return;
-    }
-
     if (
-      typeof asset.fileSize === 'number' &&
-      asset.fileSize > MAX_VIDEO_SIZE_BYTES
+      !canComposeInChat ||
+      sendingCapturedMedia ||
+      sendingVoiceRecording ||
+      sendingCapturedMediaRef.current ||
+      sendingVoiceRecordingRef.current
     ) {
-      Alert.alert(pt.warning_title, pt.video_size_exceeded);
       return;
     }
 
-    await sendCapturedMediaDraft({
-      uri: asset.uri,
-      kind: 'video',
-      fileName,
-      mimeType: asset.mimeType || 'video/mp4',
-      durationSec:
-        typeof asset.duration === 'number' && Number.isFinite(asset.duration)
-          ? Math.max(1, Math.round(asset.duration / 1000))
-          : null,
+    await withAttachmentSheetDismissed(async () => {
+      Alert.alert(pt.pick_video_source_title, pt.pick_video_source_message, [
+        {
+          text: pt.video_source_gallery,
+          onPress: () => {
+            void pickVideoFromLibrary();
+          },
+        },
+        {
+          text: pt.video_source_camera,
+          onPress: () => {
+            void captureVideoFromCamera();
+          },
+        },
+        {
+          text: pt.cancel,
+          style: 'cancel',
+        },
+      ]);
     });
   }, [
     canComposeInChat,
-    extractExtension,
-    sendCapturedMediaDraft,
+    captureVideoFromCamera,
+    pickVideoFromLibrary,
     sendingCapturedMedia,
     sendingVoiceRecording,
+    withAttachmentSheetDismissed,
   ]);
 
   const handlePickDocument = useCallback(async () => {
@@ -8185,7 +9021,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (documentPickerActiveRef.current) return;
 
     documentPickerActiveRef.current = true;
-    await new Promise<void>((resolve) => setTimeout(resolve, 350));
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, ATTACHMENT_PICKER_TRANSITION_DELAY_MS)
+    );
 
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -8239,7 +9077,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (documentPickerActiveRef.current) return;
 
     documentPickerActiveRef.current = true;
-    await new Promise<void>((resolve) => setTimeout(resolve, 350));
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, ATTACHMENT_PICKER_TRANSITION_DELAY_MS)
+    );
 
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -8890,7 +9730,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: 'images',
+      mediaTypes: ['images', 'videos'],
       quality: 0.8,
       videoMaxDuration: 120,
     });
@@ -8914,18 +9754,21 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         ? originalName
         : `${kind}-${Date.now()}.${fallbackExtension}`;
 
+    if (kind === 'video') {
+      await handleTrimmedVideoAsset(asset);
+      return;
+    }
+
     await sendCapturedMediaDraft({
       uri: asset.uri,
       kind,
       fileName,
       mimeType: asset.mimeType || fallbackMime,
-      durationSec:
-        kind === 'video' && typeof asset.duration === 'number'
-          ? Math.max(1, Math.round(asset.duration / 1000))
-          : null,
+      durationSec: null,
     });
   }, [
     canComposeInChat,
+    handleTrimmedVideoAsset,
     isRecordingVoice,
     sendCapturedMediaDraft,
     sendingCapturedMedia,
@@ -10494,6 +11337,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           ) : null}
         </>
       )}
+
+      {isOpeningVideoEditor ? (
+        <View style={styles.videoEditorOpeningOverlay}>
+          <View style={styles.videoEditorOpeningCard}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.videoEditorOpeningText}>
+              {pt.video_editor_opening}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       <Modal
         visible={messageActionTarget !== null}
@@ -14737,6 +15591,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 24,
+  },
+  videoEditorOpeningOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 50,
+    elevation: 50,
+    backgroundColor: 'rgba(0, 0, 0, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  videoEditorOpeningCard: {
+    minHeight: 68,
+    minWidth: 220,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  videoEditorOpeningText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
   },
   modalHintText: {
     fontSize: 12,
