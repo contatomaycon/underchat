@@ -547,7 +547,12 @@ export function UserSidebar({
               accessible={false}
             >
               <View style={styles.sidebar}>
-                <View style={styles.sidebarHeader}>
+                <View
+                  style={[
+                    styles.sidebarHeader,
+                    { paddingTop: insets.top + 12 },
+                  ]}
+                >
                   <Text style={styles.sidebarTitle}>{pt.account}</Text>
                   <Pressable
                     onPress={dismissKeyboardAnd(closeSidebar)}

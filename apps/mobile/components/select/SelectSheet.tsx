@@ -119,7 +119,10 @@ export function SelectSheet({
         behavior={keyboardAvoidingBehavior}
         keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
       >
-        <Pressable style={[styles.overlay, { paddingBottom: 12 + insets.bottom }]} onPress={handleClose}>
+        <Pressable
+          style={[styles.overlay, { paddingBottom: 12 + insets.bottom }]}
+          onPress={handleClose}
+        >
           <Pressable
             style={styles.card}
             onPress={(event) => {
