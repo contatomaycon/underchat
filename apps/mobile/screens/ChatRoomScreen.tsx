@@ -632,6 +632,8 @@ type LocationMapRegion = {
   longitudeDelta: number;
 };
 
+type LocationMapStatus = 'idle' | 'loading' | 'ready' | 'failed';
+
 type MapPressCoordinateEvent = {
   geometry?: {
     coordinates?: number[];
@@ -669,6 +671,9 @@ const isExpoGoStoreClient =
   (Constants as { executionEnvironment?: string | null })
     .executionEnvironment === 'storeClient';
 
+const MAPLIBRE_DEFAULT_STYLE_URL =
+  'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
+
 const mapLibreStyleUrl = (() => {
   const expoConfig = (
     Constants as {
@@ -683,8 +688,45 @@ const mapLibreStyleUrl = (() => {
   if (typeof styleUrl === 'string' && styleUrl.trim().length > 0) {
     return styleUrl.trim();
   }
-  return 'https://demotiles.maplibre.org/style.json';
+  return MAPLIBRE_DEFAULT_STYLE_URL;
 })();
+
+function readMapLoadErrorMessage(error: unknown): string | null {
+  if (typeof error === 'string') {
+    const normalized = error.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (!error || typeof error !== 'object') return null;
+
+  const eventRecord = error as {
+    message?: unknown;
+    error?: unknown;
+    nativeEvent?: {
+      message?: unknown;
+      error?: unknown;
+      payload?: {
+        message?: unknown;
+      };
+    };
+  };
+
+  const candidates: unknown[] = [
+    eventRecord.nativeEvent?.message,
+    eventRecord.nativeEvent?.error,
+    eventRecord.nativeEvent?.payload?.message,
+    eventRecord.message,
+    eventRecord.error,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const normalized = candidate.trim();
+    if (normalized.length > 0) return normalized;
+  }
+
+  return null;
+}
 
 const mapDebugSupportInfo = [
   `platform=${Platform.OS}`,
@@ -4761,6 +4803,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   >(null);
   const [locationMapRegion, setLocationMapRegion] =
     useState<LocationMapRegion | null>(null);
+  const [locationMapStatus, setLocationMapStatus] =
+    useState<LocationMapStatus>('idle');
+  const [locationMapErrorMessage, setLocationMapErrorMessage] = useState<
+    string | null
+  >(null);
+  const [locationMapStyleUrl, setLocationMapStyleUrl] =
+    useState(mapLibreStyleUrl);
+  const [locationMapUsedDefaultFallback, setLocationMapUsedDefaultFallback] =
+    useState(false);
   const [locationCurrentLoading, setLocationCurrentLoading] = useState(false);
   const [locationCurrentError, setLocationCurrentError] = useState(false);
   const [sendingCapturedMedia, setSendingCapturedMedia] = useState(false);
@@ -9596,6 +9647,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setLocationSearchResults([]);
     setLocationCurrentAccuracy(null);
     setLocationMapRegion(null);
+    setLocationMapStatus(hasNativeMapSupport ? 'loading' : 'failed');
+    setLocationMapErrorMessage(null);
+    setLocationMapStyleUrl(mapLibreStyleUrl);
+    setLocationMapUsedDefaultFallback(false);
     setLocationPickerVisible(true);
     void resolveCurrentLocation();
   }, [resolveCurrentLocation]);
@@ -9663,6 +9718,79 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const region = locationMapRegion ?? LOCATION_MAP_DEFAULT_REGION;
     return [region.longitude, region.latitude];
   }, [locationMapRegion]);
+
+  const locationMapDebugInfo = useMemo(() => {
+    const details = [
+      mapDebugSupportInfo,
+      `pickerStatus=${locationMapStatus}`,
+      `pickerStyleUrl=${locationMapStyleUrl}`,
+    ];
+
+    if (locationMapErrorMessage) {
+      details.push(`pickerError=${locationMapErrorMessage}`);
+    }
+
+    return details.join(' | ');
+  }, [locationMapErrorMessage, locationMapStatus, locationMapStyleUrl]);
+
+  const handleLocationMapWillStartLoading = useCallback(() => {
+    setLocationMapStatus('loading');
+    setLocationMapErrorMessage(null);
+  }, []);
+
+  const handleLocationMapDidFinishLoading = useCallback(() => {
+    setLocationMapStatus('ready');
+    setLocationMapErrorMessage(null);
+  }, []);
+
+  const handleLocationMapDidFailLoading = useCallback(
+    (event: unknown) => {
+      const errorMessage =
+        readMapLoadErrorMessage(event) ?? 'MapLibre style loading failed.';
+
+      if (
+        !locationMapUsedDefaultFallback &&
+        locationMapStyleUrl !== MAPLIBRE_DEFAULT_STYLE_URL
+      ) {
+        if (__DEV__) {
+          console.log(
+            'MapLibre [location-picker] style failed, retrying default',
+            {
+              failedStyleUrl: locationMapStyleUrl,
+              fallbackStyleUrl: MAPLIBRE_DEFAULT_STYLE_URL,
+              errorMessage,
+            }
+          );
+        }
+        setLocationMapUsedDefaultFallback(true);
+        setLocationMapStyleUrl(MAPLIBRE_DEFAULT_STYLE_URL);
+        setLocationMapStatus('loading');
+        setLocationMapErrorMessage(
+          `Falha no estilo configurado. Tentando estilo padrão. ${errorMessage}`
+        );
+        return;
+      }
+
+      if (__DEV__) {
+        console.log('MapLibre [location-picker] style failed', {
+          styleUrl: locationMapStyleUrl,
+          errorMessage,
+        });
+      }
+
+      setLocationMapStatus('failed');
+      setLocationMapErrorMessage(errorMessage);
+    },
+    [locationMapStyleUrl, locationMapUsedDefaultFallback]
+  );
+
+  const handleRetryLocationMap = useCallback(() => {
+    setLocationMapStatus('loading');
+    setLocationMapErrorMessage(null);
+    setLocationMapStyleUrl((currentStyle) =>
+      currentStyle.trim().length > 0 ? currentStyle : MAPLIBRE_DEFAULT_STYLE_URL
+    );
+  }, []);
 
   const handleOpenAnnotationModal = useCallback(() => {
     setCameraPickerVisible(false);
@@ -13004,8 +13132,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={locationPickerVisible}
         transparent
-        statusBarTranslucent
-        navigationBarTranslucent
+        statusBarTranslucent={Platform.OS !== 'android'}
+        navigationBarTranslucent={Platform.OS !== 'android'}
+        hardwareAccelerated={Platform.OS === 'android'}
         animationType="slide"
         onRequestClose={dismissKeyboardAnd(() =>
           setLocationPickerVisible(false)
@@ -13072,10 +13201,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               </View>
 
               <View style={styles.locationMapWrap}>
-                {hasNativeMapSupport && NativeMapView && NativeMapCamera ? (
+                {hasNativeMapSupport &&
+                NativeMapView &&
+                NativeMapCamera &&
+                locationMapStatus !== 'failed' ? (
                   <NativeMapView
                     style={styles.locationMap}
-                    mapStyle={mapLibreStyleUrl}
+                    mapStyle={locationMapStyleUrl}
+                    onWillStartLoadingMap={handleLocationMapWillStartLoading}
+                    onDidFinishLoadingMap={handleLocationMapDidFinishLoading}
+                    onDidFinishLoadingStyle={handleLocationMapDidFinishLoading}
+                    onDidFailLoadingMap={handleLocationMapDidFailLoading}
                     onPress={handleMapPress}
                   >
                     <NativeMapCamera
@@ -13108,9 +13244,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     <Text style={styles.locationMapFallbackText}>
                       {pt.location_map_unavailable}
                     </Text>
+                    {hasNativeMapSupport ? (
+                      <Pressable
+                        style={styles.locationMapRetryBtn}
+                        onPress={handleRetryLocationMap}
+                      >
+                        <Text style={styles.locationMapRetryBtnText}>
+                          {pt.retry}
+                        </Text>
+                      </Pressable>
+                    ) : null}
                     {__DEV__ ? (
                       <Text style={styles.locationMapFallbackDebugText}>
-                        {mapDebugSupportInfo}
+                        {locationMapDebugInfo}
                       </Text>
                     ) : null}
                   </View>
@@ -16031,6 +16177,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.grey700,
     textAlign: 'center',
+  },
+  locationMapRetryBtn: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: '#FFFFFF',
+  },
+  locationMapRetryBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
   },
   locationMapFallbackDebugText: {
     marginTop: 8,
