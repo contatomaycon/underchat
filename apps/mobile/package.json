@@ -21,6 +21,10 @@
     "build:android:apk": "pnpm run eas:build:apk:android",
     "build:android:aab": "pnpm run eas:build:aab:android",
     "eas:build:dev:ios": "eas build --profile development --platform ios",
+    "eas:build:prod:ios": "eas build --profile production-ios --platform ios",
+    "eas:submit:ios": "eas submit --profile production-ios --platform ios",
+    "build:ios:testflight": "pnpm run eas:build:prod:ios",
+    "submit:ios:testflight": "pnpm run eas:submit:ios",
     "web": "EXPO_UNSTABLE_BONJOUR=0 expo start --web --localhost",
     "build": "expo export --platform web"
   },
