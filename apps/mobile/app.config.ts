@@ -7,7 +7,7 @@ function readMapLibreStyleUrl(): string {
   if (styleUrl && styleUrl.length > 0) {
     return styleUrl;
   }
-  return 'https://demotiles.maplibre.org/style.json';
+  return 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 }
 
 export default (): ExpoConfig => {

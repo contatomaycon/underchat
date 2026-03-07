@@ -66,7 +66,7 @@ O app usa MapLibre no seletor de localização e não exige chave do Google Maps
 
 Variável de estilo do mapa:
 
-- `EXPO_PUBLIC_MAPLIBRE_STYLE_URL` (padrão: `https://demotiles.maplibre.org/style.json`)
+- `EXPO_PUBLIC_MAPLIBRE_STYLE_URL` (padrão: `https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json`)
 
 Local (dev client / `run:android`):
 
