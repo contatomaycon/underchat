@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "659067673916",
+    "project_id": "underchat-f1d89",
+    "storage_bucket": "underchat-f1d89.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:659067673916:android:9e5250ef0327e683201239",
+        "android_client_info": {
+          "package_name": "com.underchat.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCYtkc9wvFQ089-mswH19TJ9SS36zDBOG8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

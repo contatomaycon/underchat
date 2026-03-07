@@ -192,12 +192,16 @@ function getProjectId(): string | null {
 
 async function getExpoPushToken(): Promise<string | null> {
   const projectId = getProjectId();
-  if (!projectId) return null;
+  if (!projectId) {
+    console.warn('[Push] projectId não encontrado no EAS config');
+    return null;
+  }
 
   try {
     const token = await Notifications.getExpoPushTokenAsync({ projectId });
     return readString(token.data);
-  } catch {
+  } catch (err) {
+    console.warn('[Push] Falha ao obter Expo push token:', err);
     return null;
   }
 }

@@ -23,6 +23,7 @@
     },
     "android": {
       "package": "com.underchat.mobile",
+      "googleServicesFile": "./google-services.json",
       "icon": "./assets/android-icon-safe.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon-safe.png",
