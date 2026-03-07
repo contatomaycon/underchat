@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
@@ -126,6 +127,7 @@ export function ContactFormModal({
   onClose,
   onSuccess,
 }: ContactFormModalProps) {
+  const insets = useSafeAreaInsets();
   const [loadingInitial, setLoadingInitial] = useState(false);
   const [saving, setSaving] = useState(false);
   const [removingPhoto, setRemovingPhoto] = useState(false);
@@ -874,7 +876,7 @@ export function ContactFormModal({
         behavior={keyboardAvoidingBehavior}
         keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
       >
-        <View style={styles.overlay}>
+        <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
           <Pressable
             style={styles.modalBackdrop}
             onPress={dismissKeyboardAnd(handleRequestClose)}

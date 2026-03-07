@@ -14,6 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
 import {
   listLabelTemplates,
@@ -142,6 +143,7 @@ export function AdvancedFilterModal({
   onApply,
   canUseUserAndSectorFilters,
 }: AdvancedFilterModalProps) {
+  const insets = useSafeAreaInsets();
   const [tags, setTags] = useState<LabelTemplate[]>([]);
   const [workers, setWorkers] = useState<ChatWorker[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);
@@ -361,7 +363,7 @@ export function AdvancedFilterModal({
         behavior={keyboardAvoidingBehavior}
         keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable
             style={styles.modalBackdrop}
             onPress={dismissKeyboardAnd(handleRequestClose)}

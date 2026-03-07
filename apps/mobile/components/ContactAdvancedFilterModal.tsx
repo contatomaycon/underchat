@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { getCountryDialCodeOptions } from '../constants/countryCodes';
@@ -113,6 +114,7 @@ export function ContactAdvancedFilterModal({
   initialValues,
   onApply,
 }: ContactAdvancedFilterModalProps) {
+  const insets = useSafeAreaInsets();
   const [labels, setLabels] = useState<LabelTemplate[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [loadingLabels, setLoadingLabels] = useState(false);
@@ -316,7 +318,7 @@ export function ContactAdvancedFilterModal({
         behavior={keyboardAvoidingBehavior}
         keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
       >
-        <View style={styles.overlay}>
+        <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
           <Pressable
             style={styles.modalBackdrop}
             onPress={dismissKeyboardAnd(handleRequestClose)}

@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 import type { SelectOption } from './types';
 import { selectTokens } from './tokens';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   getKeyboardVerticalOffset,
   keyboardAvoidingBehavior,
@@ -60,6 +61,7 @@ export function SelectSheet({
   onClear,
   onDone,
 }: SelectSheetProps) {
+  const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -117,7 +119,7 @@ export function SelectSheet({
         behavior={keyboardAvoidingBehavior}
         keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
       >
-        <Pressable style={styles.overlay} onPress={handleClose}>
+        <Pressable style={[styles.overlay, { paddingBottom: 12 + insets.bottom }]} onPress={handleClose}>
           <Pressable
             style={styles.card}
             onPress={(event) => {

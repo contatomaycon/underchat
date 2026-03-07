@@ -2184,7 +2184,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setLabelInfoModalVisible(false)}
       >
-        <View style={styles.transferOverlay}>
+        <View style={[styles.transferOverlay, { paddingBottom: 16 + insets.bottom }]}>
           <Pressable
             style={styles.transferBackdrop}
             onPress={() => setLabelInfoModalVisible(false)}
@@ -2219,7 +2219,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={closeCloseServiceModal}
       >
-        <View style={styles.transferOverlay}>
+        <View style={[styles.transferOverlay, { paddingBottom: 16 + insets.bottom }]}>
           <Pressable
             style={styles.transferBackdrop}
             onPress={closeCloseServiceModal}
@@ -2295,7 +2295,7 @@ export function ChatListScreen({ route, navigation }: Props) {
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
-          <View style={styles.transferOverlay}>
+          <View style={[styles.transferOverlay, { paddingBottom: 16 + insets.bottom }]}>
             <Pressable
               style={styles.transferBackdrop}
               onPress={dismissKeyboardAnd(closeTransferModal)}

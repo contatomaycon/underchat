@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import {
   ChatUserStatus,
@@ -155,6 +156,7 @@ export function UserSidebar({
   onProfileUpdated,
   onStatusUpdated,
 }: UserSidebarProps) {
+  const insets = useSafeAreaInsets();
   const [hasAccess, setHasAccess] = useState(true);
   const [loadingProfile, setLoadingProfile] = useState(false);
 
@@ -535,7 +537,7 @@ export function UserSidebar({
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
         >
-          <View style={styles.overlay}>
+          <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
             <Pressable
               style={styles.backdrop}
               onPress={dismissKeyboardAnd(closeSidebar)}

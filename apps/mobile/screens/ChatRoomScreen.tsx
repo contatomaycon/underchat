@@ -11565,7 +11565,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
-          <View style={styles.messageOverlayRoot}>
+          <View style={[styles.messageOverlayRoot, { paddingBottom: insets.bottom }]}>
             <Pressable
               style={styles.messageOverlayBackdropPress}
               onPress={() => {
@@ -11760,7 +11760,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         onRequestClose={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
       >
         <KeyboardAvoidingView
-          style={styles.bottomSheetOverlay}
+          style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
@@ -11829,7 +11829,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setViewingEditHistoryMessage(null)}
       >
-        <View style={styles.editHistoryOverlay}>
+        <View style={[styles.editHistoryOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable
             style={styles.editHistoryBackdrop}
             onPress={() => setViewingEditHistoryMessage(null)}
@@ -11905,7 +11905,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
-          <View style={styles.bottomSheetOverlay}>
+          <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
             <Pressable
               style={styles.bottomSheetBackdrop}
               onPress={handleForwardRequestClose}
@@ -12111,7 +12111,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         onRequestClose={() => setMenuVisible(false)}
       >
         <Pressable
-          style={styles.menuOverlay}
+          style={[styles.menuOverlay, { paddingBottom: insets.bottom }]}
           onPress={() => setMenuVisible(false)}
         >
           <Pressable
@@ -12165,7 +12165,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animationType="slide"
         onRequestClose={() => setAttendantsInfoVisible(false)}
       >
-        <View style={styles.bottomSheetOverlay}>
+        <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable
             style={styles.bottomSheetBackdrop}
             onPress={() => setAttendantsInfoVisible(false)}
@@ -12272,7 +12272,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animationType="slide"
         onRequestClose={() => setCloseServiceModalVisible(false)}
       >
-        <View style={styles.bottomSheetOverlay}>
+        <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable
             style={styles.bottomSheetBackdrop}
             onPress={() => setCloseServiceModalVisible(false)}
@@ -12337,7 +12337,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animationType="slide"
         onRequestClose={() => setProtocolModalVisible(false)}
       >
-        <View style={styles.bottomSheetOverlay}>
+        <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable
             style={styles.bottomSheetBackdrop}
             onPress={() => setProtocolModalVisible(false)}
@@ -12384,7 +12384,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animationType="slide"
         onRequestClose={() => setLabelModalVisible(false)}
       >
-        <View style={styles.bottomSheetOverlay}>
+        <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable
             style={styles.bottomSheetBackdrop}
             onPress={() => setLabelModalVisible(false)}
@@ -12488,7 +12488,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
-          <View style={styles.bottomSheetOverlay}>
+          <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
             <Pressable
               style={styles.bottomSheetBackdrop}
               onPress={dismissKeyboardAnd(() => setSearchModalVisible(false))}
@@ -12590,7 +12590,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animationType="slide"
         onRequestClose={() => setAttendanceHistoryVisible(false)}
       >
-        <View style={styles.bottomSheetOverlay}>
+        <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable
             style={styles.bottomSheetBackdrop}
             onPress={() => setAttendanceHistoryVisible(false)}
@@ -12666,7 +12666,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
-          <View style={styles.bottomSheetOverlay}>
+          <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
             <Pressable
               style={styles.bottomSheetBackdrop}
               onPress={dismissKeyboardAnd(() => setTransferModalVisible(false))}
@@ -12853,7 +12853,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         onRequestClose={() => setCameraPickerVisible(false)}
       >
         <Pressable
-          style={styles.cameraPickerOverlay}
+          style={[styles.cameraPickerOverlay, { paddingBottom: 16 + insets.bottom }]}
           onPress={() => setCameraPickerVisible(false)}
         >
           <Pressable
@@ -12902,7 +12902,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         )}
       >
         <KeyboardAvoidingView
-          style={styles.bottomSheetOverlay}
+          style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
@@ -12979,7 +12979,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
-          <View style={styles.bottomSheetOverlay}>
+          <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
             <Pressable
               style={styles.bottomSheetBackdrop}
               onPress={dismissKeyboardAnd(() => setContactPickerVisible(false))}
@@ -13145,7 +13145,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
-          <View style={styles.bottomSheetOverlay}>
+          <View style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}>
             <Pressable
               style={styles.bottomSheetBackdrop}
               onPress={dismissKeyboardAnd(() =>
@@ -13394,7 +13394,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={closeMediaViewer}
       >
-        <Pressable style={styles.viewerOverlay} onPress={closeMediaViewer}>
+        <Pressable style={[styles.viewerOverlay, { paddingBottom: insets.bottom }]} onPress={closeMediaViewer}>
           <Pressable
             style={styles.viewerContent}
             onPress={(event) => event.stopPropagation()}
