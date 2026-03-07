@@ -58,7 +58,12 @@ import {
   normalizeBirthdayIso,
 } from '../utils/date';
 import { resolveImageUri } from '../utils/imageUri';
-import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import {
+  dismissKeyboard,
+  dismissKeyboardAnd,
+  getKeyboardVerticalOffset,
+  keyboardAvoidingBehavior,
+} from '../utils/keyboard';
 import {
   formatChannelPhoneLabel,
   formatLocalPhone,
@@ -860,448 +865,457 @@ export function ContactFormModal({
       visible={visible}
       animationType="slide"
       transparent
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={handleRequestClose}
     >
       <KeyboardAvoidingView
         style={styles.keyboardAvoiding}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        behavior={keyboardAvoidingBehavior}
+        keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
       >
         <View style={styles.overlay}>
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={dismissKeyboardAnd(handleRequestClose)}
-        />
-        <TouchableWithoutFeedback onPress={dismissKeyboard} accessible={false}>
-          <View style={styles.modal}>
-            <View style={styles.header}>
-              <Text style={styles.title}>
-                {isEditMode ? pt.edit_contact : pt.add_contact}
-              </Text>
-              <Pressable
-                style={styles.closeBtn}
-                onPress={dismissKeyboardAnd(onClose)}
-              >
-                <Ionicons name="close" size={24} color={colors.onSurface} />
-              </Pressable>
-            </View>
-
-            {loadingInitial ? (
-              <View style={styles.loadingWrap}>
-                <ActivityIndicator size="small" color={colors.primary} />
-              </View>
-            ) : (
-              <>
-                <ScrollView
-                  style={styles.scroll}
-                  contentContainerStyle={styles.scrollContent}
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode={
-                    Platform.OS === 'ios' ? 'interactive' : 'on-drag'
-                  }
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={dismissKeyboardAnd(handleRequestClose)}
+          />
+          <TouchableWithoutFeedback
+            onPress={dismissKeyboard}
+            accessible={false}
+          >
+            <View style={styles.modal}>
+              <View style={styles.header}>
+                <Text style={styles.title}>
+                  {isEditMode ? pt.edit_contact : pt.add_contact}
+                </Text>
+                <Pressable
+                  style={styles.closeBtn}
+                  onPress={dismissKeyboardAnd(onClose)}
                 >
-                  <View style={styles.photoRow}>
-                    <View style={styles.photoContainer}>
-                      <AppAvatar
-                        uri={photoUri}
-                        size={72}
-                        style={styles.photo}
-                        iconName="person-circle-outline"
-                        iconSize={72}
-                        iconColor={colors.grey500}
-                      />
-                    </View>
-                    <View style={styles.photoActionsGrid}>
-                      <View
-                        style={[
-                          styles.photoActionColumn,
-                          !photoUri && styles.photoActionColumnFull,
-                        ]}
-                      >
-                        <Pressable
-                          style={styles.secondaryBtn}
-                          onPress={handlePickImage}
-                        >
-                          <Text style={styles.secondaryBtnText}>
-                            {pt.select_photo}
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          style={styles.secondaryBtn}
-                          onPress={handleTakePhoto}
-                        >
-                          <Text style={styles.secondaryBtnText}>
-                            {pt.open_camera}
-                          </Text>
-                        </Pressable>
+                  <Ionicons name="close" size={24} color={colors.onSurface} />
+                </Pressable>
+              </View>
+
+              {loadingInitial ? (
+                <View style={styles.loadingWrap}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : (
+                <>
+                  <ScrollView
+                    style={styles.scroll}
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode={
+                      Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                    }
+                  >
+                    <View style={styles.photoRow}>
+                      <View style={styles.photoContainer}>
+                        <AppAvatar
+                          uri={photoUri}
+                          size={72}
+                          style={styles.photo}
+                          iconName="person-circle-outline"
+                          iconSize={72}
+                          iconColor={colors.grey500}
+                        />
                       </View>
-                      {photoUri ? (
-                        <Pressable
+                      <View style={styles.photoActionsGrid}>
+                        <View
                           style={[
-                            styles.secondaryBtn,
-                            styles.photoRemoveBtn,
-                            removingPhoto && styles.disabledBtn,
-                          ]}
-                          onPress={handleDeletePhoto}
-                          disabled={removingPhoto}
-                        >
-                          <Text style={styles.secondaryBtnText}>
-                            {pt.remove_photo}
-                          </Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
-                  </View>
-
-                  <View style={styles.field}>
-                    <Text style={styles.label}>
-                      {pt.name} <Text style={styles.required}>*</Text>
-                    </Text>
-                    <TextInput
-                      style={styles.input}
-                      value={name}
-                      onChangeText={setName}
-                      placeholder={pt.name}
-                      placeholderTextColor={colors.grey500}
-                    />
-                  </View>
-
-                  <View style={styles.row}>
-                    <View style={[styles.field, styles.half]}>
-                      <Text style={styles.label}>{pt.last_name}</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={lastName}
-                        onChangeText={setLastName}
-                        placeholder={pt.last_name}
-                        placeholderTextColor={colors.grey500}
-                      />
-                    </View>
-                    <View style={[styles.field, styles.half]}>
-                      <Text style={styles.label}>{pt.nickname}</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={nickname}
-                        onChangeText={setNickname}
-                        placeholder={pt.nickname}
-                        placeholderTextColor={colors.grey500}
-                      />
-                    </View>
-                  </View>
-
-                  <View style={styles.row}>
-                    <View style={[styles.field, styles.half]}>
-                      <Text style={styles.label}>{pt.birthday}</Text>
-                      <Pressable
-                        style={styles.inputPressable}
-                        onPress={openBirthdayPicker}
-                      >
-                        <Text
-                          style={[
-                            styles.inputPressableText,
-                            !birthdayDisplay &&
-                              styles.inputPressablePlaceholder,
+                            styles.photoActionColumn,
+                            !photoUri && styles.photoActionColumnFull,
                           ]}
                         >
-                          {birthdayDisplay || 'DD/MM/YYYY'}
-                        </Text>
-                      </Pressable>
-                    </View>
-                    <View style={[styles.field, styles.half]}>
-                      <Text style={styles.label}>{pt.email}</Text>
-                      <View style={styles.inputWithAction}>
-                        <TextInput
-                          style={styles.inputWithActionField}
-                          value={email}
-                          onChangeText={setEmail}
-                          placeholder={pt.email}
-                          placeholderTextColor={colors.grey500}
-                          keyboardType="email-address"
-                          autoCapitalize="none"
-                          editable={!canToggleEmailVisibility || emailVisible}
-                        />
-                        {canToggleEmailVisibility ? (
                           <Pressable
-                            style={styles.actionBtn}
-                            onPress={toggleEmailVisibility}
+                            style={styles.secondaryBtn}
+                            onPress={handlePickImage}
                           >
-                            <Ionicons
-                              name={
-                                emailVisible ? 'eye-off-outline' : 'eye-outline'
-                              }
-                              size={18}
-                              color={colors.primary}
-                            />
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.row}>
-                    <View style={[styles.field, styles.half]}>
-                      <SelectField
-                        label={pt.phone_ddi}
-                        required
-                        valueLabel={selectedPhoneDdiName}
-                        placeholder={pt.select_phone_ddi}
-                        onPress={() => openPicker('phoneDdi')}
-                      />
-                    </View>
-                    <View style={[styles.field, styles.half]}>
-                      <Text style={styles.label}>
-                        {pt.phone} <Text style={styles.required}>*</Text>
-                      </Text>
-                      <View style={styles.inputWithAction}>
-                        <TextInput
-                          style={styles.inputWithActionField}
-                          value={phone}
-                          onChangeText={(value) =>
-                            setPhone(formatLocalPhone(value))
-                          }
-                          editable={!canTogglePhoneVisibility || phoneVisible}
-                          keyboardType="phone-pad"
-                          maxLength={15}
-                          placeholder="(00) 00000-0000"
-                          placeholderTextColor={colors.grey500}
-                        />
-                        {canTogglePhoneVisibility ? (
-                          <Pressable
-                            style={styles.actionBtn}
-                            onPress={togglePhoneVisibility}
-                          >
-                            <Ionicons
-                              name={
-                                phoneVisible ? 'eye-off-outline' : 'eye-outline'
-                              }
-                              size={18}
-                              color={colors.primary}
-                            />
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.row}>
-                    <View style={[styles.field, styles.half]}>
-                      <SelectField
-                        label={pt.document_type}
-                        valueLabel={
-                          selectedDocumentTypeName === pt.select_option
-                            ? null
-                            : selectedDocumentTypeName
-                        }
-                        placeholder={pt.select_option}
-                        onPress={() => openPicker('documentType')}
-                      />
-                    </View>
-                    <View style={[styles.field, styles.half]}>
-                      <Text style={styles.label}>{pt.document}</Text>
-                      <View style={styles.inputWithAction}>
-                        <TextInput
-                          style={styles.inputWithActionField}
-                          value={document}
-                          onChangeText={(value) =>
-                            setDocument(
-                              formatDocumentByType(value, documentTypeId)
-                            )
-                          }
-                          editable={
-                            !canToggleDocumentVisibility || documentVisible
-                          }
-                          keyboardType={
-                            Platform.OS === 'ios' ? 'number-pad' : 'numeric'
-                          }
-                          inputMode="numeric"
-                          maxLength={documentMaskMaxLength}
-                          placeholder={documentPlaceholder}
-                          placeholderTextColor={colors.grey500}
-                        />
-                        {canToggleDocumentVisibility ? (
-                          <Pressable
-                            style={styles.actionBtn}
-                            onPress={toggleDocumentVisibility}
-                          >
-                            <Ionicons
-                              name={
-                                documentVisible
-                                  ? 'eye-off-outline'
-                                  : 'eye-outline'
-                              }
-                              size={18}
-                              color={colors.primary}
-                            />
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.field}>
-                    <SelectField
-                      label={pt.filter_by_attendant}
-                      valueLabel={
-                        selectedUserName === pt.select_attendant_filter
-                          ? null
-                          : selectedUserName
-                      }
-                      placeholder={pt.select_attendant_filter}
-                      onPress={() => openPicker('user')}
-                    />
-                  </View>
-
-                  <View style={styles.field}>
-                    <SelectField
-                      label={pt.ignore}
-                      valueLabel={selectedIgnoreName}
-                      placeholder={pt.select_option}
-                      onPress={() => openPicker('ignore')}
-                    />
-                  </View>
-
-                  <View style={styles.field}>
-                    <SelectField
-                      label={pt.filter_by_tag}
-                      valueLabel={
-                        selectedLabelsData.length > 0
-                          ? `${selectedLabelsData.length} ${pt.selected_items}`
-                          : null
-                      }
-                      placeholder={pt.select_tag_filter}
-                      onPress={() => openPicker('labels')}
-                    />
-                    {selectedLabelsData.length > 0 ? (
-                      <View style={styles.selectedWrap}>
-                        {selectedLabelsData.map((item) => (
-                          <View key={item.value} style={styles.selectedChip}>
-                            <Text
-                              style={styles.selectedChipText}
-                              numberOfLines={1}
-                            >
-                              {item.label}
+                            <Text style={styles.secondaryBtnText}>
+                              {pt.select_photo}
                             </Text>
+                          </Pressable>
+                          <Pressable
+                            style={styles.secondaryBtn}
+                            onPress={handleTakePhoto}
+                          >
+                            <Text style={styles.secondaryBtnText}>
+                              {pt.open_camera}
+                            </Text>
+                          </Pressable>
+                        </View>
+                        {photoUri ? (
+                          <Pressable
+                            style={[
+                              styles.secondaryBtn,
+                              styles.photoRemoveBtn,
+                              removingPhoto && styles.disabledBtn,
+                            ]}
+                            onPress={handleDeletePhoto}
+                            disabled={removingPhoto}
+                          >
+                            <Text style={styles.secondaryBtnText}>
+                              {pt.remove_photo}
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    <View style={styles.field}>
+                      <Text style={styles.label}>
+                        {pt.name} <Text style={styles.required}>*</Text>
+                      </Text>
+                      <TextInput
+                        style={styles.input}
+                        value={name}
+                        onChangeText={setName}
+                        placeholder={pt.name}
+                        placeholderTextColor={colors.grey500}
+                      />
+                    </View>
+
+                    <View style={styles.row}>
+                      <View style={[styles.field, styles.half]}>
+                        <Text style={styles.label}>{pt.last_name}</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={lastName}
+                          onChangeText={setLastName}
+                          placeholder={pt.last_name}
+                          placeholderTextColor={colors.grey500}
+                        />
+                      </View>
+                      <View style={[styles.field, styles.half]}>
+                        <Text style={styles.label}>{pt.nickname}</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={nickname}
+                          onChangeText={setNickname}
+                          placeholder={pt.nickname}
+                          placeholderTextColor={colors.grey500}
+                        />
+                      </View>
+                    </View>
+
+                    <View style={styles.row}>
+                      <View style={[styles.field, styles.half]}>
+                        <Text style={styles.label}>{pt.birthday}</Text>
+                        <Pressable
+                          style={styles.inputPressable}
+                          onPress={openBirthdayPicker}
+                        >
+                          <Text
+                            style={[
+                              styles.inputPressableText,
+                              !birthdayDisplay &&
+                                styles.inputPressablePlaceholder,
+                            ]}
+                          >
+                            {birthdayDisplay || 'DD/MM/YYYY'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      <View style={[styles.field, styles.half]}>
+                        <Text style={styles.label}>{pt.email}</Text>
+                        <View style={styles.inputWithAction}>
+                          <TextInput
+                            style={styles.inputWithActionField}
+                            value={email}
+                            onChangeText={setEmail}
+                            placeholder={pt.email}
+                            placeholderTextColor={colors.grey500}
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            editable={!canToggleEmailVisibility || emailVisible}
+                          />
+                          {canToggleEmailVisibility ? (
                             <Pressable
-                              style={styles.chipRemoveBtn}
-                              onPress={() => removeLabel(item.value)}
+                              style={styles.actionBtn}
+                              onPress={toggleEmailVisibility}
                             >
                               <Ionicons
-                                name="close"
-                                size={12}
-                                color={colors.onPrimary}
+                                name={
+                                  emailVisible
+                                    ? 'eye-off-outline'
+                                    : 'eye-outline'
+                                }
+                                size={18}
+                                color={colors.primary}
                               />
                             </Pressable>
-                          </View>
-                        ))}
+                          ) : null}
+                        </View>
                       </View>
-                    ) : null}
-                  </View>
+                    </View>
 
-                  <View style={styles.field}>
-                    <SelectField
-                      label={pt.channel}
-                      valueLabel={
-                        selectedChannelsData.length > 0
-                          ? `${selectedChannelsData.length} ${pt.selected_items}`
-                          : null
-                      }
-                      placeholder={pt.select_channel}
-                      onPress={() => openPicker('channels')}
-                    />
-                    {selectedChannelsData.length > 0 ? (
-                      <View style={styles.selectedWrap}>
-                        {selectedChannelsData.map((item) => (
-                          <View key={item.value} style={styles.selectedChip}>
-                            <Text
-                              style={styles.selectedChipText}
-                              numberOfLines={1}
+                    <View style={styles.row}>
+                      <View style={[styles.field, styles.half]}>
+                        <SelectField
+                          label={pt.phone_ddi}
+                          required
+                          valueLabel={selectedPhoneDdiName}
+                          placeholder={pt.select_phone_ddi}
+                          onPress={() => openPicker('phoneDdi')}
+                        />
+                      </View>
+                      <View style={[styles.field, styles.half]}>
+                        <Text style={styles.label}>
+                          {pt.phone} <Text style={styles.required}>*</Text>
+                        </Text>
+                        <View style={styles.inputWithAction}>
+                          <TextInput
+                            style={styles.inputWithActionField}
+                            value={phone}
+                            onChangeText={(value) =>
+                              setPhone(formatLocalPhone(value))
+                            }
+                            editable={!canTogglePhoneVisibility || phoneVisible}
+                            keyboardType="phone-pad"
+                            maxLength={15}
+                            placeholder="(00) 00000-0000"
+                            placeholderTextColor={colors.grey500}
+                          />
+                          {canTogglePhoneVisibility ? (
+                            <Pressable
+                              style={styles.actionBtn}
+                              onPress={togglePhoneVisibility}
                             >
-                              {item.label}
-                            </Text>
-                          </View>
-                        ))}
+                              <Ionicons
+                                name={
+                                  phoneVisible
+                                    ? 'eye-off-outline'
+                                    : 'eye-outline'
+                                }
+                                size={18}
+                                color={colors.primary}
+                              />
+                            </Pressable>
+                          ) : null}
+                        </View>
                       </View>
-                    ) : null}
-                  </View>
+                    </View>
 
-                  <View style={styles.field}>
-                    <Text style={styles.label}>{pt.notes}</Text>
-                    <TextInput
-                      style={[styles.input, styles.notesInput]}
-                      value={notes}
-                      onChangeText={setNotes}
-                      placeholder={pt.notes}
-                      placeholderTextColor={colors.grey500}
-                      multiline
-                    />
-                  </View>
-                </ScrollView>
+                    <View style={styles.row}>
+                      <View style={[styles.field, styles.half]}>
+                        <SelectField
+                          label={pt.document_type}
+                          valueLabel={
+                            selectedDocumentTypeName === pt.select_option
+                              ? null
+                              : selectedDocumentTypeName
+                          }
+                          placeholder={pt.select_option}
+                          onPress={() => openPicker('documentType')}
+                        />
+                      </View>
+                      <View style={[styles.field, styles.half]}>
+                        <Text style={styles.label}>{pt.document}</Text>
+                        <View style={styles.inputWithAction}>
+                          <TextInput
+                            style={styles.inputWithActionField}
+                            value={document}
+                            onChangeText={(value) =>
+                              setDocument(
+                                formatDocumentByType(value, documentTypeId)
+                              )
+                            }
+                            editable={
+                              !canToggleDocumentVisibility || documentVisible
+                            }
+                            keyboardType={
+                              Platform.OS === 'ios' ? 'number-pad' : 'numeric'
+                            }
+                            inputMode="numeric"
+                            maxLength={documentMaskMaxLength}
+                            placeholder={documentPlaceholder}
+                            placeholderTextColor={colors.grey500}
+                          />
+                          {canToggleDocumentVisibility ? (
+                            <Pressable
+                              style={styles.actionBtn}
+                              onPress={toggleDocumentVisibility}
+                            >
+                              <Ionicons
+                                name={
+                                  documentVisible
+                                    ? 'eye-off-outline'
+                                    : 'eye-outline'
+                                }
+                                size={18}
+                                color={colors.primary}
+                              />
+                            </Pressable>
+                          ) : null}
+                        </View>
+                      </View>
+                    </View>
 
-                <View style={styles.footer}>
+                    <View style={styles.field}>
+                      <SelectField
+                        label={pt.filter_by_attendant}
+                        valueLabel={
+                          selectedUserName === pt.select_attendant_filter
+                            ? null
+                            : selectedUserName
+                        }
+                        placeholder={pt.select_attendant_filter}
+                        onPress={() => openPicker('user')}
+                      />
+                    </View>
+
+                    <View style={styles.field}>
+                      <SelectField
+                        label={pt.ignore}
+                        valueLabel={selectedIgnoreName}
+                        placeholder={pt.select_option}
+                        onPress={() => openPicker('ignore')}
+                      />
+                    </View>
+
+                    <View style={styles.field}>
+                      <SelectField
+                        label={pt.filter_by_tag}
+                        valueLabel={
+                          selectedLabelsData.length > 0
+                            ? `${selectedLabelsData.length} ${pt.selected_items}`
+                            : null
+                        }
+                        placeholder={pt.select_tag_filter}
+                        onPress={() => openPicker('labels')}
+                      />
+                      {selectedLabelsData.length > 0 ? (
+                        <View style={styles.selectedWrap}>
+                          {selectedLabelsData.map((item) => (
+                            <View key={item.value} style={styles.selectedChip}>
+                              <Text
+                                style={styles.selectedChipText}
+                                numberOfLines={1}
+                              >
+                                {item.label}
+                              </Text>
+                              <Pressable
+                                style={styles.chipRemoveBtn}
+                                onPress={() => removeLabel(item.value)}
+                              >
+                                <Ionicons
+                                  name="close"
+                                  size={12}
+                                  color={colors.onPrimary}
+                                />
+                              </Pressable>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.field}>
+                      <SelectField
+                        label={pt.channel}
+                        valueLabel={
+                          selectedChannelsData.length > 0
+                            ? `${selectedChannelsData.length} ${pt.selected_items}`
+                            : null
+                        }
+                        placeholder={pt.select_channel}
+                        onPress={() => openPicker('channels')}
+                      />
+                      {selectedChannelsData.length > 0 ? (
+                        <View style={styles.selectedWrap}>
+                          {selectedChannelsData.map((item) => (
+                            <View key={item.value} style={styles.selectedChip}>
+                              <Text
+                                style={styles.selectedChipText}
+                                numberOfLines={1}
+                              >
+                                {item.label}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.field}>
+                      <Text style={styles.label}>{pt.notes}</Text>
+                      <TextInput
+                        style={[styles.input, styles.notesInput]}
+                        value={notes}
+                        onChangeText={setNotes}
+                        placeholder={pt.notes}
+                        placeholderTextColor={colors.grey500}
+                        multiline
+                      />
+                    </View>
+                  </ScrollView>
+
+                  <View style={styles.footer}>
+                    <Pressable
+                      style={styles.cancelBtn}
+                      onPress={dismissKeyboardAnd(onClose)}
+                    >
+                      <Text style={styles.cancelBtnText}>{pt.cancel}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.saveBtn, saving && styles.disabledBtn]}
+                      onPress={dismissKeyboardAnd(handleSave)}
+                      disabled={saving}
+                    >
+                      {saving ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.onPrimary}
+                        />
+                      ) : (
+                        <Text style={styles.saveBtnText}>{pt.save}</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </View>
+          </TouchableWithoutFeedback>
+
+          {Platform.OS === 'ios' && birthdayPickerVisible ? (
+            <Pressable
+              style={styles.pickerOverlay}
+              onPress={handleBirthdayCancel}
+            >
+              <Pressable
+                style={styles.datePickerCard}
+                onPress={(event) => event.stopPropagation()}
+              >
+                <View style={styles.datePickerHeader}>
                   <Pressable
-                    style={styles.cancelBtn}
-                    onPress={dismissKeyboardAnd(onClose)}
+                    style={styles.datePickerHeaderAction}
+                    onPress={handleBirthdayCancel}
                   >
-                    <Text style={styles.cancelBtnText}>{pt.cancel}</Text>
+                    <Text style={styles.datePickerHeaderActionText}>
+                      {pt.cancel}
+                    </Text>
                   </Pressable>
                   <Pressable
-                    style={[styles.saveBtn, saving && styles.disabledBtn]}
-                    onPress={dismissKeyboardAnd(handleSave)}
-                    disabled={saving}
+                    style={styles.datePickerHeaderAction}
+                    onPress={handleBirthdayConfirm}
                   >
-                    {saving ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={colors.onPrimary}
-                      />
-                    ) : (
-                      <Text style={styles.saveBtnText}>{pt.save}</Text>
-                    )}
+                    <Text style={styles.datePickerHeaderActionText}>
+                      {pt.done}
+                    </Text>
                   </Pressable>
                 </View>
-              </>
-            )}
-          </View>
-        </TouchableWithoutFeedback>
-
-        {Platform.OS === 'ios' && birthdayPickerVisible ? (
-          <Pressable
-            style={styles.pickerOverlay}
-            onPress={handleBirthdayCancel}
-          >
-            <Pressable
-              style={styles.datePickerCard}
-              onPress={(event) => event.stopPropagation()}
-            >
-              <View style={styles.datePickerHeader}>
-                <Pressable
-                  style={styles.datePickerHeaderAction}
-                  onPress={handleBirthdayCancel}
-                >
-                  <Text style={styles.datePickerHeaderActionText}>
-                    {pt.cancel}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={styles.datePickerHeaderAction}
-                  onPress={handleBirthdayConfirm}
-                >
-                  <Text style={styles.datePickerHeaderActionText}>
-                    {pt.done}
-                  </Text>
-                </Pressable>
-              </View>
-              <DateTimePicker
-                value={birthdayDraftDate}
-                mode="date"
-                display="inline"
-                onChange={handleBirthdayIosChange}
-                minimumDate={new Date(1900, 0, 1)}
-                maximumDate={new Date(2100, 11, 31)}
-              />
+                <DateTimePicker
+                  value={birthdayDraftDate}
+                  mode="date"
+                  display="inline"
+                  onChange={handleBirthdayIosChange}
+                  minimumDate={new Date(1900, 0, 1)}
+                  maximumDate={new Date(2100, 11, 31)}
+                />
+              </Pressable>
             </Pressable>
-          </Pressable>
-        ) : null}
+          ) : null}
 
           <SelectSheet
             visible={pickerKind !== null}

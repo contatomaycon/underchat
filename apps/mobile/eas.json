@@ -6,27 +6,32 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "environment": "development",
       "android": {
         "buildType": "apk"
       }
     },
     "preview-apk": {
       "distribution": "internal",
+      "environment": "preview",
       "android": {
         "buildType": "apk"
       }
     },
     "production-aab": {
+      "environment": "production",
       "android": {
         "buildType": "app-bundle"
       }
     },
     "production-ios": {
-      "distribution": "store"
+      "distribution": "store",
+      "environment": "production"
     },
     "development-simulator": {
       "developmentClient": true,
       "distribution": "internal",
+      "environment": "development",
       "ios": {
         "simulator": true
       }

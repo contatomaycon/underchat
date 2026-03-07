@@ -25,7 +25,11 @@ import {
 import { hasChatModuleAccessPermission } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
-import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import {
+  dismissKeyboard,
+  dismissKeyboardAnd,
+  keyboardAvoidingBehavior,
+} from '../utils/keyboard';
 
 const APP_TITLE = pt.app_title;
 
@@ -99,7 +103,7 @@ export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={keyboardAvoidingBehavior}
     >
       <StatusBar style="dark" />
       <ScrollView

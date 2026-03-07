@@ -60,6 +60,21 @@ Esse comando usa o perfil `production-ios` na seção `submit` do EAS.
 
 ## Android
 
+### Configuração de mapa com MapLibre (Localização no chat)
+
+O app usa MapLibre no seletor de localização e não exige chave do Google Maps.
+
+Variável de estilo do mapa:
+
+- `EXPO_PUBLIC_MAPLIBRE_STYLE_URL` (padrão: `https://demotiles.maplibre.org/style.json`)
+
+Local (dev client / `run:android`):
+
+- Copie `.env.example` para `.env`
+- Ajuste `EXPO_PUBLIC_MAPLIBRE_STYLE_URL` se quiser usar outro estilo
+
+- Rebuild nativo é recomendado após instalar/alterar provider de mapa
+
 - Android
   pnpm run run:android
   pnpm exec expo start --dev-client --android --tunnel

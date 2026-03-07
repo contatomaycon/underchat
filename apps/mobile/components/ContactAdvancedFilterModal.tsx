@@ -31,7 +31,12 @@ import type {
   ContactSortField,
   ContactSortOrder,
 } from '../types/contact';
-import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import {
+  dismissKeyboard,
+  dismissKeyboardAnd,
+  getKeyboardVerticalOffset,
+  keyboardAvoidingBehavior,
+} from '../utils/keyboard';
 import { SelectField, SelectSheet, type SelectOption } from './select';
 
 type PickerKind =
@@ -301,13 +306,15 @@ export function ContactAdvancedFilterModal({
     <Modal
       visible={visible}
       transparent
+      statusBarTranslucent
+      navigationBarTranslucent
       animationType="slide"
       onRequestClose={handleRequestClose}
     >
       <KeyboardAvoidingView
         style={styles.keyboardAvoiding}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        behavior={keyboardAvoidingBehavior}
+        keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
       >
         <View style={styles.overlay}>
           <Pressable
@@ -319,208 +326,208 @@ export function ContactAdvancedFilterModal({
             accessible={false}
           >
             <View style={styles.modal}>
-            <View style={styles.header}>
-              <Text style={styles.title}>{pt.advanced_filters}</Text>
-              <Pressable
-                onPress={dismissKeyboardAnd(onClose)}
-                style={styles.closeBtn}
+              <View style={styles.header}>
+                <Text style={styles.title}>{pt.advanced_filters}</Text>
+                <Pressable
+                  onPress={dismissKeyboardAnd(onClose)}
+                  style={styles.closeBtn}
+                >
+                  <Ionicons name="close" size={24} color={colors.onSurface} />
+                </Pressable>
+              </View>
+
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={
+                  Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                }
               >
-                <Ionicons name="close" size={24} color={colors.onSurface} />
-              </Pressable>
-            </View>
-
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode={
-                Platform.OS === 'ios' ? 'interactive' : 'on-drag'
-              }
-            >
-              <View style={styles.field}>
-                <SelectField
-                  label={pt.filter_by_tag}
-                  valueLabel={
-                    selectedLabelName === pt.select_tag_filter
-                      ? null
-                      : selectedLabelName
-                  }
-                  placeholder={pt.select_tag_filter}
-                  onPress={() => openPicker('label')}
-                  loading={loadingLabels}
-                  disabled={loadingLabels}
-                />
-              </View>
-
-              <View style={styles.row}>
-                <View style={[styles.field, styles.half]}>
+                <View style={styles.field}>
                   <SelectField
-                    label={pt.phone_ddi}
+                    label={pt.filter_by_tag}
                     valueLabel={
-                      selectedPhoneDdiName === pt.select_phone_ddi
+                      selectedLabelName === pt.select_tag_filter
                         ? null
-                        : selectedPhoneDdiName
+                        : selectedLabelName
                     }
-                    placeholder={pt.select_phone_ddi}
-                    onPress={() => openPicker('phoneDdi')}
+                    placeholder={pt.select_tag_filter}
+                    onPress={() => openPicker('label')}
+                    loading={loadingLabels}
+                    disabled={loadingLabels}
                   />
                 </View>
-                <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.phone}</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={filterPhone ?? ''}
-                    onChangeText={(value) =>
-                      setFilterPhone(formatPhone(value) || null)
-                    }
-                    keyboardType="phone-pad"
-                    maxLength={15}
-                    placeholder={pt.filter_by_phone_placeholder}
-                    placeholderTextColor={colors.grey500}
-                  />
-                </View>
-              </View>
 
-              <View style={styles.row}>
-                <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.name}</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={filterName ?? ''}
-                    onChangeText={(value) => setFilterName(value || null)}
-                    placeholder={pt.name}
-                    placeholderTextColor={colors.grey500}
-                  />
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.half]}>
+                    <SelectField
+                      label={pt.phone_ddi}
+                      valueLabel={
+                        selectedPhoneDdiName === pt.select_phone_ddi
+                          ? null
+                          : selectedPhoneDdiName
+                      }
+                      placeholder={pt.select_phone_ddi}
+                      onPress={() => openPicker('phoneDdi')}
+                    />
+                  </View>
+                  <View style={[styles.field, styles.half]}>
+                    <Text style={styles.label}>{pt.phone}</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={filterPhone ?? ''}
+                      onChangeText={(value) =>
+                        setFilterPhone(formatPhone(value) || null)
+                      }
+                      keyboardType="phone-pad"
+                      maxLength={15}
+                      placeholder={pt.filter_by_phone_placeholder}
+                      placeholderTextColor={colors.grey500}
+                    />
+                  </View>
                 </View>
-                <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.last_name}</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={filterLastName ?? ''}
-                    onChangeText={(value) => setFilterLastName(value || null)}
-                    placeholder={pt.last_name}
-                    placeholderTextColor={colors.grey500}
-                  />
-                </View>
-              </View>
 
-              <View style={styles.row}>
-                <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.nickname}</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={filterNickname ?? ''}
-                    onChangeText={(value) => setFilterNickname(value || null)}
-                    placeholder={pt.nickname}
-                    placeholderTextColor={colors.grey500}
-                  />
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.half]}>
+                    <Text style={styles.label}>{pt.name}</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={filterName ?? ''}
+                      onChangeText={(value) => setFilterName(value || null)}
+                      placeholder={pt.name}
+                      placeholderTextColor={colors.grey500}
+                    />
+                  </View>
+                  <View style={[styles.field, styles.half]}>
+                    <Text style={styles.label}>{pt.last_name}</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={filterLastName ?? ''}
+                      onChangeText={(value) => setFilterLastName(value || null)}
+                      placeholder={pt.last_name}
+                      placeholderTextColor={colors.grey500}
+                    />
+                  </View>
                 </View>
-                <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.email}</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={filterEmail ?? ''}
-                    onChangeText={(value) => setFilterEmail(value || null)}
-                    placeholder={pt.email}
-                    placeholderTextColor={colors.grey500}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </View>
-              </View>
 
-              <View style={styles.row}>
-                <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.birthday}</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={filterBirthday ?? ''}
-                    onChangeText={(value) =>
-                      setFilterBirthday(normalizeDateInput(value) || null)
-                    }
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.grey500}
-                  />
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.half]}>
+                    <Text style={styles.label}>{pt.nickname}</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={filterNickname ?? ''}
+                      onChangeText={(value) => setFilterNickname(value || null)}
+                      placeholder={pt.nickname}
+                      placeholderTextColor={colors.grey500}
+                    />
+                  </View>
+                  <View style={[styles.field, styles.half]}>
+                    <Text style={styles.label}>{pt.email}</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={filterEmail ?? ''}
+                      onChangeText={(value) => setFilterEmail(value || null)}
+                      placeholder={pt.email}
+                      placeholderTextColor={colors.grey500}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
                 </View>
-                <View style={[styles.field, styles.half]}>
-                  <Text style={styles.label}>{pt.document}</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={filterDocument ?? ''}
-                    onChangeText={(value) =>
-                      setFilterDocument(
-                        formatDocumentByType(value, null) || null
-                      )
-                    }
-                    maxLength={documentMaskMaxLength}
-                    placeholder={pt.document}
-                    placeholderTextColor={colors.grey500}
-                  />
+
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.half]}>
+                    <Text style={styles.label}>{pt.birthday}</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={filterBirthday ?? ''}
+                      onChangeText={(value) =>
+                        setFilterBirthday(normalizeDateInput(value) || null)
+                      }
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor={colors.grey500}
+                    />
+                  </View>
+                  <View style={[styles.field, styles.half]}>
+                    <Text style={styles.label}>{pt.document}</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={filterDocument ?? ''}
+                      onChangeText={(value) =>
+                        setFilterDocument(
+                          formatDocumentByType(value, null) || null
+                        )
+                      }
+                      maxLength={documentMaskMaxLength}
+                      placeholder={pt.document}
+                      placeholderTextColor={colors.grey500}
+                    />
+                  </View>
                 </View>
-              </View>
 
-              <View style={styles.field}>
-                <SelectField
-                  label={pt.filter_by_attendant}
-                  valueLabel={
-                    selectedUserName === pt.select_attendant_filter
-                      ? null
-                      : selectedUserName
-                  }
-                  placeholder={pt.select_attendant_filter}
-                  onPress={() => openPicker('user')}
-                  loading={loadingUsers}
-                  disabled={loadingUsers}
-                />
-              </View>
-
-              <View style={styles.row}>
-                <View style={[styles.field, styles.half]}>
+                <View style={styles.field}>
                   <SelectField
-                    label={pt.sort_by}
+                    label={pt.filter_by_attendant}
                     valueLabel={
-                      selectedSortFieldName === pt.select_sort_field
+                      selectedUserName === pt.select_attendant_filter
                         ? null
-                        : selectedSortFieldName
+                        : selectedUserName
                     }
-                    placeholder={pt.select_sort_field}
-                    onPress={() => openPicker('sortField')}
+                    placeholder={pt.select_attendant_filter}
+                    onPress={() => openPicker('user')}
+                    loading={loadingUsers}
+                    disabled={loadingUsers}
                   />
                 </View>
-                <View style={[styles.field, styles.half]}>
-                  <SelectField
-                    label={pt.sort_order}
-                    valueLabel={
-                      selectedSortOrderName === pt.select_sort_order
-                        ? null
-                        : selectedSortOrderName
-                    }
-                    placeholder={pt.select_sort_order}
-                    onPress={() => openPicker('sortOrder')}
-                  />
-                </View>
-              </View>
-            </ScrollView>
 
-            <View style={styles.footer}>
-              <Pressable
-                style={styles.cancelButton}
-                onPress={dismissKeyboardAnd(onClose)}
-              >
-                <Text style={styles.cancelButtonText}>{pt.cancel}</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.applyButton, saving && styles.disabledButton]}
-                onPress={dismissKeyboardAnd(handleApply)}
-                disabled={saving}
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.applyButtonText}>{pt.filter}</Text>
-                )}
-              </Pressable>
-            </View>
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.half]}>
+                    <SelectField
+                      label={pt.sort_by}
+                      valueLabel={
+                        selectedSortFieldName === pt.select_sort_field
+                          ? null
+                          : selectedSortFieldName
+                      }
+                      placeholder={pt.select_sort_field}
+                      onPress={() => openPicker('sortField')}
+                    />
+                  </View>
+                  <View style={[styles.field, styles.half]}>
+                    <SelectField
+                      label={pt.sort_order}
+                      valueLabel={
+                        selectedSortOrderName === pt.select_sort_order
+                          ? null
+                          : selectedSortOrderName
+                      }
+                      placeholder={pt.select_sort_order}
+                      onPress={() => openPicker('sortOrder')}
+                    />
+                  </View>
+                </View>
+              </ScrollView>
+
+              <View style={styles.footer}>
+                <Pressable
+                  style={styles.cancelButton}
+                  onPress={dismissKeyboardAnd(onClose)}
+                >
+                  <Text style={styles.cancelButtonText}>{pt.cancel}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.applyButton, saving && styles.disabledButton]}
+                  onPress={dismissKeyboardAnd(handleApply)}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.applyButtonText}>{pt.filter}</Text>
+                  )}
+                </Pressable>
+              </View>
             </View>
           </TouchableWithoutFeedback>
 

@@ -4,7 +4,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -15,6 +14,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 import type { SelectOption } from './types';
 import { selectTokens } from './tokens';
+import {
+  getKeyboardVerticalOffset,
+  keyboardAvoidingBehavior,
+} from '../../utils/keyboard';
 
 export interface SelectSheetProps {
   visible: boolean;
@@ -106,12 +109,13 @@ export function SelectSheet({
       animationType="fade"
       presentationStyle="overFullScreen"
       statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={handleClose}
     >
       <KeyboardAvoidingView
         style={styles.keyboardAvoiding}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        behavior={keyboardAvoidingBehavior}
+        keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
       >
         <Pressable style={styles.overlay} onPress={handleClose}>
           <Pressable

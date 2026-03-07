@@ -103,7 +103,12 @@ import {
   syncGlobalChatCounts,
 } from '../utils/chatCountsSync';
 import { formatBadgeCount } from '../utils/countFormat';
-import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import {
+  dismissKeyboard,
+  dismissKeyboardAnd,
+  getKeyboardVerticalOffset,
+  keyboardAvoidingBehavior,
+} from '../utils/keyboard';
 import { addAppResumeListener } from '../utils/appResumeBus';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
@@ -2174,6 +2179,8 @@ export function ChatListScreen({ route, navigation }: Props) {
       <Modal
         visible={labelInfoModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="fade"
         onRequestClose={() => setLabelInfoModalVisible(false)}
       >
@@ -2207,6 +2214,8 @@ export function ChatListScreen({ route, navigation }: Props) {
       <Modal
         visible={closeServiceModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="fade"
         onRequestClose={closeCloseServiceModal}
       >
@@ -2276,13 +2285,15 @@ export function ChatListScreen({ route, navigation }: Props) {
       <Modal
         visible={transferModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="fade"
         onRequestClose={closeTransferModal}
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
           <View style={styles.transferOverlay}>
             <Pressable

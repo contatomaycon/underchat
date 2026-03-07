@@ -26,7 +26,12 @@ import { hasChatAccessPermission } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { AppAvatar } from './AppAvatar';
-import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import {
+  dismissKeyboard,
+  dismissKeyboardAnd,
+  getKeyboardVerticalOffset,
+  keyboardAvoidingBehavior,
+} from '../utils/keyboard';
 import { teardownMobileSession } from '../utils/sessionTeardown';
 import {
   disableMobilePushNotifications,
@@ -521,230 +526,239 @@ export function UserSidebar({
         visible={visible}
         animationType="slide"
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         onRequestClose={closeSidebar}
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
         >
           <View style={styles.overlay}>
-          <Pressable
-            style={styles.backdrop}
-            onPress={dismissKeyboardAnd(closeSidebar)}
-          />
-          <TouchableWithoutFeedback
-            onPress={dismissKeyboard}
-            accessible={false}
-          >
-            <View style={styles.sidebar}>
-              <View style={styles.sidebarHeader}>
-                <Text style={styles.sidebarTitle}>{pt.account}</Text>
-                <Pressable
-                  onPress={dismissKeyboardAnd(closeSidebar)}
-                  hitSlop={12}
-                  style={styles.closeBtn}
-                >
-                  <Ionicons name="close" size={24} color={colors.onSurface} />
-                </Pressable>
-              </View>
+            <Pressable
+              style={styles.backdrop}
+              onPress={dismissKeyboardAnd(closeSidebar)}
+            />
+            <TouchableWithoutFeedback
+              onPress={dismissKeyboard}
+              accessible={false}
+            >
+              <View style={styles.sidebar}>
+                <View style={styles.sidebarHeader}>
+                  <Text style={styles.sidebarTitle}>{pt.account}</Text>
+                  <Pressable
+                    onPress={dismissKeyboardAnd(closeSidebar)}
+                    hitSlop={12}
+                    style={styles.closeBtn}
+                  >
+                    <Ionicons name="close" size={24} color={colors.onSurface} />
+                  </Pressable>
+                </View>
 
-              {loadingProfile ? (
-                <View style={styles.loadingWrap}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              ) : !hasAccess ? (
-                <View style={styles.permissionDeniedWrap}>
-                  <Text style={styles.permissionDeniedText}>
-                    {pt.chat_permission_denied}
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <View style={styles.profileTop}>
-                    <Pressable
-                      style={styles.avatarWrap}
-                      onPress={dismissKeyboardAnd(() =>
-                        setPhotoModalVisible(true)
-                      )}
-                    >
-                      <AppAvatar
-                        uri={photo}
-                        size={84}
-                        style={styles.avatarImage}
-                        iconName="person-circle-outline"
-                        iconSize={84}
-                        iconColor={colors.grey400}
-                      />
-                    </Pressable>
-                    <Text style={styles.profileName}>{name}</Text>
-                    <View style={styles.profileMetaRow}>
-                      {role ? (
-                        <Text style={styles.profileRole}>{role}</Text>
-                      ) : null}
-                      <View style={styles.profileStatusInline}>
-                        <View
-                          style={[
-                            styles.profileStatusDot,
-                            { backgroundColor: statusColor },
-                          ]}
+                {loadingProfile ? (
+                  <View style={styles.loadingWrap}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : !hasAccess ? (
+                  <View style={styles.permissionDeniedWrap}>
+                    <Text style={styles.permissionDeniedText}>
+                      {pt.chat_permission_denied}
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.profileTop}>
+                      <Pressable
+                        style={styles.avatarWrap}
+                        onPress={dismissKeyboardAnd(() =>
+                          setPhotoModalVisible(true)
+                        )}
+                      >
+                        <AppAvatar
+                          uri={photo}
+                          size={84}
+                          style={styles.avatarImage}
+                          iconName="person-circle-outline"
+                          iconSize={84}
+                          iconColor={colors.grey400}
                         />
-                        <Text style={styles.profileStatusText}>
-                          {statusLabel}
-                        </Text>
+                      </Pressable>
+                      <Text style={styles.profileName}>{name}</Text>
+                      <View style={styles.profileMetaRow}>
+                        {role ? (
+                          <Text style={styles.profileRole}>{role}</Text>
+                        ) : null}
+                        <View style={styles.profileStatusInline}>
+                          <View
+                            style={[
+                              styles.profileStatusDot,
+                              { backgroundColor: statusColor },
+                            ]}
+                          />
+                          <Text style={styles.profileStatusText}>
+                            {statusLabel}
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                  </View>
 
-                  <ScrollView
-                    style={styles.scroll}
-                    contentContainerStyle={styles.scrollContent}
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode={
-                      Platform.OS === 'ios' ? 'interactive' : 'on-drag'
-                    }
-                  >
-                    <View style={styles.section}>
-                      <Text style={styles.sectionTitle}>{pt.about}</Text>
-                      <TextInput
-                        style={styles.aboutInput}
-                        multiline
-                        value={about}
-                        maxLength={200}
-                        onChangeText={setAbout}
-                        placeholder={pt.about}
-                        placeholderTextColor={colors.grey500}
-                      />
-                      <View style={styles.aboutFooter}>
-                        <Text style={styles.counterText}>
-                          {about.length}/200
+                    <ScrollView
+                      style={styles.scroll}
+                      contentContainerStyle={styles.scrollContent}
+                      keyboardShouldPersistTaps="handled"
+                      keyboardDismissMode={
+                        Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                      }
+                    >
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>{pt.about}</Text>
+                        <TextInput
+                          style={styles.aboutInput}
+                          multiline
+                          value={about}
+                          maxLength={200}
+                          onChangeText={setAbout}
+                          placeholder={pt.about}
+                          placeholderTextColor={colors.grey500}
+                        />
+                        <View style={styles.aboutFooter}>
+                          <Text style={styles.counterText}>
+                            {about.length}/200
+                          </Text>
+                          {aboutSaving ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={colors.primary}
+                            />
+                          ) : null}
+                        </View>
+                      </View>
+
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>
+                          {pt.status_chat}
                         </Text>
-                        {aboutSaving ? (
+                        <View style={styles.statusGroup}>
+                          {STATUS_OPTIONS.map((option) => {
+                            const active = status === option.value;
+                            return (
+                              <Pressable
+                                key={option.value}
+                                style={styles.statusOption}
+                                onPress={dismissKeyboardAnd(() =>
+                                  handleStatusChange(option.value)
+                                )}
+                                disabled={statusSaving}
+                              >
+                                <View
+                                  style={[
+                                    styles.statusRadio,
+                                    active && {
+                                      borderColor: option.color,
+                                    },
+                                  ]}
+                                >
+                                  {active ? (
+                                    <View
+                                      style={[
+                                        styles.statusRadioDot,
+                                        { backgroundColor: option.color },
+                                      ]}
+                                    />
+                                  ) : null}
+                                </View>
+                                <Text style={styles.statusLabel}>
+                                  {option.label}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                        {statusSaving ? (
                           <ActivityIndicator
                             size="small"
                             color={colors.primary}
+                            style={styles.inlineLoader}
                           />
                         ) : null}
                       </View>
-                    </View>
 
-                    <View style={styles.section}>
-                      <Text style={styles.sectionTitle}>{pt.status_chat}</Text>
-                      <View style={styles.statusGroup}>
-                        {STATUS_OPTIONS.map((option) => {
-                          const active = status === option.value;
-                          return (
-                            <Pressable
-                              key={option.value}
-                              style={styles.statusOption}
-                              onPress={dismissKeyboardAnd(() =>
-                                handleStatusChange(option.value)
-                              )}
-                              disabled={statusSaving}
-                            >
-                              <View
-                                style={[
-                                  styles.statusRadio,
-                                  active && {
-                                    borderColor: option.color,
-                                  },
-                                ]}
-                              >
-                                {active ? (
-                                  <View
-                                    style={[
-                                      styles.statusRadioDot,
-                                      { backgroundColor: option.color },
-                                    ]}
-                                  />
-                                ) : null}
-                              </View>
-                              <Text style={styles.statusLabel}>
-                                {option.label}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                      {statusSaving ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.primary}
-                          style={styles.inlineLoader}
-                        />
-                      ) : null}
-                    </View>
-
-                    <View style={[styles.section, styles.settingsSection]}>
-                      <Text style={styles.sectionTitle}>{pt.settings}</Text>
-                      <View style={styles.settingRow}>
-                        <View style={styles.settingLabelWrap}>
-                          <Ionicons
-                            name="notifications-outline"
-                            size={20}
-                            color={colors.onSurface}
-                          />
-                          <Text style={styles.settingLabel}>
-                            {pt.notification}
-                          </Text>
-                        </View>
-                        <Pressable
-                          style={[
-                            styles.switch,
-                            notifications ? styles.switchOn : styles.switchOff,
-                          ]}
-                          onPress={dismissKeyboardAnd(() =>
-                            handleNotificationToggle(!notifications)
-                          )}
-                          disabled={notificationSaving}
-                        >
-                          <View
+                      <View style={[styles.section, styles.settingsSection]}>
+                        <Text style={styles.sectionTitle}>{pt.settings}</Text>
+                        <View style={styles.settingRow}>
+                          <View style={styles.settingLabelWrap}>
+                            <Ionicons
+                              name="notifications-outline"
+                              size={20}
+                              color={colors.onSurface}
+                            />
+                            <Text style={styles.settingLabel}>
+                              {pt.notification}
+                            </Text>
+                          </View>
+                          <Pressable
                             style={[
-                              styles.switchThumb,
-                              notifications && styles.switchThumbOn,
+                              styles.switch,
+                              notifications
+                                ? styles.switchOn
+                                : styles.switchOff,
                             ]}
+                            onPress={dismissKeyboardAnd(() =>
+                              handleNotificationToggle(!notifications)
+                            )}
+                            disabled={notificationSaving}
+                          >
+                            <View
+                              style={[
+                                styles.switchThumb,
+                                notifications && styles.switchThumbOn,
+                              ]}
+                            />
+                          </Pressable>
+                        </View>
+                        {notificationSaving ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.primary}
+                            style={styles.inlineLoader}
                           />
-                        </Pressable>
+                        ) : null}
                       </View>
-                      {notificationSaving ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.primary}
-                          style={styles.inlineLoader}
-                        />
-                      ) : null}
-                    </View>
-                  </ScrollView>
-                </>
-              )}
+                    </ScrollView>
+                  </>
+                )}
 
-              <View style={styles.footer}>
-                <Pressable
-                  style={[
-                    styles.logoutBtn,
-                    logoutLoading && styles.logoutBtnDisabled,
-                  ]}
-                  onPress={dismissKeyboardAnd(handleLogout)}
-                  disabled={logoutLoading}
-                >
-                  {logoutLoading ? (
-                    <ActivityIndicator size="small" color={colors.onPrimary} />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name="log-out-outline"
-                        size={22}
+                <View style={styles.footer}>
+                  <Pressable
+                    style={[
+                      styles.logoutBtn,
+                      logoutLoading && styles.logoutBtnDisabled,
+                    ]}
+                    onPress={dismissKeyboardAnd(handleLogout)}
+                    disabled={logoutLoading}
+                  >
+                    {logoutLoading ? (
+                      <ActivityIndicator
+                        size="small"
                         color={colors.onPrimary}
-                        style={styles.logoutIcon}
                       />
-                      <Text style={styles.logoutText}>{pt.logout}</Text>
-                    </>
-                  )}
-                </Pressable>
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="log-out-outline"
+                          size={22}
+                          color={colors.onPrimary}
+                          style={styles.logoutIcon}
+                        />
+                        <Text style={styles.logoutText}>{pt.logout}</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
               </View>
-            </View>
-          </TouchableWithoutFeedback>
-        </View>
+            </TouchableWithoutFeedback>
+          </View>
           {photoModalVisible ? (
             <View style={styles.photoOverlayLayer}>
               <Pressable
@@ -752,66 +766,69 @@ export function UserSidebar({
                 onPress={dismissKeyboardAnd(closePhotoModal)}
               />
               <View style={styles.photoCard}>
-              <View style={styles.photoHeader}>
-                <Text style={styles.photoTitle}>{pt.profile_photo}</Text>
-                <Pressable
-                  onPress={dismissKeyboardAnd(closePhotoModal)}
-                  hitSlop={10}
-                >
-                  <Ionicons name="close" size={22} color={colors.onSurface} />
-                </Pressable>
-              </View>
-
-              <View style={styles.photoPreviewWrap}>
-                <AppAvatar
-                  uri={photo}
-                  size={120}
-                  style={styles.photoPreview}
-                  iconName="person-circle-outline"
-                  iconSize={120}
-                  iconColor={colors.grey400}
-                />
-              </View>
-
-              <View style={styles.photoActions}>
-                <Pressable
-                  style={styles.primaryActionBtn}
-                  onPress={dismissKeyboardAnd(() => {
-                    void handlePickPhoto('camera');
-                  })}
-                  disabled={photoLoading}
-                >
-                  {photoLoading ? (
-                    <ActivityIndicator size="small" color={colors.onPrimary} />
-                  ) : (
-                    <Text style={styles.primaryActionText}>
-                      {pt.open_camera}
-                    </Text>
-                  )}
-                </Pressable>
-                <Pressable
-                  style={styles.neutralActionBtn}
-                  onPress={dismissKeyboardAnd(() => {
-                    void handlePickPhoto('gallery');
-                  })}
-                  disabled={photoLoading}
-                >
-                  <Text style={styles.neutralActionText}>
-                    {pt.select_photo}
-                  </Text>
-                </Pressable>
-                {photo ? (
+                <View style={styles.photoHeader}>
+                  <Text style={styles.photoTitle}>{pt.profile_photo}</Text>
                   <Pressable
-                    style={styles.secondaryActionBtn}
-                    onPress={dismissKeyboardAnd(handleRemovePhoto)}
+                    onPress={dismissKeyboardAnd(closePhotoModal)}
+                    hitSlop={10}
+                  >
+                    <Ionicons name="close" size={22} color={colors.onSurface} />
+                  </Pressable>
+                </View>
+
+                <View style={styles.photoPreviewWrap}>
+                  <AppAvatar
+                    uri={photo}
+                    size={120}
+                    style={styles.photoPreview}
+                    iconName="person-circle-outline"
+                    iconSize={120}
+                    iconColor={colors.grey400}
+                  />
+                </View>
+
+                <View style={styles.photoActions}>
+                  <Pressable
+                    style={styles.primaryActionBtn}
+                    onPress={dismissKeyboardAnd(() => {
+                      void handlePickPhoto('camera');
+                    })}
                     disabled={photoLoading}
                   >
-                    <Text style={styles.secondaryActionText}>
-                      {pt.remove_photo}
+                    {photoLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.onPrimary}
+                      />
+                    ) : (
+                      <Text style={styles.primaryActionText}>
+                        {pt.open_camera}
+                      </Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    style={styles.neutralActionBtn}
+                    onPress={dismissKeyboardAnd(() => {
+                      void handlePickPhoto('gallery');
+                    })}
+                    disabled={photoLoading}
+                  >
+                    <Text style={styles.neutralActionText}>
+                      {pt.select_photo}
                     </Text>
                   </Pressable>
-                ) : null}
-              </View>
+                  {photo ? (
+                    <Pressable
+                      style={styles.secondaryActionBtn}
+                      onPress={dismissKeyboardAnd(handleRemovePhoto)}
+                      disabled={photoLoading}
+                    >
+                      <Text style={styles.secondaryActionText}>
+                        {pt.remove_photo}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               </View>
             </View>
           ) : null}

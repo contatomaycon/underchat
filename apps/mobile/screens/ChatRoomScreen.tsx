@@ -159,7 +159,12 @@ import {
   parseWhatsAppTextTokens,
   type WhatsAppTextToken,
 } from '../utils/whatsAppTextFormat';
-import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import {
+  dismissKeyboard,
+  dismissKeyboardAnd,
+  getKeyboardVerticalOffset,
+  keyboardAvoidingBehavior,
+} from '../utils/keyboard';
 import { addAppResumeListener } from '../utils/appResumeBus';
 import { syncGlobalChatCounts } from '../utils/chatCountsSync';
 
@@ -628,39 +633,58 @@ type LocationMapRegion = {
 };
 
 type MapPressCoordinateEvent = {
-  nativeEvent: {
-    coordinate: {
-      latitude: number;
-      longitude: number;
+  geometry?: {
+    coordinates?: number[];
+  };
+  nativeEvent?: {
+    coordinate?: {
+      latitude?: number;
+      longitude?: number;
     };
   };
 };
 
-type ReactNativeMapsModule = {
-  default?: ComponentType<Record<string, unknown>>;
+type MapLibreModule = {
   MapView?: ComponentType<Record<string, unknown>>;
-  Marker?: ComponentType<Record<string, unknown>>;
+  Camera?: ComponentType<Record<string, unknown>>;
+  PointAnnotation?: ComponentType<Record<string, unknown>>;
 };
 
-let reactNativeMapsLoadError: string | null = null;
+let mapLibreLoadError: string | null = null;
 
-const reactNativeMapsModule = (() => {
+const mapLibreModule = (() => {
   try {
-    return require('react-native-maps') as ReactNativeMapsModule;
+    return require('@maplibre/maplibre-react-native') as MapLibreModule;
   } catch (error) {
-    reactNativeMapsLoadError =
-      error instanceof Error ? error.message : String(error);
+    mapLibreLoadError = error instanceof Error ? error.message : String(error);
     return null;
   }
 })();
 
-const NativeMapView =
-  reactNativeMapsModule?.default ?? reactNativeMapsModule?.MapView ?? null;
-const NativeMapMarker = reactNativeMapsModule?.Marker ?? null;
+const NativeMapView = mapLibreModule?.MapView ?? null;
+const NativeMapCamera = mapLibreModule?.Camera ?? null;
+const NativeMapPointAnnotation = mapLibreModule?.PointAnnotation ?? null;
 
 const isExpoGoStoreClient =
   (Constants as { executionEnvironment?: string | null })
     .executionEnvironment === 'storeClient';
+
+const mapLibreStyleUrl = (() => {
+  const expoConfig = (
+    Constants as {
+      expoConfig?: {
+        extra?: {
+          mapLibreStyleUrl?: unknown;
+        };
+      };
+    }
+  ).expoConfig;
+  const styleUrl = expoConfig?.extra?.mapLibreStyleUrl;
+  if (typeof styleUrl === 'string' && styleUrl.trim().length > 0) {
+    return styleUrl.trim();
+  }
+  return 'https://demotiles.maplibre.org/style.json';
+})();
 
 const mapDebugSupportInfo = [
   `platform=${Platform.OS}`,
@@ -671,10 +695,13 @@ const mapDebugSupportInfo = [
   `appOwnership=${
     (Constants as { appOwnership?: string | null }).appOwnership ?? 'null'
   }`,
+  `provider=maplibre`,
   `nativeMapView=${NativeMapView ? 'yes' : 'no'}`,
-  `nativeMarker=${NativeMapMarker ? 'yes' : 'no'}`,
+  `nativeCamera=${NativeMapCamera ? 'yes' : 'no'}`,
+  `nativePointAnnotation=${NativeMapPointAnnotation ? 'yes' : 'no'}`,
+  `styleUrl=${mapLibreStyleUrl}`,
   `expoGoStoreClient=${isExpoGoStoreClient ? 'yes' : 'no'}`,
-  `loadError=${reactNativeMapsLoadError ?? 'none'}`,
+  `loadError=${mapLibreLoadError ?? 'none'}`,
 ].join(' | ');
 
 const hasNativeMapSupport =
@@ -2998,13 +3025,8 @@ function LocationMessagePreview({
     previewCandidates[
       Math.min(previewSourceIndex, previewCandidates.length - 1)
     ];
-  const previewRegion = useMemo(
-    () => ({
-      latitude,
-      longitude,
-      latitudeDelta: 0.0032,
-      longitudeDelta: 0.0032,
-    }),
+  const previewCoordinateLngLat = useMemo<[number, number]>(
+    () => [longitude, latitude],
     [latitude, longitude]
   );
   const title = name?.trim() || pt.location;
@@ -3021,21 +3043,37 @@ function LocationMessagePreview({
       delayLongPress={220}
     >
       <View style={styles.locationMapPreview}>
-        {hasNativeMapSupport && NativeMapView ? (
+        {hasNativeMapSupport && NativeMapView && NativeMapCamera ? (
           <>
             <NativeMapView
               style={styles.locationMapImage}
-              region={previewRegion}
+              mapStyle={mapLibreStyleUrl}
               scrollEnabled={false}
               zoomEnabled={false}
               rotateEnabled={false}
               pitchEnabled={false}
-              toolbarEnabled={false}
               pointerEvents="none"
-            />
-            <View style={styles.locationPinOverlay}>
-              <Ionicons name="location-sharp" size={36} color="#EF4444" />
-            </View>
+            >
+              <NativeMapCamera
+                centerCoordinate={previewCoordinateLngLat}
+                zoomLevel={15}
+                animationDuration={0}
+              />
+              {NativeMapPointAnnotation ? (
+                <NativeMapPointAnnotation
+                  id={`location-preview-${latitude}-${longitude}`}
+                  coordinate={previewCoordinateLngLat}
+                >
+                  <View style={styles.locationMapMarker}>
+                    <Ionicons name="location-sharp" size={30} color="#EF4444" />
+                  </View>
+                </NativeMapPointAnnotation>
+              ) : (
+                <View style={styles.locationPinOverlay}>
+                  <Ionicons name="location-sharp" size={36} color="#EF4444" />
+                </View>
+              )}
+            </NativeMapView>
           </>
         ) : previewLoadError ? (
           <View style={styles.locationMapFallback}>
@@ -9470,7 +9508,34 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleMapPress = useCallback(
     (event: MapPressCoordinateEvent) => {
-      const { latitude, longitude } = event.nativeEvent.coordinate;
+      const geometryCoordinates = event.geometry?.coordinates;
+      const coordinatesFromGeometry =
+        Array.isArray(geometryCoordinates) &&
+        geometryCoordinates.length >= 2 &&
+        Number.isFinite(geometryCoordinates[0]) &&
+        Number.isFinite(geometryCoordinates[1])
+          ? {
+              longitude: Number(geometryCoordinates[0]),
+              latitude: Number(geometryCoordinates[1]),
+            }
+          : null;
+
+      const nativeCoordinate = event.nativeEvent?.coordinate;
+      const coordinatesFromNative =
+        nativeCoordinate &&
+        Number.isFinite(nativeCoordinate.latitude) &&
+        Number.isFinite(nativeCoordinate.longitude)
+          ? {
+              latitude: Number(nativeCoordinate.latitude),
+              longitude: Number(nativeCoordinate.longitude),
+            }
+          : null;
+
+      const resolvedCoordinate =
+        coordinatesFromGeometry ?? coordinatesFromNative;
+      if (!resolvedCoordinate) return;
+
+      const { latitude, longitude } = resolvedCoordinate;
       applyLocationSelection({
         latitude,
         longitude,
@@ -9588,6 +9653,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       longitude: selectedLongitude,
     };
   }, [selectedLatitude, selectedLongitude]);
+
+  const selectedCoordinateLngLat = useMemo<[number, number] | null>(() => {
+    if (!selectedCoordinate) return null;
+    return [selectedCoordinate.longitude, selectedCoordinate.latitude];
+  }, [selectedCoordinate]);
+
+  const mapCenterCoordinateLngLat = useMemo<[number, number]>(() => {
+    const region = locationMapRegion ?? LOCATION_MAP_DEFAULT_REGION;
+    return [region.longitude, region.latitude];
+  }, [locationMapRegion]);
 
   const handleOpenAnnotationModal = useCallback(() => {
     setCameraPickerVisible(false);
@@ -10304,8 +10379,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={0}
+      behavior={keyboardAvoidingBehavior}
+      keyboardVerticalOffset={getKeyboardVerticalOffset(0)}
     >
       <View style={[styles.chatHeader, { paddingTop: insets.top + 8 }]}>
         <View style={styles.chatHeaderTopRow}>
@@ -11352,13 +11427,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={messageActionTarget !== null}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="fade"
         onRequestClose={closeMessageOverlay}
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
           <View style={styles.messageOverlayRoot}>
             <Pressable
@@ -11549,13 +11626,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={editingMessageTarget !== null}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
       >
         <KeyboardAvoidingView
           style={styles.bottomSheetOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
           <Pressable
             style={styles.bottomSheetBackdrop}
@@ -11617,6 +11696,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={viewingEditHistoryMessage !== null}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="fade"
         onRequestClose={() => setViewingEditHistoryMessage(null)}
       >
@@ -11686,13 +11767,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={forwardModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={handleForwardRequestClose}
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
           <View style={styles.bottomSheetOverlay}>
             <Pressable
@@ -11894,6 +11977,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={menuVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="fade"
         onRequestClose={() => setMenuVisible(false)}
       >
@@ -11947,6 +12032,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={attendantsInfoVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={() => setAttendantsInfoVisible(false)}
       >
@@ -12052,6 +12139,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={closeServiceModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={() => setCloseServiceModalVisible(false)}
       >
@@ -12115,6 +12204,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={protocolModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={() => setProtocolModalVisible(false)}
       >
@@ -12160,6 +12251,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={labelModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={() => setLabelModalVisible(false)}
       >
@@ -12257,13 +12350,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={searchModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={dismissKeyboardAnd(() => setSearchModalVisible(false))}
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
           <View style={styles.bottomSheetOverlay}>
             <Pressable
@@ -12362,6 +12457,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={attendanceHistoryVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={() => setAttendanceHistoryVisible(false)}
       >
@@ -12429,6 +12526,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={transferModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={dismissKeyboardAnd(() =>
           setTransferModalVisible(false)
@@ -12436,8 +12535,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
           <View style={styles.bottomSheetOverlay}>
             <Pressable
@@ -12620,6 +12719,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={cameraPickerVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="fade"
         onRequestClose={() => setCameraPickerVisible(false)}
       >
@@ -12665,6 +12766,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={annotationModalVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={dismissKeyboardAnd(() =>
           setAnnotationModalVisible(false)
@@ -12672,8 +12775,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       >
         <KeyboardAvoidingView
           style={styles.bottomSheetOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
           <Pressable
             style={styles.bottomSheetBackdrop}
@@ -12736,6 +12839,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={contactPickerVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={dismissKeyboardAnd(() =>
           setContactPickerVisible(false)
@@ -12743,8 +12848,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
           <View style={styles.bottomSheetOverlay}>
             <Pressable
@@ -12899,6 +13004,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={locationPickerVisible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="slide"
         onRequestClose={dismissKeyboardAnd(() =>
           setLocationPickerVisible(false)
@@ -12906,8 +13013,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
           <View style={styles.bottomSheetOverlay}>
             <Pressable
@@ -12965,17 +13072,30 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               </View>
 
               <View style={styles.locationMapWrap}>
-                {hasNativeMapSupport && NativeMapView ? (
+                {hasNativeMapSupport && NativeMapView && NativeMapCamera ? (
                   <NativeMapView
                     style={styles.locationMap}
-                    region={locationMapRegion ?? LOCATION_MAP_DEFAULT_REGION}
+                    mapStyle={mapLibreStyleUrl}
                     onPress={handleMapPress}
-                    showsCompass
-                    showsUserLocation
-                    loadingEnabled
                   >
-                    {selectedCoordinate && NativeMapMarker ? (
-                      <NativeMapMarker coordinate={selectedCoordinate} />
+                    <NativeMapCamera
+                      centerCoordinate={mapCenterCoordinateLngLat}
+                      zoomLevel={14}
+                      animationDuration={250}
+                    />
+                    {selectedCoordinateLngLat && NativeMapPointAnnotation ? (
+                      <NativeMapPointAnnotation
+                        id="location-picker-selected"
+                        coordinate={selectedCoordinateLngLat}
+                      >
+                        <View style={styles.locationMapMarker}>
+                          <Ionicons
+                            name="location-sharp"
+                            size={30}
+                            color="#EF4444"
+                          />
+                        </View>
+                      </NativeMapPointAnnotation>
                     ) : null}
                   </NativeMapView>
                 ) : (
@@ -13123,9 +13243,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       <Modal
         visible={viewer.visible}
         transparent
+        statusBarTranslucent
+        navigationBarTranslucent
         animationType="fade"
         onRequestClose={closeMediaViewer}
-        statusBarTranslucent
       >
         <Pressable style={styles.viewerOverlay} onPress={closeMediaViewer}>
           <Pressable
@@ -13909,6 +14030,10 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
+  },
+  locationMapMarker: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   locationInfo: {
     paddingHorizontal: 12,
