@@ -1,11 +1,13 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import { BACKEND_URL } from '../config';
 import {
   deletePushSubscription,
   registerPushSubscription,
 } from '../api/chatApi';
 import type { ListChatsResult } from '../types/chat';
+import { getToken } from '../storage/authStorage';
 import {
   clearStoredPushSubscription,
   getStoredPushSubscription,
@@ -224,6 +226,57 @@ async function requestPushPermission(): Promise<boolean> {
   return status === 'granted';
 }
 
+async function resolveSubscriptionForDelete(): Promise<{
+  endpoint: string;
+  provider: 'expo';
+} | null> {
+  const stored = await getStoredPushSubscription();
+  if (stored) {
+    return stored;
+  }
+
+  const token = await getExpoPushToken();
+  if (!token) {
+    return null;
+  }
+
+  return {
+    endpoint: token,
+    provider: 'expo',
+  };
+}
+
+async function deletePushSubscriptionDirect(payload: {
+  endpoint: string;
+  provider: 'expo';
+}): Promise<boolean> {
+  if (!BACKEND_URL) {
+    return false;
+  }
+
+  const token = await getToken();
+  if (!token) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/v1/push/unsubscribe`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-Language': 'pt',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function initializePushNotifications(options: {
   onChatTap: (chat: ListChatsResult) => void;
 }): Promise<void> {
@@ -310,14 +363,14 @@ export async function enableMobilePushNotifications(): Promise<PushEnableResult>
 }
 
 export async function disableMobilePushNotifications(): Promise<boolean> {
-  const stored = await getStoredPushSubscription();
-  if (!stored) {
-    return true;
+  const subscription = await resolveSubscriptionForDelete();
+  if (!subscription) {
+    return false;
   }
 
   const ok = await deletePushSubscription({
-    endpoint: stored.endpoint,
-    provider: stored.provider,
+    endpoint: subscription.endpoint,
+    provider: subscription.provider,
   });
 
   if (ok) {
@@ -328,14 +381,15 @@ export async function disableMobilePushNotifications(): Promise<boolean> {
 }
 
 export async function unsubscribeMobilePushOnLogout(): Promise<void> {
-  const stored = await getStoredPushSubscription();
-  if (!stored) {
+  const subscription = await resolveSubscriptionForDelete();
+  if (!subscription) {
+    await clearStoredPushSubscription();
     return;
   }
 
-  await deletePushSubscription({
-    endpoint: stored.endpoint,
-    provider: stored.provider,
+  await deletePushSubscriptionDirect({
+    endpoint: subscription.endpoint,
+    provider: subscription.provider,
   }).catch(() => false);
 
   await clearStoredPushSubscription();

@@ -348,11 +348,8 @@ export function UserSidebar({
       setNotifications(nextValue);
       setNotificationSaving(true);
 
-      let pushOk = false;
-
       if (nextValue) {
         const result = await enableMobilePushNotifications();
-        pushOk = result.ok;
 
         if (!result.ok) {
           setNotifications(previous);
@@ -365,29 +362,32 @@ export function UserSidebar({
           );
           return;
         }
-      } else {
-        pushOk = await disableMobilePushNotifications();
-        if (!pushOk) {
+
+        const profileUpdated = await persistProfile({
+          notifications: nextValue,
+        });
+
+        if (!profileUpdated) {
           setNotifications(previous);
+          await disableMobilePushNotifications().catch(() => false);
           setNotificationSaving(false);
-          Alert.alert(pt.error_title, pt.notification_disable_error);
           return;
         }
+
+        setNotificationSaving(false);
+        return;
       }
 
       const profileUpdated = await persistProfile({ notifications: nextValue });
-
       if (!profileUpdated) {
         setNotifications(previous);
+        setNotificationSaving(false);
+        return;
+      }
 
-        if (nextValue) {
-          await disableMobilePushNotifications().catch(() => false);
-        } else if (!nextValue && pushOk) {
-          await enableMobilePushNotifications().catch(() => ({
-            ok: false,
-            reason: 'server_error' as const,
-          }));
-        }
+      const pushDisabled = await disableMobilePushNotifications();
+      if (!pushDisabled) {
+        Alert.alert(pt.warning_title, pt.notification_disable_error);
       }
 
       setNotificationSaving(false);

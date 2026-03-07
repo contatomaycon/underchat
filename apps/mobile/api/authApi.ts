@@ -1,4 +1,5 @@
 import { BACKEND_URL } from '../config';
+import { apiGet } from './client';
 import type { AttendanceGuardStatus } from '../types/attendanceHours';
 
 export interface AuthLoginRequest {
@@ -21,6 +22,10 @@ interface ApiResponse<T> {
   status: boolean;
   message: string;
   data: T | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 export async function login(
@@ -65,4 +70,20 @@ export async function login(
   }
 
   return { success: true, data: body.data };
+}
+
+export async function fetchAuthenticatedUser(): Promise<Record<
+  string,
+  unknown
+> | null> {
+  const endpoints = ['/user/me', '/auth/me'];
+
+  for (const endpoint of endpoints) {
+    const response = await apiGet<Record<string, unknown>>(endpoint);
+    if (isRecord(response?.data)) {
+      return response.data;
+    }
+  }
+
+  return null;
 }

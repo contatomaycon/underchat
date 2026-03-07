@@ -8,7 +8,7 @@ const BASE = `${BACKEND_URL}/v1`;
 
 async function handleUnauthorized(): Promise<void> {
   await teardownMobileSession({
-    notifyPushServer: false,
+    notifyPushServer: true,
     notifyServerLogout: false,
     emitUnauthorized: true,
   });

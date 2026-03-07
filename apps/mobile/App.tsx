@@ -32,8 +32,10 @@ import { ensureOnlinePresence } from './socket/presence';
 import { pt } from './locales/pt';
 import type { ListChatsResult } from './types/chat';
 import { emitAppResume } from './utils/appResumeBus';
+import { fetchAuthenticatedUser } from './api/authApi';
 import {
   cleanupPushNotifications,
+  disableMobilePushNotifications,
   enableMobilePushNotifications,
   initializePushNotifications,
 } from './services/pushNotifications';
@@ -272,16 +274,30 @@ export default function App() {
 
     let cancelled = false;
 
-    void getUser()
-      .then(async (user) => {
-        if (cancelled) return;
-        if (!isUserNotificationEnabled(user)) return;
+    void (async () => {
+      let user = await getUser();
+      if (cancelled) return;
+
+      const remoteUser = await fetchAuthenticatedUser().catch(() => null);
+      if (cancelled) return;
+
+      if (remoteUser) {
+        user = remoteUser;
+        await patchUser(remoteUser).catch(() => {
+          // ignore
+        });
+      }
+
+      if (isUserNotificationEnabled(user)) {
         await enableMobilePushNotifications().catch(() => ({
           ok: false,
           reason: 'server_error' as const,
         }));
-      })
-      .catch(() => {});
+        return;
+      }
+
+      await disableMobilePushNotifications().catch(() => false);
+    })().catch(() => {});
 
     return () => {
       cancelled = true;

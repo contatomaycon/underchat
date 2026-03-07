@@ -60,6 +60,17 @@ Esse comando usa o perfil `production-ios` na seção `submit` do EAS.
 
 ## Android
 
+### Regra de notificações (Android e iOS)
+
+- Toggle em Perfil > Configurações > Notificação:
+  - Ao desativar, o app persiste `notifications=false` no perfil e interrompe o recebimento de push.
+  - Ao ativar, o app solicita permissão (se necessário), registra o endpoint push e persiste `notifications=true`.
+- Logout (`Sair`) sempre encerra a sessão push no servidor e remove o endpoint local.
+- Logout automático por sessão inválida (`401`) também encerra inscrição de push.
+- No login/boot autenticado, o app sincroniza o usuário com o backend e:
+  - se `chat_user.notifications=true`, registra push;
+  - se `chat_user.notifications=false`, garante desinscrição de push.
+
 ### Configuração de mapa com MapLibre (Localização no chat)
 
 O app usa MapLibre no seletor de localização e não exige chave do Google Maps.
