@@ -68,7 +68,6 @@ import {
 } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Directory, File, Paths } from 'expo-file-system';
-import * as MediaLibrary from 'expo-media-library';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Location from 'expo-location';
@@ -368,14 +367,25 @@ function formatAudioTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function isExpoGoEnvironment(): boolean {
-  const constants = Constants as {
-    appOwnership?: string | null;
-    executionEnvironment?: string | null;
+function isDirectoryPickerCancellationError(error: unknown): boolean {
+  if (!error) return false;
+  if (typeof error === 'string') {
+    return /cancel|canceled|cancelled|dismissed|abort/i.test(error);
+  }
+
+  if (typeof error !== 'object') return false;
+
+  const parsed = error as {
+    code?: unknown;
+    name?: unknown;
+    message?: unknown;
   };
-  return (
-    constants.appOwnership === 'expo' ||
-    constants.executionEnvironment === 'storeClient'
+
+  const values = [parsed.code, parsed.name, parsed.message];
+  return values.some(
+    (value) =>
+      typeof value === 'string' &&
+      /cancel|canceled|cancelled|dismissed|abort/i.test(value)
   );
 }
 
@@ -1223,6 +1233,110 @@ function sanitizeFilename(value: string): string {
     .slice(0, 80);
 }
 
+function splitFileNameParts(fileName: string): { base: string; extension: string } {
+  const dotIndex = fileName.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex === fileName.length - 1) {
+    return {
+      base: fileName,
+      extension: '',
+    };
+  }
+
+  return {
+    base: fileName.slice(0, dotIndex),
+    extension: fileName.slice(dotIndex),
+  };
+}
+
+function resolveUniqueFileName(
+  directory: Directory,
+  requestedFileName: string
+): string {
+  if (!new File(directory, requestedFileName).exists) {
+    return requestedFileName;
+  }
+
+  const { base, extension } = splitFileNameParts(requestedFileName);
+  let index = 1;
+  while (index < 10_000) {
+    const candidate = `${base} (${index})${extension}`;
+    if (!new File(directory, candidate).exists) {
+      return candidate;
+    }
+    index += 1;
+  }
+
+  return `${base}-${Date.now()}${extension}`;
+}
+
+function resolveDownloadMimeType(fileName: string, kind: DownloadKind): string {
+  const extension = extractFileExtension(fileName);
+
+  if (kind === 'image') {
+    if (extension === 'png') return 'image/png';
+    if (extension === 'webp') return 'image/webp';
+    if (extension === 'gif') return 'image/gif';
+    return 'image/jpeg';
+  }
+
+  if (kind === 'video') {
+    if (extension === 'webm') return 'video/webm';
+    if (extension === 'mov') return 'video/quicktime';
+    if (extension === 'mkv') return 'video/x-matroska';
+    return 'video/mp4';
+  }
+
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'txt') return 'text/plain';
+  if (extension === 'csv') return 'text/csv';
+  if (extension === 'json') return 'application/json';
+  if (extension === 'zip') return 'application/zip';
+  if (extension === 'mp3') return 'audio/mpeg';
+  if (extension === 'm4a') return 'audio/mp4';
+  if (extension === 'ogg' || extension === 'opus') return 'audio/ogg';
+
+  return 'application/octet-stream';
+}
+
+function resolveDownloadSuccessMessage(kind: DownloadKind): string {
+  if (kind === 'image') return pt.image_download_success;
+  if (kind === 'video') return pt.video_download_success;
+  return pt.file_download_success;
+}
+
+function resolveDownloadErrorMessage(kind: DownloadKind): string {
+  if (kind === 'image') return pt.image_download_error;
+  if (kind === 'video') return pt.video_download_error;
+  return pt.file_download_error;
+}
+
+async function saveDownloadedFileToPickedDirectory(
+  downloadedFile: File,
+  requestedFileName: string,
+  kind: DownloadKind
+): Promise<void> {
+  const pickedDirectory = await Directory.pickDirectoryAsync();
+  const targetFileName = resolveUniqueFileName(pickedDirectory, requestedFileName);
+  const mimeType = resolveDownloadMimeType(targetFileName, kind);
+  const destinationFile = pickedDirectory.createFile(targetFileName, mimeType);
+
+  try {
+    const bytes = await downloadedFile.bytes();
+    destinationFile.write(bytes);
+    const savedSize = destinationFile.size;
+    if (typeof savedSize === 'number' && savedSize <= 0) {
+      throw new Error('saved-file-empty');
+    }
+  } catch (error) {
+    try {
+      if (destinationFile.exists) {
+        destinationFile.delete();
+      }
+    } catch {}
+    throw error;
+  }
+}
+
 function getExtensionFromUrl(url: string): string | null {
   const withoutQuery = url.split('?')[0]?.split('#')[0] ?? '';
   const fileName = withoutQuery.split('/').pop() ?? '';
@@ -1626,40 +1740,19 @@ async function forceDownloadToDevice(
     } catch {}
   };
 
-  if ((kind === 'image' || kind === 'video') && !isExpoGoEnvironment()) {
-    try {
-      const granularPermissions: MediaLibrary.GranularPermission[] =
-        kind === 'image' ? ['photo'] : ['video'];
-      const permission = await MediaLibrary.requestPermissionsAsync(
-        true,
-        granularPermissions
-      );
-
-      if (permission.granted) {
-        await MediaLibrary.saveToLibraryAsync(downloadedFile.uri);
-        cleanupDownloadedFile();
-        return;
-      }
-    } catch {}
+  try {
+    await saveDownloadedFileToPickedDirectory(downloadedFile, fileName, kind);
+    Alert.alert(pt.success_title, resolveDownloadSuccessMessage(kind));
+    return;
+  } catch (error) {
+    if (isDirectoryPickerCancellationError(error)) {
+      Alert.alert(pt.warning_title, pt.download_cancelled);
+      return;
+    }
+    Alert.alert(pt.error_title, resolveDownloadErrorMessage(kind));
+  } finally {
+    cleanupDownloadedFile();
   }
-
-  if (requireOptionalNativeModule('ExpoSharing') != null) {
-    try {
-      const SharingModule =
-        require('expo-sharing') as typeof import('expo-sharing');
-      const isAvailable = await SharingModule.isAvailableAsync();
-      if (isAvailable) {
-        await SharingModule.shareAsync(downloadedFile.uri, {
-          dialogTitle: fileName,
-        });
-        cleanupDownloadedFile();
-        return;
-      }
-    } catch {}
-  }
-
-  cleanupDownloadedFile();
-  Linking.openURL(sourceUrl);
 }
 
 function getLatestMessageText(msg: ListMessageResult): string {
