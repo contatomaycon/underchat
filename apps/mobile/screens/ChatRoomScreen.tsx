@@ -1189,7 +1189,9 @@ function getAlbumItemIndex(message: ListMessageResult): number | null {
   return value;
 }
 
-function toGalleryImageItem(message: ListMessageResult): GalleryImageItem | null {
+function toGalleryImageItem(
+  message: ListMessageResult
+): GalleryImageItem | null {
   const image = message.content?.image;
   const imageSrc = resolveMediaUri(image?.url);
   if (!imageSrc) return null;
@@ -1253,7 +1255,9 @@ function flushWorkingGalleryGroup(
   });
 }
 
-function buildImageGalleryLookup(messages: ListMessageResult[]): ImageGalleryLookup {
+function buildImageGalleryLookup(
+  messages: ListMessageResult[]
+): ImageGalleryLookup {
   const groupsById: Record<string, GalleryImageGroup> = {};
   const membershipByMessageId: Record<string, GalleryMembership> = {};
 
@@ -1287,7 +1291,9 @@ function buildImageGalleryLookup(messages: ListMessageResult[]): ImageGalleryLoo
       if (currentGroup.direction !== direction) return false;
 
       if (mode === 'metadata') {
-        return currentGroup.albumId !== null && currentGroup.albumId === albumId;
+        return (
+          currentGroup.albumId !== null && currentGroup.albumId === albumId
+        );
       }
 
       if (currentGroup.albumId !== null || albumId !== null) {
@@ -1298,7 +1304,9 @@ function buildImageGalleryLookup(messages: ListMessageResult[]): ImageGalleryLoo
         return false;
       }
 
-      return timestamp - currentGroup.lastTimestamp <= FALLBACK_GALLERY_WINDOW_MS;
+      return (
+        timestamp - currentGroup.lastTimestamp <= FALLBACK_GALLERY_WINDOW_MS
+      );
     })();
 
     const activeGroup = currentGroup;
@@ -4003,7 +4011,10 @@ function BubbleContent({
 
   if (type === EMessageType.image && content.image?.url) {
     if (imageGallery && imageGallery.items.length >= 2) {
-      const visibleItems = imageGallery.items.slice(0, MAX_IMAGE_GALLERY_THUMBNAILS);
+      const visibleItems = imageGallery.items.slice(
+        0,
+        MAX_IMAGE_GALLERY_THUMBNAILS
+      );
       const hiddenCount = Math.max(
         0,
         imageGallery.items.length - MAX_IMAGE_GALLERY_THUMBNAILS
@@ -5775,63 +5786,63 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setDownloadingViewerMedia(false);
   }, []);
 
-  const openImageViewer = useCallback((
-    msg: ListMessageResult,
-    galleryIndex = 0
-  ) => {
-    const sticker = msg.content?.sticker;
-    const stickerUrl = sticker?.url;
-    if (stickerUrl) {
-      const stickerSrc = resolveMediaUri(stickerUrl);
-      if (!stickerSrc) return;
-      if (!isRenderableSticker(sticker)) {
-        void forceDownloadToDevice(
-          stickerSrc,
-          resolveStickerDownloadName(msg),
-          'document'
-        );
+  const openImageViewer = useCallback(
+    (msg: ListMessageResult, galleryIndex = 0) => {
+      const sticker = msg.content?.sticker;
+      const stickerUrl = sticker?.url;
+      if (stickerUrl) {
+        const stickerSrc = resolveMediaUri(stickerUrl);
+        if (!stickerSrc) return;
+        if (!isRenderableSticker(sticker)) {
+          void forceDownloadToDevice(
+            stickerSrc,
+            resolveStickerDownloadName(msg),
+            'document'
+          );
+          return;
+        }
+        openImageViewerFromItems([
+          {
+            src: stickerSrc,
+            caption: '',
+            downloadName: resolveStickerDownloadName(msg),
+          },
+        ]);
         return;
       }
+
+      const galleryMembership =
+        imageGalleryLookup.membershipByMessageId[msg.message_id];
+      if (galleryMembership) {
+        const group = imageGalleryLookup.groupsById[galleryMembership.groupId];
+        if (group?.items.length) {
+          openImageViewerFromItems(
+            group.items.map((item) => ({
+              src: item.src,
+              caption: item.caption,
+              downloadName: item.downloadName,
+            })),
+            galleryIndex
+          );
+          return;
+        }
+      }
+
+      const imageUrl = msg.content?.image?.url;
+      if (!imageUrl) return;
+      const imageSrc = resolveMediaUri(imageUrl);
+      if (!imageSrc) return;
+
       openImageViewerFromItems([
         {
-          src: stickerSrc,
-          caption: '',
-          downloadName: resolveStickerDownloadName(msg),
+          src: imageSrc,
+          caption: msg.content?.image?.caption ?? '',
+          downloadName: resolveImageDownloadName(msg, imageSrc),
         },
       ]);
-      return;
-    }
-
-    const galleryMembership =
-      imageGalleryLookup.membershipByMessageId[msg.message_id];
-    if (galleryMembership) {
-      const group = imageGalleryLookup.groupsById[galleryMembership.groupId];
-      if (group?.items.length) {
-        openImageViewerFromItems(
-          group.items.map((item) => ({
-            src: item.src,
-            caption: item.caption,
-            downloadName: item.downloadName,
-          })),
-          galleryIndex
-        );
-        return;
-      }
-    }
-
-    const imageUrl = msg.content?.image?.url;
-    if (!imageUrl) return;
-    const imageSrc = resolveMediaUri(imageUrl);
-    if (!imageSrc) return;
-
-    openImageViewerFromItems([
-      {
-        src: imageSrc,
-        caption: msg.content?.image?.caption ?? '',
-        downloadName: resolveImageDownloadName(msg, imageSrc),
-      },
-    ]);
-  }, [imageGalleryLookup, openImageViewerFromItems]);
+    },
+    [imageGalleryLookup, openImageViewerFromItems]
+  );
 
   const openVideoViewer = useCallback((msg: ListMessageResult) => {
     const video = msg.content?.video;
@@ -5928,7 +5939,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const handleDownloadViewerMedia = useCallback(async () => {
     const activeViewerItem = viewer.items[viewer.activeIndex] ?? null;
     const viewerSrc = activeViewerItem?.src || viewer.src;
-    const viewerDownloadName = activeViewerItem?.downloadName || viewer.downloadName;
+    const viewerDownloadName =
+      activeViewerItem?.downloadName || viewer.downloadName;
 
     if (!viewerSrc || downloadingViewerMedia) return;
 
@@ -5969,7 +5981,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [canGoToNextViewerImage, setActiveViewerIndex, viewer.activeIndex]);
 
   useEffect(() => {
-    if (!viewer.visible || viewer.kind !== 'image' || viewer.items.length <= 1) {
+    if (
+      !viewer.visible ||
+      viewer.kind !== 'image' ||
+      viewer.items.length <= 1
+    ) {
       return;
     }
 
@@ -5980,7 +5996,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animated: false,
       });
     });
-  }, [viewer.activeIndex, viewer.items.length, viewer.kind, viewer.visible, viewerMediaWidth]);
+  }, [
+    viewer.activeIndex,
+    viewer.items.length,
+    viewer.kind,
+    viewer.visible,
+    viewerMediaWidth,
+  ]);
 
   const loadMessages = useCallback(async () => {
     setLoading(true);
@@ -11301,7 +11323,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     item.message.message_id
                   ];
                 const imageGallery = galleryMembership
-                  ? imageGalleryLookup.groupsById[galleryMembership.groupId] ?? null
+                  ? (imageGalleryLookup.groupsById[galleryMembership.groupId] ??
+                    null)
                   : null;
 
                 const bubble = (
@@ -14163,7 +14186,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                         style={[
                           styles.viewerNavButton,
                           styles.viewerNavButtonRight,
-                          !canGoToNextViewerImage && styles.viewerNavButtonDisabled,
+                          !canGoToNextViewerImage &&
+                            styles.viewerNavButtonDisabled,
                         ]}
                         onPress={goToNextViewerImage}
                         disabled={!canGoToNextViewerImage}
