@@ -5144,6 +5144,54 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [viewer.kind, viewer.visible, viewerVideoPlayer]);
 
   useEffect(() => {
+    if (
+      Platform.OS !== 'android' ||
+      !viewer.visible ||
+      viewer.kind !== 'video' ||
+      !viewer.src
+    ) {
+      return;
+    }
+
+    const subscription = (
+      viewerVideoPlayer as unknown as {
+        addListener?: (
+          event: string,
+          listener: (status: unknown) => void
+        ) => { remove?: () => void } | void;
+      }
+    ).addListener?.('playbackStatusUpdate', (status) => {
+      if (!status || typeof status !== 'object') {
+        return;
+      }
+
+      const statusRecord = status as {
+        error?: unknown;
+        isLoaded?: unknown;
+      };
+
+      if (statusRecord.error) {
+        console.warn('[VideoViewer][Android] playback error', {
+          src: viewer.src,
+          error: statusRecord.error,
+        });
+      }
+
+      if (statusRecord.isLoaded === false) {
+        console.warn('[VideoViewer][Android] media not loaded', {
+          src: viewer.src,
+        });
+      }
+    });
+
+    return () => {
+      if (subscription && typeof subscription === 'object') {
+        subscription.remove?.();
+      }
+    };
+  }, [viewer.kind, viewer.src, viewer.visible, viewerVideoPlayer]);
+
+  useEffect(() => {
     const useNative = Platform.OS !== 'web';
     if (!showRecordingHint) {
       recordingHintOpacity.stopAnimation();
@@ -13394,11 +13442,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={closeMediaViewer}
       >
-        <Pressable style={[styles.viewerOverlay, { paddingBottom: insets.bottom }]} onPress={closeMediaViewer}>
-          <Pressable
-            style={styles.viewerContent}
-            onPress={(event) => event.stopPropagation()}
-          >
+        <View style={[styles.viewerOverlay, { paddingBottom: insets.bottom }]}>
+          <Pressable style={styles.viewerBackdrop} onPress={closeMediaViewer} />
+          <View style={styles.viewerContent}>
             <View style={styles.viewerActions}>
               <Pressable
                 style={[
@@ -13448,8 +13494,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 {viewer.caption}
               </Text>
             ) : null}
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -14632,6 +14678,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === 'ios' ? 42 : 24,
+  },
+  viewerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
   },
   viewerContent: {
     flex: 1,
