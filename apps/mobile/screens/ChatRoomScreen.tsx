@@ -163,6 +163,7 @@ import {
   SelectSheet,
   type SelectOption,
 } from '../components/select';
+import { BottomSheetModal } from '../components/BottomSheetModal';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { resolveImageUri } from '../utils/imageUri';
@@ -12846,75 +12847,49 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal
+      <BottomSheetModal
         visible={editingMessageTarget !== null}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
+        onClose={() => setEditingMessageTarget(null)}
+        title={pt.edit_message}
+        cardStyle={styles.annotationSheetCard}
+        footer={
+          <>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                (!editingMessageText.trim() || savingEditedMessage) &&
+                  styles.sendBtnDisabled,
+              ]}
+              onPress={dismissKeyboardAnd(() => {
+                void handleSaveEditedMessage();
+              })}
+              disabled={!editingMessageText.trim() || savingEditedMessage}
+            >
+              {savingEditedMessage ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>{pt.save}</Text>
+              )}
+            </Pressable>
+          </>
+        }
       >
-        <KeyboardAvoidingView
-          style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
-        >
-          <Pressable
-            style={styles.bottomSheetBackdrop}
-            onPress={dismissKeyboardAnd(() => setEditingMessageTarget(null))}
-          />
-          <View style={[styles.bottomSheetCard, styles.annotationSheetCard]}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>{pt.edit_message}</Text>
-              <Pressable
-                onPress={dismissKeyboardAnd(() =>
-                  setEditingMessageTarget(null)
-                )}
-              >
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
-
-            <TextInput
-              value={editingMessageText}
-              onChangeText={setEditingMessageText}
-              style={styles.annotationInput}
-              placeholder={pt.type_message}
-              placeholderTextColor={colors.grey500}
-              multiline
-              maxLength={65535}
-            />
-
-            <View style={styles.bottomSheetFooter}>
-              <Pressable
-                style={styles.secondaryBtn}
-                onPress={dismissKeyboardAnd(() =>
-                  setEditingMessageTarget(null)
-                )}
-              >
-                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.primaryBtn,
-                  (!editingMessageText.trim() || savingEditedMessage) &&
-                    styles.sendBtnDisabled,
-                ]}
-                onPress={dismissKeyboardAnd(() => {
-                  void handleSaveEditedMessage();
-                })}
-                disabled={!editingMessageText.trim() || savingEditedMessage}
-              >
-                {savingEditedMessage ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>{pt.save}</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        <TextInput
+          value={editingMessageText}
+          onChangeText={setEditingMessageText}
+          style={styles.annotationInput}
+          placeholder={pt.type_message}
+          placeholderTextColor={colors.grey500}
+          multiline
+          maxLength={65535}
+        />
+      </BottomSheetModal>
 
       <Modal
         visible={viewingEditHistoryMessage !== null}
@@ -12977,7 +12952,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 : null}
             </ScrollView>
 
-            <View style={styles.bottomSheetFooter}>
+            <View style={styles.editHistoryFooter}>
               <Pressable
                 style={styles.primaryBtn}
                 onPress={() => setViewingEditHistoryMessage(null)}
@@ -12989,203 +12964,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         </View>
       </Modal>
 
-      <Modal
+      <BottomSheetModal
         visible={forwardModalVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={handleForwardRequestClose}
-      >
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
-        >
-          <View
-            style={[
-              styles.bottomSheetOverlay,
-              { paddingBottom: insets.bottom },
-            ]}
-          >
-            <Pressable
-              style={styles.bottomSheetBackdrop}
-              onPress={handleForwardRequestClose}
-            />
-            <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
-              <View style={styles.bottomSheetHeader}>
-                <Text style={styles.bottomSheetTitle}>{pt.forward}</Text>
-                <Pressable onPress={handleForwardRequestClose}>
-                  <Ionicons name="close" size={22} color={colors.onSurface} />
-                </Pressable>
-              </View>
-
-              <View style={styles.formField}>
-                <SelectField
-                  label={pt.channel}
-                  valueLabel={selectedForwardChannel?.title ?? null}
-                  placeholder={pt.transfer_select_channel}
-                  onPress={dismissKeyboardAnd(() =>
-                    setForwardPickerKind('channel')
-                  )}
-                  disabled={
-                    forwardChannelsLoading || forwardChannels.length === 0
-                  }
-                  loading={forwardChannelsLoading}
-                />
-              </View>
-
-              <View style={styles.forwardStatusRow}>
-                {(
-                  [
-                    { value: 'in_chat', label: pt.in_chat },
-                    { value: 'queue', label: pt.queue },
-                    { value: 'all', label: pt.all },
-                  ] as const
-                ).map((option) => (
-                  <Pressable
-                    key={option.value}
-                    style={[
-                      styles.forwardStatusChip,
-                      forwardStatus === option.value &&
-                        styles.forwardStatusChipActive,
-                      !canInteractWithForwardTargets &&
-                        styles.forwardStatusChipDisabled,
-                    ]}
-                    disabled={!canInteractWithForwardTargets}
-                    onPress={dismissKeyboardAnd(() => {
-                      setForwardStatus(option.value);
-                    })}
-                  >
-                    <Text
-                      style={[
-                        styles.forwardStatusChipText,
-                        forwardStatus === option.value &&
-                          styles.forwardStatusChipTextActive,
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <View style={styles.searchInputWrap}>
-                <Ionicons
-                  name="search-outline"
-                  size={18}
-                  color={colors.grey600}
-                />
-                <TextInput
-                  style={styles.searchInput}
-                  value={forwardSearch}
-                  onChangeText={setForwardSearch}
-                  placeholder={pt.search_contacts}
-                  placeholderTextColor={colors.grey500}
-                  maxLength={120}
-                  editable={canInteractWithForwardTargets}
-                />
-              </View>
-
-              {forwardChannelsLoading ? (
-                <View style={styles.modalLoadingWrap}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              ) : !canInteractWithForwardTargets ? (
-                <Text style={styles.emptyText}>{pt.channel_required}</Text>
-              ) : forwardLoading ? (
-                <View style={styles.modalLoadingWrap}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              ) : (
-                <FlatList
-                  data={forwardItems}
-                  keyExtractor={(item) => item.value}
-                  contentContainerStyle={styles.bottomSheetList}
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="on-drag"
-                  onEndReached={handleLoadMoreForwardTargets}
-                  onEndReachedThreshold={0.25}
-                  renderItem={({ item }) => {
-                    const selected = forwardSelectedIds.includes(item.value);
-                    return (
-                      <Pressable
-                        style={styles.forwardTargetRow}
-                        onPress={dismissKeyboardAnd(() =>
-                          toggleForwardTarget(item.value)
-                        )}
-                      >
-                        <Text
-                          style={styles.forwardTargetText}
-                          numberOfLines={2}
-                        >
-                          {item.title}
-                        </Text>
-                        {selected ? (
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={18}
-                            color={colors.primary}
-                          />
-                        ) : null}
-                      </Pressable>
-                    );
-                  }}
-                  ListEmptyComponent={
-                    <Text style={styles.emptyText}>{pt.no_results_found}</Text>
-                  }
-                  ListFooterComponent={
-                    forwardLoadingMore ? (
-                      <View style={styles.modalLoadingWrap}>
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.primary}
-                        />
-                      </View>
-                    ) : null
-                  }
-                />
-              )}
-
-              <Text style={styles.modalHintText}>
-                {pt.selected_contacts
-                  .replace('{count}', String(forwardSelectedIds.length))
-                  .replace('{max}', '∞')}
-              </Text>
-
-              <View style={styles.bottomSheetFooter}>
-                <Pressable
-                  style={styles.secondaryBtn}
-                  onPress={dismissKeyboardAnd(closeForwardModal)}
-                >
-                  <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.primaryBtn,
-                    (!canInteractWithForwardTargets ||
-                      forwardSelectedIds.length === 0 ||
-                      forwardSubmitting) &&
-                      styles.sendBtnDisabled,
-                  ]}
-                  onPress={dismissKeyboardAnd(() => {
-                    void handleSubmitForward();
-                  })}
-                  disabled={
-                    !canInteractWithForwardTargets ||
-                    forwardSelectedIds.length === 0 ||
-                    forwardSubmitting
-                  }
-                >
-                  {forwardSubmitting ? (
-                    <ActivityIndicator size="small" color={colors.onPrimary} />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>{pt.forward}</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </View>
+        onClose={handleForwardRequestClose}
+        title={pt.forward}
+        cardStyle={styles.searchSheetCard}
+        noScroll
+        extraContent={
           <SelectSheet
             visible={forwardPickerKind === 'channel'}
             title={pt.channel}
@@ -13201,8 +12986,160 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               setForwardPickerKind(null);
             }}
           />
-        </KeyboardAvoidingView>
-      </Modal>
+        }
+        footer={
+          <>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={dismissKeyboardAnd(closeForwardModal)}
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                (!canInteractWithForwardTargets ||
+                  forwardSelectedIds.length === 0 ||
+                  forwardSubmitting) &&
+                  styles.sendBtnDisabled,
+              ]}
+              onPress={dismissKeyboardAnd(() => {
+                void handleSubmitForward();
+              })}
+              disabled={
+                !canInteractWithForwardTargets ||
+                forwardSelectedIds.length === 0 ||
+                forwardSubmitting
+              }
+            >
+              {forwardSubmitting ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>{pt.forward}</Text>
+              )}
+            </Pressable>
+          </>
+        }
+      >
+        <View style={styles.formField}>
+          <SelectField
+            label={pt.channel}
+            valueLabel={selectedForwardChannel?.title ?? null}
+            placeholder={pt.transfer_select_channel}
+            onPress={dismissKeyboardAnd(() => setForwardPickerKind('channel'))}
+            disabled={forwardChannelsLoading || forwardChannels.length === 0}
+            loading={forwardChannelsLoading}
+          />
+        </View>
+
+        <View style={styles.forwardStatusRow}>
+          {(
+            [
+              { value: 'in_chat', label: pt.in_chat },
+              { value: 'queue', label: pt.queue },
+              { value: 'all', label: pt.all },
+            ] as const
+          ).map((option) => (
+            <Pressable
+              key={option.value}
+              style={[
+                styles.forwardStatusChip,
+                forwardStatus === option.value &&
+                  styles.forwardStatusChipActive,
+                !canInteractWithForwardTargets &&
+                  styles.forwardStatusChipDisabled,
+              ]}
+              disabled={!canInteractWithForwardTargets}
+              onPress={dismissKeyboardAnd(() => {
+                setForwardStatus(option.value);
+              })}
+            >
+              <Text
+                style={[
+                  styles.forwardStatusChipText,
+                  forwardStatus === option.value &&
+                    styles.forwardStatusChipTextActive,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={styles.searchInputWrap}>
+          <Ionicons name="search-outline" size={18} color={colors.grey600} />
+          <TextInput
+            style={styles.searchInput}
+            value={forwardSearch}
+            onChangeText={setForwardSearch}
+            placeholder={pt.search_contacts}
+            placeholderTextColor={colors.grey500}
+            maxLength={120}
+            editable={canInteractWithForwardTargets}
+          />
+        </View>
+
+        {forwardChannelsLoading ? (
+          <View style={styles.modalLoadingWrap}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : !canInteractWithForwardTargets ? (
+          <Text style={styles.emptyText}>{pt.channel_required}</Text>
+        ) : forwardLoading ? (
+          <View style={styles.modalLoadingWrap}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={forwardItems}
+            keyExtractor={(item) => item.value}
+            contentContainerStyle={styles.bottomSheetList}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            onEndReached={handleLoadMoreForwardTargets}
+            onEndReachedThreshold={0.25}
+            renderItem={({ item }) => {
+              const selected = forwardSelectedIds.includes(item.value);
+              return (
+                <Pressable
+                  style={styles.forwardTargetRow}
+                  onPress={dismissKeyboardAnd(() =>
+                    toggleForwardTarget(item.value)
+                  )}
+                >
+                  <Text style={styles.forwardTargetText} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                  {selected ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color={colors.primary}
+                    />
+                  ) : null}
+                </Pressable>
+              );
+            }}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+            }
+            ListFooterComponent={
+              forwardLoadingMore ? (
+                <View style={styles.modalLoadingWrap}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : null
+            }
+          />
+        )}
+
+        <Text style={styles.modalHintText}>
+          {pt.selected_contacts
+            .replace('{count}', String(forwardSelectedIds.length))
+            .replace('{max}', '∞')}
+        </Text>
+      </BottomSheetModal>
 
       <Modal
         visible={menuVisible}
@@ -13259,696 +13196,375 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         </Pressable>
       </Modal>
 
-      <Modal
+      <BottomSheetModal
         visible={attendantsInfoVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={() => setAttendantsInfoVisible(false)}
+        onClose={() => setAttendantsInfoVisible(false)}
+        title={pt.attendants_info}
+        cardStyle={styles.attendantsInfoSheetCard}
+        avoidKeyboard={false}
       >
-        <View
-          style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}
-        >
-          <Pressable
-            style={styles.bottomSheetBackdrop}
-            onPress={() => setAttendantsInfoVisible(false)}
-          />
-          <View
-            style={[styles.bottomSheetCard, styles.attendantsInfoSheetCard]}
-          >
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>{pt.attendants_info}</Text>
-              <Pressable onPress={() => setAttendantsInfoVisible(false)}>
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
-
-            {attendantsInfoLoading ? (
-              <View style={styles.modalLoadingWrap}>
-                <ActivityIndicator size="small" color={colors.primary} />
-              </View>
-            ) : (
-              <ScrollView
-                contentContainerStyle={styles.attendantsInfoContent}
-                keyboardShouldPersistTaps="handled"
-              >
-                {attendantsPrimaryUser ? (
-                  <View style={styles.attendantsPrimaryCard}>
-                    <View style={styles.attendantsRowHeader}>
-                      <AppAvatar
-                        uri={attendantsPrimaryUser.photo ?? null}
-                        size={42}
-                        iconName="person"
-                        iconSize={20}
-                      />
-                      <View style={styles.attendantsUserMain}>
-                        <View style={styles.attendantsPrimaryTitleRow}>
-                          <Text style={styles.attendantsPrimaryName}>
-                            {attendantsPrimaryUser.name}
-                          </Text>
-                          <View style={styles.attendantsPrimaryBadge}>
-                            <Text style={styles.attendantsPrimaryBadgeText}>
-                              {pt.primary_attendant}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text style={styles.attendantsEnteredAtText}>
-                          {pt.entered_at_label}:{' '}
-                          {formatAttendantEnteredAt(
-                            attendantsPrimaryUser.entered_at
-                          )}
+        {attendantsInfoLoading ? (
+          <View style={styles.modalLoadingWrap}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : (
+          <>
+            {attendantsPrimaryUser ? (
+              <View style={styles.attendantsPrimaryCard}>
+                <View style={styles.attendantsRowHeader}>
+                  <AppAvatar
+                    uri={attendantsPrimaryUser.photo ?? null}
+                    size={42}
+                    iconName="person"
+                    iconSize={20}
+                  />
+                  <View style={styles.attendantsUserMain}>
+                    <View style={styles.attendantsPrimaryTitleRow}>
+                      <Text style={styles.attendantsPrimaryName}>
+                        {attendantsPrimaryUser.name}
+                      </Text>
+                      <View style={styles.attendantsPrimaryBadge}>
+                        <Text style={styles.attendantsPrimaryBadgeText}>
+                          {pt.primary_attendant}
                         </Text>
                       </View>
                     </View>
-                  </View>
-                ) : (
-                  <Text style={styles.emptyText}>
-                    {pt.primary_attendant_not_available}
-                  </Text>
-                )}
-
-                <View style={styles.attendantsSectionDivider} />
-
-                <Text style={styles.attendantsSectionTitle}>
-                  {pt.secondary_attendants}
-                </Text>
-
-                {attendantsSecondaryUsers.length > 0 ? (
-                  attendantsSecondaryUsers.map((secondaryUser) => (
-                    <View
-                      key={secondaryUser.id}
-                      style={styles.attendantsSecondaryRow}
-                    >
-                      <AppAvatar
-                        uri={secondaryUser.photo ?? null}
-                        size={36}
-                        iconName="person"
-                        iconSize={18}
-                      />
-                      <View style={styles.attendantsUserMain}>
-                        <Text style={styles.attendantsSecondaryName}>
-                          {secondaryUser.name}
-                        </Text>
-                        <Text style={styles.attendantsEnteredAtText}>
-                          {pt.entered_at_label}:{' '}
-                          {formatAttendantEnteredAt(secondaryUser.entered_at)}
-                        </Text>
-                      </View>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.emptyText}>
-                    {pt.no_secondary_attendants}
-                  </Text>
-                )}
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={closeServiceModalVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={() => setCloseServiceModalVisible(false)}
-      >
-        <View
-          style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}
-        >
-          <Pressable
-            style={styles.bottomSheetBackdrop}
-            onPress={() => setCloseServiceModalVisible(false)}
-          />
-          <View style={[styles.bottomSheetCard, styles.annotationSheetCard]}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>{pt.close_service}</Text>
-              <Pressable onPress={() => setCloseServiceModalVisible(false)}>
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
-
-            <Text style={styles.closeServiceMessage}>
-              {pt.close_service_confirmation}
-            </Text>
-
-            {shouldShowCloseServiceSendMessageToggle ? (
-              <View style={styles.closeServiceToggleRow}>
-                <View style={styles.closeServiceToggleTextWrap}>
-                  <Text style={styles.closeServiceToggleLabel}>
-                    {pt.close_service_send_message_toggle_label}
-                  </Text>
-                  <Text style={styles.closeServiceToggleDescription}>
-                    {pt.close_service_send_message_toggle_description}
-                  </Text>
-                </View>
-                <Switch
-                  value={closeServiceSendMessageOnFinishAttendance}
-                  onValueChange={setCloseServiceSendMessageOnFinishAttendance}
-                  trackColor={{
-                    false: colors.grey400,
-                    true: colors.primary,
-                  }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-            ) : null}
-
-            <View style={styles.bottomSheetFooter}>
-              <Pressable
-                style={styles.secondaryBtn}
-                onPress={() => setCloseServiceModalVisible(false)}
-              >
-                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
-              </Pressable>
-              <Pressable
-                style={styles.closeServiceConfirmBtn}
-                onPress={dismissKeyboardAnd(() => void confirmCloseService())}
-              >
-                <Text style={styles.primaryBtnText}>{pt.close_service}</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={protocolModalVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={() => setProtocolModalVisible(false)}
-      >
-        <View
-          style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}
-        >
-          <Pressable
-            style={styles.bottomSheetBackdrop}
-            onPress={() => setProtocolModalVisible(false)}
-          />
-          <View style={styles.bottomSheetCard}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>{pt.protocols}</Text>
-              <Pressable onPress={() => setProtocolModalVisible(false)}>
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
-            <FlatList
-              data={protocolList}
-              keyExtractor={(item) => `${item.type}-${item.protocol}`}
-              contentContainerStyle={styles.bottomSheetList}
-              renderItem={({ item }) => (
-                <View style={styles.protocolRow}>
-                  <View
-                    style={[
-                      styles.protocolTypeBadge,
-                      { backgroundColor: resolveProtocolTypeColor(item.type) },
-                    ]}
-                  >
-                    <Text style={styles.protocolTypeBadgeText}>
-                      {item.type}
+                    <Text style={styles.attendantsEnteredAtText}>
+                      {pt.entered_at_label}:{' '}
+                      {formatAttendantEnteredAt(
+                        attendantsPrimaryUser.entered_at
+                      )}
                     </Text>
                   </View>
-                  <Text style={styles.protocolRowText}>{item.protocol}</Text>
                 </View>
-              )}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>{pt.no_results_found}</Text>
-              }
-            />
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={labelModalVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={() => setLabelModalVisible(false)}
-      >
-        <View
-          style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}
-        >
-          <Pressable
-            style={styles.bottomSheetBackdrop}
-            onPress={() => setLabelModalVisible(false)}
-          />
-          <View style={styles.bottomSheetCard}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>{pt.label}</Text>
-              <Pressable onPress={() => setLabelModalVisible(false)}>
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
-
-            {isLoadingLabelModal ? (
-              <View style={styles.modalLoadingWrap}>
-                <ActivityIndicator size="small" color={colors.primary} />
               </View>
             ) : (
-              <FlatList
-                data={labelTemplates}
-                keyExtractor={(item) => item.label_template_id}
-                contentContainerStyle={styles.bottomSheetList}
-                renderItem={({ item }) => {
-                  const selected = selectedLabelTemplateIds.includes(
-                    item.label_template_id
-                  );
-                  return (
-                    <Pressable
-                      style={styles.labelRow}
-                      onPress={() => {
-                        setSelectedLabelTemplateIds((prev) => {
-                          if (prev.includes(item.label_template_id)) {
-                            return prev.filter(
-                              (id) => id !== item.label_template_id
-                            );
-                          }
-                          return [...prev, item.label_template_id];
-                        });
-                      }}
-                    >
-                      <View
-                        style={[
-                          styles.labelColorDot,
-                          { backgroundColor: item.color },
-                        ]}
-                      />
-                      <Text style={styles.labelRowText}>{item.label}</Text>
-                      {selected ? (
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={18}
-                          color={colors.primary}
-                        />
-                      ) : null}
-                    </Pressable>
-                  );
-                }}
-                ListEmptyComponent={
-                  <Text style={styles.emptyText}>{pt.no_results_found}</Text>
-                }
-              />
+              <Text style={styles.emptyText}>
+                {pt.primary_attendant_not_available}
+              </Text>
             )}
 
-            <View style={styles.bottomSheetFooter}>
-              <Pressable
-                style={styles.secondaryBtn}
-                onPress={handleClearLabels}
-              >
-                <Text style={styles.secondaryBtnText}>{pt.clear_filter}</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.primaryBtn,
-                  isSavingLabelModal && styles.sendBtnDisabled,
-                ]}
-                onPress={() => {
-                  void handleSaveLabels();
-                }}
-                disabled={isSavingLabelModal}
-              >
-                {isSavingLabelModal ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>{pt.save}</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+            <View style={styles.attendantsSectionDivider} />
 
-      <Modal
-        visible={searchModalVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() => setSearchModalVisible(false))}
-      >
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
-        >
-          <View
-            style={[
-              styles.bottomSheetOverlay,
-              { paddingBottom: insets.bottom },
-            ]}
-          >
-            <Pressable
-              style={styles.bottomSheetBackdrop}
-              onPress={dismissKeyboardAnd(() => setSearchModalVisible(false))}
-            />
-            <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
-              <View style={styles.bottomSheetHeader}>
-                <Text style={styles.bottomSheetTitle}>
-                  {pt.search_messages}
-                </Text>
-                <Pressable
-                  onPress={dismissKeyboardAnd(() =>
-                    setSearchModalVisible(false)
-                  )}
+            <Text style={styles.attendantsSectionTitle}>
+              {pt.secondary_attendants}
+            </Text>
+
+            {attendantsSecondaryUsers.length > 0 ? (
+              attendantsSecondaryUsers.map((secondaryUser) => (
+                <View
+                  key={secondaryUser.id}
+                  style={styles.attendantsSecondaryRow}
                 >
-                  <Ionicons name="close" size={22} color={colors.onSurface} />
+                  <AppAvatar
+                    uri={secondaryUser.photo ?? null}
+                    size={36}
+                    iconName="person"
+                    iconSize={18}
+                  />
+                  <View style={styles.attendantsUserMain}>
+                    <Text style={styles.attendantsSecondaryName}>
+                      {secondaryUser.name}
+                    </Text>
+                    <Text style={styles.attendantsEnteredAtText}>
+                      {pt.entered_at_label}:{' '}
+                      {formatAttendantEnteredAt(secondaryUser.entered_at)}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>{pt.no_secondary_attendants}</Text>
+            )}
+          </>
+        )}
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        visible={closeServiceModalVisible}
+        onClose={() => setCloseServiceModalVisible(false)}
+        title={pt.close_service}
+        cardStyle={styles.annotationSheetCard}
+        avoidKeyboard={false}
+        footer={
+          <>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={() => setCloseServiceModalVisible(false)}
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={styles.closeServiceConfirmBtn}
+              onPress={dismissKeyboardAnd(() => void confirmCloseService())}
+            >
+              <Text style={styles.primaryBtnText}>{pt.close_service}</Text>
+            </Pressable>
+          </>
+        }
+      >
+        <Text style={styles.closeServiceMessage}>
+          {pt.close_service_confirmation}
+        </Text>
+
+        {shouldShowCloseServiceSendMessageToggle ? (
+          <View style={styles.closeServiceToggleRow}>
+            <View style={styles.closeServiceToggleTextWrap}>
+              <Text style={styles.closeServiceToggleLabel}>
+                {pt.close_service_send_message_toggle_label}
+              </Text>
+              <Text style={styles.closeServiceToggleDescription}>
+                {pt.close_service_send_message_toggle_description}
+              </Text>
+            </View>
+            <Switch
+              value={closeServiceSendMessageOnFinishAttendance}
+              onValueChange={setCloseServiceSendMessageOnFinishAttendance}
+              trackColor={{
+                false: colors.grey400,
+                true: colors.primary,
+              }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        ) : null}
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        visible={protocolModalVisible}
+        onClose={() => setProtocolModalVisible(false)}
+        title={pt.protocols}
+        avoidKeyboard={false}
+        noScroll
+      >
+        <FlatList
+          data={protocolList}
+          keyExtractor={(item) => `${item.type}-${item.protocol}`}
+          contentContainerStyle={styles.bottomSheetList}
+          renderItem={({ item }) => (
+            <View style={styles.protocolRow}>
+              <View
+                style={[
+                  styles.protocolTypeBadge,
+                  { backgroundColor: resolveProtocolTypeColor(item.type) },
+                ]}
+              >
+                <Text style={styles.protocolTypeBadgeText}>{item.type}</Text>
+              </View>
+              <Text style={styles.protocolRowText}>{item.protocol}</Text>
+            </View>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+          }
+        />
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        visible={labelModalVisible}
+        onClose={() => setLabelModalVisible(false)}
+        title={pt.label}
+        avoidKeyboard={false}
+        noScroll
+        footer={
+          <>
+            <Pressable style={styles.secondaryBtn} onPress={handleClearLabels}>
+              <Text style={styles.secondaryBtnText}>{pt.clear_filter}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                isSavingLabelModal && styles.sendBtnDisabled,
+              ]}
+              onPress={() => {
+                void handleSaveLabels();
+              }}
+              disabled={isSavingLabelModal}
+            >
+              {isSavingLabelModal ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>{pt.save}</Text>
+              )}
+            </Pressable>
+          </>
+        }
+      >
+        {isLoadingLabelModal ? (
+          <View style={styles.modalLoadingWrap}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={labelTemplates}
+            keyExtractor={(item) => item.label_template_id}
+            contentContainerStyle={styles.bottomSheetList}
+            renderItem={({ item }) => {
+              const selected = selectedLabelTemplateIds.includes(
+                item.label_template_id
+              );
+              return (
+                <Pressable
+                  style={styles.labelRow}
+                  onPress={() => {
+                    setSelectedLabelTemplateIds((prev) => {
+                      if (prev.includes(item.label_template_id)) {
+                        return prev.filter(
+                          (id) => id !== item.label_template_id
+                        );
+                      }
+                      return [...prev, item.label_template_id];
+                    });
+                  }}
+                >
+                  <View
+                    style={[
+                      styles.labelColorDot,
+                      { backgroundColor: item.color },
+                    ]}
+                  />
+                  <Text style={styles.labelRowText}>{item.label}</Text>
+                  {selected ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color={colors.primary}
+                    />
+                  ) : null}
                 </Pressable>
-              </View>
+              );
+            }}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+            }
+          />
+        )}
+      </BottomSheetModal>
 
-              <View style={styles.searchInputWrap}>
-                <Ionicons
-                  name="search-outline"
-                  size={18}
-                  color={colors.grey600}
-                />
-                <TextInput
-                  style={styles.searchInput}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholder={pt.search_messages_placeholder}
-                  placeholderTextColor={colors.grey500}
-                  maxLength={120}
-                />
-              </View>
+      <BottomSheetModal
+        visible={searchModalVisible}
+        onClose={() => setSearchModalVisible(false)}
+        title={pt.search_messages}
+        cardStyle={styles.searchSheetCard}
+        noScroll
+      >
+        <View style={styles.searchInputWrap}>
+          <Ionicons name="search-outline" size={18} color={colors.grey600} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={pt.search_messages_placeholder}
+            placeholderTextColor={colors.grey500}
+            maxLength={120}
+          />
+        </View>
 
-              {debouncedSearchQuery.length > 0 &&
-              debouncedSearchQuery.length < 3 ? (
-                <Text style={styles.modalHintText}>
-                  {pt.search_minimum_characters.replace('{count}', '3')}
+        {debouncedSearchQuery.length > 0 && debouncedSearchQuery.length < 3 ? (
+          <Text style={styles.modalHintText}>
+            {pt.search_minimum_characters.replace('{count}', '3')}
+          </Text>
+        ) : null}
+
+        {searchLoading ? (
+          <View style={styles.modalLoadingWrap}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={searchResults}
+            keyExtractor={(item) => item.message_id}
+            contentContainerStyle={styles.bottomSheetList}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            onEndReached={handleLoadMoreSearchResults}
+            onEndReachedThreshold={0.25}
+            renderItem={({ item }) => (
+              <Pressable
+                style={styles.searchResultRow}
+                onPress={dismissKeyboardAnd(() =>
+                  handleSelectSearchedMessage(item.message_id)
+                )}
+              >
+                <Text style={styles.searchResultDate}>
+                  {formatSearchResultDate(item.date)}
                 </Text>
-              ) : null}
-
-              {searchLoading ? (
+                <Text style={styles.searchResultText} numberOfLines={3}>
+                  {item.message || '-'}
+                </Text>
+              </Pressable>
+            )}
+            ListEmptyComponent={
+              debouncedSearchQuery.trim().length >= 3 ? (
+                <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+              ) : null
+            }
+            ListFooterComponent={
+              searchLoadingMore ? (
                 <View style={styles.modalLoadingWrap}>
                   <ActivityIndicator size="small" color={colors.primary} />
                 </View>
-              ) : (
-                <FlatList
-                  data={searchResults}
-                  keyExtractor={(item) => item.message_id}
-                  contentContainerStyle={styles.bottomSheetList}
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="on-drag"
-                  onEndReached={handleLoadMoreSearchResults}
-                  onEndReachedThreshold={0.25}
-                  renderItem={({ item }) => (
-                    <Pressable
-                      style={styles.searchResultRow}
-                      onPress={dismissKeyboardAnd(() =>
-                        handleSelectSearchedMessage(item.message_id)
-                      )}
-                    >
-                      <Text style={styles.searchResultDate}>
-                        {formatSearchResultDate(item.date)}
-                      </Text>
-                      <Text style={styles.searchResultText} numberOfLines={3}>
-                        {item.message || '-'}
-                      </Text>
-                    </Pressable>
-                  )}
-                  ListEmptyComponent={
-                    debouncedSearchQuery.trim().length >= 3 ? (
-                      <Text style={styles.emptyText}>
-                        {pt.no_results_found}
-                      </Text>
-                    ) : null
-                  }
-                  ListFooterComponent={
-                    searchLoadingMore ? (
-                      <View style={styles.modalLoadingWrap}>
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.primary}
-                        />
-                      </View>
-                    ) : null
-                  }
-                />
-              )}
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      <Modal
-        visible={attendanceHistoryVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={() => setAttendanceHistoryVisible(false)}
-      >
-        <View
-          style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}
-        >
-          <Pressable
-            style={styles.bottomSheetBackdrop}
-            onPress={() => setAttendanceHistoryVisible(false)}
+              ) : null
+            }
           />
-          <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>
-                {pt.attendance_history}
-              </Text>
-              <Pressable onPress={() => setAttendanceHistoryVisible(false)}>
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
-
-            {attendanceHistoryLoading ? (
-              <AttendanceHistorySkeleton
-                rows={ATTENDANCE_HISTORY_SKELETON_ROWS}
-              />
-            ) : (
-              <FlatList
-                data={attendanceHistory}
-                keyExtractor={(item) => item.chat_id}
-                contentContainerStyle={styles.bottomSheetList}
-                onEndReached={handleLoadMoreAttendanceHistory}
-                onEndReachedThreshold={0.25}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={styles.historyRow}
-                    onPress={() => openHistoryConversation(item)}
-                  >
-                    <Text style={styles.historyRowTitle} numberOfLines={1}>
-                      {item.contact?.name ?? item.name ?? item.phone}
-                    </Text>
-                    <Text style={styles.historyRowSubtitle}>
-                      {pt.protocol}: {item.protocol_start?.[0] || '-'}
-                    </Text>
-                    <Text style={styles.historyRowSubtitle}>
-                      {pt.attendance_time}:{' '}
-                      {calculateAttendanceTime(item.started_at, item.closed_at)}
-                    </Text>
-                  </Pressable>
-                )}
-                ListEmptyComponent={
-                  <Text style={styles.emptyText}>
-                    {pt.no_attendance_history}
-                  </Text>
-                }
-                ListFooterComponent={
-                  attendanceHistoryLoadingMore ? (
-                    <AttendanceHistorySkeleton
-                      rows={ATTENDANCE_HISTORY_SKELETON_MORE_ROWS}
-                    />
-                  ) : null
-                }
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={transferModalVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() =>
-          setTransferModalVisible(false)
         )}
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        visible={attendanceHistoryVisible}
+        onClose={() => setAttendanceHistoryVisible(false)}
+        title={pt.attendance_history}
+        cardStyle={styles.searchSheetCard}
+        avoidKeyboard={false}
+        noScroll
       >
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
-        >
-          <View
-            style={[
-              styles.bottomSheetOverlay,
-              { paddingBottom: insets.bottom },
-            ]}
-          >
-            <Pressable
-              style={styles.bottomSheetBackdrop}
-              onPress={dismissKeyboardAnd(() => setTransferModalVisible(false))}
-            />
-            <View style={[styles.bottomSheetCard, styles.transferSheetCard]}>
-              <View style={styles.bottomSheetHeader}>
-                <Text style={styles.bottomSheetTitle}>{pt.transfer}</Text>
-                <Pressable
-                  onPress={dismissKeyboardAnd(() =>
-                    setTransferModalVisible(false)
-                  )}
-                >
-                  <Ionicons name="close" size={22} color={colors.onSurface} />
-                </Pressable>
-              </View>
-              <ScrollView
-                style={styles.transferFormScroll}
-                contentContainerStyle={styles.transferFormContent}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode={
-                  Platform.OS === 'ios' ? 'interactive' : 'on-drag'
-                }
-                showsVerticalScrollIndicator={false}
+        {attendanceHistoryLoading ? (
+          <AttendanceHistorySkeleton rows={ATTENDANCE_HISTORY_SKELETON_ROWS} />
+        ) : (
+          <FlatList
+            data={attendanceHistory}
+            keyExtractor={(item) => item.chat_id}
+            contentContainerStyle={styles.bottomSheetList}
+            onEndReached={handleLoadMoreAttendanceHistory}
+            onEndReachedThreshold={0.25}
+            renderItem={({ item }) => (
+              <Pressable
+                style={styles.historyRow}
+                onPress={() => openHistoryConversation(item)}
               >
-                <View style={styles.formField}>
-                  <SelectField
-                    label={pt.channel}
-                    valueLabel={selectedTransferChannel?.title ?? null}
-                    placeholder={pt.transfer_select_channel}
-                    onPress={dismissKeyboardAnd(() =>
-                      setTransferPickerKind('channel')
-                    )}
-                    loading={isLoadingTransferChannels}
-                    disabled={isLoadingTransferChannels}
-                  />
-                </View>
+                <Text style={styles.historyRowTitle} numberOfLines={1}>
+                  {item.contact?.name ?? item.name ?? item.phone}
+                </Text>
+                <Text style={styles.historyRowSubtitle}>
+                  {pt.protocol}: {item.protocol_start?.[0] || '-'}
+                </Text>
+                <Text style={styles.historyRowSubtitle}>
+                  {pt.attendance_time}:{' '}
+                  {calculateAttendanceTime(item.started_at, item.closed_at)}
+                </Text>
+              </Pressable>
+            )}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>{pt.no_attendance_history}</Text>
+            }
+            ListFooterComponent={
+              attendanceHistoryLoadingMore ? (
+                <AttendanceHistorySkeleton
+                  rows={ATTENDANCE_HISTORY_SKELETON_MORE_ROWS}
+                />
+              ) : null
+            }
+          />
+        )}
+      </BottomSheetModal>
 
-                <View style={styles.formField}>
-                  <SelectField
-                    label={pt.transfer_to}
-                    valueLabel={
-                      transferType === 'user'
-                        ? pt.transfer_type_user
-                        : transferType === 'sector'
-                          ? pt.transfer_type_sector
-                          : null
-                    }
-                    placeholder={pt.transfer_to_placeholder}
-                    onPress={dismissKeyboardAnd(() =>
-                      setTransferPickerKind('type')
-                    )}
-                  />
-                </View>
-
-                {transferType === 'user' ? (
-                  <View style={styles.formField}>
-                    <SelectField
-                      label={pt.transfer_type_user}
-                      valueLabel={selectedTransferUser?.name ?? null}
-                      placeholder={pt.transfer_select_user}
-                      onPress={dismissKeyboardAnd(() =>
-                        setTransferPickerKind('user')
-                      )}
-                      loading={isLoadingTransferUsers}
-                      disabled={isLoadingTransferUsers}
-                    />
-                  </View>
-                ) : null}
-
-                {transferType === 'sector' ? (
-                  <>
-                    <View style={styles.formField}>
-                      <SelectField
-                        label={pt.sector}
-                        valueLabel={selectedTransferSector?.name ?? null}
-                        placeholder={pt.transfer_select_sector}
-                        onPress={dismissKeyboardAnd(() =>
-                          setTransferPickerKind('sector')
-                        )}
-                        loading={isLoadingTransferSectors}
-                        disabled={isLoadingTransferSectors}
-                      />
-                    </View>
-
-                    <View style={styles.formField}>
-                      <SelectField
-                        label={pt.transfer_sector_user_optional}
-                        valueLabel={selectedTransferSectorUser?.name ?? null}
-                        placeholder={pt.transfer_select_sector_user}
-                        onPress={dismissKeyboardAnd(() =>
-                          setTransferPickerKind('sector_user')
-                        )}
-                        loading={isLoadingTransferSectorUsers}
-                        disabled={isLoadingTransferSectorUsers}
-                      />
-                    </View>
-                  </>
-                ) : null}
-
-                <View style={styles.formField}>
-                  <Text style={styles.formFieldLabel}>
-                    {pt.transfer_annotation}
-                  </Text>
-                  <TextInput
-                    value={transferAnnotation}
-                    onChangeText={setTransferAnnotation}
-                    style={styles.transferAnnotationInput}
-                    placeholder={pt.transfer_annotation_placeholder}
-                    placeholderTextColor={colors.grey500}
-                    multiline
-                    maxLength={300}
-                  />
-                </View>
-
-                <View style={styles.closeServiceToggleRow}>
-                  <View style={styles.closeServiceToggleTextWrap}>
-                    <Text style={styles.closeServiceToggleLabel}>
-                      {pt.keep_in_chat}
-                    </Text>
-                    <Text style={styles.closeServiceToggleDescription}>
-                      {pt.keep_in_chat_description}
-                    </Text>
-                  </View>
-                  <Switch
-                    value={transferKeepInChat}
-                    onValueChange={setTransferKeepInChat}
-                    trackColor={{ false: colors.grey300, true: colors.primary }}
-                    thumbColor={colors.onPrimary}
-                  />
-                </View>
-              </ScrollView>
-
-              <View style={styles.bottomSheetFooter}>
-                <Pressable
-                  style={styles.secondaryBtn}
-                  onPress={dismissKeyboardAnd(() =>
-                    setTransferModalVisible(false)
-                  )}
-                >
-                  <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.primaryBtn,
-                    isTransferring && styles.sendBtnDisabled,
-                  ]}
-                  onPress={dismissKeyboardAnd(() => {
-                    void submitTransfer();
-                  })}
-                  disabled={isTransferring}
-                >
-                  {isTransferring ? (
-                    <ActivityIndicator size="small" color={colors.onPrimary} />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>{pt.transfer}</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </View>
+      <BottomSheetModal
+        visible={transferModalVisible}
+        onClose={() => setTransferModalVisible(false)}
+        title={pt.transfer}
+        cardStyle={styles.transferSheetCard}
+        noScroll
+        extraContent={
           <SelectSheet
             visible={transferPickerKind !== null}
             title={transferPickerTitle}
@@ -13963,8 +13579,147 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               handleSelectTransferPickerValue(value);
             })}
           />
-        </KeyboardAvoidingView>
-      </Modal>
+        }
+        footer={
+          <>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={dismissKeyboardAnd(() => setTransferModalVisible(false))}
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                isTransferring && styles.sendBtnDisabled,
+              ]}
+              onPress={dismissKeyboardAnd(() => {
+                void submitTransfer();
+              })}
+              disabled={isTransferring}
+            >
+              {isTransferring ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>{pt.transfer}</Text>
+              )}
+            </Pressable>
+          </>
+        }
+      >
+        <ScrollView
+          style={styles.transferFormScroll}
+          contentContainerStyle={styles.transferFormContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={
+            Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.formField}>
+            <SelectField
+              label={pt.channel}
+              valueLabel={selectedTransferChannel?.title ?? null}
+              placeholder={pt.transfer_select_channel}
+              onPress={dismissKeyboardAnd(() =>
+                setTransferPickerKind('channel')
+              )}
+              loading={isLoadingTransferChannels}
+              disabled={isLoadingTransferChannels}
+            />
+          </View>
+
+          <View style={styles.formField}>
+            <SelectField
+              label={pt.transfer_to}
+              valueLabel={
+                transferType === 'user'
+                  ? pt.transfer_type_user
+                  : transferType === 'sector'
+                    ? pt.transfer_type_sector
+                    : null
+              }
+              placeholder={pt.transfer_to_placeholder}
+              onPress={dismissKeyboardAnd(() => setTransferPickerKind('type'))}
+            />
+          </View>
+
+          {transferType === 'user' ? (
+            <View style={styles.formField}>
+              <SelectField
+                label={pt.transfer_type_user}
+                valueLabel={selectedTransferUser?.name ?? null}
+                placeholder={pt.transfer_select_user}
+                onPress={dismissKeyboardAnd(() =>
+                  setTransferPickerKind('user')
+                )}
+                loading={isLoadingTransferUsers}
+                disabled={isLoadingTransferUsers}
+              />
+            </View>
+          ) : null}
+
+          {transferType === 'sector' ? (
+            <>
+              <View style={styles.formField}>
+                <SelectField
+                  label={pt.sector}
+                  valueLabel={selectedTransferSector?.name ?? null}
+                  placeholder={pt.transfer_select_sector}
+                  onPress={dismissKeyboardAnd(() =>
+                    setTransferPickerKind('sector')
+                  )}
+                  loading={isLoadingTransferSectors}
+                  disabled={isLoadingTransferSectors}
+                />
+              </View>
+
+              <View style={styles.formField}>
+                <SelectField
+                  label={pt.transfer_sector_user_optional}
+                  valueLabel={selectedTransferSectorUser?.name ?? null}
+                  placeholder={pt.transfer_select_sector_user}
+                  onPress={dismissKeyboardAnd(() =>
+                    setTransferPickerKind('sector_user')
+                  )}
+                  loading={isLoadingTransferSectorUsers}
+                  disabled={isLoadingTransferSectorUsers}
+                />
+              </View>
+            </>
+          ) : null}
+
+          <View style={styles.formField}>
+            <Text style={styles.formFieldLabel}>{pt.transfer_annotation}</Text>
+            <TextInput
+              value={transferAnnotation}
+              onChangeText={setTransferAnnotation}
+              style={styles.transferAnnotationInput}
+              placeholder={pt.transfer_annotation_placeholder}
+              placeholderTextColor={colors.grey500}
+              multiline
+              maxLength={300}
+            />
+          </View>
+
+          <View style={styles.closeServiceToggleRow}>
+            <View style={styles.closeServiceToggleTextWrap}>
+              <Text style={styles.closeServiceToggleLabel}>
+                {pt.keep_in_chat}
+              </Text>
+              <Text style={styles.closeServiceToggleDescription}>
+                {pt.keep_in_chat_description}
+              </Text>
+            </View>
+            <Switch
+              value={transferKeepInChat}
+              onValueChange={setTransferKeepInChat}
+              trackColor={{ false: colors.grey300, true: colors.primary }}
+              thumbColor={colors.onPrimary}
+            />
+          </View>
+        </ScrollView>
+      </BottomSheetModal>
 
       <Modal
         visible={cameraPickerVisible}
@@ -14016,193 +13771,123 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         </Pressable>
       </Modal>
 
-      <Modal
+      <BottomSheetModal
         visible={annotationModalVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() =>
-          setAnnotationModalVisible(false)
-        )}
+        onClose={() => setAnnotationModalVisible(false)}
+        title={pt.annotation}
+        cardStyle={styles.annotationSheetCard}
+        footer={
+          <>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={dismissKeyboardAnd(() =>
+                setAnnotationModalVisible(false)
+              )}
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                (!annotationInput.trim() || sendingAnnotation) &&
+                  styles.sendBtnDisabled,
+              ]}
+              onPress={dismissKeyboardAnd(() => {
+                void handleSendAnnotation();
+              })}
+              disabled={!annotationInput.trim() || sendingAnnotation}
+            >
+              {sendingAnnotation ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>{pt.send}</Text>
+              )}
+            </Pressable>
+          </>
+        }
       >
-        <KeyboardAvoidingView
-          style={[styles.bottomSheetOverlay, { paddingBottom: insets.bottom }]}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
-        >
-          <Pressable
-            style={styles.bottomSheetBackdrop}
-            onPress={dismissKeyboardAnd(() => setAnnotationModalVisible(false))}
-          />
-          <View style={[styles.bottomSheetCard, styles.annotationSheetCard]}>
-            <View style={styles.bottomSheetHeader}>
-              <Text style={styles.bottomSheetTitle}>{pt.annotation}</Text>
-              <Pressable
-                onPress={dismissKeyboardAnd(() =>
-                  setAnnotationModalVisible(false)
-                )}
-              >
-                <Ionicons name="close" size={22} color={colors.onSurface} />
-              </Pressable>
-            </View>
-            <TextInput
-              value={annotationInput}
-              onChangeText={setAnnotationInput}
-              style={styles.annotationInput}
-              placeholder={pt.annotation_placeholder}
-              placeholderTextColor={colors.grey500}
-              multiline
-              maxLength={5000}
-            />
-            <Text style={styles.modalHintText}>
-              {pt.annotation_max_characters.replace('{count}', '5000')}
-            </Text>
-            <View style={styles.bottomSheetFooter}>
-              <Pressable
-                style={styles.secondaryBtn}
-                onPress={dismissKeyboardAnd(() =>
-                  setAnnotationModalVisible(false)
-                )}
-              >
-                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.primaryBtn,
-                  (!annotationInput.trim() || sendingAnnotation) &&
-                    styles.sendBtnDisabled,
-                ]}
-                onPress={dismissKeyboardAnd(() => {
-                  void handleSendAnnotation();
-                })}
-                disabled={!annotationInput.trim() || sendingAnnotation}
-              >
-                {sendingAnnotation ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>{pt.send}</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        <TextInput
+          value={annotationInput}
+          onChangeText={setAnnotationInput}
+          style={styles.annotationInput}
+          placeholder={pt.annotation_placeholder}
+          placeholderTextColor={colors.grey500}
+          multiline
+          maxLength={5000}
+        />
+        <Text style={styles.modalHintText}>
+          {pt.annotation_max_characters.replace('{count}', '5000')}
+        </Text>
+      </BottomSheetModal>
 
-      <Modal
+      <BottomSheetModal
         visible={messageContactsSheetVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() => {
+        onClose={() => {
           setMessageContactsSheetVisible(false);
           setMessageContactsSheetItems([]);
-        })}
-      >
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
-        >
-          <View
-            style={[
-              styles.bottomSheetOverlay,
-              { paddingBottom: insets.bottom },
-            ]}
+        }}
+        title={pt.received_contacts}
+        cardStyle={styles.searchSheetCard}
+        noScroll
+        footer={
+          <Pressable
+            style={styles.secondaryBtn}
+            onPress={dismissKeyboardAnd(() => {
+              setMessageContactsSheetVisible(false);
+              setMessageContactsSheetItems([]);
+            })}
           >
-            <Pressable
-              style={styles.bottomSheetBackdrop}
-              onPress={dismissKeyboardAnd(() => {
-                setMessageContactsSheetVisible(false);
-                setMessageContactsSheetItems([]);
-              })}
-            />
-            <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
-              <View style={styles.bottomSheetHeader}>
-                <Text style={styles.bottomSheetTitle}>
-                  {pt.received_contacts}
-                </Text>
-                <Pressable
-                  onPress={dismissKeyboardAnd(() => {
-                    setMessageContactsSheetVisible(false);
-                    setMessageContactsSheetItems([]);
-                  })}
-                >
-                  <Ionicons name="close" size={22} color={colors.onSurface} />
-                </Pressable>
-              </View>
+            <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+          </Pressable>
+        }
+      >
+        <FlatList
+          data={messageContactsSheetItems}
+          keyExtractor={(item, index) =>
+            `${item.contact_id ?? 'received'}-${item.phone ?? item.phone_partial ?? index}`
+          }
+          contentContainerStyle={styles.bottomSheetList}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          renderItem={({ item }) => {
+            const fullName = [item.name, item.last_name]
+              .filter(Boolean)
+              .join(' ')
+              .trim();
+            const phoneLabel = item.phone_partial ?? item.phone ?? '-';
 
-              <FlatList
-                data={messageContactsSheetItems}
-                keyExtractor={(item, index) =>
-                  `${item.contact_id ?? 'received'}-${item.phone ?? item.phone_partial ?? index}`
-                }
-                contentContainerStyle={styles.bottomSheetList}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="on-drag"
-                renderItem={({ item }) => {
-                  const fullName = [item.name, item.last_name]
-                    .filter(Boolean)
-                    .join(' ')
-                    .trim();
-                  const phoneLabel = item.phone_partial ?? item.phone ?? '-';
+            return (
+              <Pressable
+                style={styles.contactPickerRow}
+                onPress={dismissKeyboardAnd(() => {
+                  handleSelectMessageGroupContact(item);
+                })}
+              >
+                <AppAvatar
+                  uri={item.photo}
+                  size={34}
+                  style={styles.contactPickerAvatar}
+                  iconName="person"
+                  iconColor={colors.grey500}
+                />
+                <View style={styles.contactPickerRowInfo}>
+                  <Text style={styles.contactPickerRowName} numberOfLines={1}>
+                    {fullName || pt.contact}
+                  </Text>
+                  <Text style={styles.contactPickerRowPhone} numberOfLines={1}>
+                    {phoneLabel}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          }}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>{pt.no_contacts_found}</Text>
+          }
+        />
 
-                  return (
-                    <Pressable
-                      style={styles.contactPickerRow}
-                      onPress={dismissKeyboardAnd(() => {
-                        handleSelectMessageGroupContact(item);
-                      })}
-                    >
-                      <AppAvatar
-                        uri={item.photo}
-                        size={34}
-                        style={styles.contactPickerAvatar}
-                        iconName="person"
-                        iconColor={colors.grey500}
-                      />
-                      <View style={styles.contactPickerRowInfo}>
-                        <Text
-                          style={styles.contactPickerRowName}
-                          numberOfLines={1}
-                        >
-                          {fullName || pt.contact}
-                        </Text>
-                        <Text
-                          style={styles.contactPickerRowPhone}
-                          numberOfLines={1}
-                        >
-                          {phoneLabel}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  );
-                }}
-                ListEmptyComponent={
-                  <Text style={styles.emptyText}>{pt.no_contacts_found}</Text>
-                }
-              />
-
-              <Text style={styles.modalHintText}>
-                {pt.select_received_contact}
-              </Text>
-
-              <View style={styles.bottomSheetFooter}>
-                <Pressable
-                  style={styles.secondaryBtn}
-                  onPress={dismissKeyboardAnd(() => {
-                    setMessageContactsSheetVisible(false);
-                    setMessageContactsSheetItems([]);
-                  })}
-                >
-                  <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        <Text style={styles.modalHintText}>{pt.select_received_contact}</Text>
+      </BottomSheetModal>
 
       <ContactFormModal
         visible={contactFormVisible}
@@ -14214,437 +13899,327 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         onSuccess={handleContactFormSuccess}
       />
 
-      <Modal
+      <BottomSheetModal
         visible={contactPickerVisible}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() =>
-          setContactPickerVisible(false)
-        )}
-      >
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
-        >
-          <View
-            style={[
-              styles.bottomSheetOverlay,
-              { paddingBottom: insets.bottom },
-            ]}
-          >
+        onClose={() => setContactPickerVisible(false)}
+        title={pt.select_contacts}
+        cardStyle={styles.searchSheetCard}
+        noScroll
+        footer={
+          <>
             <Pressable
-              style={styles.bottomSheetBackdrop}
+              style={styles.secondaryBtn}
               onPress={dismissKeyboardAnd(() => setContactPickerVisible(false))}
-            />
-            <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
-              <View style={styles.bottomSheetHeader}>
-                <Text style={styles.bottomSheetTitle}>
-                  {pt.select_contacts}
-                </Text>
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                (selectedContactIds.length === 0 || sendingCapturedMedia) &&
+                  styles.sendBtnDisabled,
+              ]}
+              onPress={dismissKeyboardAnd(() => {
+                void handleSendSelectedContacts();
+              })}
+              disabled={selectedContactIds.length === 0 || sendingCapturedMedia}
+            >
+              {sendingCapturedMedia ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>{pt.send}</Text>
+              )}
+            </Pressable>
+          </>
+        }
+      >
+        <View style={styles.searchInputWrap}>
+          <Ionicons name="search-outline" size={18} color={colors.grey600} />
+          <TextInput
+            style={styles.searchInput}
+            value={contactPickerSearch}
+            onChangeText={setContactPickerSearch}
+            placeholder={pt.search_contacts}
+            placeholderTextColor={colors.grey500}
+            maxLength={120}
+          />
+        </View>
+
+        {loadingContactPicker ? (
+          <View style={styles.modalLoadingWrap}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={contactPickerItems}
+            keyExtractor={(item) => item.contact_id}
+            contentContainerStyle={styles.bottomSheetList}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            onEndReached={handleLoadMoreContactPicker}
+            onEndReachedThreshold={0.25}
+            renderItem={({ item }) => {
+              const selected = selectedContactIds.includes(item.contact_id);
+              const fullName = [item.name, item.last_name]
+                .filter(Boolean)
+                .join(' ')
+                .trim();
+              return (
                 <Pressable
+                  style={styles.contactPickerRow}
                   onPress={dismissKeyboardAnd(() =>
-                    setContactPickerVisible(false)
+                    toggleContactSelection(item.contact_id)
                   )}
                 >
-                  <Ionicons name="close" size={22} color={colors.onSurface} />
+                  <AppAvatar
+                    uri={item.photo}
+                    size={34}
+                    style={styles.contactPickerAvatar}
+                    iconName="person"
+                    iconColor={colors.grey500}
+                  />
+                  <View style={styles.contactPickerRowInfo}>
+                    <Text style={styles.contactPickerRowName} numberOfLines={1}>
+                      {fullName || pt.contact}
+                    </Text>
+                    <Text
+                      style={styles.contactPickerRowPhone}
+                      numberOfLines={1}
+                    >
+                      {item.phone_partial || '-'}
+                    </Text>
+                  </View>
+                  {selected ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  ) : null}
                 </Pressable>
-              </View>
-
-              <View style={styles.searchInputWrap}>
-                <Ionicons
-                  name="search-outline"
-                  size={18}
-                  color={colors.grey600}
-                />
-                <TextInput
-                  style={styles.searchInput}
-                  value={contactPickerSearch}
-                  onChangeText={setContactPickerSearch}
-                  placeholder={pt.search_contacts}
-                  placeholderTextColor={colors.grey500}
-                  maxLength={120}
-                />
-              </View>
-
-              {loadingContactPicker ? (
+              );
+            }}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>{pt.no_contacts_found}</Text>
+            }
+            ListFooterComponent={
+              loadingMoreContactPicker ? (
                 <View style={styles.modalLoadingWrap}>
                   <ActivityIndicator size="small" color={colors.primary} />
                 </View>
-              ) : (
-                <FlatList
-                  data={contactPickerItems}
-                  keyExtractor={(item) => item.contact_id}
-                  contentContainerStyle={styles.bottomSheetList}
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="on-drag"
-                  onEndReached={handleLoadMoreContactPicker}
-                  onEndReachedThreshold={0.25}
-                  renderItem={({ item }) => {
-                    const selected = selectedContactIds.includes(
-                      item.contact_id
-                    );
-                    const fullName = [item.name, item.last_name]
-                      .filter(Boolean)
-                      .join(' ')
-                      .trim();
-                    return (
-                      <Pressable
-                        style={styles.contactPickerRow}
-                        onPress={dismissKeyboardAnd(() =>
-                          toggleContactSelection(item.contact_id)
-                        )}
-                      >
-                        <AppAvatar
-                          uri={item.photo}
-                          size={34}
-                          style={styles.contactPickerAvatar}
-                          iconName="person"
-                          iconColor={colors.grey500}
-                        />
-                        <View style={styles.contactPickerRowInfo}>
-                          <Text
-                            style={styles.contactPickerRowName}
-                            numberOfLines={1}
-                          >
-                            {fullName || pt.contact}
-                          </Text>
-                          <Text
-                            style={styles.contactPickerRowPhone}
-                            numberOfLines={1}
-                          >
-                            {item.phone_partial || '-'}
-                          </Text>
-                        </View>
-                        {selected ? (
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={20}
-                            color={colors.primary}
-                          />
-                        ) : null}
-                      </Pressable>
-                    );
-                  }}
-                  ListEmptyComponent={
-                    <Text style={styles.emptyText}>{pt.no_contacts_found}</Text>
-                  }
-                  ListFooterComponent={
-                    loadingMoreContactPicker ? (
-                      <View style={styles.modalLoadingWrap}>
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.primary}
-                        />
-                      </View>
-                    ) : null
-                  }
-                />
-              )}
-
-              <Text style={styles.modalHintText}>
-                {pt.selected_contacts
-                  .replace('{count}', String(selectedContactIds.length))
-                  .replace('{max}', String(MAX_CONTACTS_SELECTED))}
-              </Text>
-
-              <View style={styles.bottomSheetFooter}>
-                <Pressable
-                  style={styles.secondaryBtn}
-                  onPress={dismissKeyboardAnd(() =>
-                    setContactPickerVisible(false)
-                  )}
-                >
-                  <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.primaryBtn,
-                    (selectedContactIds.length === 0 || sendingCapturedMedia) &&
-                      styles.sendBtnDisabled,
-                  ]}
-                  onPress={dismissKeyboardAnd(() => {
-                    void handleSendSelectedContacts();
-                  })}
-                  disabled={
-                    selectedContactIds.length === 0 || sendingCapturedMedia
-                  }
-                >
-                  {sendingCapturedMedia ? (
-                    <ActivityIndicator size="small" color={colors.onPrimary} />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>{pt.send}</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      <Modal
-        visible={locationPickerVisible}
-        transparent
-        statusBarTranslucent={Platform.OS !== 'android'}
-        navigationBarTranslucent={Platform.OS !== 'android'}
-        hardwareAccelerated={Platform.OS === 'android'}
-        animationType="slide"
-        onRequestClose={dismissKeyboardAnd(() =>
-          setLocationPickerVisible(false)
+              ) : null
+            }
+          />
         )}
-      >
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
-        >
-          <View
-            style={[
-              styles.bottomSheetOverlay,
-              { paddingBottom: insets.bottom },
-            ]}
-          >
+
+        <Text style={styles.modalHintText}>
+          {pt.selected_contacts
+            .replace('{count}', String(selectedContactIds.length))
+            .replace('{max}', String(MAX_CONTACTS_SELECTED))}
+        </Text>
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        visible={locationPickerVisible}
+        onClose={() => setLocationPickerVisible(false)}
+        title={pt.send_location}
+        cardStyle={styles.locationSheetCard}
+        statusBarTranslucent={Platform.OS !== 'android'}
+        hardwareAccelerated={Platform.OS === 'android'}
+        footerStyle={styles.locationFooter}
+        footer={
+          <>
             <Pressable
-              style={styles.bottomSheetBackdrop}
+              style={[
+                styles.locationSendCurrentBtn,
+                sendingCapturedMedia && styles.sendBtnDisabled,
+              ]}
+              onPress={dismissKeyboardAnd(() => {
+                void handleSendLocation();
+              })}
+              disabled={sendingCapturedMedia}
+            >
+              {sendingCapturedMedia ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>
+                  {pt.send_location_current}
+                </Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={styles.secondaryBtn}
               onPress={dismissKeyboardAnd(() =>
                 setLocationPickerVisible(false)
               )}
-            />
-            <View style={[styles.bottomSheetCard, styles.locationSheetCard]}>
-              <View style={styles.bottomSheetHeader}>
-                <Text style={styles.bottomSheetTitle}>{pt.send_location}</Text>
-                <Pressable
-                  onPress={dismissKeyboardAnd(() =>
-                    setLocationPickerVisible(false)
-                  )}
-                >
-                  <Ionicons name="close" size={22} color={colors.onSurface} />
-                </Pressable>
-              </View>
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
+          </>
+        }
+      >
+        <View style={styles.searchInputWrap}>
+          <Ionicons name="search-outline" size={18} color={colors.grey600} />
+          <TextInput
+            value={locationSearchInput}
+            onChangeText={setLocationSearchInput}
+            onSubmitEditing={dismissKeyboardAnd(() => {
+              void handleSearchLocation();
+            })}
+            style={styles.searchInput}
+            placeholder={pt.location_search_placeholder}
+            placeholderTextColor={colors.grey500}
+            returnKeyType="search"
+          />
+          <Pressable
+            onPress={dismissKeyboardAnd(() => {
+              void handleSearchLocation();
+            })}
+            style={styles.locationSearchBtn}
+            disabled={locationSearchLoading}
+          >
+            {locationSearchLoading ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons name="arrow-forward" size={18} color={colors.primary} />
+            )}
+          </Pressable>
+        </View>
 
-              <View style={styles.searchInputWrap}>
-                <Ionicons
-                  name="search-outline"
-                  size={18}
-                  color={colors.grey600}
-                />
-                <TextInput
-                  value={locationSearchInput}
-                  onChangeText={setLocationSearchInput}
-                  onSubmitEditing={dismissKeyboardAnd(() => {
-                    void handleSearchLocation();
-                  })}
-                  style={styles.searchInput}
-                  placeholder={pt.location_search_placeholder}
-                  placeholderTextColor={colors.grey500}
-                  returnKeyType="search"
-                />
-                <Pressable
-                  onPress={dismissKeyboardAnd(() => {
-                    void handleSearchLocation();
-                  })}
-                  style={styles.locationSearchBtn}
-                  disabled={locationSearchLoading}
+        <View style={styles.locationMapWrap}>
+          {hasNativeMapSupport &&
+          NativeMapView &&
+          NativeMapCamera &&
+          locationMapStatus !== 'failed' ? (
+            <NativeMapView
+              style={styles.locationMap}
+              mapStyle={locationMapStyleUrl}
+              onWillStartLoadingMap={handleLocationMapWillStartLoading}
+              onDidFinishLoadingMap={handleLocationMapDidFinishLoading}
+              onDidFinishLoadingStyle={handleLocationMapDidFinishLoading}
+              onDidFailLoadingMap={handleLocationMapDidFailLoading}
+              onPress={handleMapPress}
+            >
+              <NativeMapCamera
+                centerCoordinate={mapCenterCoordinateLngLat}
+                zoomLevel={14}
+                animationDuration={250}
+              />
+              {selectedCoordinateLngLat && NativeMapPointAnnotation ? (
+                <NativeMapPointAnnotation
+                  id="location-picker-selected"
+                  coordinate={selectedCoordinateLngLat}
                 >
-                  {locationSearchLoading ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <Ionicons
-                      name="arrow-forward"
-                      size={18}
-                      color={colors.primary}
-                    />
-                  )}
-                </Pressable>
-              </View>
-
-              <View style={styles.locationMapWrap}>
-                {hasNativeMapSupport &&
-                NativeMapView &&
-                NativeMapCamera &&
-                locationMapStatus !== 'failed' ? (
-                  <NativeMapView
-                    style={styles.locationMap}
-                    mapStyle={locationMapStyleUrl}
-                    onWillStartLoadingMap={handleLocationMapWillStartLoading}
-                    onDidFinishLoadingMap={handleLocationMapDidFinishLoading}
-                    onDidFinishLoadingStyle={handleLocationMapDidFinishLoading}
-                    onDidFailLoadingMap={handleLocationMapDidFailLoading}
-                    onPress={handleMapPress}
-                  >
-                    <NativeMapCamera
-                      centerCoordinate={mapCenterCoordinateLngLat}
-                      zoomLevel={14}
-                      animationDuration={250}
-                    />
-                    {selectedCoordinateLngLat && NativeMapPointAnnotation ? (
-                      <NativeMapPointAnnotation
-                        id="location-picker-selected"
-                        coordinate={selectedCoordinateLngLat}
-                      >
-                        <View style={styles.locationMapMarker}>
-                          <Ionicons
-                            name="location-sharp"
-                            size={30}
-                            color="#EF4444"
-                          />
-                        </View>
-                      </NativeMapPointAnnotation>
-                    ) : null}
-                  </NativeMapView>
-                ) : (
-                  <View style={styles.locationPickerMapFallback}>
-                    <Ionicons
-                      name="map-outline"
-                      size={28}
-                      color={colors.grey600}
-                    />
-                    <Text style={styles.locationMapFallbackText}>
-                      {pt.location_map_unavailable}
-                    </Text>
-                    {hasNativeMapSupport ? (
-                      <Pressable
-                        style={styles.locationMapRetryBtn}
-                        onPress={handleRetryLocationMap}
-                      >
-                        <Text style={styles.locationMapRetryBtnText}>
-                          {pt.retry}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                    {__DEV__ ? (
-                      <Text style={styles.locationMapFallbackDebugText}>
-                        {locationMapDebugInfo}
-                      </Text>
-                    ) : null}
+                  <View style={styles.locationMapMarker}>
+                    <Ionicons name="location-sharp" size={30} color="#EF4444" />
                   </View>
-                )}
-              </View>
-
-              {locationCurrentError ? (
-                <Text style={styles.locationErrorText}>
-                  {pt.location_error}
-                </Text>
+                </NativeMapPointAnnotation>
               ) : null}
-
-              <Text style={styles.locationSectionTitle}>
-                {pt.location_nearby_places}
+            </NativeMapView>
+          ) : (
+            <View style={styles.locationPickerMapFallback}>
+              <Ionicons name="map-outline" size={28} color={colors.grey600} />
+              <Text style={styles.locationMapFallbackText}>
+                {pt.location_map_unavailable}
               </Text>
-
-              <Pressable
-                style={styles.locationCurrentRow}
-                onPress={() => {
-                  void handleSendCurrentLocation();
-                }}
-                disabled={sendingCapturedMedia || locationCurrentLoading}
-              >
-                <View style={styles.locationCurrentIconWrap}>
-                  <Ionicons name="locate" size={16} color={colors.primary} />
-                </View>
-                <View style={styles.locationCurrentContent}>
-                  <Text style={styles.locationCurrentTitle}>
-                    {pt.location_current}
-                  </Text>
-                  <Text style={styles.locationCurrentSubtitle}>
-                    {locationCurrentAccuracy !== null
-                      ? pt.location_precision_meters.replace(
-                          '{meters}',
-                          String(
-                            Math.max(1, Math.round(locationCurrentAccuracy))
-                          )
-                        )
-                      : pt.location_searching}
-                  </Text>
-                </View>
-                {locationCurrentLoading ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Ionicons
-                    name="chevron-forward"
-                    size={18}
-                    color={colors.grey600}
-                  />
-                )}
-              </Pressable>
-
-              {locationSearchLoading ? (
-                <View style={styles.locationSearchLoadingRow}>
-                  <Text style={styles.locationSearchLoadingText}>
-                    {pt.location_searching}
-                  </Text>
-                  <ActivityIndicator size="small" color={colors.grey600} />
-                </View>
-              ) : null}
-
-              {locationSearchResults.map((result) => (
+              {hasNativeMapSupport ? (
                 <Pressable
-                  key={result.id}
-                  style={styles.locationSearchResultRow}
-                  onPress={() => handleSelectSearchResult(result)}
+                  style={styles.locationMapRetryBtn}
+                  onPress={handleRetryLocationMap}
                 >
-                  <Ionicons
-                    name="location-outline"
-                    size={18}
-                    color={colors.primary}
-                  />
-                  <View style={styles.locationSearchResultContent}>
-                    <Text
-                      style={styles.locationSearchResultTitle}
-                      numberOfLines={1}
-                    >
-                      {result.name}
-                    </Text>
-                    <Text
-                      style={styles.locationSearchResultSubtitle}
-                      numberOfLines={1}
-                    >
-                      {result.address}
-                    </Text>
-                  </View>
+                  <Text style={styles.locationMapRetryBtnText}>{pt.retry}</Text>
                 </Pressable>
-              ))}
-
-              {!locationSearchLoading &&
-              locationSearchInput.trim().length >= 3 &&
-              locationSearchResults.length === 0 ? (
-                <Text style={styles.locationSearchEmptyText}>
-                  {pt.location_search_no_results}
+              ) : null}
+              {__DEV__ ? (
+                <Text style={styles.locationMapFallbackDebugText}>
+                  {locationMapDebugInfo}
                 </Text>
               ) : null}
-
-              <Pressable
-                style={[
-                  styles.locationSendCurrentBtn,
-                  sendingCapturedMedia && styles.sendBtnDisabled,
-                ]}
-                onPress={dismissKeyboardAnd(() => {
-                  void handleSendLocation();
-                })}
-                disabled={sendingCapturedMedia}
-              >
-                {sendingCapturedMedia ? (
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                ) : (
-                  <Text style={styles.primaryBtnText}>
-                    {pt.send_location_current}
-                  </Text>
-                )}
-              </Pressable>
-
-              <Pressable
-                style={styles.secondaryBtn}
-                onPress={dismissKeyboardAnd(() =>
-                  setLocationPickerVisible(false)
-                )}
-              >
-                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
-              </Pressable>
             </View>
+          )}
+        </View>
+
+        {locationCurrentError ? (
+          <Text style={styles.locationErrorText}>{pt.location_error}</Text>
+        ) : null}
+
+        <Text style={styles.locationSectionTitle}>
+          {pt.location_nearby_places}
+        </Text>
+
+        <Pressable
+          style={styles.locationCurrentRow}
+          onPress={() => {
+            void handleSendCurrentLocation();
+          }}
+          disabled={sendingCapturedMedia || locationCurrentLoading}
+        >
+          <View style={styles.locationCurrentIconWrap}>
+            <Ionicons name="locate" size={16} color={colors.primary} />
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+          <View style={styles.locationCurrentContent}>
+            <Text style={styles.locationCurrentTitle}>
+              {pt.location_current}
+            </Text>
+            <Text style={styles.locationCurrentSubtitle}>
+              {locationCurrentAccuracy !== null
+                ? pt.location_precision_meters.replace(
+                    '{meters}',
+                    String(Math.max(1, Math.round(locationCurrentAccuracy)))
+                  )
+                : pt.location_searching}
+            </Text>
+          </View>
+          {locationCurrentLoading ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Ionicons name="chevron-forward" size={18} color={colors.grey600} />
+          )}
+        </Pressable>
+
+        {locationSearchLoading ? (
+          <View style={styles.locationSearchLoadingRow}>
+            <Text style={styles.locationSearchLoadingText}>
+              {pt.location_searching}
+            </Text>
+            <ActivityIndicator size="small" color={colors.grey600} />
+          </View>
+        ) : null}
+
+        {locationSearchResults.map((result) => (
+          <Pressable
+            key={result.id}
+            style={styles.locationSearchResultRow}
+            onPress={() => handleSelectSearchResult(result)}
+          >
+            <Ionicons
+              name="location-outline"
+              size={18}
+              color={colors.primary}
+            />
+            <View style={styles.locationSearchResultContent}>
+              <Text style={styles.locationSearchResultTitle} numberOfLines={1}>
+                {result.name}
+              </Text>
+              <Text
+                style={styles.locationSearchResultSubtitle}
+                numberOfLines={1}
+              >
+                {result.address}
+              </Text>
+            </View>
+          </Pressable>
+        ))}
+
+        {!locationSearchLoading &&
+        locationSearchInput.trim().length >= 3 &&
+        locationSearchResults.length === 0 ? (
+          <Text style={styles.locationSearchEmptyText}>
+            {pt.location_search_no_results}
+          </Text>
+        ) : null}
+      </BottomSheetModal>
 
       <Modal
         visible={viewer.visible}
@@ -17035,10 +16610,7 @@ const styles = StyleSheet.create({
   keyboardAvoiding: {
     flex: 1,
   },
-  bottomSheetOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
+
   editHistoryOverlay: {
     flex: 1,
     justifyContent: 'center',
@@ -17116,19 +16688,13 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: colors.onSurface,
   },
-  bottomSheetBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  bottomSheetCard: {
-    maxHeight: '82%',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 14,
-    gap: 12,
+  editHistoryFooter: {
+    flexDirection: 'row' as const,
+    justifyContent: 'flex-end' as const,
+    gap: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
   },
   searchSheetCard: {
     maxHeight: '88%',
@@ -17217,28 +16783,15 @@ const styles = StyleSheet.create({
   locationSheetCard: {
     maxHeight: '90%',
   },
-  bottomSheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: 2,
+  locationFooter: {
+    flexDirection: 'column',
+    gap: 8,
   },
-  bottomSheetTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: colors.onSurface,
-  },
+
   bottomSheetList: {
     paddingBottom: 16,
   },
-  bottomSheetFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.grey200,
-  },
+
   secondaryBtn: {
     minHeight: 40,
     borderRadius: 10,
@@ -17548,8 +17101,9 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   annotationInput: {
-    minHeight: 140,
-    maxHeight: 260,
+    minHeight: 100,
+    maxHeight: 220,
+    flexShrink: 1,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.grey300,
