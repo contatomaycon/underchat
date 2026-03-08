@@ -103,6 +103,30 @@ export class WorkerConfigViewerRepository {
     };
   }
 
+  async fetchAiAgentValue(
+    workerId: string
+  ): Promise<{ aiAgentId: string | null; statusId: string | null }> {
+    const result = await this.dbRo
+      .select({
+        ai_agent_id: workerConfig.ai_agent_id,
+        worker_config_status_id: workerConfig.worker_config_status_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_type_id, EWorkerConfigType.ai_agent_id)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return {
+      aiAgentId: result[0]?.ai_agent_id || null,
+      statusId: result[0]?.worker_config_status_id || null,
+    };
+  }
+
   async fetchChatbotsValue(workerId: string): Promise<{
     inputChatbotId: string | null;
     outputChatbotId: string | null;

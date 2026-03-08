@@ -45,6 +45,8 @@ import { updateSendMessageOnFinishAttendanceSchema } from '@core/schema/worker/u
 import { viewSendMessageOnFinishAttendanceSchema } from '@core/schema/worker/viewSendMessageOnFinishAttendance';
 import { updateChatbotSchema } from '@core/schema/worker/updateChatbot';
 import { viewChatbotSchema } from '@core/schema/worker/viewChatbot';
+import { viewAiAgentConfigSchema } from '@core/schema/worker/viewAiAgentConfig';
+import { updateAiAgentConfigSchema } from '@core/schema/worker/updateAiAgentConfig';
 import { viewAttendanceHoursSchema } from '@core/schema/worker/viewAttendanceHours';
 import { updateAttendanceHoursSchema } from '@core/schema/worker/updateAttendanceHours';
 import { planGuard } from '@/plugins/planGuard';
@@ -430,6 +432,28 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/chatbot', {
     schema: updateChatbotSchema,
     handler: workerController.updateChatbot,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/ai-agent', {
+    schema: viewAiAgentConfigSchema,
+    handler: workerController.viewAiAgentConfig,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/ai-agent', {
+    schema: updateAiAgentConfigSchema,
+    handler: workerController.updateAiAgentConfig,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

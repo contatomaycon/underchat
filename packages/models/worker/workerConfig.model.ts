@@ -5,6 +5,7 @@ import {
   chatbot,
   workerConfigStatus,
   workerConfigType,
+  aiAgent,
 } from '@core/models';
 
 export const workerConfig = pgTable(
@@ -21,6 +22,7 @@ export const workerConfig = pgTable(
       .references(() => workerConfigType.worker_config_type_id)
       .notNull(),
     chatbot_id: uuid().references(() => chatbot.chatbot_id),
+    ai_agent_id: uuid().references(() => aiAgent.ai_agent_id),
     value: varchar({ length: 2000 }),
     created_at: timestamp({
       mode: 'string',
@@ -48,6 +50,11 @@ export const workerConfig = pgTable(
       table.worker_id,
       table.chatbot_id
     ),
+    index('worker_config_ai_agent_id_idx').on(table.ai_agent_id),
+    index('worker_config_worker_id_ai_agent_id_idx').on(
+      table.worker_id,
+      table.ai_agent_id
+    ),
   ]
 );
 
@@ -59,6 +66,10 @@ export const workerConfigRelations = relations(workerConfig, ({ one }) => ({
   chatbot: one(chatbot, {
     fields: [workerConfig.chatbot_id],
     references: [chatbot.chatbot_id],
+  }),
+  aiAgent: one(aiAgent, {
+    fields: [workerConfig.ai_agent_id],
+    references: [aiAgent.ai_agent_id],
   }),
   wcs: one(workerConfigStatus, {
     fields: [workerConfig.worker_config_status_id],

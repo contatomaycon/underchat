@@ -665,6 +665,57 @@ export class WorkerConfigService {
     };
   }
 
+  async viewAiAgent(workerId: string): Promise<{
+    ai_agent_id: string | null;
+    enabled: boolean;
+  }> {
+    const config =
+      await this.workerConfigViewerRepository.fetchAiAgentValue(workerId);
+
+    const aiAgentId = config.aiAgentId || null;
+
+    const enabled =
+      config.statusId === EWorkerConfigStatus.active &&
+      aiAgentId !== null &&
+      aiAgentId.trim().length > 0;
+
+    return {
+      ai_agent_id: aiAgentId,
+      enabled,
+    };
+  }
+
+  async updateAiAgent(
+    workerId: string,
+    aiAgentId: string | null,
+    enabled: boolean
+  ): Promise<{
+    ai_agent_id: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig = await this.viewAiAgent(workerId);
+    const aiAgentIdToSave =
+      aiAgentId !== null ? aiAgentId : currentConfig.ai_agent_id;
+
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateAiAgent(
+        workerId,
+        aiAgentIdToSave,
+        statusId
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return {
+      ai_agent_id: result,
+      enabled,
+    };
+  }
+
   async updateChatbots(
     workerId: string,
     chatbotId: string | null,

@@ -312,6 +312,85 @@ export class WorkerConfigUpserterRepository {
     return this.getChatbotId(workerId);
   };
 
+  updateAiAgent = async (
+    workerId: string,
+    aiAgentId: string | null,
+    statusId: string
+  ): Promise<string | null> => {
+    await this.dbRw.transaction(async (tx) => {
+      const existing = await this.findConfigByWorkerAndTypeId(
+        tx,
+        workerId,
+        EWorkerConfigType.ai_agent_id
+      );
+
+      if (existing) {
+        await this.updateAiAgentId(
+          tx,
+          existing.worker_config_id,
+          aiAgentId,
+          statusId
+        );
+        return;
+      }
+
+      await this.createAiAgentConfig(tx, workerId, statusId, aiAgentId);
+    });
+
+    return this.getAiAgentId(workerId);
+  };
+
+  private async updateAiAgentId(
+    tx: Transaction,
+    configId: string,
+    aiAgentId: string | null,
+    statusId: string
+  ): Promise<void> {
+    await tx
+      .update(workerConfig)
+      .set({
+        worker_config_status_id: statusId,
+        ai_agent_id: aiAgentId,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_config_id, configId))
+      .execute();
+  }
+
+  private async createAiAgentConfig(
+    tx: Transaction,
+    workerId: string,
+    statusId: string,
+    aiAgentId: string | null
+  ): Promise<void> {
+    await tx.insert(workerConfig).values({
+      worker_config_id: uuidv7(),
+      worker_id: workerId,
+      worker_config_status_id: statusId,
+      worker_config_type_id: EWorkerConfigType.ai_agent_id,
+      ai_agent_id: aiAgentId,
+      value: null,
+    });
+  }
+
+  private async getAiAgentId(workerId: string): Promise<string | null> {
+    const result = await this.dbRo
+      .select({
+        ai_agent_id: workerConfig.ai_agent_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_type_id, EWorkerConfigType.ai_agent_id)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return result[0]?.ai_agent_id || null;
+  }
+
   private async updateChatbotId(
     tx: Transaction,
     configId: string,

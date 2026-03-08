@@ -25,4 +25,5 @@ export enum EWorkerConfigType {
   chatbot_working_hours_enabled = '019f41a5-2f8b-7700-9c7b-1f4f7a67f001',
   chatbot_working_hours_rule = '019f41a5-2f8b-7700-9c7b-1f4f7a67f002',
   mark_as_read = '019e1f3a-1a2b-7c3d-8e4f-5a6b7c8d9e0f',
+  ai_agent_id = '019ccf67-633d-7478-8aca-11720066346b',
 }

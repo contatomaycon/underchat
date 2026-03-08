@@ -3,6 +3,7 @@ import { useChannelsStore } from '@/@webcore/stores/channels';
 import { useContactGroupStore } from '@/@webcore/stores/contactGroup';
 import { useContactStore } from '@/@webcore/stores/contact';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
+import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { EColor } from '@core/common/enums/EColor';
 import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.schema';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -23,6 +24,7 @@ const channelStore = useChannelsStore();
 const contactGroupStore = useContactGroupStore();
 const contactStore = useContactStore();
 const chatbotStore = useChatbotStore();
+const aiAgentStore = useAiAgentStore();
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -206,6 +208,7 @@ type WorkerConfigForm = {
   auto_save_contacts: boolean;
   mark_as_read: boolean;
   chatbot: boolean;
+  ai_agent: boolean;
   attendance_hours: boolean;
 };
 
@@ -239,6 +242,7 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   auto_save_contacts: false,
   mark_as_read: false,
   chatbot: false,
+  ai_agent: false,
   attendance_hours: false,
 });
 
@@ -479,6 +483,11 @@ const chatbotWorkingHoursLastSavedTimezone = ref(
 const chatbotWorkingHoursLastSavedRules = ref<ChatbotWorkingHoursRuleForm[]>(
   []
 );
+const aiAgentId = ref<string | null>(null);
+const aiAgentModalOpen = ref(false);
+const isSavingAiAgent = ref(false);
+const selectedAiAgentId = ref<string | null>(null);
+const aiAgentEnabledInModal = ref<boolean>(false);
 const attendanceHoursModalOpen = ref(false);
 const isSavingAttendanceHours = ref(false);
 const attendanceHoursEnabledInModal = ref<boolean>(false);
@@ -1218,6 +1227,7 @@ const loadWorkerConfig = async (force = false) => {
       sendMessageOnFinishAttendanceData,
       chatbotData,
       attendanceHoursData,
+      aiAgentData,
     ] = await Promise.all([
       channelStore.fetchTransferProtocolText(channelId.value),
       channelStore.fetchTransferProtocolSectorText(channelId.value),
@@ -1228,6 +1238,7 @@ const loadWorkerConfig = async (force = false) => {
       channelStore.fetchSendMessageOnFinishAttendance(channelId.value),
       channelStore.fetchChatbot(channelId.value),
       channelStore.fetchAttendanceHours(channelId.value),
+      channelStore.fetchAiAgentConfig(channelId.value),
     ]);
 
     if (protocolTransferData) {
@@ -1303,6 +1314,8 @@ const loadWorkerConfig = async (force = false) => {
     }
 
     applyChatbotState(chatbotData as ChatbotConfigResponse | null);
+
+    applyAiAgentState(aiAgentData);
 
     applyAttendanceHoursState(attendanceHoursData);
   } finally {
@@ -2134,6 +2147,80 @@ const saveChatbot = async () => {
   }
 };
 
+const applyAiAgentState = (
+  config?: { ai_agent_id: string | null; enabled: boolean } | null
+): void => {
+  aiAgentId.value = config?.ai_agent_id ?? null;
+  selectedAiAgentId.value = config?.ai_agent_id ?? null;
+  aiAgentEnabledInModal.value = config?.enabled ?? false;
+  workerConfigForm.ai_agent = config?.enabled ?? false;
+};
+
+const openAiAgentModal = async () => {
+  if (!channelId.value) return;
+
+  await aiAgentStore.listAiAgents({ status: 'active' as any });
+  const data = await channelStore.fetchAiAgentConfig(channelId.value);
+  applyAiAgentState(data);
+  aiAgentModalOpen.value = true;
+};
+
+const closeAiAgentModal = () => {
+  aiAgentModalOpen.value = false;
+};
+
+const toggleAiAgentStatus = async () => {
+  if (!channelId.value) return;
+
+  const isCurrentlyEnabled = workerConfigForm.ai_agent;
+  const newEnabled = !isCurrentlyEnabled;
+
+  try {
+    isSavingAiAgent.value = true;
+
+    const aiAgentIdValue = aiAgentId.value || selectedAiAgentId.value || null;
+
+    const result = await channelStore.updateAiAgentConfig(
+      channelId.value,
+      aiAgentIdValue,
+      newEnabled
+    );
+
+    if (result) {
+      applyAiAgentState(result);
+    }
+  } finally {
+    isSavingAiAgent.value = false;
+  }
+};
+
+const toggleAiAgentStatusInModal = () => {
+  aiAgentEnabledInModal.value = !aiAgentEnabledInModal.value;
+};
+
+const saveAiAgent = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingAiAgent.value = true;
+    const aiAgentIdValue = selectedAiAgentId.value || null;
+
+    const result = await channelStore.updateAiAgentConfig(
+      channelId.value,
+      aiAgentIdValue,
+      aiAgentEnabledInModal.value
+    );
+
+    if (result) {
+      applyAiAgentState(result);
+    }
+
+    closeAiAgentModal();
+  } finally {
+    isSavingAiAgent.value = false;
+  }
+};
+
 const openAttendanceHoursModal = async () => {
   if (!channelId.value) return;
 
@@ -2287,6 +2374,11 @@ const workerConfigOptions = computed(() => [
     title: t('channel_general_config_chatbot_title'),
     description: t('channel_general_config_chatbot_description'),
   },
+  {
+    key: 'ai_agent' as WorkerConfigField,
+    title: t('channel_general_config_ai_agent_title'),
+    description: t('channel_general_config_ai_agent_description'),
+  },
 ]);
 
 const hasModal = (key: WorkerConfigField): boolean => {
@@ -2297,7 +2389,8 @@ const hasModal = (key: WorkerConfigField): boolean => {
     key === 'show_message_on_call' ||
     key === 'send_message_on_finish_attendance' ||
     key === 'attendance_hours' ||
-    key === 'chatbot'
+    key === 'chatbot' ||
+    key === 'ai_agent'
   );
 };
 
@@ -2401,6 +2494,21 @@ const getToggleDisabled = (key: WorkerConfigField): boolean => {
     return isSavingWorkerConfig.value || isSavingChatbot.value;
   }
 
+  if (key === 'ai_agent') {
+    if (isSavingWorkerConfig.value || isSavingAiAgent.value) {
+      return true;
+    }
+
+    const isEnabled = workerConfigForm.ai_agent;
+    const hasValue = !!aiAgentId.value;
+
+    if (!isEnabled && !hasValue) {
+      return true;
+    }
+
+    return false;
+  }
+
   return isSavingWorkerConfig.value;
 };
 
@@ -2447,6 +2555,12 @@ const handleToggleClick = (key: WorkerConfigField): void => {
     return;
   }
 
+  if (key === 'ai_agent') {
+    toggleAiAgentStatus();
+
+    return;
+  }
+
   onWorkerConfigCheckboxChange(key, !workerConfigForm[key]);
 };
 
@@ -2489,6 +2603,12 @@ const handleCardClick = (key: WorkerConfigField): void => {
 
   if (key === 'chatbot') {
     openChatbotModal();
+
+    return;
+  }
+
+  if (key === 'ai_agent') {
+    openAiAgentModal();
 
     return;
   }
@@ -2589,6 +2709,20 @@ const getToggleTooltip = (key: WorkerConfigField): string | undefined => {
     }
 
     return attendanceBlockingMessage.value ?? undefined;
+  }
+
+  if (key === 'ai_agent') {
+    if (isSavingAiAgent.value) {
+      return undefined;
+    }
+
+    const hasValue = !!aiAgentId.value;
+
+    if (!hasValue) {
+      return t('toggle_disabled_ai_agent_tooltip');
+    }
+
+    return undefined;
   }
 
   return undefined;
@@ -5631,6 +5765,63 @@ onMounted(async () => {
           :loading="isSavingChatbot"
           :disabled="isSavingChatbot"
           @click="saveChatbotWorkingHours"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="aiAgentModalOpen" max-width="600" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{ $t('channel_general_config_ai_agent_title') }}</span>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="aiAgentEnabledInModal"
+            color="primary"
+            :disabled="isSavingAiAgent"
+            @click="toggleAiAgentStatusInModal"
+          />
+          <IconBtn @click="closeAiAgentModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
+      </VCardTitle>
+      <VCardText>
+        <div class="mb-4">
+          <div class="d-flex align-center gap-2 mb-1">
+            <VLabel class="text-body-2"
+              >{{ $t('channel_general_config_ai_agent_select_label') }}:</VLabel
+            >
+          </div>
+          <AppSelectSearch
+            v-model="selectedAiAgentId"
+            :items="aiAgentStore.list"
+            item-value="ai_agent_id"
+            item-title="name"
+            :placeholder="
+              $t('channel_general_config_ai_agent_select_placeholder')
+            "
+            clearable
+            :disabled="!aiAgentEnabledInModal"
+          />
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingAiAgent"
+          @click="closeAiAgentModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingAiAgent"
+          :disabled="isSavingAiAgent"
+          @click="saveAiAgent"
         >
           {{ $t('save') }}
         </VBtn>

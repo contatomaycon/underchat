@@ -1432,6 +1432,86 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    async fetchAiAgentConfig(workerId: string): Promise<{
+      ai_agent_id: string | null;
+      enabled: boolean;
+    } | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<{
+            ai_agent_id: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/ai-agent`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateAiAgentConfig(
+      workerId: string,
+      aiAgentId: string | null,
+      enabled: boolean
+    ): Promise<{
+      ai_agent_id: string | null;
+      enabled: boolean;
+    } | null> {
+      if (!workerId) return null;
+
+      try {
+        const body: {
+          ai_agent_id?: string | null;
+          enabled: boolean;
+        } = {
+          enabled,
+          ai_agent_id: aiAgentId,
+        };
+
+        const response = await axios.patch<
+          IApiResponse<{
+            ai_agent_id: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/ai-agent`, body);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('ai_agent_config_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('ai_agent_config_update_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t('ai_agent_config_update_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
     async deleteProfileStatus(workerProfileStatusId: string): Promise<boolean> {
       try {
         this.loading = true;
