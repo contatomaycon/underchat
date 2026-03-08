@@ -376,6 +376,11 @@ export const pt = {
     'Encaminhamento parcial: {sent} enviado(s), {failed} falhou(aram).',
   forward_worker_required_for_contacts:
     'Não foi possível encaminhar para contatos sem usuário autenticado.',
+  battery_optimization_title: 'Otimização de Bateria',
+  battery_optimization_message:
+    'Para receber mensagens e notificações em tempo real mesmo com o app em segundo plano, desative a restrição de bateria para o Underchat.',
+  battery_optimization_action: 'Remover Restrição',
+  battery_optimization_dismiss: 'Agora Não',
   chat_attended_successfully: 'Chat atendido com sucesso',
   chat_reopened_successfully: 'Chat reaberto com sucesso',
   pick_service_success: 'Atendimento assumido com sucesso.',

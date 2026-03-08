@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, Platform, type AppStateStatus } from 'react-native';
 import { LoginScreen } from './screens/LoginScreen';
 import {
   getToken,
@@ -46,6 +46,8 @@ import type {
   AttendanceGuardStatus,
 } from './types/attendanceHours';
 import { AttendanceGuardLockModal } from './components/AttendanceGuardLockModal';
+import { BatteryOptimizationModal } from './components/BatteryOptimizationModal';
+import { isIgnoringBatteryOptimizations } from './utils/batteryOptimization';
 
 function getUserAccountId(user: unknown): string | null {
   if (!user || typeof user !== 'object') return null;
@@ -98,6 +100,7 @@ export default function App() {
   const [attendanceLockMessage, setAttendanceLockMessage] = useState<
     string | null
   >(null);
+  const [batteryModalVisible, setBatteryModalVisible] = useState(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const attendanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attendanceOffsetMsRef = useRef(0);
@@ -234,6 +237,14 @@ export default function App() {
     }
 
     void refreshAttendanceStatus();
+
+    if (Platform.OS === 'android') {
+      void isIgnoringBatteryOptimizations().then((ignoring) => {
+        if (!ignoring) {
+          setBatteryModalVisible(true);
+        }
+      });
+    }
   }, [authenticated]);
 
   useEffect(() => {
@@ -403,6 +414,14 @@ export default function App() {
       emitAppResume();
       void refreshAttendanceStatus();
 
+      if (Platform.OS === 'android') {
+        void isIgnoringBatteryOptimizations().then((ignoring) => {
+          if (!ignoring) {
+            setBatteryModalVisible(true);
+          }
+        });
+      }
+
       void getUser()
         .then(async (user) => {
           const accountId = getUserAccountId(user);
@@ -474,6 +493,10 @@ export default function App() {
               visible={attendanceLocked}
               status={attendanceGuardStatus}
               message={attendanceLockMessage}
+            />
+            <BatteryOptimizationModal
+              visible={batteryModalVisible}
+              onDismiss={() => setBatteryModalVisible(false)}
             />
             <StatusBar style="dark" />
           </NavigationContainer>
