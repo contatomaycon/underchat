@@ -40,7 +40,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { PanGestureHandler, State, Swipeable } from 'react-native-gesture-handler';
+import {
+  PanGestureHandler,
+  State,
+  Swipeable,
+} from 'react-native-gesture-handler';
 import type { ChatStackParamList } from '../navigation/types';
 import {
   type ListChatsResult,
@@ -14208,129 +14212,133 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               ]}
             >
               <View style={styles.viewerActions}>
-              {viewer.kind === 'image' && viewer.items.length > 1 ? (
-                <View style={styles.viewerCounterBadge}>
-                  <Text style={styles.viewerCounterText}>
-                    {viewer.activeIndex + 1} / {viewer.items.length}
-                  </Text>
-                </View>
-              ) : null}
-              <Pressable
-                style={[
-                  styles.viewerActionBtn,
-                  downloadingViewerMedia && styles.viewerActionBtnDisabled,
-                ]}
-                onPress={handleDownloadViewerMedia}
-                disabled={downloadingViewerMedia}
-              >
-                {downloadingViewerMedia ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Ionicons name="download-outline" size={20} color="#FFFFFF" />
-                )}
-              </Pressable>
-              <Pressable
-                style={styles.viewerActionBtn}
-                onPress={closeMediaViewer}
-              >
-                <Ionicons name="close" size={20} color="#FFFFFF" />
-              </Pressable>
-            </View>
+                {viewer.kind === 'image' && viewer.items.length > 1 ? (
+                  <View style={styles.viewerCounterBadge}>
+                    <Text style={styles.viewerCounterText}>
+                      {viewer.activeIndex + 1} / {viewer.items.length}
+                    </Text>
+                  </View>
+                ) : null}
+                <Pressable
+                  style={[
+                    styles.viewerActionBtn,
+                    downloadingViewerMedia && styles.viewerActionBtnDisabled,
+                  ]}
+                  onPress={handleDownloadViewerMedia}
+                  disabled={downloadingViewerMedia}
+                >
+                  {downloadingViewerMedia ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Ionicons
+                      name="download-outline"
+                      size={20}
+                      color="#FFFFFF"
+                    />
+                  )}
+                </Pressable>
+                <Pressable
+                  style={styles.viewerActionBtn}
+                  onPress={closeMediaViewer}
+                >
+                  <Ionicons name="close" size={20} color="#FFFFFF" />
+                </Pressable>
+              </View>
 
-            <View style={styles.viewerMediaContainer}>
-              {viewer.kind === 'video' && viewer.src ? (
-                <VideoView
-                  key={viewer.src}
-                  player={viewerVideoPlayer}
-                  style={styles.viewerVideo}
-                  contentFit="contain"
-                  nativeControls
-                  fullscreenOptions={VIDEO_FULLSCREEN_ENABLED}
-                  allowsPictureInPicture
-                  playsInline
-                />
-              ) : viewer.kind === 'image' && viewer.items.length > 0 ? (
-                <>
-                  <ScrollView
-                    ref={viewerImageScrollRef}
-                    horizontal
-                    pagingEnabled
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.viewerImagePager}
-                    scrollEventThrottle={16}
-                    onLayout={(event) => {
-                      const width = event.nativeEvent.layout.width;
-                      if (!Number.isFinite(width) || width <= 0) return;
-                      setViewerMediaWidth(width);
-                    }}
-                    onMomentumScrollEnd={(event) => {
-                      const width = event.nativeEvent.layoutMeasurement.width;
-                      if (!Number.isFinite(width) || width <= 0) return;
-                      const nextIndex = Math.round(
-                        event.nativeEvent.contentOffset.x / width
-                      );
-                      setActiveViewerIndex(nextIndex);
-                    }}
-                  >
-                    {viewer.items.map((item, index) => (
-                      <View
-                        key={`viewer-image-${index}-${item.src}`}
-                        style={[
-                          styles.viewerImagePage,
-                          { width: viewerMediaWidth },
-                        ]}
-                      >
-                        <Image
-                          source={{ uri: item.src }}
-                          style={styles.viewerImage}
-                          resizeMode="contain"
-                        />
-                      </View>
-                    ))}
-                  </ScrollView>
+              <View style={styles.viewerMediaContainer}>
+                {viewer.kind === 'video' && viewer.src ? (
+                  <VideoView
+                    key={viewer.src}
+                    player={viewerVideoPlayer}
+                    style={styles.viewerVideo}
+                    contentFit="contain"
+                    nativeControls
+                    fullscreenOptions={VIDEO_FULLSCREEN_ENABLED}
+                    allowsPictureInPicture
+                    playsInline
+                  />
+                ) : viewer.kind === 'image' && viewer.items.length > 0 ? (
+                  <>
+                    <ScrollView
+                      ref={viewerImageScrollRef}
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.viewerImagePager}
+                      scrollEventThrottle={16}
+                      onLayout={(event) => {
+                        const width = event.nativeEvent.layout.width;
+                        if (!Number.isFinite(width) || width <= 0) return;
+                        setViewerMediaWidth(width);
+                      }}
+                      onMomentumScrollEnd={(event) => {
+                        const width = event.nativeEvent.layoutMeasurement.width;
+                        if (!Number.isFinite(width) || width <= 0) return;
+                        const nextIndex = Math.round(
+                          event.nativeEvent.contentOffset.x / width
+                        );
+                        setActiveViewerIndex(nextIndex);
+                      }}
+                    >
+                      {viewer.items.map((item, index) => (
+                        <View
+                          key={`viewer-image-${index}-${item.src}`}
+                          style={[
+                            styles.viewerImagePage,
+                            { width: viewerMediaWidth },
+                          ]}
+                        >
+                          <Image
+                            source={{ uri: item.src }}
+                            style={styles.viewerImage}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ))}
+                    </ScrollView>
 
-                  {viewer.items.length > 1 ? (
-                    <>
-                      <Pressable
-                        style={[
-                          styles.viewerNavButton,
-                          styles.viewerNavButtonLeft,
-                          !canGoToPreviousViewerImage &&
-                            styles.viewerNavButtonDisabled,
-                        ]}
-                        onPress={goToPreviousViewerImage}
-                        disabled={!canGoToPreviousViewerImage}
-                        accessibilityLabel="Anterior"
-                      >
-                        <Ionicons
-                          name="chevron-back"
-                          size={26}
-                          color="#FFFFFF"
-                        />
-                      </Pressable>
+                    {viewer.items.length > 1 ? (
+                      <>
+                        <Pressable
+                          style={[
+                            styles.viewerNavButton,
+                            styles.viewerNavButtonLeft,
+                            !canGoToPreviousViewerImage &&
+                              styles.viewerNavButtonDisabled,
+                          ]}
+                          onPress={goToPreviousViewerImage}
+                          disabled={!canGoToPreviousViewerImage}
+                          accessibilityLabel="Anterior"
+                        >
+                          <Ionicons
+                            name="chevron-back"
+                            size={26}
+                            color="#FFFFFF"
+                          />
+                        </Pressable>
 
-                      <Pressable
-                        style={[
-                          styles.viewerNavButton,
-                          styles.viewerNavButtonRight,
-                          !canGoToNextViewerImage &&
-                            styles.viewerNavButtonDisabled,
-                        ]}
-                        onPress={goToNextViewerImage}
-                        disabled={!canGoToNextViewerImage}
-                        accessibilityLabel="Próxima"
-                      >
-                        <Ionicons
-                          name="chevron-forward"
-                          size={26}
-                          color="#FFFFFF"
-                        />
-                      </Pressable>
-                    </>
-                  ) : null}
-                </>
-              ) : null}
-            </View>
+                        <Pressable
+                          style={[
+                            styles.viewerNavButton,
+                            styles.viewerNavButtonRight,
+                            !canGoToNextViewerImage &&
+                              styles.viewerNavButtonDisabled,
+                          ]}
+                          onPress={goToNextViewerImage}
+                          disabled={!canGoToNextViewerImage}
+                          accessibilityLabel="Próxima"
+                        >
+                          <Ionicons
+                            name="chevron-forward"
+                            size={26}
+                            color="#FFFFFF"
+                          />
+                        </Pressable>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+              </View>
 
               {viewer.caption ? (
                 <Text style={styles.viewerCaption} numberOfLines={4}>
