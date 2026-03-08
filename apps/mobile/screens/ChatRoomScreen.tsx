@@ -40,7 +40,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Swipeable } from 'react-native-gesture-handler';
+import { PanGestureHandler, State, Swipeable } from 'react-native-gesture-handler';
 import type { ChatStackParamList } from '../navigation/types';
 import {
   type ListChatsResult,
@@ -5843,40 +5843,53 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }).start();
   }, [viewerTranslateY]);
 
-  const viewerPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gestureState) => {
-          if (!viewer.visible) return false;
-          if (gestureState.dy <= VIEWER_SWIPE_ACTIVATION_DISTANCE) return false;
-          return Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
-        },
-        onMoveShouldSetPanResponderCapture: (_, gestureState) => {
-          if (!viewer.visible) return false;
-          if (gestureState.dy <= VIEWER_SWIPE_ACTIVATION_DISTANCE) return false;
-          return Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
-        },
-        onPanResponderGrant: () => {
-          viewerTranslateY.stopAnimation();
-        },
-        onPanResponderMove: (_, gestureState) => {
-          viewerTranslateY.setValue(Math.max(0, gestureState.dy));
-        },
-        onPanResponderRelease: (_, gestureState) => {
-          const shouldClose =
-            gestureState.dy >= VIEWER_SWIPE_CLOSE_DISTANCE ||
-            gestureState.vy >= VIEWER_SWIPE_CLOSE_VELOCITY;
-          if (shouldClose) {
-            closeMediaViewer();
-            return;
-          }
-          resetViewerSwipeOffset();
-        },
-        onPanResponderTerminate: () => {
-          resetViewerSwipeOffset();
-        },
-      }),
-    [closeMediaViewer, resetViewerSwipeOffset, viewer.visible, viewerTranslateY]
+  const handleViewerPanGestureEvent = useCallback(
+    (event: {
+      nativeEvent: {
+        translationY: number;
+      };
+    }) => {
+      if (!viewer.visible) return;
+      const nextY = Math.max(0, event.nativeEvent.translationY);
+      viewerTranslateY.setValue(nextY);
+    },
+    [viewer.visible, viewerTranslateY]
+  );
+
+  const handleViewerPanStateChange = useCallback(
+    (event: {
+      nativeEvent: {
+        state: number;
+        oldState: number;
+        translationY: number;
+        velocityY: number;
+      };
+    }) => {
+      if (!viewer.visible) return;
+
+      const { state, oldState, translationY, velocityY } = event.nativeEvent;
+
+      if (state === State.CANCELLED || state === State.FAILED) {
+        resetViewerSwipeOffset();
+        return;
+      }
+
+      if (oldState !== State.ACTIVE) {
+        return;
+      }
+
+      const shouldClose =
+        translationY >= VIEWER_SWIPE_CLOSE_DISTANCE ||
+        velocityY >= VIEWER_SWIPE_CLOSE_VELOCITY;
+
+      if (shouldClose) {
+        closeMediaViewer();
+        return;
+      }
+
+      resetViewerSwipeOffset();
+    },
+    [closeMediaViewer, resetViewerSwipeOffset, viewer.visible]
   );
 
   const openImageViewer = useCallback(
@@ -5937,31 +5950,34 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     [imageGalleryLookup, openImageViewerFromItems]
   );
 
-  const openVideoViewer = useCallback((msg: ListMessageResult) => {
-    const video = msg.content?.video;
-    if (!video?.url) return;
-    const videoSrc = resolveMediaUri(video.url);
-    if (!videoSrc) return;
+  const openVideoViewer = useCallback(
+    (msg: ListMessageResult) => {
+      const video = msg.content?.video;
+      if (!video?.url) return;
+      const videoSrc = resolveMediaUri(video.url);
+      if (!videoSrc) return;
 
-    viewerTranslateY.stopAnimation();
-    viewerTranslateY.setValue(0);
+      viewerTranslateY.stopAnimation();
+      viewerTranslateY.setValue(0);
 
-    setViewer({
-      visible: true,
-      kind: 'video',
-      src: videoSrc,
-      caption: video.caption ?? msg.content?.message ?? '',
-      downloadName: resolveVideoDownloadName(video),
-      items: [
-        {
-          src: videoSrc,
-          caption: video.caption ?? msg.content?.message ?? '',
-          downloadName: resolveVideoDownloadName(video),
-        },
-      ],
-      activeIndex: 0,
-    });
-  }, [viewerTranslateY]);
+      setViewer({
+        visible: true,
+        kind: 'video',
+        src: videoSrc,
+        caption: video.caption ?? msg.content?.message ?? '',
+        downloadName: resolveVideoDownloadName(video),
+        items: [
+          {
+            src: videoSrc,
+            caption: video.caption ?? msg.content?.message ?? '',
+            downloadName: resolveVideoDownloadName(video),
+          },
+        ],
+        activeIndex: 0,
+      });
+    },
+    [viewerTranslateY]
+  );
 
   const resolveContactCardForMessage = useCallback(
     async (message: ListMessageResult) => {
@@ -14175,14 +14191,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       >
         <View style={[styles.viewerOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable style={styles.viewerBackdrop} onPress={closeMediaViewer} />
-          <Animated.View
-            style={[
-              styles.viewerContent,
-              { transform: [{ translateY: viewerTranslateY }] },
+          <PanGestureHandler
+            enabled={viewer.visible}
+            activeOffsetY={[
+              -VIEWER_SWIPE_ACTIVATION_DISTANCE,
+              VIEWER_SWIPE_ACTIVATION_DISTANCE,
             ]}
-            {...viewerPanResponder.panHandlers}
+            failOffsetX={[-30, 30]}
+            onGestureEvent={handleViewerPanGestureEvent}
+            onHandlerStateChange={handleViewerPanStateChange}
           >
-            <View style={styles.viewerActions}>
+            <Animated.View
+              style={[
+                styles.viewerContent,
+                { transform: [{ translateY: viewerTranslateY }] },
+              ]}
+            >
+              <View style={styles.viewerActions}>
               {viewer.kind === 'image' && viewer.items.length > 1 ? (
                 <View style={styles.viewerCounterBadge}>
                   <Text style={styles.viewerCounterText}>
@@ -14307,12 +14332,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               ) : null}
             </View>
 
-            {viewer.caption ? (
-              <Text style={styles.viewerCaption} numberOfLines={4}>
-                {viewer.caption}
-              </Text>
-            ) : null}
-          </Animated.View>
+              {viewer.caption ? (
+                <Text style={styles.viewerCaption} numberOfLines={4}>
+                  {viewer.caption}
+                </Text>
+              ) : null}
+            </Animated.View>
+          </PanGestureHandler>
         </View>
       </Modal>
     </KeyboardAvoidingView>
