@@ -6198,6 +6198,46 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     [chatInfo.contact?.phone_ddi]
   );
 
+  const handlePressChatHeaderContact = useCallback(() => {
+    dismissKeyboard();
+
+    const contactId = readNonEmptyString(chatInfo.contact?.id);
+    if (contactId) {
+      setContactFormMode('edit');
+      setContactFormContactId(contactId);
+      setContactFormInitialValues(null);
+      setContactFormVisible(true);
+      return;
+    }
+
+    const resolvedName =
+      readNonEmptyString(chatInfo.contact?.name) ??
+      readNonEmptyString(chatInfo.name) ??
+      '';
+    const resolvedPhoneDdi =
+      readNonEmptyString(chatInfo.contact?.phone_ddi) ?? '55';
+    const resolvedPhone = normalizePhoneDigits(
+      chatInfo.contact?.phone ?? chatInfo.phone
+    );
+
+    setContactFormMode('create');
+    setContactFormContactId(null);
+    setContactFormInitialValues({
+      name: resolvedName,
+      lastName: '',
+      phoneDdi: resolvedPhoneDdi,
+      phone: resolvedPhone,
+    });
+    setContactFormVisible(true);
+  }, [
+    chatInfo.contact?.id,
+    chatInfo.contact?.name,
+    chatInfo.contact?.phone,
+    chatInfo.contact?.phone_ddi,
+    chatInfo.name,
+    chatInfo.phone,
+  ]);
+
   const handlePressMessageContactCard = useCallback(
     (_message: ListMessageResult, contact: MessageContentContact) => {
       void openContactFormFromMessageContact(contact);
@@ -11467,7 +11507,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <Ionicons name="arrow-back" size={22} color={colors.onSurface} />
           </Pressable>
 
-          <View style={styles.chatHeaderContactWrap}>
+          <Pressable
+            style={styles.chatHeaderContactWrap}
+            onPress={handlePressChatHeaderContact}
+            accessibilityRole="button"
+            accessibilityLabel={pt.contact}
+          >
             <View style={styles.chatHeaderAvatarWrap}>
               <AppAvatar
                 uri={chatInfo.contact?.photo ?? chatInfo.photo}
@@ -11490,7 +11535,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 </Text>
                 {chatInfo.contact?.id ? (
                   <Pressable
-                    onPress={() => {
+                    onPress={(event) => {
+                      event.stopPropagation();
                       void handleToggleHeaderPhoneVisibility();
                     }}
                     disabled={isHeaderPhoneLoading}
@@ -11512,7 +11558,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 ) : null}
               </View>
             </View>
-          </View>
+          </Pressable>
 
           <Pressable
             style={styles.chatHeaderMenuBtn}
