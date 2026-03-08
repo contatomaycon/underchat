@@ -14166,7 +14166,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           placeholderTextColor={colors.grey500}
           multiline
           maxLength={1000}
-          editable={!aiReplyGenerating && !aiReplyResult}
+          editable={!aiReplyGenerating}
         />
 
         {/* Generating indicator */}

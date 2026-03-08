@@ -140,7 +140,7 @@ const messagePreview = computed(() => {
           v-model="instructions"
           :label="t('chat_ai_reply_instructions')"
           :placeholder="t('chat_ai_reply_instructions_placeholder')"
-          :disabled="isGenerating || !!generatedResult"
+          :disabled="isGenerating"
           rows="2"
           auto-grow
           class="mb-4"
