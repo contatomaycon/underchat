@@ -3172,7 +3172,11 @@ function VideoMessagePreview({
           onError={() => setThumbnailLoadError(true)}
         />
       ) : (
-        <View style={isVideoNote ? styles.videoNotePlaceholder : styles.videoPlaceholder}>
+        <View
+          style={
+            isVideoNote ? styles.videoNotePlaceholder : styles.videoPlaceholder
+          }
+        >
           <Ionicons name="videocam-outline" size={28} color={colors.grey600} />
         </View>
       )}
