@@ -73,6 +73,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Location from 'expo-location';
 import * as Clipboard from 'expo-clipboard';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import { Image as ExpoImage } from 'expo-image';
 import Constants from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import VideoTrimModule, {
@@ -3423,6 +3424,65 @@ function VideoMessagePreview({
   );
 }
 
+function StickerMessagePreview({
+  stickerUri,
+  isLottie,
+  onOpenImage,
+  onOpenActions,
+  onDownloadFallback,
+}: {
+  stickerUri: string;
+  isLottie: boolean;
+  onOpenImage?: () => void;
+  onOpenActions?: () => void;
+  onDownloadFallback?: () => void;
+}) {
+  const [hasImageError, setHasImageError] = useState(false);
+
+  if (isLottie) {
+    return (
+      <Pressable onLongPress={onOpenActions} delayLongPress={220}>
+        <LottieSticker src={stickerUri} size={100} />
+      </Pressable>
+    );
+  }
+
+  if (hasImageError) {
+    return (
+      <Pressable
+        style={styles.stickerFallback}
+        onPress={onDownloadFallback}
+        onLongPress={onOpenActions}
+        delayLongPress={220}
+      >
+        <Ionicons name="document-outline" size={20} color={colors.grey700} />
+        <Text style={styles.stickerFallbackText}>Sticker</Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <Pressable
+      onPress={onOpenImage}
+      onLongPress={onOpenActions}
+      delayLongPress={220}
+    >
+      <ExpoImage
+        source={{ uri: stickerUri }}
+        style={styles.stickerThumb}
+        contentFit="contain"
+        onError={(error) => {
+          console.warn('[Sticker] image render error', {
+            uri: stickerUri,
+            error: error?.error ?? 'unknown',
+          });
+          setHasImageError(true);
+        }}
+      />
+    </Pressable>
+  );
+}
+
 function LocationMessagePreview({
   latitude,
   longitude,
@@ -4124,17 +4184,9 @@ function BubbleContent({
   if (type === EMessageType.sticker && content.sticker?.url) {
     const stickerUri = resolveMediaUri(content.sticker.url);
     if (!stickerUri) return null;
-    if (isLottieSticker(content.sticker)) {
-      return renderWithContextCards(
-        <Pressable
-          onLongPress={() => onOpenActions?.(msg)}
-          delayLongPress={220}
-        >
-          <LottieSticker src={stickerUri} size={100} />
-        </Pressable>
-      );
-    }
-    if (!isRenderableSticker(content.sticker)) {
+    const isLottie = isLottieSticker(content.sticker);
+
+    if (!isLottie && !isRenderableSticker(content.sticker)) {
       return renderWithContextCards(
         <Pressable
           style={styles.stickerFallback}
@@ -4153,18 +4205,21 @@ function BubbleContent({
         </Pressable>
       );
     }
+
     return renderWithContextCards(
-      <Pressable
-        onPress={() => onOpenImage(msg, 0)}
-        onLongPress={() => onOpenActions?.(msg)}
-        delayLongPress={220}
-      >
-        <Image
-          source={{ uri: stickerUri }}
-          style={styles.stickerThumb}
-          resizeMode="contain"
-        />
-      </Pressable>
+      <StickerMessagePreview
+        stickerUri={stickerUri}
+        isLottie={isLottie}
+        onOpenImage={() => onOpenImage(msg, 0)}
+        onOpenActions={() => onOpenActions?.(msg)}
+        onDownloadFallback={() =>
+          void forceDownloadToDevice(
+            stickerUri,
+            resolveStickerDownloadName(msg),
+            'document'
+          )
+        }
+      />
     );
   }
 

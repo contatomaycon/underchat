@@ -14,8 +14,16 @@ export default (): ExpoConfig => {
   const mapLibreStyleUrl = readMapLibreStyleUrl();
   const baseConfig = appJson.expo;
 
+  const plugins = Array.isArray(baseConfig.plugins)
+    ? [...baseConfig.plugins]
+    : [];
+  if (!plugins.includes('expo-image')) {
+    plugins.push('expo-image');
+  }
+
   return {
     ...baseConfig,
+    plugins,
     extra: {
       ...(baseConfig.extra ?? {}),
       mapLibreStyleUrl,

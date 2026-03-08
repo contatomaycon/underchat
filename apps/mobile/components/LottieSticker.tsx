@@ -82,8 +82,27 @@ async function resolveAnimationJson(src: string): Promise<string> {
   return json;
 }
 
+function isValidAnimationData(value: unknown): value is AnimationObject {
+  if (!value || typeof value !== 'object') return false;
+  const data = value as Record<string, unknown>;
+  return (
+    typeof data.v === 'string' &&
+    typeof data.fr === 'number' &&
+    typeof data.ip === 'number' &&
+    typeof data.op === 'number' &&
+    typeof data.w === 'number' &&
+    typeof data.h === 'number' &&
+    Array.isArray(data.assets) &&
+    Array.isArray(data.layers)
+  );
+}
+
 function parseAnimationData(json: string): AnimationObject {
-  return JSON.parse(json) as AnimationObject;
+  const parsed = JSON.parse(json) as unknown;
+  if (!isValidAnimationData(parsed)) {
+    throw new Error('Invalid Lottie animation payload');
+  }
+  return parsed;
 }
 
 export function LottieSticker({ src, size = 100 }: LottieStickerProps) {
@@ -111,8 +130,12 @@ export function LottieSticker({ src, size = 100 }: LottieStickerProps) {
         if (!active) return;
         setAnimationData(parseAnimationData(json));
       })
-      .catch(() => {
+      .catch((error) => {
         if (!active) return;
+        console.warn('[LottieSticker] failed to decode/render sticker', {
+          src,
+          error: error instanceof Error ? error.message : String(error),
+        });
         setHasError(true);
       })
       .finally(() => {
@@ -150,7 +173,16 @@ export function LottieSticker({ src, size = 100 }: LottieStickerProps) {
 
   return (
     <View style={containerStyle}>
-      <LottieView source={animationData} autoPlay loop style={styles.lottie} />
+      <LottieView
+        source={animationData}
+        autoPlay
+        loop
+        style={styles.lottie}
+        onAnimationFailure={(error) => {
+          console.warn('[LottieSticker] animation failure', { src, error });
+          setHasError(true);
+        }}
+      />
     </View>
   );
 }
