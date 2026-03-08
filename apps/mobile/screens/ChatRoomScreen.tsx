@@ -145,6 +145,7 @@ import {
 } from '../constants/chatAuthorization';
 import { useChatFilter } from '../context/ChatFilterContext';
 import { AppAvatar } from '../components/AppAvatar';
+import { LottieSticker } from '../components/LottieSticker';
 import {
   SelectField,
   SelectSheet,
@@ -1550,16 +1551,15 @@ function isRenderableSticker(
 ): boolean {
   if (!sticker?.url) return false;
 
+  if (isLottieSticker(sticker)) return true;
+
   const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
   const extension = (sticker.extension ?? '')
     .replace(/^\./, '')
     .trim()
     .toLowerCase();
 
-  if (mimetype === 'application/was' || mimetype === 'application/x-tgsticker')
-    return false;
-
-  if (extension === 'was' || extension === 'tgs' || extension === 'zip') {
+  if (extension === 'zip') {
     return false;
   }
 
@@ -1567,6 +1567,29 @@ function isRenderableSticker(
   if (extension === 'webp') return true;
 
   return true;
+}
+
+function isLottieSticker(
+  sticker?: {
+    url?: string | null;
+    mimetype?: string | null;
+    extension?: string | null;
+  } | null
+): boolean {
+  if (!sticker?.url) return false;
+
+  const mimetype = (sticker.mimetype ?? '').trim().toLowerCase();
+  const extension = (sticker.extension ?? '')
+    .replace(/^\./, '')
+    .trim()
+    .toLowerCase();
+
+  if (mimetype === 'application/was' || mimetype === 'application/x-tgsticker')
+    return true;
+
+  if (extension === 'was' || extension === 'tgs') return true;
+
+  return false;
 }
 
 function resolveStickerDownloadName(msg: ListMessageResult): string {
@@ -2441,6 +2464,7 @@ function resolveReplyComposerThumbUri(
   }
 
   if (replyType === EMessageType.sticker) {
+    if (isLottieSticker(content.sticker)) return null;
     if (!isRenderableSticker(content.sticker)) return null;
     return resolveMediaUri(content.sticker?.url);
   }
@@ -2558,6 +2582,7 @@ function resolveQuotedPreviewImage(
     return resolveMediaUri(quoted.image?.thumbnail ?? quoted.image?.url);
   }
   if (quotedType === EMessageType.sticker) {
+    if (isLottieSticker(quoted.sticker)) return null;
     if (!isRenderableSticker(quoted.sticker)) return null;
     return resolveMediaUri(quoted.sticker?.url);
   }
@@ -3088,25 +3113,37 @@ function VideoMessagePreview({
 }) {
   const [thumbnailLoadError, setThumbnailLoadError] = useState(false);
 
-  const shouldUseVideoFramePreview =
-    Platform.OS !== 'android' && (!thumbnailUri || thumbnailLoadError);
+  const shouldUseVideoFramePreview = !thumbnailUri || thumbnailLoadError;
 
   const previewPlayer = useVideoPlayer(
     shouldUseVideoFramePreview ? { uri: sourceUri } : null,
     (player) => {
-      player.loop = false;
+      player.loop = true;
       player.muted = true;
     }
   );
 
   useEffect(() => {
+    setThumbnailLoadError(false);
+  }, [sourceUri, thumbnailUri]);
+
+  useEffect(() => {
     if (!shouldUseVideoFramePreview) return;
 
     try {
-      previewPlayer.pause();
       previewPlayer.currentTime = 0;
+      previewPlayer.play();
     } catch {}
+
+    return () => {
+      try {
+        previewPlayer.pause();
+      } catch {}
+    };
   }, [previewPlayer, shouldUseVideoFramePreview]);
+
+  const showFramePreview = shouldUseVideoFramePreview;
+  const showImagePreview = !shouldUseVideoFramePreview && !!thumbnailUri;
 
   return (
     <Pressable
@@ -3115,7 +3152,7 @@ function VideoMessagePreview({
       onLongPress={onLongPress}
       delayLongPress={220}
     >
-      {shouldUseVideoFramePreview ? (
+      {showFramePreview ? (
         <VideoView
           player={previewPlayer}
           style={
@@ -3127,13 +3164,17 @@ function VideoMessagePreview({
           allowsPictureInPicture={false}
           playsInline
         />
-      ) : (
+      ) : showImagePreview ? (
         <Image
-          source={{ uri: thumbnailUri || sourceUri }}
+          source={{ uri: thumbnailUri }}
           style={isVideoNote ? styles.videoNoteThumb : styles.videoThumb}
           resizeMode="cover"
           onError={() => setThumbnailLoadError(true)}
         />
+      ) : (
+        <View style={isVideoNote ? styles.videoNotePlaceholder : styles.videoPlaceholder}>
+          <Ionicons name="videocam-outline" size={28} color={colors.grey600} />
+        </View>
       )}
 
       <View style={styles.videoOverlay}>
@@ -3793,6 +3834,16 @@ function BubbleContent({
   if (type === EMessageType.sticker && content.sticker?.url) {
     const stickerUri = resolveMediaUri(content.sticker.url);
     if (!stickerUri) return null;
+    if (isLottieSticker(content.sticker)) {
+      return renderWithContextCards(
+        <Pressable
+          onLongPress={() => onOpenActions?.(msg)}
+          delayLongPress={220}
+        >
+          <LottieSticker src={stickerUri} size={100} />
+        </Pressable>
+      );
+    }
     if (!isRenderableSticker(content.sticker)) {
       return renderWithContextCards(
         <Pressable
