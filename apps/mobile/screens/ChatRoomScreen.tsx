@@ -518,6 +518,9 @@ const MESSAGE_SWIPE_REPLY_ACTION_WIDTH = 84;
 const MESSAGE_SWIPE_REPLY_THRESHOLD = 44;
 const MESSAGE_SWIPE_FRICTION = 1.8;
 const MESSAGE_SWIPE_DRAG_OFFSET = 18;
+const VIEWER_SWIPE_CLOSE_DISTANCE = 120;
+const VIEWER_SWIPE_CLOSE_VELOCITY = 1.05;
+const VIEWER_SWIPE_ACTIVATION_DISTANCE = 10;
 const EMOJI_PICKER_DISMISS_DY_THRESHOLD = 24;
 const EMOJI_PICKER_DISMISS_VY_THRESHOLD = 0.55;
 type DownloadKind = 'image' | 'video' | 'document';
@@ -3427,15 +3430,11 @@ function VideoMessagePreview({
 function StickerMessagePreview({
   stickerUri,
   isLottie,
-  onOpenImage,
   onOpenActions,
-  onDownloadFallback,
 }: {
   stickerUri: string;
   isLottie: boolean;
-  onOpenImage?: () => void;
   onOpenActions?: () => void;
-  onDownloadFallback?: () => void;
 }) {
   const [hasImageError, setHasImageError] = useState(false);
 
@@ -3451,7 +3450,6 @@ function StickerMessagePreview({
     return (
       <Pressable
         style={styles.stickerFallback}
-        onPress={onDownloadFallback}
         onLongPress={onOpenActions}
         delayLongPress={220}
       >
@@ -3462,11 +3460,7 @@ function StickerMessagePreview({
   }
 
   return (
-    <Pressable
-      onPress={onOpenImage}
-      onLongPress={onOpenActions}
-      delayLongPress={220}
-    >
+    <Pressable onLongPress={onOpenActions} delayLongPress={220}>
       <ExpoImage
         source={{ uri: stickerUri }}
         style={styles.stickerThumb}
@@ -4210,15 +4204,7 @@ function BubbleContent({
       <StickerMessagePreview
         stickerUri={stickerUri}
         isLottie={isLottie}
-        onOpenImage={() => onOpenImage(msg, 0)}
         onOpenActions={() => onOpenActions?.(msg)}
-        onDownloadFallback={() =>
-          void forceDownloadToDevice(
-            stickerUri,
-            resolveStickerDownloadName(msg),
-            'document'
-          )
-        }
       />
     );
   }
@@ -5276,6 +5262,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     activeIndex: 0,
   });
   const viewerImageScrollRef = useRef<ScrollView | null>(null);
+  const viewerTranslateY = useRef(new Animated.Value(0)).current;
   const [viewerMediaWidth, setViewerMediaWidth] = useState(1);
   const [cameraPickerVisible, setCameraPickerVisible] = useState(false);
   const [isOpeningVideoEditor, setIsOpeningVideoEditor] = useState(false);
@@ -5792,6 +5779,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const safeIndex = Math.max(0, Math.min(initialIndex, items.length - 1));
       const activeItem = items[safeIndex];
 
+      viewerTranslateY.stopAnimation();
+      viewerTranslateY.setValue(0);
+
       setViewer({
         visible: true,
         kind: 'image',
@@ -5803,7 +5793,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
       setDownloadingViewerMedia(false);
     },
-    []
+    [viewerTranslateY]
   );
 
   const setActiveViewerIndex = useCallback((index: number) => {
@@ -5829,6 +5819,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, []);
 
   const closeMediaViewer = useCallback(() => {
+    viewerTranslateY.stopAnimation();
+    viewerTranslateY.setValue(0);
+
     setViewer({
       visible: false,
       kind: 'image',
@@ -5839,7 +5832,52 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       activeIndex: 0,
     });
     setDownloadingViewerMedia(false);
-  }, []);
+  }, [viewerTranslateY]);
+
+  const resetViewerSwipeOffset = useCallback(() => {
+    Animated.timing(viewerTranslateY, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [viewerTranslateY]);
+
+  const viewerPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) => {
+          if (!viewer.visible) return false;
+          if (gestureState.dy <= VIEWER_SWIPE_ACTIVATION_DISTANCE) return false;
+          return Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+        },
+        onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+          if (!viewer.visible) return false;
+          if (gestureState.dy <= VIEWER_SWIPE_ACTIVATION_DISTANCE) return false;
+          return Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+        },
+        onPanResponderGrant: () => {
+          viewerTranslateY.stopAnimation();
+        },
+        onPanResponderMove: (_, gestureState) => {
+          viewerTranslateY.setValue(Math.max(0, gestureState.dy));
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          const shouldClose =
+            gestureState.dy >= VIEWER_SWIPE_CLOSE_DISTANCE ||
+            gestureState.vy >= VIEWER_SWIPE_CLOSE_VELOCITY;
+          if (shouldClose) {
+            closeMediaViewer();
+            return;
+          }
+          resetViewerSwipeOffset();
+        },
+        onPanResponderTerminate: () => {
+          resetViewerSwipeOffset();
+        },
+      }),
+    [closeMediaViewer, resetViewerSwipeOffset, viewer.visible, viewerTranslateY]
+  );
 
   const openImageViewer = useCallback(
     (msg: ListMessageResult, galleryIndex = 0) => {
@@ -5905,6 +5943,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const videoSrc = resolveMediaUri(video.url);
     if (!videoSrc) return;
 
+    viewerTranslateY.stopAnimation();
+    viewerTranslateY.setValue(0);
+
     setViewer({
       visible: true,
       kind: 'video',
@@ -5920,7 +5961,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       ],
       activeIndex: 0,
     });
-  }, []);
+  }, [viewerTranslateY]);
 
   const resolveContactCardForMessage = useCallback(
     async (message: ListMessageResult) => {
@@ -14134,7 +14175,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       >
         <View style={[styles.viewerOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable style={styles.viewerBackdrop} onPress={closeMediaViewer} />
-          <View style={styles.viewerContent}>
+          <Animated.View
+            style={[
+              styles.viewerContent,
+              { transform: [{ translateY: viewerTranslateY }] },
+            ]}
+            {...viewerPanResponder.panHandlers}
+          >
             <View style={styles.viewerActions}>
               {viewer.kind === 'image' && viewer.items.length > 1 ? (
                 <View style={styles.viewerCounterBadge}>
@@ -14265,7 +14312,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 {viewer.caption}
               </Text>
             ) : null}
-          </View>
+          </Animated.View>
         </View>
       </Modal>
     </KeyboardAvoidingView>
