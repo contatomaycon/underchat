@@ -23,6 +23,7 @@ import { forwardMessageSchema } from '@core/schema/chat/forwardMessage';
 import { updateChatStatusSchema } from '@core/schema/chat/updateChatStatus';
 import { clearChatSummarySchema } from '@core/schema/chat/clearChatSummary';
 import { joinChatSchema } from '@core/schema/chat/joinChat';
+import { leaveChatSchema } from '@core/schema/chat/leaveChat';
 import { startChatWithContactSchema } from '@core/schema/chat/startChatWithContact';
 import { searchMessagesSchema } from '@core/schema/chat/searchMessages';
 import { transferChatSchema } from '@core/schema/chat/transferChat';
@@ -226,6 +227,17 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat/:chat_id/join', {
     schema: joinChatSchema,
     handler: chatController.joinChat,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chat/:chat_id/leave', {
+    schema: leaveChatSchema,
+    handler: chatController.leaveChat,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

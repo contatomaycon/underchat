@@ -94,6 +94,7 @@ import {
   updateChatStatusDetailed,
   transferChat,
   joinChat,
+  leaveChat,
   viewChatAttendants,
   listTransferOptions,
   listTransferUsers,
@@ -145,6 +146,7 @@ import {
   canToggleForwardToOutputChatbot,
   isChatParticipant,
   isChatPrimary,
+  isChatSecondary,
   isMasterOrAdministratorUser,
   canManageInChatLifecyclePermission,
   canViewChatAttendantsInfoPermission,
@@ -550,6 +552,7 @@ type ChatMenuActionKey =
   | 'label'
   | 'attendance_history'
   | 'transfer'
+  | 'leave_conversation'
   | 'search_messages'
   | 'forward_to_output_chatbot'
   | 'close_service';
@@ -5246,6 +5249,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [isLoadingTransferSectorUsers, setIsLoadingTransferSectorUsers] =
     useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
+  const [isLeavingConversation, setIsLeavingConversation] = useState(false);
   const [isTogglingForwardToOutput, setIsTogglingForwardToOutput] =
     useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -6920,6 +6924,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     currentUserId
   );
   const isCurrentUserPrimaryInChat = isChatPrimary(chatInfo, currentUserId);
+  const isCurrentUserSecondaryInChat = isChatSecondary(chatInfo, currentUserId);
   const hasManageInChatLifecyclePermission =
     canManageInChatLifecyclePermission(permissionList);
   const canManageInChatLifecycle =
@@ -7015,6 +7020,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     canDisableSendMessageOnFinishAttendanceAction;
   const canTransferAction =
     !isHistoryReadonly && isInChatStatus && canManageInChatLifecycle;
+  const canLeaveConversationAction =
+    !isHistoryReadonly &&
+    isInChatStatus &&
+    isCurrentUserSecondaryInChat &&
+    !isCurrentUserPrimaryInChat;
   const canLabelAction =
     !isHistoryReadonly && isInChatStatus && isCurrentUserParticipantInChat;
   const canToggleForwardToOutputAction =
@@ -7092,6 +7102,67 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setCloseServiceSendMessageOnFinishAttendance(true);
     setCloseServiceModalVisible(true);
   }, []);
+
+  const confirmLeaveConversation = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (!chatId || isLeavingConversation) return;
+
+    if (
+      !isInChatStatus ||
+      !isCurrentUserSecondaryInChat ||
+      isCurrentUserPrimaryInChat
+    ) {
+      Alert.alert(pt.warning_title, pt.only_secondary_can_leave);
+      return;
+    }
+
+    setIsLeavingConversation(true);
+    const leaveResult = await leaveChat(chatId);
+    setIsLeavingConversation(false);
+
+    if (!leaveResult.ok) {
+      Alert.alert(
+        pt.error_title,
+        leaveResult.message ?? pt.leave_conversation_error
+      );
+      return;
+    }
+
+    if (leaveResult.chat) {
+      setChatInfo((prev) => ({
+        ...prev,
+        ...leaveResult.chat,
+      }));
+    }
+
+    await syncGlobalChatCounts(setChatCounts);
+    Alert.alert(pt.success_title, pt.leave_conversation_success);
+    navigation.goBack();
+  }, [
+    chatInfo.chat_id,
+    isInChatStatus,
+    isCurrentUserSecondaryInChat,
+    isCurrentUserPrimaryInChat,
+    isLeavingConversation,
+    navigation,
+    setChatCounts,
+  ]);
+
+  const handleLeaveConversation = useCallback(() => {
+    Alert.alert(pt.leave_conversation, pt.leave_conversation_confirmation, [
+      {
+        text: pt.cancel,
+        style: 'cancel',
+      },
+      {
+        text: pt.leave_conversation,
+        style: 'destructive',
+        onPress: () => {
+          void confirmLeaveConversation();
+        },
+      },
+    ]);
+  }, [confirmLeaveConversation]);
 
   const openAttendantsInfo = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
@@ -7926,6 +7997,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
+    if (canLeaveConversationAction) {
+      actions.push({
+        key: 'leave_conversation',
+        label: pt.leave_conversation,
+        icon: 'exit-outline',
+        danger: true,
+        onPress: () => {
+          handleLeaveConversation();
+        },
+      });
+    }
+
     if (canShowCloseButton) {
       actions.push({
         key: 'close_service',
@@ -7945,7 +8028,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     canShowCloseButton,
     canToggleForwardToOutputAction,
     canTransferAction,
+    canLeaveConversationAction,
     canViewAttendanceHistoryAction,
+    handleLeaveConversation,
     handleCloseService,
     handleToggleForwardToOutput,
     isForwardToOutputActive,

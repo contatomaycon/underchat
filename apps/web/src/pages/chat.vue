@@ -68,6 +68,7 @@ import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import {
   isChatParticipant,
   isChatPrimary,
+  isChatSecondary,
 } from '@core/common/functions/chatParticipants';
 import {
   ISelectedPhotoPreview,
@@ -343,6 +344,15 @@ const isCurrentUserPrimaryInActiveChat = computed(() => {
   return isChatPrimary(activeChat, chatStore.user?.user_id);
 });
 
+const isCurrentUserSecondaryInActiveChat = computed(() => {
+  const activeChat = chatStore.activeChat as IChat | null;
+  if (!activeChat) {
+    return false;
+  }
+
+  return isChatSecondary(activeChat, chatStore.user?.user_id);
+});
+
 const isCurrentUserMasterOrAdministrator = computed(() => {
   const roleId = chatStore.user?.type?.user_type_id;
   if (!roleId) {
@@ -592,6 +602,8 @@ const handleJoinConversation = async () => {
 
 const isCloseServiceDialogOpen = ref(false);
 const closeServiceSendMessageOnFinishAttendance = ref(true);
+const isLeaveConversationDialogOpen = ref(false);
+const isLeaveConversationLoading = ref(false);
 const isAttendantsInfoDialogOpen = ref(false);
 const isLoadingAttendantsInfo = ref(false);
 const attendantsInfo = ref<ViewChatAttendantsResponse | null>(null);
@@ -604,6 +616,48 @@ const handleCloseService = () => {
 
   closeServiceSendMessageOnFinishAttendance.value = true;
   isCloseServiceDialogOpen.value = true;
+};
+
+const canShowLeaveConversationAction = computed(() => {
+  if (!isInChatStatus.value) {
+    return false;
+  }
+
+  return (
+    isCurrentUserSecondaryInActiveChat.value &&
+    !isCurrentUserPrimaryInActiveChat.value
+  );
+});
+
+const handleLeaveConversation = () => {
+  if (!canShowLeaveConversationAction.value) {
+    chatStore.showSnackbar(t('only_secondary_can_leave'), EColor.warning);
+    return;
+  }
+
+  isLeaveConversationDialogOpen.value = true;
+};
+
+const confirmLeaveConversation = async () => {
+  if (!chatStore.activeChat?.chat_id || isLeaveConversationLoading.value) {
+    return;
+  }
+
+  isLeaveConversationLoading.value = true;
+  try {
+    const success = await chatStore.leaveChat(chatStore.activeChat.chat_id);
+    if (!success) {
+      return;
+    }
+
+    isLeaveConversationDialogOpen.value = false;
+    chatStore.showSnackbar(t('leave_conversation_success'), EColor.success);
+    await openChat(chatStore.activeChat.chat_id, {
+      forceReload: true,
+    });
+  } finally {
+    isLeaveConversationLoading.value = false;
+  }
 };
 
 const confirmCloseService = async () => {
@@ -1273,11 +1327,17 @@ const canShowCloseButton = computed(() => {
 });
 
 const canShowAttendantsInfoAction = computed(() => {
-  return !!chatStore.activeChat?.chat_id && hasViewChatAttendantsInfoPermission.value;
+  return (
+    !!chatStore.activeChat?.chat_id && hasViewChatAttendantsInfoPermission.value
+  );
 });
 
 const canShowHeaderActionsMenu = computed(() => {
-  return canShowCloseButton.value || canShowAttendantsInfoAction.value;
+  return (
+    canShowCloseButton.value ||
+    canShowAttendantsInfoAction.value ||
+    canShowLeaveConversationAction.value
+  );
 });
 
 const canTransfer = computed(() => {
@@ -5887,10 +5947,26 @@ onBeforeUnmount(() => {
                 </VListItem>
 
                 <VDivider
-                  v-if="canShowAttendantsInfoAction && canShowCloseButton"
+                  v-if="
+                    canShowAttendantsInfoAction &&
+                    (canShowLeaveConversationAction || canShowCloseButton)
+                  "
                 />
 
-                <VListItem v-if="canShowCloseButton" @click="handleCloseService">
+                <VListItem
+                  v-if="canShowLeaveConversationAction"
+                  @click="handleLeaveConversation"
+                >
+                  <template #prepend>
+                    <VIcon size="20" color="error">tabler-logout</VIcon>
+                  </template>
+                  <VListItemTitle>{{ t('leave_conversation') }}</VListItemTitle>
+                </VListItem>
+
+                <VListItem
+                  v-if="canShowCloseButton"
+                  @click="handleCloseService"
+                >
                   <template #prepend>
                     <VIcon size="20" color="error">tabler-x</VIcon>
                   </template>
@@ -6912,7 +6988,11 @@ onBeforeUnmount(() => {
       </VCardText>
 
       <VCardText class="d-flex justify-end">
-        <VBtn color="secondary" variant="tonal" @click="isAttendantsInfoDialogOpen = false">
+        <VBtn
+          color="secondary"
+          variant="tonal"
+          @click="isAttendantsInfoDialogOpen = false"
+        >
           {{ t('close') }}
         </VBtn>
       </VCardText>
@@ -6955,6 +7035,37 @@ onBeforeUnmount(() => {
         </VBtn>
         <VBtn @click="confirmCloseService">
           {{ t('confirm') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog
+    v-model="isLeaveConversationDialogOpen"
+    persistent
+    class="v-dialog-sm"
+  >
+    <DialogCloseBtn @click="isLeaveConversationDialogOpen = false" />
+
+    <VCard :title="t('leave_conversation')">
+      <VCardText>{{ t('leave_conversation_confirmation') }}</VCardText>
+
+      <VCardText class="d-flex justify-end gap-3 flex-wrap">
+        <VBtn
+          color="secondary"
+          variant="tonal"
+          @click="isLeaveConversationDialogOpen = false"
+          :disabled="isLeaveConversationLoading"
+        >
+          {{ t('cancel') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          :loading="isLeaveConversationLoading"
+          :disabled="isLeaveConversationLoading"
+          @click="confirmLeaveConversation"
+        >
+          {{ t('leave_conversation') }}
         </VBtn>
       </VCardText>
     </VCard>

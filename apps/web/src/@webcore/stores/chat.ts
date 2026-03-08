@@ -3706,6 +3706,49 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async leaveChat(chatId: string): Promise<boolean> {
+      if (!chatId) {
+        return false;
+      }
+
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<ListChatsResult>>(
+          `/chat/${chatId}/leave`,
+          {}
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('leave_conversation_error');
+          this.showSnackbar(errorMessage, EColor.error);
+          return false;
+        }
+
+        this.addChat(data.data as unknown as IChat, true);
+
+        if (this.activeChat?.chat_id === chatId) {
+          this.activeChat = this.createUpdatedActiveChat(data.data, true);
+        }
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t('leave_conversation_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
+
     async viewChatAttendants(
       chatId: string
     ): Promise<ViewChatAttendantsResponse | null> {

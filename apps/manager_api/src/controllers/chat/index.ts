@@ -12,6 +12,7 @@ import { forwardMessage } from './methods/forwardMessage';
 import { updateChatStatus } from './methods/updateChatStatus';
 import { clearChatSummary } from './methods/clearChatSummary';
 import { joinChat } from './methods/joinChat';
+import { leaveChat } from './methods/leaveChat';
 import { startChatWithContact } from './methods/startChatWithContact';
 import { searchMessages } from './methods/searchMessages';
 import { transferChat } from './methods/transferChat';
@@ -59,6 +60,7 @@ class ChatController {
   public updateChatStatus = updateChatStatus;
   public clearChatSummary = clearChatSummary;
   public joinChat = joinChat;
+  public leaveChat = leaveChat;
   public startChatWithContact = startChatWithContact;
   public searchMessages = searchMessages;
   public transferChat = transferChat;

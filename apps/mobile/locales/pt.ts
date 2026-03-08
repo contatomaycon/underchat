@@ -316,8 +316,15 @@ export const pt = {
   join_conversation: 'Entrar na conversa',
   join_conversation_success: 'Você entrou na conversa com sucesso.',
   join_conversation_error: 'Não foi possível entrar na conversa.',
+  leave_conversation: 'Sair da conversa',
+  leave_conversation_confirmation:
+    'Deseja realmente sair desta conversa? Você deixará de ser atendente secundário.',
+  leave_conversation_success: 'Você saiu da conversa com sucesso.',
+  leave_conversation_error: 'Não foi possível sair da conversa.',
   must_join_conversation_to_reply:
     'Entre na conversa para responder este atendimento.',
+  only_secondary_can_leave:
+    'Somente atendentes secundários podem sair desta conversa.',
   only_primary_can_transfer:
     'Somente o atendente primário, master/administrador ou usuário com permissão pode transferir este atendimento.',
   cannot_transfer_to_current_primary:

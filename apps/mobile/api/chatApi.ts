@@ -677,6 +677,31 @@ export async function joinChat(
   };
 }
 
+export async function leaveChat(chatId: string): Promise<{
+  ok: boolean;
+  message: string | null;
+  chat: ListChatsResult | null;
+}> {
+  if (!chatId || chatId.trim().length === 0) {
+    return {
+      ok: false,
+      message: null,
+      chat: null,
+    };
+  }
+
+  const res = await apiPostWithMessage<ListChatsResult>(
+    `/chat/${chatId}/leave`,
+    {}
+  );
+
+  return {
+    ok: res?.status === true,
+    message: res?.message ?? null,
+    chat: res?.data ?? null,
+  };
+}
+
 export async function viewChatAttendants(
   chatId: string
 ): Promise<ViewChatAttendantsResponse | null> {
