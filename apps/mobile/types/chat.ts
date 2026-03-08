@@ -121,6 +121,11 @@ export interface MessageContentImage {
   thumbnail?: string | null;
 }
 
+export interface MessageContentAlbum {
+  id?: string | null;
+  item_index?: number | null;
+}
+
 export interface MessageContentVideo {
   url?: string | null;
   caption?: string | null;
@@ -295,6 +300,7 @@ export interface MessageContent {
   version?: MessageVersion[] | null;
   context_info?: MessageContextInfo | null;
   template?: MessageContentTemplate | null;
+  album?: MessageContentAlbum | null;
   pin?: unknown;
   ephemeral?: unknown;
   forward?: MessageContentForward | null;

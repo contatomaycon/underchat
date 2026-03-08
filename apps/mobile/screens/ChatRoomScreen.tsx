@@ -1080,6 +1080,8 @@ type ReactionCategoryConfig = {
 };
 const LONG_TEXT_COLLAPSE_LINES = 8;
 const LONG_TEXT_COLLAPSE_CHAR_THRESHOLD = 420;
+const FALLBACK_GALLERY_WINDOW_MS = 5000;
+const MAX_IMAGE_GALLERY_THUMBNAILS = 4;
 
 function unifiedToEmoji(unified: string): string | null {
   if (!unified) return null;
@@ -1120,6 +1122,210 @@ const FORWARD_ALLOWED_TYPES = new Set<string>([
   EMessageType.contact_card,
   EMessageType.contacts,
 ]);
+
+type GalleryImageItem = {
+  message: ListMessageResult;
+  src: string;
+  caption: string;
+  downloadName: string;
+  width: number | null;
+  height: number | null;
+};
+
+type GalleryImageGroup = {
+  id: string;
+  items: GalleryImageItem[];
+};
+
+type GalleryMembership = {
+  groupId: string;
+  index: number;
+  isHead: boolean;
+};
+
+type ImageGalleryLookup = {
+  groupsById: Record<string, GalleryImageGroup>;
+  membershipByMessageId: Record<string, GalleryMembership>;
+};
+
+type WorkingGalleryGroup = {
+  mode: 'metadata' | 'fallback';
+  albumId: string | null;
+  direction: 'incoming' | 'outgoing';
+  lastTimestamp: number | null;
+  items: GalleryImageItem[];
+};
+
+function isGalleryImageMessage(message: ListMessageResult): boolean {
+  return (
+    message.content?.type === EMessageType.image &&
+    typeof message.content?.image?.url === 'string' &&
+    message.content.image.url.trim().length > 0
+  );
+}
+
+function getGalleryDirection(
+  message: ListMessageResult
+): 'incoming' | 'outgoing' {
+  return message.type_user === ETypeUserChat.client ? 'incoming' : 'outgoing';
+}
+
+function getGalleryAlbumId(message: ListMessageResult): string | null {
+  const albumId = message.content?.album?.id;
+  if (typeof albumId !== 'string') return null;
+  const trimmed = albumId.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getMessageTimestampMs(message: ListMessageResult): number | null {
+  const timestamp = new Date(message.date).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function getAlbumItemIndex(message: ListMessageResult): number | null {
+  const value = message.content?.album?.item_index;
+  if (typeof value !== 'number') return null;
+  if (!Number.isFinite(value)) return null;
+  return value;
+}
+
+function toGalleryImageItem(message: ListMessageResult): GalleryImageItem | null {
+  const image = message.content?.image;
+  const imageSrc = resolveMediaUri(image?.url);
+  if (!imageSrc) return null;
+
+  return {
+    message,
+    src: imageSrc,
+    caption: image?.caption ?? '',
+    downloadName: resolveImageDownloadName(message, imageSrc),
+    width: image?.width ?? null,
+    height: image?.height ?? null,
+  };
+}
+
+function flushWorkingGalleryGroup(
+  state: WorkingGalleryGroup | null,
+  groupsById: Record<string, GalleryImageGroup>,
+  membershipByMessageId: Record<string, GalleryMembership>
+): void {
+  if (!state || state.items.length < 2) {
+    return;
+  }
+
+  const sortedItems =
+    state.mode === 'metadata'
+      ? state.items
+          .map((item, index) => ({ item, index }))
+          .sort((a, b) => {
+            const aIndex = getAlbumItemIndex(a.item.message);
+            const bIndex = getAlbumItemIndex(b.item.message);
+
+            if (aIndex !== null && bIndex !== null && aIndex !== bIndex) {
+              return aIndex - bIndex;
+            }
+
+            if (aIndex !== null && bIndex === null) return -1;
+            if (aIndex === null && bIndex !== null) return 1;
+
+            return a.index - b.index;
+          })
+          .map(({ item }) => item)
+      : state.items;
+
+  const firstMessageId = sortedItems[0]?.message.message_id;
+  if (!firstMessageId) {
+    return;
+  }
+
+  const groupId = `${state.mode}:${state.albumId ?? 'fallback'}:${firstMessageId}`;
+  groupsById[groupId] = {
+    id: groupId,
+    items: sortedItems,
+  };
+
+  sortedItems.forEach((item, index) => {
+    membershipByMessageId[item.message.message_id] = {
+      groupId,
+      index,
+      isHead: index === 0,
+    };
+  });
+}
+
+function buildImageGalleryLookup(messages: ListMessageResult[]): ImageGalleryLookup {
+  const groupsById: Record<string, GalleryImageGroup> = {};
+  const membershipByMessageId: Record<string, GalleryMembership> = {};
+
+  let currentGroup: WorkingGalleryGroup | null = null;
+
+  const flushCurrentGroup = () => {
+    flushWorkingGalleryGroup(currentGroup, groupsById, membershipByMessageId);
+    currentGroup = null;
+  };
+
+  for (const message of messages) {
+    if (!isGalleryImageMessage(message)) {
+      flushCurrentGroup();
+      continue;
+    }
+
+    const galleryItem = toGalleryImageItem(message);
+    if (!galleryItem) {
+      flushCurrentGroup();
+      continue;
+    }
+
+    const albumId = getGalleryAlbumId(message);
+    const mode: WorkingGalleryGroup['mode'] = albumId ? 'metadata' : 'fallback';
+    const direction = getGalleryDirection(message);
+    const timestamp = getMessageTimestampMs(message);
+
+    const shouldJoinGroup = (() => {
+      if (!currentGroup) return false;
+      if (currentGroup.mode !== mode) return false;
+      if (currentGroup.direction !== direction) return false;
+
+      if (mode === 'metadata') {
+        return currentGroup.albumId !== null && currentGroup.albumId === albumId;
+      }
+
+      if (currentGroup.albumId !== null || albumId !== null) {
+        return false;
+      }
+
+      if (currentGroup.lastTimestamp === null || timestamp === null) {
+        return false;
+      }
+
+      return timestamp - currentGroup.lastTimestamp <= FALLBACK_GALLERY_WINDOW_MS;
+    })();
+
+    const activeGroup = currentGroup;
+
+    if (!shouldJoinGroup || !activeGroup) {
+      flushCurrentGroup();
+      currentGroup = {
+        mode,
+        albumId,
+        direction,
+        lastTimestamp: timestamp,
+        items: [galleryItem],
+      };
+      continue;
+    }
+
+    activeGroup.items.push(galleryItem);
+    activeGroup.lastTimestamp = timestamp;
+  }
+
+  flushCurrentGroup();
+
+  return {
+    groupsById,
+    membershipByMessageId,
+  };
+}
 
 function isDeletedMessage(message: ListMessageResult): boolean {
   return message.deleted === true;
@@ -2797,12 +3003,20 @@ type MessageWithSeparator =
       separatorLabel: string;
     };
 
+type ViewerMediaItem = {
+  src: string;
+  caption: string;
+  downloadName: string;
+};
+
 type MediaViewerState = {
   visible: boolean;
   kind: 'image' | 'video';
   src: string;
   caption: string;
   downloadName: string;
+  items: ViewerMediaItem[];
+  activeIndex: number;
 };
 
 type CameraCaptureDraft = {
@@ -3692,6 +3906,7 @@ function BubbleContent({
   msg,
   fromMe,
   content,
+  imageGallery,
   chatInfo,
   resolvedContactDisplay,
   audioCtrl,
@@ -3706,10 +3921,11 @@ function BubbleContent({
   msg: ListMessageResult;
   fromMe: boolean;
   content: MessageContent;
+  imageGallery?: GalleryImageGroup | null;
   chatInfo: ListChatsResult;
   resolvedContactDisplay?: ContactCardDisplayData;
   audioCtrl: AudioCtrl | null;
-  onOpenImage: (msg: ListMessageResult) => void;
+  onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
   onOpenActions?: (message: ListMessageResult) => void;
   onTemplateButtonPress?: (
@@ -3786,13 +4002,59 @@ function BubbleContent({
   }
 
   if (type === EMessageType.image && content.image?.url) {
+    if (imageGallery && imageGallery.items.length >= 2) {
+      const visibleItems = imageGallery.items.slice(0, MAX_IMAGE_GALLERY_THUMBNAILS);
+      const hiddenCount = Math.max(
+        0,
+        imageGallery.items.length - MAX_IMAGE_GALLERY_THUMBNAILS
+      );
+
+      return renderWithContextCards(
+        <View style={[styles.mediaBubble, styles.mediaBubbleImageGallery]}>
+          <View style={styles.imageGalleryGrid}>
+            {visibleItems.map((galleryItem, galleryIndex) => {
+              const isLastVisibleItem =
+                galleryIndex === MAX_IMAGE_GALLERY_THUMBNAILS - 1;
+              const showHiddenOverlay = hiddenCount > 0 && isLastVisibleItem;
+
+              return (
+                <Pressable
+                  key={`gallery-${msg.message_id}-${galleryItem.message.message_id}`}
+                  style={[
+                    styles.imageGalleryItem,
+                    visibleItems.length === 1 && styles.imageGalleryItemSingle,
+                  ]}
+                  onPress={() => onOpenImage(msg, galleryIndex)}
+                  onLongPress={() => onOpenActions?.(msg)}
+                  delayLongPress={220}
+                >
+                  <Image
+                    source={{ uri: galleryItem.src }}
+                    style={styles.imageGalleryThumb}
+                    resizeMode="cover"
+                  />
+                  {showHiddenOverlay ? (
+                    <View style={styles.imageGalleryHiddenOverlay}>
+                      <Text style={styles.imageGalleryHiddenText}>
+                        +{hiddenCount}
+                      </Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      );
+    }
+
     const cap = content.image.caption;
     const imageUri = resolveMediaUri(content.image.url);
     if (!imageUri) return null;
     return renderWithContextCards(
       <View style={[styles.mediaBubble, styles.mediaBubbleImage]}>
         <Pressable
-          onPress={() => onOpenImage(msg)}
+          onPress={() => onOpenImage(msg, 0)}
           onLongPress={() => onOpenActions?.(msg)}
           delayLongPress={220}
         >
@@ -3882,7 +4144,7 @@ function BubbleContent({
     }
     return renderWithContextCards(
       <Pressable
-        onPress={() => onOpenImage(msg)}
+        onPress={() => onOpenImage(msg, 0)}
         onLongPress={() => onOpenActions?.(msg)}
         delayLongPress={220}
       >
@@ -4381,6 +4643,7 @@ function MessageBubble({
   msg,
   fromMe,
   chatInfo,
+  imageGallery,
   currentUserName,
   highlighted,
   onPressQuoted,
@@ -4398,12 +4661,13 @@ function MessageBubble({
   msg: ListMessageResult;
   fromMe: boolean;
   chatInfo: ListChatsResult;
+  imageGallery?: GalleryImageGroup | null;
   currentUserName: string | null;
   highlighted?: boolean;
   onPressQuoted?: (() => void) | null;
   resolvedContactDisplay?: ContactCardDisplayData;
   audioCtrl: AudioCtrl | null;
-  onOpenImage: (msg: ListMessageResult) => void;
+  onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
   onTemplateButtonPress?: (
     button: MessageTemplateButton,
@@ -4619,6 +4883,7 @@ function MessageBubble({
           msg={msg}
           fromMe={fromMe}
           content={content}
+          imageGallery={imageGallery}
           chatInfo={chatInfo}
           resolvedContactDisplay={resolvedContactDisplay}
           audioCtrl={audioCtrl}
@@ -4872,6 +5137,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     string | null
   >(null);
   const [messages, setMessages] = useState<ListMessageResult[]>([]);
+  const imageGalleryLookup = useMemo(
+    () => buildImageGalleryLookup(messages),
+    [messages]
+  );
   const [messageActionTarget, setMessageActionTarget] =
     useState<ListMessageResult | null>(null);
   const [messageOverlayAnchor, setMessageOverlayAnchor] =
@@ -4937,7 +5206,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     src: '',
     caption: '',
     downloadName: '',
+    items: [],
+    activeIndex: 0,
   });
+  const viewerImageScrollRef = useRef<ScrollView | null>(null);
+  const [viewerMediaWidth, setViewerMediaWidth] = useState(1);
   const [cameraPickerVisible, setCameraPickerVisible] = useState(false);
   const [isOpeningVideoEditor, setIsOpeningVideoEditor] = useState(false);
   const [annotationModalVisible, setAnnotationModalVisible] = useState(false);
@@ -5447,6 +5720,48 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     recorderState.metering,
   ]);
 
+  const openImageViewerFromItems = useCallback(
+    (items: ViewerMediaItem[], initialIndex = 0) => {
+      if (items.length === 0) return;
+      const safeIndex = Math.max(0, Math.min(initialIndex, items.length - 1));
+      const activeItem = items[safeIndex];
+
+      setViewer({
+        visible: true,
+        kind: 'image',
+        src: activeItem.src,
+        caption: activeItem.caption,
+        downloadName: activeItem.downloadName,
+        items,
+        activeIndex: safeIndex,
+      });
+      setDownloadingViewerMedia(false);
+    },
+    []
+  );
+
+  const setActiveViewerIndex = useCallback((index: number) => {
+    setViewer((previous) => {
+      if (previous.kind !== 'image') return previous;
+      const items = previous.items;
+      if (items.length === 0) return previous;
+
+      const safeIndex = Math.max(0, Math.min(index, items.length - 1));
+      if (safeIndex === previous.activeIndex) {
+        return previous;
+      }
+
+      const activeItem = items[safeIndex];
+      return {
+        ...previous,
+        activeIndex: safeIndex,
+        src: activeItem.src,
+        caption: activeItem.caption,
+        downloadName: activeItem.downloadName,
+      };
+    });
+  }, []);
+
   const closeMediaViewer = useCallback(() => {
     setViewer({
       visible: false,
@@ -5454,11 +5769,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       src: '',
       caption: '',
       downloadName: '',
+      items: [],
+      activeIndex: 0,
     });
     setDownloadingViewerMedia(false);
   }, []);
 
-  const openImageViewer = useCallback((msg: ListMessageResult) => {
+  const openImageViewer = useCallback((
+    msg: ListMessageResult,
+    galleryIndex = 0
+  ) => {
     const sticker = msg.content?.sticker;
     const stickerUrl = sticker?.url;
     if (stickerUrl) {
@@ -5472,14 +5792,31 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         );
         return;
       }
-      setViewer({
-        visible: true,
-        kind: 'image',
-        src: stickerSrc,
-        caption: '',
-        downloadName: resolveStickerDownloadName(msg),
-      });
+      openImageViewerFromItems([
+        {
+          src: stickerSrc,
+          caption: '',
+          downloadName: resolveStickerDownloadName(msg),
+        },
+      ]);
       return;
+    }
+
+    const galleryMembership =
+      imageGalleryLookup.membershipByMessageId[msg.message_id];
+    if (galleryMembership) {
+      const group = imageGalleryLookup.groupsById[galleryMembership.groupId];
+      if (group?.items.length) {
+        openImageViewerFromItems(
+          group.items.map((item) => ({
+            src: item.src,
+            caption: item.caption,
+            downloadName: item.downloadName,
+          })),
+          galleryIndex
+        );
+        return;
+      }
     }
 
     const imageUrl = msg.content?.image?.url;
@@ -5487,14 +5824,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const imageSrc = resolveMediaUri(imageUrl);
     if (!imageSrc) return;
 
-    setViewer({
-      visible: true,
-      kind: 'image',
-      src: imageSrc,
-      caption: msg.content?.image?.caption ?? '',
-      downloadName: resolveImageDownloadName(msg, imageSrc),
-    });
-  }, []);
+    openImageViewerFromItems([
+      {
+        src: imageSrc,
+        caption: msg.content?.image?.caption ?? '',
+        downloadName: resolveImageDownloadName(msg, imageSrc),
+      },
+    ]);
+  }, [imageGalleryLookup, openImageViewerFromItems]);
 
   const openVideoViewer = useCallback((msg: ListMessageResult) => {
     const video = msg.content?.video;
@@ -5508,6 +5845,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       src: videoSrc,
       caption: video.caption ?? msg.content?.message ?? '',
       downloadName: resolveVideoDownloadName(video),
+      items: [
+        {
+          src: videoSrc,
+          caption: video.caption ?? msg.content?.message ?? '',
+          downloadName: resolveVideoDownloadName(video),
+        },
+      ],
+      activeIndex: 0,
     });
   }, []);
 
@@ -5581,7 +5926,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [messages, resolveContactCardForMessage]);
 
   const handleDownloadViewerMedia = useCallback(async () => {
-    if (!viewer.src || downloadingViewerMedia) return;
+    const activeViewerItem = viewer.items[viewer.activeIndex] ?? null;
+    const viewerSrc = activeViewerItem?.src || viewer.src;
+    const viewerDownloadName = activeViewerItem?.downloadName || viewer.downloadName;
+
+    if (!viewerSrc || downloadingViewerMedia) return;
 
     setDownloadingViewerMedia(true);
     try {
@@ -5589,13 +5938,49 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         viewer.kind === 'video'
           ? `video-${Date.now()}.mp4`
           : `imagem-${Date.now()}.jpg`;
-      const fileName = viewer.downloadName || defaultName;
-      await forceDownloadToDevice(viewer.src, fileName, viewer.kind);
+      const fileName = viewerDownloadName || defaultName;
+      await forceDownloadToDevice(viewerSrc, fileName, viewer.kind);
     } catch {
     } finally {
       setDownloadingViewerMedia(false);
     }
-  }, [downloadingViewerMedia, viewer.downloadName, viewer.kind, viewer.src]);
+  }, [
+    downloadingViewerMedia,
+    viewer.activeIndex,
+    viewer.downloadName,
+    viewer.items,
+    viewer.kind,
+    viewer.src,
+  ]);
+
+  const canGoToPreviousViewerImage =
+    viewer.kind === 'image' && viewer.activeIndex > 0;
+  const canGoToNextViewerImage =
+    viewer.kind === 'image' && viewer.activeIndex < viewer.items.length - 1;
+
+  const goToPreviousViewerImage = useCallback(() => {
+    if (!canGoToPreviousViewerImage) return;
+    setActiveViewerIndex(viewer.activeIndex - 1);
+  }, [canGoToPreviousViewerImage, setActiveViewerIndex, viewer.activeIndex]);
+
+  const goToNextViewerImage = useCallback(() => {
+    if (!canGoToNextViewerImage) return;
+    setActiveViewerIndex(viewer.activeIndex + 1);
+  }, [canGoToNextViewerImage, setActiveViewerIndex, viewer.activeIndex]);
+
+  useEffect(() => {
+    if (!viewer.visible || viewer.kind !== 'image' || viewer.items.length <= 1) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      viewerImageScrollRef.current?.scrollTo({
+        x: viewer.activeIndex * viewerMediaWidth,
+        y: 0,
+        animated: false,
+      });
+    });
+  }, [viewer.activeIndex, viewer.items.length, viewer.kind, viewer.visible, viewerMediaWidth]);
 
   const loadMessages = useCallback(async () => {
     setLoading(true);
@@ -5791,6 +6176,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     let lastDate: string | null = null;
     for (let i = 0; i < messages.length; i++) {
       const message = messages[i];
+      const galleryMembership =
+        imageGalleryLookup.membershipByMessageId[message.message_id];
+      if (galleryMembership && !galleryMembership.isHead) {
+        continue;
+      }
+
       const messageDate = message.date;
       if (!lastDate || !isSameDay(messageDate, lastDate)) {
         list.push({
@@ -5803,7 +6194,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       list.push({ type: 'message', message });
     }
     return list;
-  }, [messages]);
+  }, [imageGalleryLookup.membershipByMessageId, messages]);
 
   const messageIdSet = useMemo(
     () => new Set(messages.map((message) => message.message_id)),
@@ -10905,12 +11296,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   !isHistoryReadonly &&
                   !shouldObfuscateContent &&
                   canInteractWithMessage(item.message);
+                const galleryMembership =
+                  imageGalleryLookup.membershipByMessageId[
+                    item.message.message_id
+                  ];
+                const imageGallery = galleryMembership
+                  ? imageGalleryLookup.groupsById[galleryMembership.groupId] ?? null
+                  : null;
 
                 const bubble = (
                   <MessageBubble
                     msg={item.message}
                     fromMe={item.message.type_user !== ETypeUserChat.client}
                     chatInfo={chatInfo}
+                    imageGallery={imageGallery}
                     currentUserName={currentUserName}
                     highlighted={
                       highlightedMessageId === item.message.message_id ||
@@ -11862,6 +12261,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                         resolvedContactCards[messageActionTarget.message_id]
                       }
                       audioCtrl={audioCtrl}
+                      imageGallery={null}
                       onOpenImage={openImageViewer}
                       onOpenVideo={openVideoViewer}
                       onTemplateButtonPress={handleTemplateButtonPress}
@@ -13658,6 +14058,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           <Pressable style={styles.viewerBackdrop} onPress={closeMediaViewer} />
           <View style={styles.viewerContent}>
             <View style={styles.viewerActions}>
+              {viewer.kind === 'image' && viewer.items.length > 1 ? (
+                <View style={styles.viewerCounterBadge}>
+                  <Text style={styles.viewerCounterText}>
+                    {viewer.activeIndex + 1} / {viewer.items.length}
+                  </Text>
+                </View>
+              ) : null}
               <Pressable
                 style={[
                   styles.viewerActionBtn,
@@ -13692,12 +14099,85 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   allowsPictureInPicture
                   playsInline
                 />
-              ) : viewer.src ? (
-                <Image
-                  source={{ uri: viewer.src }}
-                  style={styles.viewerImage}
-                  resizeMode="contain"
-                />
+              ) : viewer.kind === 'image' && viewer.items.length > 0 ? (
+                <>
+                  <ScrollView
+                    ref={viewerImageScrollRef}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.viewerImagePager}
+                    scrollEventThrottle={16}
+                    onLayout={(event) => {
+                      const width = event.nativeEvent.layout.width;
+                      if (!Number.isFinite(width) || width <= 0) return;
+                      setViewerMediaWidth(width);
+                    }}
+                    onMomentumScrollEnd={(event) => {
+                      const width = event.nativeEvent.layoutMeasurement.width;
+                      if (!Number.isFinite(width) || width <= 0) return;
+                      const nextIndex = Math.round(
+                        event.nativeEvent.contentOffset.x / width
+                      );
+                      setActiveViewerIndex(nextIndex);
+                    }}
+                  >
+                    {viewer.items.map((item, index) => (
+                      <View
+                        key={`viewer-image-${index}-${item.src}`}
+                        style={[
+                          styles.viewerImagePage,
+                          { width: viewerMediaWidth },
+                        ]}
+                      >
+                        <Image
+                          source={{ uri: item.src }}
+                          style={styles.viewerImage}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    ))}
+                  </ScrollView>
+
+                  {viewer.items.length > 1 ? (
+                    <>
+                      <Pressable
+                        style={[
+                          styles.viewerNavButton,
+                          styles.viewerNavButtonLeft,
+                          !canGoToPreviousViewerImage &&
+                            styles.viewerNavButtonDisabled,
+                        ]}
+                        onPress={goToPreviousViewerImage}
+                        disabled={!canGoToPreviousViewerImage}
+                        accessibilityLabel="Anterior"
+                      >
+                        <Ionicons
+                          name="chevron-back"
+                          size={26}
+                          color="#FFFFFF"
+                        />
+                      </Pressable>
+
+                      <Pressable
+                        style={[
+                          styles.viewerNavButton,
+                          styles.viewerNavButtonRight,
+                          !canGoToNextViewerImage && styles.viewerNavButtonDisabled,
+                        ]}
+                        onPress={goToNextViewerImage}
+                        disabled={!canGoToNextViewerImage}
+                        accessibilityLabel="Próxima"
+                      >
+                        <Ionicons
+                          name="chevron-forward"
+                          size={26}
+                          color="#FFFFFF"
+                        />
+                      </Pressable>
+                    </>
+                  ) : null}
+                </>
               ) : null}
             </View>
 
@@ -14290,6 +14770,42 @@ const styles = StyleSheet.create({
   },
   mediaBubbleImage: {
     maxWidth: 210,
+  },
+  mediaBubbleImageGallery: {
+    maxWidth: 232,
+  },
+  imageGalleryGrid: {
+    width: 232,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 2,
+  },
+  imageGalleryItem: {
+    width: 115,
+    height: 115,
+    borderRadius: 6,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: colors.grey200,
+  },
+  imageGalleryItemSingle: {
+    width: 232,
+    height: 232,
+  },
+  imageGalleryThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  imageGalleryHiddenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.42)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageGalleryHiddenText: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '700',
   },
   imageThumb: {
     width: '100%',
@@ -14904,7 +15420,21 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 2,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
+  },
+  viewerCounterBadge: {
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  viewerCounterText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   viewerActionBtn: {
     width: 40,
@@ -14922,9 +15452,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  viewerImagePager: {
+    width: '100%',
+    height: '100%',
+  },
+  viewerImagePage: {
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   viewerImage: {
     width: '100%',
     height: '100%',
+  },
+  viewerNavButton: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -22,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    zIndex: 3,
+  },
+  viewerNavButtonLeft: {
+    left: 8,
+  },
+  viewerNavButtonRight: {
+    right: 8,
+  },
+  viewerNavButtonDisabled: {
+    opacity: 0.35,
   },
   viewerVideo: {
     width: '100%',
