@@ -5315,6 +5315,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [aiReplyAudioPlaying, setAiReplyAudioPlaying] = useState(false);
   const [aiReplyAudioProgress, setAiReplyAudioProgress] = useState(0);
   const [aiReplyAudioDuration, setAiReplyAudioDuration] = useState(0);
+  const [aiReplyAudioSpeed, setAiReplyAudioSpeed] = useState(1);
+  const aiReplyWaveformWidth = useRef(0);
+  const AI_REPLY_WAVEFORM_BARS = 64;
+  const aiReplyDefaultWaveform = useMemo(
+    () => new Array(AI_REPLY_WAVEFORM_BARS).fill(0.3),
+    []
+  );
   const [transcribeTarget, setTranscribeTarget] =
     useState<ListMessageResult | null>(null);
   const [transcribeResult, setTranscribeResult] = useState<string | null>(null);
@@ -9089,6 +9096,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setAiReplyAudioPlaying(false);
     setAiReplyAudioProgress(0);
     setAiReplyAudioDuration(0);
+    setAiReplyAudioSpeed(1);
   }, []);
 
   const handleSendAiReply = useCallback(async () => {
@@ -9150,9 +9158,38 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (aiReplyAudioPlaying) {
       aiReplyAudioRef.current.pause();
     } else {
+      aiReplyAudioRef.current.setPlaybackRate(aiReplyAudioSpeed);
       aiReplyAudioRef.current.play();
     }
-  }, [aiReplyResult?.audio_url, aiReplyAudioPlaying]);
+  }, [aiReplyResult?.audio_url, aiReplyAudioPlaying, aiReplyAudioSpeed]);
+
+  const toggleAiReplyAudioSpeed = useCallback(() => {
+    setAiReplyAudioSpeed((prev) => {
+      const next = prev === 1 ? 1.5 : prev === 1.5 ? 2 : 1;
+      if (aiReplyAudioRef.current) {
+        try {
+          aiReplyAudioRef.current.setPlaybackRate(next);
+        } catch {}
+      }
+      return next;
+    });
+  }, []);
+
+  const seekAiReplyAudio = useCallback(
+    (locationX: number) => {
+      const width = aiReplyWaveformWidth.current;
+      if (!width || width <= 0) return;
+      const percentage = Math.max(0, Math.min(1, locationX / width));
+      const dur = aiReplyAudioDuration;
+      if (dur <= 0) return;
+      const pos = percentage * dur;
+      if (aiReplyAudioRef.current) {
+        aiReplyAudioRef.current.seekTo(pos);
+        setAiReplyAudioProgress(pos);
+      }
+    },
+    [aiReplyAudioDuration]
+  );
 
   const closeAiReplyModal = useCallback(() => {
     if (aiReplyGenerating) return;
@@ -14265,13 +14302,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 {aiReplyResult.text}
               </Text>
               {aiReplyResult.audio_url ? (
-                <Pressable
-                  onPress={toggleAiReplyAudio}
+                <View
                   style={{
                     marginTop: 10,
                     flexDirection: 'row',
                     alignItems: 'center',
-                    gap: 10,
+                    gap: 8,
                     borderWidth: 1,
                     borderColor: colors.grey300,
                     borderRadius: 8,
@@ -14279,33 +14315,124 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     backgroundColor: '#fff',
                   }}
                 >
-                  <Ionicons
-                    name={aiReplyAudioPlaying ? 'pause-circle' : 'play-circle'}
-                    size={32}
-                    color={colors.primary}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <View
+                  <Pressable
+                    onPress={toggleAiReplyAudioSpeed}
+                    style={{
+                      minWidth: 36,
+                      paddingHorizontal: 4,
+                      paddingVertical: 2,
+                      borderRadius: 6,
+                      backgroundColor: colors.grey200,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
                       style={{
-                        height: 4,
-                        borderRadius: 2,
-                        backgroundColor: colors.grey200,
-                        overflow: 'hidden',
+                        fontSize: 12,
+                        fontWeight: '600',
+                        color: colors.grey700,
                       }}
                     >
-                      <View
-                        style={{
-                          height: '100%',
-                          borderRadius: 2,
-                          backgroundColor: colors.primary,
-                          width:
-                            aiReplyAudioDuration > 0
-                              ? `${(aiReplyAudioProgress / aiReplyAudioDuration) * 100}%`
-                              : '0%',
-                        }}
-                      />
+                      {aiReplyAudioSpeed === 1.5
+                        ? '1.5x'
+                        : aiReplyAudioSpeed === 2
+                          ? '2x'
+                          : '1x'}
+                    </Text>
+                  </Pressable>
+                  <Pressable onPress={toggleAiReplyAudio}>
+                    <Ionicons
+                      name={
+                        aiReplyAudioPlaying ? 'pause-circle' : 'play-circle'
+                      }
+                      size={32}
+                      color={colors.primary}
+                    />
+                  </Pressable>
+                  <Pressable
+                    style={{ flex: 1, height: 36, justifyContent: 'center' }}
+                    onLayout={(e) => {
+                      aiReplyWaveformWidth.current = e.nativeEvent.layout.width;
+                    }}
+                    onPress={(e) => {
+                      const ev = e.nativeEvent as unknown as {
+                        locationX?: number;
+                        clientX?: number;
+                        target?: HTMLElement;
+                      };
+                      let locationX: number;
+                      if (typeof ev.locationX === 'number') {
+                        locationX = ev.locationX;
+                      } else if (
+                        typeof ev.clientX === 'number' &&
+                        ev.target?.getBoundingClientRect
+                      ) {
+                        const rect = ev.target.getBoundingClientRect();
+                        locationX = ev.clientX - rect.left;
+                      } else {
+                        return;
+                      }
+                      seekAiReplyAudio(locationX);
+                    }}
+                  >
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        flexDirection: 'row',
+                        alignItems: 'flex-end',
+                        gap: 3,
+                        paddingVertical: 6,
+                      }}
+                    >
+                      {aiReplyDefaultWaveform.map((barValue, index) => {
+                        const barProgress =
+                          (index / aiReplyDefaultWaveform.length) * 100;
+                        const progressPercent =
+                          aiReplyAudioDuration > 0
+                            ? (aiReplyAudioProgress / aiReplyAudioDuration) *
+                              100
+                            : 0;
+                        const isActive = progressPercent > barProgress;
+                        return (
+                          <View
+                            key={`ai-bar-${index}`}
+                            style={[
+                              {
+                                flex: 1,
+                                minWidth: 3,
+                                maxWidth: 4,
+                                minHeight: 4,
+                                borderRadius: 2,
+                                backgroundColor: isActive
+                                  ? colors.primary
+                                  : 'rgba(47, 43, 61, 0.25)',
+                                height: `${Math.max(8, barValue * 100)}%`,
+                              },
+                            ]}
+                          />
+                        );
+                      })}
                     </View>
-                  </View>
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        width: 2,
+                        backgroundColor: colors.primary,
+                        borderRadius: 1,
+                        left:
+                          aiReplyAudioDuration > 0
+                            ? `${(aiReplyAudioProgress / aiReplyAudioDuration) * 100}%`
+                            : '0%',
+                      }}
+                    />
+                  </Pressable>
                   <Text
                     style={{
                       fontSize: 12,
@@ -14314,11 +14441,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                       textAlign: 'right',
                     }}
                   >
-                    {aiReplyAudioDuration > 0
+                    {aiReplyAudioProgress > 0
                       ? `${Math.floor(aiReplyAudioProgress / 60)}:${String(Math.floor(aiReplyAudioProgress % 60)).padStart(2, '0')}`
-                      : '0:00'}
+                      : aiReplyAudioDuration > 0
+                        ? `${Math.floor(aiReplyAudioDuration / 60)}:${String(Math.floor(aiReplyAudioDuration % 60)).padStart(2, '0')}`
+                        : '0:00'}
                   </Text>
-                </Pressable>
+                </View>
               ) : null}
             </View>
           </View>

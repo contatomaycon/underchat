@@ -34,6 +34,9 @@ const audioPlayer = ref<HTMLAudioElement | null>(null);
 const isAudioPlaying = ref(false);
 const audioCurrentTime = ref(0);
 const audioDuration = ref(0);
+const audioSpeed = ref(1);
+const NUM_BARS = 64;
+const defaultWaveform = new Array(NUM_BARS).fill(0.3);
 
 const audioProgress = computed(() =>
   audioDuration.value > 0
@@ -41,11 +44,23 @@ const audioProgress = computed(() =>
     : 0
 );
 
+const audioSpeedLabel = computed(() => {
+  if (audioSpeed.value === 1.5) return '1.5x';
+  if (audioSpeed.value === 2) return '2x';
+  return '1x';
+});
+
 const formatTime = (seconds: number) => {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
+
+const displayTime = computed(() => {
+  if (audioCurrentTime.value > 0) return formatTime(audioCurrentTime.value);
+  if (audioDuration.value > 0) return formatTime(audioDuration.value);
+  return '0:00';
+});
 
 const cleanupAudioPlayer = () => {
   if (audioPlayer.value) {
@@ -56,6 +71,7 @@ const cleanupAudioPlayer = () => {
   isAudioPlaying.value = false;
   audioCurrentTime.value = 0;
   audioDuration.value = 0;
+  audioSpeed.value = 1;
 };
 
 const toggleAudioPlay = () => {
@@ -87,9 +103,46 @@ const toggleAudioPlay = () => {
   if (isAudioPlaying.value) {
     audioPlayer.value.pause();
   } else {
+    audioPlayer.value.playbackRate = audioSpeed.value;
     audioPlayer.value.play().catch(() => {
       isAudioPlaying.value = false;
     });
+  }
+};
+
+const toggleAudioSpeed = () => {
+  if (audioSpeed.value === 1) audioSpeed.value = 1.5;
+  else if (audioSpeed.value === 1.5) audioSpeed.value = 2;
+  else audioSpeed.value = 1;
+
+  if (audioPlayer.value) {
+    audioPlayer.value.playbackRate = audioSpeed.value;
+  }
+};
+
+const seekAudio = (event: MouseEvent) => {
+  const container = event.currentTarget as HTMLElement;
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  const clickX = event.clientX - rect.left;
+  const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+
+  const url = generatedResult.value?.audio_url;
+  if (!url) return;
+
+  if (!audioPlayer.value) {
+    // Create the player if it doesn't exist yet
+    toggleAudioPlay();
+    if (audioPlayer.value) {
+      (audioPlayer.value as HTMLAudioElement).pause();
+      isAudioPlaying.value = false;
+    }
+  }
+
+  const audio = audioPlayer.value;
+  if (audio && audio.duration && Number.isFinite(audio.duration)) {
+    audio.currentTime = percentage * audio.duration;
+    audioCurrentTime.value = audio.currentTime;
   }
 };
 
@@ -267,17 +320,23 @@ const messagePreview = computed(() => {
             </p>
             <div v-if="generatedResult.audio_url" class="mt-3">
               <div
-                class="d-flex align-center gap-2 pa-2 rounded"
+                class="ai-audio-player d-flex align-center gap-2 pa-2 rounded"
                 style="
                   border: 1px solid
                     rgba(var(--v-border-color), var(--v-border-opacity));
                   background-color: rgb(var(--v-theme-surface));
                 "
               >
+                <button
+                  class="ai-audio-speed-btn"
+                  @click.stop="toggleAudioSpeed"
+                >
+                  {{ audioSpeedLabel }}
+                </button>
                 <VBtn
                   icon
                   size="36"
-                  variant="tonal"
+                  variant="text"
                   color="primary"
                   @click="toggleAudioPlay"
                 >
@@ -287,21 +346,35 @@ const messagePreview = computed(() => {
                       : 'tabler-player-play'
                   }}</VIcon>
                 </VBtn>
-                <div class="flex-1">
-                  <VProgressLinear
-                    :model-value="audioProgress"
-                    color="primary"
-                    rounded
-                    height="6"
-                  />
+                <div
+                  class="ai-audio-waveform-container"
+                  @click="seekAudio($event)"
+                >
+                  <div class="ai-audio-waveform">
+                    <div
+                      v-for="(barValue, index) in defaultWaveform"
+                      :key="`ai-bar-${index}`"
+                      class="ai-audio-waveform-bar"
+                      :class="{
+                        'ai-audio-waveform-bar--active':
+                          audioProgress >
+                          (index / defaultWaveform.length) * 100,
+                      }"
+                      :style="{
+                        height: `${Math.max(8, barValue * 100)}%`,
+                      }"
+                    ></div>
+                  </div>
+                  <div
+                    class="ai-audio-progress-indicator"
+                    :style="{ left: `${audioProgress}%` }"
+                  ></div>
                 </div>
                 <span
                   class="text-caption text-medium-emphasis"
                   style="min-inline-size: 36px; text-align: end"
                 >
-                  {{
-                    audioDuration > 0 ? formatTime(audioCurrentTime) : '0:00'
-                  }}
+                  {{ displayTime }}
                 </span>
               </div>
             </div>
@@ -335,3 +408,73 @@ const messagePreview = computed(() => {
     </VCard>
   </VDialog>
 </template>
+
+<style lang="scss" scoped>
+.ai-audio-speed-btn {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 36px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: rgba(var(--v-theme-on-surface), 0.08);
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  transition: background 0.2s ease;
+
+  &:hover {
+    background: rgba(var(--v-theme-on-surface), 0.14);
+  }
+}
+
+.ai-audio-waveform-container {
+  position: relative;
+  flex: 1 1 auto;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  min-width: 100px;
+  cursor: pointer;
+}
+
+.ai-audio-waveform {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 3px;
+  padding: 6px 0;
+  z-index: 1;
+  height: 100%;
+  width: 100%;
+}
+
+.ai-audio-waveform-bar {
+  flex: 1 1 0;
+  min-width: 3px;
+  max-width: 4px;
+  min-height: 4px;
+  background: rgba(var(--v-theme-on-surface), 0.25);
+  border-radius: 2px;
+  transition:
+    background 0.2s ease,
+    height 0.1s ease;
+}
+
+.ai-audio-waveform-bar--active {
+  background: rgb(var(--v-theme-primary));
+}
+
+.ai-audio-progress-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgb(var(--v-theme-primary));
+  transform: translateX(-50%);
+  z-index: 2;
+  border-radius: 1px;
+}
+</style>
