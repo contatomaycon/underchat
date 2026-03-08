@@ -91,6 +91,7 @@
       ],
       "expo-video",
       "expo-sharing",
+      "@maplibre/maplibre-react-native",
       "@react-native-community/datetimepicker"
     ],
     "updates": {

@@ -1233,7 +1233,10 @@ function sanitizeFilename(value: string): string {
     .slice(0, 80);
 }
 
-function splitFileNameParts(fileName: string): { base: string; extension: string } {
+function splitFileNameParts(fileName: string): {
+  base: string;
+  extension: string;
+} {
   const dotIndex = fileName.lastIndexOf('.');
   if (dotIndex <= 0 || dotIndex === fileName.length - 1) {
     return {
@@ -1316,7 +1319,10 @@ async function saveDownloadedFileToPickedDirectory(
   kind: DownloadKind
 ): Promise<void> {
   const pickedDirectory = await Directory.pickDirectoryAsync();
-  const targetFileName = resolveUniqueFileName(pickedDirectory, requestedFileName);
+  const targetFileName = resolveUniqueFileName(
+    pickedDirectory,
+    requestedFileName
+  );
   const mimeType = resolveDownloadMimeType(targetFileName, kind);
   const destinationFile = pickedDirectory.createFile(targetFileName, mimeType);
 

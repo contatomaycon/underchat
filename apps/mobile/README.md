@@ -85,6 +85,8 @@ Local (dev client / `run:android`):
 - Ajuste `EXPO_PUBLIC_MAPLIBRE_STYLE_URL` se quiser usar outro estilo
 
 - Rebuild nativo é recomendado após instalar/alterar provider de mapa
+- iOS (EAS): após instalar/alterar o MapLibre, gere um novo build para aplicar mudanças no Podfile via config plugin
+- Se ocorrer erro de cache no EAS, rode com cache limpo: `pnpm --filter mobile exec eas build --profile development --platform ios --clear-cache`
 
 - Android
   pnpm run run:android
