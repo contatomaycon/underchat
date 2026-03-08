@@ -4718,6 +4718,7 @@ function resolveMessageFeedbackIcon(
   fromMe: boolean
 ): { name: keyof typeof Ionicons.glyphMap; color: string } | null {
   if (!fromMe) return null;
+  if (message.content?.type === EMessageType.annotation) return null;
 
   if (message.summary?.is_sent_to_internal === false) {
     return {
