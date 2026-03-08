@@ -19,13 +19,6 @@ import { isChatParticipant } from '@core/common/functions/chatParticipants';
 const EXPO_PUSH_API_URL = 'https://exp.host/--/api/v2/push/send';
 const CHAT_NOTIFICATION_ANDROID_CHANNEL = 'underchat-messages';
 
-function maskEndpoint(endpoint: string): string {
-  if (!endpoint) return '';
-  return endpoint.length <= 26
-    ? endpoint
-    : `${endpoint.slice(0, 22)}...${endpoint.slice(-4)}`;
-}
-
 @injectable()
 export class PushNotificationService {
   private vapidKeys: {
@@ -114,13 +107,6 @@ export class PushNotificationService {
       if (sentOk) {
         sent++;
       } else {
-        if (subscription.provider === 'expo') {
-          console.warn('[Push][Expo] Falha no envio para assinatura', {
-            userId,
-            platform: subscription.platform,
-            endpoint: maskEndpoint(subscription.endpoint),
-          });
-        }
         failed++;
       }
     });
@@ -421,43 +407,18 @@ export class PushNotificationService {
           | {
               status?: 'ok' | 'error';
               details?: { error?: string };
-              message?: string;
             }
           | Array<{
               status?: 'ok' | 'error';
               details?: { error?: string };
-              message?: string;
             }>;
-        errors?: Array<{
-          code?: string;
-          message?: string;
-        }>;
       } | null;
 
       if (!response.ok || !body?.data) {
-        console.warn('[Push][Expo] HTTP/body inválido', {
-          status: response.status,
-          endpoint: maskEndpoint(token),
-          errors: body?.errors ?? null,
-        });
         return false;
       }
 
       const tickets = Array.isArray(body.data) ? body.data : [body.data];
-      const ticketErrors = tickets
-        .filter((ticket) => ticket?.status === 'error')
-        .map((ticket) => ({
-          error: ticket?.details?.error ?? null,
-          message: ticket?.message ?? null,
-        }));
-
-      if (ticketErrors.length > 0) {
-        console.warn('[Push][Expo] Ticket com erro', {
-          endpoint: maskEndpoint(token),
-          errors: ticketErrors,
-        });
-      }
-
       const hasDeviceNotRegistered = tickets.some(
         (ticket) => ticket?.details?.error === 'DeviceNotRegistered'
       );
@@ -470,11 +431,7 @@ export class PushNotificationService {
       }
 
       return tickets.some((ticket) => ticket?.status === 'ok');
-    } catch (error) {
-      console.warn('[Push][Expo] Erro de rede/envio', {
-        endpoint: maskEndpoint(token),
-        error: error instanceof Error ? error.message : String(error),
-      });
+    } catch {
       return false;
     }
   }
