@@ -2,8 +2,49 @@ function padTwo(value: number): string {
   return value < 10 ? `0${value}` : String(value);
 }
 
+function parseIsoDate(
+  value: string
+): { year: number; month: number; day: number } | null {
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!isoMatch) {
+    return null;
+  }
+
+  return {
+    year: Number(isoMatch[1]),
+    month: Number(isoMatch[2]),
+    day: Number(isoMatch[3]),
+  };
+}
+
+function parseDisplayDate(
+  value: string
+): { year: number; month: number; day: number } | null {
+  const displayMatch = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!displayMatch) {
+    return null;
+  }
+
+  return {
+    year: Number(displayMatch[3]),
+    month: Number(displayMatch[2]),
+    day: Number(displayMatch[1]),
+  };
+}
+
+export function formatDateInputDisplay(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
 function isValidDateParts(year: number, month: number, day: number): boolean {
-  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
     return false;
   }
 
@@ -27,7 +68,9 @@ function isValidDateParts(year: number, month: number, day: number): boolean {
   );
 }
 
-export function normalizeBirthdayIso(value: string | null | undefined): string | null {
+export function normalizeBirthdayIso(
+  value: string | null | undefined
+): string | null {
   if (!value) {
     return null;
   }
@@ -37,11 +80,9 @@ export function normalizeBirthdayIso(value: string | null | undefined): string |
     return null;
   }
 
-  const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoMatch) {
-    const year = Number(isoMatch[1]);
-    const month = Number(isoMatch[2]);
-    const day = Number(isoMatch[3]);
+  const isoDateParts = parseIsoDate(normalized);
+  if (isoDateParts) {
+    const { year, month, day } = isoDateParts;
 
     if (!isValidDateParts(year, month, day)) {
       return null;
@@ -50,11 +91,9 @@ export function normalizeBirthdayIso(value: string | null | undefined): string |
     return `${year}-${padTwo(month)}-${padTwo(day)}`;
   }
 
-  const displayMatch = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (displayMatch) {
-    const day = Number(displayMatch[1]);
-    const month = Number(displayMatch[2]);
-    const year = Number(displayMatch[3]);
+  const displayDateParts = parseDisplayDate(normalized);
+  if (displayDateParts) {
+    const { year, month, day } = displayDateParts;
 
     if (!isValidDateParts(year, month, day)) {
       return null;
@@ -66,7 +105,9 @@ export function normalizeBirthdayIso(value: string | null | undefined): string |
   return null;
 }
 
-export function formatBirthdayDisplay(isoDate: string | null | undefined): string {
+export function formatBirthdayDisplay(
+  isoDate: string | null | undefined
+): string {
   const normalized = normalizeBirthdayIso(isoDate);
   if (!normalized) {
     return '';
@@ -76,7 +117,20 @@ export function formatBirthdayDisplay(isoDate: string | null | undefined): strin
   return `${day}/${month}/${year}`;
 }
 
-export function birthdayIsoToDate(isoDate: string | null | undefined): Date | null {
+export function normalizeDateDisplay(
+  value: string | null | undefined
+): string | null {
+  const normalized = normalizeBirthdayIso(value);
+  if (!normalized) {
+    return null;
+  }
+
+  return formatBirthdayDisplay(normalized);
+}
+
+export function birthdayIsoToDate(
+  isoDate: string | null | undefined
+): Date | null {
   const normalized = normalizeBirthdayIso(isoDate);
   if (!normalized) {
     return null;

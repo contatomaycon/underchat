@@ -14,6 +14,10 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
 import {
@@ -27,6 +31,13 @@ import {
   type ChatSector,
 } from '../api/chatApi';
 import { colors } from '../theme/colors';
+import {
+  birthdayIsoToDate,
+  dateToBirthdayIso,
+  formatDateInputDisplay,
+  normalizeBirthdayIso,
+  normalizeDateDisplay,
+} from '../utils/date';
 import {
   dismissKeyboard,
   dismissKeyboardAnd,
@@ -67,29 +78,6 @@ const SORT_ORDER_OPTIONS: { value: string; title: string }[] = [
   { value: 'asc', title: pt.ascending },
   { value: 'desc', title: pt.descending },
 ];
-
-function formatDateForApi(
-  dateStr: string | null,
-  isEndDate: boolean
-): string | null {
-  if (!dateStr || dateStr.trim() === '') return null;
-  const trimmed = dateStr.trim();
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
-  if (!match) return null;
-  const y = Number.parseInt(match[1], 10);
-  const m = Number.parseInt(match[2], 10);
-  const d = Number.parseInt(match[3], 10);
-  if (Number.isNaN(y) || Number.isNaN(m) || Number.isNaN(d)) return null;
-  const date = new Date(y, m - 1, d);
-  if (Number.isNaN(date.getTime())) return null;
-  if (isEndDate) {
-    date.setDate(date.getDate() + 1);
-  }
-  const yy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yy}-${mm}-${dd}`;
-}
 
 function SkeletonRow() {
   const opacity = useRef(new Animated.Value(0.3)).current;
@@ -136,6 +124,8 @@ type PickerKind =
   | 'sort_order'
   | null;
 
+type DatePickerField = 'start' | 'end' | null;
+
 export function AdvancedFilterModal({
   visible,
   onClose,
@@ -168,6 +158,8 @@ export function AdvancedFilterModal({
   const [sortOrder, setSortOrder] = useState<string | null>('desc');
 
   const [pickerKind, setPickerKind] = useState<PickerKind>(null);
+  const [datePickerField, setDatePickerField] = useState<DatePickerField>(null);
+  const [dateDraftDate, setDateDraftDate] = useState<Date>(new Date());
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -179,8 +171,10 @@ export function AdvancedFilterModal({
     setFilterName(initialValues.filter_name ?? null);
     setFilterPhone(initialValues.filter_phone ?? null);
     setFilterProtocol(initialValues.filter_protocol ?? null);
-    setFilterDateStart(initialValues.filter_date_start ?? '');
-    setFilterDateEnd(initialValues.filter_date_end ?? '');
+    setFilterDateStart(
+      normalizeDateDisplay(initialValues.filter_date_start) ?? ''
+    );
+    setFilterDateEnd(normalizeDateDisplay(initialValues.filter_date_end) ?? '');
     setSortField(initialValues.sort_field ?? 'summary.last_message');
     setSortOrder(initialValues.sort_order ?? 'desc');
   }, [visible, initialValues]);
@@ -210,6 +204,7 @@ export function AdvancedFilterModal({
   useEffect(() => {
     if (!visible) {
       setPickerKind(null);
+      setDatePickerField(null);
     }
   }, [visible]);
 
@@ -225,8 +220,8 @@ export function AdvancedFilterModal({
       filter_name: filterName?.trim() || null,
       filter_phone: filterPhone?.trim() || null,
       filter_protocol: filterProtocol?.trim() || null,
-      filter_date_start: formatDateForApi(filterDateStart, false),
-      filter_date_end: formatDateForApi(filterDateEnd, false),
+      filter_date_start: normalizeBirthdayIso(filterDateStart),
+      filter_date_end: normalizeBirthdayIso(filterDateEnd),
       sort_field: sortField || null,
       sort_order: sortOrder || null,
     });
@@ -334,7 +329,63 @@ export function AdvancedFilterModal({
 
   const openPicker = (kind: Exclude<PickerKind, null>) => {
     dismissKeyboard();
+    setDatePickerField(null);
     setPickerKind(kind);
+  };
+
+  const setDateFieldDisplay = (
+    field: Exclude<DatePickerField, null>,
+    value: string
+  ) => {
+    if (field === 'start') {
+      setFilterDateStart(value);
+      return;
+    }
+
+    setFilterDateEnd(value);
+  };
+
+  const openDatePicker = (field: Exclude<DatePickerField, null>) => {
+    dismissKeyboard();
+    setPickerKind(null);
+
+    const currentIso = normalizeBirthdayIso(
+      field === 'start' ? filterDateStart : filterDateEnd
+    );
+    const initialDate = birthdayIsoToDate(currentIso) ?? new Date();
+
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: initialDate,
+        mode: 'date',
+        display: 'calendar',
+        onChange: (event, date) => {
+          if (event.type !== 'set' || !date) return;
+          const isoDate = dateToBirthdayIso(date);
+          setDateFieldDisplay(field, normalizeDateDisplay(isoDate) ?? '');
+        },
+      });
+      return;
+    }
+
+    setDateDraftDate(initialDate);
+    setDatePickerField(field);
+  };
+
+  const handleDateIosChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (!date) return;
+    setDateDraftDate(date);
+  };
+
+  const handleDatePickerCancel = () => {
+    setDatePickerField(null);
+  };
+
+  const handleDatePickerConfirm = () => {
+    if (!datePickerField) return;
+    const isoDate = dateToBirthdayIso(dateDraftDate);
+    setDateFieldDisplay(datePickerField, normalizeDateDisplay(isoDate) ?? '');
+    setDatePickerField(null);
   };
 
   const closePicker = () => {
@@ -346,6 +397,12 @@ export function AdvancedFilterModal({
       closePicker();
       return;
     }
+
+    if (Platform.OS === 'ios' && datePickerField) {
+      setDatePickerField(null);
+      return;
+    }
+
     onClose();
   };
 
@@ -496,23 +553,55 @@ export function AdvancedFilterModal({
                 <View style={styles.row}>
                   <View style={[styles.field, styles.half]}>
                     <Text style={styles.label}>{pt.filter_date_start}</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder={pt.select_date}
-                      placeholderTextColor={colors.grey500}
-                      value={filterDateStart}
-                      onChangeText={setFilterDateStart}
-                    />
+                    <View style={styles.dateInputWrap}>
+                      <TextInput
+                        style={styles.dateInputField}
+                        placeholder="DD/MM/YYYY"
+                        placeholderTextColor={colors.grey500}
+                        value={filterDateStart}
+                        onChangeText={(value) =>
+                          setFilterDateStart(formatDateInputDisplay(value))
+                        }
+                        keyboardType="number-pad"
+                        maxLength={10}
+                      />
+                      <Pressable
+                        style={styles.datePickerBtn}
+                        onPress={() => openDatePicker('start')}
+                      >
+                        <Ionicons
+                          name="calendar-outline"
+                          size={18}
+                          color={colors.primary}
+                        />
+                      </Pressable>
+                    </View>
                   </View>
                   <View style={[styles.field, styles.half]}>
                     <Text style={styles.label}>{pt.filter_date_end}</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder={pt.select_date}
-                      placeholderTextColor={colors.grey500}
-                      value={filterDateEnd}
-                      onChangeText={setFilterDateEnd}
-                    />
+                    <View style={styles.dateInputWrap}>
+                      <TextInput
+                        style={styles.dateInputField}
+                        placeholder="DD/MM/YYYY"
+                        placeholderTextColor={colors.grey500}
+                        value={filterDateEnd}
+                        onChangeText={(value) =>
+                          setFilterDateEnd(formatDateInputDisplay(value))
+                        }
+                        keyboardType="number-pad"
+                        maxLength={10}
+                      />
+                      <Pressable
+                        style={styles.datePickerBtn}
+                        onPress={() => openDatePicker('end')}
+                      >
+                        <Ionicons
+                          name="calendar-outline"
+                          size={18}
+                          color={colors.primary}
+                        />
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
                 <View style={styles.row}>
@@ -575,6 +664,45 @@ export function AdvancedFilterModal({
             onRequestClose={closePicker}
             onSelectValue={selectPickerValue}
           />
+
+          {Platform.OS === 'ios' && datePickerField ? (
+            <Pressable
+              style={styles.pickerOverlay}
+              onPress={handleDatePickerCancel}
+            >
+              <Pressable
+                style={styles.datePickerCard}
+                onPress={(event) => event.stopPropagation()}
+              >
+                <View style={styles.datePickerHeader}>
+                  <Pressable
+                    style={styles.datePickerHeaderAction}
+                    onPress={handleDatePickerCancel}
+                  >
+                    <Text style={styles.datePickerHeaderActionText}>
+                      {pt.cancel}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.datePickerHeaderAction}
+                    onPress={handleDatePickerConfirm}
+                  >
+                    <Text style={styles.datePickerHeaderActionText}>
+                      {pt.done}
+                    </Text>
+                  </Pressable>
+                </View>
+                <DateTimePicker
+                  value={dateDraftDate}
+                  mode="date"
+                  display="inline"
+                  onChange={handleDateIosChange}
+                  minimumDate={new Date(1900, 0, 1)}
+                  maximumDate={new Date(2100, 11, 31)}
+                />
+              </Pressable>
+            </Pressable>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -646,6 +774,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: 14,
     color: colors.onSurface,
+  },
+  dateInputWrap: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+  },
+  dateInputField: {
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: colors.onSurface,
+  },
+  datePickerBtn: {
+    width: 40,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: colors.grey200,
+  },
+  pickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'flex-end',
+  },
+  datePickerCard: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    overflow: 'hidden',
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  datePickerHeaderAction: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  datePickerHeaderActionText: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
   },
   skeletonWrap: {
     height: 44,

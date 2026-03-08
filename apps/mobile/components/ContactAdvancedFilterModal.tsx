@@ -13,6 +13,10 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -32,6 +36,13 @@ import type {
   ContactSortField,
   ContactSortOrder,
 } from '../types/contact';
+import {
+  birthdayIsoToDate,
+  dateToBirthdayIso,
+  formatDateInputDisplay,
+  normalizeBirthdayIso,
+  normalizeDateDisplay,
+} from '../utils/date';
 import {
   dismissKeyboard,
   dismissKeyboardAnd,
@@ -89,13 +100,6 @@ function formatPhone(value: string | null | undefined): string {
   return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
 }
 
-function normalizeDateInput(value: string): string {
-  const digits = value.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 4) return digits;
-  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
-}
-
 function cleanValue(value: string | null | undefined): string | null {
   if (!value) return null;
   const normalized = value.trim();
@@ -120,6 +124,8 @@ export function ContactAdvancedFilterModal({
   const [loadingLabels, setLoadingLabels] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [pickerKind, setPickerKind] = useState<PickerKind>(null);
+  const [birthdayPickerVisible, setBirthdayPickerVisible] = useState(false);
+  const [birthdayDraftDate, setBirthdayDraftDate] = useState<Date>(new Date());
   const [saving, setSaving] = useState(false);
 
   const [filterLabel, setFilterLabel] = useState<string | null>(null);
@@ -161,7 +167,9 @@ export function ContactAdvancedFilterModal({
     setFilterLastName(initialValues.filter_last_name ?? null);
     setFilterNickname(initialValues.filter_nickname ?? null);
     setFilterEmail(initialValues.filter_email ?? null);
-    setFilterBirthday(initialValues.filter_birthday ?? null);
+    setFilterBirthday(
+      normalizeDateDisplay(initialValues.filter_birthday) ?? null
+    );
     setFilterDocument(
       initialValues.filter_document
         ? formatDocumentByType(initialValues.filter_document, null)
@@ -189,6 +197,7 @@ export function ContactAdvancedFilterModal({
   useEffect(() => {
     if (!visible) {
       setPickerKind(null);
+      setBirthdayPickerVisible(false);
     }
   }, [visible]);
 
@@ -260,7 +269,7 @@ export function ContactAdvancedFilterModal({
       filter_last_name: cleanValue(filterLastName),
       filter_nickname: cleanValue(filterNickname),
       filter_email: cleanValue(filterEmail),
-      filter_birthday: cleanValue(filterBirthday),
+      filter_birthday: normalizeBirthdayIso(filterBirthday),
       filter_document: cleanDigitsValue(filterDocument),
       filter_user_id: cleanValue(filterUserId),
       sort_field: sortField ?? DEFAULT_SORT_FIELD,
@@ -272,7 +281,51 @@ export function ContactAdvancedFilterModal({
 
   const openPicker = (kind: Exclude<PickerKind, null>) => {
     dismissKeyboard();
+    setBirthdayPickerVisible(false);
     setPickerKind(kind);
+  };
+
+  const openBirthdayPicker = () => {
+    dismissKeyboard();
+    setPickerKind(null);
+
+    const initialDate =
+      birthdayIsoToDate(normalizeBirthdayIso(filterBirthday)) ?? new Date();
+
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: initialDate,
+        mode: 'date',
+        display: 'calendar',
+        onChange: (event, date) => {
+          if (event.type !== 'set' || !date) return;
+          const isoDate = dateToBirthdayIso(date);
+          setFilterBirthday(normalizeDateDisplay(isoDate));
+        },
+      });
+      return;
+    }
+
+    setBirthdayDraftDate(initialDate);
+    setBirthdayPickerVisible(true);
+  };
+
+  const handleBirthdayIosChange = (
+    _event: DateTimePickerEvent,
+    date?: Date
+  ) => {
+    if (!date) return;
+    setBirthdayDraftDate(date);
+  };
+
+  const handleBirthdayCancel = () => {
+    setBirthdayPickerVisible(false);
+  };
+
+  const handleBirthdayConfirm = () => {
+    const isoDate = dateToBirthdayIso(birthdayDraftDate);
+    setFilterBirthday(normalizeDateDisplay(isoDate));
+    setBirthdayPickerVisible(false);
   };
 
   const closePicker = () => {
@@ -284,6 +337,12 @@ export function ContactAdvancedFilterModal({
       closePicker();
       return;
     }
+
+    if (Platform.OS === 'ios' && birthdayPickerVisible) {
+      setBirthdayPickerVisible(false);
+      return;
+    }
+
     onClose();
   };
 
@@ -441,15 +500,31 @@ export function ContactAdvancedFilterModal({
                 <View style={styles.row}>
                   <View style={[styles.field, styles.half]}>
                     <Text style={styles.label}>{pt.birthday}</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={filterBirthday ?? ''}
-                      onChangeText={(value) =>
-                        setFilterBirthday(normalizeDateInput(value) || null)
-                      }
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor={colors.grey500}
-                    />
+                    <View style={styles.dateInputWrap}>
+                      <TextInput
+                        style={styles.dateInputField}
+                        value={filterBirthday ?? ''}
+                        onChangeText={(value) =>
+                          setFilterBirthday(
+                            formatDateInputDisplay(value) || null
+                          )
+                        }
+                        placeholder="DD/MM/YYYY"
+                        placeholderTextColor={colors.grey500}
+                        keyboardType="number-pad"
+                        maxLength={10}
+                      />
+                      <Pressable
+                        style={styles.datePickerBtn}
+                        onPress={openBirthdayPicker}
+                      >
+                        <Ionicons
+                          name="calendar-outline"
+                          size={18}
+                          color={colors.primary}
+                        />
+                      </Pressable>
+                    </View>
                   </View>
                   <View style={[styles.field, styles.half]}>
                     <Text style={styles.label}>{pt.document}</Text>
@@ -558,6 +633,45 @@ export function ContactAdvancedFilterModal({
             onRequestClose={closePicker}
             onSelectValue={selectPickerValue}
           />
+
+          {Platform.OS === 'ios' && birthdayPickerVisible ? (
+            <Pressable
+              style={styles.pickerOverlay}
+              onPress={handleBirthdayCancel}
+            >
+              <Pressable
+                style={styles.datePickerCard}
+                onPress={(event) => event.stopPropagation()}
+              >
+                <View style={styles.datePickerHeader}>
+                  <Pressable
+                    style={styles.datePickerHeaderAction}
+                    onPress={handleBirthdayCancel}
+                  >
+                    <Text style={styles.datePickerHeaderActionText}>
+                      {pt.cancel}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.datePickerHeaderAction}
+                    onPress={handleBirthdayConfirm}
+                  >
+                    <Text style={styles.datePickerHeaderActionText}>
+                      {pt.done}
+                    </Text>
+                  </Pressable>
+                </View>
+                <DateTimePicker
+                  value={birthdayDraftDate}
+                  mode="date"
+                  display="inline"
+                  onChange={handleBirthdayIosChange}
+                  minimumDate={new Date(1900, 0, 1)}
+                  maximumDate={new Date(2100, 11, 31)}
+                />
+              </Pressable>
+            </Pressable>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -629,6 +743,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     color: colors.onSurface,
     fontSize: 14,
+  },
+  dateInputWrap: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+  },
+  dateInputField: {
+    flex: 1,
+    height: '100%',
+    paddingHorizontal: 12,
+    color: colors.onSurface,
+    fontSize: 14,
+  },
+  datePickerBtn: {
+    width: 40,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: colors.grey200,
+  },
+  pickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'flex-end',
+  },
+  datePickerCard: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    overflow: 'hidden',
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+  },
+  datePickerHeaderAction: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  datePickerHeaderActionText: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',

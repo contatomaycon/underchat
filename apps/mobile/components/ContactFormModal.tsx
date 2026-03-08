@@ -55,6 +55,7 @@ import {
 import {
   birthdayIsoToDate,
   dateToBirthdayIso,
+  formatDateInputDisplay,
   formatBirthdayDisplay,
   normalizeBirthdayIso,
 } from '../utils/date';
@@ -164,6 +165,7 @@ export function ContactFormModal({
   const [lastName, setLastName] = useState('');
   const [nickname, setNickname] = useState('');
   const [birthdayIso, setBirthdayIso] = useState<string | null>(null);
+  const [birthdayInput, setBirthdayInput] = useState('');
   const [birthdayPickerVisible, setBirthdayPickerVisible] = useState(false);
   const [birthdayDraftDate, setBirthdayDraftDate] = useState<Date>(new Date());
   const [email, setEmail] = useState('');
@@ -220,6 +222,7 @@ export function ContactFormModal({
     setLastName('');
     setNickname('');
     setBirthdayIso(null);
+    setBirthdayInput('');
     setBirthdayPickerVisible(false);
     setBirthdayDraftDate(new Date());
     setEmail('');
@@ -299,7 +302,11 @@ export function ContactFormModal({
           setName(contact.name ?? '');
           setLastName(contact.last_name ?? '');
           setNickname(contact.nickname ?? '');
-          setBirthdayIso(normalizeBirthdayIso(contact.birthday));
+          const normalizedBirthday = normalizeBirthdayIso(contact.birthday);
+          setBirthdayIso(normalizedBirthday);
+          setBirthdayInput(
+            normalizedBirthday ? formatBirthdayDisplay(normalizedBirthday) : ''
+          );
           const displayEmail = contact.email_partial ?? '';
           const isMaskedEmail = isMaskedValue(displayEmail);
           setEmail(displayEmail);
@@ -390,10 +397,6 @@ export function ContactFormModal({
     isEditMode && (isProbablyMaskedPhone(phone) || !!phoneMaskedValue);
   const canToggleDocumentVisibility =
     isEditMode && (isMaskedValue(document) || !!documentMaskedValue);
-  const birthdayDisplay = useMemo(
-    () => formatBirthdayDisplay(birthdayIso),
-    [birthdayIso]
-  );
   const documentPlaceholder = useMemo(() => {
     if (documentTypeId === CONTACT_DOCUMENT_TYPE.cpf) {
       return '000.000.000-00';
@@ -531,7 +534,9 @@ export function ContactFormModal({
   const openBirthdayPicker = () => {
     dismissKeyboard();
 
-    const initialDate = birthdayIsoToDate(birthdayIso) ?? new Date();
+    const initialDate =
+      birthdayIsoToDate(normalizeBirthdayIso(birthdayInput) ?? birthdayIso) ??
+      new Date();
     if (Platform.OS === 'android') {
       DateTimePickerAndroid.open({
         value: initialDate,
@@ -539,7 +544,9 @@ export function ContactFormModal({
         display: 'calendar',
         onChange: (event, date) => {
           if (event.type !== 'set' || !date) return;
-          setBirthdayIso(dateToBirthdayIso(date));
+          const isoDate = dateToBirthdayIso(date);
+          setBirthdayIso(isoDate);
+          setBirthdayInput(formatBirthdayDisplay(isoDate));
         },
       });
       return;
@@ -562,8 +569,16 @@ export function ContactFormModal({
   };
 
   const handleBirthdayConfirm = () => {
-    setBirthdayIso(dateToBirthdayIso(birthdayDraftDate));
+    const isoDate = dateToBirthdayIso(birthdayDraftDate);
+    setBirthdayIso(isoDate);
+    setBirthdayInput(formatBirthdayDisplay(isoDate));
     setBirthdayPickerVisible(false);
+  };
+
+  const handleBirthdayInputChange = (value: string) => {
+    const masked = formatDateInputDisplay(value);
+    setBirthdayInput(masked);
+    setBirthdayIso(normalizeBirthdayIso(masked));
   };
 
   const setPhotoFromAsset = (asset: ImagePicker.ImagePickerAsset) => {
@@ -769,6 +784,7 @@ export function ContactFormModal({
     const normalizedName = name.trim();
     const normalizedPhone = phoneDigits(phone);
     const normalizedPhoneDdi = phoneDdi.trim();
+    const normalizedBirthday = normalizeBirthdayIso(birthdayInput);
     const normalizedDocument = normalizeDocumentDigits(
       document,
       documentTypeId
@@ -836,7 +852,7 @@ export function ContactFormModal({
             phone_ddi: normalizedPhoneDdi,
             phone: phoneValue,
             nickname: nickname.trim() || null,
-            birthday: birthdayIso,
+            birthday: normalizedBirthday,
             notes: notes || null,
             contact_document_type_id: documentTypeId,
             document: documentValue,
@@ -861,7 +877,7 @@ export function ContactFormModal({
             phone_ddi: normalizedPhoneDdi,
             phone: normalizedPhone,
             nickname: nickname.trim() || null,
-            birthday: birthdayIso,
+            birthday: normalizedBirthday,
             notes: notes || null,
             contact_document_type_id: documentTypeId,
             document: normalizedDocument || null,
@@ -1035,20 +1051,27 @@ export function ContactFormModal({
                     <View style={styles.row}>
                       <View style={[styles.field, styles.half]}>
                         <Text style={styles.label}>{pt.birthday}</Text>
-                        <Pressable
-                          style={styles.inputPressable}
-                          onPress={openBirthdayPicker}
-                        >
-                          <Text
-                            style={[
-                              styles.inputPressableText,
-                              !birthdayDisplay &&
-                                styles.inputPressablePlaceholder,
-                            ]}
+                        <View style={styles.inputWithAction}>
+                          <TextInput
+                            style={styles.inputWithActionField}
+                            value={birthdayInput}
+                            onChangeText={handleBirthdayInputChange}
+                            placeholder="DD/MM/YYYY"
+                            placeholderTextColor={colors.grey500}
+                            keyboardType="number-pad"
+                            maxLength={10}
+                          />
+                          <Pressable
+                            style={styles.actionBtn}
+                            onPress={openBirthdayPicker}
                           >
-                            {birthdayDisplay || 'DD/MM/YYYY'}
-                          </Text>
-                        </Pressable>
+                            <Ionicons
+                              name="calendar-outline"
+                              size={18}
+                              color={colors.primary}
+                            />
+                          </Pressable>
+                        </View>
                       </View>
                       <View style={[styles.field, styles.half]}>
                         <Text style={styles.label}>{pt.email}</Text>
