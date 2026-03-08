@@ -9,6 +9,8 @@ export const workerConfigForChatSchema = Type.Object({
   simultaneous_attendance: Type.Union([Type.Number(), Type.Null()]),
   simultaneous_attendance_enabled: Type.Boolean(),
   has_ura_output: Type.Boolean(),
+  ai_agent_enabled: Type.Boolean(),
+  ai_agent_id: Type.Union([Type.String(), Type.Null()]),
 });
 
 export const viewWorkerConfigForChatResponseSchema = Type.Union([

@@ -16,16 +16,21 @@ export class WorkerConfigForChatViewerRepository {
   viewWorkerConfigForChatByWorkerId = async (
     workerId: string
   ): Promise<ViewWorkerConfigForChatResponse> => {
-    const [configMap, chatbotOutputConfig] = await Promise.all([
+    const [configMap, chatbotOutputConfig, aiAgentConfig] = await Promise.all([
       this.fetchActiveConfigs(workerId),
       this.fetchChatbotOutputConfig(workerId),
+      this.fetchAiAgentConfig(workerId),
     ]);
 
     if (configMap.size === 0) {
       return null;
     }
 
-    return this.buildConfigForChat(configMap, chatbotOutputConfig);
+    return this.buildConfigForChat(
+      configMap,
+      chatbotOutputConfig,
+      aiAgentConfig
+    );
   };
 
   private async fetchChatbotOutputConfig(
@@ -85,7 +90,8 @@ export class WorkerConfigForChatViewerRepository {
 
   private buildConfigForChat(
     configMap: Map<EWorkerConfigType, string | null>,
-    chatbotOutputConfig: { chatbotId: string | null; statusId: string } | null
+    chatbotOutputConfig: { chatbotId: string | null; statusId: string } | null,
+    aiAgentConfig: { aiAgentId: string | null; enabled: boolean }
   ): ViewWorkerConfigForChatResponse {
     const simultaneousAttendance = this.parseNumber(
       configMap.get(EWorkerConfigType.simultaneous_attendance)
@@ -123,6 +129,39 @@ export class WorkerConfigForChatViewerRepository {
       simultaneous_attendance_enabled:
         simultaneousAttendance !== null && simultaneousAttendance > 0,
       has_ura_output: hasUraOutput,
+      ai_agent_enabled: aiAgentConfig.enabled,
+      ai_agent_id: aiAgentConfig.aiAgentId,
+    };
+  }
+
+  private async fetchAiAgentConfig(
+    workerId: string
+  ): Promise<{ aiAgentId: string | null; enabled: boolean }> {
+    const result = await this.dbRo
+      .select({
+        ai_agent_id: workerConfig.ai_agent_id,
+        worker_config_status_id: workerConfig.worker_config_status_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_type_id, EWorkerConfigType.ai_agent_id)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    const row = result[0];
+    if (!row) {
+      return { aiAgentId: null, enabled: false };
+    }
+
+    return {
+      aiAgentId: row.ai_agent_id ?? null,
+      enabled:
+        row.worker_config_status_id === EWorkerConfigStatus.active &&
+        !!row.ai_agent_id,
     };
   }
 

@@ -493,6 +493,20 @@ const onReply = (m: ListMessageResult) => {
   );
 };
 
+const onGenerateAiReply = (m: ListMessageResult) => {
+  if (isDeleted(m)) return;
+  globalThis.dispatchEvent(
+    new CustomEvent('open-ai-reply-modal', { detail: m })
+  );
+};
+
+const onTranscribeAudio = (m: ListMessageResult) => {
+  if (isDeleted(m)) return;
+  globalThis.dispatchEvent(
+    new CustomEvent('open-transcribe-modal', { detail: m })
+  );
+};
+
 const onCopy = async (m: ListMessageResult) => {
   if (isDeleted(m)) return;
 
@@ -3115,6 +3129,30 @@ onUnmounted(() => {
                             <VIcon size="18">tabler-mood-smile</VIcon>
                           </template>
                           <VListItemTitle>Reagir</VListItemTitle>
+                        </VListItem>
+
+                        <VListItem
+                          v-if="
+                            item.message.content?.type === EMessageType.audio &&
+                            item.message.content?.audio?.url
+                          "
+                          @click="onTranscribeAudio(item.message)"
+                        >
+                          <template #prepend>
+                            <VIcon size="18">tabler-writing</VIcon>
+                          </template>
+                          <VListItemTitle>{{
+                            t('chat_action_transcribe')
+                          }}</VListItemTitle>
+                        </VListItem>
+
+                        <VListItem @click="onGenerateAiReply(item.message)">
+                          <template #prepend>
+                            <VIcon size="18">tabler-robot</VIcon>
+                          </template>
+                          <VListItemTitle>{{
+                            t('chat_action_ai_reply')
+                          }}</VListItemTitle>
                         </VListItem>
 
                         <VListItem

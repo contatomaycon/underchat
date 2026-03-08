@@ -62,6 +62,7 @@ export const audioSchema = Type.Object({
   ptt: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   view_once: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   waveform: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  transcription: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const documentSchema = Type.Object({

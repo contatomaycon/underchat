@@ -149,6 +149,7 @@ export interface MessageContentAudio {
   ptt?: boolean | null;
   view_once?: boolean | null;
   waveform?: string | null;
+  transcription?: string | null;
 }
 
 export interface MessageContentLinkPreview {

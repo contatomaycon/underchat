@@ -26,6 +26,8 @@ import {
 import type { ListChatWorkersResponse } from '@core/schema/chat/listChatWorkers/response.schema';
 import type { ListChatUsersResponse } from '@core/schema/chat/listChatUsers/response.schema';
 import type { ListChatSectorsResponse } from '@core/schema/chat/listChatSectors/response.schema';
+import type { GenerateAiReplyResponse } from '@core/schema/chat/generateAiReply/response.schema';
+import type { TranscribeAudioResponse } from '@core/schema/chat/transcribeAudio/response.schema';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
@@ -5735,6 +5737,74 @@ export const useChatStore = defineStore('chat', {
 
         return data.data;
       } catch {
+        return null;
+      }
+    },
+
+    async generateAiReply(
+      chatId: string,
+      messageId: string,
+      responseType: 'text' | 'audio',
+      instructions?: string | null
+    ): Promise<GenerateAiReplyResponse | null> {
+      if (!chatId || !messageId) return null;
+
+      try {
+        const response = await axios.post<
+          IApiResponse<GenerateAiReplyResponse>
+        >(`/chat/${chatId}/ai-generate`, {
+          message_id: messageId,
+          response_type: responseType,
+          instructions: instructions || undefined,
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_ai_reply_error');
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('chat_ai_reply_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+
+    async transcribeAudio(
+      chatId: string,
+      messageId: string
+    ): Promise<TranscribeAudioResponse | null> {
+      if (!chatId || !messageId) return null;
+
+      try {
+        const response = await axios.post<
+          IApiResponse<TranscribeAudioResponse>
+        >(`/chat/${chatId}/message/${messageId}/transcribe`, {});
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_transcribe_error');
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('chat_transcribe_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
         return null;
       }
     },

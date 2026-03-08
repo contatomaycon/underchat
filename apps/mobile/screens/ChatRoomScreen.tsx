@@ -126,6 +126,8 @@ import {
   forwardMessage,
   type MessageForwardPayload,
   type ChatContactLookupResult,
+  generateAiReply,
+  transcribeAudioMessage,
 } from '../api/chatApi';
 import {
   addChatSocketListener,
@@ -576,7 +578,9 @@ type MessageActionKey =
   | 'react'
   | 'edit'
   | 'view_edits'
-  | 'delete';
+  | 'delete'
+  | 'transcribe'
+  | 'ai_reply';
 
 type MessageAction = {
   key: MessageActionKey;
@@ -5293,6 +5297,27 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [forwardModalVisible, setForwardModalVisible] = useState(false);
   const [forwardSourceMessage, setForwardSourceMessage] =
     useState<ListMessageResult | null>(null);
+  const [aiReplyTarget, setAiReplyTarget] = useState<ListMessageResult | null>(
+    null
+  );
+  const [aiReplyResponseType, setAiReplyResponseType] = useState<
+    'text' | 'audio'
+  >('text');
+  const [aiReplyInstructions, setAiReplyInstructions] = useState('');
+  const [aiReplyGenerating, setAiReplyGenerating] = useState(false);
+  const [aiReplyResult, setAiReplyResult] = useState<{
+    text: string;
+    audio_url?: string | null;
+    audio_duration?: number | null;
+  } | null>(null);
+  const [aiReplyError, setAiReplyError] = useState(false);
+  const [transcribeTarget, setTranscribeTarget] =
+    useState<ListMessageResult | null>(null);
+  const [transcribeResult, setTranscribeResult] = useState<string | null>(null);
+  const [transcribeCached, setTranscribeCached] = useState(false);
+  const [transcribeLoading, setTranscribeLoading] = useState(false);
+  const [transcribeError, setTranscribeError] = useState(false);
+
   const [forwardStatus, setForwardStatus] =
     useState<ForwardStatusType>('in_chat');
   const [forwardSearch, setForwardSearch] = useState('');
@@ -7393,7 +7418,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         setSearchCurrentPage(response.pagings.current_page);
         setSearchTotalPages(response.pagings.total_pages);
       } catch {
-        // Keep current results on transient failures.
       } finally {
         if (reset) {
           setSearchLoading(false);
@@ -8374,9 +8398,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           .filter((item): item is string => typeof item === 'string')
           .slice(0, 40);
         setRecentReactionEmojis(sanitized);
-      } catch {
-        // noop
-      }
+      } catch {}
     };
 
     void loadRecentReactions();
@@ -8386,9 +8408,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     void AsyncStorage.setItem(
       REACTION_RECENT_STORAGE_KEY,
       JSON.stringify(recentReactionEmojis.slice(0, 40))
-    ).catch(() => {
-      // noop
-    });
+    ).catch(() => {});
   }, [recentReactionEmojis]);
 
   const closeMessageOverlay = useCallback(() => {
@@ -8714,6 +8734,34 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
+    if (
+      canInteract &&
+      target.content?.type === EMessageType.audio &&
+      target.content?.audio?.url
+    ) {
+      actions.push({
+        key: 'transcribe',
+        label: pt.chat_action_transcribe,
+        icon: 'document-text-outline',
+        onPress: () => {
+          setTranscribeTarget(target);
+          closeMessageOverlay();
+        },
+      });
+    }
+
+    if (canInteract) {
+      actions.push({
+        key: 'ai_reply',
+        label: pt.chat_action_ai_reply,
+        icon: 'sparkles-outline',
+        onPress: () => {
+          setAiReplyTarget(target);
+          closeMessageOverlay();
+        },
+      });
+    }
+
     if (canInteract && canForwardMessage(target)) {
       actions.push({
         key: 'forward',
@@ -8935,6 +8983,190 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     savingEditedMessage,
   ]);
 
+  const sendTextPayload = useCallback(
+    async (
+      rawText: string,
+      options?: {
+        quickMessageTemplateId?: string | null;
+      }
+    ) => {
+      const text = rawText.trim();
+      if (!text || sending || !canComposeInChat) return false;
+      const replyMessageId = replyMessageTarget?.message_id;
+      const firstUrl = extractFirstUrl(text);
+      if (replyMessageId) {
+        setReplyMessageTarget(null);
+      }
+
+      setSending(true);
+      try {
+        let linkPreviewPayload: MessageContentLinkPreview | null = null;
+        if (firstUrl) {
+          linkPreviewPayload = await generateLinkPreview(firstUrl);
+        }
+
+        const result = await createMessage(
+          chatInfo.chat_id,
+          EMessageType.text,
+          text,
+          replyMessageId,
+          hasMeaningfulLinkPreview(linkPreviewPayload)
+            ? linkPreviewPayload
+            : undefined,
+          options?.quickMessageTemplateId
+        );
+        if (!result.ok) {
+          return false;
+        }
+
+        pendingScrollToBottomRef.current = true;
+        setShowScrollToBottomButton(false);
+        const createdMessage = result.message;
+        if (createdMessage) {
+          setMessages((prev) => mergeMessageLists(prev, createdMessage));
+        } else {
+          await syncLatestMessages();
+        }
+        requestAnimationFrame(() => {
+          scrollToBottomWithRetries(10);
+        });
+        return true;
+      } finally {
+        setSending(false);
+      }
+      return false;
+    },
+    [
+      canComposeInChat,
+      chatInfo.chat_id,
+      replyMessageTarget?.message_id,
+      sending,
+      scrollToBottomWithRetries,
+      syncLatestMessages,
+    ]
+  );
+
+  const handleGenerateAiReply = useCallback(async () => {
+    const target = aiReplyTarget;
+    if (!target || aiReplyGenerating) return;
+
+    setAiReplyGenerating(true);
+    setAiReplyError(false);
+    setAiReplyResult(null);
+
+    const result = await generateAiReply(
+      chatInfo.chat_id,
+      target.message_id,
+      aiReplyResponseType,
+      aiReplyInstructions.trim() || undefined
+    );
+
+    setAiReplyGenerating(false);
+
+    if (result) {
+      setAiReplyResult(result);
+    } else {
+      setAiReplyError(true);
+    }
+  }, [
+    aiReplyTarget,
+    aiReplyGenerating,
+    aiReplyResponseType,
+    aiReplyInstructions,
+    chatInfo.chat_id,
+  ]);
+
+  const handleSendAiReply = useCallback(async () => {
+    if (!aiReplyResult) return;
+
+    if (aiReplyResult.audio_url) {
+      try {
+        const response = await fetch(aiReplyResult.audio_url);
+        if (!response.ok) throw new Error('Failed to fetch audio');
+        const blob = await response.blob();
+        const mimeType = blob.type || 'audio/mpeg';
+        const formData = new FormData();
+        formData.append('type', EMessageType.audio);
+        formData.append('audio_ptt', 'true');
+        if (aiReplyResult.audio_duration) {
+          formData.append(
+            'audio_duration',
+            String(Math.round(aiReplyResult.audio_duration))
+          );
+        }
+        formData.append('hash', `ai-audio-${Date.now()}-${Math.random()}`);
+        (formData as any).append('audios', {
+          uri: aiReplyResult.audio_url,
+          name: `ai-audio-${Date.now()}.mp3`,
+          type: mimeType,
+        });
+        await createMessageWithFormData(chatInfo.chat_id, formData);
+      } catch {
+        Alert.alert(pt.error_title, pt.chat_ai_reply_send_audio_error);
+      }
+    } else {
+      await sendTextPayload(aiReplyResult.text);
+    }
+
+    setAiReplyTarget(null);
+    setAiReplyResult(null);
+    setAiReplyInstructions('');
+    setAiReplyResponseType('text');
+  }, [aiReplyResult, chatInfo.chat_id, sendTextPayload]);
+
+  const closeAiReplyModal = useCallback(() => {
+    if (aiReplyGenerating) return;
+    setAiReplyTarget(null);
+    setAiReplyResult(null);
+    setAiReplyInstructions('');
+    setAiReplyResponseType('text');
+    setAiReplyError(false);
+  }, [aiReplyGenerating]);
+
+  const handleStartTranscription = useCallback(async () => {
+    const target = transcribeTarget;
+    if (!target) return;
+
+    const existing = target.content?.audio?.transcription;
+    if (existing) {
+      setTranscribeResult(existing);
+      setTranscribeCached(true);
+      return;
+    }
+
+    setTranscribeLoading(true);
+    setTranscribeError(false);
+    setTranscribeResult(null);
+
+    const result = await transcribeAudioMessage(
+      chatInfo.chat_id,
+      target.message_id
+    );
+
+    setTranscribeLoading(false);
+
+    if (result) {
+      setTranscribeResult(result.transcription);
+      setTranscribeCached(result.cached);
+    } else {
+      setTranscribeError(true);
+    }
+  }, [transcribeTarget, chatInfo.chat_id]);
+
+  const closeTranscribeModal = useCallback(() => {
+    if (transcribeLoading) return;
+    setTranscribeTarget(null);
+    setTranscribeResult(null);
+    setTranscribeCached(false);
+    setTranscribeError(false);
+  }, [transcribeLoading]);
+
+  useEffect(() => {
+    if (transcribeTarget) {
+      void handleStartTranscription();
+    }
+  }, [transcribeTarget]);
+
   const toggleForwardTarget = useCallback((targetId: string) => {
     setForwardSelectedIds((previous) => {
       if (previous.includes(targetId)) {
@@ -9010,7 +9242,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           allowsRecording: true,
           playsInSilentMode: true,
           interruptionMode: 'duckOthers',
-          // Avoid passing `undefined` values on Android native module.
           shouldPlayInBackground: false,
           shouldRouteThroughEarpiece: false,
           allowsBackgroundRecording: false,
@@ -9026,9 +9257,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         shouldRouteThroughEarpiece: false,
         allowsBackgroundRecording: false,
       });
-    } catch {
-      //
-    }
+    } catch {}
   }, []);
 
   const stopVoiceRecorder = useCallback(async () => {
@@ -9235,7 +9464,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [discardVoiceRecording]);
 
   const cancelVoiceRecording = useCallback(async () => {
-    // Invalidate any in-flight `startVoiceRecording` so it can't "finish" after cancel.
     recordingStartTokenRef.current += 1;
 
     try {
@@ -11173,69 +11401,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ]
   );
 
-  const sendTextPayload = useCallback(
-    async (
-      rawText: string,
-      options?: {
-        quickMessageTemplateId?: string | null;
-      }
-    ) => {
-      const text = rawText.trim();
-      if (!text || sending || !canComposeInChat) return false;
-      const replyMessageId = replyMessageTarget?.message_id;
-      const firstUrl = extractFirstUrl(text);
-      if (replyMessageId) {
-        setReplyMessageTarget(null);
-      }
-
-      setSending(true);
-      try {
-        let linkPreviewPayload: MessageContentLinkPreview | null = null;
-        if (firstUrl) {
-          linkPreviewPayload = await generateLinkPreview(firstUrl);
-        }
-
-        const result = await createMessage(
-          chatInfo.chat_id,
-          EMessageType.text,
-          text,
-          replyMessageId,
-          hasMeaningfulLinkPreview(linkPreviewPayload)
-            ? linkPreviewPayload
-            : undefined,
-          options?.quickMessageTemplateId
-        );
-        if (!result.ok) {
-          return false;
-        }
-
-        pendingScrollToBottomRef.current = true;
-        setShowScrollToBottomButton(false);
-        const createdMessage = result.message;
-        if (createdMessage) {
-          setMessages((prev) => mergeMessageLists(prev, createdMessage));
-        } else {
-          await syncLatestMessages();
-        }
-        requestAnimationFrame(() => {
-          scrollToBottomWithRetries(10);
-        });
-        return true;
-      } finally {
-        setSending(false);
-      }
-      return false;
-    },
-    [
-      canComposeInChat,
-      chatInfo.chat_id,
-      replyMessageTarget?.message_id,
-      sending,
-      scrollToBottomWithRetries,
-      syncLatestMessages,
-    ]
-  );
-
   const sendQuickMessageTemplate = useCallback(
     async (template: QuickMessageTemplate, messageOverride?: string | null) => {
       if (!canComposeInChat || sendingQuickMessage) return false;
@@ -12729,9 +12894,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                       currentUserName={currentUserName}
                       highlighted
                       canInteract={false}
-                      onOpenActions={() => {
-                        // noop
-                      }}
+                      onOpenActions={() => {}}
                       onPressQuoted={null}
                       resolvedContactDisplay={
                         resolvedContactCards[messageActionTarget.message_id]
@@ -13818,6 +13981,390 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         <Text style={styles.modalHintText}>
           {pt.annotation_max_characters.replace('{count}', '5000')}
         </Text>
+      </BottomSheetModal>
+
+      {/* AI Reply Modal */}
+      <BottomSheetModal
+        visible={aiReplyTarget !== null}
+        onClose={closeAiReplyModal}
+        title={pt.chat_ai_reply_title}
+        cardStyle={styles.annotationSheetCard}
+        avoidKeyboard
+        footer={
+          aiReplyResult ? (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable
+                style={[styles.secondaryBtn, { flex: 1 }]}
+                onPress={dismissKeyboardAnd(closeAiReplyModal)}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.secondaryBtn, { flex: 1 }]}
+                onPress={dismissKeyboardAnd(() => {
+                  setAiReplyResult(null);
+                  setAiReplyError(false);
+                })}
+              >
+                <Text style={styles.secondaryBtnText}>
+                  {pt.chat_ai_reply_regenerate}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.primaryBtn, { flex: 1 }]}
+                onPress={dismissKeyboardAnd(() => {
+                  void handleSendAiReply();
+                })}
+              >
+                <Text style={styles.primaryBtnText}>{pt.send}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable
+                style={[styles.secondaryBtn, { flex: 1 }]}
+                onPress={dismissKeyboardAnd(closeAiReplyModal)}
+                disabled={aiReplyGenerating}
+              >
+                <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.primaryBtn,
+                  { flex: 1 },
+                  aiReplyGenerating && styles.sendBtnDisabled,
+                ]}
+                onPress={dismissKeyboardAnd(() => {
+                  void handleGenerateAiReply();
+                })}
+                disabled={aiReplyGenerating}
+              >
+                {aiReplyGenerating ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>
+                    {pt.chat_ai_reply_generate}
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          )
+        }
+      >
+        {/* Reference message preview */}
+        <View
+          style={{
+            backgroundColor: colors.grey200,
+            borderRadius: 8,
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 11,
+              color: colors.grey500,
+              marginBottom: 4,
+            }}
+          >
+            {pt.chat_ai_reply_reference_message}
+          </Text>
+          <Text
+            style={{ fontSize: 14, color: colors.grey900 }}
+            numberOfLines={3}
+          >
+            {aiReplyTarget?.content?.message ||
+              (aiReplyTarget?.content?.type === 'audio'
+                ? `🎤 ${pt.audio}`
+                : pt.chat_ai_reply_message)}
+          </Text>
+        </View>
+
+        {/* Response type selector */}
+        <View style={{ marginBottom: 12 }}>
+          <Text
+            style={{
+              fontSize: 13,
+              color: colors.grey600,
+              marginBottom: 6,
+            }}
+          >
+            {pt.chat_ai_reply_response_type}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable
+              style={{
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor:
+                  aiReplyResponseType === 'text'
+                    ? colors.primary
+                    : colors.grey300,
+                backgroundColor:
+                  aiReplyResponseType === 'text'
+                    ? colors.primary + '15'
+                    : 'transparent',
+                alignItems: 'center',
+              }}
+              onPress={() => setAiReplyResponseType('text')}
+              disabled={aiReplyGenerating || !!aiReplyResult}
+            >
+              <Text
+                style={{
+                  color:
+                    aiReplyResponseType === 'text'
+                      ? colors.primary
+                      : colors.grey600,
+                  fontWeight: '600',
+                }}
+              >
+                {pt.chat_ai_reply_type_text}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={{
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor:
+                  aiReplyResponseType === 'audio'
+                    ? colors.primary
+                    : colors.grey300,
+                backgroundColor:
+                  aiReplyResponseType === 'audio'
+                    ? colors.primary + '15'
+                    : 'transparent',
+                alignItems: 'center',
+              }}
+              onPress={() => setAiReplyResponseType('audio')}
+              disabled={aiReplyGenerating || !!aiReplyResult}
+            >
+              <Text
+                style={{
+                  color:
+                    aiReplyResponseType === 'audio'
+                      ? colors.primary
+                      : colors.grey600,
+                  fontWeight: '600',
+                }}
+              >
+                {pt.chat_ai_reply_type_audio}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Instructions input */}
+        <TextInput
+          value={aiReplyInstructions}
+          onChangeText={setAiReplyInstructions}
+          style={styles.annotationInput}
+          placeholder={pt.chat_ai_reply_instructions_placeholder}
+          placeholderTextColor={colors.grey500}
+          multiline
+          maxLength={1000}
+          editable={!aiReplyGenerating && !aiReplyResult}
+        />
+
+        {/* Generating indicator */}
+        {aiReplyGenerating && (
+          <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text
+              style={{
+                marginTop: 8,
+                fontSize: 13,
+                color: colors.grey500,
+              }}
+            >
+              {pt.chat_ai_reply_generating}
+            </Text>
+          </View>
+        )}
+
+        {/* Error */}
+        {aiReplyError && !aiReplyGenerating && (
+          <View
+            style={{
+              backgroundColor: '#FEE2E2',
+              borderRadius: 8,
+              padding: 12,
+              marginTop: 8,
+            }}
+          >
+            <Text style={{ color: '#DC2626', fontSize: 13 }}>
+              {pt.chat_ai_reply_error}
+            </Text>
+          </View>
+        )}
+
+        {/* Result preview */}
+        {aiReplyResult && (
+          <View style={{ marginTop: 12 }}>
+            <Text
+              style={{
+                fontSize: 11,
+                color: colors.grey500,
+                marginBottom: 6,
+              }}
+            >
+              {pt.chat_ai_reply_preview}
+            </Text>
+            <View
+              style={{
+                backgroundColor: colors.grey200,
+                borderRadius: 8,
+                padding: 12,
+              }}
+            >
+              <Text style={{ fontSize: 14, color: colors.grey900 }}>
+                {aiReplyResult.text}
+              </Text>
+              {aiReplyResult.audio_url ? (
+                <View
+                  style={{
+                    marginTop: 8,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <Ionicons
+                    name="volume-medium-outline"
+                    size={16}
+                    color={colors.primary}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: colors.primary,
+                    }}
+                  >
+                    {pt.chat_ai_reply_audio_attached}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        )}
+      </BottomSheetModal>
+
+      {/* Transcribe Modal */}
+      <BottomSheetModal
+        visible={transcribeTarget !== null}
+        onClose={closeTranscribeModal}
+        title={pt.chat_transcribe_title}
+        cardStyle={styles.annotationSheetCard}
+        footer={
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {transcribeResult ? (
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => {
+                  if (transcribeResult) {
+                    void Clipboard.setStringAsync(transcribeResult);
+                    Alert.alert('', pt.chat_transcribe_copied);
+                  }
+                }}
+              >
+                <Text style={styles.secondaryBtnText}>
+                  {pt.chat_transcribe_copy}
+                </Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={closeTranscribeModal}
+              disabled={transcribeLoading}
+            >
+              <Text style={styles.secondaryBtnText}>{pt.close}</Text>
+            </Pressable>
+          </View>
+        }
+      >
+        {transcribeLoading && (
+          <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text
+              style={{
+                marginTop: 8,
+                fontSize: 13,
+                color: colors.grey500,
+              }}
+            >
+              {pt.chat_transcribe_processing}
+            </Text>
+          </View>
+        )}
+
+        {transcribeError && !transcribeLoading && (
+          <View
+            style={{
+              backgroundColor: '#FEE2E2',
+              borderRadius: 8,
+              padding: 12,
+            }}
+          >
+            <Text style={{ color: '#DC2626', fontSize: 13 }}>
+              {pt.chat_transcribe_error}
+            </Text>
+            <Pressable
+              style={{
+                marginTop: 8,
+                paddingVertical: 6,
+                paddingHorizontal: 12,
+                backgroundColor: '#DC2626',
+                borderRadius: 6,
+                alignSelf: 'flex-start',
+              }}
+              onPress={() => void handleStartTranscription()}
+            >
+              <Text style={{ color: '#fff', fontSize: 13 }}>
+                {pt.chat_transcribe_retry}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
+        {transcribeResult && (
+          <View>
+            {transcribeCached && (
+              <View
+                style={{
+                  backgroundColor: colors.primary + '20',
+                  paddingHorizontal: 8,
+                  paddingVertical: 3,
+                  borderRadius: 4,
+                  alignSelf: 'flex-start',
+                  marginBottom: 8,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 11,
+                    color: colors.primary,
+                  }}
+                >
+                  {pt.chat_transcribe_cached}
+                </Text>
+              </View>
+            )}
+            <View
+              style={{
+                backgroundColor: colors.grey200,
+                borderRadius: 8,
+                padding: 12,
+              }}
+            >
+              <Text style={{ fontSize: 14, color: colors.grey900 }}>
+                {transcribeResult}
+              </Text>
+            </View>
+          </View>
+        )}
       </BottomSheetModal>
 
       <BottomSheetModal

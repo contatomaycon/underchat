@@ -12,6 +12,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AiReplyModal: typeof import('./src/components/chat/AiReplyModal.vue')['default']
     AppAccountExclusivePlans: typeof import('./src/components/account/AppAccountExclusivePlans.vue')['default']
     AppAccountInfo: typeof import('./src/components/account/AppAccountInfo.vue')['default']
     AppAccountInfoInline: typeof import('./src/components/account/AppAccountInfoInline.vue')['default']
@@ -163,12 +164,14 @@ declare module 'vue' {
     TheCustomizer: typeof import('./src/@webcore/components/TheCustomizer.vue')['default']
     ThemeSwitcher: typeof import('./src/@webcore/components/ThemeSwitcher.vue')['default']
     TiptapEditor: typeof import('./src/@webcore/components/TiptapEditor.vue')['default']
+    TranscribeModal: typeof import('./src/components/chat/TranscribeModal.vue')['default']
     VDialogHandler: typeof import('./src/components/VDialogHandler.vue')['default']
   }
 }
 
 // For TSX support
 declare global {
+  const AiReplyModal: typeof import('./src/components/chat/AiReplyModal.vue')['default']
   const AppAccountExclusivePlans: typeof import('./src/components/account/AppAccountExclusivePlans.vue')['default']
   const AppAccountInfo: typeof import('./src/components/account/AppAccountInfo.vue')['default']
   const AppAccountInfoInline: typeof import('./src/components/account/AppAccountInfoInline.vue')['default']
@@ -320,5 +323,6 @@ declare global {
   const TheCustomizer: typeof import('./src/@webcore/components/TheCustomizer.vue')['default']
   const ThemeSwitcher: typeof import('./src/@webcore/components/ThemeSwitcher.vue')['default']
   const TiptapEditor: typeof import('./src/@webcore/components/TiptapEditor.vue')['default']
+  const TranscribeModal: typeof import('./src/components/chat/TranscribeModal.vue')['default']
   const VDialogHandler: typeof import('./src/components/VDialogHandler.vue')['default']
 }

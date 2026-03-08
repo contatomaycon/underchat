@@ -297,6 +297,9 @@ export const mensageMappings = () => {
                     waveform: {
                       type: 'keyword',
                     },
+                    transcription: {
+                      type: 'text',
+                    },
                   },
                 },
                 sticker: {
@@ -519,6 +522,9 @@ export const mensageMappings = () => {
                 },
                 waveform: {
                   type: 'keyword',
+                },
+                transcription: {
+                  type: 'text',
                 },
               },
             },

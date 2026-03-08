@@ -29,6 +29,8 @@ import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
 import ChatProtocolBadgeDialog from '@/components/chat/ChatProtocolBadgeDialog.vue';
 import ChatQueueStatusBanner from '@/components/chat/ChatQueueStatusBanner.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
+import AiReplyModal from '@/components/chat/AiReplyModal.vue';
+import TranscribeModal from '@/components/chat/TranscribeModal.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
@@ -826,6 +828,11 @@ const activePrimaryUserIdForTransfer = computed(
 );
 
 const isLabelModalOpen = ref(false);
+
+const isAiReplyModalOpen = ref(false);
+const aiReplyTargetMessage = ref<ListMessageResult | null>(null);
+const isTranscribeModalOpen = ref(false);
+const transcribeTargetMessage = ref<ListMessageResult | null>(null);
 
 const formatChannelNumber = (number?: string | null): string | null => {
   if (!number) return null;
@@ -4872,6 +4879,54 @@ const onOpenEditContactModal = (e: Event) => {
   }
 };
 
+const onOpenAiReplyModal = (e: Event) => {
+  const customEvent = e as CustomEvent;
+  const message = customEvent.detail as ListMessageResult;
+  if (message) {
+    aiReplyTargetMessage.value = message;
+    isAiReplyModalOpen.value = true;
+  }
+};
+
+const onOpenTranscribeModal = (e: Event) => {
+  const customEvent = e as CustomEvent;
+  const message = customEvent.detail as ListMessageResult;
+  if (message) {
+    transcribeTargetMessage.value = message;
+    isTranscribeModalOpen.value = true;
+  }
+};
+
+const onAiReplySend = async (
+  text: string,
+  audioUrl?: string,
+  audioDuration?: number
+) => {
+  if (!text || !hasActiveChat()) return;
+  if (isQueueOrUraStatus.value) return;
+
+  if (audioUrl) {
+    try {
+      const response = await fetch(audioUrl);
+      if (!response.ok) throw new Error('Failed to fetch audio');
+      const blob = await response.blob();
+      const mimeType = blob.type || 'audio/mpeg';
+      await sendAudioMessage(
+        blob,
+        mimeType,
+        audioDuration ?? null,
+        false,
+        null,
+        null
+      );
+    } catch {
+      chatStore.showSnackbar(t('chat_ai_reply_send_audio_error'), EColor.error);
+    }
+  } else {
+    await sendTextMessage(text);
+  }
+};
+
 const focusComposer = () => {
   setTimeout(() => {
     const el = composerRef.value?.$el?.querySelector(
@@ -5484,6 +5539,14 @@ onMounted(async () => {
     'send-template-button',
     onSendTemplateButton as EventListener
   );
+  globalThis.addEventListener(
+    'open-ai-reply-modal',
+    onOpenAiReplyModal as EventListener
+  );
+  globalThis.addEventListener(
+    'open-transcribe-modal',
+    onOpenTranscribeModal as EventListener
+  );
 
   const handleResize = () => {
     requestAnimationFrame(() => {
@@ -5521,6 +5584,14 @@ onUnmounted(async () => {
   globalThis.removeEventListener(
     'send-template-button',
     onSendTemplateButton as EventListener
+  );
+  globalThis.removeEventListener(
+    'open-ai-reply-modal',
+    onOpenAiReplyModal as EventListener
+  );
+  globalThis.removeEventListener(
+    'open-transcribe-modal',
+    onOpenTranscribeModal as EventListener
   );
 
   if (resizeHandler.value) {
@@ -6815,6 +6886,17 @@ onBeforeUnmount(() => {
   />
 
   <ChatLabelModal v-model="isLabelModalOpen" />
+
+  <AiReplyModal
+    v-model="isAiReplyModalOpen"
+    :message="aiReplyTargetMessage"
+    @send="onAiReplySend"
+  />
+
+  <TranscribeModal
+    v-model="isTranscribeModalOpen"
+    :message="transcribeTargetMessage"
+  />
 
   <VSnackbar
     v-model="chatStore.snackbar.status"

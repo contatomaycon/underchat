@@ -1495,6 +1495,48 @@ export async function startChatWithContact(
   return res?.data ?? null;
 }
 
+export interface GenerateAiReplyResult {
+  text: string;
+  audio_url?: string | null;
+  audio_duration?: number | null;
+}
+
+export async function generateAiReply(
+  chatId: string,
+  messageId: string,
+  responseType: 'text' | 'audio',
+  instructions?: string | null
+): Promise<GenerateAiReplyResult | null> {
+  const payload: Record<string, unknown> = {
+    message_id: messageId,
+    response_type: responseType,
+  };
+  if (instructions?.trim()) {
+    payload.instructions = instructions.trim();
+  }
+  const res = await apiPost<GenerateAiReplyResult>(
+    `/chat/${chatId}/ai-generate`,
+    payload
+  );
+  return res?.data ?? null;
+}
+
+export interface TranscribeAudioResult {
+  transcription: string;
+  cached: boolean;
+}
+
+export async function transcribeAudioMessage(
+  chatId: string,
+  messageId: string
+): Promise<TranscribeAudioResult | null> {
+  const res = await apiPost<TranscribeAudioResult>(
+    `/chat/${chatId}/message/${messageId}/transcribe`,
+    {}
+  );
+  return res?.data ?? null;
+}
+
 export type {
   ContactListFilters,
   ContactSortField,

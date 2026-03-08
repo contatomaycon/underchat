@@ -44,6 +44,8 @@ import { listChatSectors } from './methods/listChatSectors';
 import { removeChatContactLabelTemplate } from './methods/removeContactLabelTemplate';
 import { listChatContactChannels } from './methods/listContactChannels';
 import { viewChatContactChannelsByContactId } from './methods/viewContactChannelsByContactId';
+import { generateAiReply } from './methods/generateAiReply';
+import { transcribeAudio } from './methods/transcribeAudio';
 
 @injectable()
 class ChatController {
@@ -92,6 +94,8 @@ class ChatController {
   public removeContactLabelTemplate = removeChatContactLabelTemplate;
   public listContactChannels = listChatContactChannels;
   public viewContactChannelsByContactId = viewChatContactChannelsByContactId;
+  public generateAiReply = generateAiReply;
+  public transcribeAudio = transcribeAudio;
 }
 
 export default ChatController;

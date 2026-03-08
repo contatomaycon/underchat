@@ -55,6 +55,8 @@ import { removeChatContactLabelTemplateSchema } from '@core/schema/chat/removeCo
 import { listChatContactChannelsSchema } from '@core/schema/chat/listContactChannels';
 import { viewChatContactChannelsByContactIdSchema } from '@core/schema/chat/viewContactChannelsByContactId';
 import { viewChatAttendantsSchema } from '@core/schema/chat/viewChatAttendants';
+import { generateAiReplySchema } from '@core/schema/chat/generateAiReply';
+import { transcribeAudioSchema } from '@core/schema/chat/transcribeAudio';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -550,6 +552,28 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/sectors', {
     schema: listChatSectorsSchema,
     handler: chatController.listChatSectors,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chat/:chat_id/ai-generate', {
+    schema: generateAiReplySchema,
+    handler: chatController.generateAiReply,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chat/:chat_id/message/:message_id/transcribe', {
+    schema: transcribeAudioSchema,
+    handler: chatController.transcribeAudio,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
