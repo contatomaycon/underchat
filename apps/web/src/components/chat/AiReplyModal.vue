@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
 import type { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
@@ -29,6 +29,70 @@ const isGenerating = ref(false);
 const generatedResult = ref<GenerateAiReplyResponse | null>(null);
 const hasError = ref(false);
 
+// Audio player state
+const audioPlayer = ref<HTMLAudioElement | null>(null);
+const isAudioPlaying = ref(false);
+const audioCurrentTime = ref(0);
+const audioDuration = ref(0);
+
+const audioProgress = computed(() =>
+  audioDuration.value > 0
+    ? (audioCurrentTime.value / audioDuration.value) * 100
+    : 0
+);
+
+const formatTime = (seconds: number) => {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
+const cleanupAudioPlayer = () => {
+  if (audioPlayer.value) {
+    audioPlayer.value.pause();
+    audioPlayer.value.src = '';
+    audioPlayer.value = null;
+  }
+  isAudioPlaying.value = false;
+  audioCurrentTime.value = 0;
+  audioDuration.value = 0;
+};
+
+const toggleAudioPlay = () => {
+  const url = generatedResult.value?.audio_url;
+  if (!url) return;
+
+  if (!audioPlayer.value) {
+    const audio = new Audio(url);
+    audio.preload = 'metadata';
+    audio.addEventListener('loadedmetadata', () => {
+      audioDuration.value = audio.duration || 0;
+    });
+    audio.addEventListener('timeupdate', () => {
+      audioCurrentTime.value = audio.currentTime || 0;
+    });
+    audio.addEventListener('play', () => {
+      isAudioPlaying.value = true;
+    });
+    audio.addEventListener('pause', () => {
+      isAudioPlaying.value = false;
+    });
+    audio.addEventListener('ended', () => {
+      isAudioPlaying.value = false;
+      audioCurrentTime.value = 0;
+    });
+    audioPlayer.value = audio;
+  }
+
+  if (isAudioPlaying.value) {
+    audioPlayer.value.pause();
+  } else {
+    audioPlayer.value.play().catch(() => {
+      isAudioPlaying.value = false;
+    });
+  }
+};
+
 watch(
   () => props.modelValue,
   (open) => {
@@ -38,9 +102,16 @@ watch(
       generatedResult.value = null;
       hasError.value = false;
       isGenerating.value = false;
+      cleanupAudioPlayer();
+    } else {
+      cleanupAudioPlayer();
     }
   }
 );
+
+onBeforeUnmount(() => {
+  cleanupAudioPlayer();
+});
 
 const close = () => {
   isOpen.value = false;
@@ -194,11 +265,45 @@ const messagePreview = computed(() => {
             >
               {{ generatedResult.text }}
             </p>
-            <div v-if="generatedResult.audio_url" class="mt-2">
-              <VChip size="small" color="primary" variant="tonal">
-                <VIcon start size="14">tabler-volume</VIcon>
-                {{ t('chat_ai_reply_audio_attached') }}
-              </VChip>
+            <div v-if="generatedResult.audio_url" class="mt-3">
+              <div
+                class="d-flex align-center gap-2 pa-2 rounded"
+                style="
+                  border: 1px solid
+                    rgba(var(--v-border-color), var(--v-border-opacity));
+                  background-color: rgb(var(--v-theme-surface));
+                "
+              >
+                <VBtn
+                  icon
+                  size="36"
+                  variant="tonal"
+                  color="primary"
+                  @click="toggleAudioPlay"
+                >
+                  <VIcon size="20">{{
+                    isAudioPlaying
+                      ? 'tabler-player-pause'
+                      : 'tabler-player-play'
+                  }}</VIcon>
+                </VBtn>
+                <div class="flex-1">
+                  <VProgressLinear
+                    :model-value="audioProgress"
+                    color="primary"
+                    rounded
+                    height="6"
+                  />
+                </div>
+                <span
+                  class="text-caption text-medium-emphasis"
+                  style="min-inline-size: 36px; text-align: end"
+                >
+                  {{
+                    audioDuration > 0 ? formatTime(audioCurrentTime) : '0:00'
+                  }}
+                </span>
+              </div>
             </div>
           </div>
         </div>

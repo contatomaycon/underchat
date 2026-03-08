@@ -5311,6 +5311,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     audio_duration?: number | null;
   } | null>(null);
   const [aiReplyError, setAiReplyError] = useState(false);
+  const aiReplyAudioRef = useRef<AudioPlayer | null>(null);
+  const [aiReplyAudioPlaying, setAiReplyAudioPlaying] = useState(false);
+  const [aiReplyAudioProgress, setAiReplyAudioProgress] = useState(0);
+  const [aiReplyAudioDuration, setAiReplyAudioDuration] = useState(0);
   const [transcribeTarget, setTranscribeTarget] =
     useState<ListMessageResult | null>(null);
   const [transcribeResult, setTranscribeResult] = useState<string | null>(null);
@@ -9076,6 +9080,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     chatInfo.chat_id,
   ]);
 
+  const cleanupAiReplyAudio = useCallback(() => {
+    if (aiReplyAudioRef.current) {
+      aiReplyAudioRef.current.pause();
+      aiReplyAudioRef.current.remove();
+      aiReplyAudioRef.current = null;
+    }
+    setAiReplyAudioPlaying(false);
+    setAiReplyAudioProgress(0);
+    setAiReplyAudioDuration(0);
+  }, []);
+
   const handleSendAiReply = useCallback(async () => {
     if (!aiReplyResult) return;
 
@@ -9112,16 +9127,42 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setAiReplyResult(null);
     setAiReplyInstructions('');
     setAiReplyResponseType('text');
-  }, [aiReplyResult, chatInfo.chat_id, sendTextPayload]);
+    cleanupAiReplyAudio();
+  }, [aiReplyResult, chatInfo.chat_id, sendTextPayload, cleanupAiReplyAudio]);
+
+  const toggleAiReplyAudio = useCallback(() => {
+    const url = aiReplyResult?.audio_url;
+    if (!url) return;
+
+    if (!aiReplyAudioRef.current) {
+      const player = createAudioPlayer(url, { updateInterval: 300 });
+      player.addListener('playbackStatusUpdate', (status) => {
+        setAiReplyAudioPlaying(status.playing);
+        setAiReplyAudioProgress(status.currentTime || 0);
+        setAiReplyAudioDuration((prev) => status.duration || prev || 0);
+        if (!status.playing && status.currentTime === 0) {
+          setAiReplyAudioProgress(0);
+        }
+      });
+      aiReplyAudioRef.current = player;
+    }
+
+    if (aiReplyAudioPlaying) {
+      aiReplyAudioRef.current.pause();
+    } else {
+      aiReplyAudioRef.current.play();
+    }
+  }, [aiReplyResult?.audio_url, aiReplyAudioPlaying]);
 
   const closeAiReplyModal = useCallback(() => {
     if (aiReplyGenerating) return;
+    cleanupAiReplyAudio();
     setAiReplyTarget(null);
     setAiReplyResult(null);
     setAiReplyInstructions('');
     setAiReplyResponseType('text');
     setAiReplyError(false);
-  }, [aiReplyGenerating]);
+  }, [aiReplyGenerating, cleanupAiReplyAudio]);
 
   const handleStartTranscription = useCallback(async () => {
     const target = transcribeTarget;
@@ -14224,28 +14265,60 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 {aiReplyResult.text}
               </Text>
               {aiReplyResult.audio_url ? (
-                <View
+                <Pressable
+                  onPress={toggleAiReplyAudio}
                   style={{
-                    marginTop: 8,
+                    marginTop: 10,
                     flexDirection: 'row',
                     alignItems: 'center',
-                    gap: 4,
+                    gap: 10,
+                    borderWidth: 1,
+                    borderColor: colors.grey300,
+                    borderRadius: 8,
+                    padding: 8,
+                    backgroundColor: '#fff',
                   }}
                 >
                   <Ionicons
-                    name="volume-medium-outline"
-                    size={16}
+                    name={aiReplyAudioPlaying ? 'pause-circle' : 'play-circle'}
+                    size={32}
                     color={colors.primary}
                   />
+                  <View style={{ flex: 1 }}>
+                    <View
+                      style={{
+                        height: 4,
+                        borderRadius: 2,
+                        backgroundColor: colors.grey200,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <View
+                        style={{
+                          height: '100%',
+                          borderRadius: 2,
+                          backgroundColor: colors.primary,
+                          width:
+                            aiReplyAudioDuration > 0
+                              ? `${(aiReplyAudioProgress / aiReplyAudioDuration) * 100}%`
+                              : '0%',
+                        }}
+                      />
+                    </View>
+                  </View>
                   <Text
                     style={{
                       fontSize: 12,
-                      color: colors.primary,
+                      color: colors.grey500,
+                      minWidth: 36,
+                      textAlign: 'right',
                     }}
                   >
-                    {pt.chat_ai_reply_audio_attached}
+                    {aiReplyAudioDuration > 0
+                      ? `${Math.floor(aiReplyAudioProgress / 60)}:${String(Math.floor(aiReplyAudioProgress % 60)).padStart(2, '0')}`
+                      : '0:00'}
                   </Text>
-                </View>
+                </Pressable>
               ) : null}
             </View>
           </View>
