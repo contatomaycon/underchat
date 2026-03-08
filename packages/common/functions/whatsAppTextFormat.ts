@@ -11,6 +11,11 @@ export interface WhatsAppTextToken {
   text: string;
 }
 
+interface TruncateTokensResult {
+  tokens: WhatsAppTextToken[];
+  truncated: boolean;
+}
+
 const MARKERS = [
   { marker: '`', type: 'code' as const },
   { marker: '~', type: 'strike' as const },
@@ -129,24 +134,7 @@ function escapeHtml(text: string): string {
     .replaceAll("'", '&#39;');
 }
 
-export function parseWhatsAppTextTokens(
-  text?: string | null
-): WhatsAppTextToken[] {
-  if (!text) return [];
-
-  let tokens: WhatsAppTextToken[] = [{ type: 'text', text }];
-
-  for (const item of MARKERS) {
-    tokens = applyMarkerFormatting(tokens, item.marker, item.type);
-  }
-
-  return splitNewlines(tokens);
-}
-
-export function formatWhatsAppTextToHtml(text?: string | null): string {
-  const tokens = parseWhatsAppTextTokens(text);
-  if (tokens.length === 0) return '';
-
+function renderWhatsAppTokensToHtml(tokens: WhatsAppTextToken[]): string {
   return tokens
     .map((token) => {
       switch (token.type) {
@@ -165,4 +153,101 @@ export function formatWhatsAppTextToHtml(text?: string | null): string {
       }
     })
     .join('');
+}
+
+function convertTokensToSingleLine(
+  tokens: WhatsAppTextToken[]
+): WhatsAppTextToken[] {
+  return tokens.map((token) => {
+    if (token.type !== 'newline') return token;
+    return { type: 'text', text: ' ' };
+  });
+}
+
+function truncateWhatsAppTextTokens(
+  tokens: WhatsAppTextToken[],
+  maxLength: number,
+  suffix: string
+): TruncateTokensResult {
+  if (maxLength <= 0) {
+    return {
+      tokens: suffix ? [{ type: 'text', text: suffix }] : [],
+      truncated: tokens.length > 0,
+    };
+  }
+
+  const next: WhatsAppTextToken[] = [];
+  let consumed = 0;
+  let truncated = false;
+
+  for (const token of tokens) {
+    if (!token.text) continue;
+
+    if (consumed >= maxLength) {
+      truncated = true;
+      break;
+    }
+
+    const remaining = maxLength - consumed;
+    if (token.text.length <= remaining) {
+      next.push(token);
+      consumed += token.text.length;
+      continue;
+    }
+
+    next.push({ type: token.type, text: token.text.slice(0, remaining) });
+    consumed += remaining;
+    truncated = true;
+    break;
+  }
+
+  if (truncated && suffix) {
+    next.push({ type: 'text', text: suffix });
+  }
+
+  return { tokens: next, truncated };
+}
+
+export function parseWhatsAppTextTokens(
+  text?: string | null
+): WhatsAppTextToken[] {
+  if (!text) return [];
+
+  let tokens: WhatsAppTextToken[] = [{ type: 'text', text }];
+
+  for (const item of MARKERS) {
+    tokens = applyMarkerFormatting(tokens, item.marker, item.type);
+  }
+
+  return splitNewlines(tokens);
+}
+
+export function formatWhatsAppTextToHtml(text?: string | null): string {
+  const tokens = parseWhatsAppTextTokens(text);
+  if (tokens.length === 0) return '';
+
+  return renderWhatsAppTokensToHtml(tokens);
+}
+
+export function parseWhatsAppPreviewTokens(
+  text?: string | null,
+  maxLength = 35,
+  suffix = '...'
+): WhatsAppTextToken[] {
+  const tokens = parseWhatsAppTextTokens(text);
+  if (tokens.length === 0) return [];
+
+  const singleLineTokens = convertTokensToSingleLine(tokens);
+  return truncateWhatsAppTextTokens(singleLineTokens, maxLength, suffix).tokens;
+}
+
+export function formatWhatsAppPreviewToHtml(
+  text?: string | null,
+  maxLength = 35,
+  suffix = '...'
+): string {
+  const tokens = parseWhatsAppPreviewTokens(text, maxLength, suffix);
+  if (tokens.length === 0) return '';
+
+  return renderWhatsAppTokensToHtml(tokens);
 }

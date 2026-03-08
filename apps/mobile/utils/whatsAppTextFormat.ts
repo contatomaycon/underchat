@@ -120,6 +120,55 @@ function splitNewlines(tokens: WhatsAppTextToken[]): WhatsAppTextToken[] {
   return out;
 }
 
+function convertTokensToSingleLine(
+  tokens: WhatsAppTextToken[]
+): WhatsAppTextToken[] {
+  return tokens.map((token) => {
+    if (token.type !== 'newline') return token;
+    return { type: 'text', text: ' ' };
+  });
+}
+
+function truncateTokens(
+  tokens: WhatsAppTextToken[],
+  maxLength: number,
+  suffix: string
+): WhatsAppTextToken[] {
+  if (maxLength <= 0) {
+    return suffix ? [{ type: 'text', text: suffix }] : [];
+  }
+
+  const next: WhatsAppTextToken[] = [];
+  let consumed = 0;
+  let truncated = false;
+
+  for (const token of tokens) {
+    if (!token.text) continue;
+
+    if (consumed >= maxLength) {
+      truncated = true;
+      break;
+    }
+
+    const remaining = maxLength - consumed;
+    if (token.text.length <= remaining) {
+      next.push(token);
+      consumed += token.text.length;
+      continue;
+    }
+
+    next.push({ type: token.type, text: token.text.slice(0, remaining) });
+    truncated = true;
+    break;
+  }
+
+  if (truncated && suffix) {
+    next.push({ type: 'text', text: suffix });
+  }
+
+  return next;
+}
+
 export function parseWhatsAppTextTokens(
   text?: string | null
 ): WhatsAppTextToken[] {
@@ -132,4 +181,15 @@ export function parseWhatsAppTextTokens(
   }
 
   return splitNewlines(tokens);
+}
+
+export function parseWhatsAppPreviewTokens(
+  text?: string | null,
+  maxLength = 35,
+  suffix = '...'
+): WhatsAppTextToken[] {
+  const tokens = parseWhatsAppTextTokens(text);
+  if (tokens.length === 0) return [];
+
+  return truncateTokens(convertTokensToSingleLine(tokens), maxLength, suffix);
 }

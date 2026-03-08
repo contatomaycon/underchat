@@ -110,6 +110,10 @@ import {
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import { addAppResumeListener } from '../utils/appResumeBus';
+import {
+  parseWhatsAppPreviewTokens,
+  type WhatsAppTextToken,
+} from '../utils/whatsAppTextFormat';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -365,6 +369,32 @@ function ChatRow({
     ? limitText(attendantFirstName, 10)
     : '';
   const attendantVerticalLabel = attendantLabel.split('').join('\n');
+  const previewTokens = useMemo<WhatsAppTextToken[]>(
+    () => parseWhatsAppPreviewTokens(lastMsg, 120, '…'),
+    [lastMsg]
+  );
+
+  const renderPreviewToken = useCallback(
+    (token: WhatsAppTextToken, index: number) => {
+      if (!token.text) return null;
+
+      return (
+        <Text
+          key={`chat-preview-${index}`}
+          style={[
+            styles.chatLastMessageToken,
+            token.type === 'bold' && styles.chatLastMessageBold,
+            token.type === 'italic' && styles.chatLastMessageItalic,
+            token.type === 'strike' && styles.chatLastMessageStrike,
+            token.type === 'code' && styles.chatLastMessageCode,
+          ]}
+        >
+          {token.text}
+        </Text>
+      );
+    },
+    []
+  );
 
   return (
     <Pressable
@@ -395,7 +425,9 @@ function ChatRow({
         </View>
         <View style={styles.chatRowBottom}>
           <Text style={styles.chatLastMessage} numberOfLines={1}>
-            {lastMsg || ' '}
+            {previewTokens.length > 0
+              ? previewTokens.map(renderPreviewToken)
+              : ' '}
           </Text>
           {unread > 0 ? (
             <View style={styles.badge}>
@@ -2184,7 +2216,12 @@ export function ChatListScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={() => setLabelInfoModalVisible(false)}
       >
-        <View style={[styles.transferOverlay, { paddingBottom: 16 + insets.bottom }]}>
+        <View
+          style={[
+            styles.transferOverlay,
+            { paddingBottom: 16 + insets.bottom },
+          ]}
+        >
           <Pressable
             style={styles.transferBackdrop}
             onPress={() => setLabelInfoModalVisible(false)}
@@ -2219,7 +2256,12 @@ export function ChatListScreen({ route, navigation }: Props) {
         animationType="fade"
         onRequestClose={closeCloseServiceModal}
       >
-        <View style={[styles.transferOverlay, { paddingBottom: 16 + insets.bottom }]}>
+        <View
+          style={[
+            styles.transferOverlay,
+            { paddingBottom: 16 + insets.bottom },
+          ]}
+        >
           <Pressable
             style={styles.transferBackdrop}
             onPress={closeCloseServiceModal}
@@ -2295,7 +2337,12 @@ export function ChatListScreen({ route, navigation }: Props) {
           behavior={keyboardAvoidingBehavior}
           keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
         >
-          <View style={[styles.transferOverlay, { paddingBottom: 16 + insets.bottom }]}>
+          <View
+            style={[
+              styles.transferOverlay,
+              { paddingBottom: 16 + insets.bottom },
+            ]}
+          >
             <Pressable
               style={styles.transferBackdrop}
               onPress={dismissKeyboardAnd(closeTransferModal)}
@@ -2923,6 +2970,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.grey600,
     flex: 1,
+  },
+  chatLastMessageToken: {
+    color: colors.grey600,
+  },
+  chatLastMessageBold: {
+    color: colors.grey600,
+    fontWeight: '700',
+  },
+  chatLastMessageItalic: {
+    color: colors.grey600,
+    fontStyle: 'italic',
+  },
+  chatLastMessageStrike: {
+    color: colors.grey600,
+    textDecorationLine: 'line-through',
+  },
+  chatLastMessageCode: {
+    color: colors.grey700,
   },
   badge: {
     minWidth: 22,

@@ -3,6 +3,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { limitCharacters } from '@core/common/functions/limitCharacters';
+import { formatWhatsAppPreviewToHtml } from '@core/common/functions/whatsAppTextFormat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
@@ -79,6 +80,10 @@ const chatbotTypeLabel = computed(() => {
   if (s === EChatStatus.ura_schedule) return t('chatbot_type_schedule');
   if (s === EChatStatus.ura_webhook) return t('chatbot_type_webhook');
   return null;
+});
+
+const previewMessageHtml = computed(() => {
+  return formatWhatsAppPreviewToHtml(props.user?.summary?.last_message, 35);
 });
 
 const chatLabels = computed(() => {
@@ -386,7 +391,7 @@ watch(
           "
           class="mb-0 text-body-2 text-medium-emphasis chat-message-preview chat-message-preview--italic"
         >
-          {{ limitCharacters(35, props.user.summary.last_message, '...') }}
+          <span v-html="previewMessageHtml" />
         </p>
         <div
           v-if="showChatbotTypeIndicator && chatbotTypeLabel"
