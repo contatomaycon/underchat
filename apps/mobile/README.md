@@ -89,6 +89,8 @@ Local (dev client / `run:android`):
 - Se ocorrer erro de cache no EAS, rode com cache limpo: `pnpm --filter mobile exec eas build --profile development --platform ios --clear-cache`
 
 - Android
+  pnpm --filter mobile exec eas build --profile preview-apk --platform android --clear-cache
+  pnpm exec expo start --dev-client --android --tunnel --clear
   pnpm run run:android
   pnpm exec expo start --dev-client --android --tunnel
 

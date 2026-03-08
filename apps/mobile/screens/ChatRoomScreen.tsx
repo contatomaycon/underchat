@@ -72,6 +72,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Location from 'expo-location';
 import * as Clipboard from 'expo-clipboard';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import Constants from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import VideoTrimModule, {
@@ -3112,38 +3113,54 @@ function VideoMessagePreview({
   onLongPress?: () => void;
 }) {
   const [thumbnailLoadError, setThumbnailLoadError] = useState(false);
+  const [generatedThumbnailUri, setGeneratedThumbnailUri] = useState<
+    string | null
+  >(null);
+  const [generatingThumbnail, setGeneratingThumbnail] = useState(false);
 
-  const shouldUseVideoFramePreview = !thumbnailUri || thumbnailLoadError;
-
-  const previewPlayer = useVideoPlayer(
-    shouldUseVideoFramePreview ? { uri: sourceUri } : null,
-    (player) => {
-      player.loop = true;
-      player.muted = true;
-    }
-  );
+  const shouldGenerateThumbnail = !thumbnailUri || thumbnailLoadError;
 
   useEffect(() => {
     setThumbnailLoadError(false);
   }, [sourceUri, thumbnailUri]);
 
   useEffect(() => {
-    if (!shouldUseVideoFramePreview) return;
+    if (!shouldGenerateThumbnail) {
+      setGeneratedThumbnailUri(null);
+      setGeneratingThumbnail(false);
+      return;
+    }
 
-    try {
-      previewPlayer.currentTime = 0;
-      previewPlayer.play();
-    } catch {}
+    let active = true;
+    setGeneratingThumbnail(true);
+    setGeneratedThumbnailUri(null);
+
+    void VideoThumbnails.getThumbnailAsync(sourceUri, {
+      time: 1000,
+      quality: 0.7,
+    })
+      .then((result) => {
+        if (!active) return;
+        setGeneratedThumbnailUri(result.uri);
+      })
+      .catch(() => {
+        if (!active) return;
+        setGeneratedThumbnailUri(null);
+      })
+      .finally(() => {
+        if (!active) return;
+        setGeneratingThumbnail(false);
+      });
 
     return () => {
-      try {
-        previewPlayer.pause();
-      } catch {}
+      active = false;
     };
-  }, [previewPlayer, shouldUseVideoFramePreview]);
+  }, [shouldGenerateThumbnail, sourceUri]);
 
-  const showFramePreview = shouldUseVideoFramePreview;
-  const showImagePreview = !shouldUseVideoFramePreview && !!thumbnailUri;
+  const previewUri = shouldGenerateThumbnail
+    ? generatedThumbnailUri
+    : thumbnailUri;
+  const showImagePreview = !!previewUri;
 
   return (
     <Pressable
@@ -3152,21 +3169,9 @@ function VideoMessagePreview({
       onLongPress={onLongPress}
       delayLongPress={220}
     >
-      {showFramePreview ? (
-        <VideoView
-          player={previewPlayer}
-          style={
-            isVideoNote ? styles.videoNoteThumbVideo : styles.videoThumbVideo
-          }
-          contentFit="cover"
-          nativeControls={false}
-          fullscreenOptions={VIDEO_FULLSCREEN_DISABLED}
-          allowsPictureInPicture={false}
-          playsInline
-        />
-      ) : showImagePreview ? (
+      {showImagePreview ? (
         <Image
-          source={{ uri: thumbnailUri }}
+          source={{ uri: previewUri }}
           style={isVideoNote ? styles.videoNoteThumb : styles.videoThumb}
           resizeMode="cover"
           onError={() => setThumbnailLoadError(true)}
@@ -3177,7 +3182,15 @@ function VideoMessagePreview({
             isVideoNote ? styles.videoNotePlaceholder : styles.videoPlaceholder
           }
         >
-          <Ionicons name="videocam-outline" size={28} color={colors.grey600} />
+          {generatingThumbnail ? (
+            <ActivityIndicator size="small" color={colors.grey600} />
+          ) : (
+            <Ionicons
+              name="videocam-outline"
+              size={28}
+              color={colors.grey600}
+            />
+          )}
         </View>
       )}
 
