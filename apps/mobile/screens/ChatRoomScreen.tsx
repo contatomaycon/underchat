@@ -5850,11 +5850,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const handleViewerPanGestureEvent = useCallback(
     (event: {
       nativeEvent: {
+        translationX: number;
         translationY: number;
       };
     }) => {
       if (!viewer.visible) return;
-      const nextY = Math.max(0, event.nativeEvent.translationY);
+      const { translationX, translationY } = event.nativeEvent;
+      if (Math.abs(translationX) > Math.abs(translationY)) {
+        viewerTranslateY.setValue(0);
+        return;
+      }
+      const nextY = Math.max(0, translationY);
       viewerTranslateY.setValue(nextY);
     },
     [viewer.visible, viewerTranslateY]
@@ -5865,13 +5871,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       nativeEvent: {
         state: number;
         oldState: number;
+        translationX: number;
         translationY: number;
         velocityY: number;
       };
     }) => {
       if (!viewer.visible) return;
 
-      const { state, oldState, translationY, velocityY } = event.nativeEvent;
+      const { state, oldState, translationX, translationY, velocityY } =
+        event.nativeEvent;
 
       if (state === State.CANCELLED || state === State.FAILED) {
         resetViewerSwipeOffset();
@@ -5879,6 +5887,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
 
       if (oldState !== State.ACTIVE) {
+        return;
+      }
+
+      if (Math.abs(translationX) > Math.abs(translationY)) {
+        resetViewerSwipeOffset();
         return;
       }
 
@@ -14201,7 +14214,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               -VIEWER_SWIPE_ACTIVATION_DISTANCE,
               VIEWER_SWIPE_ACTIVATION_DISTANCE,
             ]}
-            failOffsetX={[-30, 30]}
             onGestureEvent={handleViewerPanGestureEvent}
             onHandlerStateChange={handleViewerPanStateChange}
           >
