@@ -1,6 +1,4 @@
-import type { ExpoConfig } from 'expo/config';
-
-const appJson = require('./app.json') as { expo: ExpoConfig };
+import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 function readMapLibreStyleUrl(): string {
   const styleUrl = process.env.EXPO_PUBLIC_MAPLIBRE_STYLE_URL?.trim();
@@ -10,9 +8,14 @@ function readMapLibreStyleUrl(): string {
   return 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 }
 
-export default (): ExpoConfig => {
+export default ({ config }: ConfigContext): ExpoConfig => {
   const mapLibreStyleUrl = readMapLibreStyleUrl();
-  const baseConfig = appJson.expo;
+  const baseConfig: ExpoConfig = {
+    ...config,
+    name: config.name ?? 'Underchat',
+    slug: config.slug ?? 'underchat',
+    version: config.version ?? '1.0.0',
+  };
 
   const plugins = Array.isArray(baseConfig.plugins)
     ? [...baseConfig.plugins]
