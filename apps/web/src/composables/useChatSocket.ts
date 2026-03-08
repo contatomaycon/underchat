@@ -44,7 +44,7 @@ let chatUpdateBatchTimer: ReturnType<typeof setTimeout> | null = null;
 const createChatSocket = () => {
   const chatStore = useChatStore();
   const route = useRoute();
-  const { handleNewMessage } = useChatNotifications();
+  const { handleNewMessage, handleChatStatusChange } = useChatNotifications();
 
   const isChatOrKanbanRoute = () => {
     const name = route.name as string | undefined;
@@ -215,6 +215,10 @@ const createChatSocket = () => {
         chatStore.activeChat?.chat_id === chatData.chat_id;
 
       chatStore.addChat(chatData);
+
+      if (!isActiveChat) {
+        handleChatStatusChange(chatData);
+      }
 
       if (
         isActiveChat &&

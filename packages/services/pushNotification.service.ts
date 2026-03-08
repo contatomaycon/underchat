@@ -187,6 +187,68 @@ export class PushNotificationService {
     await Promise.all(promises);
   }
 
+  async sendNotificationForChatStatusChange(chat: IChat): Promise<void> {
+    if (
+      chat.status !== EChatStatus.queue &&
+      chat.status !== EChatStatus.in_chat
+    ) {
+      return;
+    }
+
+    const accountId = chat.account.id;
+    const userIds =
+      await this.usersWithNotificationsListerRepository.listUsersWithNotifications(
+        accountId
+      );
+
+    if (userIds.length === 0) {
+      return;
+    }
+
+    const senderName = chat.name || chat.contact?.name || 'Desconhecido';
+    const statusLabel =
+      chat.status === EChatStatus.queue
+        ? 'Aguardando na fila'
+        : 'Em atendimento';
+
+    const payload: IPushNotificationPayload = {
+      title: senderName,
+      body: statusLabel,
+      icon:
+        chat.photo || chat.contact?.photo || '/images/svg/avatar-default.svg',
+      tag: `chat-status-${chat.chat_id}`,
+      data: {
+        chatId: chat.chat_id,
+        notificationType: 'chat_status_change',
+        chatSnapshot: this.buildChatSnapshot(chat),
+      },
+    };
+
+    const eligibleUserIds: string[] = [];
+
+    for (const userId of userIds) {
+      const canReceive = await this.canUserReceiveNotification(
+        userId,
+        accountId,
+        chat
+      );
+
+      if (canReceive) {
+        eligibleUserIds.push(userId);
+      }
+    }
+
+    if (eligibleUserIds.length === 0) {
+      return;
+    }
+
+    const promises = eligibleUserIds.map((userId) =>
+      this.sendNotificationToUser(userId, payload).catch(() => {})
+    );
+
+    await Promise.all(promises);
+  }
+
   private async canUserReceiveNotification(
     userId: string,
     accountId: string,

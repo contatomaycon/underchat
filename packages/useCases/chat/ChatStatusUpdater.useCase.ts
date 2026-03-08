@@ -33,6 +33,7 @@ import {
   isChatPrimary,
 } from '@core/common/functions/chatParticipants';
 import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
+import { PushNotificationService } from '@core/services/pushNotification.service';
 
 interface IClosedStatusProtocolResult {
   protocol: string | null;
@@ -57,7 +58,9 @@ export class ChatStatusUpdaterUseCase {
     @inject(PresenceService)
     private readonly presenceService: PresenceService,
     @inject(ChatbotFlowRunnerService)
-    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService
+    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
+    @inject(PushNotificationService)
+    private readonly pushNotificationService: PushNotificationService
   ) {}
 
   private async sendProtocolMessage(
@@ -774,6 +777,15 @@ export class ChatStatusUpdaterUseCase {
     }
 
     await this.publishChatUpdate(chatWithProtocol, accountId);
+
+    if (
+      chatWithProtocol.status === EChatStatus.queue ||
+      chatWithProtocol.status === EChatStatus.in_chat
+    ) {
+      await this.pushNotificationService
+        .sendNotificationForChatStatusChange(chatWithProtocol)
+        .catch(() => {});
+    }
 
     return chatWithProtocol;
   }

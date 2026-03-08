@@ -29,6 +29,7 @@ import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermiss
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { PushNotificationService } from '@core/services/pushNotification.service';
 
 @injectable()
 export class TransferChatUseCase {
@@ -47,7 +48,9 @@ export class TransferChatUseCase {
     private readonly workerService: WorkerService,
     @inject(ChatUserViewerRepository)
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    @inject(PushNotificationService)
+    private readonly pushNotificationService: PushNotificationService
   ) {}
 
   private async loadUserAndSector(
@@ -589,6 +592,10 @@ export class TransferChatUseCase {
     );
 
     await this.publishChatUpdate(chatWithProtocol, accountId);
+
+    await this.pushNotificationService
+      .sendNotificationForChatStatusChange(chatWithProtocol)
+      .catch(() => {});
 
     if (body.annotation?.trim()) {
       await this.sendAnnotationMessage(

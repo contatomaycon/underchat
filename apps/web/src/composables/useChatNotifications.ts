@@ -393,6 +393,29 @@ export const useChatNotifications = () => {
     }, 5000);
   }
 
+  function handleChatStatusChange(chat: IChat): void {
+    if (!chatStore.user?.chat_user?.notifications) {
+      return;
+    }
+
+    if (route.name === 'chat') {
+      return;
+    }
+
+    if (
+      chat.status !== EChatStatus.in_chat &&
+      chat.status !== EChatStatus.queue
+    ) {
+      return;
+    }
+
+    if (!canReceiveMessageNotification(chat, chatStore)) {
+      return;
+    }
+
+    playAlertSound();
+  }
+
   function handleVisibilityChange() {
     isPageVisible.value = !document.hidden;
   }
@@ -459,6 +482,7 @@ export const useChatNotifications = () => {
 
   return {
     handleNewMessage,
+    handleChatStatusChange,
     requestNotificationPermission,
     registerServiceWorker,
     unsubscribeFromPushNotifications: unsubscribeFromPushNotificationsInternal,
