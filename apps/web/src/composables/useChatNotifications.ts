@@ -1,18 +1,11 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useChatStore } from '@/@webcore/stores/chat';
-import {
-  getPermissions,
-  getSectors,
-  getChannels,
-} from '@/@webcore/localStorage/user';
+import { getSectors, getChannels } from '@/@webcore/localStorage/user';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { useChatNotificationToast } from './useChatNotificationToast';
 import axiosAuth from '@/@webcore/axios';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
@@ -72,6 +65,15 @@ function getChatFromStore(
   );
 }
 
+function isChatbotStatus(status: string): boolean {
+  return (
+    status === EChatStatus.ura ||
+    status === EChatStatus.ura_output ||
+    status === EChatStatus.ura_schedule ||
+    status === EChatStatus.ura_webhook
+  );
+}
+
 function canReceiveMessageNotification(
   chat: IChat,
   chatStore: ReturnType<typeof useChatStore>
@@ -88,68 +90,31 @@ function canReceiveMessageNotification(
     }
   }
 
-  const permissions = getPermissions();
-  const userSectors = getSectors();
-  const canViewOthersChats = permissions.some(
-    (perm: EPermissionsRoles) =>
-      perm === EGeneralPermissions.full_access ||
-      perm === EGeneralPermissions.full_access_group ||
-      perm === EChatPermissions.chat_group
-  );
-  const canListAllChatsInSector = permissions.some(
-    (perm: EPermissionsRoles) =>
-      perm === EGeneralPermissions.full_access ||
-      perm === EGeneralPermissions.full_access_group ||
-      perm === EChatPermissions.chat_group ||
-      perm === EChatPermissions.list_all_chats_in_sector
-  );
-  const canListAllChatsWithoutSectorLimit = permissions.some(
-    (perm: EPermissionsRoles) =>
-      perm === EGeneralPermissions.full_access ||
-      perm === EGeneralPermissions.full_access_group ||
-      perm === EChatPermissions.chat_group ||
-      perm === EChatPermissions.list_all_chats_without_sector_limit
-  );
-
-  const hasPermissionToViewAll =
-    canViewOthersChats || canListAllChatsWithoutSectorLimit;
-  const isChatInUserSectors =
-    (userSectors.length > 0 &&
-      chat.sector?.id &&
-      userSectors.includes(chat.sector.id)) ||
-    (userSectors.length === 0 && !chat.sector?.id) ||
-    (canListAllChatsInSector && !chat.sector?.id);
-
-  if (chat.status === EChatStatus.in_chat) {
-    if (
-      hasPermissionToViewAll ||
-      isChatParticipant(chat, chatStore.user?.user_id)
-    ) {
-      return true;
-    }
-    return canListAllChatsInSector && isChatInUserSectors;
-  }
-
-  if (hasPermissionToViewAll) {
-    return true;
+  const userId = chatStore.user?.user_id;
+  if (chat.status === EChatStatus.in_chat || isChatbotStatus(chat.status)) {
+    return isChatParticipant(chat, userId);
   }
 
   if (chat.status === EChatStatus.queue) {
+    if (isChatParticipant(chat, userId)) {
+      return true;
+    }
+
     const hasParticipants =
       !!chat.user?.id ||
       (Array.isArray(chat.secondary_users) && chat.secondary_users.length > 0);
 
     if (hasParticipants) {
-      return isChatParticipant(chat, chatStore.user?.user_id);
+      return false;
     }
 
     const userSectors = getSectors();
 
     if (userSectors.length > 0) {
       if (!chat.sector?.id) {
-        return canListAllChatsInSector;
+        return true;
       }
-      return canListAllChatsInSector && userSectors.includes(chat.sector.id);
+      return userSectors.includes(chat.sector.id);
     }
 
     return !chat.sector?.id;
@@ -389,7 +354,8 @@ export const useChatNotifications = () => {
 
     if (
       chat.status !== EChatStatus.in_chat &&
-      chat.status !== EChatStatus.queue
+      chat.status !== EChatStatus.queue &&
+      !isChatbotStatus(chat.status)
     ) {
       return;
     }

@@ -1185,10 +1185,6 @@ export function ChatListScreen({ route, navigation }: Props) {
         }
       }
 
-      if (canListAllChatsWithoutSectorLimit(socketPermissions)) {
-        return true;
-      }
-
       if (chatExistsInList) {
         return true;
       }
@@ -1200,66 +1196,42 @@ export function ChatListScreen({ route, navigation }: Props) {
         ((!!chatUserId && chatUserId === currentUserId) ||
           chatSecondaryUserIds.includes(currentUserId));
 
-      if (isParticipant) {
-        return true;
-      }
-
       const status = readString((chatData as { status?: unknown }).status);
-      const chatName = readString((chatData as { name?: unknown }).name);
-      const chatPhone = readString((chatData as { phone?: unknown }).phone);
-      const sectorId = resolveSocketChatSectorId(chatData);
-      const workerId = resolveSocketChatWorkerId(chatData);
-
-      if (status) {
-        const visibilityChat = {
-          chat_id: chatId,
-          account: { id: '', name: '' },
-          worker: { id: workerId ?? '', name: '' },
-          sector: sectorId ? { id: sectorId, name: '' } : null,
-          user: chatUserId ? { id: chatUserId, name: '' } : null,
-          secondary_users: chatSecondaryUserIds.map((secondaryUserId) => ({
-            id: secondaryUserId,
-            name: '',
-            photo: null,
-          })),
-          name: chatName,
-          phone: chatPhone ?? '',
-          status: status as ListChatsResult['status'],
-          date: readString((chatData as { date?: unknown }).date) ?? '',
-        } as ListChatsResult;
-
-        if (
-          canViewChat(visibilityChat, {
-            permissions: socketPermissions,
-            userId: currentUserId,
-            userSectors,
-            userChannels,
-          })
-        ) {
-          return true;
-        }
-      }
 
       if (
-        status === 'queue' &&
-        !sectorId &&
-        !chatUserId &&
-        chatSecondaryUserIds.length === 0
+        status === 'in_chat' ||
+        status === 'ura' ||
+        status === 'ura_output' ||
+        status === 'ura_schedule' ||
+        status === 'ura_webhook'
       ) {
-        return true;
+        return isParticipant;
       }
 
-      if (userSectors.length === 0) {
+      if (status === 'queue') {
+        if (isParticipant) {
+          return true;
+        }
+
+        if (!!chatUserId || chatSecondaryUserIds.length > 0) {
+          return false;
+        }
+
+        const sectorId = resolveSocketChatSectorId(chatData);
+
+        if (userSectors.length > 0) {
+          if (!sectorId) {
+            return true;
+          }
+          return userSectors.includes(sectorId);
+        }
+
         return !sectorId;
       }
 
-      if (!sectorId) {
-        return false;
-      }
-
-      return userSectors.includes(sectorId);
+      return false;
     },
-    [socketPermissions, queue, inChat, currentUserId, userSectors, userChannels]
+    [queue, inChat, currentUserId, userSectors, userChannels]
   );
 
   const scheduleRealtimeReload = useCallback(

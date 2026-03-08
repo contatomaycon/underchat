@@ -3,14 +3,11 @@ import webPush from 'web-push';
 import { PushSubscriptionListerRepository } from '@core/repositories/push/PushSubscriptionLister.repository';
 import { PushSubscriptionDeleterRepository } from '@core/repositories/push/PushSubscriptionDeleter.repository';
 import { UsersWithNotificationsListerRepository } from '@core/repositories/push/UsersWithNotificationsLister.repository';
-import { PermissionAssignmentUserViewerRepository } from '@core/repositories/permission/PermissionAssignmentUserViewer.repository';
 import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { UserChannelChannelsListerRepository } from '@core/repositories/user/UserChannelChannelsLister.repository';
 import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificationPayload';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { vapidEnvironment } from '@core/config/environments';
@@ -33,8 +30,6 @@ export class PushNotificationService {
     private readonly pushSubscriptionDeleterRepository: PushSubscriptionDeleterRepository,
     @inject(UsersWithNotificationsListerRepository)
     private readonly usersWithNotificationsListerRepository: UsersWithNotificationsListerRepository,
-    @inject(PermissionAssignmentUserViewerRepository)
-    private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository,
     @inject(UserSectorsListerRepository)
     private readonly userSectorsListerRepository: UserSectorsListerRepository,
     @inject(UserChannelChannelsListerRepository)
@@ -214,59 +209,11 @@ export class PushNotificationService {
       }
     }
 
-    const permissions =
-      await this.permissionAssignmentUserViewerRepository.viewPermissionByUserId(
-        userId
-      );
-
-    const permissionActions = permissions.map((p) => p.action);
-
-    const canViewOthersChats = permissionActions.some(
-      (action) =>
-        action === EGeneralPermissions.full_access ||
-        action === EGeneralPermissions.full_access_group ||
-        action === EChatPermissions.chat_group
-    );
-    const canListAllChatsInSector = permissionActions.some(
-      (action) =>
-        action === EGeneralPermissions.full_access ||
-        action === EGeneralPermissions.full_access_group ||
-        action === EChatPermissions.chat_group ||
-        action === EChatPermissions.list_all_chats_in_sector
-    );
-    const canListAllChatsWithoutSectorLimit = permissionActions.some(
-      (action) =>
-        action === EGeneralPermissions.full_access ||
-        action === EGeneralPermissions.full_access_group ||
-        action === EChatPermissions.chat_group ||
-        action === EChatPermissions.list_all_chats_without_sector_limit
-    );
-
-    const hasPermissionToViewAll =
-      canViewOthersChats || canListAllChatsWithoutSectorLimit;
-
-    const userSectors = await this.userSectorsListerRepository.listUserSectors(
-      accountId,
-      userId
-    );
-    const isChatInUserSectors =
-      (userSectors.length > 0 &&
-        chat.sector?.id &&
-        userSectors.includes(chat.sector.id)) ||
-      (userSectors.length === 0 && !chat.sector?.id) ||
-      (canListAllChatsInSector && !chat.sector?.id);
-
     if (
       chat.status === EChatStatus.in_chat ||
       this.isChatbotStatus(chat.status)
     ) {
-      if (isChatParticipant(chat, userId)) return true;
-      if (hasPermissionToViewAll) return true;
-      return canListAllChatsInSector && isChatInUserSectors;
-    }
-
-    if (hasPermissionToViewAll) {
-      return true;
+      return isChatParticipant(chat, userId);
     }
 
     if (chat.status === EChatStatus.queue) {
@@ -281,11 +228,17 @@ export class PushNotificationService {
         return false;
       }
 
+      const userSectors =
+        await this.userSectorsListerRepository.listUserSectors(
+          accountId,
+          userId
+        );
+
       if (userSectors.length > 0) {
         if (!chat.sector?.id) {
-          return canListAllChatsInSector;
+          return true;
         }
-        return canListAllChatsInSector && userSectors.includes(chat.sector.id);
+        return userSectors.includes(chat.sector.id);
       }
 
       return !chat.sector?.id;

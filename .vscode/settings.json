@@ -18,5 +18,7 @@
   },
   "[json]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
-  }
+  },
+  "chat.promptFilesRecommendations": {},
+  "chat.mcp.serverSampling": {}
 }
