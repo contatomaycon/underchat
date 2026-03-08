@@ -151,6 +151,10 @@ import {
 } from '../constants/chatAuthorization';
 import { useChatFilter } from '../context/ChatFilterContext';
 import { AppAvatar } from '../components/AppAvatar';
+import {
+  ContactFormModal,
+  type ContactFormInitialValues,
+} from '../components/ContactFormModal';
 import { LottieSticker } from '../components/LottieSticker';
 import {
   SelectField,
@@ -1915,6 +1919,24 @@ function buildContactCardDisplayFromLookup(
     name: resolvedName || fallback.name,
     phone: resolvedPhone || fallback.phone,
     photoUri: resolvedPhoto || fallback.photoUri,
+  };
+}
+
+function buildContactFormInitialValues(
+  contact: MessageContentContact,
+  defaultPhoneDdi: string
+): ContactFormInitialValues {
+  const resolvedName = readNonEmptyString(contact.name) ?? '';
+  const resolvedLastName = readNonEmptyString(contact.last_name) ?? '';
+  const resolvedPhoneDdi =
+    readNonEmptyString(contact.phone_ddi) ?? defaultPhoneDdi;
+  const rawPhone = contact.phone ?? contact.phone_partial ?? '';
+
+  return {
+    name: resolvedName,
+    lastName: resolvedLastName,
+    phoneDdi: resolvedPhoneDdi,
+    phone: normalizePhoneDigits(rawPhone),
   };
 }
 
@@ -3979,6 +4001,8 @@ function BubbleContent({
   onOpenImage,
   onOpenVideo,
   onOpenActions,
+  onPressContactCard,
+  onPressContactsGroup,
   onTemplateButtonPress,
   disableTemplateButtons,
   forceCollapsedLongText = false,
@@ -3994,6 +4018,14 @@ function BubbleContent({
   onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
   onOpenActions?: (message: ListMessageResult) => void;
+  onPressContactCard?: (
+    message: ListMessageResult,
+    contact: MessageContentContact
+  ) => void;
+  onPressContactsGroup?: (
+    message: ListMessageResult,
+    contacts: MessageContentContact[]
+  ) => void;
   onTemplateButtonPress?: (
     button: MessageTemplateButton,
     message: ListMessageResult
@@ -4467,11 +4499,21 @@ function BubbleContent({
   }
 
   if (type === EMessageType.contact_card && content.contact) {
+    const messageContact = content.contact;
     const contactDisplay =
       resolvedContactDisplay ??
-      resolveContactCardDisplayData(content.contact, chatInfo);
+      resolveContactCardDisplayData(messageContact, chatInfo);
     return renderWithContextCards(
-      <View style={[styles.contactWrap, fromMe && styles.contactWrapRight]}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.contactWrap,
+          fromMe && styles.contactWrapRight,
+          pressed && styles.contactWrapPressed,
+        ]}
+        onPress={() => onPressContactCard?.(msg, messageContact)}
+        onLongPress={() => onOpenActions?.(msg)}
+        delayLongPress={220}
+      >
         <View
           style={[
             styles.contactAvatarWrap,
@@ -4497,7 +4539,7 @@ function BubbleContent({
             </Text>
           ) : null}
         </View>
-      </View>
+      </Pressable>
     );
   }
 
@@ -4508,13 +4550,22 @@ function BubbleContent({
     const extra =
       list.length > 1 ? ` e ${list.length - 1} ${pt.contacts_other}` : '';
     return renderWithContextCards(
-      <View style={styles.contactWrap}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.contactWrap,
+          fromMe && styles.contactWrapRight,
+          pressed && styles.contactWrapPressed,
+        ]}
+        onPress={() => onPressContactsGroup?.(msg, list)}
+        onLongPress={() => onOpenActions?.(msg)}
+        delayLongPress={220}
+      >
         <Ionicons name="people" size={32} color={colors.primary} />
         <Text style={[styles.contactName, textColor]}>
           {name}
           {extra}
         </Text>
-      </View>
+      </Pressable>
     );
   }
 
@@ -4707,6 +4758,8 @@ function MessageBubble({
   audioCtrl,
   onOpenImage,
   onOpenVideo,
+  onPressContactCard,
+  onPressContactsGroup,
   onTemplateButtonPress,
   disableTemplateButtons,
   canInteract,
@@ -4725,6 +4778,14 @@ function MessageBubble({
   audioCtrl: AudioCtrl | null;
   onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
+  onPressContactCard?: (
+    message: ListMessageResult,
+    contact: MessageContentContact
+  ) => void;
+  onPressContactsGroup?: (
+    message: ListMessageResult,
+    contacts: MessageContentContact[]
+  ) => void;
   onTemplateButtonPress?: (
     button: MessageTemplateButton,
     message: ListMessageResult
@@ -4945,6 +5006,8 @@ function MessageBubble({
           audioCtrl={audioCtrl}
           onOpenImage={onOpenImage}
           onOpenVideo={onOpenVideo}
+          onPressContactCard={onPressContactCard}
+          onPressContactsGroup={onPressContactsGroup}
           onOpenActions={onOpenActions}
           onTemplateButtonPress={onTemplateButtonPress}
           disableTemplateButtons={disableTemplateButtons}
@@ -5285,6 +5348,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [loadingContactPicker, setLoadingContactPicker] = useState(false);
   const [loadingMoreContactPicker, setLoadingMoreContactPicker] =
     useState(false);
+  const [contactFormVisible, setContactFormVisible] = useState(false);
+  const [contactFormMode, setContactFormMode] = useState<'create' | 'edit'>(
+    'create'
+  );
+  const [contactFormContactId, setContactFormContactId] = useState<
+    string | null
+  >(null);
+  const [contactFormInitialValues, setContactFormInitialValues] =
+    useState<ContactFormInitialValues | null>(null);
+  const [messageContactsSheetVisible, setMessageContactsSheetVisible] =
+    useState(false);
+  const [messageContactsSheetItems, setMessageContactsSheetItems] = useState<
+    MessageContentContact[]
+  >([]);
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [locationLatitudeInput, setLocationLatitudeInput] = useState('');
   const [locationLongitudeInput, setLocationLongitudeInput] = useState('');
@@ -5577,6 +5654,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setSearchModalVisible(false);
     setAttendanceHistoryVisible(false);
     setTransferModalVisible(false);
+    setContactFormVisible(false);
+    setContactFormContactId(null);
+    setContactFormInitialValues(null);
+    setMessageContactsSheetVisible(false);
+    setMessageContactsSheetItems([]);
   }, [chatInfo.chat_id]);
 
   useEffect(() => {
@@ -6054,6 +6136,113 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [chatInfo.chat_id]);
 
   useEffect(() => {
+    for (const message of messages) {
+      if (
+        message.content?.type !== EMessageType.contact_card ||
+        !message.content.contact
+      ) {
+        continue;
+      }
+      void resolveContactCardForMessage(message);
+    }
+  }, [messages, resolveContactCardForMessage]);
+
+  const openContactFormFromMessageContact = useCallback(
+    async (contact: MessageContentContact) => {
+      dismissKeyboard();
+
+      const fallbackPhoneDdi =
+        readNonEmptyString(contact.phone_ddi) ??
+        readNonEmptyString(chatInfo.contact?.phone_ddi) ??
+        '55';
+      const initialValues = buildContactFormInitialValues(
+        contact,
+        fallbackPhoneDdi
+      );
+
+      let lookup: ChatContactLookupResult | null = null;
+      const payloadContactId = readNonEmptyString(contact.contact_id);
+      if (payloadContactId) {
+        try {
+          lookup = await getChatContactById(payloadContactId);
+        } catch {}
+      }
+
+      if (!lookup) {
+        const normalizedPhone = normalizePhoneDigits(
+          contact.phone ?? contact.phone_partial
+        );
+        if (normalizedPhone.length >= 8) {
+          try {
+            lookup = await getChatContactByPhone(
+              normalizedPhone,
+              fallbackPhoneDdi
+            );
+          } catch {}
+        }
+      }
+
+      if (lookup?.contact_id) {
+        setContactFormMode('edit');
+        setContactFormContactId(lookup.contact_id);
+        setContactFormInitialValues(null);
+      } else {
+        setContactFormMode('create');
+        setContactFormContactId(null);
+        setContactFormInitialValues(initialValues);
+      }
+
+      setContactFormVisible(true);
+    },
+    [chatInfo.contact?.phone_ddi]
+  );
+
+  const handlePressMessageContactCard = useCallback(
+    (_message: ListMessageResult, contact: MessageContentContact) => {
+      void openContactFormFromMessageContact(contact);
+    },
+    [openContactFormFromMessageContact]
+  );
+
+  const handlePressMessageContactsGroup = useCallback(
+    (_message: ListMessageResult, contacts: MessageContentContact[]) => {
+      if (!Array.isArray(contacts) || contacts.length === 0) return;
+
+      if (contacts.length === 1) {
+        void openContactFormFromMessageContact(contacts[0]);
+        return;
+      }
+
+      dismissKeyboard();
+      setMessageContactsSheetItems(contacts);
+      setMessageContactsSheetVisible(true);
+    },
+    [openContactFormFromMessageContact]
+  );
+
+  const handleSelectMessageGroupContact = useCallback(
+    (contact: MessageContentContact) => {
+      setMessageContactsSheetVisible(false);
+      setMessageContactsSheetItems([]);
+      void openContactFormFromMessageContact(contact);
+    },
+    [openContactFormFromMessageContact]
+  );
+
+  const handleCloseContactForm = useCallback(() => {
+    setContactFormVisible(false);
+    setContactFormContactId(null);
+    setContactFormInitialValues(null);
+  }, []);
+
+  const handleContactFormSuccess = useCallback(() => {
+    setContactFormVisible(false);
+    setContactFormContactId(null);
+    setContactFormInitialValues(null);
+    resolvedContactLookupDone.current.clear();
+    resolvingContactCards.current.clear();
+    setResolvedContactCards({});
+
     for (const message of messages) {
       if (
         message.content?.type !== EMessageType.contact_card ||
@@ -11488,6 +11677,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     audioCtrl={audioCtrl}
                     onOpenImage={openImageViewer}
                     onOpenVideo={openVideoViewer}
+                    onPressContactCard={handlePressMessageContactCard}
+                    onPressContactsGroup={handlePressMessageContactsGroup}
                     onTemplateButtonPress={handleTemplateButtonPress}
                     disableTemplateButtons={!canComposeInChat || sending}
                     obfuscateContent={shouldObfuscateContent}
@@ -13767,6 +13958,131 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       </Modal>
 
       <Modal
+        visible={messageContactsSheetVisible}
+        transparent
+        statusBarTranslucent
+        navigationBarTranslucent
+        animationType="slide"
+        onRequestClose={dismissKeyboardAnd(() => {
+          setMessageContactsSheetVisible(false);
+          setMessageContactsSheetItems([]);
+        })}
+      >
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoiding}
+          behavior={keyboardAvoidingBehavior}
+          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
+        >
+          <View
+            style={[
+              styles.bottomSheetOverlay,
+              { paddingBottom: insets.bottom },
+            ]}
+          >
+            <Pressable
+              style={styles.bottomSheetBackdrop}
+              onPress={dismissKeyboardAnd(() => {
+                setMessageContactsSheetVisible(false);
+                setMessageContactsSheetItems([]);
+              })}
+            />
+            <View style={[styles.bottomSheetCard, styles.searchSheetCard]}>
+              <View style={styles.bottomSheetHeader}>
+                <Text style={styles.bottomSheetTitle}>
+                  {pt.received_contacts}
+                </Text>
+                <Pressable
+                  onPress={dismissKeyboardAnd(() => {
+                    setMessageContactsSheetVisible(false);
+                    setMessageContactsSheetItems([]);
+                  })}
+                >
+                  <Ionicons name="close" size={22} color={colors.onSurface} />
+                </Pressable>
+              </View>
+
+              <FlatList
+                data={messageContactsSheetItems}
+                keyExtractor={(item, index) =>
+                  `${item.contact_id ?? 'received'}-${item.phone ?? item.phone_partial ?? index}`
+                }
+                contentContainerStyle={styles.bottomSheetList}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                renderItem={({ item }) => {
+                  const fullName = [item.name, item.last_name]
+                    .filter(Boolean)
+                    .join(' ')
+                    .trim();
+                  const phoneLabel = item.phone_partial ?? item.phone ?? '-';
+
+                  return (
+                    <Pressable
+                      style={styles.contactPickerRow}
+                      onPress={dismissKeyboardAnd(() => {
+                        handleSelectMessageGroupContact(item);
+                      })}
+                    >
+                      <AppAvatar
+                        uri={item.photo}
+                        size={34}
+                        style={styles.contactPickerAvatar}
+                        iconName="person"
+                        iconColor={colors.grey500}
+                      />
+                      <View style={styles.contactPickerRowInfo}>
+                        <Text
+                          style={styles.contactPickerRowName}
+                          numberOfLines={1}
+                        >
+                          {fullName || pt.contact}
+                        </Text>
+                        <Text
+                          style={styles.contactPickerRowPhone}
+                          numberOfLines={1}
+                        >
+                          {phoneLabel}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                }}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>{pt.no_contacts_found}</Text>
+                }
+              />
+
+              <Text style={styles.modalHintText}>
+                {pt.select_received_contact}
+              </Text>
+
+              <View style={styles.bottomSheetFooter}>
+                <Pressable
+                  style={styles.secondaryBtn}
+                  onPress={dismissKeyboardAnd(() => {
+                    setMessageContactsSheetVisible(false);
+                    setMessageContactsSheetItems([]);
+                  })}
+                >
+                  <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <ContactFormModal
+        visible={contactFormVisible}
+        mode={contactFormMode}
+        contactId={contactFormContactId}
+        initialValues={contactFormInitialValues}
+        createChatId={chatInfo.chat_id}
+        onClose={handleCloseContactForm}
+        onSuccess={handleContactFormSuccess}
+      />
+
+      <Modal
         visible={contactPickerVisible}
         transparent
         statusBarTranslucent
@@ -15487,6 +15803,9 @@ const styles = StyleSheet.create({
   },
   contactWrapRight: {
     backgroundColor: 'rgba(255, 255, 255, 0.94)',
+  },
+  contactWrapPressed: {
+    opacity: 0.72,
   },
   contactAvatarWrap: {
     width: 42,

@@ -192,6 +192,8 @@ export const pt = {
   document: 'Documento',
   location: 'Localização',
   contacts_other: 'contatos',
+  received_contacts: 'Contatos recebidos',
+  select_received_contact: 'Selecione um contato para abrir o cadastro',
   location_map_unavailable: 'Mapa indisponível',
   loading_more_messages: 'Carregando mensagens...',
   open_camera: 'Abrir câmera',

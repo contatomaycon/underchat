@@ -81,10 +81,22 @@ type PickerKind =
   | 'ignore'
   | null;
 
+export interface ContactFormInitialValues {
+  name?: string | null;
+  lastName?: string | null;
+  nickname?: string | null;
+  email?: string | null;
+  phoneDdi?: string | null;
+  phone?: string | null;
+  notes?: string | null;
+}
+
 interface ContactFormModalProps {
   visible: boolean;
   mode: ContactFormMode;
   contactId?: string | null;
+  initialValues?: ContactFormInitialValues | null;
+  createChatId?: string | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -124,6 +136,8 @@ export function ContactFormModal({
   visible,
   mode,
   contactId = null,
+  initialValues = null,
+  createChatId = null,
   onClose,
   onSuccess,
 }: ContactFormModalProps) {
@@ -315,6 +329,22 @@ export function ContactFormModal({
           setPhotoUri(resolveImageUri(contact.photo) ?? null);
         } else {
           resetForm();
+
+          const initialName = initialValues?.name?.trim() ?? '';
+          const initialLastName = initialValues?.lastName?.trim() ?? '';
+          const initialNickname = initialValues?.nickname?.trim() ?? '';
+          const initialEmail = initialValues?.email?.trim() ?? '';
+          const initialPhoneDdi = initialValues?.phoneDdi?.trim() ?? '';
+          const initialPhone = initialValues?.phone?.trim() ?? '';
+          const initialNotes = initialValues?.notes ?? '';
+
+          if (initialName) setName(initialName);
+          if (initialLastName) setLastName(initialLastName);
+          if (initialNickname) setNickname(initialNickname);
+          if (initialEmail) setEmail(initialEmail);
+          if (initialPhoneDdi) setPhoneDdi(initialPhoneDdi);
+          if (initialPhone) setPhone(initialPhone);
+          if (initialNotes) setNotes(initialNotes);
         }
       } finally {
         if (!cancelled) {
@@ -330,7 +360,7 @@ export function ContactFormModal({
     return () => {
       cancelled = true;
     };
-  }, [canLoadContact, contactId, visible]);
+  }, [canLoadContact, contactId, initialValues, visible]);
 
   useEffect(() => {
     if (!visible) {
@@ -837,6 +867,7 @@ export function ContactFormModal({
             document: normalizedDocument || null,
             user_id: selectedUserId,
             ignore,
+            chat_id: createChatId?.trim() || null,
           },
           photoBlob
         );
