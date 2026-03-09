@@ -8,6 +8,7 @@ import {
   View,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -50,6 +51,7 @@ export function ContactStartConversationModal({
   onClose,
   onConversationStarted,
 }: ContactStartConversationModalProps) {
+  const insets = useSafeAreaInsets();
   const [workers, setWorkers] = useState<TransferWorker[]>([]);
   const [sectors, setSectors] = useState<TransferSector[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
@@ -202,10 +204,12 @@ export function ContactStartConversationModal({
     <Modal
       visible={visible}
       transparent
+      statusBarTranslucent
+      navigationBarTranslucent
       animationType="slide"
       onRequestClose={handleRequestClose}
     >
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
         <Pressable style={styles.modalBackdrop} onPress={handleRequestClose} />
         <View style={styles.modal}>
           <View style={styles.header}>

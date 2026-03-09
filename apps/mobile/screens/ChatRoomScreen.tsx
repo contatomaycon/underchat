@@ -861,6 +861,29 @@ function formatSearchResultDate(dateString: string): string {
   return date.toLocaleDateString('pt-BR');
 }
 
+function formatAttendanceHistoryDate(
+  dateString: string | null | undefined
+): string {
+  if (!dateString) return '-';
+
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  const now = new Date();
+  const today = now.toDateString();
+  if (date.toDateString() === today) {
+    return pt.today;
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return pt.yesterday;
+  }
+
+  return date.toLocaleDateString('pt-BR');
+}
+
 function formatAttendantEnteredAt(
   enteredAt: string | null | undefined
 ): string {
@@ -13799,6 +13822,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               >
                 <Text style={styles.historyRowTitle} numberOfLines={1}>
                   {item.contact?.name ?? item.name ?? item.phone}
+                </Text>
+                <Text style={styles.historyRowSubtitle}>
+                  {pt.date}: {formatAttendanceHistoryDate(item.date)}
                 </Text>
                 <Text style={styles.historyRowSubtitle}>
                   {pt.protocol}: {item.protocol_start?.[0] || '-'}
