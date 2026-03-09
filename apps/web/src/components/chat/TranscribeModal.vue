@@ -133,7 +133,14 @@ const copyToClipboard = async () => {
               }}
             </VBtn>
           </div>
-          <div class="pa-3 rounded bg-surface-variant">
+          <div
+            class="pa-3 rounded"
+            style="
+              border: 1px solid
+                rgba(var(--v-border-color), var(--v-border-opacity));
+              background-color: rgb(var(--v-theme-surface));
+            "
+          >
             <p
               class="text-body-2 mb-0"
               style="white-space: pre-wrap; word-break: break-word"
