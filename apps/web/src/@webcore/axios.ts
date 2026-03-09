@@ -22,6 +22,7 @@ const createAxiosInstance = () => {
 };
 
 const axiosAuth = createAxiosInstance();
+let logoutAndRedirectPromise: Promise<void> | null = null;
 
 const getCurrentLocale = (): string => {
   const i18n = getI18n();
@@ -78,11 +79,25 @@ const refreshSession = async (): Promise<string | null> => {
   }
 };
 
-const logoutAndRedirect = async () => {
-  await teardownClientSession({
-    notifyPushServer: false,
-  });
-  router.push({ name: 'login' });
+export const logoutAndRedirect = async (): Promise<void> => {
+  if (logoutAndRedirectPromise) {
+    return logoutAndRedirectPromise;
+  }
+
+  logoutAndRedirectPromise = (async () => {
+    await teardownClientSession({
+      notifyPushServer: false,
+    });
+    await router.push({ name: 'login' }).catch(() => {
+      // ignore navigation race conditions
+    });
+  })();
+
+  try {
+    await logoutAndRedirectPromise;
+  } finally {
+    logoutAndRedirectPromise = null;
+  }
 };
 
 const updatePlanStatusFromResponse = async (
@@ -142,7 +157,9 @@ axiosAuth.interceptors.response.use(
     return response;
   },
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest = error.config as
+      | (InternalAxiosRequestConfig & { _retry?: boolean })
+      | undefined;
 
     if (error.response?.status === 403) {
       const blockedData = error?.response?.data
@@ -162,11 +179,14 @@ axiosAuth.interceptors.response.use(
       }
     }
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
+    if (error.response?.status === 401) {
+      if (originalRequest && !originalRequest._retry) {
+        originalRequest._retry = true;
 
-      const retried = await retryWithRefreshedToken(originalRequest);
-      if (retried) return retried;
+        const retried = await retryWithRefreshedToken(originalRequest);
+        if (retried) return retried;
+      }
+
       await logoutAndRedirect();
     }
 

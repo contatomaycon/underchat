@@ -1,7 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BACKEND_URL } from '../config';
-import { cleanupChatSocket } from '../socket/chatSocket';
-import { resetConnection } from '../socket/centrifugo';
 import { clearAuth, getToken } from '../storage/authStorage';
 import { clearStoredPushSubscription } from '../storage/pushStorage';
 import { emitAuthUnauthorized } from './authEvents';
@@ -13,6 +11,8 @@ type TeardownMobileSessionOptions = {
   notifyPushServer?: boolean;
   emitUnauthorized?: boolean;
 };
+
+let unauthorizedTeardownPromise: Promise<void> | null = null;
 
 const clearExtraStorage = async (): Promise<void> => {
   await Promise.all(
@@ -54,6 +54,22 @@ const unsubscribePushServerSide = async (): Promise<void> => {
   }
 };
 
+const cleanupRealtimeConnections = async (): Promise<void> => {
+  try {
+    const { cleanupChatSocket } = await import('../socket/chatSocket');
+    await cleanupChatSocket();
+  } catch {
+    // ignore
+  }
+
+  try {
+    const { resetConnection } = await import('../socket/centrifugo');
+    resetConnection();
+  } catch {
+    // ignore
+  }
+};
+
 export async function teardownMobileSession(
   options: TeardownMobileSessionOptions = {}
 ): Promise<void> {
@@ -71,11 +87,7 @@ export async function teardownMobileSession(
     await logoutOnServer();
   }
 
-  await cleanupChatSocket().catch(() => {
-    // ignore
-  });
-
-  resetConnection();
+  await cleanupRealtimeConnections();
 
   await Promise.all([
     clearAuth(),
@@ -86,4 +98,20 @@ export async function teardownMobileSession(
   if (emitUnauthorized) {
     emitAuthUnauthorized();
   }
+}
+
+export async function teardownMobileSessionOnUnauthorized(): Promise<void> {
+  if (unauthorizedTeardownPromise) {
+    return unauthorizedTeardownPromise;
+  }
+
+  unauthorizedTeardownPromise = teardownMobileSession({
+    notifyPushServer: true,
+    notifyServerLogout: false,
+    emitUnauthorized: true,
+  }).finally(() => {
+    unauthorizedTeardownPromise = null;
+  });
+
+  return unauthorizedTeardownPromise;
 }

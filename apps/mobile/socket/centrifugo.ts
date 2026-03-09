@@ -9,6 +9,7 @@ import {
 } from 'centrifuge';
 import { BACKEND_URL } from '../config';
 import { getToken } from '../storage/authStorage';
+import { teardownMobileSessionOnUnauthorized } from '../utils/sessionTeardown';
 
 export type { Subscription };
 
@@ -57,6 +58,11 @@ const requestCentrifugoAuthToken = async (): Promise<AuthTokenResponse> => {
     },
     body: '{}',
   });
+
+  if (response.status === 401) {
+    await teardownMobileSessionOnUnauthorized();
+    throw new Error('Unauthorized Centrifugo token request');
+  }
 
   if (!response.ok) {
     throw new Error('Failed to request Centrifugo token');

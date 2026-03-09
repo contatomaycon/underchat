@@ -7,7 +7,8 @@ import {
   PublishResult,
   SubscribedContext,
 } from 'centrifuge';
-import axios from '@webcore/axios';
+import { isAxiosError } from 'axios';
+import axios, { logoutAndRedirect } from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
 
@@ -58,6 +59,12 @@ const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
       };
 
       return data.data;
+    } catch (error) {
+      if (isAxiosError(error) && error.response?.status === 401) {
+        await logoutAndRedirect();
+      }
+
+      throw error;
     } finally {
       tokenGenerationPromise = null;
     }

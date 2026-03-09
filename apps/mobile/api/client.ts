@@ -2,16 +2,12 @@ import { BACKEND_URL } from '../config';
 import { getToken } from '../storage/authStorage';
 import { emitAttendanceBlocked } from '../utils/authEvents';
 import type { AttendanceBlockedPayload } from '../types/attendanceHours';
-import { teardownMobileSession } from '../utils/sessionTeardown';
+import { teardownMobileSessionOnUnauthorized } from '../utils/sessionTeardown';
 
 const BASE = `${BACKEND_URL}/v1`;
 
 async function handleUnauthorized(): Promise<void> {
-  await teardownMobileSession({
-    notifyPushServer: true,
-    notifyServerLogout: false,
-    emitUnauthorized: true,
-  });
+  await teardownMobileSessionOnUnauthorized();
 }
 
 async function handleAttendanceBlocked(response: Response): Promise<boolean> {

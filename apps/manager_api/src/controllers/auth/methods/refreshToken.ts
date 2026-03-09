@@ -4,6 +4,7 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { AuthRefreshTokenUseCase } from '@core/useCases/auth/AuthRefreshToken.useCase';
+import { AuthRefreshTokenError } from '@core/common/exceptions/AuthRefreshTokenError';
 
 export const refreshToken = async (
   request: FastifyRequest,
@@ -32,6 +33,13 @@ export const refreshToken = async (
       data: responseAuth,
     });
   } catch (error) {
+    if (error instanceof AuthRefreshTokenError) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: error.httpStatusCode,
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };
