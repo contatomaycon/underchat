@@ -68,8 +68,9 @@ export class PushNotificationService {
     userId: string,
     payload: IPushNotificationPayload
   ): Promise<{ sent: number; failed: number }> {
-    const subscriptions =
-      await this.pushSubscriptionListerRepository.listByUserId(userId);
+    const subscriptions = this.dedupeSubscriptionsByEndpoint(
+      await this.pushSubscriptionListerRepository.listByUserId(userId)
+    );
 
     if (subscriptions.length === 0) {
       return { sent: 0, failed: 0 };
@@ -162,7 +163,7 @@ export class PushNotificationService {
       },
     };
 
-    const eligibleUserIds: string[] = [];
+    const eligibleUserIds = new Set<string>();
 
     for (const userId of userIds) {
       const canReceive = await this.canUserReceiveNotification(
@@ -172,15 +173,15 @@ export class PushNotificationService {
       );
 
       if (canReceive) {
-        eligibleUserIds.push(userId);
+        eligibleUserIds.add(userId);
       }
     }
 
-    if (eligibleUserIds.length === 0) {
+    if (eligibleUserIds.size === 0) {
       return;
     }
 
-    const promises = eligibleUserIds.map((userId) =>
+    const promises = Array.from(eligibleUserIds).map((userId) =>
       this.sendNotificationToUser(userId, payload).catch(() => {})
     );
 
@@ -224,7 +225,7 @@ export class PushNotificationService {
       },
     };
 
-    const eligibleUserIds: string[] = [];
+    const eligibleUserIds = new Set<string>();
 
     for (const userId of userIds) {
       const canReceive = await this.canUserReceiveNotification(
@@ -234,15 +235,15 @@ export class PushNotificationService {
       );
 
       if (canReceive) {
-        eligibleUserIds.push(userId);
+        eligibleUserIds.add(userId);
       }
     }
 
-    if (eligibleUserIds.length === 0) {
+    if (eligibleUserIds.size === 0) {
       return;
     }
 
-    const promises = eligibleUserIds.map((userId) =>
+    const promises = Array.from(eligibleUserIds).map((userId) =>
       this.sendNotificationToUser(userId, payload).catch(() => {})
     );
 
@@ -324,6 +325,23 @@ export class PushNotificationService {
       status === EChatStatus.ura_schedule ||
       status === EChatStatus.ura_webhook
     );
+  }
+
+  private dedupeSubscriptionsByEndpoint<
+    T extends { provider: string; endpoint: string },
+  >(subscriptions: T[]): T[] {
+    if (subscriptions.length <= 1) {
+      return subscriptions;
+    }
+
+    const deduped = new Map<string, T>();
+    for (const subscription of subscriptions) {
+      const key = `${subscription.provider}:${subscription.endpoint}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, subscription);
+      }
+    }
+    return Array.from(deduped.values());
   }
 
   private buildChatSnapshot(chat: IChat): Record<string, unknown> {

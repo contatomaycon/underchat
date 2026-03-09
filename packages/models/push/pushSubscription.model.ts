@@ -5,8 +5,9 @@ import {
   text,
   varchar,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { user } from '@core/models';
 
 export const pushSubscription = pgTable(
@@ -39,6 +40,9 @@ export const pushSubscription = pgTable(
       table.user_id,
       table.deleted_at
     ),
+    uniqueIndex('push_subscription_provider_endpoint_active_uidx')
+      .on(table.provider, table.endpoint)
+      .where(sql`${table.deleted_at} is null`),
   ]
 );
 
