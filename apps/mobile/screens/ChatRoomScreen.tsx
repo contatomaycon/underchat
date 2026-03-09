@@ -69,6 +69,8 @@ import {
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   RecordingPresets,
+  preload,
+  clearPreloadedSource,
 } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Directory, File, Paths } from 'expo-file-system';
@@ -384,6 +386,38 @@ function formatAudioTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function isAudioPlaybackNearEnd(position: number, duration: number): boolean {
+  if (!Number.isFinite(position) || !Number.isFinite(duration)) return false;
+  if (duration <= 0) return false;
+  return position >= Math.max(0, duration - AUDIO_FINISH_THRESHOLD_SECONDS);
+}
+
+function collectLatestAudioUrlsForPrefetch(
+  list: ListMessageResult[],
+  limit: number
+): string[] {
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
+  for (
+    let index = list.length - 1;
+    index >= 0 && urls.length < limit;
+    index -= 1
+  ) {
+    const message = list[index];
+    const rawUrl = readNonEmptyString(message.content?.audio?.url);
+    if (!rawUrl) continue;
+
+    const resolved = resolveMediaUri(rawUrl) ?? rawUrl;
+    if (!resolved || seen.has(resolved)) continue;
+
+    seen.add(resolved);
+    urls.push(resolved);
+  }
+
+  return urls;
+}
+
 function isDirectoryPickerCancellationError(error: unknown): boolean {
   if (!error) return false;
   if (typeof error === 'string') {
@@ -497,6 +531,8 @@ const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 const CHAT_MESSAGES_PER_PAGE = 10;
 const CHAT_SOCKET_SYNC_PER_PAGE = 20;
+const AUDIO_PREFETCH_LIMIT = 20;
+const AUDIO_FINISH_THRESHOLD_SECONDS = 0.05;
 const CHAT_SOCKET_SYNC_INTERVAL_MS = 30000;
 const CHAT_SOCKET_SYNC_DEBOUNCE_MS = 5000;
 const ATTENDANCE_HISTORY_SKELETON_ROWS = 6;
@@ -3182,6 +3218,8 @@ type AudioState = {
   position: number;
   duration: number;
   rate: number;
+  isLoading: boolean;
+  isBuffering: boolean;
 };
 
 const DEFAULT_AUDIO_STATE: AudioState = {
@@ -3189,6 +3227,8 @@ const DEFAULT_AUDIO_STATE: AudioState = {
   position: 0,
   duration: 0,
   rate: 1,
+  isLoading: false,
+  isBuffering: false,
 };
 
 function useChatAudio() {
@@ -3197,7 +3237,13 @@ function useChatAudio() {
     {}
   );
   const soundRefs = useRef<Record<string, AudioPlayer | null>>({});
+  const listenerRefs = useRef<Record<string, { remove?: () => void } | null>>(
+    {}
+  );
   const waveformCache = useRef<Record<string, number[]>>({});
+  const pendingAutoPlayRef = useRef<Record<string, boolean>>({});
+  const pendingAutoPlayRateRef = useRef<Record<string, number>>({});
+  const finishedPlaybackRef = useRef<Record<string, boolean>>({});
 
   const updateState = useCallback(
     (messageId: string, patch: Partial<AudioState>) => {
@@ -3209,57 +3255,239 @@ function useChatAudio() {
     []
   );
 
+  const releaseSound = useCallback((messageId: string) => {
+    pendingAutoPlayRef.current[messageId] = false;
+    delete pendingAutoPlayRateRef.current[messageId];
+    delete finishedPlaybackRef.current[messageId];
+
+    const listener = listenerRefs.current[messageId];
+    if (listener?.remove) {
+      try {
+        listener.remove();
+      } catch {}
+    }
+    delete listenerRefs.current[messageId];
+
+    const player = soundRefs.current[messageId];
+    if (player) {
+      try {
+        player.pause();
+      } catch {}
+      try {
+        player.remove();
+      } catch {}
+    }
+    delete soundRefs.current[messageId];
+  }, []);
+
+  const disposeAllPlayers = useCallback(() => {
+    const messageIds = Object.keys(soundRefs.current);
+    for (const messageId of messageIds) {
+      releaseSound(messageId);
+    }
+    waveformCache.current = {};
+  }, [releaseSound]);
+
+  const resetPlaybackToStart = useCallback(
+    (messageId: string, player: AudioPlayer, durationHint: number) => {
+      finishedPlaybackRef.current[messageId] = true;
+      pendingAutoPlayRef.current[messageId] = false;
+      const durationSec =
+        durationHint > 0 ? durationHint : player.duration || 0;
+
+      const applyReset = () => {
+        const patch: Partial<AudioState> = {
+          isPlaying: false,
+          position: 0,
+          isLoading: false,
+          isBuffering: false,
+        };
+        if (durationSec > 0) {
+          patch.duration = durationSec;
+        }
+        updateState(messageId, patch);
+      };
+
+      try {
+        player.pause();
+      } catch {}
+
+      try {
+        player.seekTo(0).then(applyReset).catch(applyReset);
+      } catch {
+        applyReset();
+      }
+    },
+    [updateState]
+  );
+
   const getOrCreateSound = useCallback(
     (messageId: string, url: string): AudioPlayer | null => {
       if (soundRefs.current[messageId]) return soundRefs.current[messageId];
       try {
-        const player = createAudioPlayer(url, { updateInterval: 300 });
-        player.addListener('playbackStatusUpdate', (status) => {
-          setState((prev) => {
-            const cur = prev[messageId];
-            return {
-              ...prev,
-              [messageId]: {
-                isPlaying: status.playing,
-                position: status.currentTime,
-                duration: cur?.duration || status.duration || 0,
-                rate: cur?.rate ?? status.playbackRate ?? 1,
-              },
-            };
-          });
+        const player = createAudioPlayer(url, {
+          updateInterval: 300,
+          downloadFirst: true,
+          preferredForwardBufferDuration: 10,
         });
+        player.loop = false;
+        const initialDuration = player.duration || 0;
+        const initialPatch: Partial<AudioState> = {
+          isLoading: !player.isLoaded,
+          isBuffering: player.isBuffering,
+        };
+        if (initialDuration > 0) {
+          initialPatch.duration = initialDuration;
+        }
+        updateState(messageId, initialPatch);
+
+        const subscription = player.addListener(
+          'playbackStatusUpdate',
+          (status) => {
+            const statusDuration = status.duration || player.duration || 0;
+            const statusPosition = status.currentTime || 0;
+            const didFinish =
+              status.didJustFinish ||
+              (!status.playing &&
+                isAudioPlaybackNearEnd(statusPosition, statusDuration));
+
+            if (didFinish) {
+              resetPlaybackToStart(messageId, player, statusDuration);
+              return;
+            }
+
+            setState((prev) => {
+              const cur = prev[messageId];
+              const nextRate =
+                cur?.rate ??
+                status.playbackRate ??
+                pendingAutoPlayRateRef.current[messageId] ??
+                1;
+              return {
+                ...prev,
+                [messageId]: {
+                  ...DEFAULT_AUDIO_STATE,
+                  ...cur,
+                  isPlaying: status.playing,
+                  position: statusPosition,
+                  duration:
+                    statusDuration > 0 ? statusDuration : (cur?.duration ?? 0),
+                  rate: nextRate,
+                  isLoading: !status.isLoaded,
+                  isBuffering: status.isBuffering,
+                },
+              };
+            });
+
+            if (
+              status.isLoaded &&
+              pendingAutoPlayRef.current[messageId] &&
+              !finishedPlaybackRef.current[messageId] &&
+              !status.playing
+            ) {
+              pendingAutoPlayRef.current[messageId] = false;
+              const rate = pendingAutoPlayRateRef.current[messageId] ?? 1;
+              try {
+                player.setPlaybackRate(rate);
+                player.play();
+              } catch {}
+            }
+          }
+        );
+        listenerRefs.current[messageId] = subscription ?? null;
         soundRefs.current[messageId] = player;
         return player;
       } catch {
         return null;
       }
     },
-    []
+    [resetPlaybackToStart, updateState]
   );
 
   const playPause = useCallback(
     (messageId: string, url: string) => {
       const player = getOrCreateSound(messageId, url);
       if (!player) return;
-      const cur = state[messageId];
-      const isPlaying = cur?.isPlaying ?? false;
-      if (isPlaying) {
+      const cur = state[messageId] ?? DEFAULT_AUDIO_STATE;
+
+      if (cur.isPlaying) {
+        pendingAutoPlayRef.current[messageId] = false;
         player.pause();
-      } else {
-        const rate = cur?.rate ?? 1;
-        player.setPlaybackRate(rate);
-        player.play();
+        updateState(messageId, {
+          isPlaying: false,
+          isLoading: false,
+          isBuffering: false,
+        });
+        return;
       }
+
+      const rate = cur.rate ?? 1;
+      finishedPlaybackRef.current[messageId] = false;
+      pendingAutoPlayRateRef.current[messageId] = rate;
+
+      const startPlayback = () => {
+        try {
+          player.setPlaybackRate(rate);
+        } catch {}
+
+        if (player.isLoaded && !player.isBuffering) {
+          pendingAutoPlayRef.current[messageId] = false;
+          updateState(messageId, {
+            isLoading: false,
+            isBuffering: false,
+          });
+          try {
+            player.play();
+          } catch {}
+          return;
+        }
+
+        pendingAutoPlayRef.current[messageId] = true;
+        updateState(messageId, {
+          isLoading: true,
+          isBuffering: player.isBuffering,
+        });
+
+        if (player.isLoaded) {
+          try {
+            player.play();
+          } catch {}
+        }
+      };
+
+      const durationSec =
+        cur.duration > 0 ? cur.duration : player.duration || 0;
+      const positionSec =
+        cur.position > 0 ? cur.position : player.currentTime || 0;
+      if (isAudioPlaybackNearEnd(positionSec, durationSec)) {
+        try {
+          player
+            .seekTo(0)
+            .then(() => {
+              updateState(messageId, { position: 0 });
+              startPlayback();
+            })
+            .catch(startPlayback);
+          return;
+        } catch {}
+      }
+
+      startPlayback();
     },
-    [getOrCreateSound, state]
+    [getOrCreateSound, state, updateState]
   );
 
   const seek = useCallback(
     (messageId: string, url: string, percentage: number) => {
       const player = getOrCreateSound(messageId, url);
       if (!player) return;
+      finishedPlaybackRef.current[messageId] = false;
+      pendingAutoPlayRef.current[messageId] = false;
+
       const cur = state[messageId];
-      const durationSec = cur?.duration ?? 0;
+      const durationSec =
+        (cur?.duration && cur.duration > 0 ? cur.duration : player.duration) ||
+        0;
       if (durationSec <= 0) return;
       const positionSec = Math.max(0, Math.min(1, percentage)) * durationSec;
       player.seekTo(positionSec).then(() => {
@@ -3274,6 +3502,7 @@ function useChatAudio() {
       const cur = state[messageId];
       const currentRate = cur?.rate ?? 1;
       const nextRate = currentRate === 1 ? 1.5 : currentRate === 1.5 ? 2 : 1;
+      pendingAutoPlayRateRef.current[messageId] = nextRate;
       updateState(messageId, { rate: nextRate });
       const player = soundRefs.current[messageId];
       if (player) {
@@ -3335,6 +3564,18 @@ function useChatAudio() {
     [waveformWidths]
   );
 
+  const releaseAll = useCallback(() => {
+    disposeAllPlayers();
+    setState({});
+    setWaveformWidths({});
+  }, [disposeAllPlayers]);
+
+  useEffect(() => {
+    return () => {
+      disposeAllPlayers();
+    };
+  }, [disposeAllPlayers]);
+
   return {
     getState,
     getSpeedLabel,
@@ -3344,6 +3585,7 @@ function useChatAudio() {
     getWaveform,
     setWaveformWidth,
     getWaveformWidth,
+    releaseAll,
   };
 }
 
@@ -4368,11 +4610,15 @@ function BubbleContent({
               onLongPress={() => onOpenActions?.(msg)}
               delayLongPress={220}
             >
-              <Ionicons
-                name={audioState.isPlaying ? 'pause' : 'play'}
-                size={16}
-                color={colors.primary}
-              />
+              {audioState.isLoading || audioState.isBuffering ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons
+                  name={audioState.isPlaying ? 'pause' : 'play'}
+                  size={16}
+                  color={colors.primary}
+                />
+              )}
             </Pressable>
             <Text
               style={[
@@ -5178,6 +5424,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     previousContentHeight: number;
   } | null>(null);
   const messagesRef = useRef<ListMessageResult[]>([]);
+  const preloadedAudioUrlsRef = useRef<Set<string>>(new Set());
+  const preloadingAudioUrlsRef = useRef<Set<string>>(new Set());
+  const audioPrefetchSessionRef = useRef(0);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [chatInfo, setChatInfo] = useState(chat);
   const [permissionList, setPermissionList] = useState<string[]>([]);
@@ -5340,6 +5589,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [aiReplyAudioProgress, setAiReplyAudioProgress] = useState(0);
   const [aiReplyAudioDuration, setAiReplyAudioDuration] = useState(0);
   const [aiReplyAudioSpeed, setAiReplyAudioSpeed] = useState(1);
+  const [aiReplyAudioLoading, setAiReplyAudioLoading] = useState(false);
+  const [aiReplyAudioBuffering, setAiReplyAudioBuffering] = useState(false);
+  const aiReplyAudioPendingAutoPlayRef = useRef(false);
+  const aiReplyAudioFinishedRef = useRef(false);
+  const aiReplyAudioSpeedRef = useRef(1);
   const aiReplyWaveformWidth = useRef(0);
   const AI_REPLY_WAVEFORM_BARS = 64;
   const aiReplyDefaultWaveform = useMemo(
@@ -5570,6 +5824,32 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const showProtocolInHeader =
     workerConfigForChat?.show_protocol_in_chat === true &&
     protocolList.length > 0;
+  const clearTrackedAudioPreloads = useCallback(() => {
+    audioPrefetchSessionRef.current += 1;
+    const preloadedUrls = Array.from(preloadedAudioUrlsRef.current);
+    preloadedAudioUrlsRef.current.clear();
+    preloadingAudioUrlsRef.current.clear();
+
+    for (const url of preloadedUrls) {
+      void clearPreloadedSource(url).catch(() => {});
+    }
+  }, []);
+  const releaseChatAudioRef = useRef(audioCtrl.releaseAll);
+
+  useEffect(() => {
+    aiReplyAudioSpeedRef.current = aiReplyAudioSpeed;
+  }, [aiReplyAudioSpeed]);
+
+  useEffect(() => {
+    releaseChatAudioRef.current = audioCtrl.releaseAll;
+  }, [audioCtrl.releaseAll]);
+
+  useEffect(() => {
+    return () => {
+      releaseChatAudioRef.current();
+      clearTrackedAudioPreloads();
+    };
+  }, [chatInfo.chat_id, clearTrackedAudioPreloads]);
 
   useEffect(() => {
     setChatInfo(chat);
@@ -5771,6 +6051,39 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    const sessionId = audioPrefetchSessionRef.current;
+    const urls = collectLatestAudioUrlsForPrefetch(
+      messages,
+      AUDIO_PREFETCH_LIMIT
+    );
+    for (const url of urls) {
+      if (
+        preloadedAudioUrlsRef.current.has(url) ||
+        preloadingAudioUrlsRef.current.has(url)
+      ) {
+        continue;
+      }
+
+      preloadingAudioUrlsRef.current.add(url);
+      void preload(url, { preferredForwardBufferDuration: 10 })
+        .then(() => {
+          if (audioPrefetchSessionRef.current !== sessionId) {
+            void clearPreloadedSource(url).catch(() => {});
+            return;
+          }
+          preloadedAudioUrlsRef.current.add(url);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (audioPrefetchSessionRef.current !== sessionId) {
+            return;
+          }
+          preloadingAudioUrlsRef.current.delete(url);
+        });
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -9123,6 +9436,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   ]);
 
   const cleanupAiReplyAudio = useCallback(() => {
+    aiReplyAudioPendingAutoPlayRef.current = false;
+    aiReplyAudioFinishedRef.current = false;
     if (aiReplyAudioRef.current) {
       aiReplyAudioRef.current.pause();
       aiReplyAudioRef.current.remove();
@@ -9131,7 +9446,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setAiReplyAudioPlaying(false);
     setAiReplyAudioProgress(0);
     setAiReplyAudioDuration(0);
+    setAiReplyAudioLoading(false);
+    setAiReplyAudioBuffering(false);
     setAiReplyAudioSpeed(1);
+    aiReplyAudioSpeedRef.current = 1;
   }, []);
 
   const handleSendAiReply = useCallback(async () => {
@@ -9197,29 +9515,121 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (!url) return;
 
     if (!aiReplyAudioRef.current) {
-      const player = createAudioPlayer(url, { updateInterval: 300 });
+      const player = createAudioPlayer(url, {
+        updateInterval: 300,
+        downloadFirst: true,
+        preferredForwardBufferDuration: 10,
+      });
+      player.loop = false;
+      setAiReplyAudioLoading(!player.isLoaded);
+      setAiReplyAudioBuffering(player.isBuffering);
+      setAiReplyAudioDuration((prev) => player.duration || prev || 0);
       player.addListener('playbackStatusUpdate', (status) => {
+        const statusDuration = status.duration || player.duration || 0;
+        const statusPosition = status.currentTime || 0;
+        const didFinish =
+          status.didJustFinish ||
+          (!status.playing &&
+            isAudioPlaybackNearEnd(statusPosition, statusDuration));
+
+        if (didFinish) {
+          aiReplyAudioFinishedRef.current = true;
+          aiReplyAudioPendingAutoPlayRef.current = false;
+          setAiReplyAudioPlaying(false);
+          setAiReplyAudioLoading(false);
+          setAiReplyAudioBuffering(false);
+          setAiReplyAudioDuration((prev) => statusDuration || prev || 0);
+          try {
+            player.pause();
+          } catch {}
+          try {
+            player
+              .seekTo(0)
+              .then(() => setAiReplyAudioProgress(0))
+              .catch(() => setAiReplyAudioProgress(0));
+          } catch {
+            setAiReplyAudioProgress(0);
+          }
+          return;
+        }
+
         setAiReplyAudioPlaying(status.playing);
-        setAiReplyAudioProgress(status.currentTime || 0);
-        setAiReplyAudioDuration((prev) => status.duration || prev || 0);
-        if (!status.playing && status.currentTime === 0) {
-          setAiReplyAudioProgress(0);
+        setAiReplyAudioProgress(statusPosition);
+        setAiReplyAudioDuration((prev) => statusDuration || prev || 0);
+        setAiReplyAudioLoading(!status.isLoaded);
+        setAiReplyAudioBuffering(status.isBuffering);
+
+        if (
+          status.isLoaded &&
+          aiReplyAudioPendingAutoPlayRef.current &&
+          !aiReplyAudioFinishedRef.current &&
+          !status.playing
+        ) {
+          aiReplyAudioPendingAutoPlayRef.current = false;
+          try {
+            player.setPlaybackRate(aiReplyAudioSpeedRef.current);
+            player.play();
+          } catch {}
         }
       });
       aiReplyAudioRef.current = player;
     }
 
+    const player = aiReplyAudioRef.current;
+    if (!player) return;
+
     if (aiReplyAudioPlaying) {
-      aiReplyAudioRef.current.pause();
-    } else {
-      aiReplyAudioRef.current.setPlaybackRate(aiReplyAudioSpeed);
-      aiReplyAudioRef.current.play();
+      aiReplyAudioPendingAutoPlayRef.current = false;
+      player.pause();
+      return;
     }
-  }, [aiReplyResult?.audio_url, aiReplyAudioPlaying, aiReplyAudioSpeed]);
+
+    aiReplyAudioFinishedRef.current = false;
+    const startPlayback = () => {
+      try {
+        player.setPlaybackRate(aiReplyAudioSpeedRef.current);
+      } catch {}
+
+      if (player.isLoaded && !player.isBuffering) {
+        aiReplyAudioPendingAutoPlayRef.current = false;
+        setAiReplyAudioLoading(false);
+        setAiReplyAudioBuffering(false);
+        try {
+          player.play();
+        } catch {}
+        return;
+      }
+
+      aiReplyAudioPendingAutoPlayRef.current = true;
+      setAiReplyAudioLoading(true);
+      setAiReplyAudioBuffering(player.isBuffering);
+      if (player.isLoaded) {
+        try {
+          player.play();
+        } catch {}
+      }
+    };
+
+    if (isAudioPlaybackNearEnd(player.currentTime || 0, player.duration || 0)) {
+      try {
+        player
+          .seekTo(0)
+          .then(() => {
+            setAiReplyAudioProgress(0);
+            startPlayback();
+          })
+          .catch(startPlayback);
+        return;
+      } catch {}
+    }
+
+    startPlayback();
+  }, [aiReplyResult?.audio_url, aiReplyAudioPlaying]);
 
   const toggleAiReplyAudioSpeed = useCallback(() => {
     setAiReplyAudioSpeed((prev) => {
       const next = prev === 1 ? 1.5 : prev === 1.5 ? 2 : 1;
+      aiReplyAudioSpeedRef.current = next;
       if (aiReplyAudioRef.current) {
         try {
           aiReplyAudioRef.current.setPlaybackRate(next);
@@ -9238,6 +9648,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       if (dur <= 0) return;
       const pos = percentage * dur;
       if (aiReplyAudioRef.current) {
+        aiReplyAudioFinishedRef.current = false;
+        aiReplyAudioPendingAutoPlayRef.current = false;
         aiReplyAudioRef.current.seekTo(pos);
         setAiReplyAudioProgress(pos);
       }
@@ -14401,13 +14813,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     </Text>
                   </Pressable>
                   <Pressable onPress={toggleAiReplyAudio}>
-                    <Ionicons
-                      name={
-                        aiReplyAudioPlaying ? 'pause-circle' : 'play-circle'
-                      }
-                      size={32}
-                      color={colors.primary}
-                    />
+                    {aiReplyAudioLoading || aiReplyAudioBuffering ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Ionicons
+                        name={
+                          aiReplyAudioPlaying ? 'pause-circle' : 'play-circle'
+                        }
+                        size={32}
+                        color={colors.primary}
+                      />
+                    )}
                   </Pressable>
                   <Pressable
                     style={{ flex: 1, height: 36, justifyContent: 'center' }}
@@ -14500,11 +14916,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                       textAlign: 'right',
                     }}
                   >
-                    {aiReplyAudioProgress > 0
-                      ? `${Math.floor(aiReplyAudioProgress / 60)}:${String(Math.floor(aiReplyAudioProgress % 60)).padStart(2, '0')}`
-                      : aiReplyAudioDuration > 0
-                        ? `${Math.floor(aiReplyAudioDuration / 60)}:${String(Math.floor(aiReplyAudioDuration % 60)).padStart(2, '0')}`
-                        : '0:00'}
+                    {`${Math.floor(aiReplyAudioProgress / 60)}:${String(Math.floor(aiReplyAudioProgress % 60)).padStart(2, '0')}`}
                   </Text>
                 </View>
               ) : null}
