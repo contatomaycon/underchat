@@ -18,6 +18,7 @@ export default fp(
         'Origin',
         'Referer',
         'User-Agent',
+        'x-client-platform',
       ],
       exposedHeaders: ['x-plan-active'],
       credentials: true,
