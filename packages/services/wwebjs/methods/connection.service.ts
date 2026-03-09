@@ -511,7 +511,6 @@ export class WwebjsConnectionService {
 
       for (const name of CHROMIUM_LOCK_FILE_NAMES) {
         try {
-          // Chromium can leave broken symlinks here after abrupt restarts.
           fs.rmSync(path.join(targetDir, name), {
             force: true,
             recursive: true,
@@ -725,7 +724,33 @@ export class WwebjsConnectionService {
     } else if (this.isTransientInitializeError(message)) {
       this.reconnectAfterTransientInitializeError();
     } else {
-      this.scheduleNextReconnectAttempt();
+      this.clearFolder();
+
+      if (
+        this.typeConnection === EBaileysConnectionType.qrcode &&
+        this.initialConnection &&
+        !this.userRequestedDisconnect
+      ) {
+        this.retryCount = 0;
+        this.logConnectionEvent('initialize_error_scheduling_qr', {
+          connection_type: this.typeConnection,
+          reason: message,
+        });
+        this.clearDisconnectRetryTimer();
+        this.disconnectRetryTimer = setTimeout(() => {
+          this.disconnectRetryTimer = undefined;
+          this.connect({
+            initial_connection: this.initialConnection,
+            force_new: false,
+            allow_restore: false,
+            type: this.typeConnection,
+            requested_by_user: false,
+            from_disconnect_restart: true,
+          }).catch(() => {
+            this.scheduleNextReconnectAttempt();
+          });
+        }, RETRY_DELAY);
+      }
     }
 
     this.saveLogWppConnection({
@@ -1043,7 +1068,32 @@ export class WwebjsConnectionService {
           this.clearChromiumProfileLock();
         });
         this.incomingMessageService.unbind();
-        this.scheduleNextReconnectAttempt();
+        this.clearFolder();
+
+        if (
+          this.typeConnection === EBaileysConnectionType.qrcode &&
+          this.initialConnection &&
+          !this.userRequestedDisconnect
+        ) {
+          this.retryCount = 0;
+          this.logConnectionEvent('auth_failure_scheduling_qr', {
+            connection_type: this.typeConnection,
+          });
+          this.clearDisconnectRetryTimer();
+          this.disconnectRetryTimer = setTimeout(() => {
+            this.disconnectRetryTimer = undefined;
+            this.connect({
+              initial_connection: this.initialConnection,
+              force_new: false,
+              allow_restore: false,
+              type: this.typeConnection,
+              requested_by_user: false,
+              from_disconnect_restart: true,
+            }).catch(() => {
+              this.scheduleNextReconnectAttempt();
+            });
+          }, RETRY_DELAY);
+        }
       });
 
       client.on('chat_state', (state) => {

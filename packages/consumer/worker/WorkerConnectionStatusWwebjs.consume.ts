@@ -73,7 +73,12 @@ export class WorkerConnectionStatusWwebjsConsume {
       return;
     }
 
-    if (this.wwebjsService.hasSession()) {
+    const currentCode = this.wwebjsService.getCode();
+    const isSessionInvalid =
+      currentCode === ECodeMessage.badSession ||
+      currentCode === ECodeMessage.loggedOut;
+
+    if (this.wwebjsService.hasSession() && !isSessionInvalid) {
       await this.waitForReconnection(3000, 500);
       if (this.wwebjsService.isConnected()) {
         await this.publishConnectedStatus();
@@ -86,7 +91,6 @@ export class WorkerConnectionStatusWwebjsConsume {
     }
 
     const currentStatus = this.wwebjsService.getStatus();
-    const currentCode = this.wwebjsService.getCode();
     const hasActiveSocket = Boolean(this.wwebjsService.socket);
     const awaitingUserAction =
       currentCode === ECodeMessage.awaitingReadQrCode ||
@@ -102,9 +106,24 @@ export class WorkerConnectionStatusWwebjsConsume {
       return;
     }
 
+    if (isSessionInvalid) {
+      this.logConnectionEvent('connection_session_invalid_clearing', {
+        code: currentCode,
+        connection_type: data.type,
+      });
+
+      await this.wwebjsService.disconnect({
+        initial_connection: true,
+        disconnected_user: false,
+        preserve_session: false,
+        remove_session: true,
+      });
+    }
+
     await this.connectWithService(data, {
-      fromDisconnectRestart: false,
+      fromDisconnectRestart: isSessionInvalid,
       requestedByUser: true,
+      allowRestore: !isSessionInvalid,
     });
   }
 
@@ -157,20 +176,24 @@ export class WorkerConnectionStatusWwebjsConsume {
     options: {
       fromDisconnectRestart: boolean;
       requestedByUser: boolean;
+      allowRestore?: boolean;
     }
   ): Promise<void> {
+    const allowRestore = options.allowRestore ?? true;
+
     this.logConnectionEvent('connection_connect_invoked', {
       from_disconnect_restart: options.fromDisconnectRestart,
       requested_by_user: options.requestedByUser,
       connection_type: data.type,
       has_phone_connection: Boolean(data.phone_connection),
+      allow_restore: allowRestore,
       delegated_retry_owner: 'connection_service',
     });
 
     try {
       const state = await this.wwebjsService.connect({
         initial_connection: true,
-        allow_restore: true,
+        allow_restore: allowRestore,
         force_new: options.fromDisconnectRestart,
         requested_by_user: options.requestedByUser,
         from_disconnect_restart: options.fromDisconnectRestart,
@@ -363,9 +386,14 @@ export class WorkerConnectionStatusWwebjsConsume {
       return;
     }
 
+    const code = this.wwebjsService.getCode();
+    const skipRestore =
+      code === ECodeMessage.badSession || code === ECodeMessage.loggedOut;
+
     const connectPromise = this.wwebjsService
       .connect({
         initial_connection: true,
+        allow_restore: !skipRestore,
         force_new: fromDisconnectRestart,
         requested_by_user: !fromDisconnectRestart,
         from_disconnect_restart: fromDisconnectRestart,
