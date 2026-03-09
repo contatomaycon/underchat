@@ -115,6 +115,7 @@ import {
   parseWhatsAppPreviewTokens,
   type WhatsAppTextToken,
 } from '../utils/whatsAppTextFormat';
+import { addCurrentUserPresenceStatusListener } from '../utils/currentUserPresence';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -811,6 +812,12 @@ export function ChatListScreen({ route, navigation }: Props) {
       .finally(() => {
         setIsUserResolved(true);
       });
+  }, []);
+
+  useEffect(() => {
+    return addCurrentUserPresenceStatusListener(setUserStatus, {
+      emitCurrent: true,
+    });
   }, []);
 
   useEffect(() => {

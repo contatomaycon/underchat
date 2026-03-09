@@ -49,6 +49,8 @@ import type {
 import { AttendanceGuardLockModal } from './components/AttendanceGuardLockModal';
 import { BatteryOptimizationModal } from './components/BatteryOptimizationModal';
 import { isIgnoringBatteryOptimizations } from './utils/batteryOptimization';
+import { readChatUserStatus } from './utils/chatUserStatus';
+import { emitCurrentUserPresenceStatus } from './utils/currentUserPresence';
 
 function getUserAccountId(user: unknown): string | null {
   if (!user || typeof user !== 'object') return null;
@@ -300,6 +302,8 @@ export default function App() {
         });
       }
 
+      emitCurrentUserPresenceStatus(readChatUserStatus(user));
+
       if (isUserNotificationEnabled(user)) {
         await enableMobilePushNotifications().catch(() => ({
           ok: false,
@@ -331,6 +335,8 @@ export default function App() {
         if (cancelled) return;
         const accountId = getUserAccountId(user);
         const loggedUserId = getUserId(user);
+        emitCurrentUserPresenceStatus(readChatUserStatus(user));
+
         if (accountId) {
           await initializeChatSocket(accountId).catch(() => {});
         }
@@ -359,6 +365,7 @@ export default function App() {
               status: payload.status,
             },
           });
+          emitCurrentUserPresenceStatus(payload.status);
         });
       })
       .catch(() => {});
@@ -426,8 +433,12 @@ export default function App() {
       void getUser()
         .then(async (user) => {
           const accountId = getUserAccountId(user);
+          emitCurrentUserPresenceStatus(readChatUserStatus(user));
+
           if (!accountId) return;
+
           await initializeChatSocket(accountId).catch(() => {});
+          await ensureOnlinePresence().catch(() => {});
         })
         .catch(() => {});
     });

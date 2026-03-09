@@ -51,6 +51,7 @@ import {
 } from '../utils/chatUserStatus';
 import { syncGlobalChatCounts } from '../utils/chatCountsSync';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
+import { addCurrentUserPresenceStatusListener } from '../utils/currentUserPresence';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Contacts'>;
 
@@ -347,6 +348,12 @@ export function ContactListScreen({ navigation }: Props) {
         );
       })
       .catch(() => setUserChannels([]));
+  }, []);
+
+  useEffect(() => {
+    return addCurrentUserPresenceStatusListener(setUserStatus, {
+      emitCurrent: true,
+    });
   }, []);
 
   useFocusEffect(

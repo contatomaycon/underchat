@@ -1,5 +1,6 @@
 import type { ChatUserStatus } from '../api/chatApi';
 import { getUser, patchUser } from '../storage/authStorage';
+import { emitCurrentUserPresenceStatus } from '../utils/currentUserPresence';
 import { publish } from './centrifugo';
 
 type PresenceStatus = Extract<
@@ -69,6 +70,7 @@ export async function publishPresence(
         status,
       },
     });
+    emitCurrentUserPresenceStatus(status);
     return true;
   } catch {
     return false;

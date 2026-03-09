@@ -182,6 +182,7 @@ import {
 } from '../utils/keyboard';
 import { addAppResumeListener } from '../utils/appResumeBus';
 import { syncGlobalChatCounts } from '../utils/chatCountsSync';
+import { addCurrentUserPresenceStatusListener } from '../utils/currentUserPresence';
 
 type EmojiDatasetEntry = {
   unified?: string;
@@ -5636,6 +5637,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    return addCurrentUserPresenceStatusListener(setCurrentUserStatus, {
+      emitCurrent: true,
+    });
   }, []);
 
   useEffect(() => {
