@@ -12,9 +12,7 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { WAMessage, proto } from '@whiskeysockets/baileys';
 import { v7 as uuidv7 } from 'uuid';
-import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
@@ -22,6 +20,10 @@ import { IContactValidationUpdate } from '@core/common/interfaces/IContactValida
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
+import {
+  resolveWebhookInteractionJids,
+  type IWebhookInteractionJids,
+} from '@core/common/functions/resolveWebhookInteractionJids';
 
 @singleton()
 export class WebhookIntegrationWwebjsConsume {
@@ -154,12 +156,12 @@ export class WebhookIntegrationWwebjsConsume {
   private async processWebhookIntegration(
     data: IWebhookIntegrationRequest
   ): Promise<void> {
-    const remoteJid = await this.resolveRemoteJidForInteraction(data);
-    if (!remoteJid) {
+    const resolvedJids = await this.resolveRemoteJidForInteraction(data);
+    if (!resolvedJids) {
       return;
     }
 
-    const upsertMessage = this.buildUpsertMessage(data, remoteJid);
+    const upsertMessage = this.buildUpsertMessage(data, resolvedJids);
 
     if (!upsertMessage) {
       return;
@@ -174,6 +176,84 @@ export class WebhookIntegrationWwebjsConsume {
   ): Promise<{ valid: boolean; jid?: string; phone?: string }> {
     const phoneDdiToUse = phoneDdi ?? '55';
     return this.wwebjsService.validatePhone(phoneDdiToUse, phone);
+  }
+
+  private isLidJid(jid?: string | null): boolean {
+    return !!jid && jid.endsWith('@lid');
+  }
+
+  private buildValidationCandidates(
+    request: IWebhookIntegrationRequest
+  ): Array<{ phone: string; phoneDdi: string; phoneWithDdi: string }> {
+    const candidates: Array<{
+      phone: string;
+      phoneDdi: string;
+      phoneWithDdi: string;
+    }> = [];
+    const seen = new Set<string>();
+
+    const addCandidate = (
+      phone: string | null | undefined,
+      phoneDdi: string | null | undefined
+    ) => {
+      if (!phone) {
+        return;
+      }
+
+      const normalizedPhone = onlyDigits(phone);
+      if (!normalizedPhone) {
+        return;
+      }
+
+      const normalizedDdi = onlyDigits(phoneDdi ?? '55') || '55';
+      const phoneWithDdi = `${normalizedDdi}${normalizedPhone}`;
+      if (seen.has(phoneWithDdi)) {
+        return;
+      }
+
+      seen.add(phoneWithDdi);
+      candidates.push({
+        phone: normalizedPhone,
+        phoneDdi: normalizedDdi,
+        phoneWithDdi,
+      });
+    };
+
+    addCandidate(request.phone, request.phone_ddi);
+    addCandidate(request.phone_validated, request.phone_ddi_validated);
+
+    return candidates;
+  }
+
+  private resolveValidatedPhoneWithDdi(
+    result: { jid?: string; phone?: string },
+    fallbackPhoneWithDdi: string
+  ): string {
+    if (result.phone) {
+      const extracted = extractPhoneAndDdi(result.phone);
+      if (extracted) {
+        return `${extracted.phone_ddi}${extracted.phone}`;
+      }
+    }
+
+    if (!this.isLidJid(result.jid)) {
+      const phoneFromJid = getPhoneFromJid(result.jid, null);
+      if (phoneFromJid) {
+        const extracted = extractPhoneAndDdi(phoneFromJid);
+        if (extracted) {
+          return `${extracted.phone_ddi}${extracted.phone}`;
+        }
+      }
+    }
+
+    return fallbackPhoneWithDdi;
+  }
+
+  private getFallbackCandidate(
+    request: IWebhookIntegrationRequest
+  ): { phone: string; phoneDdi: string; phoneWithDdi: string } | null {
+    const [firstCandidate] = this.buildValidationCandidates(request);
+    return firstCandidate ?? null;
   }
 
   private buildPhoneWithDdi(
@@ -249,91 +329,101 @@ export class WebhookIntegrationWwebjsConsume {
 
   private async resolveRemoteJidForInteraction(
     request: IWebhookIntegrationRequest
-  ): Promise<string | null> {
-    const fallbackRemoteJid =
-      request.contact_is_valided && request.phone_validated
-        ? (normalizePhoneToJid(
-            request.phone_validated,
-            request.phone_ddi_validated ?? null
-          ) ?? null)
-        : null;
-    const fallbackPhoneWithDdi = this.buildPhoneWithDdi(
-      request.phone,
-      request.phone_ddi
-    );
-
-    try {
-      const result = await this.validatePhone(request.phone, request.phone_ddi);
-
-      if (!result.valid) {
-        await this.publishContactValidationUpdate(
-          request.contact_id,
-          fallbackPhoneWithDdi,
-          false
-        );
-        return null;
-      }
-
-      let validatedPhoneWithDdi =
-        result.phone ||
-        getPhoneFromJid(result.jid, null) ||
-        fallbackPhoneWithDdi;
-      let normalized = extractPhoneAndDdi(validatedPhoneWithDdi);
-      if (result.phone) {
-        const extracted = extractPhoneAndDdi(result.phone);
-        if (extracted) {
-          normalized = extracted;
-          validatedPhoneWithDdi = `${extracted.phone_ddi}${extracted.phone}`;
-        }
-      }
-
-      let validatedJid = result.jid ?? null;
-      if (!validatedJid && normalized) {
-        validatedJid =
-          normalizePhoneToJid(normalized.phone, normalized.phone_ddi) ?? null;
-      }
-
-      if (
-        this.shouldPublishSuccessContactUpdate(request, validatedPhoneWithDdi)
-      ) {
-        await this.publishContactValidationUpdate(
-          request.contact_id,
-          validatedPhoneWithDdi,
-          true
-        );
-      }
-
-      return validatedJid ?? fallbackRemoteJid;
-    } catch (error) {
-      if (this.isInvalidValidationError(error)) {
-        await this.publishContactValidationUpdate(
-          request.contact_id,
-          fallbackPhoneWithDdi,
-          false
-        );
-        return null;
-      }
-
-      if (this.isTechnicalValidationError(error)) {
-        return fallbackRemoteJid;
-      }
-
+  ): Promise<IWebhookInteractionJids | null> {
+    const candidates = this.buildValidationCandidates(request);
+    if (!candidates.length) {
       return null;
     }
+
+    let hasInvalidPhone = false;
+
+    for (const candidate of candidates) {
+      try {
+        const result = await this.validatePhone(
+          candidate.phone,
+          candidate.phoneDdi
+        );
+
+        if (!result.valid) {
+          hasInvalidPhone = true;
+          continue;
+        }
+
+        const validatedPhoneWithDdi = this.resolveValidatedPhoneWithDdi(
+          result,
+          candidate.phoneWithDdi
+        );
+
+        if (
+          this.shouldPublishSuccessContactUpdate(request, validatedPhoneWithDdi)
+        ) {
+          await this.publishContactValidationUpdate(
+            request.contact_id,
+            validatedPhoneWithDdi,
+            true
+          );
+        }
+
+        const resolvedJids = resolveWebhookInteractionJids({
+          validatedJid: result.jid ?? null,
+          validatedPhoneWithDdi,
+          fallbackPhone: candidate.phone,
+          fallbackPhoneDdi: candidate.phoneDdi,
+        });
+
+        if (resolvedJids) {
+          return resolvedJids;
+        }
+      } catch (error) {
+        if (this.isInvalidValidationError(error)) {
+          hasInvalidPhone = true;
+          continue;
+        }
+
+        if (this.isTechnicalValidationError(error)) {
+          continue;
+        }
+
+        return null;
+      }
+    }
+
+    const fallbackCandidate = this.getFallbackCandidate(request);
+    if (!fallbackCandidate) {
+      return null;
+    }
+
+    if (hasInvalidPhone) {
+      await this.publishContactValidationUpdate(
+        request.contact_id,
+        fallbackCandidate.phoneWithDdi,
+        false
+      );
+    }
+
+    return resolveWebhookInteractionJids({
+      validatedPhoneWithDdi: fallbackCandidate.phoneWithDdi,
+      fallbackPhone: fallbackCandidate.phone,
+      fallbackPhoneDdi: fallbackCandidate.phoneDdi,
+    });
   }
 
   private buildUpsertMessage(
     request: IWebhookIntegrationRequest,
-    remoteJid: string
+    resolvedJids: IWebhookInteractionJids
   ): IUpsertMessage | null {
     const messageText = this.extractMessageText(request);
-    const waMessage = this.buildWaMessage(remoteJid, messageText ?? '');
+    const waMessage = this.buildWaMessage(
+      resolvedJids.remoteJid,
+      resolvedJids.remoteJidAlt,
+      messageText ?? ''
+    );
 
     const upsert: IUpsertMessage = {
       account_id: request.account_id,
       worker_id: request.worker_id,
       type: EMessageType.text,
-      message: waMessage as unknown as IUpsertMessage['message'],
+      message: waMessage,
       has_quoted: false,
       is_call_event: false,
     };
@@ -363,17 +453,22 @@ export class WebhookIntegrationWwebjsConsume {
     return upsert;
   }
 
-  private buildWaMessage(remoteJid: string, messageText: string): WAMessage {
+  private buildWaMessage(
+    remoteJid: string,
+    remoteJidAlt: string | undefined,
+    messageText: string
+  ): IUpsertMessage['message'] {
     return {
       key: {
         remoteJid,
+        remoteJidAlt,
         fromMe: false,
         id: uuidv7(),
       },
       messageTimestamp: Math.floor(Date.now() / 1000),
       message: {
         conversation: messageText,
-      } as proto.IMessage,
+      },
     };
   }
 
