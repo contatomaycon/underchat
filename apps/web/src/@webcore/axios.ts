@@ -87,6 +87,7 @@ export const logoutAndRedirect = async (): Promise<void> => {
   logoutAndRedirectPromise = (async () => {
     await teardownClientSession({
       notifyPushServer: false,
+      notifyPresenceOffline: false,
     });
     await router.push({ name: 'login' }).catch(() => {
       // ignore navigation race conditions

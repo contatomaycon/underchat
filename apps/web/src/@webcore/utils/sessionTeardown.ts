@@ -6,6 +6,7 @@ import { normalizeBaseUrl } from './helpers';
 type TeardownSessionOptions = {
   notifyServerLogout?: boolean;
   notifyPushServer?: boolean;
+  notifyPresenceOffline?: boolean;
 };
 
 const logoutOnServer = async (): Promise<void> => {
@@ -52,13 +53,16 @@ const unsubscribePushLocalOnly = async (): Promise<void> => {
 };
 
 const cleanupPresenceAndPush = async (
-  notifyPushServer: boolean
+  notifyPushServer: boolean,
+  notifyPresenceOffline: boolean
 ): Promise<void> => {
-  try {
-    const { presenceOffline } = await import('@webcore/presence');
-    await presenceOffline();
-  } catch {
-    // ignore
+  if (notifyPresenceOffline) {
+    try {
+      const { presenceOffline } = await import('@webcore/presence');
+      await presenceOffline();
+    } catch {
+      // ignore
+    }
   }
 
   if (notifyPushServer) {
@@ -105,9 +109,13 @@ const resetRealtimeState = async (): Promise<void> => {
 export const teardownClientSession = async (
   options: TeardownSessionOptions = {}
 ): Promise<void> => {
-  const { notifyServerLogout = false, notifyPushServer = true } = options;
+  const {
+    notifyServerLogout = false,
+    notifyPushServer = true,
+    notifyPresenceOffline = true,
+  } = options;
 
-  await cleanupPresenceAndPush(notifyPushServer);
+  await cleanupPresenceAndPush(notifyPushServer, notifyPresenceOffline);
 
   if (notifyServerLogout) {
     await logoutOnServer();
