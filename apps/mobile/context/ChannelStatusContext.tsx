@@ -72,6 +72,7 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const mountedRef = useRef(true);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const channelIdsRef = useRef<Set<string>>(new Set());
 
   const refreshUserChannels = useCallback(async () => {
     const channels = await getChannels();
@@ -79,6 +80,7 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
     const names = new Map(channels.map((ch) => [ch.id, ch.name]));
     setUserChannelIds(ids);
     setUserChannelNames(names);
+    channelIdsRef.current = ids;
     return ids;
   }, []);
 
@@ -133,7 +135,7 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
     const bootstrap = async () => {
       setIsLoading(true);
 
-      const channelIds = await refreshUserChannels();
+      await refreshUserChannels();
       await fetchOfflineChannels();
 
       const user = await getUser();
@@ -149,7 +151,8 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
           (payload: ChannelStatusPayload) => {
             if (!mountedRef.current) return;
 
-            if (channelIds.size > 0 && !channelIds.has(payload.worker_id)) {
+            const currentIds = channelIdsRef.current;
+            if (currentIds.size > 0 && !currentIds.has(payload.worker_id)) {
               return;
             }
 

@@ -13,6 +13,6 @@ export type OfflineChannel = {
 
 export async function getOfflineChannels(): Promise<OfflineChannel[]> {
   const result = await apiGet<OfflineChannel[]>('/chat/offline-channels');
-  if (!result || !Array.isArray(result)) return [];
-  return result;
+  if (!result || !Array.isArray(result.data)) return [];
+  return result.data;
 }
