@@ -1505,7 +1505,7 @@ const createLocalMessageSummary = () => ({
   is_sent: false,
   is_delivered: false,
   is_seen: false,
-  is_sent_to_internal: false,
+  is_sent_to_internal: true,
 });
 
 const formatLocalMessageWithAttendeeName = (
@@ -1897,7 +1897,8 @@ const createAudioFormData = (
   viewOnce: boolean,
   duration: number | null,
   hash: string,
-  ptt: boolean = false
+  ptt: boolean = false,
+  replyMessageId?: string | null
 ): FormData => {
   const formData = new FormData();
   formData.append('type', EMessageType.audio);
@@ -1910,6 +1911,10 @@ const createAudioFormData = (
     formData.append('audio_view_once', 'true');
   }
   formData.append('audio_ptt', ptt ? 'true' : 'false');
+
+  if (replyMessageId) {
+    formData.append('message_quoted_id', replyMessageId);
+  }
 
   formData.append('hash', hash);
 
@@ -2117,7 +2122,7 @@ const sendAudioMessage = async (
   duration: number | null,
   viewOnce: boolean,
   _messageText?: string | null,
-  _replyMessage?: ListMessageResult | null
+  replyMessage?: ListMessageResult | null
 ): Promise<void> => {
   if (!chatStore.activeChat?.chat_id) return;
 
@@ -2127,6 +2132,9 @@ const sendAudioMessage = async (
   }
 
   const hash = createMessageHash();
+  const replyId =
+    replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
+  const quotedPayload = getQuotedContent(replyMessage || null);
 
   let extensionFromMime =
     mimeType.split('/')[1]?.split(';')[0]?.trim() || 'ogg';
@@ -2150,6 +2158,8 @@ const sendAudioMessage = async (
   const content: ContentMessageChat = {
     type: EMessageType.audio,
     message: null,
+    message_quoted_id: replyId ?? undefined,
+    quoted: quotedPayload,
     audio: {
       url: localUrl,
       name: fileName,
@@ -2168,7 +2178,8 @@ const sendAudioMessage = async (
     viewOnce,
     duration,
     hash,
-    true
+    true,
+    replyId
   );
 
   const success = await chatStore.createMessageWithAudios(formData, {
@@ -4905,6 +4916,8 @@ const onAiReplySend = async (
   if (!text || !hasActiveChat()) return;
   if (isQueueOrUraStatus.value) return;
 
+  const replyMessage = aiReplyTargetMessage.value;
+
   if (audioUrl) {
     try {
       const response = await fetch(audioUrl);
@@ -4917,13 +4930,13 @@ const onAiReplySend = async (
         audioDuration ?? null,
         false,
         null,
-        null
+        replyMessage
       );
     } catch {
       chatStore.showSnackbar(t('chat_ai_reply_send_audio_error'), EColor.error);
     }
   } else {
-    await sendTextMessage(text);
+    await sendTextMessage(text, null, replyMessage);
   }
 };
 

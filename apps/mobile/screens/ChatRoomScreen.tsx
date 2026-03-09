@@ -8999,13 +8999,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       rawText: string,
       options?: {
         quickMessageTemplateId?: string | null;
+        replyMessageIdOverride?: string | null;
       }
     ) => {
       const text = rawText.trim();
       if (!text || sending || !canComposeInChat) return false;
-      const replyMessageId = replyMessageTarget?.message_id;
+      const replyMessageId =
+        options?.replyMessageIdOverride ?? replyMessageTarget?.message_id;
       const firstUrl = extractFirstUrl(text);
-      if (replyMessageId) {
+      if (
+        replyMessageTarget?.message_id &&
+        replyMessageId === replyMessageTarget.message_id
+      ) {
         setReplyMessageTarget(null);
       }
 
@@ -9102,6 +9107,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const handleSendAiReply = useCallback(async () => {
     if (!aiReplyResult) return;
 
+    const quotedMessageId = aiReplyTarget?.message_id ?? null;
+
     if (aiReplyResult.audio_url) {
       try {
         const response = await fetch(aiReplyResult.audio_url);
@@ -9117,18 +9124,29 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             String(Math.round(aiReplyResult.audio_duration))
           );
         }
+        if (quotedMessageId) {
+          formData.append('message_quoted_id', quotedMessageId);
+        }
         formData.append('hash', `ai-audio-${Date.now()}-${Math.random()}`);
         (formData as any).append('audios', {
           uri: aiReplyResult.audio_url,
           name: `ai-audio-${Date.now()}.mp3`,
           type: mimeType,
         });
-        await createMessageWithFormData(chatInfo.chat_id, formData);
+        const result = await createMessageWithFormData(
+          chatInfo.chat_id,
+          formData
+        );
+        if (result.ok && result.message) {
+          setMessages((prev) => mergeMessageLists(prev, result.message!));
+        }
       } catch {
         Alert.alert(pt.error_title, pt.chat_ai_reply_send_audio_error);
       }
     } else {
-      await sendTextPayload(aiReplyResult.text);
+      await sendTextPayload(aiReplyResult.text, {
+        replyMessageIdOverride: quotedMessageId,
+      });
     }
 
     setAiReplyTarget(null);
@@ -9136,7 +9154,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setAiReplyInstructions('');
     setAiReplyResponseType('text');
     cleanupAiReplyAudio();
-  }, [aiReplyResult, chatInfo.chat_id, sendTextPayload, cleanupAiReplyAudio]);
+  }, [
+    aiReplyResult,
+    aiReplyTarget,
+    chatInfo.chat_id,
+    sendTextPayload,
+    cleanupAiReplyAudio,
+  ]);
 
   const toggleAiReplyAudio = useCallback(() => {
     const url = aiReplyResult?.audio_url;
