@@ -4,7 +4,12 @@ import axios, {
   type AxiosResponse,
   type AxiosRequestHeaders,
 } from 'axios';
-import { getToken, setToken, persistPlanStatus } from './localStorage/user';
+import {
+  getToken,
+  setToken,
+  persistPlanStatus,
+  removeUserData,
+} from './localStorage/user';
 import { teardownClientSession } from './utils/sessionTeardown';
 import { router } from '@/plugins/1.router';
 import { getI18n } from '@/plugins/i18n';
@@ -23,6 +28,8 @@ const createAxiosInstance = () => {
 
 const axiosAuth = createAxiosInstance();
 let logoutAndRedirectPromise: Promise<void> | null = null;
+let refreshSessionPromise: Promise<string | null> | null = null;
+let hasInvalidSession = false;
 
 const getCurrentLocale = (): string => {
   const i18n = getI18n();
@@ -43,6 +50,8 @@ const applyAuthHeaders = (
 };
 
 const refreshSession = async (): Promise<string | null> => {
+  if (hasInvalidSession) return null;
+
   const token = getToken();
   if (!token) return null;
 
@@ -79,20 +88,72 @@ const refreshSession = async (): Promise<string | null> => {
   }
 };
 
+const refreshSessionWithSingleFlight = async (): Promise<string | null> => {
+  if (hasInvalidSession || logoutAndRedirectPromise) {
+    return null;
+  }
+
+  if (refreshSessionPromise) {
+    return refreshSessionPromise;
+  }
+
+  refreshSessionPromise = refreshSession();
+
+  try {
+    return await refreshSessionPromise;
+  } finally {
+    refreshSessionPromise = null;
+  }
+};
+
+const getLoginHref = (): string => {
+  try {
+    return router.resolve({ name: 'login' }).href || '/login';
+  } catch {
+    return '/login';
+  }
+};
+
+const redirectToLoginWithFallback = async (): Promise<void> => {
+  if (router.currentRoute.value?.name === 'login') {
+    return;
+  }
+
+  const loginHref = getLoginHref();
+
+  try {
+    await router.replace({ name: 'login' });
+  } catch {
+    globalThis.location.replace(loginHref);
+    return;
+  }
+
+  if (router.currentRoute.value?.name !== 'login') {
+    globalThis.location.replace(loginHref);
+  }
+};
+
 export const logoutAndRedirect = async (): Promise<void> => {
   if (logoutAndRedirectPromise) {
     return logoutAndRedirectPromise;
   }
 
+  hasInvalidSession = true;
+
+  // Clear persisted auth state immediately to stop new authenticated requests.
+  removeUserData();
+
   logoutAndRedirectPromise = (async () => {
-    await teardownClientSession({
+    const teardownPromise = teardownClientSession({
       notifyPushServer: false,
       notifyPresenceOffline: false,
-    });
-    await router.push({ name: 'login' }).catch(() => {
-      // ignore navigation race conditions
-    });
-  })();
+    }).catch(() => {});
+
+    await redirectToLoginWithFallback();
+    await teardownPromise;
+  })().catch(() => {
+    globalThis.location.replace(getLoginHref());
+  });
 
   try {
     await logoutAndRedirectPromise;
@@ -121,7 +182,7 @@ const updatePlanStatusFromResponse = async (
 const retryWithRefreshedToken = async (
   originalRequest: InternalAxiosRequestConfig
 ) => {
-  const refreshedToken = await refreshSession();
+  const refreshedToken = await refreshSessionWithSingleFlight();
   if (!refreshedToken) return null;
   const headers = originalRequest.headers;
   originalRequest.headers = applyAuthHeaders(
@@ -135,6 +196,11 @@ const retryWithRefreshedToken = async (
 axiosAuth.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = getToken();
+
+    if (hasInvalidSession && token) {
+      hasInvalidSession = false;
+    }
+
     const currentLocale = getCurrentLocale();
     if (config.headers) {
       config.headers = applyAuthHeaders(
@@ -181,14 +247,20 @@ axiosAuth.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      if (originalRequest && !originalRequest._retry) {
+      if (hasInvalidSession || logoutAndRedirectPromise) {
+        await logoutAndRedirect();
+      } else if (originalRequest && !originalRequest._retry) {
         originalRequest._retry = true;
 
         const retried = await retryWithRefreshedToken(originalRequest);
         if (retried) return retried;
+        await logoutAndRedirect();
+      } else {
+        await logoutAndRedirect();
       }
 
-      await logoutAndRedirect();
+      const err = error instanceof Error ? error : new Error(String(error));
+      throw err;
     }
 
     const err = error instanceof Error ? error : new Error(String(error));

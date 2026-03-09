@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { isAxiosError } from 'axios';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useDashboardStore } from '@/@webcore/stores/dashboard';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -140,25 +141,47 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
   );
 
   if (!dashboardStore.offlineChannels.find((ch) => ch.id === data.worker_id)) {
-    dashboardStore.getDashboardOfflineChannels();
+    void dashboardStore.getDashboardOfflineChannels().catch(() => {});
   }
 };
 
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 
 onMounted(async () => {
-  await loadChannelsIfNeeded();
-
-  if (user?.account_id) {
-    await onMessage(
-      workerCentrifugoQueue(user.account_id),
-      workerStatusHandler
-    );
+  try {
+    await loadChannelsIfNeeded();
+  } catch (error) {
+    if (!isAxiosError(error) || error.response?.status !== 401) {
+      if (import.meta.env.DEV) {
+        console.error(
+          'Failed to load offline channels for status banner',
+          error
+        );
+      }
+    }
   }
 
-  pollingTimer = setInterval(async () => {
+  if (user?.account_id) {
+    try {
+      await onMessage(
+        workerCentrifugoQueue(user.account_id),
+        workerStatusHandler
+      );
+    } catch (error) {
+      if (!isAxiosError(error) || error.response?.status !== 401) {
+        if (import.meta.env.DEV) {
+          console.error(
+            'Failed to subscribe ChannelStatusBanner to worker status channel',
+            error
+          );
+        }
+      }
+    }
+  }
+
+  pollingTimer = setInterval(() => {
     refreshUserChannels();
-    await dashboardStore.getDashboardOfflineChannels();
+    void dashboardStore.getDashboardOfflineChannels().catch(() => {});
   }, POLLING_INTERVAL_MS);
 });
 
