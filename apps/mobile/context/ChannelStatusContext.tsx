@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -87,9 +88,7 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
       if (mountedRef.current) {
         setOfflineChannelsRaw(data);
       }
-    } catch {
-      // silently fail — polling will retry
-    }
+    } catch {}
   }, []);
 
   const refresh = useCallback(async () => {
@@ -101,24 +100,31 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshUserChannels, fetchOfflineChannels]);
 
-  // Filter offline channels by user's accessible channels
   const offlineChannels =
     userChannelIds.size === 0
       ? offlineChannelsRaw
       : offlineChannelsRaw.filter((ch) => userChannelIds.has(ch.id));
 
-  // Build allChannelStatuses: all user channels with their online/offline status
-  const allChannelStatuses = Array.from(userChannelNames.entries()).map(
-    ([id, name]) => {
-      const offlineCh = offlineChannelsRaw.find((ch) => ch.id === id);
-      return {
-        id,
-        name,
-        isOnline: !offlineCh,
-        status: offlineCh?.status ?? null,
-      };
+  const allChannelStatuses = useMemo(() => {
+    if (userChannelNames.size > 0) {
+      return Array.from(userChannelNames.entries()).map(([id, name]) => {
+        const offlineCh = offlineChannelsRaw.find((ch) => ch.id === id);
+        return {
+          id,
+          name,
+          isOnline: !offlineCh,
+          status: offlineCh?.status ?? null,
+        };
+      });
     }
-  );
+
+    return offlineChannelsRaw.map((ch) => ({
+      id: ch.id,
+      name: ch.name,
+      isOnline: false,
+      status: ch.status,
+    }));
+  }, [userChannelNames, offlineChannelsRaw]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -143,13 +149,11 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
           (payload: ChannelStatusPayload) => {
             if (!mountedRef.current) return;
 
-            // Filter by user channels
             if (channelIds.size > 0 && !channelIds.has(payload.worker_id)) {
               return;
             }
 
             if (payload.worker_status_id === WORKER_STATUS_ONLINE) {
-              // Channel came online — remove from offline list
               setOfflineChannelsRaw((prev) =>
                 prev.filter((ch) => ch.id !== payload.worker_id)
               );
@@ -174,7 +178,6 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
                     : ch
                 );
               }
-              // New offline channel — refetch full list to get name
               void fetchOfflineChannels();
               return prev;
             });
@@ -186,7 +189,6 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
 
-      // Start polling as safety net
       pollingRef.current = setInterval(async () => {
         if (!mountedRef.current) return;
         await refreshUserChannels();

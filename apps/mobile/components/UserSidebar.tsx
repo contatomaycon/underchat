@@ -151,14 +151,14 @@ function readUserProfile(user: unknown): {
 }
 
 const CHANNEL_STATUS_COLORS: Record<string, string> = {
-  '019a930d-c6f6-766d-9c84-30af6ecc33b2': colors.success, // online
-  '019a930d-c6f6-766d-9c84-3696c2cd5ed8': colors.error, // offline
-  '019a930d-c6f6-766d-9c84-48cb970a9f21': colors.error, // error
-  '019a930d-c6f6-766d-9c84-5056ccf66633': colors.error, // mismatched
-  '019bcd18-ce66-77a2-9d7c-e48159c253da': colors.warning, // stopped
-  '019a930d-c6f6-766d-9c84-52e87789979b': colors.warning, // creating
-  '019a930d-c6f6-766d-9c84-3904383fe742': colors.warning, // disponible
-  '019a930d-c6f6-766d-9c84-3f0abf55560d': colors.grey400, // new
+  '019a930d-c6f6-766d-9c84-30af6ecc33b2': colors.success,
+  '019a930d-c6f6-766d-9c84-3696c2cd5ed8': colors.error,
+  '019a930d-c6f6-766d-9c84-48cb970a9f21': colors.error,
+  '019a930d-c6f6-766d-9c84-5056ccf66633': colors.error,
+  '019bcd18-ce66-77a2-9d7c-e48159c253da': colors.warning,
+  '019a930d-c6f6-766d-9c84-52e87789979b': colors.warning,
+  '019a930d-c6f6-766d-9c84-3904383fe742': colors.warning,
+  '019a930d-c6f6-766d-9c84-3f0abf55560d': colors.grey400,
 };
 
 function getChannelDotColor(
@@ -181,43 +181,79 @@ function getChannelStatusLabel(
 }
 
 function ChannelStatusSection() {
-  const { allChannelStatuses, isLoading } = useChannelStatus();
+  const { allChannelStatuses, isLoading, refresh } = useChannelStatus();
+  const [expanded, setExpanded] = useState(false);
 
-  if (allChannelStatuses.length === 0 && !isLoading) return null;
+  const handleToggle = useCallback(async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next) {
+      await refresh();
+    }
+  }, [expanded, refresh]);
+
+  const issueCount = allChannelStatuses.filter((ch) => !ch.isOnline).length;
 
   return (
     <View style={channelStyles.section}>
-      <Text style={channelStyles.sectionTitle}>{pt.channel_status}</Text>
-      {isLoading && allChannelStatuses.length === 0 ? (
-        <ActivityIndicator size="small" color={colors.primary} />
-      ) : (
-        <View style={channelStyles.list}>
-          {allChannelStatuses.map((ch) => (
-            <View key={ch.id} style={channelStyles.row}>
-              <View
-                style={[
-                  channelStyles.dot,
-                  {
-                    backgroundColor: getChannelDotColor(
-                      ch.isOnline,
-                      ch.status?.id
-                    ),
-                  },
-                ]}
-              />
-              <Text style={channelStyles.name} numberOfLines={1}>
-                {ch.name}
-              </Text>
-              <Text
-                style={[
-                  channelStyles.statusLabel,
-                  { color: getChannelDotColor(ch.isOnline, ch.status?.id) },
-                ]}
-              >
-                {getChannelStatusLabel(ch.isOnline, ch.status?.name)}
-              </Text>
+      <Pressable
+        style={channelStyles.button}
+        onPress={dismissKeyboardAnd(handleToggle)}
+      >
+        <View style={channelStyles.buttonLeft}>
+          <Ionicons name="wifi-outline" size={20} color={colors.onSurface} />
+          <Text style={channelStyles.buttonLabel}>{pt.channel_status}</Text>
+        </View>
+        <View style={channelStyles.buttonRight}>
+          {issueCount > 0 && (
+            <View style={channelStyles.badge}>
+              <Text style={channelStyles.badgeText}>{issueCount}</Text>
             </View>
-          ))}
+          )}
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={colors.grey500}
+          />
+        </View>
+      </Pressable>
+
+      {expanded && (
+        <View style={channelStyles.expandedContent}>
+          {isLoading && allChannelStatuses.length === 0 ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : allChannelStatuses.length === 0 ? (
+            <Text style={channelStyles.emptyText}>Nenhum canal encontrado</Text>
+          ) : (
+            <View style={channelStyles.list}>
+              {allChannelStatuses.map((ch) => (
+                <View key={ch.id} style={channelStyles.row}>
+                  <View
+                    style={[
+                      channelStyles.dot,
+                      {
+                        backgroundColor: getChannelDotColor(
+                          ch.isOnline,
+                          ch.status?.id
+                        ),
+                      },
+                    ]}
+                  />
+                  <Text style={channelStyles.name} numberOfLines={1}>
+                    {ch.name}
+                  </Text>
+                  <Text
+                    style={[
+                      channelStyles.statusLabel,
+                      { color: getChannelDotColor(ch.isOnline, ch.status?.id) },
+                    ]}
+                  >
+                    {getChannelStatusLabel(ch.isOnline, ch.status?.name)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -228,12 +264,52 @@ const channelStyles = StyleSheet.create({
   section: {
     marginTop: 24,
   },
-  sectionTitle: {
-    fontSize: 17,
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.grey100,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  buttonLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  buttonLabel: {
+    fontSize: 15,
     fontWeight: '500',
-    color: colors.grey700,
-    textTransform: 'uppercase',
-    marginBottom: 8,
+    color: colors.onSurface,
+  },
+  buttonRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  badge: {
+    backgroundColor: colors.error,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  expandedContent: {
+    marginTop: 12,
+    paddingLeft: 4,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.grey500,
+    fontStyle: 'italic',
   },
   list: {
     gap: 8,
