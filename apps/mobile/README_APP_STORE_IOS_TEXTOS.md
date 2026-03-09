@@ -24,7 +24,7 @@ Este arquivo reúne textos prontos para preencher o App Store Connect em **Portu
 
 `O Underchat ajuda equipes a organizar e acelerar o atendimento em tempo real.
 
-Com ele, sua operação centraliza conversas, acompanha filas, distribui atendimentos e mantém histórico para dar continuidade ao contato com cada cliente.
+Com ele, sua operação centraliza conversas através do WhatsApp, acompanha filas, distribui atendimentos e mantém histórico para dar continuidade ao contato com cada cliente.
 
 Principais recursos:
 
