@@ -38,6 +38,7 @@ import {
   disableMobilePushNotifications,
   enableMobilePushNotifications,
 } from '../services/pushNotifications';
+import { useChannelStatus } from '../context/ChannelStatusContext';
 
 type SidebarStatus = 'online' | 'busy' | 'do_not_disturb';
 type PhotoPickerSource = 'camera' | 'gallery';
@@ -148,6 +149,115 @@ function readUserProfile(user: unknown): {
     notifications: readBoolean(chatUser.notifications),
   };
 }
+
+const CHANNEL_STATUS_COLORS: Record<string, string> = {
+  '019a930d-c6f6-766d-9c84-30af6ecc33b2': colors.success, // online
+  '019a930d-c6f6-766d-9c84-3696c2cd5ed8': colors.error, // offline
+  '019a930d-c6f6-766d-9c84-48cb970a9f21': colors.error, // error
+  '019a930d-c6f6-766d-9c84-5056ccf66633': colors.error, // mismatched
+  '019bcd18-ce66-77a2-9d7c-e48159c253da': colors.warning, // stopped
+  '019a930d-c6f6-766d-9c84-52e87789979b': colors.warning, // creating
+  '019a930d-c6f6-766d-9c84-3904383fe742': colors.warning, // disponible
+  '019a930d-c6f6-766d-9c84-3f0abf55560d': colors.grey400, // new
+};
+
+function getChannelDotColor(
+  isOnline: boolean,
+  statusId?: string | null
+): string {
+  if (isOnline) return colors.success;
+  if (statusId && CHANNEL_STATUS_COLORS[statusId])
+    return CHANNEL_STATUS_COLORS[statusId];
+  return colors.warning;
+}
+
+function getChannelStatusLabel(
+  isOnline: boolean,
+  statusName?: string | null
+): string {
+  if (isOnline) return pt.channel_online;
+  if (statusName) return statusName;
+  return pt.channel_offline;
+}
+
+function ChannelStatusSection() {
+  const { allChannelStatuses, isLoading } = useChannelStatus();
+
+  if (allChannelStatuses.length === 0 && !isLoading) return null;
+
+  return (
+    <View style={channelStyles.section}>
+      <Text style={channelStyles.sectionTitle}>{pt.channel_status}</Text>
+      {isLoading && allChannelStatuses.length === 0 ? (
+        <ActivityIndicator size="small" color={colors.primary} />
+      ) : (
+        <View style={channelStyles.list}>
+          {allChannelStatuses.map((ch) => (
+            <View key={ch.id} style={channelStyles.row}>
+              <View
+                style={[
+                  channelStyles.dot,
+                  {
+                    backgroundColor: getChannelDotColor(
+                      ch.isOnline,
+                      ch.status?.id
+                    ),
+                  },
+                ]}
+              />
+              <Text style={channelStyles.name} numberOfLines={1}>
+                {ch.name}
+              </Text>
+              <Text
+                style={[
+                  channelStyles.statusLabel,
+                  { color: getChannelDotColor(ch.isOnline, ch.status?.id) },
+                ]}
+              >
+                {getChannelStatusLabel(ch.isOnline, ch.status?.name)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const channelStyles = StyleSheet.create({
+  section: {
+    marginTop: 24,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '500',
+    color: colors.grey700,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  list: {
+    gap: 8,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  name: {
+    flex: 1,
+    fontSize: 15,
+    color: colors.onSurface,
+  },
+  statusLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+});
 
 export function UserSidebar({
   visible,
@@ -690,6 +800,8 @@ export function UserSidebar({
                           />
                         ) : null}
                       </View>
+
+                      <ChannelStatusSection />
 
                       <View style={[styles.section, styles.settingsSection]}>
                         <Text style={styles.sectionTitle}>{pt.settings}</Text>

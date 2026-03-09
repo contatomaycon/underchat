@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useDashboardStore } from '@/@webcore/stores/dashboard';
@@ -9,15 +9,28 @@ import { useI18n } from 'vue-i18n';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { getUser } from '@/@webcore/localStorage/user';
+import { getUser, getChannels } from '@/@webcore/localStorage/user';
+
+const POLLING_INTERVAL_MS = 60_000;
 
 const { t } = useI18n();
 const router = useRouter();
 const chatStore = useChatStore();
 const dashboardStore = useDashboardStore();
 
+const userChannelIds = ref<Set<string>>(
+  new Set(getChannels().map((ch) => ch.id))
+);
+
+const refreshUserChannels = () => {
+  userChannelIds.value = new Set(getChannels().map((ch) => ch.id));
+};
+
 const offlineChannels = computed(() => {
-  return dashboardStore.offlineChannels;
+  if (userChannelIds.value.size === 0) return dashboardStore.offlineChannels;
+  return dashboardStore.offlineChannels.filter((ch) =>
+    userChannelIds.value.has(ch.id)
+  );
 });
 
 const prioritizedChannels = computed(() => {
@@ -105,6 +118,13 @@ const getStatusName = (statusId: string | undefined | null): string | null => {
 const user = getUser();
 
 const workerStatusHandler = (data: IBaileysConnectionState) => {
+  if (
+    userChannelIds.value.size > 0 &&
+    !userChannelIds.value.has(data.worker_id)
+  ) {
+    return;
+  }
+
   if (data.worker_status_id === EWorkerStatus.online) {
     dashboardStore.updateOfflineChannelStatus(data.worker_id, null, null);
     return;
@@ -124,6 +144,8 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
   }
 };
 
+let pollingTimer: ReturnType<typeof setInterval> | null = null;
+
 onMounted(async () => {
   await loadChannelsIfNeeded();
 
@@ -133,9 +155,19 @@ onMounted(async () => {
       workerStatusHandler
     );
   }
+
+  pollingTimer = setInterval(async () => {
+    refreshUserChannels();
+    await dashboardStore.getDashboardOfflineChannels();
+  }, POLLING_INTERVAL_MS);
 });
 
 onUnmounted(async () => {
+  if (pollingTimer) {
+    clearInterval(pollingTimer);
+    pollingTimer = null;
+  }
+
   if (user?.account_id) {
     await unsubscribe(
       workerCentrifugoQueue(user.account_id),

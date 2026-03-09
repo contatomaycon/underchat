@@ -46,6 +46,7 @@ import { listChatContactChannels } from './methods/listContactChannels';
 import { viewChatContactChannelsByContactId } from './methods/viewContactChannelsByContactId';
 import { generateAiReply } from './methods/generateAiReply';
 import { transcribeAudio } from './methods/transcribeAudio';
+import { listOfflineChannels } from '@/controllers/dashboard/methods/listOfflineChannels';
 
 @injectable()
 class ChatController {
@@ -96,6 +97,7 @@ class ChatController {
   public viewContactChannelsByContactId = viewChatContactChannelsByContactId;
   public generateAiReply = generateAiReply;
   public transcribeAudio = transcribeAudio;
+  public listOfflineChannels = listOfflineChannels;
 }
 
 export default ChatController;

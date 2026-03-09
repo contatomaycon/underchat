@@ -79,6 +79,7 @@ import {
   type SelectOption,
 } from '../components/select';
 import { UserSidebar } from '../components/UserSidebar';
+import { ChannelStatusBanner } from '../components/ChannelStatusBanner';
 import { AppAvatar } from '../components/AppAvatar';
 import type { WorkerConfigForChat } from '../types/contact';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -2104,6 +2105,7 @@ export function ChatListScreen({ route, navigation }: Props) {
           </Pressable>
         ) : null}
       </View>
+      <ChannelStatusBanner />
       {tab === 'in_chat' ? (
         <View style={styles.quickFilterRow}>
           <Pressable

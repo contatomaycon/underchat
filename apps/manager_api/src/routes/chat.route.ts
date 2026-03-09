@@ -57,6 +57,7 @@ import { viewChatContactChannelsByContactIdSchema } from '@core/schema/chat/view
 import { viewChatAttendantsSchema } from '@core/schema/chat/viewChatAttendants';
 import { generateAiReplySchema } from '@core/schema/chat/generateAiReply';
 import { transcribeAudioSchema } from '@core/schema/chat/transcribeAudio';
+import { listOfflineChannelsSchema } from '@core/schema/dashboard/listOfflineChannels';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -579,6 +580,14 @@ export default function chatRoutes(server: FastifyInstance) {
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
       planStatus,
+    ],
+  });
+
+  server.get('/chat/offline-channels', {
+    schema: listOfflineChannelsSchema,
+    handler: chatController.listOfflineChannels,
+    preHandler: [
+      (request, reply) => server.authenticateJwt(request, reply, []),
     ],
   });
 }

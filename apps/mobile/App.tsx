@@ -18,6 +18,7 @@ import {
   hasChatModuleAccessPermission,
 } from './constants/chatAuthorization';
 import { ChatFilterProvider } from './context/ChatFilterContext';
+import { ChannelStatusProvider } from './context/ChannelStatusContext';
 import { RootNavigator } from './navigation/RootNavigator';
 import {
   addAttendanceBlockedListener,
@@ -484,22 +485,24 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ChatFilterProvider canViewChatbotTab={canViewChatbotTab}>
-          <NavigationContainer
-            ref={navigationRef}
-            onReady={() => setNavigationReady(true)}
-          >
-            <RootNavigator />
-            <AttendanceGuardLockModal
-              visible={attendanceLocked}
-              status={attendanceGuardStatus}
-              message={attendanceLockMessage}
-            />
-            <BatteryOptimizationModal
-              visible={batteryModalVisible}
-              onDismiss={() => setBatteryModalVisible(false)}
-            />
-            <StatusBar style="dark" />
-          </NavigationContainer>
+          <ChannelStatusProvider>
+            <NavigationContainer
+              ref={navigationRef}
+              onReady={() => setNavigationReady(true)}
+            >
+              <RootNavigator />
+              <AttendanceGuardLockModal
+                visible={attendanceLocked}
+                status={attendanceGuardStatus}
+                message={attendanceLockMessage}
+              />
+              <BatteryOptimizationModal
+                visible={batteryModalVisible}
+                onDismiss={() => setBatteryModalVisible(false)}
+              />
+              <StatusBar style="dark" />
+            </NavigationContainer>
+          </ChannelStatusProvider>
         </ChatFilterProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

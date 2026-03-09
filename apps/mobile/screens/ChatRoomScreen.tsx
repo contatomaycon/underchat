@@ -14094,7 +14094,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         avoidKeyboard
         footer={
           aiReplyResult ? (
-            <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 8, flex: 1 }}>
               <Pressable
                 style={[styles.secondaryBtn, { flex: 1 }]}
                 onPress={dismissKeyboardAnd(closeAiReplyModal)}
@@ -14122,7 +14122,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               </Pressable>
             </View>
           ) : (
-            <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 8, flex: 1 }}>
               <Pressable
                 style={[styles.secondaryBtn, { flex: 1 }]}
                 onPress={dismissKeyboardAnd(closeAiReplyModal)}
@@ -14206,7 +14206,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     : colors.grey300,
                 backgroundColor:
                   aiReplyResponseType === 'text'
-                    ? colors.primary + '15'
+                    ? 'rgba(40, 101, 183, 0.08)'
                     : 'transparent',
                 alignItems: 'center',
               }}
@@ -14215,6 +14215,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             >
               <Text
                 style={{
+                  fontSize: 14,
                   color:
                     aiReplyResponseType === 'text'
                       ? colors.primary
@@ -14237,7 +14238,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     : colors.grey300,
                 backgroundColor:
                   aiReplyResponseType === 'audio'
-                    ? colors.primary + '15'
+                    ? 'rgba(40, 101, 183, 0.08)'
                     : 'transparent',
                 alignItems: 'center',
               }}
@@ -14246,6 +14247,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             >
               <Text
                 style={{
+                  fontSize: 14,
                   color:
                     aiReplyResponseType === 'audio'
                       ? colors.primary
