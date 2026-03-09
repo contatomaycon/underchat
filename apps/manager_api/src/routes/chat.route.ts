@@ -58,6 +58,7 @@ import { viewChatAttendantsSchema } from '@core/schema/chat/viewChatAttendants';
 import { generateAiReplySchema } from '@core/schema/chat/generateAiReply';
 import { transcribeAudioSchema } from '@core/schema/chat/transcribeAudio';
 import { listOfflineChannelsSchema } from '@core/schema/dashboard/listOfflineChannels';
+import { listChannelsStatusSchema } from '@core/schema/dashboard/listChannelsStatus';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -586,6 +587,14 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/offline-channels', {
     schema: listOfflineChannelsSchema,
     handler: chatController.listOfflineChannels,
+    preHandler: [
+      (request, reply) => server.authenticateJwt(request, reply, []),
+    ],
+  });
+
+  server.get('/chat/channels-status', {
+    schema: listChannelsStatusSchema,
+    handler: chatController.listChannelsStatus,
     preHandler: [
       (request, reply) => server.authenticateJwt(request, reply, []),
     ],

@@ -9,10 +9,12 @@ import { DashboardChatbotsRepository } from '@core/repositories/dashboard/Dashbo
 import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
 import { DashboardTemplatesRepository } from '@core/repositories/dashboard/DashboardTemplates.repository';
 import { DashboardOfflineChannelsRepository } from '@core/repositories/dashboard/DashboardOfflineChannels.repository';
+import { DashboardChannelsStatusRepository } from '@core/repositories/dashboard/DashboardChannelsStatus.repository';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDashboardConversations/response.schema';
 import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
 import { ListOfflineChannelsFinalResponse } from '@core/schema/dashboard/listOfflineChannels/response.schema';
+import { ListChannelsStatusFinalResponse } from '@core/schema/dashboard/listChannelsStatus/response.schema';
 
 @injectable()
 export class DashboardService {
@@ -34,7 +36,9 @@ export class DashboardService {
     @inject(DashboardTemplatesRepository)
     private readonly dashboardTemplatesRepository: DashboardTemplatesRepository,
     @inject(DashboardOfflineChannelsRepository)
-    private readonly dashboardOfflineChannelsRepository: DashboardOfflineChannelsRepository
+    private readonly dashboardOfflineChannelsRepository: DashboardOfflineChannelsRepository,
+    @inject(DashboardChannelsStatusRepository)
+    private readonly dashboardChannelsStatusRepository: DashboardChannelsStatusRepository
   ) {}
 
   getDashboardStats = async (
@@ -184,6 +188,12 @@ export class DashboardService {
     return this.dashboardOfflineChannelsRepository.listOfflineChannels(
       accountId
     );
+  };
+
+  getDashboardChannelsStatus = async (
+    accountId: string
+  ): Promise<ListChannelsStatusFinalResponse> => {
+    return this.dashboardChannelsStatusRepository.listChannelsStatus(accountId);
   };
 
   private readonly formatRenewalDate = (

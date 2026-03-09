@@ -3,12 +3,16 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { getOfflineChannels, type OfflineChannel } from '../api/dashboardApi';
+import {
+  getOfflineChannels,
+  getAllChannelsStatus,
+  type OfflineChannel,
+  type ChannelWithStatus,
+} from '../api/dashboardApi';
 import { getChannels, getUser } from '../storage/authStorage';
 import {
   initializeChannelStatusSocket,
@@ -65,10 +69,8 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
   const [offlineChannelsRaw, setOfflineChannelsRaw] = useState<
     OfflineChannel[]
   >([]);
+  const [allChannelsRaw, setAllChannelsRaw] = useState<ChannelWithStatus[]>([]);
   const [userChannelIds, setUserChannelIds] = useState<Set<string>>(new Set());
-  const [userChannelNames, setUserChannelNames] = useState<Map<string, string>>(
-    new Map()
-  );
   const [isLoading, setIsLoading] = useState(false);
   const mountedRef = useRef(true);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -77,9 +79,7 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
   const refreshUserChannels = useCallback(async () => {
     const channels = await getChannels();
     const ids = new Set(channels.map((ch) => ch.id));
-    const names = new Map(channels.map((ch) => [ch.id, ch.name]));
     setUserChannelIds(ids);
-    setUserChannelNames(names);
     channelIdsRef.current = ids;
     return ids;
   }, []);
@@ -93,40 +93,37 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, []);
 
+  const fetchAllChannels = useCallback(async () => {
+    try {
+      const data = await getAllChannelsStatus();
+      if (mountedRef.current) {
+        setAllChannelsRaw(data);
+      }
+    } catch {}
+  }, []);
+
   const refresh = useCallback(async () => {
     setIsLoading(true);
     await refreshUserChannels();
-    await fetchOfflineChannels();
+    await Promise.all([fetchOfflineChannels(), fetchAllChannels()]);
     if (mountedRef.current) {
       setIsLoading(false);
     }
-  }, [refreshUserChannels, fetchOfflineChannels]);
+  }, [refreshUserChannels, fetchOfflineChannels, fetchAllChannels]);
 
   const offlineChannels =
     userChannelIds.size === 0
       ? offlineChannelsRaw
       : offlineChannelsRaw.filter((ch) => userChannelIds.has(ch.id));
 
-  const allChannelStatuses = useMemo(() => {
-    if (userChannelNames.size > 0) {
-      return Array.from(userChannelNames.entries()).map(([id, name]) => {
-        const offlineCh = offlineChannelsRaw.find((ch) => ch.id === id);
-        return {
-          id,
-          name,
-          isOnline: !offlineCh,
-          status: offlineCh?.status ?? null,
-        };
-      });
-    }
-
-    return offlineChannelsRaw.map((ch) => ({
+  const allChannelStatuses = allChannelsRaw
+    .filter((ch) => userChannelIds.size === 0 || userChannelIds.has(ch.id))
+    .map((ch) => ({
       id: ch.id,
       name: ch.name,
-      isOnline: false,
+      isOnline: ch.status?.id === WORKER_STATUS_ONLINE,
       status: ch.status,
     }));
-  }, [userChannelNames, offlineChannelsRaw]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -136,7 +133,7 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
 
       await refreshUserChannels();
-      await fetchOfflineChannels();
+      await Promise.all([fetchOfflineChannels(), fetchAllChannels()]);
 
       const user = await getUser();
       const accountId =
@@ -156,15 +153,34 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
               return;
             }
 
+            const statusId = payload.worker_status_id ?? null;
+            const statusName = getStatusName(payload.worker_status_id);
+
+            setAllChannelsRaw((prev) => {
+              const exists = prev.find((ch) => ch.id === payload.worker_id);
+              if (exists) {
+                return prev.map((ch) =>
+                  ch.id === payload.worker_id
+                    ? {
+                        ...ch,
+                        status: statusId
+                          ? { id: statusId, name: statusName }
+                          : ch.status,
+                      }
+                    : ch
+                );
+              }
+
+              void fetchAllChannels();
+              return prev;
+            });
+
             if (payload.worker_status_id === WORKER_STATUS_ONLINE) {
               setOfflineChannelsRaw((prev) =>
                 prev.filter((ch) => ch.id !== payload.worker_id)
               );
               return;
             }
-
-            const statusId = payload.worker_status_id ?? null;
-            const statusName = getStatusName(payload.worker_status_id);
 
             setOfflineChannelsRaw((prev) => {
               const existing = prev.find((ch) => ch.id === payload.worker_id);
@@ -181,6 +197,7 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
                     : ch
                 );
               }
+
               void fetchOfflineChannels();
               return prev;
             });
@@ -195,7 +212,7 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
       pollingRef.current = setInterval(async () => {
         if (!mountedRef.current) return;
         await refreshUserChannels();
-        await fetchOfflineChannels();
+        await Promise.all([fetchOfflineChannels(), fetchAllChannels()]);
       }, POLLING_INTERVAL_MS);
     };
 

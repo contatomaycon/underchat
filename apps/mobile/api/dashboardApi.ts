@@ -16,3 +16,15 @@ export async function getOfflineChannels(): Promise<OfflineChannel[]> {
   if (!result || !Array.isArray(result.data)) return [];
   return result.data;
 }
+
+export type ChannelWithStatus = {
+  id: string;
+  name: string;
+  status: OfflineChannelStatus | null;
+};
+
+export async function getAllChannelsStatus(): Promise<ChannelWithStatus[]> {
+  const result = await apiGet<ChannelWithStatus[]>('/chat/channels-status');
+  if (!result || !Array.isArray(result.data)) return [];
+  return result.data;
+}
