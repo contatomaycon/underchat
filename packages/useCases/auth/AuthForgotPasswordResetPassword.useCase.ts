@@ -17,6 +17,7 @@ import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
 import { randomUUID } from 'node:crypto';
 import { AuthRepository } from '@core/repositories/auth/Auth.repository';
 import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
+import type { SessionPlatform } from '@core/common/types/SessionPlatform';
 
 @injectable()
 export class AuthForgotPasswordResetPasswordUseCase {
@@ -65,7 +66,8 @@ export class AuthForgotPasswordResetPasswordUseCase {
 
   private async notifyPreviousSession(
     userId: string,
-    accountId: string
+    accountId: string,
+    sessionPlatform: SessionPlatform
   ): Promise<void> {
     try {
       const channel = chatAccountCentrifugo(accountId);
@@ -73,24 +75,51 @@ export class AuthForgotPasswordResetPasswordUseCase {
       await this.centrifugoService.publishSub(channel, {
         event: 'force_logout',
         user_id: userId,
+        session_platform: sessionPlatform,
       });
     } catch (error) {
       console.error('Failed to notify previous session', error);
     }
   }
 
+  private async hasActiveSession(
+    accountId: string,
+    userId: string,
+    sessionPlatform: SessionPlatform
+  ): Promise<boolean> {
+    const sessionKey = createJwtSessionKey(accountId, userId, sessionPlatform);
+
+    if (sessionPlatform === 'web') {
+      const legacySessionKey = createJwtSessionKey(accountId, userId);
+      const [activeSession, legacySession] = await Promise.all([
+        this.redis.get(sessionKey),
+        this.redis.get(legacySessionKey),
+      ]);
+
+      return Boolean(activeSession || legacySession);
+    }
+
+    const activeSession = await this.redis.get(sessionKey);
+    return Boolean(activeSession);
+  }
+
   private async handleDuplicateLogin(
     userId: string,
-    accountId: string
+    accountId: string,
+    sessionPlatform: SessionPlatform
   ): Promise<boolean> {
-    const isAlreadyLoggedIn = await this.presenceService.isUserLoggedIn(userId);
+    const isAlreadyLoggedIn = await this.hasActiveSession(
+      accountId,
+      userId,
+      sessionPlatform
+    );
 
     if (!isAlreadyLoggedIn) {
       return false;
     }
 
     await this.invalidateUserJwtCache(accountId, userId);
-    await this.notifyPreviousSession(userId, accountId);
+    await this.notifyPreviousSession(userId, accountId, sessionPlatform);
 
     return true;
   }
@@ -98,9 +127,20 @@ export class AuthForgotPasswordResetPasswordUseCase {
   private async setActiveSession(
     accountId: string,
     userId: string,
-    sessionId: string
+    sessionId: string,
+    sessionPlatform: SessionPlatform
   ): Promise<void> {
-    const sessionKey = createJwtSessionKey(accountId, userId);
+    const sessionKey = createJwtSessionKey(accountId, userId, sessionPlatform);
+
+    if (sessionPlatform === 'web') {
+      const legacySessionKey = createJwtSessionKey(accountId, userId);
+      await Promise.all([
+        this.redis.set(sessionKey, sessionId),
+        this.redis.del(legacySessionKey),
+      ]);
+      return;
+    }
+
     await this.redis.set(sessionKey, sessionId);
   }
 
@@ -110,7 +150,8 @@ export class AuthForgotPasswordResetPasswordUseCase {
     module: ERouteModule,
     userId: string,
     accountId: string,
-    input: AuthForgotPasswordResetPasswordRequest
+    input: AuthForgotPasswordResetPasswordRequest,
+    sessionPlatform: SessionPlatform
   ): Promise<AuthForgotPasswordResetPasswordResponse> {
     if (input.new_password !== input.confirm_password) {
       throw new Error(t('passwords_do_not_match'));
@@ -158,7 +199,8 @@ export class AuthForgotPasswordResetPasswordUseCase {
 
     const hadDuplicateLogin = await this.handleDuplicateLogin(
       userId,
-      accountId
+      accountId,
+      sessionPlatform
     );
     const sessionId = randomUUID();
 
@@ -168,6 +210,7 @@ export class AuthForgotPasswordResetPasswordUseCase {
         module,
         account_id: accountId,
         session_id: sessionId,
+        session_platform: sessionPlatform,
       },
       {
         sign: {
@@ -191,7 +234,7 @@ export class AuthForgotPasswordResetPasswordUseCase {
     }
 
     await this.presenceService.setUserAway(userId);
-    await this.setActiveSession(accountId, userId, sessionId);
+    await this.setActiveSession(accountId, userId, sessionId, sessionPlatform);
 
     return {
       user: userResult,

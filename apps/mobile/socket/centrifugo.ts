@@ -55,6 +55,7 @@ const requestCentrifugoAuthToken = async (): Promise<AuthTokenResponse> => {
       'Accept-Language': 'pt',
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      'X-Client-Platform': 'mobile',
     },
     body: '{}',
   });

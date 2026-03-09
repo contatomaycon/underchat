@@ -70,6 +70,12 @@ export type SocketUserPresencePayload = {
   status: ChatUserStatus;
 };
 
+export type SocketForceLogoutPayload = {
+  event: 'force_logout';
+  user_id: string;
+  session_platform: 'web' | 'mobile' | null;
+};
+
 type SocketEventMap = {
   typing: SocketTypingPayload;
   message: SocketMessagePayload;
@@ -77,6 +83,7 @@ type SocketEventMap = {
   recoveryFailed: SocketRecoveryFailedPayload;
   channelsUpdated: SocketChannelsUpdatedPayload;
   userPresence: SocketUserPresencePayload;
+  forceLogout: SocketForceLogoutPayload;
 };
 
 type SocketEventName = keyof SocketEventMap;
@@ -109,6 +116,7 @@ const chatUpdateListeners = new Set<SocketListener<'chatUpdate'>>();
 const recoveryFailedListeners = new Set<SocketListener<'recoveryFailed'>>();
 const channelsUpdatedListeners = new Set<SocketListener<'channelsUpdated'>>();
 const userPresenceListeners = new Set<SocketListener<'userPresence'>>();
+const forceLogoutListeners = new Set<SocketListener<'forceLogout'>>();
 
 const emitTyping = (payload: SocketTypingPayload): void => {
   for (const listener of typingListeners) {
@@ -162,6 +170,16 @@ const emitChannelsUpdated = (payload: SocketChannelsUpdatedPayload): void => {
 
 const emitUserPresence = (payload: SocketUserPresencePayload): void => {
   for (const listener of userPresenceListeners) {
+    try {
+      listener(payload);
+    } catch {
+      //
+    }
+  }
+};
+
+const emitForceLogout = (payload: SocketForceLogoutPayload): void => {
+  for (const listener of forceLogoutListeners) {
     try {
       listener(payload);
     } catch {
@@ -403,6 +421,41 @@ const parseUserPresencePayload = (
   };
 };
 
+const parseForceLogoutPayload = (
+  rawData: unknown
+): SocketForceLogoutPayload | null => {
+  if (!rawData || typeof rawData !== 'object') {
+    return null;
+  }
+
+  const data = rawData as Record<string, unknown>;
+  if (data.event !== 'force_logout') {
+    return null;
+  }
+
+  const rawUserId = data.user_id;
+  const userId =
+    getStringField(rawUserId) ??
+    (typeof rawUserId === 'number' && Number.isFinite(rawUserId)
+      ? String(rawUserId)
+      : null);
+  if (!userId) {
+    return null;
+  }
+
+  const sessionPlatformRaw = getStringField(data.session_platform);
+  const sessionPlatform =
+    sessionPlatformRaw === 'web' || sessionPlatformRaw === 'mobile'
+      ? sessionPlatformRaw
+      : null;
+
+  return {
+    event: 'force_logout',
+    user_id: userId,
+    session_platform: sessionPlatform,
+  };
+};
+
 const isTypingPayload = (
   payload: SocketTypingPayload | SocketMessagePayload | SocketChatPayload
 ): payload is SocketTypingPayload => {
@@ -490,6 +543,12 @@ export const initializeChatSocket = async (
       );
 
       await onMessage(chatChannel, (incoming) => {
+        const forceLogout = parseForceLogoutPayload(incoming);
+        if (forceLogout) {
+          emitForceLogout(forceLogout);
+          return;
+        }
+
         const channelsUpdated = parseUserChannelsUpdatedPayload(incoming);
         if (channelsUpdated) {
           emitChannelsUpdated(channelsUpdated);
@@ -594,6 +653,13 @@ export const addChatSocketListener = <K extends SocketEventName>(
     userPresenceListeners.add(listener as SocketListener<'userPresence'>);
     return () => {
       userPresenceListeners.delete(listener as SocketListener<'userPresence'>);
+    };
+  }
+
+  if (eventName === 'forceLogout') {
+    forceLogoutListeners.add(listener as SocketListener<'forceLogout'>);
+    return () => {
+      forceLogoutListeners.delete(listener as SocketListener<'forceLogout'>);
     };
   }
 

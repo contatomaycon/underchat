@@ -16,6 +16,7 @@ import Redis from 'ioredis';
 import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
 import { randomUUID } from 'node:crypto';
 import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
+import type { SessionPlatform } from '@core/common/types/SessionPlatform';
 
 @injectable()
 export class AuthLoginUseCase {
@@ -64,7 +65,8 @@ export class AuthLoginUseCase {
 
   private async notifyPreviousSession(
     userId: string,
-    accountId: string
+    accountId: string,
+    sessionPlatform: SessionPlatform
   ): Promise<void> {
     try {
       const channel = chatAccountCentrifugo(accountId);
@@ -72,24 +74,51 @@ export class AuthLoginUseCase {
       await this.centrifugoService.publishSub(channel, {
         event: 'force_logout',
         user_id: userId,
+        session_platform: sessionPlatform,
       });
     } catch (error) {
       console.error('Failed to notify previous session', error);
     }
   }
 
+  private async hasActiveSession(
+    accountId: string,
+    userId: string,
+    sessionPlatform: SessionPlatform
+  ): Promise<boolean> {
+    const sessionKey = createJwtSessionKey(accountId, userId, sessionPlatform);
+
+    if (sessionPlatform === 'web') {
+      const legacySessionKey = createJwtSessionKey(accountId, userId);
+      const [activeSession, legacySession] = await Promise.all([
+        this.redis.get(sessionKey),
+        this.redis.get(legacySessionKey),
+      ]);
+
+      return Boolean(activeSession || legacySession);
+    }
+
+    const activeSession = await this.redis.get(sessionKey);
+    return Boolean(activeSession);
+  }
+
   private async handleDuplicateLogin(
     userId: string,
-    accountId: string
+    accountId: string,
+    sessionPlatform: SessionPlatform
   ): Promise<boolean> {
-    const isAlreadyLoggedIn = await this.presenceService.isUserLoggedIn(userId);
+    const isAlreadyLoggedIn = await this.hasActiveSession(
+      accountId,
+      userId,
+      sessionPlatform
+    );
 
     if (!isAlreadyLoggedIn) {
       return false;
     }
 
     await this.invalidateUserJwtCache(accountId, userId);
-    await this.notifyPreviousSession(userId, accountId);
+    await this.notifyPreviousSession(userId, accountId, sessionPlatform);
 
     return true;
   }
@@ -97,9 +126,20 @@ export class AuthLoginUseCase {
   private async setActiveSession(
     accountId: string,
     userId: string,
-    sessionId: string
+    sessionId: string,
+    sessionPlatform: SessionPlatform
   ): Promise<void> {
-    const sessionKey = createJwtSessionKey(accountId, userId);
+    const sessionKey = createJwtSessionKey(accountId, userId, sessionPlatform);
+
+    if (sessionPlatform === 'web') {
+      const legacySessionKey = createJwtSessionKey(accountId, userId);
+      await Promise.all([
+        this.redis.set(sessionKey, sessionId),
+        this.redis.del(legacySessionKey),
+      ]);
+      return;
+    }
+
     await this.redis.set(sessionKey, sessionId);
   }
 
@@ -107,7 +147,8 @@ export class AuthLoginUseCase {
     t: TFunction<'translation', undefined>,
     reply: FastifyReply,
     module: ERouteModule,
-    input: AuthLoginRequest
+    input: AuthLoginRequest,
+    sessionPlatform: SessionPlatform
   ): Promise<AuthLoginResponse | null> {
     const result = await this.authService.authenticate(
       input.login,
@@ -142,7 +183,8 @@ export class AuthLoginUseCase {
 
     const hadDuplicateLogin = await this.handleDuplicateLogin(
       result.user_id,
-      result.account_id
+      result.account_id,
+      sessionPlatform
     );
     await this.invalidateUserJwtCache(result.account_id, result.user_id);
     const sessionId = randomUUID();
@@ -153,6 +195,7 @@ export class AuthLoginUseCase {
         module,
         account_id: result.account_id,
         session_id: sessionId,
+        session_platform: sessionPlatform,
       },
       {
         sign: {
@@ -181,7 +224,12 @@ export class AuthLoginUseCase {
     }
 
     await this.presenceService.setUserAway(result.user_id);
-    await this.setActiveSession(result.account_id, result.user_id, sessionId);
+    await this.setActiveSession(
+      result.account_id,
+      result.user_id,
+      sessionId,
+      sessionPlatform
+    );
 
     return {
       user: result,

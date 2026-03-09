@@ -37,6 +37,7 @@ const logoutOnServer = async (): Promise<void> => {
         Accept: 'application/json',
         'Accept-Language': 'pt',
         Authorization: `Bearer ${token}`,
+        'X-Client-Platform': 'mobile',
       },
     });
   } catch (error) {

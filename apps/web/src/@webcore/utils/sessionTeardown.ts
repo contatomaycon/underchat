@@ -23,6 +23,7 @@ const logoutOnServer = async (): Promise<void> => {
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${token}`,
+        'X-Client-Platform': 'web',
       },
     });
   } catch (error) {

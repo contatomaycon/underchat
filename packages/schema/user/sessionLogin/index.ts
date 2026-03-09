@@ -22,6 +22,12 @@ export const sessionLoginSchema = {
         default: ELanguage.pt,
       })
     ),
+    'X-Client-Platform': Type.Optional(
+      Type.String({
+        description: 'Plataforma da sessão',
+        enum: ['web', 'mobile'],
+      })
+    ),
   }),
   params: sessionLoginRequestSchema,
   response: {

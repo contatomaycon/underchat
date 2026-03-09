@@ -10,6 +10,11 @@ import Redis from 'ioredis';
 import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
 import { AuthRefreshTokenError } from '@core/common/exceptions/AuthRefreshTokenError';
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
+import {
+  DEFAULT_SESSION_PLATFORM,
+  normalizeSessionPlatform,
+} from '@core/common/functions/sessionPlatform';
+import type { SessionPlatform } from '@core/common/types/SessionPlatform';
 
 @injectable()
 export class AuthRefreshTokenUseCase {
@@ -21,6 +26,68 @@ export class AuthRefreshTokenUseCase {
     @inject('Redis') private readonly redis: Redis
   ) {}
 
+  private async resolveActiveSession(
+    accountId: string,
+    userId: string,
+    sessionPlatform: SessionPlatform | null
+  ): Promise<{
+    activeSession: string | null;
+    isLegacySession: boolean;
+  }> {
+    if (!sessionPlatform) {
+      const legacyKey = createJwtSessionKey(accountId, userId);
+      const legacySession = await this.redis.get(legacyKey);
+
+      if (legacySession) {
+        return {
+          activeSession: legacySession,
+          isLegacySession: true,
+        };
+      }
+
+      const webSessionKey = createJwtSessionKey(
+        accountId,
+        userId,
+        DEFAULT_SESSION_PLATFORM
+      );
+      const webSession = await this.redis.get(webSessionKey);
+
+      return {
+        activeSession: webSession,
+        isLegacySession: false,
+      };
+    }
+
+    const sessionKey = createJwtSessionKey(accountId, userId, sessionPlatform);
+    const activeSession = await this.redis.get(sessionKey);
+
+    return {
+      activeSession,
+      isLegacySession: false,
+    };
+  }
+
+  private async persistPlatformSession(
+    accountId: string,
+    userId: string,
+    sessionId: string,
+    sessionPlatform: SessionPlatform,
+    isLegacySession: boolean
+  ): Promise<void> {
+    const sessionKey = createJwtSessionKey(accountId, userId, sessionPlatform);
+
+    if (isLegacySession && sessionPlatform === DEFAULT_SESSION_PLATFORM) {
+      const legacyKey = createJwtSessionKey(accountId, userId);
+      await Promise.all([
+        this.redis.set(sessionKey, sessionId),
+        this.redis.del(legacyKey),
+      ]);
+      return;
+    }
+
+    await this.redis.set(sessionKey, sessionId);
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     request: FastifyRequest,
@@ -31,6 +98,7 @@ export class AuthRefreshTokenUseCase {
       module: ERouteModule;
       account_id: string;
       session_id: string;
+      session_platform?: string;
     };
 
     try {
@@ -96,8 +164,15 @@ export class AuthRefreshTokenUseCase {
       );
     }
 
-    const sessionKey = createJwtSessionKey(accountId, decodeToken.user_id);
-    const activeSession = await this.redis.get(sessionKey);
+    const decodedSessionPlatform = normalizeSessionPlatform(
+      decodeToken.session_platform
+    );
+    const sessionPlatform = decodedSessionPlatform ?? DEFAULT_SESSION_PLATFORM;
+    const { activeSession, isLegacySession } = await this.resolveActiveSession(
+      accountId,
+      decodeToken.user_id,
+      decodedSessionPlatform
+    );
 
     if (!activeSession) {
       throw new AuthRefreshTokenError(
@@ -128,6 +203,7 @@ export class AuthRefreshTokenUseCase {
       module: request.module,
       account_id: accountId,
       session_id: decodeToken.session_id,
+      session_platform: sessionPlatform,
     };
 
     const token = await reply.jwtSign(payload, {
@@ -138,6 +214,14 @@ export class AuthRefreshTokenUseCase {
     });
 
     const planIsActive = await this.accountService.isPlanActive(accountId);
+
+    await this.persistPlatformSession(
+      accountId,
+      decodeToken.user_id,
+      decodeToken.session_id,
+      sessionPlatform,
+      isLegacySession
+    );
 
     return {
       token,

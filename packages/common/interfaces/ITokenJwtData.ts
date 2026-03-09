@@ -1,4 +1,5 @@
 import { IJwtGroupHierarchy } from './IJwtGroupHierarchy';
+import type { SessionPlatform } from '@core/common/types/SessionPlatform';
 
 export interface IUserChannel {
   id: string;
@@ -14,4 +15,5 @@ export interface ITokenJwtData {
   sectors: string[];
   channels: IUserChannel[];
   plan_is_active: boolean;
+  session_platform?: SessionPlatform | null;
 }

@@ -5,6 +5,7 @@ import {
   createUserAttendanceRulesCacheKey,
 } from '@core/common/functions/createCacheKey';
 import { PresenceService } from '@core/services/presence.service';
+import type { SessionPlatform } from '@core/common/types/SessionPlatform';
 
 @injectable()
 export class AuthLogoutUseCase {
@@ -60,13 +61,62 @@ export class AuthLogoutUseCase {
     );
   }
 
-  async execute(accountId: string, userId: string): Promise<void> {
-    const sessionKey = createJwtSessionKey(accountId, userId);
+  private async hasAnyActiveSession(
+    accountId: string,
+    userId: string
+  ): Promise<boolean> {
+    const legacySessionKey = createJwtSessionKey(accountId, userId);
+    const webSessionKey = createJwtSessionKey(accountId, userId, 'web');
+    const mobileSessionKey = createJwtSessionKey(accountId, userId, 'mobile');
+
+    const [legacySession, webSession, mobileSession] = await Promise.all([
+      this.redis.get(legacySessionKey),
+      this.redis.get(webSessionKey),
+      this.redis.get(mobileSessionKey),
+    ]);
+
+    return Boolean(legacySession || webSession || mobileSession);
+  }
+
+  private async removeCurrentSession(
+    accountId: string,
+    userId: string,
+    sessionPlatform?: SessionPlatform | null
+  ): Promise<void> {
+    if (!sessionPlatform) {
+      const legacySessionKey = createJwtSessionKey(accountId, userId);
+      await this.redis.del(legacySessionKey);
+      return;
+    }
+
+    const sessionKey = createJwtSessionKey(accountId, userId, sessionPlatform);
+    await this.redis.del(sessionKey);
+
+    if (sessionPlatform === 'web') {
+      const legacySessionKey = createJwtSessionKey(accountId, userId);
+      await this.redis.del(legacySessionKey);
+    }
+  }
+
+  async execute(
+    accountId: string,
+    userId: string,
+    sessionPlatform?: SessionPlatform | null
+  ): Promise<void> {
     await Promise.all([
-      this.redis.del(sessionKey),
+      this.removeCurrentSession(accountId, userId, sessionPlatform),
       this.invalidateUserJwtCache(accountId, userId),
       this.invalidateUserAttendanceRulesCache(accountId, userId),
     ]);
+
+    const stillHasActiveSession = await this.hasAnyActiveSession(
+      accountId,
+      userId
+    );
+
+    if (stillHasActiveSession) {
+      return;
+    }
 
     await this.presenceService.setUserOffline(userId);
     await this.invalidateUserPresenceCache(userId);

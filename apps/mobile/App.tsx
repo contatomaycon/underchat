@@ -24,6 +24,7 @@ import {
   addAttendanceBlockedListener,
   addAuthUnauthorizedListener,
 } from './utils/authEvents';
+import { teardownMobileSessionOnUnauthorized } from './utils/sessionTeardown';
 import {
   cleanupChatSocket,
   initializeChatSocket,
@@ -324,6 +325,7 @@ export default function App() {
     let cancelled = false;
     let offChannelsUpdated: (() => void) | null = null;
     let offUserPresence: (() => void) | null = null;
+    let offForceLogout: (() => void) | null = null;
 
     if (!authenticated) {
       cleanupChatSocket().catch(() => {});
@@ -367,6 +369,19 @@ export default function App() {
           });
           emitCurrentUserPresenceStatus(payload.status);
         });
+
+        offForceLogout = addChatSocketListener('forceLogout', (payload) => {
+          const eventUserId = normalizeIdentifier(payload.user_id);
+          if (!loggedUserId || !eventUserId || eventUserId !== loggedUserId) {
+            return;
+          }
+
+          if (payload.session_platform !== 'mobile') {
+            return;
+          }
+
+          void teardownMobileSessionOnUnauthorized();
+        });
       })
       .catch(() => {});
 
@@ -374,6 +389,7 @@ export default function App() {
       cancelled = true;
       offChannelsUpdated?.();
       offUserPresence?.();
+      offForceLogout?.();
     };
   }, [authenticated]);
 

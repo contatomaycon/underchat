@@ -20,6 +20,12 @@ export const forgotPasswordResetPasswordSchema = {
     Authorization: Type.String({
       description: 'Token JWT temporário obtido após verificação do código',
     }),
+    'X-Client-Platform': Type.Optional(
+      Type.String({
+        description: 'Plataforma da sessão',
+        enum: ['web', 'mobile'],
+      })
+    ),
   }),
   body: authForgotPasswordResetPasswordRequestSchema,
   response: {

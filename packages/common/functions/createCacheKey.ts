@@ -1,3 +1,5 @@
+import type { SessionPlatform } from '@core/common/types/SessionPlatform';
+
 function joinParts(parts: string[]): string {
   const filteredParts = parts.filter(Boolean);
 
@@ -45,7 +47,11 @@ export function createKeyApiCacheKey(
   return joinParts(['keyCache', keyApi, encodedRouteModule]);
 }
 
-export function createJwtSessionKey(accountId: string, userId: string): string {
+export function createJwtSessionKey(
+  accountId: string,
+  userId: string,
+  sessionPlatform?: SessionPlatform
+): string {
   if (!accountId) {
     throw new Error('account id is required');
   }
@@ -54,7 +60,45 @@ export function createJwtSessionKey(accountId: string, userId: string): string {
     throw new Error('user id is required');
   }
 
+  if (sessionPlatform) {
+    return joinParts(['jwtSession', accountId, userId, sessionPlatform]);
+  }
+
   return joinParts(['jwtSession', accountId, userId]);
+}
+
+export function parseJwtSessionKey(key: string): {
+  accountId: string;
+  userId: string;
+  sessionPlatform: SessionPlatform | null;
+} | null {
+  if (!key) {
+    return null;
+  }
+
+  const [prefix, accountId, userId, sessionPlatform, ...extra] = key.split(':');
+
+  if (prefix !== 'jwtSession' || !accountId || !userId || extra.length > 0) {
+    return null;
+  }
+
+  if (!sessionPlatform) {
+    return {
+      accountId,
+      userId,
+      sessionPlatform: null,
+    };
+  }
+
+  if (sessionPlatform !== 'web' && sessionPlatform !== 'mobile') {
+    return null;
+  }
+
+  return {
+    accountId,
+    userId,
+    sessionPlatform,
+  };
 }
 
 export function createUserAttendanceRulesCacheKey(

@@ -7,6 +7,7 @@ import { AuthLoginRequest } from '@core/schema/auth/login/request.schema';
 import { AuthLoginUseCase } from '@core/useCases/auth/AuthLogin.useCase';
 import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
 import { USER_ATTENDANCE_HOURS_BLOCK_REASON } from '@core/common/functions/userAttendanceHours';
+import { resolveSessionPlatformFromHeaders } from '@core/common/functions/sessionPlatform';
 
 export const login = async (
   request: FastifyRequest<{
@@ -16,13 +17,15 @@ export const login = async (
 ) => {
   const loginAuthUseCase = container.resolve(AuthLoginUseCase);
   const { t } = request;
+  const sessionPlatform = resolveSessionPlatformFromHeaders(request.headers);
 
   try {
     const responseAuth = await loginAuthUseCase.execute(
       t,
       reply,
       request.module,
-      request.body
+      request.body,
+      sessionPlatform
     );
 
     if (responseAuth) {

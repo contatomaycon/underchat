@@ -15,6 +15,12 @@ export const refreshTokenSchema = {
         default: ELanguage.pt,
       })
     ),
+    'X-Client-Platform': Type.Optional(
+      Type.String({
+        description: 'Plataforma da sessão',
+        enum: ['web', 'mobile'],
+      })
+    ),
   }),
   response: {
     200: Type.Object({

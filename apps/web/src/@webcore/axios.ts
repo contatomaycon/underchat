@@ -27,6 +27,7 @@ const createAxiosInstance = () => {
 };
 
 const axiosAuth = createAxiosInstance();
+const WEB_SESSION_PLATFORM = 'web';
 let logoutAndRedirectPromise: Promise<void> | null = null;
 let refreshSessionPromise: Promise<string | null> | null = null;
 let hasInvalidSession = false;
@@ -43,6 +44,7 @@ const applyAuthHeaders = (
 ): AxiosRequestHeaders | AxiosHeaders => {
   const nextHeaders = AxiosHeaders.from(headers ?? {});
   nextHeaders.set('Accept-Language', locale);
+  nextHeaders.set('X-Client-Platform', WEB_SESSION_PLATFORM);
   if (token) {
     nextHeaders.set('Authorization', `Bearer ${token}`);
   }

@@ -82,8 +82,10 @@ export const initUserPresenceSubscription = async (
   const handleForceLogoutEvent = async (data: {
     event: string;
     user_id: string;
+    session_platform?: string;
   }): Promise<void> => {
     if (data.user_id !== chatStore.user?.user_id) return;
+    if (data.session_platform && data.session_platform !== 'web') return;
 
     const { router } = await import('@/plugins/1.router');
     const { useAuthStore } = await import('@webcore/stores/auth');

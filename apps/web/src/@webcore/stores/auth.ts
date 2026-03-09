@@ -100,6 +100,7 @@ export const useAuthStore = defineStore('auth', {
             headers: {
               'Content-Type': 'application/json',
               'Accept-Language': currentLocale,
+              'X-Client-Platform': 'web',
             },
           }
         );
@@ -151,7 +152,11 @@ export const useAuthStore = defineStore('auth', {
       try {
         const response = await axiosAuth.post<
           IApiResponse<AuthLoginResponse | null>
-        >(`/user/${userId}/session-login`);
+        >(`/user/${userId}/session-login`, undefined, {
+          headers: {
+            'X-Client-Platform': 'web',
+          },
+        });
 
         const data = response?.data;
 
@@ -355,6 +360,7 @@ export const useAuthStore = defineStore('auth', {
               'Content-Type': 'application/json',
               'Accept-Language': currentLocale,
               Authorization: `Bearer ${token}`,
+              'X-Client-Platform': 'web',
             },
           }
         );

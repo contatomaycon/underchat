@@ -12,7 +12,8 @@ export const logout = async (request: FastifyRequest, reply: FastifyReply) => {
   try {
     await authLogoutUseCase.execute(
       tokenJwtData.account_id,
-      tokenJwtData.user_id
+      tokenJwtData.user_id,
+      tokenJwtData.session_platform ?? null
     );
 
     return sendResponse(reply, {

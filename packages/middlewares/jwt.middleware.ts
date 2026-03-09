@@ -20,6 +20,8 @@ import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutP
 import Redis from 'ioredis';
 import { UserService } from '@core/services/user.service';
 import { USER_ATTENDANCE_HOURS_BLOCK_REASON } from '@core/common/functions/userAttendanceHours';
+import { normalizeSessionPlatform } from '@core/common/functions/sessionPlatform';
+import type { SessionPlatform } from '@core/common/types/SessionPlatform';
 
 async function handleApiKeyCacheWithCachedValue(
   redis: Redis,
@@ -67,6 +69,7 @@ async function handleApiKeyCacheWithCachedValue(
 async function generateTokenJwtAccess(
   userId: string,
   sessionId: string,
+  sessionPlatform: SessionPlatform | null,
   responseAuth: IJwtPermissionsWithPlan
 ): Promise<ITokenJwtData> {
   const accountId = responseAuth.actions.find(
@@ -95,6 +98,7 @@ async function generateTokenJwtAccess(
     sectors,
     channels,
     plan_is_active: responseAuth.plan_is_active,
+    session_platform: sessionPlatform,
   } as ITokenJwtData;
 }
 
@@ -115,6 +119,7 @@ async function authenticateJwt(
       module: ERouteModule;
       account_id: string;
       session_id: string;
+      session_platform?: string;
     } = await request.jwtVerify({
       verify: {
         key: generalEnvironment.jwtSecret,
@@ -152,7 +157,16 @@ async function authenticateJwt(
       });
     }
 
-    const sessionKey = createJwtSessionKey(decoded.account_id, decoded.user_id);
+    const decodedSessionPlatform = normalizeSessionPlatform(
+      decoded.session_platform
+    );
+    const sessionKey = decodedSessionPlatform
+      ? createJwtSessionKey(
+          decoded.account_id,
+          decoded.user_id,
+          decodedSessionPlatform
+        )
+      : createJwtSessionKey(decoded.account_id, decoded.user_id);
     const routeModule = getRootPath(routePath, request.module);
     const cacheKey = createJwtCacheKey(
       decoded.account_id,
@@ -232,6 +246,7 @@ async function authenticateJwt(
     const tokenJwtData = await generateTokenJwtAccess(
       decoded.user_id,
       decoded.session_id,
+      decodedSessionPlatform,
       responseAuth
     );
 

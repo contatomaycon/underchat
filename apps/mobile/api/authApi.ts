@@ -49,6 +49,7 @@ export async function login(
     headers: {
       'Content-Type': 'application/json',
       'Accept-Language': 'pt',
+      'X-Client-Platform': 'mobile',
     },
     body: JSON.stringify({ login: loginValue, password } as AuthLoginRequest),
   });

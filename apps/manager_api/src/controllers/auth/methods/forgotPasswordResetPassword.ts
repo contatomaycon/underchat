@@ -8,6 +8,7 @@ import { AuthForgotPasswordResetPasswordUseCase } from '@core/useCases/auth/Auth
 import { generalEnvironment } from '@core/config/environments';
 import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
 import { USER_ATTENDANCE_HOURS_BLOCK_REASON } from '@core/common/functions/userAttendanceHours';
+import { resolveSessionPlatformFromHeaders } from '@core/common/functions/sessionPlatform';
 
 export const forgotPasswordResetPassword = async (
   request: FastifyRequest<{
@@ -19,6 +20,7 @@ export const forgotPasswordResetPassword = async (
     AuthForgotPasswordResetPasswordUseCase
   );
   const { t } = request;
+  const sessionPlatform = resolveSessionPlatformFromHeaders(request.headers);
 
   try {
     const decoded: {
@@ -53,7 +55,8 @@ export const forgotPasswordResetPassword = async (
       request.module,
       decoded.user_id,
       decoded.account_id,
-      request.body
+      request.body,
+      sessionPlatform
     );
 
     return sendResponse(reply, {

@@ -17,6 +17,12 @@ export const loginSchema = {
         default: ELanguage.pt,
       })
     ),
+    'X-Client-Platform': Type.Optional(
+      Type.String({
+        description: 'Plataforma da sessão',
+        enum: ['web', 'mobile'],
+      })
+    ),
   }),
   body: authLoginRequestSchema,
   response: {

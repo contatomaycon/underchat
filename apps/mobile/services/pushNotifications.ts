@@ -267,6 +267,7 @@ async function deletePushSubscriptionDirect(payload: {
         'Accept-Language': 'pt',
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
+        'X-Client-Platform': 'mobile',
       },
       body: JSON.stringify(payload),
     });
