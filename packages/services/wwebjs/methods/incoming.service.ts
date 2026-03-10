@@ -41,6 +41,11 @@ interface WwebjsResolvedJids {
   remoteJidAlt?: string;
 }
 
+type WwebjsIncomingEventSource =
+  | 'message'
+  | 'message_create'
+  | 'message_ciphertext';
+
 function getNonEmptyString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
@@ -204,7 +209,6 @@ export class WwebjsIncomingMessageService {
   private readonly processedCalls = new Map<string, number>();
   private readonly processedPinMessages = new Map<string, number>();
   private readonly processedIncomingMessages = new Map<string, number>();
-  private boundAtMs = Date.now();
   private readonly PIN_MESSAGE_CACHE_TTL_MS = 15000;
   private readonly INCOMING_MESSAGE_CACHE_TTL_MS = 30000;
   private readonly INCOMING_MESSAGE_CACHE_MAX_SIZE = 100000;
@@ -241,9 +245,8 @@ export class WwebjsIncomingMessageService {
 
   bindTo(client: Client): void {
     this.currentClient = client;
-    this.boundAtMs = Date.now();
     client.on('message', (msg: Message) => {
-      if (this.shouldSkipIncomingMessage(msg)) {
+      if (this.shouldSkipIncomingMessage(msg, 'message')) {
         return;
       }
 
@@ -257,7 +260,7 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
-      if (this.shouldSkipIncomingMessage(msg)) {
+      if (this.shouldSkipIncomingMessage(msg, 'message_ciphertext')) {
         return;
       }
 
@@ -268,7 +271,7 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
-      if (this.shouldSkipIncomingMessage(msg)) {
+      if (this.shouldSkipIncomingMessage(msg, 'message_create')) {
         return;
       }
 
@@ -317,9 +320,12 @@ export class WwebjsIncomingMessageService {
     client.on('message_ack', (msg: Message, ack: number) => {
       void this.handleMessageAck(msg, ack);
     });
-    client.on('message_pinned', (message: Message, pinData) => {
-      void this.handlePinnedMessage(message, pinData);
-    });
+    client.on(
+      'message_pinned',
+      (message: Message, pinData?: IWwebjsPinEventData) => {
+        void this.handlePinnedMessage(message, pinData);
+      }
+    );
   }
 
   private shouldSkipChat(remoteJid: string): boolean {
@@ -372,7 +378,253 @@ export class WwebjsIncomingMessageService {
     }
   }
 
-  private shouldSkipIncomingMessage(msg: Message): boolean {
+  private cleanupProcessedPinMessages(now: number): void {
+    for (const [key, timestamp] of this.processedPinMessages.entries()) {
+      if (now - timestamp > this.PIN_MESSAGE_CACHE_TTL_MS) {
+        this.processedPinMessages.delete(key);
+      }
+    }
+  }
+
+  private buildIncomingDedupeKeys(
+    msg: Message,
+    source: WwebjsIncomingEventSource
+  ): string[] {
+    const namespace =
+      source === 'message_ciphertext' ? 'ciphertext' : 'default';
+    const messageId = getNonEmptyString(getMessageIdSerialized(msg));
+    const scopedStanzaDedupeKey = buildScopedStanzaDedupeKey(msg);
+
+    return [messageId, scopedStanzaDedupeKey]
+      .filter((key): key is string => !!key)
+      .map((key) => `${namespace}:${key}`);
+  }
+
+  private getPinActionState(
+    msg: Message,
+    pinData?: IWwebjsPinEventData
+  ): string {
+    const rawData = (
+      msg as unknown as {
+        _data?: {
+          pinMessageType?: unknown;
+          pinType?: unknown;
+          pinActionType?: unknown;
+          pinAction?: unknown;
+        };
+      }
+    )._data;
+
+    const pinTypeCandidate =
+      pinData?.pinType ??
+      rawData?.pinMessageType ??
+      rawData?.pinType ??
+      rawData?.pinActionType ??
+      rawData?.pinAction;
+
+    if (
+      typeof pinTypeCandidate === 'number' &&
+      Number.isFinite(pinTypeCandidate)
+    ) {
+      return `type:${pinTypeCandidate}`;
+    }
+
+    if (typeof pinTypeCandidate === 'string') {
+      const normalizedType = pinTypeCandidate.trim().toLowerCase();
+      if (normalizedType) {
+        return `type:${normalizedType}`;
+      }
+    }
+
+    if (pinData?.isPinned === true) {
+      return 'state:pinned';
+    }
+
+    if (pinData?.isPinned === false) {
+      return 'state:unpinned';
+    }
+
+    const rawType = getNonEmptyString(msg.type)?.toLowerCase();
+    if (rawType === 'pinned_message') {
+      return 'state:pinned';
+    }
+
+    return 'state:unknown';
+  }
+
+  private getSerializedId(value: unknown): string | undefined {
+    if (!value) return undefined;
+
+    if (typeof value === 'string') {
+      return getNonEmptyString(value);
+    }
+
+    if (typeof value !== 'object') {
+      return undefined;
+    }
+
+    const objectValue = value as Record<string, unknown>;
+    const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
+    for (const key of directKeys) {
+      const normalized = getNonEmptyString(objectValue[key]);
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    return undefined;
+  }
+
+  private getPinParentMessageId(
+    msg: Message,
+    pinData?: IWwebjsPinEventData
+  ): string | undefined {
+    if (pinData?.parentMessageId) {
+      return getNonEmptyString(pinData.parentMessageId) ?? undefined;
+    }
+
+    const rawData = (
+      msg as unknown as {
+        _data?: {
+          pinParentKey?: unknown;
+          targetMsgKey?: unknown;
+          parentMsgKey?: unknown;
+        };
+      }
+    )._data;
+
+    return (
+      this.getSerializedId(rawData?.pinParentKey) ??
+      this.getSerializedId(rawData?.targetMsgKey) ??
+      this.getSerializedId(rawData?.parentMsgKey)
+    );
+  }
+
+  private getPinChatId(
+    msg: Message,
+    pinData?: IWwebjsPinEventData
+  ): string | undefined {
+    const idValue =
+      typeof msg.id === 'object' && msg.id !== null
+        ? (msg.id as {
+            remoteJid?: unknown;
+            remote_jid?: unknown;
+            remote?: unknown;
+          })
+        : undefined;
+
+    const candidates = [
+      pinData?.chatId,
+      msg.fromMe ? msg.to || msg.from : msg.from || msg.to,
+      getMessageRemoteFromId(msg),
+      getNonEmptyString(idValue?.remoteJid),
+      getNonEmptyString(idValue?.remote_jid),
+      getNonEmptyString(idValue?.remote),
+      msg.from,
+      msg.to,
+    ];
+
+    for (const candidate of candidates) {
+      const normalizedCandidate = getNonEmptyString(candidate);
+      if (!normalizedCandidate) {
+        continue;
+      }
+
+      const normalizedJid =
+        normalizeJid(normalizedCandidate) ?? normalizedCandidate;
+      if (!normalizedJid) {
+        continue;
+      }
+
+      return normalizedJid;
+    }
+
+    return undefined;
+  }
+
+  private getPinDedupeKeys(
+    msg: Message,
+    pinData?: IWwebjsPinEventData
+  ): string[] {
+    const rawData = (
+      msg as unknown as {
+        _data?: {
+          pinMessageType?: unknown;
+          pinType?: unknown;
+          pinActionType?: unknown;
+          pinAction?: unknown;
+          pinParentKey?: unknown;
+          targetMsgKey?: unknown;
+        };
+      }
+    )._data;
+
+    const hasPinSignals =
+      getNonEmptyString(msg.type)?.toLowerCase() === 'pin_message' ||
+      getNonEmptyString(msg.type)?.toLowerCase() === 'pinned_message' ||
+      pinData !== undefined ||
+      rawData?.pinMessageType !== undefined ||
+      rawData?.pinType !== undefined ||
+      rawData?.pinActionType !== undefined ||
+      rawData?.pinAction !== undefined ||
+      rawData?.pinParentKey !== undefined ||
+      rawData?.targetMsgKey !== undefined;
+
+    if (!hasPinSignals) {
+      return [];
+    }
+
+    const keys = new Set<string>();
+    const actionState = this.getPinActionState(msg, pinData);
+    const parentMessageId = this.getPinParentMessageId(msg, pinData);
+    const chatId = this.getPinChatId(msg, pinData);
+
+    if (chatId && parentMessageId) {
+      keys.add(`pin:action:${chatId}:${parentMessageId}:${actionState}`);
+    }
+
+    const messageId = getNonEmptyString(getMessageIdSerialized(msg));
+    if (messageId) {
+      keys.add(`pin:message:${messageId}:${actionState}`);
+    }
+
+    const scopedStanzaDedupeKey = buildScopedStanzaDedupeKey(msg);
+    if (scopedStanzaDedupeKey) {
+      keys.add(`pin:stanza:${scopedStanzaDedupeKey}:${actionState}`);
+    }
+
+    return Array.from(keys);
+  }
+
+  private shouldSkipPinMessage(
+    msg: Message,
+    pinData?: IWwebjsPinEventData
+  ): boolean {
+    const dedupeKeys = this.getPinDedupeKeys(msg, pinData);
+    if (dedupeKeys.length === 0) {
+      return false;
+    }
+
+    const now = Date.now();
+    this.cleanupProcessedPinMessages(now);
+
+    for (const dedupeKey of dedupeKeys) {
+      if (this.processedPinMessages.has(dedupeKey)) {
+        return true;
+      }
+    }
+
+    for (const dedupeKey of dedupeKeys) {
+      this.processedPinMessages.set(dedupeKey, now);
+    }
+
+    return false;
+  }
+
+  private shouldSkipIncomingMessage(
+    msg: Message,
+    source: WwebjsIncomingEventSource
+  ): boolean {
     if (this.isUnsupportedSystemNotification(msg)) {
       return true;
     }
@@ -385,19 +637,17 @@ export class WwebjsIncomingMessageService {
       return true;
     }
 
-    const messageId = getMessageIdSerialized(msg);
-    const scopedStanzaDedupeKey = buildScopedStanzaDedupeKey(msg);
-    if (!messageId && !scopedStanzaDedupeKey) {
+    if (source !== 'message_ciphertext' && this.shouldSkipPinMessage(msg)) {
+      return true;
+    }
+
+    const dedupeKeys = this.buildIncomingDedupeKeys(msg, source);
+    if (dedupeKeys.length === 0) {
       return false;
     }
 
     const now = Date.now();
     this.cleanupProcessedIncomingMessages(now);
-
-    const dedupeKeys = [
-      getNonEmptyString(messageId),
-      scopedStanzaDedupeKey,
-    ].filter((key): key is string => !!key);
 
     for (const dedupeKey of dedupeKeys) {
       if (this.processedIncomingMessages.has(dedupeKey)) {
@@ -626,60 +876,11 @@ export class WwebjsIncomingMessageService {
     );
   }
 
-  private getMessageClientReceivedTsMillis(msg: Message): number | undefined {
-    const raw = (
-      msg as unknown as { _data?: { clientReceivedTsMillis?: unknown } }
-    )?._data?.clientReceivedTsMillis;
-    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
-      return raw;
-    }
-    if (typeof raw === 'string') {
-      const parsed = Number(raw);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        return parsed;
-      }
-    }
-    return undefined;
-  }
-
-  private getMessageTimestampSeconds(msg: Message): number | undefined {
-    if (typeof msg.timestamp === 'number' && Number.isFinite(msg.timestamp)) {
-      return msg.timestamp;
-    }
-
-    const raw = (msg as unknown as { _data?: { t?: unknown } })._data?.t;
-    if (typeof raw === 'number' && Number.isFinite(raw)) {
-      return raw;
-    }
-    if (typeof raw === 'string') {
-      const parsed = Number(raw);
-      if (Number.isFinite(parsed)) {
-        return parsed;
-      }
-    }
-
-    return undefined;
-  }
-
-  private shouldSkipPinnedMessage(msg: Message): boolean {
-    const messageId = getMessageIdSerialized(msg);
-    if (!messageId) {
-      return false;
-    }
-
-    const now = Date.now();
-    for (const [key, timestamp] of this.processedPinMessages.entries()) {
-      if (now - timestamp > this.PIN_MESSAGE_CACHE_TTL_MS) {
-        this.processedPinMessages.delete(key);
-      }
-    }
-
-    if (this.processedPinMessages.has(messageId)) {
-      return true;
-    }
-
-    this.processedPinMessages.set(messageId, now);
-    return false;
+  private shouldSkipPinnedMessage(
+    msg: Message,
+    pinData?: IWwebjsPinEventData
+  ): boolean {
+    return this.shouldSkipPinMessage(msg, pinData);
   }
 
   private isGroupOrBroadcastJid(jid: string): boolean {
@@ -846,7 +1047,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    if (this.shouldSkipPinnedMessage(msg)) {
+    if (this.shouldSkipPinnedMessage(msg, pinData)) {
       return;
     }
 
