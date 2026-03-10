@@ -16,8 +16,15 @@ function trimBrazilDdi(value: string): string {
   return digits;
 }
 
+export function normalizePhoneDigits(
+  value: string | null | undefined
+): string | null {
+  const normalized = trimBrazilDdi(value ?? '').slice(0, 11);
+  return normalized.length > 0 ? normalized : null;
+}
+
 export function formatLocalPhone(value: string): string {
-  const normalized = trimBrazilDdi(value).slice(0, 11);
+  const normalized = normalizePhoneDigits(value) ?? '';
 
   if (normalized.length <= 2) {
     return normalized;
@@ -59,7 +66,9 @@ export function formatPhoneForDisplay(
   return formatLocalPhone(digits);
 }
 
-export function formatChannelPhoneLabel(number: string | null | undefined): string {
+export function formatChannelPhoneLabel(
+  number: string | null | undefined
+): string {
   if (!number) {
     return '';
   }

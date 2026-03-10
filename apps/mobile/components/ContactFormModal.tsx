@@ -70,6 +70,7 @@ import {
   formatChannelPhoneLabel,
   formatLocalPhone,
   formatPhoneForDisplay,
+  normalizePhoneDigits,
 } from '../utils/phoneFormat';
 
 type ContactFormMode = 'create' | 'edit';
@@ -105,12 +106,6 @@ interface ContactFormModalProps {
 function toDisplayName(name?: string | null, lastName?: string | null): string {
   const parts = [name, lastName].filter(Boolean);
   return parts.length > 0 ? parts.join(' ') : '';
-}
-
-function phoneDigits(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const digits = value.replace(/\D/g, '');
-  return digits.length > 0 ? digits : null;
 }
 
 function isMaskedValue(value: string | null | undefined): boolean {
@@ -782,7 +777,7 @@ export function ContactFormModal({
 
   const handleSave = async () => {
     const normalizedName = name.trim();
-    const normalizedPhone = phoneDigits(phone);
+    const normalizedPhone = normalizePhoneDigits(phone);
     const normalizedPhoneDdi = phoneDdi.trim();
     const normalizedBirthday = normalizeBirthdayIso(birthdayInput);
     const normalizedDocument = normalizeDocumentDigits(

@@ -44,6 +44,7 @@ import {
   getKeyboardVerticalOffset,
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
+import { formatLocalPhone, normalizePhoneDigits } from '../utils/phoneFormat';
 import { SelectField, SelectSheet, type SelectOption } from './select';
 
 export interface AdvancedFilterValues {
@@ -169,7 +170,11 @@ export function AdvancedFilterModal({
     setFilterUser(initialValues.filter_user_id ?? null);
     setFilterSector(initialValues.filter_sector_id ?? null);
     setFilterName(initialValues.filter_name ?? null);
-    setFilterPhone(initialValues.filter_phone ?? null);
+    setFilterPhone(
+      initialValues.filter_phone
+        ? formatLocalPhone(initialValues.filter_phone)
+        : null
+    );
     setFilterProtocol(initialValues.filter_protocol ?? null);
     setFilterDateStart(
       normalizeDateDisplay(initialValues.filter_date_start) ?? ''
@@ -218,7 +223,7 @@ export function AdvancedFilterModal({
         ? filterSector || null
         : null,
       filter_name: filterName?.trim() || null,
-      filter_phone: filterPhone?.trim() || null,
+      filter_phone: normalizePhoneDigits(filterPhone),
       filter_protocol: filterProtocol?.trim() || null,
       filter_date_start: normalizeBirthdayIso(filterDateStart),
       filter_date_end: normalizeBirthdayIso(filterDateEnd),
@@ -535,8 +540,12 @@ export function AdvancedFilterModal({
                       placeholder={pt.filter_by_phone_placeholder}
                       placeholderTextColor={colors.grey500}
                       value={filterPhone ?? ''}
-                      onChangeText={(t) => setFilterPhone(t || null)}
+                      onChangeText={(t) => {
+                        const masked = formatLocalPhone(t);
+                        setFilterPhone(masked || null);
+                      }}
                       keyboardType="phone-pad"
+                      maxLength={15}
                     />
                   </View>
                   <View style={[styles.field, styles.half]}>

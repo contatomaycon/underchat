@@ -49,6 +49,7 @@ import {
   getKeyboardVerticalOffset,
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
+import { formatLocalPhone, normalizePhoneDigits } from '../utils/phoneFormat';
 import { SelectField, SelectSheet, type SelectOption } from './select';
 
 type PickerKind =
@@ -84,20 +85,6 @@ interface ContactAdvancedFilterModalProps {
   onClose: () => void;
   initialValues: ContactAdvancedFilterValues;
   onApply: (values: ContactAdvancedFilterValues) => void;
-}
-
-function formatPhone(value: string | null | undefined): string {
-  if (!value) return '';
-
-  const numbers = value.replace(/\D/g, '').slice(0, 11);
-  if (numbers.length <= 2) return numbers;
-  if (numbers.length <= 6) {
-    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
-  }
-  if (numbers.length <= 10) {
-    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
-  }
-  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
 }
 
 function cleanValue(value: string | null | undefined): string | null {
@@ -160,7 +147,7 @@ export function ContactAdvancedFilterModal({
     setFilterPhoneDdi(initialValues.filter_phone_ddi ?? null);
     setFilterPhone(
       initialValues.filter_phone
-        ? formatPhone(initialValues.filter_phone)
+        ? formatLocalPhone(initialValues.filter_phone)
         : null
     );
     setFilterName(initialValues.filter_name ?? null);
@@ -264,7 +251,7 @@ export function ContactAdvancedFilterModal({
     onApply({
       filter_label_template_id: cleanValue(filterLabel),
       filter_phone_ddi: cleanValue(filterPhoneDdi),
-      filter_phone: cleanDigitsValue(filterPhone),
+      filter_phone: normalizePhoneDigits(filterPhone),
       filter_name: cleanValue(filterName),
       filter_last_name: cleanValue(filterLastName),
       filter_nickname: cleanValue(filterNickname),
@@ -439,7 +426,7 @@ export function ContactAdvancedFilterModal({
                       style={styles.input}
                       value={filterPhone ?? ''}
                       onChangeText={(value) =>
-                        setFilterPhone(formatPhone(value) || null)
+                        setFilterPhone(formatLocalPhone(value) || null)
                       }
                       keyboardType="phone-pad"
                       maxLength={15}
