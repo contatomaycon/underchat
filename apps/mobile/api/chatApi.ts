@@ -379,7 +379,8 @@ export async function createMessage(
   message?: string,
   messageQuotedId?: string | null,
   linkPreview?: MessageContentLinkPreview | null,
-  quickMessageTemplateId?: string | null
+  quickMessageTemplateId?: string | null,
+  hash?: string | null
 ): Promise<{ ok: boolean; message: ListMessageResult | null }> {
   const payload: {
     type: string;
@@ -387,6 +388,7 @@ export async function createMessage(
     message_quoted_id?: string;
     link_preview?: MessageContentLinkPreview;
     quick_message_template_id?: string;
+    hash?: string;
   } = {
     type,
     message: message ?? '',
@@ -408,6 +410,10 @@ export async function createMessage(
     quickMessageTemplateId.trim().length > 0
   ) {
     payload.quick_message_template_id = quickMessageTemplateId.trim();
+  }
+
+  if (typeof hash === 'string' && hash.trim().length > 0) {
+    payload.hash = hash.trim();
   }
 
   const res = await apiPost<ListMessageResult | null>(

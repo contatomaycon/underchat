@@ -2466,6 +2466,17 @@ function mergeMessageSummary(
   };
 }
 
+function createPendingMessageSummary(
+  isSentToInternal: boolean
+): NonNullable<ListMessageResult['summary']> {
+  return {
+    is_sent: false,
+    is_delivered: false,
+    is_seen: false,
+    is_sent_to_internal: isSentToInternal,
+  };
+}
+
 function mergeMessageLists(
   current: ListMessageResult[],
   incoming: ListMessageResult
@@ -3154,6 +3165,12 @@ type PendingVideoUploadDraft = {
   fileSize: number | null;
   replyMessageId: string | null;
   localMessageId: string;
+};
+
+type SubmitFormDataMessageOptions = {
+  optimisticMessage?: ListMessageResult | null;
+  hash?: string | null;
+  showFailureAlert?: boolean;
 };
 
 function formatMessageTime(dateStr: string | null | undefined): string {
@@ -9337,6 +9354,59 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     savingEditedMessage,
   ]);
 
+  const pushMessageToList = useCallback(
+    (message: ListMessageResult) => {
+      pendingScrollToBottomRef.current = true;
+      setShowScrollToBottomButton(false);
+      setMessages((previous) => mergeMessageLists(previous, message));
+      requestAnimationFrame(() => {
+        scrollToBottomWithRetries(10);
+      });
+    },
+    [scrollToBottomWithRetries]
+  );
+
+  const markMessageAsFailedByHash = useCallback((hash: string | null) => {
+    const normalizedHash = readNonEmptyString(hash);
+    if (!normalizedHash) return;
+
+    setMessages((previous) =>
+      previous.map((entry) => {
+        if (readNonEmptyString(entry.hash) !== normalizedHash) {
+          return entry;
+        }
+
+        return {
+          ...entry,
+          summary: createPendingMessageSummary(false),
+        };
+      })
+    );
+  }, []);
+
+  const buildOptimisticMessage = useCallback(
+    (input: {
+      hash: string;
+      content: MessageContent;
+      localMessageId?: string;
+    }): ListMessageResult => {
+      return {
+        message_id: input.localMessageId ?? `local-${input.hash}`,
+        chat_id: chatInfo.chat_id,
+        type_user: ETypeUserChat.operator,
+        user:
+          currentUserId && currentUserName
+            ? { id: currentUserId, name: currentUserName }
+            : null,
+        content: input.content,
+        summary: createPendingMessageSummary(true),
+        date: new Date().toISOString(),
+        hash: input.hash,
+      };
+    },
+    [chatInfo.chat_id, currentUserId, currentUserName]
+  );
+
   const sendTextPayload = useCallback(
     async (
       rawText: string,
@@ -9350,6 +9420,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const replyMessageId =
         options?.replyMessageIdOverride ?? replyMessageTarget?.message_id;
       const firstUrl = extractFirstUrl(text);
+      const hash = createClientMessageHash();
       if (
         replyMessageTarget?.message_id &&
         replyMessageId === replyMessageTarget.message_id
@@ -9357,11 +9428,31 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         setReplyMessageTarget(null);
       }
 
+      const optimisticMessage = buildOptimisticMessage({
+        hash,
+        content: {
+          type: EMessageType.text,
+          message: text,
+          message_quoted_id: replyMessageId ?? null,
+        },
+      });
+      pushMessageToList(optimisticMessage);
+
       setSending(true);
       try {
         let linkPreviewPayload: MessageContentLinkPreview | null = null;
         if (firstUrl) {
           linkPreviewPayload = await generateLinkPreview(firstUrl);
+        }
+
+        if (hasMeaningfulLinkPreview(linkPreviewPayload)) {
+          pushMessageToList({
+            ...optimisticMessage,
+            content: {
+              ...(optimisticMessage.content ?? { type: EMessageType.text }),
+              link_preview: linkPreviewPayload,
+            },
+          });
         }
 
         const result = await createMessage(
@@ -9372,35 +9463,36 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           hasMeaningfulLinkPreview(linkPreviewPayload)
             ? linkPreviewPayload
             : undefined,
-          options?.quickMessageTemplateId
+          options?.quickMessageTemplateId,
+          hash
         );
         if (!result.ok) {
+          markMessageAsFailedByHash(hash);
           return false;
         }
 
-        pendingScrollToBottomRef.current = true;
-        setShowScrollToBottomButton(false);
         const createdMessage = result.message;
         if (createdMessage) {
-          setMessages((prev) => mergeMessageLists(prev, createdMessage));
+          pushMessageToList(createdMessage);
         } else {
           await syncLatestMessages();
         }
-        requestAnimationFrame(() => {
-          scrollToBottomWithRetries(10);
-        });
         return true;
+      } catch {
+        markMessageAsFailedByHash(hash);
+        return false;
       } finally {
         setSending(false);
       }
-      return false;
     },
     [
+      buildOptimisticMessage,
       canComposeInChat,
       chatInfo.chat_id,
+      markMessageAsFailedByHash,
+      pushMessageToList,
       replyMessageTarget?.message_id,
       sending,
-      scrollToBottomWithRetries,
       syncLatestMessages,
     ]
   );
@@ -9452,43 +9544,117 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     aiReplyAudioSpeedRef.current = 1;
   }, []);
 
+  const submitFormDataMessage = useCallback(
+    async (
+      formData: FormData,
+      options?: SubmitFormDataMessageOptions
+    ): Promise<boolean> => {
+      const replyMessageId = replyMessageTarget?.message_id;
+      if (replyMessageId && !formData.get('message_quoted_id')) {
+        formData.append('message_quoted_id', replyMessageId);
+      }
+
+      const messageHash =
+        readNonEmptyString(options?.hash) ??
+        readNonEmptyString(formData.get('hash'));
+      if (options?.optimisticMessage) {
+        pushMessageToList(options.optimisticMessage);
+      }
+
+      try {
+        const result = await createMessageWithFormData(
+          chatInfo.chat_id,
+          formData
+        );
+        if (!result.ok) {
+          markMessageAsFailedByHash(messageHash);
+          if (options?.showFailureAlert !== false) {
+            Alert.alert(pt.error_title, pt.send_error);
+          }
+          return false;
+        }
+
+        const createdMessage = result.message;
+        if (createdMessage) {
+          pushMessageToList(createdMessage);
+        } else {
+          await syncLatestMessages();
+        }
+        if (replyMessageId) {
+          setReplyMessageTarget(null);
+        }
+        return true;
+      } catch {
+        markMessageAsFailedByHash(messageHash);
+        if (options?.showFailureAlert !== false) {
+          Alert.alert(pt.error_title, pt.send_error);
+        }
+        return false;
+      }
+    },
+    [
+      chatInfo.chat_id,
+      markMessageAsFailedByHash,
+      pushMessageToList,
+      replyMessageTarget?.message_id,
+      syncLatestMessages,
+    ]
+  );
+
   const handleSendAiReply = useCallback(async () => {
     if (!aiReplyResult) return;
 
     const quotedMessageId = aiReplyTarget?.message_id ?? null;
 
     if (aiReplyResult.audio_url) {
-      try {
-        const response = await fetch(aiReplyResult.audio_url);
-        if (!response.ok) throw new Error('Failed to fetch audio');
-        const blob = await response.blob();
-        const mimeType = blob.type || 'audio/mpeg';
-        const formData = new FormData();
-        formData.append('type', EMessageType.audio);
-        formData.append('audio_ptt', 'true');
-        if (aiReplyResult.audio_duration) {
-          formData.append(
-            'audio_duration',
-            String(Math.round(aiReplyResult.audio_duration))
-          );
-        }
-        if (quotedMessageId) {
-          formData.append('message_quoted_id', quotedMessageId);
-        }
-        formData.append('hash', `ai-audio-${Date.now()}-${Math.random()}`);
-        (formData as any).append('audios', {
-          uri: aiReplyResult.audio_url,
-          name: `ai-audio-${Date.now()}.mp3`,
-          type: mimeType,
-        });
-        const result = await createMessageWithFormData(
-          chatInfo.chat_id,
-          formData
-        );
-        if (result.ok && result.message) {
-          setMessages((prev) => mergeMessageLists(prev, result.message!));
-        }
-      } catch {
+      const hash = createClientMessageHash();
+      const fileName = `ai-audio-${Date.now()}.mp3`;
+      const duration =
+        typeof aiReplyResult.audio_duration === 'number' &&
+        Number.isFinite(aiReplyResult.audio_duration)
+          ? Math.max(1, Math.round(aiReplyResult.audio_duration))
+          : null;
+
+      const formData = new FormData();
+      formData.append('type', EMessageType.audio);
+      formData.append('audio_ptt', 'true');
+      if (duration) {
+        formData.append('audio_duration', String(duration));
+      }
+      if (quotedMessageId) {
+        formData.append('message_quoted_id', quotedMessageId);
+      }
+      formData.append('hash', hash);
+      (formData as any).append('audios', {
+        uri: aiReplyResult.audio_url,
+        name: fileName,
+        type: 'audio/mpeg',
+      });
+
+      const optimisticMessage = buildOptimisticMessage({
+        hash,
+        content: {
+          type: EMessageType.audio,
+          message_quoted_id: quotedMessageId,
+          audio: {
+            url: aiReplyResult.audio_url,
+            name: fileName,
+            mimetype: 'audio/mpeg',
+            extension: '.mp3',
+            duration,
+            ptt: true,
+            view_once: false,
+          },
+        },
+      });
+
+      const ok = await submitFormDataMessage(formData, {
+        hash,
+        optimisticMessage,
+        showFailureAlert: false,
+      });
+
+      if (!ok) {
         Alert.alert(pt.error_title, pt.chat_ai_reply_send_audio_error);
       }
     } else {
@@ -9505,7 +9671,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [
     aiReplyResult,
     aiReplyTarget,
-    chatInfo.chat_id,
+    buildOptimisticMessage,
+    submitFormDataMessage,
     sendTextPayload,
     cleanupAiReplyAudio,
   ]);
@@ -9848,44 +10015,48 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     try {
       if (!recorded) return;
 
+      const hash = createClientMessageHash();
+      const extension = extractFileExtension(recorded.fileName);
       const formData = new FormData();
       formData.append('type', EMessageType.audio);
       formData.append('audio_ptt', 'true');
       formData.append('audio_duration', String(recorded.durationSec));
-      formData.append('hash', createClientMessageHash());
+      formData.append('hash', hash);
       await appendMediaToFormData(formData, 'audios', {
         uri: recorded.uri,
         name: recorded.fileName,
         mimeType: recorded.mimeType,
       });
 
-      const result = await createMessageWithFormData(
-        chatInfo.chat_id,
-        formData
-      );
-      if (!result.ok) return;
+      const optimisticMessage = buildOptimisticMessage({
+        hash,
+        content: {
+          type: EMessageType.audio,
+          audio: {
+            url: recorded.uri,
+            name: recorded.fileName,
+            mimetype: recorded.mimeType,
+            extension: extension ? `.${extension}` : null,
+            duration: recorded.durationSec,
+            ptt: true,
+            view_once: false,
+          },
+        },
+      });
 
-      pendingScrollToBottomRef.current = true;
-      setShowScrollToBottomButton(false);
-      const createdMessage = result.message;
-      if (createdMessage) {
-        setMessages((prev) => mergeMessageLists(prev, createdMessage));
-      } else {
-        await syncLatestMessages();
-      }
-      requestAnimationFrame(() => {
-        scrollToBottomWithRetries(10);
+      await submitFormDataMessage(formData, {
+        hash,
+        optimisticMessage,
       });
     } finally {
       setSendingVoiceRecording(false);
     }
   }, [
-    chatInfo.chat_id,
+    buildOptimisticMessage,
     resetRecordingComposerState,
-    scrollToBottomWithRetries,
     sendingVoiceRecording,
     stopVoiceRecorder,
-    syncLatestMessages,
+    submitFormDataMessage,
   ]);
 
   const lockVoiceRecording = useCallback(() => {
@@ -10149,46 +10320,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     })
   ).current;
 
-  const submitFormDataMessage = useCallback(
-    async (formData: FormData): Promise<boolean> => {
-      const replyMessageId = replyMessageTarget?.message_id;
-      if (replyMessageId && !formData.get('message_quoted_id')) {
-        formData.append('message_quoted_id', replyMessageId);
-      }
-
-      const result = await createMessageWithFormData(
-        chatInfo.chat_id,
-        formData
-      );
-      if (!result.ok) {
-        Alert.alert(pt.error_title, pt.send_error);
-        return false;
-      }
-
-      pendingScrollToBottomRef.current = true;
-      setShowScrollToBottomButton(false);
-      const createdMessage = result.message;
-      if (createdMessage) {
-        setMessages((prev) => mergeMessageLists(prev, createdMessage));
-      } else {
-        await syncLatestMessages();
-      }
-      if (replyMessageId) {
-        setReplyMessageTarget(null);
-      }
-      requestAnimationFrame(() => {
-        scrollToBottomWithRetries(10);
-      });
-      return true;
-    },
-    [
-      chatInfo.chat_id,
-      replyMessageTarget?.message_id,
-      scrollToBottomWithRetries,
-      syncLatestMessages,
-    ]
-  );
-
   const finishVideoTrimSession = useCallback(
     (result: VideoTrimSessionResult) => {
       const session = videoTrimSessionRef.current;
@@ -10355,12 +10486,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             duration: draft.durationSec,
           },
         },
-        summary: {
-          is_sent: false,
-          is_delivered: false,
-          is_seen: false,
-          is_sent_to_internal: true,
-        },
+        summary: createPendingMessageSummary(true),
         date: new Date().toISOString(),
         hash: draft.hash,
       };
@@ -10491,12 +10617,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             ...entry,
             message_id: draft.localMessageId,
             date: new Date().toISOString(),
-            summary: {
-              is_sent: false,
-              is_delivered: false,
-              is_seen: false,
-              is_sent_to_internal: true,
-            },
+            summary: createPendingMessageSummary(true),
             content: {
               ...(entry.content ?? { type: EMessageType.video }),
               type: EMessageType.video,
@@ -10536,59 +10657,24 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           formData
         );
         if (!result.ok) {
-          setMessages((previous) =>
-            previous.map((entry) =>
-              readNonEmptyString(entry.hash) === draft.hash
-                ? {
-                    ...entry,
-                    summary: {
-                      is_sent: false,
-                      is_delivered: false,
-                      is_seen: false,
-                      is_sent_to_internal: false,
-                    },
-                  }
-                : entry
-            )
-          );
+          markMessageAsFailedByHash(draft.hash);
           Alert.alert(pt.error_title, pt.send_error);
           return false;
         }
 
-        pendingScrollToBottomRef.current = true;
-        setShowScrollToBottomButton(false);
         const createdMessage = result.message;
         if (createdMessage) {
-          setMessages((previous) =>
-            mergeMessageLists(previous, createdMessage)
-          );
+          pushMessageToList(createdMessage);
         } else {
           await syncLatestMessages();
         }
         pendingVideoUploadsRef.current.delete(draft.hash);
-        requestAnimationFrame(() => {
-          scrollToBottomWithRetries(10);
-        });
         if (!options?.isRetry && draft.replyMessageId) {
           setReplyMessageTarget(null);
         }
         return true;
       } catch {
-        setMessages((previous) =>
-          previous.map((entry) =>
-            readNonEmptyString(entry.hash) === draft.hash
-              ? {
-                  ...entry,
-                  summary: {
-                    is_sent: false,
-                    is_delivered: false,
-                    is_seen: false,
-                    is_sent_to_internal: false,
-                  },
-                }
-              : entry
-          )
-        );
+        markMessageAsFailedByHash(draft.hash);
         Alert.alert(pt.error_title, pt.send_error);
         return false;
       } finally {
@@ -10599,7 +10685,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     [
       chatInfo.chat_id,
       isHistoryReadonly,
-      scrollToBottomWithRetries,
+      markMessageAsFailedByHash,
+      pushMessageToList,
       syncLatestMessages,
     ]
   );
@@ -10633,14 +10720,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         };
 
         pendingVideoUploadsRef.current.set(hash, pendingDraft);
-        setMessages((previous) =>
-          mergeMessageLists(previous, buildOptimisticVideoMessage(pendingDraft))
-        );
-        pendingScrollToBottomRef.current = true;
-        setShowScrollToBottomButton(false);
-        requestAnimationFrame(() => {
-          scrollToBottomWithRetries(10);
-        });
+        pushMessageToList(buildOptimisticVideoMessage(pendingDraft));
         if (replyMessageId) {
           setReplyMessageTarget(null);
         }
@@ -10650,25 +10730,46 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
       setSendingCapturedMedia(true);
       try {
+        const hash = createClientMessageHash();
+        const extension = extractFileExtension(draft.fileName);
         const formData = new FormData();
         formData.append('type', EMessageType.image);
-        formData.append('hash', createClientMessageHash());
+        formData.append('hash', hash);
         await appendMediaToFormData(formData, 'images', {
           uri: draft.uri,
           name: draft.fileName,
           mimeType: draft.mimeType,
         });
 
-        await submitFormDataMessage(formData);
+        const optimisticMessage = buildOptimisticMessage({
+          hash,
+          content: {
+            type: EMessageType.image,
+            message_quoted_id: replyMessageTarget?.message_id ?? null,
+            image: {
+              url: draft.uri,
+              caption: null,
+              mimetype: draft.mimeType,
+              extension: extension ? `.${extension}` : null,
+              size: draft.fileSize ?? null,
+            },
+          },
+        });
+
+        await submitFormDataMessage(formData, {
+          hash,
+          optimisticMessage,
+        });
       } finally {
         setSendingCapturedMedia(false);
       }
     },
     [
       buildOptimisticVideoMessage,
+      buildOptimisticMessage,
       isHistoryReadonly,
+      pushMessageToList,
       replyMessageTarget?.message_id,
-      scrollToBottomWithRetries,
       sendPendingVideoDraft,
       sendingCapturedMedia,
       submitFormDataMessage,
@@ -10978,18 +11079,38 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         return;
       }
 
+      const hash = createClientMessageHash();
+      const extension = extractFileExtension(asset.name);
       const formData = new FormData();
       formData.append('type', EMessageType.document);
-      formData.append('hash', createClientMessageHash());
+      formData.append('hash', hash);
       await appendMediaToFormData(formData, 'documents', {
         uri: asset.uri,
         name: asset.name,
         mimeType: asset.mimeType || 'application/octet-stream',
       });
 
+      const optimisticMessage = buildOptimisticMessage({
+        hash,
+        content: {
+          type: EMessageType.document,
+          message_quoted_id: replyMessageTarget?.message_id ?? null,
+          document: {
+            url: asset.uri,
+            name: asset.name,
+            mimetype: asset.mimeType || 'application/octet-stream',
+            extension: extension ? `.${extension}` : null,
+            size: typeof asset.size === 'number' ? asset.size : null,
+          },
+        },
+      });
+
       setSendingCapturedMedia(true);
       try {
-        await submitFormDataMessage(formData);
+        await submitFormDataMessage(formData, {
+          hash,
+          optimisticMessage,
+        });
       } finally {
         setSendingCapturedMedia(false);
       }
@@ -10997,7 +11118,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       documentPickerActiveRef.current = false;
     }
   }, [
+    buildOptimisticMessage,
     canComposeInChat,
+    replyMessageTarget?.message_id,
     sendingCapturedMedia,
     sendingVoiceRecording,
     submitFormDataMessage,
@@ -11057,18 +11180,40 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         return;
       }
 
+      const hash = createClientMessageHash();
       const formData = new FormData();
       formData.append('type', EMessageType.audio);
-      formData.append('hash', createClientMessageHash());
+      formData.append('hash', hash);
       await appendMediaToFormData(formData, 'audios', {
         uri: asset.uri,
         name: asset.name,
         mimeType: asset.mimeType || 'audio/mpeg',
       });
 
+      const optimisticMessage = buildOptimisticMessage({
+        hash,
+        content: {
+          type: EMessageType.audio,
+          message_quoted_id: replyMessageTarget?.message_id ?? null,
+          audio: {
+            url: asset.uri,
+            name: asset.name,
+            mimetype: asset.mimeType || 'audio/mpeg',
+            extension: extension ? `.${extension}` : null,
+            size: typeof asset.size === 'number' ? asset.size : null,
+            duration: null,
+            ptt: false,
+            view_once: false,
+          },
+        },
+      });
+
       setSendingCapturedMedia(true);
       try {
-        await submitFormDataMessage(formData);
+        await submitFormDataMessage(formData, {
+          hash,
+          optimisticMessage,
+        });
       } finally {
         setSendingCapturedMedia(false);
       }
@@ -11076,8 +11221,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       documentPickerActiveRef.current = false;
     }
   }, [
+    buildOptimisticMessage,
     canComposeInChat,
     extractExtension,
+    replyMessageTarget?.message_id,
     sendingCapturedMedia,
     sendingVoiceRecording,
     submitFormDataMessage,
@@ -11203,11 +11350,44 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     try {
       for (const contactId of selectedContactIds) {
+        const hash = createClientMessageHash();
+        const pickerContact = contactPickerItems.find(
+          (entry) => entry.contact_id === contactId
+        );
+        const contactName =
+          [pickerContact?.name, pickerContact?.last_name]
+            .filter(
+              (value): value is string =>
+                typeof value === 'string' && value.trim().length > 0
+            )
+            .join(' ')
+            .trim() || pt.contact;
+
         const formData = new FormData();
         formData.append('type', EMessageType.contact_card);
         formData.append('contacts', contactId);
-        formData.append('hash', createClientMessageHash());
-        const ok = await submitFormDataMessage(formData);
+        formData.append('hash', hash);
+
+        const optimisticMessage = buildOptimisticMessage({
+          hash,
+          content: {
+            type: EMessageType.contact_card,
+            message_quoted_id: replyMessageTarget?.message_id ?? null,
+            contact: {
+              contact_id: contactId,
+              name: contactName,
+              last_name: pickerContact?.last_name ?? null,
+              phone: pickerContact?.phone_partial ?? null,
+              phone_partial: pickerContact?.phone_partial ?? null,
+              photo: pickerContact?.photo ?? null,
+            },
+          },
+        });
+
+        const ok = await submitFormDataMessage(formData, {
+          hash,
+          optimisticMessage,
+        });
         if (!ok) return;
       }
 
@@ -11218,7 +11398,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       setSendingCapturedMedia(false);
     }
   }, [
+    buildOptimisticMessage,
     canComposeInChat,
+    contactPickerItems,
+    replyMessageTarget?.message_id,
     selectedContactIds,
     sendingCapturedMedia,
     submitFormDataMessage,
@@ -11233,6 +11416,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }) => {
       if (sendingCapturedMedia || !canComposeInChat) return false;
 
+      const hash = createClientMessageHash();
       const formData = new FormData();
       formData.append('type', EMessageType.location);
       formData.append('location_latitude', String(payload.latitude));
@@ -11246,11 +11430,28 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       if (normalizedAddress.length > 0) {
         formData.append('location_address', normalizedAddress);
       }
-      formData.append('hash', createClientMessageHash());
+      formData.append('hash', hash);
+
+      const optimisticMessage = buildOptimisticMessage({
+        hash,
+        content: {
+          type: EMessageType.location,
+          message_quoted_id: replyMessageTarget?.message_id ?? null,
+          location: {
+            latitude: payload.latitude,
+            longitude: payload.longitude,
+            name: normalizedName || null,
+            address: normalizedAddress || null,
+          },
+        },
+      });
 
       setSendingCapturedMedia(true);
       try {
-        const ok = await submitFormDataMessage(formData);
+        const ok = await submitFormDataMessage(formData, {
+          hash,
+          optimisticMessage,
+        });
         if (!ok) return false;
         setLocationPickerVisible(false);
         return true;
@@ -11258,7 +11459,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         setSendingCapturedMedia(false);
       }
     },
-    [canComposeInChat, sendingCapturedMedia, submitFormDataMessage]
+    [
+      buildOptimisticMessage,
+      canComposeInChat,
+      replyMessageTarget?.message_id,
+      sendingCapturedMedia,
+      submitFormDataMessage,
+    ]
   );
 
   const applyLocationSelection = useCallback(
@@ -11649,12 +11856,25 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     setSendingAnnotation(true);
     try {
+      const hash = createClientMessageHash();
       const formData = new FormData();
       formData.append('type', EMessageType.annotation);
       formData.append('message', message);
-      formData.append('hash', createClientMessageHash());
+      formData.append('hash', hash);
 
-      const ok = await submitFormDataMessage(formData);
+      const optimisticMessage = buildOptimisticMessage({
+        hash,
+        content: {
+          type: EMessageType.annotation,
+          message,
+          message_quoted_id: replyMessageTarget?.message_id ?? null,
+        },
+      });
+
+      const ok = await submitFormDataMessage(formData, {
+        hash,
+        optimisticMessage,
+      });
       if (!ok) return;
 
       setAnnotationModalVisible(false);
@@ -11664,7 +11884,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
   }, [
     annotationInput,
+    buildOptimisticMessage,
     canComposeInChat,
+    replyMessageTarget?.message_id,
     sendingAnnotation,
     submitFormDataMessage,
   ]);
@@ -11965,9 +12187,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
       if (!template.attachment_url) return false;
 
+      const hash = createClientMessageHash();
       const formData = new FormData();
       formData.append('type', template.type);
-      formData.append('hash', createClientMessageHash());
+      formData.append('hash', hash);
       formData.append(
         'quick_message_template_id',
         template.message_template_id
@@ -11980,11 +12203,77 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         formData.append('message', '');
       }
 
-      return await submitFormDataMessage(formData);
+      const attachmentUrl = template.attachment_url;
+      const attachmentName = resolveFileNameFromUri(
+        attachmentUrl,
+        `quick-message-${Date.now()}`
+      );
+      const attachmentExtension =
+        extractFileExtension(attachmentName) ||
+        getExtensionFromUrl(attachmentUrl);
+      const attachmentMime = readNonEmptyString(template.mimetype);
+
+      const optimisticContent: MessageContent = {
+        type: template.type,
+        message: normalizedMessage || null,
+        message_quoted_id: replyMessageTarget?.message_id ?? null,
+      };
+
+      if (template.type === EMessageType.image) {
+        optimisticContent.image = {
+          url: attachmentUrl,
+          caption: normalizedMessage || null,
+          mimetype: attachmentMime,
+          extension: attachmentExtension ? `.${attachmentExtension}` : null,
+          width: template.width ?? null,
+          height: template.height ?? null,
+        };
+      } else if (template.type === EMessageType.video) {
+        optimisticContent.video = {
+          url: attachmentUrl,
+          caption: normalizedMessage || null,
+          name: attachmentName,
+          mimetype: attachmentMime,
+          extension: attachmentExtension ? `.${attachmentExtension}` : null,
+          duration: template.duration ?? null,
+          width: template.width ?? null,
+          height: template.height ?? null,
+          thumbnail: null,
+        };
+      } else if (template.type === EMessageType.audio) {
+        optimisticContent.audio = {
+          url: attachmentUrl,
+          name: attachmentName,
+          mimetype: attachmentMime,
+          extension: attachmentExtension ? `.${attachmentExtension}` : null,
+          duration: template.duration ?? null,
+          ptt: false,
+          view_once: false,
+        };
+      } else if (template.type === EMessageType.document) {
+        optimisticContent.document = {
+          url: attachmentUrl,
+          name: attachmentName,
+          mimetype: attachmentMime,
+          extension: attachmentExtension ? `.${attachmentExtension}` : null,
+        };
+      }
+
+      const optimisticMessage = buildOptimisticMessage({
+        hash,
+        content: optimisticContent,
+      });
+
+      return await submitFormDataMessage(formData, {
+        hash,
+        optimisticMessage,
+      });
     },
     [
+      buildOptimisticMessage,
       canComposeInChat,
       replaceTagsInQuickMessage,
+      replyMessageTarget?.message_id,
       sendTextPayload,
       sendingQuickMessage,
       submitFormDataMessage,
