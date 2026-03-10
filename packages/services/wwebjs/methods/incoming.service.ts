@@ -266,6 +266,9 @@ export class WwebjsIncomingMessageService {
 
       void this.handleIncomingMessage(msg);
     });
+    client.on('message_ciphertext_failed', (msg: Message) => {
+      this.handleCiphertextFailed(msg);
+    });
     client.on('message_create', (msg: Message) => {
       if (!this.shouldHandleFromMeCreatedMessage(msg)) {
         return;
@@ -1036,6 +1039,29 @@ export class WwebjsIncomingMessageService {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private handleCiphertextFailed(msg: Message): void {
+    const rawData = (
+      msg as unknown as {
+        _data?: {
+          subtype?: unknown;
+        };
+      }
+    )._data;
+
+    const subtype = getNonEmptyString(rawData?.subtype);
+
+    console.warn('[wwebjs] message_ciphertext_failed', {
+      id: getMessageIdSerialized(msg),
+      from: msg.from,
+      to: msg.to,
+      type: msg.type,
+      subtype,
+      fromMe: msg.fromMe,
+      account_id: wwebjsEnvironment.wwebjsAccountId,
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+    });
   }
 
   private async handlePinnedMessage(

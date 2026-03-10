@@ -122,6 +122,7 @@ export class WwebjsConnectionService {
   private qrHash: string | undefined;
   private typeConnection: EBaileysConnectionType =
     EBaileysConnectionType.qrcode;
+  private phoneConnection: string | undefined;
 
   constructor(
     @inject(CentrifugoService)
@@ -211,10 +212,17 @@ export class WwebjsConnectionService {
       initial_connection: initialConnection = false,
       allow_restore: allowRestore = true,
       type: typeConnection = EBaileysConnectionType.qrcode,
+      phone_connection: phoneConnection,
       force_new: forceNew = false,
       requested_by_user: requestedByUser = false,
       from_disconnect_restart: fromDisconnectRestart = false,
     } = input;
+    const normalizedPhoneConnection =
+      this.normalizePhoneConnection(phoneConnection);
+    const effectivePhoneConnection =
+      typeConnection === EBaileysConnectionType.phone
+        ? (normalizedPhoneConnection ?? this.phoneConnection)
+        : undefined;
 
     this.logConnectionEvent('connect_requested', {
       requested_by_user: requestedByUser,
@@ -222,6 +230,7 @@ export class WwebjsConnectionService {
       force_new: forceNew,
       allow_restore: allowRestore,
       connection_type: typeConnection,
+      has_phone_connection: Boolean(effectivePhoneConnection),
       has_session: this.hasSession(),
       has_active_socket: Boolean(this.client),
     });
@@ -241,6 +250,7 @@ export class WwebjsConnectionService {
 
     this.initialConnection = initialConnection;
     this.typeConnection = typeConnection;
+    this.phoneConnection = effectivePhoneConnection;
     this.trackQrReadSession(requestedByUser, typeConnection);
 
     if (this.connected) {
@@ -573,6 +583,7 @@ export class WwebjsConnectionService {
       delay_ms: delayMs,
       force_new: forceNew,
       connection_type: this.typeConnection,
+      has_phone_connection: Boolean(this.phoneConnection),
       requested_by_user: false,
       from_disconnect_restart: true,
     });
@@ -587,6 +598,7 @@ export class WwebjsConnectionService {
         delay_ms: delayMs,
         force_new: forceNew,
         connection_type: this.typeConnection,
+        has_phone_connection: Boolean(this.phoneConnection),
         from_disconnect_restart: true,
       });
       this.connect({
@@ -594,6 +606,7 @@ export class WwebjsConnectionService {
         force_new: forceNew,
         allow_restore: true,
         type: this.typeConnection,
+        phone_connection: this.phoneConnection,
         requested_by_user: false,
         from_disconnect_restart: true,
       }).catch(() => {
@@ -820,11 +833,55 @@ export class WwebjsConnectionService {
         };
       }
 
+      if (
+        this.typeConnection === EBaileysConnectionType.phone &&
+        this.phoneConnection
+      ) {
+        clientOptions.pairWithPhoneNumber = {
+          phoneNumber: this.phoneConnection,
+        };
+      }
+
       const client = new ClientCtor(clientOptions);
 
       this.client = client;
       this.logConnectionEvent('client_initialized', {
         attempt_id: attemptId,
+      });
+
+      client.on('code', (code: string) => {
+        if (!this.isActiveClient(client)) {
+          return;
+        }
+
+        if (this.typeConnection !== EBaileysConnectionType.phone) {
+          return;
+        }
+
+        if (this.connectionEstablished || this.status === Status.connected) {
+          return;
+        }
+
+        const pairingCode = code?.trim();
+        if (!pairingCode) {
+          return;
+        }
+
+        this.setStatus(Status.connecting, ECodeMessage.awaitingPairingCode);
+
+        const payload: IBaileysConnectionState = {
+          status: this.status,
+          code: this.code,
+          pairing_code: pairingCode,
+          worker_id: WORKER,
+          account_id: ACCOUNT,
+          worker_status_id: EWorkerStatus.disponible,
+        };
+
+        this.publishSub(payload);
+        void this.notifyWorkerStatusSafely(payload, 'pairing_code');
+        this.pendingResolve?.(payload);
+        this.pendingResolve = undefined;
       });
 
       client.on('qr', async (qr: string) => {
@@ -1369,6 +1426,18 @@ export class WwebjsConnectionService {
       this.qrGenerationCount = 0;
       this.qrHash = undefined;
     }
+  }
+
+  private normalizePhoneConnection(
+    phoneConnection?: string
+  ): string | undefined {
+    const normalized = phoneConnection?.replace(/\D/g, '');
+
+    if (!normalized) {
+      return undefined;
+    }
+
+    return normalized;
   }
 
   private resetQrReadSession(): void {
