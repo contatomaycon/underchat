@@ -6822,36 +6822,48 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     viewerMediaWidth,
   ]);
 
-  const loadMessages = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await listMessages(
-        chatInfo.chat_id,
-        1,
-        CHAT_MESSAGES_PER_PAGE
-      );
-      if (!res) {
-        setMessages([]);
-        currentPageRef.current = 1;
-        totalPagesRef.current = 1;
-        preserveScrollOnPrependRef.current = null;
-        return;
+  const loadMessages = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
+      if (!silent) {
+        setLoading(true);
       }
 
-      const baseMessages = [...res.results].reverse();
-      const pending = consumePendingMessages(chatInfo.chat_id);
-      const mergedMessages = mergePendingSocketMessages(baseMessages, pending);
+      try {
+        const res = await listMessages(
+          chatInfo.chat_id,
+          1,
+          CHAT_MESSAGES_PER_PAGE
+        );
+        if (!res) {
+          setMessages([]);
+          currentPageRef.current = 1;
+          totalPagesRef.current = 1;
+          preserveScrollOnPrependRef.current = null;
+          return;
+        }
 
-      currentPageRef.current = toPositiveInt(res.current_page, 1);
-      totalPagesRef.current = toPositiveInt(res.total_pages, 1);
-      preserveScrollOnPrependRef.current = null;
-      pendingScrollToBottomRef.current = true;
+        const baseMessages = [...res.results].reverse();
+        const pending = consumePendingMessages(chatInfo.chat_id);
+        const mergedMessages = mergePendingSocketMessages(
+          baseMessages,
+          pending
+        );
 
-      setMessages(mergedMessages);
-    } finally {
-      setLoading(false);
-    }
-  }, [chatInfo.chat_id]);
+        currentPageRef.current = toPositiveInt(res.current_page, 1);
+        totalPagesRef.current = toPositiveInt(res.total_pages, 1);
+        preserveScrollOnPrependRef.current = null;
+        pendingScrollToBottomRef.current = true;
+
+        setMessages(mergedMessages);
+      } finally {
+        if (!silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [chatInfo.chat_id]
+  );
 
   const syncLatestMessages = useCallback(async () => {
     const res = await listMessages(chatInfo.chat_id, 1, CHAT_MESSAGES_PER_PAGE);
@@ -7107,7 +7119,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       lastSocketSyncTimeRef.current = 0;
       preserveScrollOnPrependRef.current = null;
       setShowScrollToBottomButton(false);
-      void loadMessages();
+      const shouldRefreshSilently =
+        messagesRef.current.length > 0 ||
+        mediaPickerActiveRef.current ||
+        documentPickerActiveRef.current ||
+        sendingCapturedMediaRef.current ||
+        sendingVoiceRecordingRef.current;
+      void loadMessages({ silent: shouldRefreshSilently });
     }, [loadMessages])
   );
 
@@ -7305,10 +7323,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           payloadSecondaryUserIds.includes(currentUserId));
 
       if (isActive && isPayloadParticipant) {
-        loadMessages();
+        pendingScrollToBottomRef.current = true;
+        setShowScrollToBottomButton(false);
+        requestAnimationFrame(() => {
+          scrollToBottomWithRetries(10);
+        });
+        void syncMessagesStatus(true);
       }
     },
-    [chatInfo.chat_id, currentUserId, loadMessages]
+    [
+      chatInfo.chat_id,
+      currentUserId,
+      scrollToBottomWithRetries,
+      syncMessagesStatus,
+    ]
   );
 
   useFocusEffect(
@@ -7362,7 +7390,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   useEffect(() => {
     return addAppResumeListener(() => {
       if (!isFocused) return;
-      void loadMessages();
+      void loadMessages({ silent: true });
       void syncMessagesStatus(true);
     });
   }, [isFocused, loadMessages, syncMessagesStatus]);
