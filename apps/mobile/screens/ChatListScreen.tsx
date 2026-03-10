@@ -129,6 +129,7 @@ const CHAT_STATUS = {
 
 type ChatListLoadTrigger =
   | 'initial'
+  | 'quick_filter'
   | 'focus'
   | 'realtime'
   | 'resume'
@@ -142,7 +143,8 @@ type PendingChatListLoadTrigger = Exclude<
 
 const FOCUS_RELOAD_COOLDOWN_MS = 10_000;
 const CHAT_LIST_TRIGGER_PRIORITY: Record<PendingChatListLoadTrigger, number> = {
-  initial: 6,
+  initial: 7,
+  quick_filter: 6,
   criteria_change: 5,
   action: 4,
   realtime: 3,
@@ -159,6 +161,10 @@ const CHATBOT_FILTER_OPTIONS: Array<{
   { value: 'ura_schedule', label: pt.chatbot_type_schedule },
   { value: 'ura_webhook', label: pt.chatbot_type_webhook },
 ];
+
+function getChatbotFilterKey(filters: ChatbotFilterStatus[]): string {
+  return [...filters].sort().join('|');
+}
 
 type TransferDestinationType = 'user' | 'sector';
 type TransferPickerKind =
@@ -712,6 +718,10 @@ export function ChatListScreen({ route, navigation }: Props) {
   const pendingReloadTriggerRef = useRef<PendingChatListLoadTrigger | null>(
     null
   );
+  const previousInChatScopeRef = useRef(inChatScope);
+  const previousChatbotFilterKeyRef = useRef(
+    getChatbotFilterKey(chatbotFilters)
+  );
   const lastAutomaticReloadAtRef = useRef<number | null>(null);
   const openedSwipeableRef = useRef<SwipeableMethods | null>(null);
   const closeServiceConfigRequestRef = useRef(0);
@@ -892,6 +902,9 @@ export function ChatListScreen({ route, navigation }: Props) {
         }
 
         if (loadingRef.current) {
+          if (trigger === 'quick_filter') {
+            setLoading(true);
+          }
           if (trigger !== 'manual_refresh') {
             const pendingTrigger = trigger as PendingChatListLoadTrigger;
             const currentPendingTrigger = pendingReloadTriggerRef.current;
@@ -906,9 +919,10 @@ export function ChatListScreen({ route, navigation }: Props) {
           return;
         }
 
-        const shouldShowInitialSkeleton =
-          trigger === 'initial' && !hasLoadedOnceRef.current;
-        if (shouldShowInitialSkeleton) {
+        const shouldShowSkeleton =
+          trigger === 'quick_filter' ||
+          (trigger === 'initial' && !hasLoadedOnceRef.current);
+        if (shouldShowSkeleton) {
           setLoading(true);
         }
 
@@ -1112,7 +1126,6 @@ export function ChatListScreen({ route, navigation }: Props) {
           setIsLoadingMore(false);
           isLoadingMoreRef.current = false;
         } else {
-          setLoading(false);
           loadingRef.current = false;
           hasLoadedOnceRef.current = true;
 
@@ -1132,8 +1145,16 @@ export function ChatListScreen({ route, navigation }: Props) {
             isFocusedRef.current &&
             isAuthContextResolvedRef.current
           ) {
+            if (pendingTrigger === 'quick_filter') {
+              setLoading(true);
+            } else {
+              setLoading(false);
+            }
             void load({ trigger: pendingTrigger });
+            return;
           }
+
+          setLoading(false);
         }
       }
     },
@@ -1271,6 +1292,12 @@ export function ChatListScreen({ route, navigation }: Props) {
   useEffect(() => {
     const wasFocused = wasFocusedRef.current;
     wasFocusedRef.current = isFocused;
+    const chatbotFilterKey = getChatbotFilterKey(chatbotFilters);
+    const didInChatScopeChange = previousInChatScopeRef.current !== inChatScope;
+    const didChatbotFilterChange =
+      previousChatbotFilterKeyRef.current !== chatbotFilterKey;
+    previousInChatScopeRef.current = inChatScope;
+    previousChatbotFilterKeyRef.current = chatbotFilterKey;
 
     if (!isFocused || !isAuthContextResolved) {
       if (!hasLoadedOnceRef.current) {
@@ -1289,8 +1316,21 @@ export function ChatListScreen({ route, navigation }: Props) {
       return;
     }
 
-    void load({ trigger: 'criteria_change' });
-  }, [isFocused, isAuthContextResolved, load]);
+    const isQuickFilterChange =
+      (tab === 'in_chat' && didInChatScopeChange) ||
+      (tab === 'chatbot' && didChatbotFilterChange);
+
+    void load({
+      trigger: isQuickFilterChange ? 'quick_filter' : 'criteria_change',
+    });
+  }, [
+    chatbotFilters,
+    inChatScope,
+    isAuthContextResolved,
+    isFocused,
+    load,
+    tab,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
