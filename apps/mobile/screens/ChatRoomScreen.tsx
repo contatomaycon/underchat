@@ -186,6 +186,11 @@ import {
 import { addAppResumeListener } from '../utils/appResumeBus';
 import { syncGlobalChatCounts } from '../utils/chatCountsSync';
 import { addCurrentUserPresenceStatusListener } from '../utils/currentUserPresence';
+import {
+  createFlatWaveformPlaceholder,
+  parseWaveform,
+  type WaveformInput,
+} from '../utils/audioWaveform';
 
 type EmojiDatasetEntry = {
   unified?: string;
@@ -369,44 +374,16 @@ function WhatsAppFormattedText({
   );
 }
 
-function decodeBase64Waveform(base64: string): number[] | null {
-  try {
-    if (typeof globalThis.atob !== 'function') return null;
-    const binary = globalThis.atob(base64);
-    const out: number[] = [];
-    for (let i = 0; i < binary.length; i++) {
-      out.push(binary.charCodeAt(i));
-    }
-    return out.length > 0 ? out : null;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeWaveformValues(arr: number[]): number[] {
-  return arr.map((v) => Math.max(0.15, Math.min(1, v / 100)));
-}
-
-function parseWaveform(
-  waveform: string | number[] | null | undefined
-): number[] | null {
-  if (!waveform) return null;
-  if (typeof waveform === 'string') {
-    const decoded = decodeBase64Waveform(waveform);
-    return decoded && decoded.length > 0
-      ? normalizeWaveformValues(decoded)
-      : null;
-  }
-  if (Array.isArray(waveform) && waveform.length > 0) {
-    return normalizeWaveformValues(waveform);
-  }
-  return null;
-}
-
 function formatAudioTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function createWaveformCacheSignature(data: WaveformInput): string {
+  if (!data) return 'waveform:empty';
+  if (typeof data === 'string') return `waveform:string:${data.trim()}`;
+  return `waveform:array:${data.length}:${data.join(',')}`;
 }
 
 function isAudioPlaybackNearEnd(position: number, duration: number): boolean {
@@ -550,6 +527,7 @@ const WAVEFORM_BAR_WIDTH = 2;
 const WAVEFORM_BAR_GAP = 2;
 const WAVEFORM_HORIZONTAL_INSET = 2;
 const WAVEFORM_FALLBACK_MAX_BARS = 28;
+const AUDIO_WAVEFORM_DEFAULT_BARS = 64;
 const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 const CHAT_MESSAGES_PER_PAGE = 10;
@@ -599,6 +577,22 @@ const EMOJI_PICKER_DISMISS_VY_THRESHOLD = 0.55;
 type DownloadKind = 'image' | 'video' | 'document';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const PLAYBACK_AUDIO_MODE = {
+  allowsRecording: false,
+  playsInSilentMode: true,
+  interruptionMode: 'mixWithOthers',
+  shouldPlayInBackground: false,
+  shouldRouteThroughEarpiece: false,
+  allowsBackgroundRecording: false,
+} as const;
+
+async function ensureIosPlaybackAudioMode(): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    await setAudioModeAsync(PLAYBACK_AUDIO_MODE);
+  } catch {}
+}
 
 type ChatRoomMode = 'default' | 'history_readonly';
 
@@ -3330,6 +3324,7 @@ function useChatAudio() {
     {}
   );
   const waveformCache = useRef<Record<string, number[]>>({});
+  const waveformCacheSignature = useRef<Record<string, string>>({});
   const pendingAutoPlayRef = useRef<Record<string, boolean>>({});
   const pendingAutoPlayRateRef = useRef<Record<string, number>>({});
   const finishedPlaybackRef = useRef<Record<string, boolean>>({});
@@ -3348,6 +3343,8 @@ function useChatAudio() {
     pendingAutoPlayRef.current[messageId] = false;
     delete pendingAutoPlayRateRef.current[messageId];
     delete finishedPlaybackRef.current[messageId];
+    delete waveformCache.current[messageId];
+    delete waveformCacheSignature.current[messageId];
 
     const listener = listenerRefs.current[messageId];
     if (listener?.remove) {
@@ -3375,6 +3372,7 @@ function useChatAudio() {
       releaseSound(messageId);
     }
     waveformCache.current = {};
+    waveformCacheSignature.current = {};
   }, [releaseSound]);
 
   const resetPlaybackToStart = useCallback(
@@ -3495,73 +3493,79 @@ function useChatAudio() {
 
   const playPause = useCallback(
     (messageId: string, url: string) => {
-      const player = getOrCreateSound(messageId, url);
-      if (!player) return;
-      const cur = state[messageId] ?? DEFAULT_AUDIO_STATE;
+      const runPlaybackToggle = async () => {
+        const player = getOrCreateSound(messageId, url);
+        if (!player) return;
+        const cur = state[messageId] ?? DEFAULT_AUDIO_STATE;
 
-      if (cur.isPlaying) {
-        pendingAutoPlayRef.current[messageId] = false;
-        player.pause();
-        updateState(messageId, {
-          isPlaying: false,
-          isLoading: false,
-          isBuffering: false,
-        });
-        return;
-      }
-
-      const rate = cur.rate ?? 1;
-      finishedPlaybackRef.current[messageId] = false;
-      pendingAutoPlayRateRef.current[messageId] = rate;
-
-      const startPlayback = () => {
-        try {
-          player.setPlaybackRate(rate);
-        } catch {}
-
-        if (player.isLoaded && !player.isBuffering) {
+        if (cur.isPlaying) {
           pendingAutoPlayRef.current[messageId] = false;
+          player.pause();
           updateState(messageId, {
+            isPlaying: false,
             isLoading: false,
             isBuffering: false,
           });
-          try {
-            player.play();
-          } catch {}
           return;
         }
 
-        pendingAutoPlayRef.current[messageId] = true;
-        updateState(messageId, {
-          isLoading: true,
-          isBuffering: player.isBuffering,
-        });
+        await ensureIosPlaybackAudioMode();
 
-        if (player.isLoaded) {
+        const rate = cur.rate ?? 1;
+        finishedPlaybackRef.current[messageId] = false;
+        pendingAutoPlayRateRef.current[messageId] = rate;
+
+        const startPlayback = () => {
           try {
-            player.play();
+            player.setPlaybackRate(rate);
+          } catch {}
+
+          if (player.isLoaded && !player.isBuffering) {
+            pendingAutoPlayRef.current[messageId] = false;
+            updateState(messageId, {
+              isLoading: false,
+              isBuffering: false,
+            });
+            try {
+              player.play();
+            } catch {}
+            return;
+          }
+
+          pendingAutoPlayRef.current[messageId] = true;
+          updateState(messageId, {
+            isLoading: true,
+            isBuffering: player.isBuffering,
+          });
+
+          if (player.isLoaded) {
+            try {
+              player.play();
+            } catch {}
+          }
+        };
+
+        const durationSec =
+          cur.duration > 0 ? cur.duration : player.duration || 0;
+        const positionSec =
+          cur.position > 0 ? cur.position : player.currentTime || 0;
+        if (isAudioPlaybackNearEnd(positionSec, durationSec)) {
+          try {
+            player
+              .seekTo(0)
+              .then(() => {
+                updateState(messageId, { position: 0 });
+                startPlayback();
+              })
+              .catch(startPlayback);
+            return;
           } catch {}
         }
+
+        startPlayback();
       };
 
-      const durationSec =
-        cur.duration > 0 ? cur.duration : player.duration || 0;
-      const positionSec =
-        cur.position > 0 ? cur.position : player.currentTime || 0;
-      if (isAudioPlaybackNearEnd(positionSec, durationSec)) {
-        try {
-          player
-            .seekTo(0)
-            .then(() => {
-              updateState(messageId, { position: 0 });
-              startPlayback();
-            })
-            .catch(startPlayback);
-          return;
-        } catch {}
-      }
-
-      startPlayback();
+      void runPlaybackToggle();
     },
     [getOrCreateSound, state, updateState]
   );
@@ -3604,19 +3608,25 @@ function useChatAudio() {
   );
 
   const getWaveform = useCallback(
-    (
-      messageId: string,
-      data: string | number[] | null | undefined
-    ): number[] => {
-      if (waveformCache.current[messageId])
+    (messageId: string, data: WaveformInput): number[] => {
+      const signature = createWaveformCacheSignature(data);
+      if (
+        waveformCache.current[messageId] &&
+        waveformCacheSignature.current[messageId] === signature
+      ) {
         return waveformCache.current[messageId];
+      }
       const parsed = parseWaveform(data);
       if (parsed && parsed.length > 0) {
         waveformCache.current[messageId] = parsed;
+        waveformCacheSignature.current[messageId] = signature;
         return parsed;
       }
-      const placeholder = new Array(64).fill(0.3);
+      const placeholder = createFlatWaveformPlaceholder(
+        AUDIO_WAVEFORM_DEFAULT_BARS
+      );
       waveformCache.current[messageId] = placeholder;
+      waveformCacheSignature.current[messageId] = signature;
       return placeholder;
     },
     []
@@ -5877,6 +5887,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     );
   }, [chatInfo, currentUserName, replyMessageTarget]);
   const audioCtrl = useChatAudio();
+  useEffect(() => {
+    void ensureIosPlaybackAudioMode();
+  }, []);
   const viewerVideoPlayer = useVideoPlayer(
     viewer.kind === 'video' && viewer.src ? { uri: viewer.src } : null,
     (player) => {
@@ -9814,119 +9827,127 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   ]);
 
   const toggleAiReplyAudio = useCallback(() => {
-    const url = aiReplyResult?.audio_url;
-    if (!url) return;
+    const runToggle = async () => {
+      const url = aiReplyResult?.audio_url;
+      if (!url) return;
 
-    if (!aiReplyAudioRef.current) {
-      const player = createAudioPlayer(url, {
-        updateInterval: 300,
-        downloadFirst: true,
-        preferredForwardBufferDuration: 10,
-      });
-      player.loop = false;
-      setAiReplyAudioLoading(!player.isLoaded);
-      setAiReplyAudioBuffering(player.isBuffering);
-      setAiReplyAudioDuration((prev) => player.duration || prev || 0);
-      player.addListener('playbackStatusUpdate', (status) => {
-        const statusDuration = status.duration || player.duration || 0;
-        const statusPosition = status.currentTime || 0;
-        const didFinish =
-          status.didJustFinish ||
-          (!status.playing &&
-            isAudioPlaybackNearEnd(statusPosition, statusDuration));
+      if (!aiReplyAudioRef.current) {
+        const player = createAudioPlayer(url, {
+          updateInterval: 300,
+          downloadFirst: true,
+          preferredForwardBufferDuration: 10,
+        });
+        player.loop = false;
+        setAiReplyAudioLoading(!player.isLoaded);
+        setAiReplyAudioBuffering(player.isBuffering);
+        setAiReplyAudioDuration((prev) => player.duration || prev || 0);
+        player.addListener('playbackStatusUpdate', (status) => {
+          const statusDuration = status.duration || player.duration || 0;
+          const statusPosition = status.currentTime || 0;
+          const didFinish =
+            status.didJustFinish ||
+            (!status.playing &&
+              isAudioPlaybackNearEnd(statusPosition, statusDuration));
 
-        if (didFinish) {
-          aiReplyAudioFinishedRef.current = true;
+          if (didFinish) {
+            aiReplyAudioFinishedRef.current = true;
+            aiReplyAudioPendingAutoPlayRef.current = false;
+            setAiReplyAudioPlaying(false);
+            setAiReplyAudioLoading(false);
+            setAiReplyAudioBuffering(false);
+            setAiReplyAudioDuration((prev) => statusDuration || prev || 0);
+            try {
+              player.pause();
+            } catch {}
+            try {
+              player
+                .seekTo(0)
+                .then(() => setAiReplyAudioProgress(0))
+                .catch(() => setAiReplyAudioProgress(0));
+            } catch {
+              setAiReplyAudioProgress(0);
+            }
+            return;
+          }
+
+          setAiReplyAudioPlaying(status.playing);
+          setAiReplyAudioProgress(statusPosition);
+          setAiReplyAudioDuration((prev) => statusDuration || prev || 0);
+          setAiReplyAudioLoading(!status.isLoaded);
+          setAiReplyAudioBuffering(status.isBuffering);
+
+          if (
+            status.isLoaded &&
+            aiReplyAudioPendingAutoPlayRef.current &&
+            !aiReplyAudioFinishedRef.current &&
+            !status.playing
+          ) {
+            aiReplyAudioPendingAutoPlayRef.current = false;
+            try {
+              player.setPlaybackRate(aiReplyAudioSpeedRef.current);
+              player.play();
+            } catch {}
+          }
+        });
+        aiReplyAudioRef.current = player;
+      }
+
+      const player = aiReplyAudioRef.current;
+      if (!player) return;
+
+      if (aiReplyAudioPlaying) {
+        aiReplyAudioPendingAutoPlayRef.current = false;
+        player.pause();
+        return;
+      }
+
+      await ensureIosPlaybackAudioMode();
+
+      aiReplyAudioFinishedRef.current = false;
+      const startPlayback = () => {
+        try {
+          player.setPlaybackRate(aiReplyAudioSpeedRef.current);
+        } catch {}
+
+        if (player.isLoaded && !player.isBuffering) {
           aiReplyAudioPendingAutoPlayRef.current = false;
-          setAiReplyAudioPlaying(false);
           setAiReplyAudioLoading(false);
           setAiReplyAudioBuffering(false);
-          setAiReplyAudioDuration((prev) => statusDuration || prev || 0);
           try {
-            player.pause();
+            player.play();
           } catch {}
-          try {
-            player
-              .seekTo(0)
-              .then(() => setAiReplyAudioProgress(0))
-              .catch(() => setAiReplyAudioProgress(0));
-          } catch {
-            setAiReplyAudioProgress(0);
-          }
           return;
         }
 
-        setAiReplyAudioPlaying(status.playing);
-        setAiReplyAudioProgress(statusPosition);
-        setAiReplyAudioDuration((prev) => statusDuration || prev || 0);
-        setAiReplyAudioLoading(!status.isLoaded);
-        setAiReplyAudioBuffering(status.isBuffering);
-
-        if (
-          status.isLoaded &&
-          aiReplyAudioPendingAutoPlayRef.current &&
-          !aiReplyAudioFinishedRef.current &&
-          !status.playing
-        ) {
-          aiReplyAudioPendingAutoPlayRef.current = false;
+        aiReplyAudioPendingAutoPlayRef.current = true;
+        setAiReplyAudioLoading(true);
+        setAiReplyAudioBuffering(player.isBuffering);
+        if (player.isLoaded) {
           try {
-            player.setPlaybackRate(aiReplyAudioSpeedRef.current);
             player.play();
           } catch {}
         }
-      });
-      aiReplyAudioRef.current = player;
-    }
+      };
 
-    const player = aiReplyAudioRef.current;
-    if (!player) return;
-
-    if (aiReplyAudioPlaying) {
-      aiReplyAudioPendingAutoPlayRef.current = false;
-      player.pause();
-      return;
-    }
-
-    aiReplyAudioFinishedRef.current = false;
-    const startPlayback = () => {
-      try {
-        player.setPlaybackRate(aiReplyAudioSpeedRef.current);
-      } catch {}
-
-      if (player.isLoaded && !player.isBuffering) {
-        aiReplyAudioPendingAutoPlayRef.current = false;
-        setAiReplyAudioLoading(false);
-        setAiReplyAudioBuffering(false);
+      if (
+        isAudioPlaybackNearEnd(player.currentTime || 0, player.duration || 0)
+      ) {
         try {
-          player.play();
-        } catch {}
-        return;
-      }
-
-      aiReplyAudioPendingAutoPlayRef.current = true;
-      setAiReplyAudioLoading(true);
-      setAiReplyAudioBuffering(player.isBuffering);
-      if (player.isLoaded) {
-        try {
-          player.play();
+          player
+            .seekTo(0)
+            .then(() => {
+              setAiReplyAudioProgress(0);
+              startPlayback();
+            })
+            .catch(startPlayback);
+          return;
         } catch {}
       }
+
+      startPlayback();
     };
 
-    if (isAudioPlaybackNearEnd(player.currentTime || 0, player.duration || 0)) {
-      try {
-        player
-          .seekTo(0)
-          .then(() => {
-            setAiReplyAudioProgress(0);
-            startPlayback();
-          })
-          .catch(startPlayback);
-        return;
-      } catch {}
-    }
-
-    startPlayback();
+    void runToggle();
   }, [aiReplyResult?.audio_url, aiReplyAudioPlaying]);
 
   const toggleAiReplyAudioSpeed = useCallback(() => {
@@ -10096,14 +10117,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         return;
       }
 
-      await setAudioModeAsync({
-        allowsRecording: false,
-        playsInSilentMode: true,
-        interruptionMode: 'mixWithOthers',
-        shouldPlayInBackground: false,
-        shouldRouteThroughEarpiece: false,
-        allowsBackgroundRecording: false,
-      });
+      if (Platform.OS === 'ios') {
+        await ensureIosPlaybackAudioMode();
+        return;
+      }
+
+      await setAudioModeAsync(PLAYBACK_AUDIO_MODE);
     } catch {}
   }, []);
 
