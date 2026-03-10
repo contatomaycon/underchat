@@ -2615,6 +2615,51 @@ function mergeMessageBatch(
   return next;
 }
 
+function mergeSnapshotMessagesWithCurrent(
+  current: ListMessageResult[],
+  snapshot: ListMessageResult[]
+): ListMessageResult[] {
+  if (snapshot.length === 0) return [];
+
+  const currentByHash = new Map<string, ListMessageResult>();
+  const currentByMessageId = new Map<string, ListMessageResult>();
+
+  for (const message of current) {
+    const hash = readNonEmptyString(message.hash);
+    if (hash && !currentByHash.has(hash)) {
+      currentByHash.set(hash, message);
+    }
+
+    const messageId = readNonEmptyString(message.message_id);
+    if (messageId && !currentByMessageId.has(messageId)) {
+      currentByMessageId.set(messageId, message);
+    }
+  }
+
+  let next: ListMessageResult[] = [];
+  for (const message of snapshot) {
+    const hash = readNonEmptyString(message.hash);
+    const messageId = readNonEmptyString(message.message_id);
+    const previous =
+      (hash ? currentByHash.get(hash) : undefined) ??
+      (messageId ? currentByMessageId.get(messageId) : undefined);
+    const mergedSummary = mergeMessageSummary(
+      previous?.summary,
+      message.summary
+    );
+    const reconciledMessage = previous
+      ? {
+          ...message,
+          hash: hash ?? readNonEmptyString(previous.hash),
+          summary: mergedSummary,
+        }
+      : message;
+    next = mergeMessageLists(next, reconciledMessage);
+  }
+
+  return next;
+}
+
 type ReactionSummaryItem = { emoji: string; count: number };
 type ReplyComposerPreviewModel = {
   name: string;
@@ -6855,7 +6900,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         preserveScrollOnPrependRef.current = null;
         pendingScrollToBottomRef.current = true;
 
-        setMessages(mergedMessages);
+        setMessages((previous) =>
+          mergeSnapshotMessagesWithCurrent(previous, mergedMessages)
+        );
       } finally {
         if (!silent) {
           setLoading(false);
@@ -7119,14 +7166,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       lastSocketSyncTimeRef.current = 0;
       preserveScrollOnPrependRef.current = null;
       setShowScrollToBottomButton(false);
+      const hasLoadedMessages = messagesRef.current.length > 0;
+      if (hasLoadedMessages) {
+        void syncMessagesStatus(true);
+        return;
+      }
       const shouldRefreshSilently =
-        messagesRef.current.length > 0 ||
         mediaPickerActiveRef.current ||
         documentPickerActiveRef.current ||
         sendingCapturedMediaRef.current ||
         sendingVoiceRecordingRef.current;
       void loadMessages({ silent: shouldRefreshSilently });
-    }, [loadMessages])
+    }, [loadMessages, syncMessagesStatus])
   );
 
   useEffect(() => {
@@ -7390,10 +7441,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   useEffect(() => {
     return addAppResumeListener(() => {
       if (!isFocused) return;
-      void loadMessages({ silent: true });
       void syncMessagesStatus(true);
     });
-  }, [isFocused, loadMessages, syncMessagesStatus]);
+  }, [isFocused, syncMessagesStatus]);
 
   useFocusEffect(
     useCallback(() => {
