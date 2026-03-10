@@ -29,6 +29,7 @@ import {
   Switch,
   NativeEventEmitter,
   NativeModules,
+  useWindowDimensions,
   type StyleProp,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -234,6 +235,26 @@ function splitTextChunksWithLinks(text: string): TextChunk[] {
   return chunks.length > 0 ? chunks : [{ text, url: null }];
 }
 
+function insertSoftWrapOpportunities(text: string): string {
+  if (!text) return text;
+
+  return text.replace(
+    new RegExp(`\\S{${SOFT_WRAP_TOKEN_MIN_LENGTH},}`, 'g'),
+    (token) => {
+      let out = '';
+      for (
+        let index = 0;
+        index < token.length;
+        index += SOFT_WRAP_TOKEN_MIN_LENGTH
+      ) {
+        if (index > 0) out += SOFT_WRAP_BREAK_CHAR;
+        out += token.slice(index, index + SOFT_WRAP_TOKEN_MIN_LENGTH);
+      }
+      return out;
+    }
+  );
+}
+
 async function openExternalTextUrl(url: string): Promise<void> {
   try {
     await Linking.openURL(url);
@@ -289,6 +310,7 @@ function renderWhatsAppTextToken(
   const chunks = splitTextChunksWithLinks(token.text);
   return chunks.map((chunk, chunkIndex) => {
     if (!chunk.text) return null;
+    const chunkText = insertSoftWrapOpportunities(chunk.text);
 
     if (chunk.url) {
       const url = chunk.url;
@@ -304,7 +326,7 @@ function renderWhatsAppTextToken(
           }}
           suppressHighlighting
         >
-          {chunk.text}
+          {chunkText}
         </Text>
       );
     }
@@ -314,7 +336,7 @@ function renderWhatsAppTextToken(
         key={`whatsapp-token-${tokenIndex}-${chunkIndex}`}
         style={tokenStyle}
       >
-        {chunk.text}
+        {chunkText}
       </Text>
     );
   });
@@ -336,6 +358,7 @@ function WhatsAppFormattedText({
       style={style}
       numberOfLines={numberOfLines}
       ellipsizeMode={ellipsizeMode}
+      textBreakStrategy="highQuality"
       selectable={selectable}
       onTextLayout={onTextLayout}
     >
@@ -1162,6 +1185,10 @@ const LONG_TEXT_COLLAPSE_LINES = 8;
 const LONG_TEXT_COLLAPSE_CHAR_THRESHOLD = 420;
 const FALLBACK_GALLERY_WINDOW_MS = 5000;
 const MAX_IMAGE_GALLERY_THUMBNAILS = 4;
+const CHAT_LIST_HORIZONTAL_PADDING = 12;
+const CHAT_BUBBLE_MAX_WIDTH_RATIO = 0.9;
+const SOFT_WRAP_TOKEN_MIN_LENGTH = 24;
+const SOFT_WRAP_BREAK_CHAR = '\u200B';
 
 function unifiedToEmoji(unified: string): string | null {
   if (!unified) return null;
@@ -3920,10 +3947,17 @@ function LinkPreviewMessage({
   const previewImage = resolvePreviewImage(preview);
   const title = readNonEmptyString(preview.title);
   const description = readNonEmptyString(preview.description);
-  const previewUrlDisplay = formatPreviewUrlForDisplay(previewUrl);
+  const titleDisplay = title ? insertSoftWrapOpportunities(title) : null;
+  const descriptionDisplay = description
+    ? insertSoftWrapOpportunities(description)
+    : null;
+  const previewUrlDisplay = insertSoftWrapOpportunities(
+    formatPreviewUrlForDisplay(previewUrl)
+  );
   const domain = resolveDomainFromUrl(
     preview['canonical-url'] ?? preview['matched-text'] ?? previewUrl
   );
+  const domainDisplay = domain ? insertSoftWrapOpportunities(domain) : null;
 
   if (!title && !description && !previewImage && !previewUrl) {
     return null;
@@ -3958,19 +3992,19 @@ function LinkPreviewMessage({
           />
         ) : null}
         <View style={styles.linkPreviewText}>
-          {domain ? (
+          {domainDisplay ? (
             <Text style={styles.linkPreviewDomain} numberOfLines={1}>
-              {domain}
+              {domainDisplay}
             </Text>
           ) : null}
-          {title ? (
+          {titleDisplay ? (
             <Text style={styles.linkPreviewTitle} numberOfLines={2}>
-              {title}
+              {titleDisplay}
             </Text>
           ) : null}
-          {description ? (
+          {descriptionDisplay ? (
             <Text style={styles.linkPreviewDescription} numberOfLines={2}>
-              {description}
+              {descriptionDisplay}
             </Text>
           ) : null}
         </View>
@@ -4010,6 +4044,16 @@ function ExternalAdReplyMessage({
   const title = readNonEmptyString(adReply.title);
   const greetingMessage = readNonEmptyString(adReply.greeting_message_body);
   const sourceUrl = readNonEmptyString(adReply.source_url);
+  const sourceAppDisplay = sourceApp
+    ? insertSoftWrapOpportunities(sourceApp)
+    : null;
+  const titleDisplay = title ? insertSoftWrapOpportunities(title) : null;
+  const greetingMessageDisplay = greetingMessage
+    ? insertSoftWrapOpportunities(greetingMessage)
+    : null;
+  const sourceUrlDisplay = sourceUrl
+    ? insertSoftWrapOpportunities(sourceUrl)
+    : null;
 
   if (!thumbnailUri && !sourceApp && !title && !greetingMessage && !sourceUrl) {
     return null;
@@ -4044,26 +4088,26 @@ function ExternalAdReplyMessage({
           />
         ) : null}
         <View style={styles.externalAdInfo}>
-          {sourceApp ? (
+          {sourceAppDisplay ? (
             <Text style={styles.externalAdSource} numberOfLines={1}>
-              {sourceApp}
+              {sourceAppDisplay}
             </Text>
           ) : null}
-          {title ? (
+          {titleDisplay ? (
             <Text style={styles.externalAdTitle} numberOfLines={2}>
-              {title}
+              {titleDisplay}
             </Text>
           ) : null}
-          {greetingMessage ? (
+          {greetingMessageDisplay ? (
             <Text style={styles.externalAdDescription} numberOfLines={2}>
-              {greetingMessage}
+              {greetingMessageDisplay}
             </Text>
           ) : null}
         </View>
       </View>
-      {sourceUrl ? (
+      {sourceUrlDisplay ? (
         <Text style={styles.externalAdUrl} numberOfLines={1}>
-          {sourceUrl}
+          {sourceUrlDisplay}
         </Text>
       ) : null}
     </Pressable>
@@ -5092,6 +5136,7 @@ function MessageBubble({
   forceCollapsedLongText?: boolean;
   obfuscateContent?: boolean;
 }) {
+  const { width: viewportWidth } = useWindowDimensions();
   const content = msg.content;
   const timeStr = formatMessageTime(msg.date);
   const latestText = getLatestMessageText(msg).trim();
@@ -5156,6 +5201,17 @@ function MessageBubble({
       content.message ||
       content.template);
   const feedbackIcon = resolveMessageFeedbackIcon(msg, fromMe);
+  const responsiveBubbleMaxWidth = Math.max(
+    0,
+    Math.floor(
+      Math.max(0, viewportWidth - CHAT_LIST_HORIZONTAL_PADDING * 2) *
+        CHAT_BUBBLE_MAX_WIDTH_RATIO
+    )
+  );
+  const bubbleResponsiveWidth = {
+    maxWidth: responsiveBubbleMaxWidth,
+    minWidth: 0,
+  };
 
   if (!content || !hasContent) {
     return (
@@ -5168,6 +5224,7 @@ function MessageBubble({
         <View
           style={[
             styles.bubble,
+            bubbleResponsiveWidth,
             fromMe ? styles.bubbleRight : styles.bubbleLeft,
             fromMe && hasAnyLinkContent && styles.bubbleRightWithLink,
             !fromMe && hasAnyLinkContent && styles.bubbleLeftWithLink,
@@ -5246,6 +5303,7 @@ function MessageBubble({
       <Pressable
         style={({ pressed }) => [
           styles.bubble,
+          bubbleResponsiveWidth,
           { backgroundColor: bubbleBg },
           isSystem && styles.bubbleSystem,
           isContactCard && styles.bubbleContact,
@@ -15953,7 +16011,7 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   listContent: {
-    padding: 12,
+    padding: CHAT_LIST_HORIZONTAL_PADDING,
     paddingBottom: 8,
   },
   loadingOlderWrap: {
@@ -16045,7 +16103,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   bubble: {
-    maxWidth: '80%',
+    maxWidth: '100%',
+    minWidth: 0,
     paddingHorizontal: 12,
     paddingVertical: 8,
     paddingRight: 28,
@@ -16054,18 +16113,16 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 8,
     borderBottomLeftRadius: 6,
     borderBottomRightRadius: 6,
+    overflow: 'hidden',
   },
   bubbleLeft: {
     backgroundColor: colors.surface,
     borderBottomLeftRadius: 4,
   },
   bubbleLeftWithLink: {
-    maxWidth: '90%',
     paddingRight: 20,
   },
   bubbleRightWithLink: {
-    maxWidth: '90%',
-    minWidth: 220,
     paddingRight: 18,
   },
   bubbleRight: {
@@ -16141,9 +16198,14 @@ const styles = StyleSheet.create({
   bubbleText: {
     fontSize: 15,
     lineHeight: 21,
+    minWidth: 0,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   bubbleTextWrap: {
     minWidth: 0,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   readMoreButton: {
     marginTop: 6,
@@ -16172,6 +16234,7 @@ const styles = StyleSheet.create({
   whatsAppLink: {
     color: colors.primary,
     textDecorationLine: 'underline',
+    flexShrink: 1,
   },
   bubbleTextLeft: {
     color: colors.onSurface,
@@ -16240,20 +16303,20 @@ const styles = StyleSheet.create({
   },
   bubbleSystem: {
     alignSelf: 'center',
-    maxWidth: '90%',
+    maxWidth: '100%',
   },
   bubbleContact: {
-    minWidth: 210,
+    minWidth: 0,
   },
   bubbleAudio: {
-    minWidth: 220,
+    minWidth: 0,
     width: '70%',
     maxWidth: '70%',
     paddingRight: 12,
     overflow: 'hidden',
   },
   bubbleDocument: {
-    minWidth: 250,
+    minWidth: 0,
     maxWidth: '78%',
     paddingRight: 12,
   },
@@ -16466,6 +16529,8 @@ const styles = StyleSheet.create({
   contentStack: {
     gap: 8,
     width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
   },
   mediaBubble: {
     maxWidth: 232,
@@ -16621,9 +16686,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   locationBubble: {
-    width: 200,
+    width: '100%',
     maxWidth: 200,
-    minWidth: 175,
+    minWidth: 0,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
@@ -16680,6 +16745,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(47, 43, 61, 0.12)',
     padding: 10,
     gap: 8,
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    overflow: 'hidden',
   },
   linkPreviewCardLeft: {
     backgroundColor: 'rgba(47, 43, 61, 0.04)',
@@ -16687,7 +16756,7 @@ const styles = StyleSheet.create({
   linkPreviewCardRight: {
     backgroundColor: 'rgba(255, 255, 255, 0.36)',
     alignSelf: 'stretch',
-    minWidth: 280,
+    minWidth: 0,
   },
   linkPreviewMain: {
     flexDirection: 'row',
@@ -16735,6 +16804,7 @@ const styles = StyleSheet.create({
   linkPreviewUrl: {
     width: '100%',
     minWidth: 0,
+    maxWidth: '100%',
     fontSize: 12,
     lineHeight: 17,
     color: colors.primary,
@@ -16747,6 +16817,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(47, 43, 61, 0.12)',
     padding: 10,
     gap: 8,
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    overflow: 'hidden',
   },
   externalAdCardLeft: {
     backgroundColor: 'rgba(47, 43, 61, 0.04)',
@@ -16758,6 +16832,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
+    width: '100%',
+    minWidth: 0,
   },
   externalAdThumb: {
     width: 60,
@@ -16789,6 +16865,10 @@ const styles = StyleSheet.create({
   externalAdUrl: {
     fontSize: 12,
     color: colors.primary,
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   audioWrap: {
     flexDirection: 'row',
@@ -16948,7 +17028,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(47, 43, 61, 0.04)',
     marginBottom: 6,
     width: '100%',
-    minWidth: 220,
+    minWidth: 0,
+    maxWidth: '100%',
   },
   documentCardRight: {
     backgroundColor: 'rgba(255, 255, 255, 0.28)',
@@ -17015,7 +17096,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
-    minWidth: 210,
+    minWidth: 0,
+    maxWidth: '100%',
   },
   contactWrapRight: {
     backgroundColor: 'rgba(255, 255, 255, 0.94)',
@@ -17067,6 +17149,8 @@ const styles = StyleSheet.create({
   },
   templateWrap: {
     gap: 6,
+    minWidth: 0,
+    maxWidth: '100%',
   },
   templateTitle: {
     fontSize: 15,
