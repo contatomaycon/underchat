@@ -1181,6 +1181,8 @@ const FALLBACK_GALLERY_WINDOW_MS = 5000;
 const MAX_IMAGE_GALLERY_THUMBNAILS = 4;
 const CHAT_LIST_HORIZONTAL_PADDING = 12;
 const CHAT_BUBBLE_MAX_WIDTH_RATIO = 0.9;
+const CHAT_DOCUMENT_BUBBLE_MAX_WIDTH_RATIO = 0.84;
+const CHAT_DOCUMENT_BUBBLE_MIN_WIDTH = 224;
 const SOFT_WRAP_TOKEN_MIN_LENGTH = 24;
 const SOFT_WRAP_BREAK_CHAR = '\u200B';
 
@@ -1845,6 +1847,54 @@ function resolveVideoDownloadName(
   }
   const ext = (video.extension ?? '').replace(/^\./, '').toLowerCase() || 'mp4';
   return `video.${ext}`;
+}
+
+function resolveDocumentDisplayName(
+  document: MessageContentDocument | null | undefined
+): string {
+  const explicitName = readNonEmptyString(document?.name);
+  if (explicitName) {
+    const sanitizedName = sanitizeFilename(explicitName);
+    if (sanitizedName.length > 0) {
+      return sanitizedName;
+    }
+  }
+
+  const documentUrl = readNonEmptyString(document?.url);
+  if (documentUrl) {
+    const nameFromUrl = sanitizeFilename(
+      resolveFileNameFromUri(documentUrl, '')
+    );
+    if (nameFromUrl.length > 0) {
+      return nameFromUrl;
+    }
+  }
+
+  return pt.document;
+}
+
+function resolveDocumentExtensionLabel(
+  document: MessageContentDocument | null | undefined
+): string {
+  const extensionFromPayload = readNonEmptyString(document?.extension)?.replace(
+    /^\./,
+    ''
+  );
+  if (extensionFromPayload) {
+    return extensionFromPayload.toUpperCase();
+  }
+
+  const extensionFromName = extractFileExtension(document?.name).toUpperCase();
+  if (extensionFromName) {
+    return extensionFromName;
+  }
+
+  const extensionFromUrl = getExtensionFromUrl(document?.url ?? '');
+  if (extensionFromUrl) {
+    return extensionFromUrl.toUpperCase();
+  }
+
+  return 'FILE';
 }
 
 function resolveDocumentDownloadName(
@@ -4822,10 +4872,10 @@ function BubbleContent({
     const doc = content.document;
     const docUrl = resolveMediaUri(doc.url);
     if (!docUrl) return null;
-    const ext = (doc.extension ?? '').toUpperCase() || 'FILE';
+    const ext = resolveDocumentExtensionLabel(doc);
     const extLabel = ext.slice(0, 4);
     const sizeStr = formatFileSize(doc.size);
-    const name = doc.name?.trim() || pt.document;
+    const name = resolveDocumentDisplayName(doc);
     const meta = [ext, sizeStr].filter(Boolean).join(' • ');
     const cap = content.message;
     return renderWithContextCards(
@@ -4854,7 +4904,11 @@ function BubbleContent({
               <Text style={styles.documentName} numberOfLines={1}>
                 {name}
               </Text>
-              {meta ? <Text style={styles.documentMeta}>{meta}</Text> : null}
+              {meta ? (
+                <Text style={styles.documentMeta} numberOfLines={1}>
+                  {meta}
+                </Text>
+              ) : null}
             </View>
           </Pressable>
 
@@ -5267,6 +5321,26 @@ function MessageBubble({
     maxWidth: responsiveBubbleMaxWidth,
     minWidth: 0,
   };
+  const documentBubbleMinWidth = Math.min(
+    CHAT_DOCUMENT_BUBBLE_MIN_WIDTH,
+    responsiveBubbleMaxWidth
+  );
+  const documentBubbleMaxWidth = Math.min(
+    responsiveBubbleMaxWidth,
+    Math.floor(
+      Math.max(0, viewportWidth - CHAT_LIST_HORIZONTAL_PADDING * 2) *
+        CHAT_DOCUMENT_BUBBLE_MAX_WIDTH_RATIO
+    )
+  );
+  const documentBubbleWidth = Math.max(
+    documentBubbleMinWidth,
+    documentBubbleMaxWidth
+  );
+  const documentBubbleResponsiveWidth = {
+    minWidth: documentBubbleMinWidth,
+    width: documentBubbleWidth,
+    maxWidth: documentBubbleWidth,
+  };
 
   if (!content || !hasContent) {
     return (
@@ -5364,6 +5438,7 @@ function MessageBubble({
           isContactCard && styles.bubbleContact,
           isAudio && styles.bubbleAudio,
           isDocument && styles.bubbleDocument,
+          isDocument && documentBubbleResponsiveWidth,
           fromMe && hasAnyLinkContent && styles.bubbleRightWithLink,
           !fromMe && hasAnyLinkContent && styles.bubbleLeftWithLink,
           hasQuoted && styles.bubbleQuotedMinWidth,
@@ -16414,14 +16489,14 @@ const styles = StyleSheet.create({
   },
   bubbleDocument: {
     minWidth: 0,
-    maxWidth: '78%',
     paddingRight: 12,
+    paddingBottom: 10,
   },
   bubbleMetaAudio: {
     marginTop: 6,
   },
   bubbleMetaDocument: {
-    marginTop: 2,
+    marginTop: 6,
   },
   forwardedIndicator: {
     flexDirection: 'row',
@@ -17119,6 +17194,7 @@ const styles = StyleSheet.create({
   documentCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 12,
     padding: 12,
     borderRadius: 10,
@@ -17136,6 +17212,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
     minWidth: 0,
   },
   documentIconCircle: {
@@ -17146,6 +17224,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 1,
     backgroundColor: 'rgba(40, 101, 183, 0.12)',
+    flexShrink: 0,
   },
   documentIconCircleRight: {
     backgroundColor: 'rgba(40, 101, 183, 0.18)',
@@ -17159,15 +17238,21 @@ const styles = StyleSheet.create({
   },
   documentInfo: {
     flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
     minWidth: 0,
+    justifyContent: 'center',
   },
   documentName: {
     fontSize: 14,
+    lineHeight: 18,
     fontWeight: '600',
     color: colors.primary,
+    maxWidth: '100%',
   },
   documentMeta: {
     fontSize: 11,
+    lineHeight: 14,
     color: colors.grey600,
     marginTop: 2,
   },
@@ -17178,12 +17263,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(40, 101, 183, 0.1)',
+    flexShrink: 0,
   },
   documentDownloadBtnRight: {
     backgroundColor: 'rgba(40, 101, 183, 0.2)',
   },
   documentCaption: {
-    marginTop: 2,
+    marginTop: 4,
   },
   contactWrap: {
     flexDirection: 'row',
