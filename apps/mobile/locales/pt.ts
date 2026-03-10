@@ -158,6 +158,8 @@ export const pt = {
   about: 'Sobre',
   status_chat: 'Status',
   online: 'Online',
+  offline: 'Offline',
+  away: 'Ausente',
   busy: 'Ocupado',
   do_not_disturb: 'Não perturbe',
   settings: 'Configurações',

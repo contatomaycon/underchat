@@ -286,8 +286,30 @@ export class PresenceService {
     });
   }
 
-  async heartbeat(userId: string): Promise<void> {
+  async heartbeat(
+    userId: string,
+    options?: { keepCurrentStatus?: boolean }
+  ): Promise<void> {
     const currentStatus = await this.getCurrentStatus(userId);
+
+    if (
+      options?.keepCurrentStatus &&
+      currentStatus &&
+      currentStatus !== EChatUserStatus.offline
+    ) {
+      await this.persistStatus(userId, currentStatus, {
+        touchRedis: true,
+        forcePublish: true,
+      });
+      return;
+    }
+
+    if (
+      options?.keepCurrentStatus &&
+      currentStatus === EChatUserStatus.offline
+    ) {
+      return;
+    }
 
     if (
       currentStatus === EChatUserStatus.busy ||

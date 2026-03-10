@@ -16,6 +16,7 @@ import { AuthService } from '@core/services/auth.service';
 import Redis from 'ioredis';
 import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
 import type { SessionPlatform } from '@core/common/types/SessionPlatform';
+import { hasChatUserStatusUpdatePermissionByPermissions } from '@core/common/functions/chatUserStatusPermission';
 
 @injectable()
 export class UserSessionLoginUseCase {
@@ -227,7 +228,14 @@ export class UserSessionLoginUseCase {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
 
-    await this.presenceService.setUserAway(targetUserId);
+    const canUpdateOwnChatStatus =
+      hasChatUserStatusUpdatePermissionByPermissions(permissions);
+
+    if (canUpdateOwnChatStatus) {
+      await this.presenceService.setUserAway(targetUserId);
+    } else {
+      await this.presenceService.setUserOnline(targetUserId);
+    }
     await this.setActiveSession(
       userAccountId,
       targetUserId,

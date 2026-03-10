@@ -1,4 +1,4 @@
-import type { ChatUserStatus } from '../api/chatApi';
+import { updateChatUser, type ChatUserStatus } from '../api/chatApi';
 import { getUser, patchUser } from '../storage/authStorage';
 import { emitCurrentUserPresenceStatus } from '../utils/currentUserPresence';
 import { publish } from './centrifugo';
@@ -16,6 +16,19 @@ type PresenceMessage = {
 };
 
 const PRESENCE_CHANNEL = 'presence:updates';
+
+function readNotificationsFromUser(user: unknown): boolean {
+  if (!user || typeof user !== 'object') {
+    return false;
+  }
+
+  const chatUser = (user as { chat_user?: unknown }).chat_user;
+  if (!chatUser || typeof chatUser !== 'object') {
+    return false;
+  }
+
+  return (chatUser as { notifications?: unknown }).notifications === true;
+}
 
 function normalizeIdentifier(value: unknown): string | null {
   if (typeof value === 'string') {
@@ -65,6 +78,10 @@ export async function publishPresence(
 
   try {
     await publish(PRESENCE_CHANNEL, message);
+    if (options?.isHeartbeat) {
+      return true;
+    }
+
     await patchUser({
       chat_user: {
         status,
@@ -73,6 +90,25 @@ export async function publishPresence(
     emitCurrentUserPresenceStatus(status);
     return true;
   } catch {
+    if (!options?.isHeartbeat && status === 'offline') {
+      const user = await getUser();
+      const notifications = readNotificationsFromUser(user);
+      const updated = await updateChatUser({
+        status: 'offline',
+        notifications,
+      });
+
+      if (updated) {
+        await patchUser({
+          chat_user: {
+            status: 'offline',
+          },
+        });
+        emitCurrentUserPresenceStatus('offline');
+        return true;
+      }
+    }
+
     return false;
   }
 }

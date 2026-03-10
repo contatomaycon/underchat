@@ -1,10 +1,12 @@
 import { router } from '@/plugins/1.router';
-import { isLoggedIn } from './localStorage/user';
+import { getPermissions, isLoggedIn } from './localStorage/user';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { IPresenceMessage } from '@core/common/interfaces/IPresenceMessage';
 import { publish } from '@webcore/centrifugo';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 
 type PresenceMode = EChatUserStatus;
 
@@ -22,6 +24,18 @@ let currentMode: PresenceMode | null = null;
 let hasPermissionError = false;
 
 const chatStore = useChatStore();
+
+const hasManualStatusPermission = (): boolean => {
+  const permissions = getPermissions();
+
+  return permissions.some(
+    (permission) =>
+      permission === EGeneralPermissions.full_access ||
+      permission === EGeneralPermissions.full_access_group ||
+      permission === EChatPermissions.chat_group ||
+      permission === EChatPermissions.chat_user_status_update
+  );
+};
 
 const updateLocalPresenceStatus = (status: EChatUserStatus): void => {
   const currentUser = chatStore.user;
@@ -57,8 +71,12 @@ const resolveUserStatus = (): EChatUserStatus | null => {
 const resolveTargetMode = (): PresenceMode => {
   if (!isLoggedIn()) return EChatUserStatus.offline;
 
+  if (!hasManualStatusPermission()) {
+    return EChatUserStatus.online;
+  }
+
   const userStatus = resolveUserStatus();
-  if (!userStatus || userStatus === EChatUserStatus.offline) {
+  if (!userStatus) {
     return EChatUserStatus.online;
   }
 
@@ -179,6 +197,11 @@ export const presenceDoNotDisturb = async (): Promise<void> => {
 export const refreshUpdateProfileSidebarContent = (
   status: EChatUserStatus
 ): void => {
+  if (status === EChatUserStatus.offline) {
+    presenceOffline().catch(() => {});
+    return;
+  }
+
   if (status === EChatUserStatus.online) {
     presenceOnline().catch(() => {});
     return;
@@ -191,6 +214,11 @@ export const refreshUpdateProfileSidebarContent = (
 
   if (status === EChatUserStatus.busy) {
     presenceBusy().catch(() => {});
+    return;
+  }
+
+  if (status === EChatUserStatus.away) {
+    presenceAway().catch(() => {});
     return;
   }
 

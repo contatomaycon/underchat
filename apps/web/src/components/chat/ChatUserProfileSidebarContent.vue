@@ -11,8 +11,12 @@ import {
   presenceBusy,
   presenceDoNotDisturb,
   presenceAway,
+  presenceOffline,
 } from '@/@webcore/presence';
 import { useTheme } from 'vuetify';
+import { can } from '@/@layouts/plugins/casl';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 
 const emit = defineEmits<{
   close: [];
@@ -27,10 +31,21 @@ const { global } = useTheme();
 const refFormProfileSidebarContent = ref<VForm>();
 const isUpdatingStatus = ref(false);
 
+const canUpdateOwnStatus = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.chat_user_status_update,
+  ]);
+});
+
 const userStatusRadioOptions = [
   { title: t('online'), value: 'online', color: 'success' },
   { title: t('busy'), value: 'busy', color: 'error' },
   { title: t('do_not_disturb'), value: 'do_not_disturb', color: 'warning' },
+  { title: t('away'), value: 'away', color: 'secondary' },
+  { title: t('offline'), value: 'offline', color: 'default' },
 ];
 
 const updateChatUser = useDebounceFn(chatStore.updateChatUserDebounce, 1000);
@@ -48,6 +63,10 @@ const updateProfileSidebarContent = async () => {
 };
 
 const updateStatus = async () => {
+  if (!canUpdateOwnStatus.value) {
+    return;
+  }
+
   const validateForm = await refFormProfileSidebarContent?.value?.validate();
   if (!validateForm?.valid) return;
 
@@ -62,6 +81,8 @@ const updateStatus = async () => {
 
     if (currentStatus === EChatUserStatus.online) {
       await presenceOnline();
+    } else if (currentStatus === EChatUserStatus.offline) {
+      await presenceOffline();
     } else if (currentStatus === EChatUserStatus.do_not_disturb) {
       await presenceDoNotDisturb();
     } else if (currentStatus === EChatUserStatus.busy) {
@@ -736,7 +757,7 @@ const removePhoto = async () => {
           />
         </div>
 
-        <div class="mb-6">
+        <div v-if="canUpdateOwnStatus" class="mb-6">
           <div class="text-base text-disabled">{{ $t('status_chat') }}</div>
           <VRadioGroup
             v-model="chatStore.user.chat_user.status"

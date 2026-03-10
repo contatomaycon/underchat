@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { AuthRepository } from '@core/repositories/auth/Auth.repository';
 import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
 import type { SessionPlatform } from '@core/common/types/SessionPlatform';
+import { hasChatUserStatusUpdatePermissionByPermissions } from '@core/common/functions/chatUserStatusPermission';
 
 @injectable()
 export class AuthForgotPasswordResetPasswordUseCase {
@@ -233,7 +234,14 @@ export class AuthForgotPasswordResetPasswordUseCase {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
 
-    await this.presenceService.setUserAway(userId);
+    const canUpdateOwnChatStatus =
+      hasChatUserStatusUpdatePermissionByPermissions(permissions);
+
+    if (canUpdateOwnChatStatus) {
+      await this.presenceService.setUserAway(userId);
+    } else {
+      await this.presenceService.setUserOnline(userId);
+    }
     await this.setActiveSession(accountId, userId, sessionId, sessionPlatform);
 
     return {

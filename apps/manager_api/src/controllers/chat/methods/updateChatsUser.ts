@@ -19,6 +19,7 @@ export const updateChatsUser = async (
     const response = await chatUserUpdaterUseCase.execute(
       t,
       tokenJwtData.user_id,
+      tokenJwtData.actions,
       request.body
     );
 

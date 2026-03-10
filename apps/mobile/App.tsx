@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ import {
 import {
   canViewChatbotTab as checkCanViewChatbotTab,
   hasChatModuleAccessPermission,
+  canUpdateOwnChatStatusPermission,
 } from './constants/chatAuthorization';
 import { ChatFilterProvider } from './context/ChatFilterContext';
 import { ChannelStatusProvider } from './context/ChannelStatusContext';
@@ -30,7 +31,8 @@ import {
   initializeChatSocket,
   addChatSocketListener,
 } from './socket/chatSocket';
-import { ensureOnlinePresence } from './socket/presence';
+import { publishPresence } from './socket/presence';
+import { addCentrifugoConnectionListener } from './socket/centrifugo';
 import { pt } from './locales/pt';
 import type { ListChatsResult } from './types/chat';
 import { emitAppResume } from './utils/appResumeBus';
@@ -51,7 +53,12 @@ import { AttendanceGuardLockModal } from './components/AttendanceGuardLockModal'
 import { BatteryOptimizationModal } from './components/BatteryOptimizationModal';
 import { isIgnoringBatteryOptimizations } from './utils/batteryOptimization';
 import { readChatUserStatus } from './utils/chatUserStatus';
-import { emitCurrentUserPresenceStatus } from './utils/currentUserPresence';
+import {
+  addCurrentUserPresenceStatusListener,
+  emitCurrentUserPresenceStatus,
+  getCurrentUserPresenceStatusSnapshot,
+} from './utils/currentUserPresence';
+import type { ChatUserStatus } from './api/chatApi';
 
 function getUserAccountId(user: unknown): string | null {
   if (!user || typeof user !== 'object') return null;
@@ -90,6 +97,39 @@ function isUserNotificationEnabled(user: unknown): boolean {
   return (chatUser as { notifications?: unknown }).notifications === true;
 }
 
+type PresenceStatus = Extract<
+  ChatUserStatus,
+  'online' | 'away' | 'busy' | 'do_not_disturb' | 'offline'
+>;
+
+const SOCKET_DISCONNECT_OFFLINE_GRACE_MS = 30_000;
+const HEARTBEAT_INTERVALS_MS: Record<PresenceStatus, number> = {
+  online: 20_000,
+  away: 60_000,
+  busy: 60_000,
+  do_not_disturb: 60_000,
+  offline: 60_000,
+};
+
+function normalizePresenceStatus(value: ChatUserStatus | null): PresenceStatus {
+  if (value === 'busy') return 'busy';
+  if (value === 'do_not_disturb') return 'do_not_disturb';
+  if (value === 'away') return 'away';
+  if (value === 'offline') return 'offline';
+  return 'online';
+}
+
+function resolvePresenceTargetStatus(
+  currentStatus: ChatUserStatus | null,
+  canUpdateOwnStatus: boolean
+): PresenceStatus {
+  if (!canUpdateOwnStatus) {
+    return 'online';
+  }
+
+  return normalizePresenceStatus(currentStatus);
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -109,6 +149,117 @@ export default function App() {
   const attendanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attendanceOffsetMsRef = useRef(0);
   const authenticatedRef = useRef(false);
+  const canUpdateOwnStatusRef = useRef(false);
+  const socketConnectedRef = useRef(false);
+  const disconnectOfflineTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTargetStatusRef = useRef<PresenceStatus>('online');
+  const forcedOfflineBySocketRef = useRef(false);
+  const hasSeenSocketConnectedRef = useRef(false);
+
+  const clearDisconnectOfflineTimer = (): void => {
+    if (!disconnectOfflineTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(disconnectOfflineTimerRef.current);
+    disconnectOfflineTimerRef.current = null;
+  };
+
+  const stopPresenceHeartbeat = (): void => {
+    if (!heartbeatTimerRef.current) {
+      return;
+    }
+
+    clearInterval(heartbeatTimerRef.current);
+    heartbeatTimerRef.current = null;
+  };
+
+  const startPresenceHeartbeat = (status: PresenceStatus): void => {
+    stopPresenceHeartbeat();
+
+    if (status === 'offline') {
+      return;
+    }
+
+    const interval = HEARTBEAT_INTERVALS_MS[status] ?? 60_000;
+    heartbeatTimerRef.current = setInterval(() => {
+      if (!authenticatedRef.current || !socketConnectedRef.current) {
+        stopPresenceHeartbeat();
+        return;
+      }
+
+      const snapshot = getCurrentUserPresenceStatusSnapshot();
+      const targetStatus = resolvePresenceTargetStatus(
+        snapshot,
+        canUpdateOwnStatusRef.current
+      );
+      const heartbeatStatus = canUpdateOwnStatusRef.current
+        ? targetStatus
+        : 'online';
+
+      if (heartbeatStatus === 'offline') {
+        stopPresenceHeartbeat();
+        return;
+      }
+
+      void publishPresence(heartbeatStatus, { isHeartbeat: true });
+    }, interval);
+  };
+
+  const handleSocketConnected = useCallback(async () => {
+    if (!authenticatedRef.current) {
+      return;
+    }
+
+    socketConnectedRef.current = true;
+    hasSeenSocketConnectedRef.current = true;
+    clearDisconnectOfflineTimer();
+
+    const targetStatus = canUpdateOwnStatusRef.current
+      ? reconnectTargetStatusRef.current
+      : 'online';
+
+    forcedOfflineBySocketRef.current = false;
+
+    const published = await publishPresence(targetStatus);
+    if (!published) {
+      return;
+    }
+
+    startPresenceHeartbeat(targetStatus);
+  }, []);
+
+  const handleSocketDisconnected = useCallback(() => {
+    socketConnectedRef.current = false;
+    stopPresenceHeartbeat();
+    clearDisconnectOfflineTimer();
+
+    if (!hasSeenSocketConnectedRef.current) {
+      return;
+    }
+
+    if (!authenticatedRef.current) {
+      return;
+    }
+
+    const snapshot = getCurrentUserPresenceStatusSnapshot();
+    reconnectTargetStatusRef.current = resolvePresenceTargetStatus(
+      snapshot,
+      canUpdateOwnStatusRef.current
+    );
+
+    disconnectOfflineTimerRef.current = setTimeout(() => {
+      if (!authenticatedRef.current || socketConnectedRef.current) {
+        return;
+      }
+
+      forcedOfflineBySocketRef.current = true;
+      void publishPresence('offline');
+    }, SOCKET_DISCONNECT_OFFLINE_GRACE_MS);
+  }, []);
 
   const clearAttendanceTimer = (): void => {
     if (!attendanceTimerRef.current) {
@@ -207,6 +358,7 @@ export default function App() {
         if (!cancelled) {
           setAuthenticated(false);
           setCanViewChatbotTab(false);
+          canUpdateOwnStatusRef.current = false;
           setAuthError(pt.chat_permission_denied);
           setReady(true);
         }
@@ -216,6 +368,8 @@ export default function App() {
       if (!cancelled) {
         setAuthenticated(true);
         setCanViewChatbotTab(checkCanViewChatbotTab(permissions));
+        canUpdateOwnStatusRef.current =
+          canUpdateOwnChatStatusPermission(permissions);
         setReady(true);
       }
     };
@@ -224,6 +378,7 @@ export default function App() {
       if (cancelled) return;
       setAuthenticated(false);
       setCanViewChatbotTab(false);
+      canUpdateOwnStatusRef.current = false;
       setReady(true);
     });
 
@@ -237,6 +392,12 @@ export default function App() {
 
     if (!authenticated) {
       resetAttendanceLock();
+      socketConnectedRef.current = false;
+      hasSeenSocketConnectedRef.current = false;
+      forcedOfflineBySocketRef.current = false;
+      reconnectTargetStatusRef.current = 'online';
+      clearDisconnectOfflineTimer();
+      stopPresenceHeartbeat();
       return;
     }
 
@@ -256,6 +417,7 @@ export default function App() {
 
     if (!authenticated) {
       setCanViewChatbotTab(false);
+      canUpdateOwnStatusRef.current = false;
       cleanupChatSocket().catch(() => {});
       return;
     }
@@ -269,18 +431,25 @@ export default function App() {
           if (cancelled) return;
           setAuthenticated(false);
           setCanViewChatbotTab(false);
+          canUpdateOwnStatusRef.current = false;
           setAuthError(pt.chat_permission_denied);
           return;
         }
 
         setCanViewChatbotTab(checkCanViewChatbotTab(permissions));
+        canUpdateOwnStatusRef.current =
+          canUpdateOwnChatStatusPermission(permissions);
+
+        if (socketConnectedRef.current) {
+          void handleSocketConnected();
+        }
       })
       .catch(() => {});
 
     return () => {
       cancelled = true;
     };
-  }, [authenticated]);
+  }, [authenticated, handleSocketConnected]);
 
   useEffect(() => {
     if (!authenticated) {
@@ -304,6 +473,9 @@ export default function App() {
       }
 
       emitCurrentUserPresenceStatus(readChatUserStatus(user));
+      reconnectTargetStatusRef.current = normalizePresenceStatus(
+        readChatUserStatus(user)
+      );
 
       if (isUserNotificationEnabled(user)) {
         await enableMobilePushNotifications().catch(() => ({
@@ -322,6 +494,45 @@ export default function App() {
   }, [authenticated]);
 
   useEffect(() => {
+    return addCurrentUserPresenceStatusListener(
+      (status) => {
+        if (!canUpdateOwnStatusRef.current) {
+          return;
+        }
+
+        if (forcedOfflineBySocketRef.current && status === 'offline') {
+          return;
+        }
+
+        reconnectTargetStatusRef.current = normalizePresenceStatus(status);
+      },
+      { emitCurrent: true }
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+
+    const removeListener = addCentrifugoConnectionListener(
+      (connected) => {
+        if (connected) {
+          void handleSocketConnected();
+          return;
+        }
+
+        handleSocketDisconnected();
+      },
+      { emitCurrent: true }
+    );
+
+    return () => {
+      removeListener();
+    };
+  }, [authenticated, handleSocketConnected, handleSocketDisconnected]);
+
+  useEffect(() => {
     let cancelled = false;
     let offChannelsUpdated: (() => void) | null = null;
     let offUserPresence: (() => void) | null = null;
@@ -338,12 +549,13 @@ export default function App() {
         const accountId = getUserAccountId(user);
         const loggedUserId = getUserId(user);
         emitCurrentUserPresenceStatus(readChatUserStatus(user));
+        reconnectTargetStatusRef.current = normalizePresenceStatus(
+          readChatUserStatus(user)
+        );
 
         if (accountId) {
           await initializeChatSocket(accountId).catch(() => {});
         }
-
-        await ensureOnlinePresence().catch(() => {});
 
         offChannelsUpdated = addChatSocketListener(
           'channelsUpdated',
@@ -450,11 +662,17 @@ export default function App() {
         .then(async (user) => {
           const accountId = getUserAccountId(user);
           emitCurrentUserPresenceStatus(readChatUserStatus(user));
+          reconnectTargetStatusRef.current = normalizePresenceStatus(
+            readChatUserStatus(user)
+          );
 
           if (!accountId) return;
 
           await initializeChatSocket(accountId).catch(() => {});
-          await ensureOnlinePresence().catch(() => {});
+
+          if (socketConnectedRef.current) {
+            await handleSocketConnected();
+          }
         })
         .catch(() => {});
     });
@@ -462,7 +680,7 @@ export default function App() {
     return () => {
       subscription.remove();
     };
-  }, [authenticated]);
+  }, [authenticated, handleSocketConnected]);
 
   useEffect(() => {
     const onUnauthorized = () => {
@@ -488,6 +706,8 @@ export default function App() {
   useEffect(() => {
     return () => {
       clearAttendanceTimer();
+      clearDisconnectOfflineTimer();
+      stopPresenceHeartbeat();
       cleanupChatSocket().catch(() => {});
     };
   }, []);

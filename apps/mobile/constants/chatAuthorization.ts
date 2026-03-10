@@ -120,6 +120,13 @@ export const VIEW_CHAT_ATTENDANTS_INFO_PERMISSIONS = [
   'view_chat_attendants_info',
 ] as const;
 
+export const CHAT_USER_STATUS_UPDATE_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'chat_user_status_update',
+] as const;
+
 export type ChatAuthorizationContext = {
   permissions: string[];
   userId: string | null;
@@ -331,6 +338,12 @@ export function canViewChatAttendantsInfoPermission(
   permissions: string[]
 ): boolean {
   return hasAnyPermission(permissions, VIEW_CHAT_ATTENDANTS_INFO_PERMISSIONS);
+}
+
+export function canUpdateOwnChatStatusPermission(
+  permissions: string[]
+): boolean {
+  return hasAnyPermission(permissions, CHAT_USER_STATUS_UPDATE_PERMISSIONS);
 }
 
 export function canViewOthersChats(permissions: string[]): boolean {

@@ -41,6 +41,17 @@ const channelStreamPositions = new Map<
   { offset: number; epoch: string }
 >();
 const recoveryFailedListeners = new Set<(channel: string) => void>();
+const connectionListeners = new Set<(connected: boolean) => void>();
+
+const emitConnectionState = (connected: boolean): void => {
+  for (const listener of connectionListeners) {
+    try {
+      listener(connected);
+    } catch {
+      // ignore listener errors
+    }
+  }
+};
 
 const requestCentrifugoAuthToken = async (): Promise<AuthTokenResponse> => {
   const token = await getToken();
@@ -216,7 +227,12 @@ const getConnection = async (): Promise<Centrifuge> => {
     maxReconnectDelay: 10000,
   });
 
+  centrifugeClient.on('connected', () => {
+    emitConnectionState(true);
+  });
+
   centrifugeClient.on('disconnected', (ctx) => {
+    emitConnectionState(false);
     if (ctx.reason !== 'clean' && ctx.code !== 1000) {
       setTimeout(() => {
         if (centrifugeClient && centrifugeClient.state === State.Disconnected) {
@@ -386,7 +402,28 @@ export const addCentrifugoRecoveryFailedListener = (
   };
 };
 
+export const addCentrifugoConnectionListener = (
+  listener: (connected: boolean) => void,
+  options?: { emitCurrent?: boolean }
+): (() => void) => {
+  connectionListeners.add(listener);
+
+  if (options?.emitCurrent) {
+    listener(centrifugeClient?.state === State.Connected);
+  }
+
+  return () => {
+    connectionListeners.delete(listener);
+  };
+};
+
+export const isCentrifugoConnected = (): boolean => {
+  return centrifugeClient?.state === State.Connected;
+};
+
 export const resetConnection = (): void => {
+  emitConnectionState(false);
+
   if (centrifugeClient) {
     try {
       centrifugeClient.disconnect();

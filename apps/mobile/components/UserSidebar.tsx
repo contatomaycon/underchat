@@ -23,7 +23,10 @@ import {
   uploadUserPhoto,
 } from '../api/chatApi';
 import { getPermissions, getUser, patchUser } from '../storage/authStorage';
-import { hasChatAccessPermission } from '../constants/chatAuthorization';
+import {
+  canUpdateOwnChatStatusPermission,
+  hasChatAccessPermission,
+} from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { AppAvatar } from './AppAvatar';
@@ -40,7 +43,7 @@ import {
 } from '../services/pushNotifications';
 import { useChannelStatus } from '../context/ChannelStatusContext';
 
-type SidebarStatus = 'online' | 'busy' | 'do_not_disturb';
+type SidebarStatus = 'online' | 'busy' | 'do_not_disturb' | 'away' | 'offline';
 type PhotoPickerSource = 'camera' | 'gallery';
 type ProfilePhotoFilePayload = {
   uri: string;
@@ -59,6 +62,16 @@ const STATUS_OPTIONS: Array<{
     value: 'do_not_disturb',
     label: pt.do_not_disturb,
     color: colors.primaryDarken1,
+  },
+  {
+    value: 'away',
+    label: pt.away,
+    color: colors.warning,
+  },
+  {
+    value: 'offline',
+    label: pt.offline,
+    color: colors.grey600,
   },
 ];
 
@@ -87,6 +100,8 @@ function readBoolean(value: unknown): boolean {
 function normalizeStatus(value: unknown): SidebarStatus {
   if (value === 'busy') return 'busy';
   if (value === 'do_not_disturb') return 'do_not_disturb';
+  if (value === 'away') return 'away';
+  if (value === 'offline') return 'offline';
   return 'online';
 }
 
@@ -344,6 +359,7 @@ export function UserSidebar({
 }: UserSidebarProps) {
   const insets = useSafeAreaInsets();
   const [hasAccess, setHasAccess] = useState(true);
+  const [canUpdateOwnStatus, setCanUpdateOwnStatus] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(false);
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -392,11 +408,18 @@ export function UserSidebar({
       const resolvedStatus = input?.status ?? status;
       const resolvedNotifications = input?.notifications ?? notifications;
 
-      const payload = {
+      const payload: {
+        about: string;
+        status?: ChatUserStatus;
+        notifications: boolean;
+      } = {
         about: resolvedAbout,
-        status: resolvedStatus as ChatUserStatus,
         notifications: resolvedNotifications,
       };
+
+      if (input?.status && canUpdateOwnStatus) {
+        payload.status = resolvedStatus as ChatUserStatus;
+      }
 
       const ok = await updateChatUser(payload);
       if (!ok) {
@@ -407,7 +430,9 @@ export function UserSidebar({
       await patchUser({
         chat_user: {
           about: resolvedAbout,
-          status: resolvedStatus,
+          ...(input?.status && canUpdateOwnStatus
+            ? { status: resolvedStatus }
+            : {}),
           notifications: resolvedNotifications,
         },
       });
@@ -418,7 +443,7 @@ export function UserSidebar({
 
       return true;
     },
-    [about, notifications, onStatusUpdated, status]
+    [about, canUpdateOwnStatus, notifications, onStatusUpdated, status]
   );
 
   useEffect(() => {
@@ -445,7 +470,9 @@ export function UserSidebar({
       if (cancelled) return;
 
       const hasPermission = hasChatAccessPermission(permissions);
+      const canUpdateStatus = canUpdateOwnChatStatusPermission(permissions);
       setHasAccess(hasPermission);
+      setCanUpdateOwnStatus(canUpdateStatus);
 
       const user = await getUser();
       if (cancelled) return;
@@ -467,6 +494,7 @@ export function UserSidebar({
       if (cancelled) return;
       setLoadingProfile(false);
       setHasAccess(false);
+      setCanUpdateOwnStatus(false);
     });
 
     return () => {
@@ -510,6 +538,10 @@ export function UserSidebar({
 
   const handleStatusChange = useCallback(
     async (nextStatus: SidebarStatus) => {
+      if (!canUpdateOwnStatus) {
+        return;
+      }
+
       if (statusSaving || nextStatus === status) return;
 
       const previous = status;
@@ -523,7 +555,7 @@ export function UserSidebar({
 
       setStatusSaving(false);
     },
-    [persistProfile, status, statusSaving]
+    [canUpdateOwnStatus, persistProfile, status, statusSaving]
   );
 
   const handleNotificationToggle = useCallback(
@@ -828,54 +860,56 @@ export function UserSidebar({
                         </View>
                       </View>
 
-                      <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>
-                          {pt.status_chat}
-                        </Text>
-                        <View style={styles.statusGroup}>
-                          {STATUS_OPTIONS.map((option) => {
-                            const active = status === option.value;
-                            return (
-                              <Pressable
-                                key={option.value}
-                                style={styles.statusOption}
-                                onPress={dismissKeyboardAnd(() =>
-                                  handleStatusChange(option.value)
-                                )}
-                                disabled={statusSaving}
-                              >
-                                <View
-                                  style={[
-                                    styles.statusRadio,
-                                    active && {
-                                      borderColor: option.color,
-                                    },
-                                  ]}
+                      {canUpdateOwnStatus ? (
+                        <View style={styles.section}>
+                          <Text style={styles.sectionTitle}>
+                            {pt.status_chat}
+                          </Text>
+                          <View style={styles.statusGroup}>
+                            {STATUS_OPTIONS.map((option) => {
+                              const active = status === option.value;
+                              return (
+                                <Pressable
+                                  key={option.value}
+                                  style={styles.statusOption}
+                                  onPress={dismissKeyboardAnd(() =>
+                                    handleStatusChange(option.value)
+                                  )}
+                                  disabled={statusSaving}
                                 >
-                                  {active ? (
-                                    <View
-                                      style={[
-                                        styles.statusRadioDot,
-                                        { backgroundColor: option.color },
-                                      ]}
-                                    />
-                                  ) : null}
-                                </View>
-                                <Text style={styles.statusLabel}>
-                                  {option.label}
-                                </Text>
-                              </Pressable>
-                            );
-                          })}
+                                  <View
+                                    style={[
+                                      styles.statusRadio,
+                                      active && {
+                                        borderColor: option.color,
+                                      },
+                                    ]}
+                                  >
+                                    {active ? (
+                                      <View
+                                        style={[
+                                          styles.statusRadioDot,
+                                          { backgroundColor: option.color },
+                                        ]}
+                                      />
+                                    ) : null}
+                                  </View>
+                                  <Text style={styles.statusLabel}>
+                                    {option.label}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                          {statusSaving ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={colors.primary}
+                              style={styles.inlineLoader}
+                            />
+                          ) : null}
                         </View>
-                        {statusSaving ? (
-                          <ActivityIndicator
-                            size="small"
-                            color={colors.primary}
-                            style={styles.inlineLoader}
-                          />
-                        ) : null}
-                      </View>
+                      ) : null}
 
                       <ChannelStatusSection />
 

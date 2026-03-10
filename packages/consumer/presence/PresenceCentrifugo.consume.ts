@@ -5,6 +5,8 @@ import { PresenceService } from '@core/services/presence.service';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { IPresenceMessage } from '@core/common/interfaces/IPresenceMessage';
 import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
+import { PermissionService } from '@core/services/permission.service';
+import { hasChatUserStatusUpdatePermissionByPermissions } from '@core/common/functions/chatUserStatusPermission';
 
 @singleton()
 export class PresenceCentrifugoConsume {
@@ -13,12 +15,16 @@ export class PresenceCentrifugoConsume {
   private readonly accountIdCacheTtl = 3600;
   private readonly userExistsCachePrefix = 'presence:user:exists:';
   private readonly userExistsCacheTtl = 86400;
+  private readonly statusPermissionCachePrefix = 'presence:status:permission:';
+  private readonly statusPermissionCacheTtl = 300;
 
   constructor(
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject('Redis') private readonly redis: Redis,
     @inject(PresenceService) private readonly presenceService: PresenceService,
+    @inject(PermissionService)
+    private readonly permissionService: PermissionService,
     @inject(UserAccountViewerRepository)
     private readonly userAccountViewerRepository: UserAccountViewerRepository
   ) {}
@@ -50,6 +56,10 @@ export class PresenceCentrifugoConsume {
 
   private getUserExistsCacheKey(userId: string): string {
     return `${this.userExistsCachePrefix}${userId}`;
+  }
+
+  private getStatusPermissionCacheKey(userId: string): string {
+    return `${this.statusPermissionCachePrefix}${userId}`;
   }
 
   private async getCachedAccountId(userId: string): Promise<string | null> {
@@ -118,6 +128,59 @@ export class PresenceCentrifugoConsume {
     }
   }
 
+  private async getCachedStatusPermission(
+    userId: string
+  ): Promise<boolean | null> {
+    const cached = await this.redis.get(
+      this.getStatusPermissionCacheKey(userId)
+    );
+
+    if (cached === '1') {
+      return true;
+    }
+
+    if (cached === '0') {
+      return false;
+    }
+
+    return null;
+  }
+
+  private async setCachedStatusPermission(
+    userId: string,
+    value: boolean
+  ): Promise<void> {
+    await this.redis.set(
+      this.getStatusPermissionCacheKey(userId),
+      value ? '1' : '0',
+      'EX',
+      this.statusPermissionCacheTtl
+    );
+  }
+
+  private async canUpdateOwnStatus(userId: string): Promise<boolean> {
+    const cached = await this.getCachedStatusPermission(userId);
+    if (cached !== null) {
+      return cached;
+    }
+
+    try {
+      const permissions =
+        await this.permissionService.viewPermissionByUserId(userId);
+      const canUpdate =
+        hasChatUserStatusUpdatePermissionByPermissions(permissions);
+
+      await this.setCachedStatusPermission(userId, canUpdate);
+      return canUpdate;
+    } catch (error) {
+      console.error('Failed to validate status update permission', {
+        userId,
+        error,
+      });
+      return false;
+    }
+  }
+
   private async handlePresenceMessage(data: unknown): Promise<void> {
     try {
       if (!data || typeof data !== 'object') return;
@@ -137,6 +200,8 @@ export class PresenceCentrifugoConsume {
         return;
       }
 
+      const canUpdateOwnStatus = await this.canUpdateOwnStatus(message.user_id);
+
       const validStatuses = [
         EChatUserStatus.online,
         EChatUserStatus.away,
@@ -150,9 +215,21 @@ export class PresenceCentrifugoConsume {
       }
 
       if (message.is_heartbeat) {
-        await this.presenceService.heartbeat(message.user_id);
+        if (canUpdateOwnStatus) {
+          await this.presenceService.heartbeat(message.user_id, {
+            keepCurrentStatus: true,
+          });
+        } else {
+          await this.presenceService.setUserOnline(message.user_id);
+        }
       } else {
-        switch (message.status) {
+        const status = canUpdateOwnStatus
+          ? message.status
+          : message.status === EChatUserStatus.offline
+            ? EChatUserStatus.offline
+            : EChatUserStatus.online;
+
+        switch (status) {
           case EChatUserStatus.online:
             await this.presenceService.setUserOnline(message.user_id);
             break;
