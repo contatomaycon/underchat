@@ -54,31 +54,15 @@ const resolveUserStatus = (): EChatUserStatus | null => {
   return (status as EChatUserStatus) ?? null;
 };
 
-const resolveRoutePath = (): string => router.currentRoute.value?.path ?? '';
-
-const isChatRoute = (path: string): boolean => {
-  if (!path) return false;
-
-  return /^\/chat(\/|$)/.test(path);
-};
-
 const resolveTargetMode = (): PresenceMode => {
   if (!isLoggedIn()) return EChatUserStatus.offline;
 
   const userStatus = resolveUserStatus();
-  if (
-    userStatus === EChatUserStatus.busy ||
-    userStatus === EChatUserStatus.do_not_disturb
-  ) {
-    return userStatus;
-  }
-
-  const path = resolveRoutePath();
-  if (isChatRoute(path)) {
+  if (!userStatus || userStatus === EChatUserStatus.offline) {
     return EChatUserStatus.online;
   }
 
-  return EChatUserStatus.away;
+  return userStatus;
 };
 
 const sendPresence = async (
@@ -227,10 +211,6 @@ export const resetPresencePermissionError = (): void => {
 const bindPresenceListeners = (): void => {
   if (listenersBound) return;
   listenersBound = true;
-
-  router.afterEach(() => {
-    refreshPresenceForCurrentRoute();
-  });
 
   globalThis.addEventListener('focus', refreshPresenceForCurrentRoute);
   document.addEventListener('visibilitychange', () => {
