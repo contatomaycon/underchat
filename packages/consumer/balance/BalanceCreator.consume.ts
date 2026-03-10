@@ -1,6 +1,10 @@
 import { singleton, inject } from 'tsyringe';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
-import { SshService } from '@core/services/ssh.service';
+import {
+  SshService,
+  SshCommandExecutionError,
+  SshRunCommandsError,
+} from '@core/services/ssh.service';
 import { ServerService } from '@core/services/server.service';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { ConnectConfig } from 'ssh2';
@@ -137,6 +141,21 @@ export class BalanceCreatorConsume {
         await this.handleCreateServerMessage(server, data);
         return;
       } catch (err) {
+        if (err instanceof SshRunCommandsError) {
+          server.log.warn(
+            `Skipping server ${data.server_id ?? 'unknown'}: ${getErrorMessage(err)}`
+          );
+          const serverId = data.server_id ?? null;
+          if (serverId) {
+            await this.serverService.updateServerStatusById(
+              serverId,
+              EServerStatus.error
+            );
+          }
+
+          return;
+        }
+
         if (attempt < maxAttempts) {
           server.log.warn(
             `Server ${data.server_id ?? 'unknown'} installation attempt ${attempt} failed, retrying in ${delayMs / 1000}s`
@@ -183,7 +202,9 @@ export class BalanceCreatorConsume {
       const logs = await this.sshService.runCommands(
         serverId,
         sshConfig,
-        installCommands
+        installCommands,
+        true,
+        { failOnNonZero: true }
       );
 
       if (logs.length === 0) {
@@ -228,6 +249,20 @@ export class BalanceCreatorConsume {
 
       await this.serverService.updateServerStatusById(serverId, finalStatus);
     } catch (err: unknown) {
+      if (err instanceof SshRunCommandsError) {
+        if (err.partialResults.length > 0) {
+          await this.serverService.updateLogInstallServerBulk(
+            err.partialResults
+          );
+        }
+
+        if (err.causeError instanceof SshCommandExecutionError) {
+          throw new Error(
+            `Installation interrupted by command failure: ${err.causeError.command}`
+          );
+        }
+      }
+
       throw err;
     }
   }

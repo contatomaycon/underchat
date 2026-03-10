@@ -102,7 +102,10 @@ export async function installUbuntu2404(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      docker build --no-cache -t under-worker-baileys:latest -f ./apps/worker_baileys/Dockerfile ."`,
+      if ! docker build --no-cache -t under-worker-baileys:latest -f ./apps/worker_baileys/Dockerfile .; then \
+        echo 'ERROR: Docker build failed for under-worker-baileys' >&2; \
+        exit 1; \
+      fi"`,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
@@ -113,7 +116,10 @@ export async function installUbuntu2404(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      docker build --no-cache -t under-worker-wwebjs:latest -f ./apps/worker_wwebjs/Dockerfile ."`,
+      if ! docker build --no-cache -t under-worker-wwebjs:latest -f ./apps/worker_wwebjs/Dockerfile .; then \
+        echo 'ERROR: Docker build failed for under-worker-wwebjs' >&2; \
+        exit 1; \
+      fi"`,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
@@ -126,7 +132,10 @@ export async function installUbuntu2404(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      docker build --no-cache -t under-balance-api:latest -f ./apps/balance_api/Dockerfile ."`,
+      if ! docker build --no-cache -t under-balance-api:latest -f ./apps/balance_api/Dockerfile .; then \
+        echo 'ERROR: Docker build failed for under-balance-api' >&2; \
+        exit 1; \
+      fi"`,
 
     `bash -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \

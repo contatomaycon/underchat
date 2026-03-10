@@ -13,6 +13,36 @@ import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { serverSshCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
+export class SshCommandExecutionError extends Error {
+  constructor(
+    readonly command: string,
+    readonly exitCode: number | null,
+    readonly signal: string | null,
+    readonly output: string
+  ) {
+    const suffix =
+      exitCode !== null
+        ? `exit code ${exitCode}`
+        : signal
+          ? `signal ${signal}`
+          : 'unknown reason';
+
+    super(`SSH command failed (${suffix}): ${command}`);
+    this.name = 'SshCommandExecutionError';
+  }
+}
+
+export class SshRunCommandsError extends Error {
+  constructor(
+    readonly command: string,
+    readonly partialResults: IServerSshCentrifugo[],
+    readonly causeError: unknown
+  ) {
+    super(`SSH runCommands interrupted on command failure: ${command}`);
+    this.name = 'SshRunCommandsError';
+  }
+}
+
 @injectable()
 export class SshService {
   private readonly connectMaxRetries = 3;
@@ -170,9 +200,15 @@ export class SshService {
       pty?: boolean;
       timeoutMs?: number;
       onData?: (chunk: string) => void;
+      failOnNonZero?: boolean;
     } = {}
   ): Promise<string> {
-    const { pty = false, timeoutMs = 0, onData } = options;
+    const {
+      pty = false,
+      timeoutMs = 0,
+      onData,
+      failOnNonZero = false,
+    } = options;
 
     return new Promise((resolve, reject) => {
       conn.exec(command, { pty }, (err, stream) => {
@@ -205,9 +241,27 @@ export class SshService {
             onData(text);
           }
         });
-        stream.on('close', () => {
+        stream.on('close', (code: number | undefined, signal: string) => {
           if (timer) {
             clearTimeout(timer);
+          }
+
+          const normalizedCode = code ?? null;
+          const normalizedSignal = signal || null;
+
+          if (
+            failOnNonZero &&
+            normalizedCode !== null &&
+            normalizedCode !== 0
+          ) {
+            return reject(
+              new SshCommandExecutionError(
+                command,
+                normalizedCode,
+                normalizedSignal,
+                output.trimEnd()
+              )
+            );
           }
 
           resolve(output.trimEnd());
@@ -264,43 +318,52 @@ export class SshService {
     serverId: string,
     config: ConnectConfig,
     commands: string[],
-    sendCentrifugo = true
+    sendCentrifugo = true,
+    options: {
+      failOnNonZero?: boolean;
+    } = {}
   ): Promise<IServerSshCentrifugo[]> {
     const conn = await this.connect(config);
     const results: IServerSshCentrifugo[] = [];
+    const { failOnNonZero = false } = options;
 
     try {
       for (const cmd of commands) {
-        await this.execCommand(conn, cmd, {
-          pty: true,
-          onData: (linha) => {
-            const date = new Date();
+        try {
+          await this.execCommand(conn, cmd, {
+            pty: true,
+            failOnNonZero,
+            onData: (linha) => {
+              const date = new Date();
 
-            const outputStripAnsi = stripAnsi(linha);
-            const commandStripAnsi = stripAnsi(cmd);
+              const outputStripAnsi = stripAnsi(linha);
+              const commandStripAnsi = stripAnsi(cmd);
 
-            const serverSshCentrifugo: IServerSshCentrifugo = {
-              server_id: serverId,
-              command: commandStripAnsi,
-              output: outputStripAnsi,
-              date,
-            };
+              const serverSshCentrifugo: IServerSshCentrifugo = {
+                server_id: serverId,
+                command: commandStripAnsi,
+                output: outputStripAnsi,
+                date,
+              };
 
-            results.push({
-              command: commandStripAnsi,
-              output: outputStripAnsi,
-              date,
-              server_id: serverId,
-            });
+              results.push({
+                command: commandStripAnsi,
+                output: outputStripAnsi,
+                date,
+                server_id: serverId,
+              });
 
-            if (sendCentrifugo) {
-              this.centrifugoService.publish(
-                serverSshCentrifugoQueue(),
-                serverSshCentrifugo
-              );
-            }
-          },
-        });
+              if (sendCentrifugo) {
+                this.centrifugoService.publish(
+                  serverSshCentrifugoQueue(),
+                  serverSshCentrifugo
+                );
+              }
+            },
+          });
+        } catch (error) {
+          throw new SshRunCommandsError(cmd, results, error);
+        }
       }
 
       return results;
