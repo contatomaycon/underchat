@@ -2,7 +2,7 @@ import { singleton, inject } from 'tsyringe';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
 import {
   SshService,
-  SshCommandExecutionError,
+  SshRunCommandsCancelledError,
   SshRunCommandsError,
 } from '@core/services/ssh.service';
 import { ServerService } from '@core/services/server.service';
@@ -135,17 +135,31 @@ export class BalanceCreatorConsume {
   ): Promise<void> {
     const maxAttempts = 5;
     const delayMs = 10_000;
+    const serverId = data.server_id ?? null;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (serverId && (await this.isServerCanceled(serverId))) {
+        server.log.warn(
+          `Skipping server ${serverId}: installation already canceled`
+        );
+        return;
+      }
+
       try {
         await this.handleCreateServerMessage(server, data);
         return;
       } catch (err) {
+        if (err instanceof SshRunCommandsCancelledError) {
+          server.log.warn(
+            `Skipping server ${data.server_id ?? 'unknown'}: installation canceled`
+          );
+          return;
+        }
+
         if (err instanceof SshRunCommandsError) {
           server.log.warn(
             `Skipping server ${data.server_id ?? 'unknown'}: ${getErrorMessage(err)}`
           );
-          const serverId = data.server_id ?? null;
           if (serverId) {
             await this.serverService.updateServerStatusById(
               serverId,
@@ -153,6 +167,13 @@ export class BalanceCreatorConsume {
             );
           }
 
+          return;
+        }
+
+        if (serverId && (await this.isServerCanceled(serverId))) {
+          server.log.warn(
+            `Skipping server ${serverId}: installation canceled during retry flow`
+          );
           return;
         }
 
@@ -167,7 +188,6 @@ export class BalanceCreatorConsume {
         server.log.warn(
           `Skipping server ${data.server_id ?? 'unknown'}: ${getErrorMessage(err)}`
         );
-        const serverId = data.server_id ?? null;
         if (serverId) {
           await this.serverService.updateServerStatusById(
             serverId,
@@ -204,7 +224,10 @@ export class BalanceCreatorConsume {
         sshConfig,
         installCommands,
         true,
-        { failOnNonZero: true }
+        {
+          failOnNonZero: true,
+          cancellationKey: serverId,
+        }
       );
 
       if (logs.length === 0) {
@@ -243,22 +266,23 @@ export class BalanceCreatorConsume {
         webView
       );
 
+      if (await this.isServerCanceled(serverId)) {
+        return;
+      }
+
       const finalStatus = installed
         ? EServerStatus.online
         : EServerStatus.error;
 
       await this.serverService.updateServerStatusById(serverId, finalStatus);
     } catch (err: unknown) {
-      if (err instanceof SshRunCommandsError) {
+      if (
+        err instanceof SshRunCommandsError ||
+        err instanceof SshRunCommandsCancelledError
+      ) {
         if (err.partialResults.length > 0) {
           await this.serverService.updateLogInstallServerBulk(
             err.partialResults
-          );
-        }
-
-        if (err.causeError instanceof SshCommandExecutionError) {
-          throw new Error(
-            `Installation interrupted by command failure: ${err.causeError.command}`
           );
         }
       }
@@ -335,12 +359,24 @@ export class BalanceCreatorConsume {
     );
 
     for (let i = 0; i < attempts; i++) {
+      if (await this.isServerCanceled(serverId)) {
+        throw new SshRunCommandsCancelledError(
+          serverId,
+          'installation_status_check',
+          []
+        );
+      }
+
       await delay(1000);
 
       const result = await this.sshService.runCommands(
         serverId,
         sshConfig,
-        commands
+        commands,
+        true,
+        {
+          cancellationKey: serverId,
+        }
       );
 
       if (result.length > 0) {
@@ -370,12 +406,24 @@ export class BalanceCreatorConsume {
       this.sshService.getImagesCommands(getDistroAndVersion);
 
     for (let i = 0; i < attempts; i++) {
+      if (await this.isServerCanceled(serverId)) {
+        throw new SshRunCommandsCancelledError(
+          serverId,
+          'installation_image_check',
+          []
+        );
+      }
+
       await delay(1000);
 
       const result = await this.sshService.runCommands(
         serverId,
         sshConfig,
-        getImagesCommands
+        getImagesCommands,
+        true,
+        {
+          cancellationKey: serverId,
+        }
       );
 
       if (result.length > 0) {
@@ -393,6 +441,16 @@ export class BalanceCreatorConsume {
     }
 
     return false;
+  }
+
+  private async isServerCanceled(serverId: string): Promise<boolean> {
+    const sshView = await this.serverService.viewServerSshById(serverId);
+
+    if (!sshView) {
+      return false;
+    }
+
+    return sshView.server_status_id === EServerStatus.canceled;
   }
 
   private parseMessage(value: Buffer | null): CreateServerResponse | null {

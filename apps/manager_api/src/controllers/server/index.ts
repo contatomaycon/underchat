@@ -6,6 +6,7 @@ import { viewServer } from './methods/viewServer';
 import { listServer } from './methods/listServer';
 import { serverLogsInstall } from './methods/serverLogsInstall';
 import { reinstallServer } from './methods/reinstallServer';
+import { cancelInstallServer } from './methods/cancelInstallServer';
 
 @injectable()
 class ServerController {
@@ -16,6 +17,7 @@ class ServerController {
   public listServer = listServer;
   public serverLogsInstall = serverLogsInstall;
   public reinstallServer = reinstallServer;
+  public cancelInstallServer = cancelInstallServer;
 }
 
 export default ServerController;

@@ -1,5 +1,5 @@
 import { injectable, inject } from 'tsyringe';
-import { Client, ConnectConfig } from 'ssh2';
+import { Client, ClientChannel, ConnectConfig } from 'ssh2';
 import stripAnsi from 'strip-ansi';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { EAllowedDistroVersion } from '@core/common/enums/EAllowedDistroVersion';
@@ -43,10 +43,32 @@ export class SshRunCommandsError extends Error {
   }
 }
 
+export class SshRunCommandsCancelledError extends Error {
+  constructor(
+    readonly serverId: string,
+    readonly command: string,
+    readonly partialResults: IServerSshCentrifugo[],
+    readonly causeError?: unknown
+  ) {
+    super(`SSH runCommands canceled for server ${serverId}`);
+    this.name = 'SshRunCommandsCancelledError';
+  }
+}
+
+interface IRunningServerCommand {
+  conn: Client;
+  stream: ClientChannel | null;
+  canceled: boolean;
+}
+
 @injectable()
 export class SshService {
   private readonly connectMaxRetries = 3;
   private readonly connectRetryBaseDelayMs = 1000;
+  private readonly runningCommandsByServer = new Map<
+    string,
+    IRunningServerCommand
+  >();
 
   constructor(
     @inject(CentrifugoService)
@@ -200,6 +222,9 @@ export class SshService {
       pty?: boolean;
       timeoutMs?: number;
       onData?: (chunk: string) => void;
+      onStreamReady?: (stream: ClientChannel) => void;
+      isCancelled?: () => boolean;
+      createCancelError?: () => Error;
       failOnNonZero?: boolean;
     } = {}
   ): Promise<string> {
@@ -207,6 +232,9 @@ export class SshService {
       pty = false,
       timeoutMs = 0,
       onData,
+      onStreamReady,
+      isCancelled,
+      createCancelError,
       failOnNonZero = false,
     } = options;
 
@@ -218,11 +246,38 @@ export class SshService {
 
         let output = '';
         let timer: NodeJS.Timeout | undefined;
+        let settled = false;
+
+        const resolveOnce = (value: string): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (timer) {
+            clearTimeout(timer);
+          }
+          resolve(value);
+        };
+
+        const rejectOnce = (error: Error): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (timer) {
+            clearTimeout(timer);
+          }
+          reject(error);
+        };
+
+        if (onStreamReady) {
+          onStreamReady(stream);
+        }
 
         if (timeoutMs > 0) {
           timer = setTimeout(() => {
             stream.close();
-            reject(new Error('execCommand timeout'));
+            rejectOnce(new Error('execCommand timeout'));
           }, timeoutMs);
         }
         stream.on('data', (chunk: Buffer) => {
@@ -242,8 +297,11 @@ export class SshService {
           }
         });
         stream.on('close', (code: number | undefined, signal: string) => {
-          if (timer) {
-            clearTimeout(timer);
+          if (isCancelled?.()) {
+            rejectOnce(
+              createCancelError?.() ?? new Error('SSH command canceled')
+            );
+            return;
           }
 
           const normalizedCode = code ?? null;
@@ -254,7 +312,7 @@ export class SshService {
             normalizedCode !== null &&
             normalizedCode !== 0
           ) {
-            return reject(
+            return rejectOnce(
               new SshCommandExecutionError(
                 command,
                 normalizedCode,
@@ -264,17 +322,48 @@ export class SshService {
             );
           }
 
-          resolve(output.trimEnd());
+          resolveOnce(output.trimEnd());
         });
         stream.on('error', (e: Error) => {
-          if (timer) {
-            clearTimeout(timer);
+          if (isCancelled?.()) {
+            rejectOnce(
+              createCancelError?.() ?? new Error('SSH command canceled')
+            );
+            return;
           }
 
-          reject(e);
+          rejectOnce(e);
         });
       });
     });
+  }
+
+  cancelServerExecution(serverId: string): boolean {
+    const runningCommand = this.runningCommandsByServer.get(serverId);
+
+    if (!runningCommand) {
+      return false;
+    }
+
+    runningCommand.canceled = true;
+
+    try {
+      runningCommand.stream?.close();
+    } catch {}
+
+    try {
+      runningCommand.stream?.destroy();
+    } catch {}
+
+    try {
+      runningCommand.conn.end();
+    } catch {}
+
+    try {
+      runningCommand.conn.destroy();
+    } catch {}
+
+    return true;
   }
 
   async getDistroAndVersion(config: ConnectConfig): Promise<IDistroInfo> {
@@ -321,18 +410,58 @@ export class SshService {
     sendCentrifugo = true,
     options: {
       failOnNonZero?: boolean;
+      cancellationKey?: string;
     } = {}
   ): Promise<IServerSshCentrifugo[]> {
     const conn = await this.connect(config);
     const results: IServerSshCentrifugo[] = [];
-    const { failOnNonZero = false } = options;
+    const { failOnNonZero = false, cancellationKey } = options;
+    const runningCommand: IRunningServerCommand | null = cancellationKey
+      ? {
+          conn,
+          stream: null,
+          canceled: false,
+        }
+      : null;
+
+    if (cancellationKey && runningCommand) {
+      this.runningCommandsByServer.set(cancellationKey, runningCommand);
+    }
 
     try {
       for (const cmd of commands) {
+        if (runningCommand?.canceled) {
+          throw new SshRunCommandsCancelledError(
+            cancellationKey ?? serverId,
+            cmd,
+            results
+          );
+        }
+
         try {
           await this.execCommand(conn, cmd, {
             pty: true,
             failOnNonZero,
+            isCancelled: () => runningCommand?.canceled ?? false,
+            createCancelError: () =>
+              new SshRunCommandsCancelledError(
+                cancellationKey ?? serverId,
+                cmd,
+                results
+              ),
+            onStreamReady: (stream) => {
+              if (!runningCommand) {
+                return;
+              }
+
+              runningCommand.stream = stream;
+
+              if (runningCommand.canceled) {
+                try {
+                  stream.close();
+                } catch {}
+              }
+            },
             onData: (linha) => {
               const date = new Date();
 
@@ -362,12 +491,36 @@ export class SshService {
             },
           });
         } catch (error) {
+          if (error instanceof SshRunCommandsCancelledError) {
+            throw error;
+          }
+
+          if (runningCommand?.canceled) {
+            throw new SshRunCommandsCancelledError(
+              cancellationKey ?? serverId,
+              cmd,
+              results,
+              error
+            );
+          }
+
           throw new SshRunCommandsError(cmd, results, error);
+        } finally {
+          if (runningCommand) {
+            runningCommand.stream = null;
+          }
         }
       }
 
       return results;
     } finally {
+      if (cancellationKey && runningCommand) {
+        const current = this.runningCommandsByServer.get(cancellationKey);
+        if (current === runningCommand) {
+          this.runningCommandsByServer.delete(cancellationKey);
+        }
+      }
+
       conn.end();
     }
   }

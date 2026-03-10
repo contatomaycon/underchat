@@ -16,6 +16,7 @@ import { viewServerSchema } from '@core/schema/server/viewServer';
 import { listServerSchema } from '@core/schema/server/listServer';
 import { serverLogsInstallSchema } from '@core/schema/server/serverLogsInstall';
 import { reinstallServerSchema } from '@core/schema/server/reinstallServer';
+import { cancelInstallServerSchema } from '@core/schema/server/cancelInstallServer';
 
 export default function serverRoutes(server: FastifyInstance) {
   const serverController = container.resolve(ServerController);
@@ -59,6 +60,15 @@ export default function serverRoutes(server: FastifyInstance) {
   server.patch('/server/:server_id', {
     schema: reinstallServerSchema,
     handler: serverController.reinstallServer,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverReinstallPermissions),
+    ],
+  });
+
+  server.patch('/server/:server_id/cancel-install', {
+    schema: cancelInstallServerSchema,
+    handler: serverController.cancelInstallServer,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, serverReinstallPermissions),

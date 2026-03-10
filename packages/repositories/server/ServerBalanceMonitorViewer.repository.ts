@@ -13,7 +13,11 @@ export class ServerBalanceMonitorViewerRepository {
   ) {}
 
   listEligible = async (): Promise<IBalanceMonitorServer[]> => {
-    const excluded = [EServerStatus.new, EServerStatus.installing];
+    const excluded = [
+      EServerStatus.new,
+      EServerStatus.installing,
+      EServerStatus.canceled,
+    ];
 
     const result = await this.dbRo
       .select({

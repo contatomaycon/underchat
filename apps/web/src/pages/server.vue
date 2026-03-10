@@ -79,6 +79,7 @@ const itemsStatus = ref([
   { id: EServerStatus.online, text: t('online') },
   { id: EServerStatus.error, text: t('error') },
   { id: EServerStatus.offline, text: t('offline') },
+  { id: EServerStatus.canceled, text: t('canceled') },
 ]);
 
 const isDialogDeleterShow = ref(false);
@@ -97,6 +98,9 @@ const serverToLogs = ref<string | null>(null);
 const isDialogRefreshServerShow = ref(false);
 const serverToRefresh = ref<string | null>(null);
 
+const isDialogCancelInstallShow = ref(false);
+const serverToCancelInstall = ref<string | null>(null);
+
 const resolveStatusVariant = (s: string) => {
   if (s === EServerStatus.new) return { color: EColor.info, text: t('new') };
   if (s === EServerStatus.installing)
@@ -107,6 +111,8 @@ const resolveStatusVariant = (s: string) => {
     return { color: EColor.error, text: t('error') };
   if (s === EServerStatus.offline)
     return { color: EColor.error, text: t('offline') };
+  if (s === EServerStatus.canceled)
+    return { color: EColor.warning, text: t('canceled') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
@@ -183,6 +189,20 @@ const handleReinstall = async () => {
   await serverStore.reinstallServer(serverToRefresh.value);
 
   serverToRefresh.value = null;
+};
+
+const cancelInstallServer = async (id: string) => {
+  serverToCancelInstall.value = id;
+
+  isDialogCancelInstallShow.value = true;
+};
+
+const handleCancelInstall = async () => {
+  if (!serverToCancelInstall.value) return;
+
+  await serverStore.cancelInstallServer(serverToCancelInstall.value);
+
+  serverToCancelInstall.value = null;
 };
 
 const openEditDialog = (id: string) => {
@@ -377,6 +397,24 @@ onBeforeUnmount(async () => {
 
                 <IconBtn
                   v-if="
+                    item.status.id === EServerStatus.installing &&
+                    $canPermission(permissionsReinstall)
+                  "
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('cancel_installation') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-player-stop"
+                    @click="cancelInstallServer(item.id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="
                     item.status.id !== EServerStatus.installing &&
                     $canPermission(permissionsServerLogsInstall)
                   "
@@ -443,6 +481,14 @@ onBeforeUnmount(async () => {
         :title="$t('delete_server')"
         :message="$t('delete_server_confirmation')"
         @confirm="handleDelete"
+      />
+
+      <VDialogHandler
+        v-if="isDialogCancelInstallShow"
+        v-model="isDialogCancelInstallShow"
+        :title="$t('cancel_installation')"
+        :message="$t('cancel_installation_confirmation')"
+        @confirm="handleCancelInstall"
       />
 
       <AppEditServer
