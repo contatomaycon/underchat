@@ -20,7 +20,7 @@ import {
   ServerBuildVersion,
   ServerBuildViewResponse,
 } from '@core/schema/server/viewServerBuild/response.schema';
-import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
@@ -671,6 +671,78 @@ export class ServerBuildRepository {
         )
       )
       .execute();
+  };
+
+  touchRunningJobItem = async (
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): Promise<void> => {
+    const now = currentTime();
+
+    await this.dbRw.transaction(async (tx) => {
+      await tx
+        .update(serverBuildJobItem)
+        .set({
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(serverBuildJobItem.server_build_job_id, serverBuildJobId),
+            eq(serverBuildJobItem.build_type, buildType),
+            eq(serverBuildJobItem.status, EServerBuildJobItemStatus.running)
+          )
+        )
+        .execute();
+
+      await tx
+        .update(serverBuildJob)
+        .set({
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(serverBuildJob.server_build_job_id, serverBuildJobId),
+            inArray(serverBuildJob.status, [
+              EServerBuildJobStatus.running,
+              EServerBuildJobStatus.cancel_requested,
+            ])
+          )
+        )
+        .execute();
+    });
+  };
+
+  failStaleRunningItems = async (
+    staleTimeoutMs: number,
+    errorMessage: string
+  ): Promise<string[]> => {
+    const now = currentTime();
+    const staleTimeoutSeconds = Math.max(1, Math.floor(staleTimeoutMs / 1000));
+
+    const staleRows = await this.dbRw
+      .update(serverBuildJobItem)
+      .set({
+        status: EServerBuildJobItemStatus.failed,
+        error_message: errorMessage,
+        updated_at: now,
+        finished_at: now,
+      })
+      .where(
+        sql`${serverBuildJobItem.status} = ${EServerBuildJobItemStatus.running}
+            and ${serverBuildJobItem.updated_at} <= NOW() - (${staleTimeoutSeconds} * INTERVAL '1 second')`
+      )
+      .returning({
+        server_build_job_id: serverBuildJobItem.server_build_job_id,
+      })
+      .execute();
+
+    if (staleRows.length === 0) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(staleRows.map((row) => row.server_build_job_id))
+    );
   };
 
   markJobItemFailed = async (

@@ -94,6 +94,26 @@ export class ServerBuildService {
     );
   };
 
+  touchRunningJobItem = async (
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): Promise<void> => {
+    await this.serverBuildRepository.touchRunningJobItem(
+      serverBuildJobId,
+      buildType
+    );
+  };
+
+  failStaleRunningItems = async (
+    staleTimeoutMs: number,
+    errorMessage: string
+  ): Promise<string[]> => {
+    return this.serverBuildRepository.failStaleRunningItems(
+      staleTimeoutMs,
+      errorMessage
+    );
+  };
+
   markJobItemFailed = async (
     serverBuildJobId: string,
     buildType: EServerBuildType,

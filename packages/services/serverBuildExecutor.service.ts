@@ -34,9 +34,22 @@ export class ServerBuildExecutorService {
   >();
   private readonly cancelRequested = new Set<string>();
   private readonly commandOutputLimit = 12_000;
+  private readonly commandInactivityTimeoutMs =
+    buildEnvironment.buildCommandInactivityTimeoutMs;
+  private readonly commandMaxDurationMs =
+    buildEnvironment.buildCommandMaxDurationMs;
+  private readonly commandHeartbeatIntervalMs =
+    buildEnvironment.buildHeartbeatIntervalMs;
+  private readonly staleRunningItemTimeoutMs =
+    buildEnvironment.buildStaleRunningItemTimeoutMs;
+  private readonly staleRunningItemCheckIntervalMs =
+    buildEnvironment.buildStaleCheckIntervalMs;
   private readonly realtimeLogLineLimit = 2_000;
   private readonly realtimeLogBufferFlushThreshold = 8_000;
   private readonly realtimeLogBufferByStream = new Map<string, string>();
+  private staleRunningItemMonitorTimer: ReturnType<typeof setInterval> | null =
+    null;
+  private isRecoveringStaleItems = false;
   private readonly buildTargets: IServerBuildTarget[] = [
     {
       buildType: EServerBuildType.baileys,
@@ -60,7 +73,9 @@ export class ServerBuildExecutorService {
     private readonly serverBuildService: ServerBuildService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService
-  ) {}
+  ) {
+    this.startStaleRunningItemMonitor();
+  }
 
   private getExecutionKey(
     serverBuildJobId: string,
@@ -272,6 +287,83 @@ export class ServerBuildExecutorService {
     return output.slice(output.length - this.commandOutputLimit);
   }
 
+  private formatDuration(ms: number): string {
+    if (ms < 1000) {
+      return `${ms}ms`;
+    }
+
+    const seconds = Math.round(ms / 1000);
+    if (seconds < 60) {
+      return `${seconds}s`;
+    }
+
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (remainingSeconds === 0) {
+      return `${minutes}m`;
+    }
+
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+
+  private startStaleRunningItemMonitor(): void {
+    if (this.staleRunningItemMonitorTimer) {
+      return;
+    }
+
+    this.staleRunningItemMonitorTimer = setInterval(() => {
+      void this.recoverStaleRunningItems();
+    }, this.staleRunningItemCheckIntervalMs);
+    this.staleRunningItemMonitorTimer.unref?.();
+
+    void this.recoverStaleRunningItems();
+  }
+
+  private async recoverStaleRunningItems(): Promise<void> {
+    if (this.isRecoveringStaleItems) {
+      return;
+    }
+
+    this.isRecoveringStaleItems = true;
+    try {
+      const staleReason = `Build item sem heartbeat por ${this.formatDuration(this.staleRunningItemTimeoutMs)}.`;
+      const affectedJobIds =
+        await this.serverBuildService.failStaleRunningItems(
+          this.staleRunningItemTimeoutMs,
+          staleReason
+        );
+
+      if (affectedJobIds.length === 0) {
+        return;
+      }
+
+      for (const serverBuildJobId of affectedJobIds) {
+        const status =
+          await this.serverBuildService.syncJobStatusFromItems(
+            serverBuildJobId
+          );
+
+        this.publishActionLog(
+          serverBuildJobId,
+          null,
+          `Detected stale running build item and marked it as failed (${staleReason})`
+        );
+        await this.publishJobSnapshot(serverBuildJobId);
+
+        if (
+          status === EServerBuildJobStatus.completed ||
+          status === EServerBuildJobStatus.failed ||
+          status === EServerBuildJobStatus.canceled
+        ) {
+          this.cancelRequested.delete(serverBuildJobId);
+        }
+      }
+    } catch {
+    } finally {
+      this.isRecoveringStaleItems = false;
+    }
+  }
+
   private getImageReferences(
     target: IServerBuildTarget,
     version: string
@@ -413,6 +505,10 @@ export class ServerBuildExecutorService {
       let cancelMonitorTimer: ReturnType<typeof setInterval> | null = null;
       let cancelKillTimer: ReturnType<typeof setTimeout> | null = null;
       let cancelCheckInFlight = false;
+      let timedOutMessage: string | null = null;
+      let lastOutputAt = Date.now();
+      let lastHeartbeatAt = Date.now();
+      let heartbeatInFlight = false;
 
       const child = spawn(command, args, {
         cwd: options.cwd,
@@ -422,6 +518,36 @@ export class ServerBuildExecutorService {
 
       const executionKey = this.getExecutionKey(serverBuildJobId, buildType);
       this.activeProcesses.set(executionKey, child);
+
+      const requestTimeoutTermination = (
+        timeoutReason: string,
+        timeoutMs: number
+      ): void => {
+        if (timedOutMessage) {
+          return;
+        }
+
+        timedOutMessage = timeoutReason;
+        this.publishActionLog(
+          serverBuildJobId,
+          buildType,
+          `Command watchdog triggered after ${this.formatDuration(timeoutMs)}: ${timeoutReason}`
+        );
+
+        try {
+          child.kill('SIGTERM');
+        } catch {}
+
+        if (cancelKillTimer) {
+          return;
+        }
+
+        cancelKillTimer = setTimeout(() => {
+          try {
+            child.kill('SIGKILL');
+          } catch {}
+        }, 5000);
+      };
 
       const requestCancellation = (): void => {
         this.cancelRequested.add(serverBuildJobId);
@@ -453,11 +579,51 @@ export class ServerBuildExecutorService {
         }
       };
 
+      const tryHeartbeat = (now: number): void => {
+        if (heartbeatInFlight) {
+          return;
+        }
+
+        if (now - lastHeartbeatAt < this.commandHeartbeatIntervalMs) {
+          return;
+        }
+
+        heartbeatInFlight = true;
+        lastHeartbeatAt = now;
+        this.serverBuildService
+          .touchRunningJobItem(serverBuildJobId, buildType)
+          .catch(() => {})
+          .finally(() => {
+            heartbeatInFlight = false;
+          });
+      };
+
       const pollCancellation = (): void => {
         if (this.cancelRequested.has(serverBuildJobId)) {
           requestCancellation();
           return;
         }
+
+        const now = Date.now();
+        const elapsedMs = now - commandStartedAt;
+        if (elapsedMs >= this.commandMaxDurationMs) {
+          requestTimeoutTermination(
+            `Command exceeded maximum duration while executing: ${commandDisplay}`,
+            elapsedMs
+          );
+          return;
+        }
+
+        const inactivityMs = now - lastOutputAt;
+        if (inactivityMs >= this.commandInactivityTimeoutMs) {
+          requestTimeoutTermination(
+            `No command output for ${this.formatDuration(inactivityMs)} while executing: ${commandDisplay}`,
+            inactivityMs
+          );
+          return;
+        }
+
+        tryHeartbeat(now);
 
         if (cancelCheckInFlight) {
           return;
@@ -485,6 +651,7 @@ export class ServerBuildExecutorService {
         stream: 'stdout' | 'stderr'
       ): void => {
         const chunkText = chunk.toString();
+        lastOutputAt = Date.now();
         output += chunkText;
 
         if (output.length > this.commandOutputLimit * 2) {
@@ -508,13 +675,14 @@ export class ServerBuildExecutorService {
         stopCancelMonitor();
         this.flushRealtimeOutputBuffer(serverBuildJobId, buildType, 'stdout');
         this.flushRealtimeOutputBuffer(serverBuildJobId, buildType, 'stderr');
+        const errorMessage = timedOutMessage ?? error.message;
         this.publishActionLog(
           serverBuildJobId,
           buildType,
-          `Command error: ${error.message}`
+          `Command error: ${errorMessage}`
         );
         this.clearActiveProcess(serverBuildJobId, buildType, child);
-        reject(error);
+        reject(timedOutMessage ? new Error(timedOutMessage) : error);
       });
 
       child.on('close', (code, signal) => {
@@ -525,6 +693,11 @@ export class ServerBuildExecutorService {
         this.clearActiveProcess(serverBuildJobId, buildType, child);
         const commandDurationMs = Date.now() - commandStartedAt;
         const commandDurationLabel = `${commandDurationMs}ms`;
+
+        if (timedOutMessage) {
+          reject(new Error(timedOutMessage));
+          return;
+        }
 
         if (this.cancelRequested.has(serverBuildJobId)) {
           this.publishActionLog(
