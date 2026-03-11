@@ -12,14 +12,25 @@ import {
 } from '@core/schema/server/viewServerBuild/response.schema';
 import { ServerBuildGenerateResponse } from '@core/schema/server/generateServerBuild/response.schema';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
+import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
+import { IServerBuildCentrifugo } from '@core/common/interfaces/IServerBuildCentrifugo';
 
 type VersionsByType = Record<EServerBuildType, ServerBuildVersion[]>;
+type RealtimeLogsByJob = Record<string, string[]>;
 
 const emptyVersionsByType = (): VersionsByType => ({
   [EServerBuildType.baileys]: [],
   [EServerBuildType.wwebjs]: [],
   [EServerBuildType.balance_api]: [],
 });
+
+const activeJobStatuses = new Set<EServerBuildJobStatus>([
+  EServerBuildJobStatus.queued,
+  EServerBuildJobStatus.running,
+  EServerBuildJobStatus.cancel_requested,
+]);
+
+const realtimeLogsLimitPerJob = 120;
 
 export const useServerBuildStore = defineStore('serverBuild', {
   state: () => ({
@@ -31,7 +42,9 @@ export const useServerBuildStore = defineStore('serverBuild', {
     i18n: getI18n(),
     loading: false,
     active_job: null as ServerBuildJob | null,
+    jobs: [] as ServerBuildJob[],
     versions_by_type: emptyVersionsByType() as VersionsByType,
+    realtime_logs_by_job: {} as RealtimeLogsByJob,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -41,6 +54,103 @@ export const useServerBuildStore = defineStore('serverBuild', {
     },
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+
+    syncActiveJobFromJobs() {
+      const activeJob =
+        this.jobs.find((job) =>
+          activeJobStatuses.has(job.status as EServerBuildJobStatus)
+        ) ?? null;
+
+      this.active_job = activeJob;
+    },
+
+    upsertJob(job: ServerBuildJob) {
+      const index = this.jobs.findIndex(
+        (current) => current.server_build_job_id === job.server_build_job_id
+      );
+
+      if (index === -1) {
+        this.jobs = [job, ...this.jobs];
+      } else {
+        const nextJobs = [...this.jobs];
+        nextJobs[index] = job;
+        this.jobs = nextJobs;
+      }
+
+      this.jobs = [...this.jobs]
+        .sort((a, b) =>
+          String(b.created_at).localeCompare(String(a.created_at))
+        )
+        .slice(0, 20);
+
+      const validJobIds = new Set(
+        this.jobs.map((currentJob) => currentJob.server_build_job_id)
+      );
+      this.realtime_logs_by_job = Object.fromEntries(
+        Object.entries(this.realtime_logs_by_job).filter(([jobId]) =>
+          validJobIds.has(jobId)
+        )
+      );
+
+      this.syncActiveJobFromJobs();
+    },
+
+    appendRealtimeLog(
+      serverBuildJobId: string,
+      inputLog: string,
+      buildType: string | null,
+      stream: string | null,
+      timestamp: string
+    ) {
+      const normalizedLines = inputLog
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      if (normalizedLines.length === 0) {
+        return;
+      }
+
+      const prefix = [
+        `[${timestamp || new Date().toISOString()}]`,
+        buildType ? `[${buildType}]` : null,
+        stream ? `[${stream}]` : null,
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      const currentLogs = this.realtime_logs_by_job[serverBuildJobId] ?? [];
+      const nextLogs = [
+        ...currentLogs,
+        ...normalizedLines.map((line) => `${prefix} ${line}`),
+      ].slice(-realtimeLogsLimitPerJob);
+
+      this.realtime_logs_by_job = {
+        ...this.realtime_logs_by_job,
+        [serverBuildJobId]: nextLogs,
+      };
+    },
+
+    applyRealtimeEvent(event: IServerBuildCentrifugo) {
+      if (!event?.server_build_job_id) {
+        return;
+      }
+
+      if (event.event === 'job_snapshot' && event.job) {
+        this.upsertJob(event.job);
+        return;
+      }
+
+      if (event.event === 'command_log' && event.log) {
+        this.appendRealtimeLog(
+          event.server_build_job_id,
+          event.log,
+          event.build_type,
+          event.stream,
+          event.timestamp
+        );
+      }
     },
 
     async fetchBuilds(): Promise<ServerBuildViewResponse | null> {
@@ -63,8 +173,20 @@ export const useServerBuildStore = defineStore('serverBuild', {
           return null;
         }
 
+        this.jobs = data.data.jobs ?? [];
+        this.syncActiveJobFromJobs();
         this.active_job = data.data.active_job;
         this.versions_by_type = data.data.versions_by_type;
+
+        const validJobIds = new Set(
+          this.jobs.map((job) => job.server_build_job_id)
+        );
+        this.realtime_logs_by_job = Object.fromEntries(
+          Object.entries(this.realtime_logs_by_job).filter(([jobId]) =>
+            validJobIds.has(jobId)
+          )
+        );
+
         return data.data;
       } catch (error) {
         let message = this.i18n.global.t('build_list_error');

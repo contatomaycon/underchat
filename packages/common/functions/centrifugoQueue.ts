@@ -36,6 +36,10 @@ export function statusServerCentrifugoQueue(): string {
   return 'status_server';
 }
 
+export function serverBuildCentrifugoQueue(): string {
+  return 'server_build';
+}
+
 export function serverSshCentrifugoQueue(): string {
   return 'server_ssh';
 }

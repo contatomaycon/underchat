@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { useServerBuildStore } from '@/@webcore/stores/serverBuild';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EServerBuildJobItemStatus } from '@core/common/enums/EServerBuildJobItemStatus';
@@ -6,8 +7,11 @@ import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus'
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
+import { serverBuildCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { IServerBuildCentrifugo } from '@core/common/interfaces/IServerBuildCentrifugo';
+import { ServerBuildJob } from '@core/schema/server/viewServerBuild/response.schema';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 
@@ -55,11 +59,10 @@ const activeStatusSet = new Set<string>([
   EServerBuildJobStatus.cancel_requested,
 ]);
 
-const pollingIntervalMs = 5000;
-const pollingInFlight = ref(false);
-const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const isBuildRealtimeSubscribed = ref(false);
 
 const activeJob = computed(() => serverBuildStore.active_job);
+const buildJobs = computed(() => serverBuildStore.jobs);
 const versionsByType = computed(() => serverBuildStore.versions_by_type);
 
 const hasActiveJob = computed(() => {
@@ -135,32 +138,63 @@ const getItemStatusColor = (status: string): string => {
   return 'secondary';
 };
 
-const stopPolling = (): void => {
-  if (!pollingTimer.value) {
-    return;
+const getJobErrorMessage = (job: ServerBuildJob): string => {
+  if (job.error_message) {
+    return job.error_message;
   }
 
-  clearInterval(pollingTimer.value);
-  pollingTimer.value = null;
+  const itemErrors = job.items
+    .filter((item) => item.error_message)
+    .map(
+      (item) =>
+        `${getBuildTypeLabel(item.build_type)}: ${String(item.error_message)}`
+    );
+
+  if (itemErrors.length === 0) {
+    return '-';
+  }
+
+  return itemErrors.join(' | ');
 };
 
-const startPolling = (): void => {
-  if (pollingTimer.value) {
+const getJobRealtimeLogs = (serverBuildJobId: string): string => {
+  const logs = serverBuildStore.realtime_logs_by_job[serverBuildJobId] ?? [];
+  if (logs.length === 0) {
+    return t('build_no_logs');
+  }
+
+  return logs.join('\n');
+};
+
+const handleBuildRealtimeMessage = (data: IServerBuildCentrifugo): void => {
+  serverBuildStore.applyRealtimeEvent(data);
+};
+
+const subscribeBuildRealtime = async (): Promise<void> => {
+  if (isBuildRealtimeSubscribed.value) {
     return;
   }
 
-  pollingTimer.value = setInterval(async () => {
-    if (!hasActiveJob.value || pollingInFlight.value) {
-      return;
-    }
+  try {
+    await onMessage(serverBuildCentrifugoQueue(), handleBuildRealtimeMessage);
+    isBuildRealtimeSubscribed.value = true;
+  } catch (error) {
+    console.error('Failed to subscribe build realtime updates', error);
+  }
+};
 
-    pollingInFlight.value = true;
-    try {
-      await serverBuildStore.fetchBuilds();
-    } finally {
-      pollingInFlight.value = false;
-    }
-  }, pollingIntervalMs);
+const unsubscribeBuildRealtime = async (): Promise<void> => {
+  if (!isBuildRealtimeSubscribed.value) {
+    return;
+  }
+
+  try {
+    await unsubscribe(serverBuildCentrifugoQueue());
+  } catch (error) {
+    console.error('Failed to unsubscribe build realtime updates', error);
+  } finally {
+    isBuildRealtimeSubscribed.value = false;
+  }
 };
 
 const refreshBuilds = async (): Promise<void> => {
@@ -201,25 +235,13 @@ const handleBack = (): void => {
   router.push({ name: 'server' });
 };
 
-watch(
-  hasActiveJob,
-  (active) => {
-    if (active) {
-      startPolling();
-      return;
-    }
-
-    stopPolling();
-  },
-  { immediate: true }
-);
-
 onMounted(async () => {
   await refreshBuilds();
+  await subscribeBuildRealtime();
 });
 
-onBeforeUnmount(() => {
-  stopPolling();
+onBeforeUnmount(async () => {
+  await unsubscribeBuildRealtime();
 });
 </script>
 
@@ -420,6 +442,70 @@ onBeforeUnmount(() => {
             </VCard>
           </VCol>
         </VRow>
+
+        <VCard class="mt-6" variant="outlined">
+          <VCardTitle>{{ $t('build_jobs_history') }}</VCardTitle>
+
+          <VCardText>
+            <div
+              v-if="buildJobs.length === 0"
+              class="text-medium-emphasis"
+            >
+              {{ $t('no_data_available') }}
+            </div>
+
+            <VTable v-else density="compact">
+              <thead>
+                <tr>
+                  <th>{{ $t('build_version') }}</th>
+                  <th>{{ $t('build_status') }}</th>
+                  <th>{{ $t('build_requested_at') }}</th>
+                  <th>{{ $t('build_started_at') }}</th>
+                  <th>{{ $t('build_finished_at') }}</th>
+                  <th>{{ $t('error') }}</th>
+                  <th>{{ $t('build_realtime_logs') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="job in buildJobs"
+                  :key="job.server_build_job_id"
+                >
+                  <td>{{ job.version }}</td>
+                  <td>
+                    <VChip
+                      size="small"
+                      :color="getJobStatusColor(job.status)"
+                    >
+                      {{ getJobStatusLabel(job.status) }}
+                    </VChip>
+                  </td>
+                  <td>
+                    {{ job.created_at ? formatDateTime(job.created_at) : '-' }}
+                  </td>
+                  <td>
+                    {{ job.started_at ? formatDateTime(job.started_at) : '-' }}
+                  </td>
+                  <td>
+                    {{
+                      job.finished_at
+                        ? formatDateTime(job.finished_at)
+                        : '-'
+                    }}
+                  </td>
+                  <td class="build-error-cell">
+                    {{ getJobErrorMessage(job) }}
+                  </td>
+                  <td class="build-log-cell">
+                    <pre class="build-log-pre">{{
+                      getJobRealtimeLogs(job.server_build_job_id)
+                    }}</pre>
+                  </td>
+                </tr>
+              </tbody>
+            </VTable>
+          </VCardText>
+        </VCard>
       </VCardText>
     </VCard>
 
@@ -447,5 +533,29 @@ onBeforeUnmount(() => {
 
 .build-image-cell {
   max-inline-size: 340px;
+}
+
+.build-error-cell {
+  max-inline-size: 340px;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.build-log-cell {
+  max-inline-size: 500px;
+  min-inline-size: 260px;
+  vertical-align: top;
+}
+
+.build-log-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-block-size: 180px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.75rem;
+  line-height: 1.35;
 }
 </style>

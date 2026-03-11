@@ -72,6 +72,7 @@ export const serverBuildVersionsByTypeSchema = Type.Object({
 
 export const serverBuildViewResponseSchema = Type.Object({
   active_job: Type.Union([serverBuildJobSchema, Type.Null()]),
+  jobs: Type.Array(serverBuildJobSchema),
   versions_by_type: serverBuildVersionsByTypeSchema,
 });
 

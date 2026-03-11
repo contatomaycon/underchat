@@ -7,6 +7,11 @@ import {
   generalEnvironment,
 } from '@core/config/environments';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
+import { serverBuildCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { IRunServerBuildCommandOptions } from '@core/common/interfaces/IRunServerBuildCommandOptions';
+import { IServerBuildCentrifugo } from '@core/common/interfaces/IServerBuildCentrifugo';
+import { IServerBuildTarget } from '@core/common/interfaces/IServerBuildTarget';
+import { CentrifugoService } from './centrifugo.service';
 import { ServerBuildService } from './serverBuild.service';
 
 class BuildJobCanceledError extends Error {
@@ -19,18 +24,6 @@ class BuildJobCanceledError extends Error {
   }
 }
 
-interface IBuildTarget {
-  buildType: EServerBuildType;
-  imageName: string;
-  dockerfilePath: string;
-}
-
-interface ICommandOptions {
-  cwd: string;
-  stdin?: string;
-  displayArgs?: string[];
-}
-
 @injectable()
 export class ServerBuildExecutorService {
   private readonly activeProcesses = new Map<
@@ -39,7 +32,8 @@ export class ServerBuildExecutorService {
   >();
   private readonly cancelRequested = new Set<string>();
   private readonly commandOutputLimit = 12_000;
-  private readonly buildTargets: IBuildTarget[] = [
+  private readonly realtimeLogChunkLimit = 2_000;
+  private readonly buildTargets: IServerBuildTarget[] = [
     {
       buildType: EServerBuildType.baileys,
       imageName: 'under-worker-baileys',
@@ -59,8 +53,93 @@ export class ServerBuildExecutorService {
 
   constructor(
     @inject(ServerBuildService)
-    private readonly serverBuildService: ServerBuildService
+    private readonly serverBuildService: ServerBuildService,
+    @inject(CentrifugoService)
+    private readonly centrifugoService: CentrifugoService
   ) {}
+
+  private async publishRealtimeEvent(
+    payload: IServerBuildCentrifugo
+  ): Promise<void> {
+    try {
+      await this.centrifugoService.publish(
+        serverBuildCentrifugoQueue(),
+        payload
+      );
+    } catch {}
+  }
+
+  private getRealtimeTimestamp(): string {
+    return new Date().toISOString();
+  }
+
+  private async publishJobSnapshot(serverBuildJobId: string): Promise<void> {
+    const job = await this.serverBuildService.getBuildJobById(serverBuildJobId);
+    if (!job) {
+      return;
+    }
+
+    await this.publishRealtimeEvent({
+      event: 'job_snapshot',
+      server_build_job_id: serverBuildJobId,
+      timestamp: this.getRealtimeTimestamp(),
+      build_type: null,
+      stream: null,
+      log: null,
+      job: {
+        server_build_job_id: job.server_build_job_id,
+        requested_by: job.requested_by ?? null,
+        version: job.version,
+        status: job.status,
+        error_message: job.error_message ?? null,
+        created_at: job.created_at ?? '',
+        updated_at: job.updated_at ?? '',
+        started_at: job.started_at ?? null,
+        finished_at: job.finished_at ?? null,
+        items: (job.items ?? []).map((item) => ({
+          server_build_job_item_id: item.server_build_job_item_id,
+          server_build_job_id: item.server_build_job_id,
+          build_type: item.build_type,
+          status: item.status,
+          image_reference: item.image_reference ?? null,
+          error_message: item.error_message ?? null,
+          created_at: item.created_at ?? '',
+          updated_at: item.updated_at ?? '',
+          started_at: item.started_at ?? null,
+          finished_at: item.finished_at ?? null,
+        })),
+      },
+    });
+  }
+
+  private publishCommandLog(
+    serverBuildJobId: string,
+    buildType: EServerBuildType | null,
+    stream: 'stdout' | 'stderr',
+    chunk: string
+  ): void {
+    const normalized = chunk
+      .replace(/\r/g, '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join('\n')
+      .slice(0, this.realtimeLogChunkLimit);
+
+    if (!normalized) {
+      return;
+    }
+
+    void this.publishRealtimeEvent({
+      event: 'command_log',
+      server_build_job_id: serverBuildJobId,
+      timestamp: this.getRealtimeTimestamp(),
+      job: null,
+      build_type: buildType as IServerBuildCentrifugo['build_type'],
+      stream,
+      log: normalized,
+    });
+  }
 
   private hasAllDockerfiles(workspaceRoot: string): boolean {
     return this.buildTargets.every((target) =>
@@ -69,7 +148,7 @@ export class ServerBuildExecutorService {
   }
 
   private getImageReferences(
-    target: IBuildTarget,
+    target: IServerBuildTarget,
     version: string
   ): {
     harborRepository: string;
@@ -184,7 +263,7 @@ export class ServerBuildExecutorService {
     serverBuildJobId: string,
     command: string,
     args: string[],
-    options: ICommandOptions
+    options: IRunServerBuildCommandOptions
   ): Promise<void> {
     if (await this.isCancelRequested(serverBuildJobId)) {
       throw new BuildJobCanceledError(serverBuildJobId);
@@ -201,15 +280,28 @@ export class ServerBuildExecutorService {
 
       this.activeProcesses.set(serverBuildJobId, child);
 
-      const appendOutput = (chunk: Buffer): void => {
-        output += chunk.toString();
+      const appendOutput = (
+        chunk: Buffer,
+        stream: 'stdout' | 'stderr'
+      ): void => {
+        const chunkText = chunk.toString();
+        output += chunkText;
         if (output.length > this.commandOutputLimit * 2) {
           output = this.trimCommandOutput(output);
         }
+
+        if (options.emitRealtimeLogs !== false) {
+          this.publishCommandLog(
+            serverBuildJobId,
+            options.buildType ?? null,
+            stream,
+            chunkText
+          );
+        }
       };
 
-      child.stdout.on('data', appendOutput);
-      child.stderr.on('data', appendOutput);
+      child.stdout.on('data', (chunk) => appendOutput(chunk, 'stdout'));
+      child.stderr.on('data', (chunk) => appendOutput(chunk, 'stderr'));
 
       child.on('error', (error) => {
         this.clearActiveProcess(serverBuildJobId, child);
@@ -264,6 +356,7 @@ export class ServerBuildExecutorService {
     const child = this.activeProcesses.get(serverBuildJobId);
     if (!child) {
       await this.serverBuildService.cancelJobIfNotRunning(serverBuildJobId);
+      await this.publishJobSnapshot(serverBuildJobId);
       return;
     }
 
@@ -295,9 +388,12 @@ export class ServerBuildExecutorService {
     if (!started) {
       if (await this.serverBuildService.isCancelRequested(serverBuildJobId)) {
         await this.serverBuildService.cancelJobIfNotRunning(serverBuildJobId);
+        await this.publishJobSnapshot(serverBuildJobId);
       }
       return;
     }
+
+    await this.publishJobSnapshot(serverBuildJobId);
 
     let finalStatus: 'completed' | 'failed' | 'canceled' = 'completed';
     let finalErrorMessage: string | null = null;
@@ -350,6 +446,7 @@ export class ServerBuildExecutorService {
             target.buildType,
             finalErrorMessage
           );
+          await this.publishJobSnapshot(serverBuildJobId);
           break;
         }
 
@@ -357,6 +454,7 @@ export class ServerBuildExecutorService {
           serverBuildJobId,
           target.buildType
         );
+        await this.publishJobSnapshot(serverBuildJobId);
 
         try {
           const { harborRepository, imageReference } = this.getImageReferences(
@@ -378,7 +476,10 @@ export class ServerBuildExecutorService {
               target.dockerfilePath,
               '.',
             ],
-            { cwd: workspaceRoot }
+            {
+              cwd: workspaceRoot,
+              buildType: target.buildType,
+            }
           );
 
           await this.serverBuildService.markJobItemSuccessAndPersistVersion({
@@ -389,6 +490,7 @@ export class ServerBuildExecutorService {
             harbor_repository: harborRepository,
             image_reference: imageReference,
           });
+          await this.publishJobSnapshot(serverBuildJobId);
         } catch (error) {
           const errorMessage = this.getErrorMessage(error);
 
@@ -400,6 +502,7 @@ export class ServerBuildExecutorService {
               target.buildType,
               errorMessage
             );
+            await this.publishJobSnapshot(serverBuildJobId);
           } else {
             finalStatus = 'failed';
             finalErrorMessage = errorMessage;
@@ -408,6 +511,7 @@ export class ServerBuildExecutorService {
               target.buildType,
               errorMessage
             );
+            await this.publishJobSnapshot(serverBuildJobId);
           }
 
           break;
@@ -425,6 +529,7 @@ export class ServerBuildExecutorService {
 
       if (finalStatus === 'completed') {
         await this.serverBuildService.markJobCompleted(serverBuildJobId);
+        await this.publishJobSnapshot(serverBuildJobId);
         return;
       }
 
@@ -433,6 +538,7 @@ export class ServerBuildExecutorService {
           serverBuildJobId,
           finalErrorMessage
         );
+        await this.publishJobSnapshot(serverBuildJobId);
         return;
       }
 
@@ -440,6 +546,7 @@ export class ServerBuildExecutorService {
         serverBuildJobId,
         finalErrorMessage ?? 'Build execution failed'
       );
+      await this.publishJobSnapshot(serverBuildJobId);
     }
   }
 }
