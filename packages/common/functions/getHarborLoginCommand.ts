@@ -1,4 +1,5 @@
 import { escapeShellSingleQuotes } from './escapeShellSingleQuotes';
+import { escapeShellDoubleQuotes } from './escapeShellDoubleQuotes';
 
 interface IGetHarborLoginCommand {
   harborRegistry: string;
@@ -7,9 +8,15 @@ interface IGetHarborLoginCommand {
 }
 
 export function getHarborLoginCommand(input: IGetHarborLoginCommand): string {
-  const harborRegistry = escapeShellSingleQuotes(input.harborRegistry);
-  const harborUsername = escapeShellSingleQuotes(input.harborUsername);
-  const harborPassword = escapeShellSingleQuotes(input.harborPassword);
+  const harborRegistry = escapeShellDoubleQuotes(
+    escapeShellSingleQuotes(input.harborRegistry)
+  );
+  const harborUsername = escapeShellDoubleQuotes(
+    escapeShellSingleQuotes(input.harborUsername)
+  );
+  const harborPassword = escapeShellDoubleQuotes(
+    escapeShellSingleQuotes(input.harborPassword)
+  );
 
   return `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
     hash -r && \
