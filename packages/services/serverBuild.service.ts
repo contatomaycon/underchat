@@ -698,6 +698,19 @@ export class ServerBuildService {
     });
   }
 
+  async hasActiveBuildJob(): Promise<boolean> {
+    const [activeJob] = await this.dbRw
+      .select({
+        server_build_job_id: serverBuildJob.server_build_job_id,
+      })
+      .from(serverBuildJob)
+      .where(inArray(serverBuildJob.status, this.activeJobStatuses))
+      .limit(1)
+      .execute();
+
+    return Boolean(activeJob?.server_build_job_id);
+  }
+
   async setDefaultVersion(
     serverBuildVersionId: string
   ): Promise<ServerBuildDefaultResponse | null> {
@@ -757,7 +770,7 @@ export class ServerBuildService {
   }
 
   async getDefaultImages(): Promise<IServerBuildDefaultImages | null> {
-    const defaults = await this.dbRo
+    const defaults = await this.dbRw
       .select({
         build_type: serverBuildVersion.build_type,
         image_reference: serverBuildVersion.image_reference,

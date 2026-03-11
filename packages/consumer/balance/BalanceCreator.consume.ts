@@ -146,6 +146,8 @@ export class BalanceCreatorConsume {
   ): Promise<void> {
     const maxAttempts = 5;
     const delayMs = 10_000;
+    const maxMissingDefaultWaitAttempts = 60;
+    let missingDefaultWaitAttempts = 0;
     const serverId = data.server_id ?? null;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -182,6 +184,24 @@ export class BalanceCreatorConsume {
         }
 
         if (err instanceof MissingDefaultBuildImagesError) {
+          const hasActiveBuildJob =
+            await this.serverBuildService.hasActiveBuildJob();
+
+          if (
+            hasActiveBuildJob &&
+            missingDefaultWaitAttempts < maxMissingDefaultWaitAttempts
+          ) {
+            missingDefaultWaitAttempts += 1;
+
+            server.log.warn(
+              `Default build images not found for server ${data.server_id ?? 'unknown'} while a build job is active (${missingDefaultWaitAttempts}/${maxMissingDefaultWaitAttempts}). Retrying in ${delayMs / 1000}s`
+            );
+
+            await delay(delayMs);
+            attempt -= 1;
+            continue;
+          }
+
           server.log.warn(
             `Skipping server ${data.server_id ?? 'unknown'}: ${getErrorMessage(err)}`
           );
