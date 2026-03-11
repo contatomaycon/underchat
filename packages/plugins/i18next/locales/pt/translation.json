@@ -1082,5 +1082,11 @@
   "server_build_default_not_found": "Versao de build nao encontrada",
   "server_build_default_update_success": "Versao default atualizada com sucesso!",
   "server_build_retry_success": "Reprocessamento do target de build enviado com sucesso!",
-  "server_build_retry_not_allowed": "Nao foi possivel reprocessar o target de build informado."
+  "server_build_retry_not_allowed": "Nao foi possivel reprocessar o target de build informado.",
+  "server_build_delete_success": "Build removido com sucesso!",
+  "server_build_delete_not_found": "Build informado nao foi encontrado.",
+  "server_build_delete_active_conflict": "Nao e possivel remover build em andamento.",
+  "server_build_delete_default_conflict": "Nao e possivel remover build que esta como default.",
+  "server_build_delete_harbor_error": "Erro ao remover imagens do Harbor para este build.",
+  "server_build_pair_success": "Pareamento de builds concluido com sucesso!"
 }

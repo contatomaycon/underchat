@@ -11,6 +11,8 @@ import {
   ServerBuildViewResponse,
 } from '@core/schema/server/viewServerBuild/response.schema';
 import { ServerBuildGenerateResponse } from '@core/schema/server/generateServerBuild/response.schema';
+import { PairServerBuildResponse } from '@core/schema/server/pairServerBuild/response.schema';
+import { DeleteServerBuildResponse } from '@core/schema/server/deleteServerBuild/response.schema';
 import { RetryServerBuildRequest } from '@core/schema/server/retryServerBuild/request.schema';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
@@ -242,6 +244,43 @@ export const useServerBuildStore = defineStore('serverBuild', {
       }
     },
 
+    async pairBuilds(): Promise<PairServerBuildResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.post<IApiResponse<PairServerBuildResponse>>(
+            '/server/build/pair'
+          );
+
+        this.loading = false;
+
+        const data = response.data;
+        if (!data?.status || !data?.data) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('build_pair_error'),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('build_pair_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t('build_pair_error');
+        if (error instanceof AxiosError) {
+          message = error.response?.data?.message ?? message;
+        }
+        this.showSnackbar(message, EColor.error);
+        this.loading = false;
+        return null;
+      }
+    },
+
     async cancelActiveBuild(): Promise<boolean> {
       try {
         this.loading = true;
@@ -343,6 +382,49 @@ export const useServerBuildStore = defineStore('serverBuild', {
         let message = this.i18n.global.t('build_retry_error');
         if (error instanceof AxiosError) {
           message = error.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+        this.loading = false;
+        return false;
+      }
+    },
+
+    async deleteBuild(serverBuildJobId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<
+          IApiResponse<DeleteServerBuildResponse>
+        >(`/server/build/${serverBuildJobId}`);
+
+        this.loading = false;
+
+        const data = response.data;
+        if (!data?.status || !data?.data) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('build_delete_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('build_delete_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let message = this.i18n.global.t('build_delete_error');
+        if (error instanceof AxiosError) {
+          if (error.response?.status === 409) {
+            message =
+              error.response?.data?.message ??
+              this.i18n.global.t('build_delete_conflict');
+          } else {
+            message = error.response?.data?.message ?? message;
+          }
         }
 
         this.showSnackbar(message, EColor.error);

@@ -7,10 +7,13 @@ import {
 import { EServerBuildJobItemStatus } from '@core/common/enums/EServerBuildJobItemStatus';
 import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
+import { buildEnvironment } from '@core/config/environments';
 import { currentTime } from '@core/common/functions/currentTime';
 import { ICancelServerBuildResult } from '@core/common/interfaces/ICancelServerBuildResult';
 import { ICreateServerBuildJobResult } from '@core/common/interfaces/ICreateServerBuildJobResult';
 import { IMarkServerBuildItemSuccessInput } from '@core/common/interfaces/IMarkServerBuildItemSuccessInput';
+import { IDeleteServerBuildResult } from '@core/common/interfaces/IDeleteServerBuildResult';
+import { IHarborBuildVersionByType } from '@core/common/interfaces/IHarborBuildVersionByType';
 import { IServerBuildDefaultImages } from '@core/common/interfaces/IServerBuildDefaultImages';
 import { IServerBuildJobWithItems } from '@core/common/interfaces/IServerBuildJobWithItems';
 import { ServerBuildDefaultResponse } from '@core/schema/server/setServerBuildDefault/response.schema';
@@ -160,6 +163,45 @@ export class ServerBuildRepository {
             (item: { server_build_version_id: string }) =>
               item.server_build_version_id
           )
+        )
+      )
+      .execute();
+  }
+
+  private async ensureDefaultVersionWhenMissing(
+    tx: any,
+    buildType: EServerBuildType,
+    version: string,
+    now: string
+  ): Promise<void> {
+    const [currentDefault] = await tx
+      .select({
+        server_build_version_id: serverBuildVersion.server_build_version_id,
+      })
+      .from(serverBuildVersion)
+      .where(
+        and(
+          eq(serverBuildVersion.build_type, buildType),
+          eq(serverBuildVersion.is_default, true)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    if (currentDefault) {
+      return;
+    }
+
+    await tx
+      .update(serverBuildVersion)
+      .set({
+        is_default: true,
+        updated_at: now,
+      })
+      .where(
+        and(
+          eq(serverBuildVersion.build_type, buildType),
+          eq(serverBuildVersion.version, version)
         )
       )
       .execute();
@@ -1168,6 +1210,196 @@ export class ServerBuildRepository {
     });
 
     return version;
+  };
+
+  getBuildJobSummaryById = async (
+    serverBuildJobId: string
+  ): Promise<{
+    server_build_job_id: string;
+    version: string;
+    status: EServerBuildJobStatus;
+  } | null> => {
+    const [job] = await this.dbRw
+      .select({
+        server_build_job_id: serverBuildJob.server_build_job_id,
+        version: serverBuildJob.version,
+        status: serverBuildJob.status,
+      })
+      .from(serverBuildJob)
+      .where(eq(serverBuildJob.server_build_job_id, serverBuildJobId))
+      .limit(1)
+      .execute();
+
+    return job ?? null;
+  };
+
+  isBuildVersionDefault = async (version: string): Promise<boolean> => {
+    const [versionRow] = await this.dbRw
+      .select({
+        server_build_version_id: serverBuildVersion.server_build_version_id,
+      })
+      .from(serverBuildVersion)
+      .where(
+        and(
+          eq(serverBuildVersion.version, version),
+          eq(serverBuildVersion.is_default, true)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return Boolean(versionRow?.server_build_version_id);
+  };
+
+  hardDeleteBuildByVersion = async (
+    version: string
+  ): Promise<IDeleteServerBuildResult> => {
+    return this.dbRw.transaction(async (tx) => {
+      const jobRows = await tx
+        .select({
+          server_build_job_id: serverBuildJob.server_build_job_id,
+        })
+        .from(serverBuildJob)
+        .where(eq(serverBuildJob.version, version))
+        .execute();
+
+      const jobIds = jobRows.map((row) => row.server_build_job_id);
+      let deletedJobItems = 0;
+
+      if (jobIds.length > 0) {
+        const deletedItemsResult = await tx
+          .delete(serverBuildJobItem)
+          .where(inArray(serverBuildJobItem.server_build_job_id, jobIds))
+          .execute();
+        deletedJobItems = deletedItemsResult.rowCount ?? 0;
+      }
+
+      const deletedJobsResult = await tx
+        .delete(serverBuildJob)
+        .where(eq(serverBuildJob.version, version))
+        .execute();
+
+      const deletedVersionsResult = await tx
+        .delete(serverBuildVersion)
+        .where(eq(serverBuildVersion.version, version))
+        .execute();
+
+      return {
+        version,
+        deleted_jobs: deletedJobsResult.rowCount ?? 0,
+        deleted_job_items: deletedJobItems,
+        deleted_versions: deletedVersionsResult.rowCount ?? 0,
+      };
+    });
+  };
+
+  pairBuildVersionFromHarbor = async (
+    input: IHarborBuildVersionByType
+  ): Promise<{
+    imported: boolean;
+    created_jobs: number;
+    created_versions: number;
+  }> => {
+    const baseNow = currentTime();
+    const dateFromHarbor = input.created_at ? new Date(input.created_at) : null;
+    const normalizedDate =
+      dateFromHarbor && !Number.isNaN(dateFromHarbor.getTime())
+        ? dateFromHarbor.toISOString()
+        : baseNow;
+
+    return this.dbRw.transaction(async (tx) => {
+      let createdVersions = 0;
+      let createdJobs = 0;
+      let imported = false;
+
+      for (const buildType of this.buildTypes) {
+        const result = await tx
+          .insert(serverBuildVersion)
+          .values({
+            server_build_version_id: uuidv7(),
+            build_type: buildType,
+            version: input.version,
+            harbor_registry: buildEnvironment.harborRegistry,
+            harbor_repository: input.harbor_repositories[buildType],
+            image_reference: input.image_references[buildType],
+            is_default: false,
+            created_at: normalizedDate,
+            updated_at: normalizedDate,
+          })
+          .onConflictDoNothing()
+          .execute();
+
+        const rowCount = result.rowCount ?? 0;
+        if (rowCount > 0) {
+          createdVersions += rowCount;
+          imported = true;
+        }
+
+        await this.keepOnlyLastFiveVersions(tx, buildType);
+        await this.ensureDefaultVersionWhenMissing(
+          tx,
+          buildType,
+          input.version,
+          baseNow
+        );
+      }
+
+      const [existingJob] = await tx
+        .select({
+          server_build_job_id: serverBuildJob.server_build_job_id,
+        })
+        .from(serverBuildJob)
+        .where(eq(serverBuildJob.version, input.version))
+        .limit(1)
+        .execute();
+
+      if (!existingJob) {
+        const serverBuildJobId = uuidv7();
+
+        await tx
+          .insert(serverBuildJob)
+          .values({
+            server_build_job_id: serverBuildJobId,
+            requested_by: null,
+            version: input.version,
+            status: EServerBuildJobStatus.completed,
+            error_message: null,
+            created_at: normalizedDate,
+            updated_at: normalizedDate,
+            started_at: normalizedDate,
+            finished_at: normalizedDate,
+          })
+          .execute();
+
+        await tx
+          .insert(serverBuildJobItem)
+          .values(
+            this.buildTypes.map((buildType) => ({
+              server_build_job_item_id: uuidv7(),
+              server_build_job_id: serverBuildJobId,
+              build_type: buildType,
+              status: EServerBuildJobItemStatus.success,
+              image_reference: input.image_references[buildType],
+              error_message: null,
+              created_at: normalizedDate,
+              updated_at: normalizedDate,
+              started_at: normalizedDate,
+              finished_at: normalizedDate,
+            }))
+          )
+          .onConflictDoNothing()
+          .execute();
+
+        createdJobs = 1;
+        imported = true;
+      }
+
+      return {
+        imported,
+        created_jobs: createdJobs,
+        created_versions: createdVersions,
+      };
+    });
   };
 
   getDefaultImages = async (): Promise<IServerBuildDefaultImages | null> => {

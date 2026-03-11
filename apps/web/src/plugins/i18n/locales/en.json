@@ -2718,6 +2718,7 @@
   "build": "Build",
   "build_versions": "Build Versions",
   "build_generate_version": "Generate version",
+  "build_pair": "Pair",
   "build_cancel": "Cancel build",
   "build_current_job": "Build in progress",
   "build_no_active_job": "No active build job.",
@@ -2751,11 +2752,18 @@
   "build_generate_error": "Error requesting version generation.",
   "build_generate_success": "Generation request sent successfully!",
   "build_generate_conflict": "There is already a build in progress.",
+  "build_pair_error": "Error pairing builds from Harbor.",
+  "build_pair_success": "Pairing completed successfully!",
   "build_cancel_error": "Error requesting build cancellation.",
   "build_cancel_success": "Cancellation request sent successfully!",
   "build_retry_item": "Retry",
   "build_retry_error": "Error requesting target retry.",
   "build_retry_success": "Target retry request sent successfully!",
   "build_set_default_error": "Error changing default version.",
-  "build_set_default_success": "Default version updated successfully!"
+  "build_set_default_success": "Default version updated successfully!",
+  "build_delete": "Delete build",
+  "build_delete_confirmation": "Are you sure you want to delete this build? This action also removes related Harbor images.",
+  "build_delete_error": "Error deleting build.",
+  "build_delete_success": "Build deleted successfully!",
+  "build_delete_conflict": "Could not delete the selected build."
 }

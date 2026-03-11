@@ -1082,5 +1082,11 @@
   "server_build_default_not_found": "Build version not found",
   "server_build_default_update_success": "Default build version updated successfully!",
   "server_build_retry_success": "Build target retry request sent successfully!",
-  "server_build_retry_not_allowed": "Unable to retry the selected build target."
+  "server_build_retry_not_allowed": "Unable to retry the selected build target.",
+  "server_build_delete_success": "Build deleted successfully!",
+  "server_build_delete_not_found": "Selected build was not found.",
+  "server_build_delete_active_conflict": "Cannot delete a build that is still in progress.",
+  "server_build_delete_default_conflict": "Cannot delete a build currently set as default.",
+  "server_build_delete_harbor_error": "Failed to delete Harbor images for this build.",
+  "server_build_pair_success": "Build pairing completed successfully!"
 }

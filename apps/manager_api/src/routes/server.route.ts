@@ -25,6 +25,8 @@ import { serverBuildGenerateSchema } from '@core/schema/server/generateServerBui
 import { serverBuildCancelSchema } from '@core/schema/server/cancelServerBuild';
 import { serverBuildDefaultSchema } from '@core/schema/server/setServerBuildDefault';
 import { retryServerBuildSchema } from '@core/schema/server/retryServerBuild';
+import { deleteServerBuildSchema } from '@core/schema/server/deleteServerBuild';
+import { pairServerBuildSchema } from '@core/schema/server/pairServerBuild';
 
 export default function serverRoutes(server: FastifyInstance) {
   const serverController = container.resolve(ServerController);
@@ -125,6 +127,24 @@ export default function serverRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, serverBuildEditPermissions),
+    ],
+  });
+
+  server.delete('/server/build/:server_build_job_id', {
+    schema: deleteServerBuildSchema,
+    handler: serverController.deleteServerBuild,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverBuildEditPermissions),
+    ],
+  });
+
+  server.post('/server/build/pair', {
+    schema: pairServerBuildSchema,
+    handler: serverController.pairServerBuild,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverBuildGeneratePermissions),
     ],
   });
 

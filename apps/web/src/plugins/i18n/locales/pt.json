@@ -2725,6 +2725,7 @@
   "build": "Build",
   "build_versions": "Versões de Build",
   "build_generate_version": "Gerar versão",
+  "build_pair": "Parear",
   "build_cancel": "Cancelar build",
   "build_current_job": "Build em andamento",
   "build_no_active_job": "Nenhum build em andamento.",
@@ -2758,11 +2759,18 @@
   "build_generate_error": "Erro ao solicitar geração de versão.",
   "build_generate_success": "Solicitação de geração enviada com sucesso!",
   "build_generate_conflict": "Já existe um build em andamento.",
+  "build_pair_error": "Erro ao parear builds do Harbor.",
+  "build_pair_success": "Pareamento concluído com sucesso!",
   "build_cancel_error": "Erro ao solicitar cancelamento do build.",
   "build_cancel_success": "Solicitação de cancelamento enviada com sucesso!",
   "build_retry_item": "Reprocessar",
   "build_retry_error": "Erro ao solicitar reprocessamento do target.",
   "build_retry_success": "Solicitação de reprocessamento enviada com sucesso!",
   "build_set_default_error": "Erro ao alterar a versão default.",
-  "build_set_default_success": "Versão default alterada com sucesso!"
+  "build_set_default_success": "Versão default alterada com sucesso!",
+  "build_delete": "Deletar build",
+  "build_delete_confirmation": "Tem certeza que deseja deletar este build? Esta ação remove também as imagens relacionadas no Harbor.",
+  "build_delete_error": "Erro ao deletar build.",
+  "build_delete_success": "Build deletado com sucesso!",
+  "build_delete_conflict": "Não foi possível deletar o build selecionado."
 }

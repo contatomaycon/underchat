@@ -68,6 +68,8 @@ const terminalStatusSet = new Set<string>([
 ]);
 
 const isBuildRealtimeSubscribed = ref(false);
+const isDialogDeleteBuildShow = ref(false);
+const serverBuildJobToDelete = ref<string | null>(null);
 
 const activeJob = computed(() => serverBuildStore.active_job);
 const buildJobs = computed(() => serverBuildStore.jobs);
@@ -228,6 +230,15 @@ const handleGenerateVersion = async (): Promise<void> => {
   await refreshBuilds();
 };
 
+const handlePairBuilds = async (): Promise<void> => {
+  const paired = await serverBuildStore.pairBuilds();
+  if (!paired) {
+    return;
+  }
+
+  await refreshBuilds();
+};
+
 const handleCancelBuild = async (): Promise<void> => {
   const canceled = await serverBuildStore.cancelActiveBuild();
   if (!canceled) {
@@ -268,6 +279,28 @@ const handleBack = (): void => {
   router.push({ name: 'server' });
 };
 
+const openDeleteBuildDialog = (serverBuildJobId: string): void => {
+  serverBuildJobToDelete.value = serverBuildJobId;
+  isDialogDeleteBuildShow.value = true;
+};
+
+const handleDeleteBuild = async (): Promise<void> => {
+  if (!serverBuildJobToDelete.value) {
+    return;
+  }
+
+  const serverBuildJobId = serverBuildJobToDelete.value;
+  serverBuildJobToDelete.value = null;
+  isDialogDeleteBuildShow.value = false;
+
+  const deleted = await serverBuildStore.deleteBuild(serverBuildJobId);
+  if (!deleted) {
+    return;
+  }
+
+  await refreshBuilds();
+};
+
 onMounted(async () => {
   await subscribeBuildRealtime();
   await refreshBuilds();
@@ -299,6 +332,17 @@ onBeforeUnmount(async () => {
             @click="handleGenerateVersion"
           >
             {{ $t('build_generate_version') }}
+          </VBtn>
+
+          <VBtn
+            v-if="$canPermission(permissionsGenerate)"
+            color="secondary"
+            variant="tonal"
+            prepend-icon="tabler-link"
+            :disabled="serverBuildStore.loading"
+            @click="handlePairBuilds"
+          >
+            {{ $t('build_pair') }}
           </VBtn>
 
           <VBtn
@@ -521,10 +565,7 @@ onBeforeUnmount(async () => {
                   </td>
                   <td class="build-actions-cell">
                     <div
-                      v-if="
-                        $canPermission(permissionsEdit) &&
-                        getRetryableItems(job).length > 0
-                      "
+                      v-if="$canPermission(permissionsEdit)"
                       class="d-flex flex-column gap-2"
                     >
                       <VBtn
@@ -545,6 +586,16 @@ onBeforeUnmount(async () => {
                           `${$t('build_retry_item')} ${getBuildTypeLabel(item.build_type)}`
                         }}
                       </VBtn>
+
+                      <VBtn
+                        size="x-small"
+                        color="error"
+                        variant="tonal"
+                        :disabled="serverBuildStore.loading"
+                        @click="openDeleteBuildDialog(job.server_build_job_id)"
+                      >
+                        {{ $t('build_delete') }}
+                      </VBtn>
                     </div>
 
                     <span v-else>-</span>
@@ -561,6 +612,14 @@ onBeforeUnmount(async () => {
         </VCard>
       </VCardText>
     </VCard>
+
+    <VDialogHandler
+      v-if="isDialogDeleteBuildShow"
+      v-model="isDialogDeleteBuildShow"
+      :title="$t('build_delete')"
+      :message="$t('build_delete_confirmation')"
+      @confirm="handleDeleteBuild"
+    />
 
     <VSnackbar
       v-model="serverBuildStore.snackbar.status"

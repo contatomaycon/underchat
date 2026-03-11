@@ -1,6 +1,8 @@
 import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
 import { ICancelServerBuildResult } from '@core/common/interfaces/ICancelServerBuildResult';
 import { ICreateServerBuildJobResult } from '@core/common/interfaces/ICreateServerBuildJobResult';
+import { IDeleteServerBuildResult } from '@core/common/interfaces/IDeleteServerBuildResult';
+import { IHarborBuildVersionByType } from '@core/common/interfaces/IHarborBuildVersionByType';
 import { IMarkServerBuildItemSuccessInput } from '@core/common/interfaces/IMarkServerBuildItemSuccessInput';
 import { IServerBuildDefaultImages } from '@core/common/interfaces/IServerBuildDefaultImages';
 import { IServerBuildJobWithItems } from '@core/common/interfaces/IServerBuildJobWithItems';
@@ -192,6 +194,36 @@ export class ServerBuildService {
     serverBuildVersionId: string
   ): Promise<ServerBuildDefaultResponse | null> => {
     return this.serverBuildRepository.setDefaultVersion(serverBuildVersionId);
+  };
+
+  getBuildJobSummaryById = async (
+    serverBuildJobId: string
+  ): Promise<{
+    server_build_job_id: string;
+    version: string;
+    status: EServerBuildJobStatus;
+  } | null> => {
+    return this.serverBuildRepository.getBuildJobSummaryById(serverBuildJobId);
+  };
+
+  isBuildVersionDefault = async (version: string): Promise<boolean> => {
+    return this.serverBuildRepository.isBuildVersionDefault(version);
+  };
+
+  hardDeleteBuildByVersion = async (
+    version: string
+  ): Promise<IDeleteServerBuildResult> => {
+    return this.serverBuildRepository.hardDeleteBuildByVersion(version);
+  };
+
+  pairBuildVersionFromHarbor = async (
+    input: IHarborBuildVersionByType
+  ): Promise<{
+    imported: boolean;
+    created_jobs: number;
+    created_versions: number;
+  }> => {
+    return this.serverBuildRepository.pairBuildVersionFromHarbor(input);
   };
 
   getDefaultImages = async (): Promise<IServerBuildDefaultImages | null> => {
