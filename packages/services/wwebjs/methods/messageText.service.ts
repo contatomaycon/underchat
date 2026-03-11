@@ -47,14 +47,22 @@ export class WwebjsMessageTextService {
     options?: { extra?: Record<string, unknown> }
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
-    const quotedMessageId =
-      (await resolveQuotedMessageId(client, jid, quoted.key)) ?? quoted.key.id;
-
-    const sendOptions = {
-      quotedMessageId,
-      ignoreQuoteErrors: false,
+    const quotedMessageId = await resolveQuotedMessageId(
+      client,
+      jid,
+      quoted.key
+    );
+    const sendOptions: {
+      quotedMessageId?: string;
+      ignoreQuoteErrors?: false;
+      extra?: Record<string, unknown>;
+    } = {
       extra: options?.extra,
     };
+    if (quotedMessageId) {
+      sendOptions.quotedMessageId = quotedMessageId;
+      sendOptions.ignoreQuoteErrors = false;
+    }
     const msg = await this.helpers.sendMessage(jid, text, sendOptions);
 
     return messageToWaLike(msg ?? undefined);

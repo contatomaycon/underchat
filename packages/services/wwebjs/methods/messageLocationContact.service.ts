@@ -26,8 +26,7 @@ export class WwebjsMessageLocationContactService {
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const quotedMessageId = quoted?.key?.id
-      ? ((await resolveQuotedMessageId(client, jid, quoted.key)) ??
-        quoted.key.id)
+      ? await resolveQuotedMessageId(client, jid, quoted.key)
       : undefined;
 
     const loc = new Location(
@@ -38,11 +37,17 @@ export class WwebjsMessageLocationContactService {
         address: location.address,
       }
     );
-    const options = {
-      quotedMessageId,
-      ignoreQuoteErrors: quotedMessageId ? false : undefined,
+    const options: {
+      quotedMessageId?: string;
+      ignoreQuoteErrors?: false;
+      extra?: Record<string, unknown>;
+    } = {
       extra,
     };
+    if (quotedMessageId) {
+      options.quotedMessageId = quotedMessageId;
+      options.ignoreQuoteErrors = false;
+    }
     const msg = await this.helpers.sendMessage(jid, loc, options);
 
     return messageToWaLike(msg ?? undefined);
@@ -56,16 +61,22 @@ export class WwebjsMessageLocationContactService {
   ): Promise<IMessageKeyResponse | undefined> {
     const client = this.helpers.getClient();
     const quotedMessageId = quoted?.key?.id
-      ? ((await resolveQuotedMessageId(client, jid, quoted.key)) ??
-        quoted.key.id)
+      ? await resolveQuotedMessageId(client, jid, quoted.key)
       : undefined;
 
-    const options = {
+    const options: {
+      parseVCards: true;
+      quotedMessageId?: string;
+      ignoreQuoteErrors?: false;
+      extra?: Record<string, unknown>;
+    } = {
       parseVCards: true,
-      quotedMessageId,
-      ignoreQuoteErrors: quotedMessageId ? false : undefined,
       extra,
     };
+    if (quotedMessageId) {
+      options.quotedMessageId = quotedMessageId;
+      options.ignoreQuoteErrors = false;
+    }
     const msg = await this.helpers.sendMessage(jid, vcard, options);
 
     return messageToWaLike(msg ?? undefined);

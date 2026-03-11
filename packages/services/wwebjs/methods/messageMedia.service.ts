@@ -26,9 +26,7 @@ async function getQuotedMessageId(
     return undefined;
   }
 
-  return (
-    (await resolveQuotedMessageId(client, jid, quoted.key)) ?? quoted.key.id
-  );
+  return resolveQuotedMessageId(client, jid, quoted.key);
 }
 
 @injectable()
@@ -47,12 +45,19 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(image);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const options = {
+    const options: {
+      caption?: string;
+      quotedMessageId?: string;
+      ignoreQuoteErrors?: false;
+      extra?: Record<string, unknown>;
+    } = {
       caption: args?.caption,
-      quotedMessageId,
-      ignoreQuoteErrors: quotedMessageId ? false : undefined,
       extra: args?.extra,
     };
+    if (quotedMessageId) {
+      options.quotedMessageId = quotedMessageId;
+      options.ignoreQuoteErrors = false;
+    }
     const msg = await this.helpers.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
@@ -71,12 +76,19 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(video);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const options = {
+    const options: {
+      caption?: string;
+      quotedMessageId?: string;
+      ignoreQuoteErrors?: false;
+      extra?: Record<string, unknown>;
+    } = {
       caption: args?.caption,
-      quotedMessageId,
-      ignoreQuoteErrors: quotedMessageId ? false : undefined,
       extra: args?.extra,
     };
+    if (quotedMessageId) {
+      options.quotedMessageId = quotedMessageId;
+      options.ignoreQuoteErrors = false;
+    }
     const msg = await this.helpers.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);
@@ -98,13 +110,21 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(audio);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const options = {
+    const options: {
+      sendAudioAsVoice: boolean;
+      isViewOnce?: boolean;
+      quotedMessageId?: string;
+      ignoreQuoteErrors?: false;
+      extra?: Record<string, unknown>;
+    } = {
       sendAudioAsVoice: args?.ptt ?? true,
       isViewOnce: args?.viewOnce,
-      quotedMessageId,
-      ignoreQuoteErrors: quotedMessageId ? false : undefined,
       extra: args?.extra,
     };
+    if (quotedMessageId) {
+      options.quotedMessageId = quotedMessageId;
+      options.ignoreQuoteErrors = false;
+    }
 
     const msg = await this.helpers.sendMessage(jid, media, options);
 
@@ -120,12 +140,19 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(sticker);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const options = {
+    const options: {
+      sendMediaAsSticker: true;
+      quotedMessageId?: string;
+      ignoreQuoteErrors?: false;
+      extra?: Record<string, unknown>;
+    } = {
       sendMediaAsSticker: true,
-      quotedMessageId,
-      ignoreQuoteErrors: quotedMessageId ? false : undefined,
       extra,
     };
+    if (quotedMessageId) {
+      options.quotedMessageId = quotedMessageId;
+      options.ignoreQuoteErrors = false;
+    }
     const msg = await this.helpers.sendMessage(jid, media, options);
     return messageToWaLike(msg ?? undefined);
   }
@@ -144,13 +171,21 @@ export class WwebjsMessageMediaService {
     const client = this.helpers.getClient();
     const media = await mediaFromInput(document);
     const quotedMessageId = await getQuotedMessageId(client, jid, quoted);
-    const options = {
+    const options: {
+      sendMediaAsDocument: true;
+      caption?: string;
+      quotedMessageId?: string;
+      ignoreQuoteErrors?: false;
+      extra?: Record<string, unknown>;
+    } = {
       sendMediaAsDocument: true,
       caption: args.caption,
-      quotedMessageId,
-      ignoreQuoteErrors: quotedMessageId ? false : undefined,
       extra: args.extra,
     };
+    if (quotedMessageId) {
+      options.quotedMessageId = quotedMessageId;
+      options.ignoreQuoteErrors = false;
+    }
     const msg = await this.helpers.sendMessage(jid, media, options);
 
     return messageToWaLike(msg ?? undefined);

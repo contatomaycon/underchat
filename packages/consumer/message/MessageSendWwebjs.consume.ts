@@ -784,6 +784,8 @@ export class MessageSendWwebjsConsume {
           remote_jid?: string | null;
           remote_jid_alt?: string | null;
           from_me?: boolean | null;
+          participant?: string | null;
+          participant_alt?: string | null;
         };
       }
     | undefined {
@@ -797,6 +799,8 @@ export class MessageSendWwebjsConsume {
         remote_jid: quotedKey.remote_jid ?? null,
         remote_jid_alt: quotedKey.remote_jid_alt ?? null,
         from_me: quotedKey.from_me ?? null,
+        participant: quotedKey.participant ?? null,
+        participant_alt: quotedKey.participant_alt ?? null,
       },
     };
   }
