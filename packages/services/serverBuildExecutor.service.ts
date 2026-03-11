@@ -32,7 +32,9 @@ export class ServerBuildExecutorService {
   >();
   private readonly cancelRequested = new Set<string>();
   private readonly commandOutputLimit = 12_000;
-  private readonly realtimeLogChunkLimit = 2_000;
+  private readonly realtimeLogLineLimit = 2_000;
+  private readonly realtimeLogBufferFlushThreshold = 8_000;
+  private readonly realtimeLogBufferByStream = new Map<string, string>();
   private readonly buildTargets: IServerBuildTarget[] = [
     {
       buildType: EServerBuildType.baileys,
@@ -62,7 +64,7 @@ export class ServerBuildExecutorService {
     payload: IServerBuildCentrifugo
   ): Promise<void> {
     try {
-      await this.centrifugoService.publish(
+      await this.centrifugoService.publishImmediate(
         serverBuildCentrifugoQueue(),
         payload
       );
@@ -116,19 +118,18 @@ export class ServerBuildExecutorService {
     serverBuildJobId: string,
     buildType: EServerBuildType | null,
     stream: 'stdout' | 'stderr',
-    chunk: string
+    line: string
   ): void {
-    const normalized = chunk
-      .replace(/\r/g, '')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .join('\n')
-      .slice(0, this.realtimeLogChunkLimit);
+    const normalized = line.trimEnd();
 
-    if (!normalized) {
+    if (normalized.trim().length === 0) {
       return;
     }
+
+    const finalLine =
+      normalized.length > this.realtimeLogLineLimit
+        ? `${normalized.slice(0, this.realtimeLogLineLimit)} ... [truncated ${normalized.length - this.realtimeLogLineLimit} chars]`
+        : normalized;
 
     void this.publishRealtimeEvent({
       event: 'command_log',
@@ -137,8 +138,100 @@ export class ServerBuildExecutorService {
       job: null,
       build_type: buildType as IServerBuildCentrifugo['build_type'],
       stream,
-      log: normalized,
+      log: finalLine,
     });
+  }
+
+  private publishActionLog(
+    serverBuildJobId: string,
+    buildType: EServerBuildType | null,
+    message: string
+  ): void {
+    const normalizedMessage = message
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join(' | ');
+
+    if (!normalizedMessage) {
+      return;
+    }
+
+    this.publishCommandLog(
+      serverBuildJobId,
+      buildType,
+      'stdout',
+      `[action] ${normalizedMessage}`
+    );
+  }
+
+  private getRealtimeBufferKey(
+    serverBuildJobId: string,
+    stream: 'stdout' | 'stderr'
+  ): string {
+    return `${serverBuildJobId}:${stream}`;
+  }
+
+  private appendRealtimeOutputChunk(
+    serverBuildJobId: string,
+    buildType: EServerBuildType | null,
+    stream: 'stdout' | 'stderr',
+    chunk: string
+  ): void {
+    const bufferKey = this.getRealtimeBufferKey(serverBuildJobId, stream);
+    const previousBuffer = this.realtimeLogBufferByStream.get(bufferKey) ?? '';
+    const normalizedChunk = chunk.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const mergedChunk = `${previousBuffer}${normalizedChunk}`;
+    const lines = mergedChunk.split('\n');
+    const pendingLine = lines.pop() ?? '';
+
+    for (const line of lines) {
+      this.publishCommandLog(serverBuildJobId, buildType, stream, line);
+    }
+
+    if (pendingLine.length >= this.realtimeLogBufferFlushThreshold) {
+      this.publishCommandLog(serverBuildJobId, buildType, stream, pendingLine);
+      this.realtimeLogBufferByStream.delete(bufferKey);
+      return;
+    }
+
+    if (pendingLine.length > 0) {
+      this.realtimeLogBufferByStream.set(bufferKey, pendingLine);
+      return;
+    }
+
+    this.realtimeLogBufferByStream.delete(bufferKey);
+  }
+
+  private flushRealtimeOutputBuffer(
+    serverBuildJobId: string,
+    buildType: EServerBuildType | null,
+    stream: 'stdout' | 'stderr'
+  ): void {
+    const bufferKey = this.getRealtimeBufferKey(serverBuildJobId, stream);
+    const pendingLine = this.realtimeLogBufferByStream.get(bufferKey);
+
+    if (!pendingLine) {
+      return;
+    }
+
+    this.realtimeLogBufferByStream.delete(bufferKey);
+    this.publishCommandLog(serverBuildJobId, buildType, stream, pendingLine);
+  }
+
+  private flushRealtimeOutputBuffersByJob(serverBuildJobId: string): void {
+    const jobPrefix = `${serverBuildJobId}:`;
+    for (const [bufferKey, pendingLine] of this.realtimeLogBufferByStream) {
+      if (!bufferKey.startsWith(jobPrefix)) {
+        continue;
+      }
+
+      const stream = bufferKey.endsWith(':stderr') ? 'stderr' : 'stdout';
+      this.realtimeLogBufferByStream.delete(bufferKey);
+      this.publishCommandLog(serverBuildJobId, null, stream, pendingLine);
+    }
   }
 
   private hasAllDockerfiles(workspaceRoot: string): boolean {
@@ -269,6 +362,15 @@ export class ServerBuildExecutorService {
       throw new BuildJobCanceledError(serverBuildJobId);
     }
 
+    const argsForDisplay = options.displayArgs ?? args;
+    const commandDisplay = `${command} ${argsForDisplay.join(' ')}`.trim();
+    const commandStartedAt = Date.now();
+    this.publishActionLog(
+      serverBuildJobId,
+      options.buildType ?? null,
+      `Executing command: ${commandDisplay}`
+    );
+
     await new Promise<void>((resolve, reject) => {
       let output = '';
 
@@ -291,7 +393,7 @@ export class ServerBuildExecutorService {
         }
 
         if (options.emitRealtimeLogs !== false) {
-          this.publishCommandLog(
+          this.appendRealtimeOutputChunk(
             serverBuildJobId,
             options.buildType ?? null,
             stream,
@@ -304,14 +406,47 @@ export class ServerBuildExecutorService {
       child.stderr.on('data', (chunk) => appendOutput(chunk, 'stderr'));
 
       child.on('error', (error) => {
+        this.flushRealtimeOutputBuffer(
+          serverBuildJobId,
+          options.buildType ?? null,
+          'stdout'
+        );
+        this.flushRealtimeOutputBuffer(
+          serverBuildJobId,
+          options.buildType ?? null,
+          'stderr'
+        );
+        this.publishActionLog(
+          serverBuildJobId,
+          options.buildType ?? null,
+          `Command error: ${error.message}`
+        );
         this.clearActiveProcess(serverBuildJobId, child);
         reject(error);
       });
 
       child.on('close', (code, signal) => {
+        this.flushRealtimeOutputBuffer(
+          serverBuildJobId,
+          options.buildType ?? null,
+          'stdout'
+        );
+        this.flushRealtimeOutputBuffer(
+          serverBuildJobId,
+          options.buildType ?? null,
+          'stderr'
+        );
+
         this.clearActiveProcess(serverBuildJobId, child);
+        const commandDurationMs = Date.now() - commandStartedAt;
+        const commandDurationLabel = `${commandDurationMs}ms`;
 
         if (this.cancelRequested.has(serverBuildJobId)) {
+          this.publishActionLog(
+            serverBuildJobId,
+            options.buildType ?? null,
+            `Command canceled (${signal ?? `code ${code ?? 'unknown'}`}) after ${commandDurationLabel}: ${commandDisplay}`
+          );
           reject(
             new BuildJobCanceledError(
               serverBuildJobId,
@@ -322,12 +457,21 @@ export class ServerBuildExecutorService {
         }
 
         if (code === 0) {
+          this.publishActionLog(
+            serverBuildJobId,
+            options.buildType ?? null,
+            `Command finished in ${commandDurationLabel}: ${commandDisplay}`
+          );
           resolve();
           return;
         }
 
         const commandOutput = this.trimCommandOutput(output);
-        const argsForDisplay = options.displayArgs ?? args;
+        this.publishActionLog(
+          serverBuildJobId,
+          options.buildType ?? null,
+          `Command failed (${signal ?? `exit code ${code ?? 'unknown'}`}) after ${commandDurationLabel}: ${commandDisplay}`
+        );
         reject(
           new Error(
             `Command failed (${signal ?? `exit code ${code ?? 'unknown'}`}): ${command} ${argsForDisplay.join(' ')}\n${commandOutput}`
@@ -394,6 +538,7 @@ export class ServerBuildExecutorService {
     }
 
     await this.publishJobSnapshot(serverBuildJobId);
+    this.publishActionLog(serverBuildJobId, null, 'Build job started');
 
     let finalStatus: 'completed' | 'failed' | 'canceled' = 'completed';
     let finalErrorMessage: string | null = null;
@@ -401,6 +546,11 @@ export class ServerBuildExecutorService {
 
     try {
       workspaceRoot = this.getWorkspaceRootForJob(serverBuildJobId);
+      this.publishActionLog(
+        serverBuildJobId,
+        null,
+        `Preparing workspace for version ${job.version}`
+      );
       await this.prepareWorkspaceFromGit(serverBuildJobId, workspaceRoot);
 
       if (
@@ -409,6 +559,7 @@ export class ServerBuildExecutorService {
       ) {
         finalStatus = 'failed';
         finalErrorMessage = `Build workspace root not found or incomplete: ${workspaceRoot}`;
+        this.publishActionLog(serverBuildJobId, null, finalErrorMessage);
         return;
       }
 
@@ -431,6 +582,11 @@ export class ServerBuildExecutorService {
       for (const target of this.buildTargets) {
         if (await this.isCancelRequested(serverBuildJobId)) {
           finalStatus = 'canceled';
+          this.publishActionLog(
+            serverBuildJobId,
+            target.buildType,
+            'Cancellation requested before starting next build target'
+          );
           break;
         }
 
@@ -441,6 +597,11 @@ export class ServerBuildExecutorService {
         if (!fs.existsSync(dockerfileAbsolutePath)) {
           finalStatus = 'failed';
           finalErrorMessage = `Dockerfile not found: ${dockerfileAbsolutePath}`;
+          this.publishActionLog(
+            serverBuildJobId,
+            target.buildType,
+            finalErrorMessage
+          );
           await this.serverBuildService.markJobItemFailed(
             serverBuildJobId,
             target.buildType,
@@ -449,6 +610,12 @@ export class ServerBuildExecutorService {
           await this.publishJobSnapshot(serverBuildJobId);
           break;
         }
+
+        this.publishActionLog(
+          serverBuildJobId,
+          target.buildType,
+          `Starting build target ${target.buildType}`
+        );
 
         await this.serverBuildService.markJobItemRunning(
           serverBuildJobId,
@@ -490,6 +657,11 @@ export class ServerBuildExecutorService {
             harbor_repository: harborRepository,
             image_reference: imageReference,
           });
+          this.publishActionLog(
+            serverBuildJobId,
+            target.buildType,
+            `Build target ${target.buildType} finished successfully`
+          );
           await this.publishJobSnapshot(serverBuildJobId);
         } catch (error) {
           const errorMessage = this.getErrorMessage(error);
@@ -497,6 +669,11 @@ export class ServerBuildExecutorService {
           if (error instanceof BuildJobCanceledError) {
             finalStatus = 'canceled';
             finalErrorMessage = errorMessage;
+            this.publishActionLog(
+              serverBuildJobId,
+              target.buildType,
+              `Build target ${target.buildType} canceled: ${errorMessage}`
+            );
             await this.serverBuildService.markJobItemCanceled(
               serverBuildJobId,
               target.buildType,
@@ -506,6 +683,11 @@ export class ServerBuildExecutorService {
           } else {
             finalStatus = 'failed';
             finalErrorMessage = errorMessage;
+            this.publishActionLog(
+              serverBuildJobId,
+              target.buildType,
+              `Build target ${target.buildType} failed: ${errorMessage}`
+            );
             await this.serverBuildService.markJobItemFailed(
               serverBuildJobId,
               target.buildType,
@@ -522,14 +704,21 @@ export class ServerBuildExecutorService {
       finalStatus =
         error instanceof BuildJobCanceledError ? 'canceled' : 'failed';
       finalErrorMessage = errorMessage;
+      this.publishActionLog(
+        serverBuildJobId,
+        null,
+        `Build job ${finalStatus}: ${errorMessage}`
+      );
     } finally {
       this.cancelRequested.delete(serverBuildJobId);
       this.clearActiveProcess(serverBuildJobId);
+      this.flushRealtimeOutputBuffersByJob(serverBuildJobId);
       this.cleanupWorkspace(workspaceRoot);
 
       if (finalStatus === 'completed') {
         await this.serverBuildService.markJobCompleted(serverBuildJobId);
         await this.publishJobSnapshot(serverBuildJobId);
+        this.publishActionLog(serverBuildJobId, null, 'Build job completed');
         return;
       }
 
@@ -539,6 +728,7 @@ export class ServerBuildExecutorService {
           finalErrorMessage
         );
         await this.publishJobSnapshot(serverBuildJobId);
+        this.publishActionLog(serverBuildJobId, null, 'Build job canceled');
         return;
       }
 
@@ -547,6 +737,7 @@ export class ServerBuildExecutorService {
         finalErrorMessage ?? 'Build execution failed'
       );
       await this.publishJobSnapshot(serverBuildJobId);
+      this.publishActionLog(serverBuildJobId, null, 'Build job failed');
     }
   }
 }

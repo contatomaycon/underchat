@@ -236,8 +236,8 @@ const handleBack = (): void => {
 };
 
 onMounted(async () => {
-  await refreshBuilds();
   await subscribeBuildRealtime();
+  await refreshBuilds();
 });
 
 onBeforeUnmount(async () => {
@@ -447,10 +447,7 @@ onBeforeUnmount(async () => {
           <VCardTitle>{{ $t('build_jobs_history') }}</VCardTitle>
 
           <VCardText>
-            <div
-              v-if="buildJobs.length === 0"
-              class="text-medium-emphasis"
-            >
+            <div v-if="buildJobs.length === 0" class="text-medium-emphasis">
               {{ $t('no_data_available') }}
             </div>
 
@@ -467,16 +464,10 @@ onBeforeUnmount(async () => {
                 </tr>
               </thead>
               <tbody>
-                <tr
-                  v-for="job in buildJobs"
-                  :key="job.server_build_job_id"
-                >
+                <tr v-for="job in buildJobs" :key="job.server_build_job_id">
                   <td>{{ job.version }}</td>
                   <td>
-                    <VChip
-                      size="small"
-                      :color="getJobStatusColor(job.status)"
-                    >
+                    <VChip size="small" :color="getJobStatusColor(job.status)">
                       {{ getJobStatusLabel(job.status) }}
                     </VChip>
                   </td>
@@ -488,9 +479,7 @@ onBeforeUnmount(async () => {
                   </td>
                   <td>
                     {{
-                      job.finished_at
-                        ? formatDateTime(job.finished_at)
-                        : '-'
+                      job.finished_at ? formatDateTime(job.finished_at) : '-'
                     }}
                   </td>
                   <td class="build-error-cell">
@@ -553,8 +542,9 @@ onBeforeUnmount(async () => {
   word-break: break-word;
   max-block-size: 180px;
   overflow: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
   font-size: 0.75rem;
   line-height: 1.35;
 }

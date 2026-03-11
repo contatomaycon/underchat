@@ -30,7 +30,7 @@ const activeJobStatuses = new Set<EServerBuildJobStatus>([
   EServerBuildJobStatus.cancel_requested,
 ]);
 
-const realtimeLogsLimitPerJob = 120;
+const realtimeLogsLimitPerJob = 1000;
 
 export const useServerBuildStore = defineStore('serverBuild', {
   state: () => ({

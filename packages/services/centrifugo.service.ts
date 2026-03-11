@@ -1050,6 +1050,24 @@ export class CentrifugoService {
     }
   }
 
+  async publishImmediate(
+    channel: string,
+    data: unknown
+  ): Promise<PublishResult> {
+    try {
+      return await this.withPublishRetry(
+        () => this.publishViaHttpApiDirect(channel, data),
+        { channel }
+      );
+    } catch (error) {
+      return this.handlePublishError(
+        error,
+        channel,
+        'centrifugo_publish_immediate_error'
+      );
+    }
+  }
+
   async publishSub(channel: string, data: unknown): Promise<PublishResult> {
     try {
       const subId = this.extractSubId(channel);
