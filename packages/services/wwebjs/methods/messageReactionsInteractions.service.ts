@@ -20,7 +20,48 @@ export class WwebjsMessageReactionsInteractionsService {
     const msg = await client.getMessageById(serializedId);
 
     if (msg) {
-      await msg.react(emoji);
+      const pupPage = client.pupPage;
+      if (!pupPage) {
+        throw new Error('Wwebjs puppeteer page not available');
+      }
+
+      await pupPage.evaluate(
+        async (messageId: string, reaction: string) => {
+          if (!messageId) {
+            return;
+          }
+
+          const browserGlobal = globalThis as unknown as {
+            require: (module: string) => unknown;
+          };
+          const collections = browserGlobal.require('WAWebCollections') as {
+            Msg: {
+              get: (id: string) => unknown;
+              getMessagesById: (
+                ids: string[]
+              ) => Promise<{ messages?: unknown[] } | undefined>;
+            };
+          };
+          const message =
+            collections.Msg.get(messageId) ||
+            (await collections.Msg.getMessagesById([messageId]))?.messages?.[0];
+          if (!message) {
+            return;
+          }
+
+          const reactionAction = browserGlobal.require(
+            'WAWebSendReactionMsgAction'
+          ) as {
+            sendReactionToMsg: (
+              message: unknown,
+              reactionText: string
+            ) => Promise<unknown>;
+          };
+          await reactionAction.sendReactionToMsg(message, reaction);
+        },
+        serializedId,
+        emoji
+      );
       return messageToWaLike(msg);
     }
 

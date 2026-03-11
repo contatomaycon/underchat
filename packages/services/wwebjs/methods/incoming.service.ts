@@ -46,6 +46,20 @@ type WwebjsIncomingEventSource =
   | 'message_create'
   | 'message_ciphertext';
 
+interface WwebjsReactionEvent {
+  id?: unknown;
+  msgId?: unknown;
+  msgKey?: unknown;
+  parentMsgKey?: unknown;
+  reactionParentKey?: unknown;
+  reaction?: unknown;
+  reactionText?: unknown;
+  senderId?: unknown;
+  senderUserJid?: unknown;
+  timestamp?: unknown;
+  reactionTimestamp?: unknown;
+}
+
 function getNonEmptyString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
@@ -82,25 +96,182 @@ function getMessageIdSerialized(msg: { id?: unknown }): string | undefined {
   return String(msg.id);
 }
 
-function getReactionMsgIdSerialized(reaction: {
-  msgId?: { _serialized?: string; id?: string };
-}): string | undefined {
-  const m = reaction.msgId;
-  if (!m) return undefined;
-  if (typeof m === 'object' && m !== null && '_serialized' in m) {
-    return (m as { _serialized: string })._serialized;
+function parseBooleanLike(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') {
+    return value;
   }
+
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+
   return undefined;
 }
 
-function getReactionIdSerialized(reaction: {
-  id?: { _serialized?: string };
-}): string {
-  const m = reaction.id;
-  if (typeof m === 'object' && m !== null && '_serialized' in (m ?? {})) {
-    return (m as { _serialized: string })._serialized;
+function getRemoteFromMessageKeyValue(
+  value: Record<string, unknown>
+): string | undefined {
+  const direct =
+    getNonEmptyString(value.remoteJid) ?? getNonEmptyString(value.remote_jid);
+  if (direct) {
+    return direct;
   }
+
+  const remote = value.remote;
+  if (typeof remote === 'string') {
+    return getNonEmptyString(remote);
+  }
+
+  if (typeof remote === 'object' && remote !== null) {
+    const remoteObj = remote as Record<string, unknown>;
+    return (
+      getNonEmptyString(remoteObj._serialized) ??
+      getNonEmptyString(remoteObj.id)
+    );
+  }
+
+  return undefined;
+}
+
+function extractSerializedMessageKey(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return getNonEmptyString(value);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const keyObject = value as Record<string, unknown>;
+  const serialized = getNonEmptyString(keyObject._serialized);
+  if (serialized) {
+    return serialized;
+  }
+
+  const keyId =
+    getNonEmptyString(keyObject.id) ??
+    getNonEmptyString(keyObject.stanzaId) ??
+    getNonEmptyString(keyObject.stanzaID);
+  const remoteJid = getRemoteFromMessageKeyValue(keyObject);
+  const fromMe = parseBooleanLike(keyObject.fromMe ?? keyObject.from_me);
+
+  if (fromMe !== undefined && remoteJid && keyId) {
+    return `${fromMe}_${remoteJid}_${keyId}`;
+  }
+
+  return keyId;
+}
+
+function getReactionMsgIdSerialized(
+  reaction: WwebjsReactionEvent
+): string | undefined {
+  return (
+    extractSerializedMessageKey(reaction.msgId) ??
+    extractSerializedMessageKey(reaction.parentMsgKey) ??
+    extractSerializedMessageKey(reaction.reactionParentKey)
+  );
+}
+
+function getReactionIdSerialized(reaction: WwebjsReactionEvent): string {
+  const serialized =
+    extractSerializedMessageKey(reaction.id) ??
+    extractSerializedMessageKey(reaction.msgKey);
+  if (serialized) {
+    return serialized;
+  }
+
   return `react_${Date.now()}`;
+}
+
+function getReactionSenderId(
+  reaction: WwebjsReactionEvent
+): string | undefined {
+  const direct =
+    getNonEmptyString(reaction.senderId) ??
+    getNonEmptyString(reaction.senderUserJid);
+  if (direct) {
+    return direct;
+  }
+
+  if (typeof reaction.senderId === 'object' && reaction.senderId !== null) {
+    const senderIdObject = reaction.senderId as Record<string, unknown>;
+    const objectSender =
+      getNonEmptyString(senderIdObject._serialized) ??
+      getNonEmptyString(senderIdObject.id);
+    if (objectSender) {
+      return objectSender;
+    }
+  }
+
+  if (
+    typeof reaction.senderUserJid === 'object' &&
+    reaction.senderUserJid !== null
+  ) {
+    const senderUserObject = reaction.senderUserJid as Record<string, unknown>;
+    return (
+      getNonEmptyString(senderUserObject._serialized) ??
+      getNonEmptyString(senderUserObject.id)
+    );
+  }
+
+  return undefined;
+}
+
+function getReactionEmoji(reaction: WwebjsReactionEvent): string {
+  if (typeof reaction.reaction === 'string') {
+    return reaction.reaction;
+  }
+
+  if (typeof reaction.reactionText === 'string') {
+    return reaction.reactionText;
+  }
+
+  return '';
+}
+
+function parseNumberLike(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeTimestampSeconds(value: unknown): number | undefined {
+  const numeric = parseNumberLike(value);
+  if (numeric === undefined || numeric <= 0) {
+    return undefined;
+  }
+
+  if (numeric > 10_000_000_000) {
+    return Math.floor(numeric / 1000);
+  }
+
+  return Math.floor(numeric);
+}
+
+function getReactionTimestampSeconds(
+  reaction: WwebjsReactionEvent
+): number | undefined {
+  return (
+    normalizeTimestampSeconds(reaction.timestamp) ??
+    normalizeTimestampSeconds(reaction.reactionTimestamp)
+  );
 }
 
 function getRemoteFromSerializedMessageId(
@@ -295,18 +466,9 @@ export class WwebjsIncomingMessageService {
         void this.handleMessageEdit(message, newBody, prevBody);
       }
     );
-    client.on(
-      'message_reaction',
-      (reaction: {
-        id?: { _serialized?: string };
-        msgId?: { _serialized?: string };
-        reaction?: string;
-        senderId?: string;
-        timestamp?: number;
-      }) => {
-        void this.handleMessageReaction(client, reaction);
-      }
-    );
+    client.on('message_reaction', (reaction: WwebjsReactionEvent) => {
+      void this.handleMessageReaction(client, reaction);
+    });
     client.on(
       'call',
       (call: {
@@ -1653,32 +1815,33 @@ export class WwebjsIncomingMessageService {
 
   private async handleMessageReaction(
     client: Client,
-    reaction: {
-      id?: { _serialized?: string };
-      msgId?: { _serialized?: string };
-      reaction?: string;
-      senderId?: string;
-      timestamp?: number;
-    }
+    reaction: WwebjsReactionEvent
   ): Promise<void> {
     const parentMsgId = getReactionMsgIdSerialized(reaction);
     if (!parentMsgId) return;
 
-    let remoteJid: string;
+    let remoteJid = '';
     let remoteJidAlt: string | undefined;
     try {
       const parentMsg = await client.getMessageById(parentMsgId);
-      if (!parentMsg) {
-        return;
+      if (parentMsg) {
+        const resolvedJids = this.resolveRemoteJids(client, parentMsg);
+        remoteJid = resolvedJids?.remoteJid ?? '';
+        remoteJidAlt = resolvedJids?.remoteJidAlt;
       }
+    } catch {}
 
-      const resolvedJids = this.resolveRemoteJids(client, parentMsg);
-      remoteJid = resolvedJids?.remoteJid ?? '';
-      remoteJidAlt = resolvedJids?.remoteJidAlt;
-    } catch {
+    if (!remoteJid) {
+      const fallbackRemote = getRemoteFromSerializedMessageId(parentMsgId);
+      const normalizedFallback = fallbackRemote
+        ? (normalizeJid(fallbackRemote) ?? fallbackRemote)
+        : undefined;
+      remoteJid = normalizedFallback ?? '';
+    }
+
+    if (!remoteJid) {
       return;
     }
-    if (!remoteJid) return;
     if (
       this.shouldSkipChat(remoteJid) ||
       this.isGroupOrBroadcastJid(remoteJid)
@@ -1687,20 +1850,21 @@ export class WwebjsIncomingMessageService {
     }
 
     const reactionId = getReactionIdSerialized(reaction);
-    const emoji = reaction.reaction ?? '';
+    const emoji = getReactionEmoji(reaction);
+    const senderId = getReactionSenderId(reaction);
     const myJid =
       (this.currentClient?.info?.wid as { _serialized?: string } | undefined)
         ?._serialized ?? '';
     const fromMe = Boolean(
-      reaction.senderId &&
+      senderId &&
       myJid &&
-      (reaction.senderId === myJid ||
-        reaction.senderId.replace(/@s\.whatsapp\.net$/, '') ===
+      (senderId === myJid ||
+        senderId.replace(/@s\.whatsapp\.net$/, '') ===
           myJid.replace(/@s\.whatsapp\.net$/, ''))
     );
-    const participant = remoteJid.includes('@g.us')
-      ? reaction.senderId
-      : undefined;
+    const participant = remoteJid.includes('@g.us') ? senderId : undefined;
+    const timestamp =
+      getReactionTimestampSeconds(reaction) ?? Math.floor(Date.now() / 1000);
 
     const upsert = buildReactionUpsert(
       remoteJid,
@@ -1710,7 +1874,7 @@ export class WwebjsIncomingMessageService {
       emoji,
       fromMe,
       participant,
-      reaction.timestamp ?? Math.floor(Date.now() / 1000)
+      timestamp
     );
     const topic = this.kafkaServiceQueueService.upsertMessage();
     await this.streamProducerService.send(topic, upsert);
