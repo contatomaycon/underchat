@@ -160,6 +160,38 @@ const query = computed(() => ({
 }));
 
 const isServerBuildRoute = computed(() => route.name === 'server-build');
+const isServerStatusSubscribed = ref(false);
+
+const handleServerStatusMessage = (data: IStatusServerCentrifugo) => {
+  serverStore.updateStatusServer(data.server_id, data.status, data.last_sync);
+};
+
+const subscribeServerStatus = async (): Promise<void> => {
+  if (isServerBuildRoute.value || isServerStatusSubscribed.value) {
+    return;
+  }
+
+  try {
+    await onMessage(statusServerCentrifugoQueue(), handleServerStatusMessage);
+    isServerStatusSubscribed.value = true;
+  } catch (error) {
+    console.error('Failed to subscribe server status updates', error);
+  }
+};
+
+const unsubscribeServerStatus = async (): Promise<void> => {
+  if (!isServerStatusSubscribed.value) {
+    return;
+  }
+
+  try {
+    await unsubscribe(statusServerCentrifugoQueue());
+  } catch (error) {
+    console.error('Failed to unsubscribe server status updates', error);
+  } finally {
+    isServerStatusSubscribed.value = false;
+  }
+};
 
 const handleTableChange = (o: {
   page: number;
@@ -237,26 +269,38 @@ const openLogsDialog = (id: string) => {
 watch(
   query,
   async (q) => {
+    if (isServerBuildRoute.value) {
+      return;
+    }
+
     await serverStore.listServers(q);
   },
   { immediate: true, deep: true }
 );
 
-onMounted(async () => {
-  await onMessage(
-    statusServerCentrifugoQueue(),
-    (data: IStatusServerCentrifugo) => {
-      serverStore.updateStatusServer(
-        data.server_id,
-        data.status,
-        data.last_sync
-      );
+watch(
+  isServerBuildRoute,
+  async (isBuildRoute, wasBuildRoute) => {
+    if (isBuildRoute) {
+      await unsubscribeServerStatus();
+      return;
     }
-  );
+
+    await subscribeServerStatus();
+
+    if (wasBuildRoute) {
+      await serverStore.listServers(query.value);
+    }
+  },
+  { immediate: true }
+);
+
+onMounted(async () => {
+  await subscribeServerStatus();
 });
 
 onBeforeUnmount(async () => {
-  await unsubscribe(statusServerCentrifugoQueue());
+  await unsubscribeServerStatus();
 });
 </script>
 

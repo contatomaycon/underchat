@@ -63,6 +63,8 @@ RUN mkdir -p /build_locales
 
 COPY packages/plugins/i18next/locales /build_locales
 
+FROM docker:27-cli AS docker_cli
+
 FROM node:24.12.0-bookworm-slim
 
 WORKDIR /app
@@ -73,6 +75,8 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/service_api/package*.json ./apps/service_api
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 COPY --from=builder /app/packages/proto ./packages/proto
+COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker_cli /usr/local/libexec/docker /usr/local/libexec/docker
 
 RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser
 
@@ -82,6 +86,7 @@ RUN apt-get update && \
       librdkafka1 \
       curl \
       wget \
+      git \
       gnupg \
       ca-certificates \
       fonts-liberation \
@@ -127,10 +132,18 @@ RUN apt-get update && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
       google-chrome-stable && \
+    mkdir -p /usr/libexec/docker/cli-plugins /usr/local/lib/docker/cli-plugins && \
+    if [ -f /usr/local/libexec/docker/cli-plugins/docker-buildx ]; then \
+      ln -sf /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/libexec/docker/cli-plugins/docker-buildx && \
+      ln -sf /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx; \
+    fi && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome && \
     ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome && \
+    docker --version && \
+    docker buildx version && \
+    git --version && \
     fc-cache -f -v
 
 RUN mkdir -p /home/pptruser/Downloads \

@@ -37,12 +37,12 @@ export class BuildEnvironment {
     return password;
   }
 
-  public get buildWorkspaceRoot(): string {
-    const workspaceRoot = process.env.BUILD_WORKSPACE_ROOT?.trim();
-    if (workspaceRoot) {
-      return workspaceRoot;
+  public get buildGitCloneDir(): string {
+    const cloneDir = process.env.BUILD_GIT_CLONE_DIR?.trim();
+    if (cloneDir) {
+      return cloneDir;
     }
 
-    return process.cwd();
+    return '/tmp/underchat-build-source';
   }
 }

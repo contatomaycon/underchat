@@ -2,7 +2,10 @@ import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { inject, injectable } from 'tsyringe';
-import { buildEnvironment } from '@core/config/environments';
+import {
+  buildEnvironment,
+  generalEnvironment,
+} from '@core/config/environments';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { ServerBuildService } from './serverBuild.service';
 
@@ -25,6 +28,7 @@ interface IBuildTarget {
 interface ICommandOptions {
   cwd: string;
   stdin?: string;
+  displayArgs?: string[];
 }
 
 @injectable()
@@ -58,6 +62,12 @@ export class ServerBuildExecutorService {
     private readonly serverBuildService: ServerBuildService
   ) {}
 
+  private hasAllDockerfiles(workspaceRoot: string): boolean {
+    return this.buildTargets.every((target) =>
+      fs.existsSync(path.resolve(workspaceRoot, target.dockerfilePath))
+    );
+  }
+
   private getImageReferences(
     target: IBuildTarget,
     version: string
@@ -72,6 +82,70 @@ export class ServerBuildExecutorService {
       harborRepository,
       imageReference,
     };
+  }
+
+  private getRepositoryUrlWithToken(): string {
+    const encodedToken = encodeURIComponent(generalEnvironment.gitToken);
+    return `https://${encodedToken}@gitea.devunder.com/${generalEnvironment.gitRepo}.git`;
+  }
+
+  private getWorkspaceRootForJob(serverBuildJobId: string): string {
+    const workspaceParent = path.resolve(buildEnvironment.buildGitCloneDir);
+    return path.resolve(workspaceParent, `server-build-${serverBuildJobId}`);
+  }
+
+  private async prepareWorkspaceFromGit(
+    serverBuildJobId: string,
+    workspaceRoot: string
+  ): Promise<void> {
+    const branch = generalEnvironment.gitBranch;
+    const workspaceParent = path.dirname(workspaceRoot);
+    const repositoryUrl = this.getRepositoryUrlWithToken();
+    const repositoryUrlDisplay = `https://<token>@gitea.devunder.com/${generalEnvironment.gitRepo}.git`;
+
+    fs.mkdirSync(workspaceParent, { recursive: true });
+    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+
+    await this.runCommand(
+      serverBuildJobId,
+      'git',
+      [
+        'clone',
+        '--single-branch',
+        '--branch',
+        branch,
+        repositoryUrl,
+        workspaceRoot,
+      ],
+      {
+        cwd: workspaceParent,
+        displayArgs: [
+          'clone',
+          '--single-branch',
+          '--branch',
+          branch,
+          repositoryUrlDisplay,
+          workspaceRoot,
+        ],
+      }
+    );
+
+    await this.runCommand(
+      serverBuildJobId,
+      'git',
+      ['pull', '--ff-only', 'origin', branch],
+      { cwd: workspaceRoot }
+    );
+  }
+
+  private cleanupWorkspace(workspaceRoot: string | null): void {
+    if (!workspaceRoot) {
+      return;
+    }
+
+    try {
+      fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    } catch {}
   }
 
   private trimCommandOutput(output: string): string {
@@ -161,9 +235,10 @@ export class ServerBuildExecutorService {
         }
 
         const commandOutput = this.trimCommandOutput(output);
+        const argsForDisplay = options.displayArgs ?? args;
         reject(
           new Error(
-            `Command failed (${signal ?? `exit code ${code ?? 'unknown'}`}): ${command} ${args.join(' ')}\n${commandOutput}`
+            `Command failed (${signal ?? `exit code ${code ?? 'unknown'}`}): ${command} ${argsForDisplay.join(' ')}\n${commandOutput}`
           )
         );
       });
@@ -226,15 +301,18 @@ export class ServerBuildExecutorService {
 
     let finalStatus: 'completed' | 'failed' | 'canceled' = 'completed';
     let finalErrorMessage: string | null = null;
-
-    const workspaceRoot = path.resolve(buildEnvironment.buildWorkspaceRoot);
-    if (!fs.existsSync(workspaceRoot)) {
-      finalStatus = 'failed';
-      finalErrorMessage = `Build workspace root not found: ${workspaceRoot}`;
-    }
+    let workspaceRoot: string | null = null;
 
     try {
-      if (finalStatus === 'failed') {
+      workspaceRoot = this.getWorkspaceRootForJob(serverBuildJobId);
+      await this.prepareWorkspaceFromGit(serverBuildJobId, workspaceRoot);
+
+      if (
+        !fs.existsSync(workspaceRoot) ||
+        !this.hasAllDockerfiles(workspaceRoot)
+      ) {
+        finalStatus = 'failed';
+        finalErrorMessage = `Build workspace root not found or incomplete: ${workspaceRoot}`;
         return;
       }
 
@@ -343,6 +421,7 @@ export class ServerBuildExecutorService {
     } finally {
       this.cancelRequested.delete(serverBuildJobId);
       this.clearActiveProcess(serverBuildJobId);
+      this.cleanupWorkspace(workspaceRoot);
 
       if (finalStatus === 'completed') {
         await this.serverBuildService.markJobCompleted(serverBuildJobId);
