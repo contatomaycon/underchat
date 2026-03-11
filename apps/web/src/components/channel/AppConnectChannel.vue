@@ -2,6 +2,7 @@
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -15,6 +16,7 @@ const channelStore = useChannelsStore();
 const props = defineProps<{
   modelValue: boolean;
   channelId: string | null;
+  channelType: string | null;
   accountId: string | null;
 }>();
 
@@ -26,6 +28,7 @@ const isVisible = computed({
 });
 
 const channelId = toRef(props, 'channelId');
+const channelType = toRef(props, 'channelType');
 const accountId = toRef(props, 'accountId');
 
 const statusConnection = ref<EBaileysConnectionStatus>(
@@ -70,6 +73,9 @@ const isConnected = computed(
 
 const isDisconnected = computed(
   () => statusConnection.value === EBaileysConnectionStatus.disconnected
+);
+const isBrowserWorkerType = computed(
+  () => channelType.value === EWorkerType.wwebjs
 );
 
 const progress = computed(() => calculateProgress(elapsedSeconds.value).value);
@@ -169,6 +175,8 @@ async function sendPhoneNumber() {
 }
 
 function enterPhoneNumber() {
+  if (isBrowserWorkerType.value) return;
+
   secondsNextAttempt.value = 0;
   isPhoneNumber.value = true;
   phoneSent.value = false;
@@ -277,7 +285,10 @@ function startNextAttemptCountdown() {
     }
 
     clearInterval(intervalIdNextAttempt.value!);
-    if (statusCode.value === ECodeMessage.phoneNotAvailable) {
+    if (
+      statusCode.value === ECodeMessage.phoneNotAvailable &&
+      !isBrowserWorkerType.value
+    ) {
       enterPhoneNumber();
     }
   }, 1000);
@@ -770,6 +781,7 @@ onUnmounted(() => {
 
           <div
             v-else-if="
+              !isBrowserWorkerType &&
               !isDisconnected &&
               !isConnected &&
               statusCode !== ECodeMessage.newLoginAttempt &&

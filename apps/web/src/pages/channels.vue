@@ -116,6 +116,7 @@ const isAddChannelVisible = ref(false);
 const channelToEdit = ref<string | null>(null);
 
 const channelConnectionChannel = ref<string | null>(null);
+const channelConnectionType = ref<string | null>(null);
 const isDialogConnectionChannelShow = ref(false);
 
 const channelConnectionLogs = ref<string | null>(null);
@@ -231,8 +232,9 @@ const openEditDialog = (id: string) => {
   isDialogEditChannelShow.value = true;
 };
 
-const openConnectionDialog = (id: string) => {
+const openConnectionDialog = (id: string, typeId: string | null = null) => {
   channelConnectionChannel.value = id;
+  channelConnectionType.value = typeId;
   isDialogConnectionChannelShow.value = true;
 };
 
@@ -280,6 +282,13 @@ watch(isDialogDeleterShow, (isOpen) => {
   if (!isOpen) {
     openConversationsCount.value = null;
     channelToDelete.value = null;
+  }
+});
+
+watch(isDialogConnectionChannelShow, (isOpen) => {
+  if (!isOpen) {
+    channelConnectionChannel.value = null;
+    channelConnectionType.value = null;
   }
 });
 
@@ -472,7 +481,7 @@ onUnmounted(async () => {
                     <span>{{ $t('connect_channel') }}</span> </VTooltip
                   ><VIcon
                     icon="tabler-plug-connected"
-                    @click="openConnectionDialog(item.id)"
+                    @click="openConnectionDialog(item.id, item.type?.id ?? null)"
                 /></IconBtn>
 
                 <IconBtn v-if="$canPermission(permissionsEdit)"
@@ -585,6 +594,7 @@ onUnmounted(async () => {
         v-if="isDialogConnectionChannelShow && user?.account_id"
         v-model="isDialogConnectionChannelShow"
         :channel-id="channelConnectionChannel"
+        :channel-type="channelConnectionType"
         :account-id="user.account_id"
       />
 
