@@ -72,6 +72,7 @@ import { extractReactionMessage } from '@core/common/functions/extractReactionMe
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { isUuidLike } from '@core/common/functions/isUuidLike';
 import { IMessageKeyIdContext } from '@core/common/interfaces/IMessageKeyIdContext';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
@@ -415,13 +416,7 @@ export class MessageUpsertConsume {
   }
 
   private isUuidLike(value: string | undefined): boolean {
-    if (!value) {
-      return false;
-    }
-
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value
-    );
+    return isUuidLike(value);
   }
 
   private isPhoneLikeName(value: string): boolean {
@@ -780,14 +775,36 @@ export class MessageUpsertConsume {
     const actorRemote = this.normalizeReactionActorId(
       data.message?.key?.remoteJid ?? data.message?.key?.remoteJidAlt
     );
+
+    // For fromMe reactions, prefer JID/LID from the message key over UUID
     const canonicalUserId = isFromMe
-      ? (this.toNonEmptyString(getChat.worker?.id) ??
+      ? (actorParticipant ??
+        actorRemote ??
+        this.toNonEmptyString(getChat.worker?.id) ??
         this.toNonEmptyString(getChat.user?.id) ??
         '')
       : (actorParticipant ?? actorRemote ?? '');
     const canonicalUserIdNormalized =
       this.normalizeReactionActorId(canonicalUserId) ?? canonicalUserId;
-    const canonicalUserName = isFromMe
+
+    // Detect if a non-fromMe reaction is actually from the operator.
+    // In 1:1 chats, if the actor JID does not match the contact JID,
+    // then the reaction belongs to the operator (fromMe was mis-detected).
+    const chatContactJid = this.normalizeReactionActorId(
+      getChat.message_key?.remote_jid
+    );
+    const chatContactJidAlt = this.normalizeReactionActorId(
+      getChat.message_key?.remote_jid_alt
+    );
+    const isEffectivelyOwn =
+      isFromMe ||
+      (!!canonicalUserIdNormalized &&
+        !!chatContactJid &&
+        canonicalUserIdNormalized !== chatContactJid &&
+        (!chatContactJidAlt ||
+          canonicalUserIdNormalized !== chatContactJidAlt));
+
+    const canonicalUserName = isEffectivelyOwn
       ? (this.toNonEmptyString(getChat.worker?.name) ??
         this.toNonEmptyString(getChat.user?.name) ??
         '')
@@ -822,14 +839,14 @@ export class MessageUpsertConsume {
         return true;
       }
 
-      if (isFromMe) {
+      if (isEffectivelyOwn) {
         const isCanonicalOwn =
           (reactionUserId && reactionUserId === canonicalUserId) ||
           reactionUserIdNormalized === canonicalUserIdNormalized;
         const isLegacyOwn =
           (reactionUserId && legacyOwnIds.has(reactionUserId)) ||
           legacyOwnIdsNormalized.has(reactionUserIdNormalized);
-        const isLegacyUuid = this.isUuidLike(reactionUserId);
+        const isLegacyUuid = isUuidLike(reactionUserId);
 
         return !(isCanonicalOwn || isLegacyOwn || isLegacyUuid);
       }

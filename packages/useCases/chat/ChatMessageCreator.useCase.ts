@@ -28,6 +28,8 @@ import { IChatContext } from '@core/common/interfaces/IChatContext';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { isUuidLike } from '@core/common/functions/isUuidLike';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -504,9 +506,30 @@ export class ChatMessageCreatorUseCase {
     userName: string
   ): Promise<IChatMessage> {
     const existingReactions = message.content?.reactions || [];
-    const reactionsWithoutUser = existingReactions.filter(
-      (reaction) => reaction.user_id !== userId
-    );
+
+    // Build a set of JIDs that belong to the contact (not the operator)
+    const contactJids = new Set<string>();
+    const contactJid = normalizeJid(message.message_key?.remote_jid);
+    const contactJidAlt = normalizeJid(message.message_key?.remote_jid_alt);
+    if (contactJid) contactJids.add(contactJid);
+    if (contactJidAlt) contactJids.add(contactJidAlt);
+
+    const reactionsWithoutUser = existingReactions.filter((reaction) => {
+      const rid = reaction.user_id;
+      if (!rid) return true;
+
+      // Exact match with operator UUID
+      if (rid === userId) return false;
+
+      // Legacy UUID from operator (not a JID, so it's an old format)
+      if (isUuidLike(rid)) return false;
+
+      // JID that does NOT belong to the contact → it's the operator's JID/LID
+      const normalizedRid = normalizeJid(rid) ?? rid;
+      if (!contactJids.has(normalizedRid)) return false;
+
+      return true;
+    });
 
     let updatedReactions: IReaction[] = reactionsWithoutUser;
     if (emoji) {
