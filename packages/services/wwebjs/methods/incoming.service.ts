@@ -274,6 +274,41 @@ function getReactionTimestampSeconds(
   );
 }
 
+function normalizeJidForComparison(
+  value: string | undefined
+): string | undefined {
+  const normalizedValue = getNonEmptyString(value);
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  return normalizeJid(normalizedValue) ?? normalizedValue;
+}
+
+function getUserPartFromJid(value: string): string {
+  const atIndex = value.indexOf('@');
+  return (atIndex > 0 ? value.slice(0, atIndex) : value).trim();
+}
+
+function isSameJidAccount(
+  first: string | undefined,
+  second: string | undefined
+): boolean {
+  const normalizedFirst = normalizeJidForComparison(first);
+  const normalizedSecond = normalizeJidForComparison(second);
+  if (!normalizedFirst || !normalizedSecond) {
+    return false;
+  }
+
+  if (normalizedFirst === normalizedSecond) {
+    return true;
+  }
+
+  return (
+    getUserPartFromJid(normalizedFirst) === getUserPartFromJid(normalizedSecond)
+  );
+}
+
 function getRemoteFromSerializedMessageId(
   serializedMessageId: string
 ): string | undefined {
@@ -1852,17 +1887,12 @@ export class WwebjsIncomingMessageService {
     const reactionId = getReactionIdSerialized(reaction);
     const emoji = getReactionEmoji(reaction);
     const senderId = getReactionSenderId(reaction);
+    const normalizedSenderId = normalizeJidForComparison(senderId);
     const myJid =
       (this.currentClient?.info?.wid as { _serialized?: string } | undefined)
         ?._serialized ?? '';
-    const fromMe = Boolean(
-      senderId &&
-      myJid &&
-      (senderId === myJid ||
-        senderId.replace(/@s\.whatsapp\.net$/, '') ===
-          myJid.replace(/@s\.whatsapp\.net$/, ''))
-    );
-    const participant = remoteJid.includes('@g.us') ? senderId : undefined;
+    const fromMe = isSameJidAccount(normalizedSenderId ?? senderId, myJid);
+    const participant = normalizedSenderId ?? senderId;
     const timestamp =
       getReactionTimestampSeconds(reaction) ?? Math.floor(Date.now() / 1000);
 

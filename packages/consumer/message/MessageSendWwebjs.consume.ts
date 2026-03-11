@@ -1549,25 +1549,33 @@ export class MessageSendWwebjsConsume {
     chatId: string,
     currentType: EMessageType | undefined
   ): Promise<void> {
-    if (
-      currentType !== EMessageType.react ||
-      !data.message_key?.id ||
-      !data.content?.reactions?.length
-    ) {
+    if (currentType !== EMessageType.react || !data.message_key?.id) {
       return;
     }
-    const lastReaction =
-      data.content.reactions[data.content.reactions.length - 1];
+
+    const emojiFromMessage =
+      typeof data.content?.message === 'string' ? data.content.message : null;
+    const lastReaction = data.content?.reactions?.at(-1);
+    const emoji = emojiFromMessage ?? lastReaction?.emoji;
+    if (emoji === undefined) {
+      return;
+    }
+
     const key = {
       remoteJid: jid,
       fromMe: data.message_key.from_me ?? false,
       id: data.message_key.id,
       participant: data.message_key.participant ?? undefined,
     };
-    await this.wwebjsMessageReactionsInteractionsService.react(
+
+    const result = await this.wwebjsMessageReactionsInteractionsService.react(
       key,
-      lastReaction.emoji
+      emoji
     );
+    if (!result) {
+      throw new Error('Failed to send reaction');
+    }
+
     this.lastMessageTypeByChatId.set(chatId, EMessageType.react);
   }
 

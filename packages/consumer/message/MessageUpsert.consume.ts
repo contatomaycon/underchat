@@ -405,6 +405,25 @@ export class MessageUpsertConsume {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
+  private normalizeReactionActorId(value: unknown): string | undefined {
+    const normalized = this.toNonEmptyString(value);
+    if (!normalized) {
+      return undefined;
+    }
+
+    return normalizeJid(normalized) ?? normalized;
+  }
+
+  private isUuidLike(value: string | undefined): boolean {
+    if (!value) {
+      return false;
+    }
+
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value
+    );
+  }
+
   private isPhoneLikeName(value: string): boolean {
     const normalized = value.trim();
     if (!normalized) return false;
@@ -754,14 +773,73 @@ export class MessageUpsertConsume {
       return true;
     }
 
-    const userId = getChat.user?.id ?? '';
-    const userName = getChat.user?.name ?? '';
+    const isFromMe = data.message?.key?.fromMe === true;
+    const actorParticipant = this.normalizeReactionActorId(
+      data.message?.key?.participant ?? data.message?.key?.participantAlt
+    );
+    const actorRemote = this.normalizeReactionActorId(
+      data.message?.key?.remoteJid ?? data.message?.key?.remoteJidAlt
+    );
+    const canonicalUserId = isFromMe
+      ? (this.toNonEmptyString(getChat.worker?.id) ??
+        this.toNonEmptyString(getChat.user?.id) ??
+        '')
+      : (actorParticipant ?? actorRemote ?? '');
+    const canonicalUserIdNormalized =
+      this.normalizeReactionActorId(canonicalUserId) ?? canonicalUserId;
+    const canonicalUserName = isFromMe
+      ? (this.toNonEmptyString(getChat.worker?.name) ??
+        this.toNonEmptyString(getChat.user?.name) ??
+        '')
+      : (this.toNonEmptyString(getChat.contact?.name) ?? '');
     const emoji = reactionMsg.text ?? '';
 
     const existingReactions = targetMessage.content?.reactions || [];
-    const reactionsWithoutUser = existingReactions.filter(
-      (reaction) => reaction.user_id !== userId
-    );
+    const legacyOwnIds = new Set<string>();
+    for (const legacyCandidate of [
+      this.toNonEmptyString(getChat.user?.id),
+      this.toNonEmptyString(getChat.worker?.id),
+      this.toNonEmptyString(canonicalUserId),
+    ]) {
+      if (legacyCandidate) {
+        legacyOwnIds.add(legacyCandidate);
+      }
+    }
+
+    const legacyOwnIdsNormalized = new Set<string>();
+    for (const legacyId of legacyOwnIds) {
+      legacyOwnIdsNormalized.add(
+        this.normalizeReactionActorId(legacyId) ?? legacyId
+      );
+    }
+
+    const reactionsWithoutUser = existingReactions.filter((reaction) => {
+      const reactionUserId = this.toNonEmptyString(reaction.user_id);
+      const reactionUserIdNormalized =
+        this.normalizeReactionActorId(reactionUserId) ?? reactionUserId ?? '';
+
+      if (!reactionUserId && !canonicalUserId) {
+        return true;
+      }
+
+      if (isFromMe) {
+        const isCanonicalOwn =
+          (reactionUserId && reactionUserId === canonicalUserId) ||
+          reactionUserIdNormalized === canonicalUserIdNormalized;
+        const isLegacyOwn =
+          (reactionUserId && legacyOwnIds.has(reactionUserId)) ||
+          legacyOwnIdsNormalized.has(reactionUserIdNormalized);
+        const isLegacyUuid = this.isUuidLike(reactionUserId);
+
+        return !(isCanonicalOwn || isLegacyOwn || isLegacyUuid);
+      }
+
+      if (!canonicalUserIdNormalized) {
+        return true;
+      }
+
+      return reactionUserIdNormalized !== canonicalUserIdNormalized;
+    });
 
     let updatedReactions = reactionsWithoutUser;
     if (emoji) {
@@ -769,8 +847,8 @@ export class MessageUpsertConsume {
         ...reactionsWithoutUser,
         {
           emoji,
-          user_id: userId,
-          user_name: userName,
+          user_id: canonicalUserId,
+          user_name: canonicalUserName,
         },
       ];
     }

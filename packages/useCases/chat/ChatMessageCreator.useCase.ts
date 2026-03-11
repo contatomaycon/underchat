@@ -1215,6 +1215,7 @@ export class ChatMessageCreatorUseCase {
       chatContext.chat,
       chatContext.chatId,
       updatedMessage,
+      emoji,
       messageContext.hash,
       messageContext.typeUser,
       messageContext.senderUser
@@ -1238,6 +1239,7 @@ export class ChatMessageCreatorUseCase {
     chat: IChat,
     chatId: string,
     targetMessage: IChatMessage,
+    emoji: string,
     hash: string | null,
     typeUser: ETypeUserChat,
     senderUser?: IChat['user'] | null
@@ -1268,6 +1270,7 @@ export class ChatMessageCreatorUseCase {
       has_quoted: targetMessage.has_quoted ?? false,
       content: {
         type: EMessageType.react,
+        message: emoji,
         reactions: targetMessage.content?.reactions ?? null,
       },
       date: new Date().toISOString(),
