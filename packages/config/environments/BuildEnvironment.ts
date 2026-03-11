@@ -1,6 +1,31 @@
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 
 export class BuildEnvironment {
+  private normalizeString(value: string): string {
+    const normalized = value.trim();
+    const hasSingleQuotes =
+      normalized.startsWith("'") && normalized.endsWith("'");
+    const hasDoubleQuotes =
+      normalized.startsWith('"') && normalized.endsWith('"');
+
+    if (hasSingleQuotes || hasDoubleQuotes) {
+      return normalized.slice(1, -1).trim();
+    }
+
+    return normalized;
+  }
+
+  private parseRequiredString(envName: string): string {
+    const raw = process.env[envName];
+    const normalized = raw ? this.normalizeString(raw) : '';
+
+    if (!normalized) {
+      throw new InvalidConfigurationError(`${envName} is not defined.`);
+    }
+
+    return normalized;
+  }
+
   private parseOptionalPositiveNumber(
     envName: string,
     defaultValue: number
@@ -21,39 +46,36 @@ export class BuildEnvironment {
   }
 
   public get harborRegistry(): string {
-    const registry = process.env.HARBOR_REGISTRY?.trim();
-    if (!registry) {
-      throw new InvalidConfigurationError('HARBOR_REGISTRY is not defined.');
-    }
-
-    return registry;
+    return this.parseRequiredString('HARBOR_REGISTRY');
   }
 
   public get harborNamespace(): string {
-    const namespace = process.env.HARBOR_NAMESPACE?.trim();
-    if (!namespace) {
-      throw new InvalidConfigurationError('HARBOR_NAMESPACE is not defined.');
-    }
-
-    return namespace.replace(/^\/+|\/+$/g, '');
+    return this.parseRequiredString('HARBOR_NAMESPACE').replace(
+      /^\/+|\/+$/g,
+      ''
+    );
   }
 
   public get harborUsername(): string {
-    const username = process.env.HARBOR_USERNAME?.trim();
-    if (!username) {
-      throw new InvalidConfigurationError('HARBOR_USERNAME is not defined.');
-    }
-
-    return username;
+    return this.parseRequiredString('HARBOR_USERNAME');
   }
 
   public get harborPassword(): string {
-    const password = process.env.HARBOR_PASSWORD?.trim();
-    if (!password) {
-      throw new InvalidConfigurationError('HARBOR_PASSWORD is not defined.');
+    return this.parseRequiredString('HARBOR_PASSWORD');
+  }
+
+  public get harborAuth(): string | null {
+    const raw = process.env.HARBOR_AUTH;
+    if (!raw) {
+      return null;
     }
 
-    return password;
+    const normalized = this.normalizeString(raw);
+    if (!normalized) {
+      return null;
+    }
+
+    return normalized;
   }
 
   public get buildGitCloneDir(): string {

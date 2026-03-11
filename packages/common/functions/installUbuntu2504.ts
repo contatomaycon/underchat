@@ -6,6 +6,7 @@ import { readEnvFile } from './readEnvFile';
 import { IViewServerWebById } from '../interfaces/IViewServerWebById';
 import { IServerBuildDefaultImages } from '../interfaces/IServerBuildDefaultImages';
 import { escapeShellSingleQuotes } from './escapeShellSingleQuotes';
+import { getHarborLoginCommand } from './getHarborLoginCommand';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,18 +19,19 @@ export async function installUbuntu2504(
 
   const patchEnv = path.join(__dirname, '../../../.env');
   const envContent = await readEnvFile(patchEnv);
-  const harborRegistry = escapeShellSingleQuotes(
-    buildEnvironment.harborRegistry
-  );
-  const harborUsername = escapeShellSingleQuotes(
-    buildEnvironment.harborUsername
-  );
-  const harborPassword = escapeShellSingleQuotes(
-    buildEnvironment.harborPassword
-  );
+  const harborRegistryValue = buildEnvironment.harborRegistry;
+  const harborUsernameValue = buildEnvironment.harborUsername;
+  const harborPasswordValue = buildEnvironment.harborPassword;
+  const harborAuthValue = buildEnvironment.harborAuth;
   const baileysImage = escapeShellSingleQuotes(defaultImages.baileys);
   const wwebjsImage = escapeShellSingleQuotes(defaultImages.wwebjs);
   const balanceApiImage = escapeShellSingleQuotes(defaultImages.balance_api);
+  const harborLoginCommand = getHarborLoginCommand({
+    harborRegistry: harborRegistryValue,
+    harborUsername: harborUsernameValue,
+    harborPassword: harborPasswordValue,
+    harborAuth: harborAuthValue,
+  });
 
   return [
     'dpkg --configure -a',
@@ -105,13 +107,7 @@ export async function installUbuntu2504(
       cd /home/app && \
       docker network create underchat 2>/dev/null || true"`,
 
-    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
-      hash -r && \
-      cd /home/app && \
-      if ! printf '%s' '${harborPassword}' | docker login '${harborRegistry}' -u '${harborUsername}' --password-stdin; then \
-        echo 'ERROR: Harbor docker login failed' >&2; \
-        exit 1; \
-      fi"`,
+    harborLoginCommand,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
