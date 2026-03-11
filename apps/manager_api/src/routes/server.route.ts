@@ -24,6 +24,7 @@ import { serverBuildViewSchema } from '@core/schema/server/viewServerBuild';
 import { serverBuildGenerateSchema } from '@core/schema/server/generateServerBuild';
 import { serverBuildCancelSchema } from '@core/schema/server/cancelServerBuild';
 import { serverBuildDefaultSchema } from '@core/schema/server/setServerBuildDefault';
+import { retryServerBuildSchema } from '@core/schema/server/retryServerBuild';
 
 export default function serverRoutes(server: FastifyInstance) {
   const serverController = container.resolve(ServerController);
@@ -112,6 +113,15 @@ export default function serverRoutes(server: FastifyInstance) {
   server.patch('/server/build/default/:server_build_version_id', {
     schema: serverBuildDefaultSchema,
     handler: serverController.setServerBuildDefault,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverBuildEditPermissions),
+    ],
+  });
+
+  server.post('/server/build/retry', {
+    schema: retryServerBuildSchema,
+    handler: serverController.retryServerBuild,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, serverBuildEditPermissions),

@@ -2753,6 +2753,9 @@
   "build_generate_conflict": "There is already a build in progress.",
   "build_cancel_error": "Error requesting build cancellation.",
   "build_cancel_success": "Cancellation request sent successfully!",
+  "build_retry_item": "Retry",
+  "build_retry_error": "Error requesting target retry.",
+  "build_retry_success": "Target retry request sent successfully!",
   "build_set_default_error": "Error changing default version.",
   "build_set_default_success": "Default version updated successfully!"
 }

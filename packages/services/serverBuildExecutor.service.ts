@@ -6,6 +6,7 @@ import {
   buildEnvironment,
   generalEnvironment,
 } from '@core/config/environments';
+import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { serverBuildCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { IRunServerBuildCommandOptions } from '@core/common/interfaces/IRunServerBuildCommandOptions';
@@ -17,7 +18,8 @@ import { ServerBuildService } from './serverBuild.service';
 class BuildJobCanceledError extends Error {
   constructor(
     readonly serverBuildJobId: string,
-    message = 'Build job canceled'
+    readonly buildType: EServerBuildType,
+    message = 'Build job item canceled'
   ) {
     super(message);
     this.name = 'BuildJobCanceledError';
@@ -59,6 +61,21 @@ export class ServerBuildExecutorService {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService
   ) {}
+
+  private getExecutionKey(
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): string {
+    return `${serverBuildJobId}:${buildType}`;
+  }
+
+  private getBuildTarget(
+    buildType: EServerBuildType
+  ): IServerBuildTarget | null {
+    return (
+      this.buildTargets.find((target) => target.buildType === buildType) ?? null
+    );
+  }
 
   private async publishRealtimeEvent(
     payload: IServerBuildCentrifugo
@@ -169,18 +186,23 @@ export class ServerBuildExecutorService {
 
   private getRealtimeBufferKey(
     serverBuildJobId: string,
+    buildType: EServerBuildType,
     stream: 'stdout' | 'stderr'
   ): string {
-    return `${serverBuildJobId}:${stream}`;
+    return `${serverBuildJobId}:${buildType}:${stream}`;
   }
 
   private appendRealtimeOutputChunk(
     serverBuildJobId: string,
-    buildType: EServerBuildType | null,
+    buildType: EServerBuildType,
     stream: 'stdout' | 'stderr',
     chunk: string
   ): void {
-    const bufferKey = this.getRealtimeBufferKey(serverBuildJobId, stream);
+    const bufferKey = this.getRealtimeBufferKey(
+      serverBuildJobId,
+      buildType,
+      stream
+    );
     const previousBuffer = this.realtimeLogBufferByStream.get(bufferKey) ?? '';
     const normalizedChunk = chunk.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const mergedChunk = `${previousBuffer}${normalizedChunk}`;
@@ -207,10 +229,14 @@ export class ServerBuildExecutorService {
 
   private flushRealtimeOutputBuffer(
     serverBuildJobId: string,
-    buildType: EServerBuildType | null,
+    buildType: EServerBuildType,
     stream: 'stdout' | 'stderr'
   ): void {
-    const bufferKey = this.getRealtimeBufferKey(serverBuildJobId, stream);
+    const bufferKey = this.getRealtimeBufferKey(
+      serverBuildJobId,
+      buildType,
+      stream
+    );
     const pendingLine = this.realtimeLogBufferByStream.get(bufferKey);
 
     if (!pendingLine) {
@@ -221,23 +247,29 @@ export class ServerBuildExecutorService {
     this.publishCommandLog(serverBuildJobId, buildType, stream, pendingLine);
   }
 
-  private flushRealtimeOutputBuffersByJob(serverBuildJobId: string): void {
-    const jobPrefix = `${serverBuildJobId}:`;
+  private flushRealtimeOutputBuffersByExecution(
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): void {
+    const executionPrefix = `${serverBuildJobId}:${buildType}:`;
+
     for (const [bufferKey, pendingLine] of this.realtimeLogBufferByStream) {
-      if (!bufferKey.startsWith(jobPrefix)) {
+      if (!bufferKey.startsWith(executionPrefix)) {
         continue;
       }
 
       const stream = bufferKey.endsWith(':stderr') ? 'stderr' : 'stdout';
       this.realtimeLogBufferByStream.delete(bufferKey);
-      this.publishCommandLog(serverBuildJobId, null, stream, pendingLine);
+      this.publishCommandLog(serverBuildJobId, buildType, stream, pendingLine);
     }
   }
 
-  private hasAllDockerfiles(workspaceRoot: string): boolean {
-    return this.buildTargets.every((target) =>
-      fs.existsSync(path.resolve(workspaceRoot, target.dockerfilePath))
-    );
+  private trimCommandOutput(output: string): string {
+    if (output.length <= this.commandOutputLimit) {
+      return output;
+    }
+
+    return output.slice(output.length - this.commandOutputLimit);
   }
 
   private getImageReferences(
@@ -261,13 +293,20 @@ export class ServerBuildExecutorService {
     return `https://${encodedToken}@gitea.devunder.com/${generalEnvironment.gitRepo}.git`;
   }
 
-  private getWorkspaceRootForJob(serverBuildJobId: string): string {
+  private getWorkspaceRootForJobItem(
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): string {
     const workspaceParent = path.resolve(buildEnvironment.buildGitCloneDir);
-    return path.resolve(workspaceParent, `server-build-${serverBuildJobId}`);
+    return path.resolve(
+      workspaceParent,
+      `server-build-${serverBuildJobId}-${buildType}`
+    );
   }
 
   private async prepareWorkspaceFromGit(
     serverBuildJobId: string,
+    buildType: EServerBuildType,
     workspaceRoot: string
   ): Promise<void> {
     const branch = generalEnvironment.gitBranch;
@@ -280,6 +319,7 @@ export class ServerBuildExecutorService {
 
     await this.runCommand(
       serverBuildJobId,
+      buildType,
       'git',
       [
         'clone',
@@ -304,6 +344,7 @@ export class ServerBuildExecutorService {
 
     await this.runCommand(
       serverBuildJobId,
+      buildType,
       'git',
       ['pull', '--ff-only', 'origin', branch],
       { cwd: workspaceRoot }
@@ -320,19 +361,13 @@ export class ServerBuildExecutorService {
     } catch {}
   }
 
-  private trimCommandOutput(output: string): string {
-    if (output.length <= this.commandOutputLimit) {
-      return output;
-    }
-
-    return output.slice(output.length - this.commandOutputLimit);
-  }
-
   private clearActiveProcess(
     serverBuildJobId: string,
+    buildType: EServerBuildType,
     child?: ChildProcessWithoutNullStreams
   ): void {
-    const runningChild = this.activeProcesses.get(serverBuildJobId);
+    const executionKey = this.getExecutionKey(serverBuildJobId, buildType);
+    const runningChild = this.activeProcesses.get(executionKey);
     if (!runningChild) {
       return;
     }
@@ -341,7 +376,7 @@ export class ServerBuildExecutorService {
       return;
     }
 
-    this.activeProcesses.delete(serverBuildJobId);
+    this.activeProcesses.delete(executionKey);
   }
 
   private async isCancelRequested(serverBuildJobId: string): Promise<boolean> {
@@ -354,25 +389,30 @@ export class ServerBuildExecutorService {
 
   private async runCommand(
     serverBuildJobId: string,
+    buildType: EServerBuildType,
     command: string,
     args: string[],
     options: IRunServerBuildCommandOptions
   ): Promise<void> {
     if (await this.isCancelRequested(serverBuildJobId)) {
-      throw new BuildJobCanceledError(serverBuildJobId);
+      throw new BuildJobCanceledError(serverBuildJobId, buildType);
     }
 
     const argsForDisplay = options.displayArgs ?? args;
     const commandDisplay = `${command} ${argsForDisplay.join(' ')}`.trim();
     const commandStartedAt = Date.now();
+
     this.publishActionLog(
       serverBuildJobId,
-      options.buildType ?? null,
+      buildType,
       `Executing command: ${commandDisplay}`
     );
 
     await new Promise<void>((resolve, reject) => {
       let output = '';
+      let cancelMonitorTimer: ReturnType<typeof setInterval> | null = null;
+      let cancelKillTimer: ReturnType<typeof setTimeout> | null = null;
+      let cancelCheckInFlight = false;
 
       const child = spawn(command, args, {
         cwd: options.cwd,
@@ -380,7 +420,65 @@ export class ServerBuildExecutorService {
         stdio: 'pipe',
       });
 
-      this.activeProcesses.set(serverBuildJobId, child);
+      const executionKey = this.getExecutionKey(serverBuildJobId, buildType);
+      this.activeProcesses.set(executionKey, child);
+
+      const requestCancellation = (): void => {
+        this.cancelRequested.add(serverBuildJobId);
+
+        try {
+          child.kill('SIGTERM');
+        } catch {}
+
+        if (cancelKillTimer) {
+          return;
+        }
+
+        cancelKillTimer = setTimeout(() => {
+          try {
+            child.kill('SIGKILL');
+          } catch {}
+        }, 5000);
+      };
+
+      const stopCancelMonitor = (): void => {
+        if (cancelMonitorTimer) {
+          clearInterval(cancelMonitorTimer);
+          cancelMonitorTimer = null;
+        }
+
+        if (cancelKillTimer) {
+          clearTimeout(cancelKillTimer);
+          cancelKillTimer = null;
+        }
+      };
+
+      const pollCancellation = (): void => {
+        if (this.cancelRequested.has(serverBuildJobId)) {
+          requestCancellation();
+          return;
+        }
+
+        if (cancelCheckInFlight) {
+          return;
+        }
+
+        cancelCheckInFlight = true;
+        this.serverBuildService
+          .isCancelRequested(serverBuildJobId)
+          .then((cancelRequested) => {
+            if (cancelRequested) {
+              requestCancellation();
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            cancelCheckInFlight = false;
+          });
+      };
+
+      cancelMonitorTimer = setInterval(pollCancellation, 1_000);
+      pollCancellation();
 
       const appendOutput = (
         chunk: Buffer,
@@ -388,6 +486,7 @@ export class ServerBuildExecutorService {
       ): void => {
         const chunkText = chunk.toString();
         output += chunkText;
+
         if (output.length > this.commandOutputLimit * 2) {
           output = this.trimCommandOutput(output);
         }
@@ -395,7 +494,7 @@ export class ServerBuildExecutorService {
         if (options.emitRealtimeLogs !== false) {
           this.appendRealtimeOutputChunk(
             serverBuildJobId,
-            options.buildType ?? null,
+            buildType,
             stream,
             chunkText
           );
@@ -406,50 +505,38 @@ export class ServerBuildExecutorService {
       child.stderr.on('data', (chunk) => appendOutput(chunk, 'stderr'));
 
       child.on('error', (error) => {
-        this.flushRealtimeOutputBuffer(
-          serverBuildJobId,
-          options.buildType ?? null,
-          'stdout'
-        );
-        this.flushRealtimeOutputBuffer(
-          serverBuildJobId,
-          options.buildType ?? null,
-          'stderr'
-        );
+        stopCancelMonitor();
+        this.flushRealtimeOutputBuffer(serverBuildJobId, buildType, 'stdout');
+        this.flushRealtimeOutputBuffer(serverBuildJobId, buildType, 'stderr');
         this.publishActionLog(
           serverBuildJobId,
-          options.buildType ?? null,
+          buildType,
           `Command error: ${error.message}`
         );
-        this.clearActiveProcess(serverBuildJobId, child);
+        this.clearActiveProcess(serverBuildJobId, buildType, child);
         reject(error);
       });
 
       child.on('close', (code, signal) => {
-        this.flushRealtimeOutputBuffer(
-          serverBuildJobId,
-          options.buildType ?? null,
-          'stdout'
-        );
-        this.flushRealtimeOutputBuffer(
-          serverBuildJobId,
-          options.buildType ?? null,
-          'stderr'
-        );
+        stopCancelMonitor();
+        this.flushRealtimeOutputBuffer(serverBuildJobId, buildType, 'stdout');
+        this.flushRealtimeOutputBuffer(serverBuildJobId, buildType, 'stderr');
 
-        this.clearActiveProcess(serverBuildJobId, child);
+        this.clearActiveProcess(serverBuildJobId, buildType, child);
         const commandDurationMs = Date.now() - commandStartedAt;
         const commandDurationLabel = `${commandDurationMs}ms`;
 
         if (this.cancelRequested.has(serverBuildJobId)) {
           this.publishActionLog(
             serverBuildJobId,
-            options.buildType ?? null,
+            buildType,
             `Command canceled (${signal ?? `code ${code ?? 'unknown'}`}) after ${commandDurationLabel}: ${commandDisplay}`
           );
+
           reject(
             new BuildJobCanceledError(
               serverBuildJobId,
+              buildType,
               `Build canceled (${signal ?? `code ${code ?? 'unknown'}`})`
             )
           );
@@ -459,7 +546,7 @@ export class ServerBuildExecutorService {
         if (code === 0) {
           this.publishActionLog(
             serverBuildJobId,
-            options.buildType ?? null,
+            buildType,
             `Command finished in ${commandDurationLabel}: ${commandDisplay}`
           );
           resolve();
@@ -469,9 +556,10 @@ export class ServerBuildExecutorService {
         const commandOutput = this.trimCommandOutput(output);
         this.publishActionLog(
           serverBuildJobId,
-          options.buildType ?? null,
+          buildType,
           `Command failed (${signal ?? `exit code ${code ?? 'unknown'}`}) after ${commandDurationLabel}: ${commandDisplay}`
         );
+
         reject(
           new Error(
             `Command failed (${signal ?? `exit code ${code ?? 'unknown'}`}): ${command} ${argsForDisplay.join(' ')}\n${commandOutput}`
@@ -497,74 +585,119 @@ export class ServerBuildExecutorService {
   async requestCancel(serverBuildJobId: string): Promise<void> {
     this.cancelRequested.add(serverBuildJobId);
 
-    const child = this.activeProcesses.get(serverBuildJobId);
-    if (!child) {
+    const executionPrefix = `${serverBuildJobId}:`;
+    const activeChildren = Array.from(this.activeProcesses.entries()).filter(
+      ([executionKey]) => executionKey.startsWith(executionPrefix)
+    );
+
+    if (activeChildren.length === 0) {
       await this.serverBuildService.cancelJobIfNotRunning(serverBuildJobId);
+      await this.serverBuildService.syncJobStatusFromItems(serverBuildJobId);
       await this.publishJobSnapshot(serverBuildJobId);
       return;
     }
 
-    try {
-      child.kill('SIGTERM');
-    } catch {}
+    for (const [, child] of activeChildren) {
+      try {
+        child.kill('SIGTERM');
+      } catch {}
+    }
 
     setTimeout(() => {
-      const runningChild = this.activeProcesses.get(serverBuildJobId);
-      if (!runningChild) {
-        return;
-      }
+      const runningChildren = Array.from(this.activeProcesses.entries()).filter(
+        ([executionKey]) => executionKey.startsWith(executionPrefix)
+      );
 
-      try {
-        runningChild.kill('SIGKILL');
-      } catch {}
+      for (const [, child] of runningChildren) {
+        try {
+          child.kill('SIGKILL');
+        } catch {}
+      }
     }, 5000);
+
+    await this.publishJobSnapshot(serverBuildJobId);
   }
 
-  async executeBuildJob(serverBuildJobId: string): Promise<void> {
-    const job = await this.serverBuildService.getBuildJobById(serverBuildJobId);
-
-    if (!job) {
+  async executeBuildJobItem(
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): Promise<void> {
+    const target = this.getBuildTarget(buildType);
+    if (!target) {
       return;
     }
 
-    const started =
-      await this.serverBuildService.markJobRunning(serverBuildJobId);
-    if (!started) {
-      if (await this.serverBuildService.isCancelRequested(serverBuildJobId)) {
-        await this.serverBuildService.cancelJobIfNotRunning(serverBuildJobId);
-        await this.publishJobSnapshot(serverBuildJobId);
+    const version = await this.serverBuildService.claimJobItemForExecution(
+      serverBuildJobId,
+      buildType
+    );
+
+    if (!version) {
+      const job =
+        await this.serverBuildService.getBuildJobById(serverBuildJobId);
+      if (!job) {
+        return;
       }
+
+      const shouldSyncStatus =
+        job.status !== EServerBuildJobStatus.completed &&
+        job.status !== EServerBuildJobStatus.failed &&
+        job.status !== EServerBuildJobStatus.canceled;
+      const status = shouldSyncStatus
+        ? await this.serverBuildService.syncJobStatusFromItems(serverBuildJobId)
+        : job.status;
+
+      if (
+        status === EServerBuildJobStatus.completed ||
+        status === EServerBuildJobStatus.failed ||
+        status === EServerBuildJobStatus.canceled
+      ) {
+        this.cancelRequested.delete(serverBuildJobId);
+      }
+
+      await this.publishJobSnapshot(serverBuildJobId);
       return;
     }
 
     await this.publishJobSnapshot(serverBuildJobId);
-    this.publishActionLog(serverBuildJobId, null, 'Build job started');
+    this.publishActionLog(
+      serverBuildJobId,
+      buildType,
+      `Build target ${buildType} claimed for execution`
+    );
 
-    let finalStatus: 'completed' | 'failed' | 'canceled' = 'completed';
-    let finalErrorMessage: string | null = null;
     let workspaceRoot: string | null = null;
 
     try {
-      workspaceRoot = this.getWorkspaceRootForJob(serverBuildJobId);
+      workspaceRoot = this.getWorkspaceRootForJobItem(
+        serverBuildJobId,
+        buildType
+      );
+
       this.publishActionLog(
         serverBuildJobId,
-        null,
-        `Preparing workspace for version ${job.version}`
+        buildType,
+        `Preparing workspace for version ${version}`
       );
-      await this.prepareWorkspaceFromGit(serverBuildJobId, workspaceRoot);
 
-      if (
-        !fs.existsSync(workspaceRoot) ||
-        !this.hasAllDockerfiles(workspaceRoot)
-      ) {
-        finalStatus = 'failed';
-        finalErrorMessage = `Build workspace root not found or incomplete: ${workspaceRoot}`;
-        this.publishActionLog(serverBuildJobId, null, finalErrorMessage);
-        return;
+      await this.prepareWorkspaceFromGit(
+        serverBuildJobId,
+        buildType,
+        workspaceRoot
+      );
+
+      const dockerfileAbsolutePath = path.resolve(
+        workspaceRoot,
+        target.dockerfilePath
+      );
+
+      if (!fs.existsSync(dockerfileAbsolutePath)) {
+        throw new Error(`Dockerfile not found: ${dockerfileAbsolutePath}`);
       }
 
       await this.runCommand(
         serverBuildJobId,
+        buildType,
         'docker',
         [
           'login',
@@ -579,165 +712,108 @@ export class ServerBuildExecutorService {
         }
       );
 
-      for (const target of this.buildTargets) {
-        if (await this.isCancelRequested(serverBuildJobId)) {
-          finalStatus = 'canceled';
-          this.publishActionLog(
-            serverBuildJobId,
-            target.buildType,
-            'Cancellation requested before starting next build target'
-          );
-          break;
-        }
+      const { harborRepository, imageReference } = this.getImageReferences(
+        target,
+        version
+      );
 
-        const dockerfileAbsolutePath = path.resolve(
-          workspaceRoot,
-          target.dockerfilePath
-        );
-        if (!fs.existsSync(dockerfileAbsolutePath)) {
-          finalStatus = 'failed';
-          finalErrorMessage = `Dockerfile not found: ${dockerfileAbsolutePath}`;
-          this.publishActionLog(
-            serverBuildJobId,
-            target.buildType,
-            finalErrorMessage
-          );
-          await this.serverBuildService.markJobItemFailed(
-            serverBuildJobId,
-            target.buildType,
-            finalErrorMessage
-          );
-          await this.publishJobSnapshot(serverBuildJobId);
-          break;
+      await this.runCommand(
+        serverBuildJobId,
+        buildType,
+        'docker',
+        [
+          'buildx',
+          'build',
+          '--no-cache',
+          '--push',
+          '-t',
+          imageReference,
+          '-f',
+          target.dockerfilePath,
+          '.',
+        ],
+        {
+          cwd: workspaceRoot,
         }
+      );
+
+      await this.serverBuildService.markJobItemSuccessAndPersistVersion({
+        server_build_job_id: serverBuildJobId,
+        build_type: buildType,
+        version,
+        harbor_registry: buildEnvironment.harborRegistry,
+        harbor_repository: harborRepository,
+        image_reference: imageReference,
+      });
+
+      this.publishActionLog(
+        serverBuildJobId,
+        buildType,
+        `Build target ${buildType} finished successfully`
+      );
+    } catch (error) {
+      const errorMessage = this.getErrorMessage(error);
+      const canceled =
+        error instanceof BuildJobCanceledError ||
+        (await this.serverBuildService.isCancelRequested(serverBuildJobId));
+
+      if (canceled) {
+        await this.serverBuildService.markJobItemCanceled(
+          serverBuildJobId,
+          buildType,
+          errorMessage
+        );
 
         this.publishActionLog(
           serverBuildJobId,
-          target.buildType,
-          `Starting build target ${target.buildType}`
+          buildType,
+          `Build target ${buildType} canceled: ${errorMessage}`
         );
-
-        await this.serverBuildService.markJobItemRunning(
+      } else {
+        await this.serverBuildService.markJobItemFailed(
           serverBuildJobId,
-          target.buildType
+          buildType,
+          errorMessage
         );
-        await this.publishJobSnapshot(serverBuildJobId);
 
-        try {
-          const { harborRepository, imageReference } = this.getImageReferences(
-            target,
-            job.version
-          );
-
-          await this.runCommand(
-            serverBuildJobId,
-            'docker',
-            [
-              'buildx',
-              'build',
-              '--no-cache',
-              '--push',
-              '-t',
-              imageReference,
-              '-f',
-              target.dockerfilePath,
-              '.',
-            ],
-            {
-              cwd: workspaceRoot,
-              buildType: target.buildType,
-            }
-          );
-
-          await this.serverBuildService.markJobItemSuccessAndPersistVersion({
-            server_build_job_id: serverBuildJobId,
-            build_type: target.buildType,
-            version: job.version,
-            harbor_registry: buildEnvironment.harborRegistry,
-            harbor_repository: harborRepository,
-            image_reference: imageReference,
-          });
-          this.publishActionLog(
-            serverBuildJobId,
-            target.buildType,
-            `Build target ${target.buildType} finished successfully`
-          );
-          await this.publishJobSnapshot(serverBuildJobId);
-        } catch (error) {
-          const errorMessage = this.getErrorMessage(error);
-
-          if (error instanceof BuildJobCanceledError) {
-            finalStatus = 'canceled';
-            finalErrorMessage = errorMessage;
-            this.publishActionLog(
-              serverBuildJobId,
-              target.buildType,
-              `Build target ${target.buildType} canceled: ${errorMessage}`
-            );
-            await this.serverBuildService.markJobItemCanceled(
-              serverBuildJobId,
-              target.buildType,
-              errorMessage
-            );
-            await this.publishJobSnapshot(serverBuildJobId);
-          } else {
-            finalStatus = 'failed';
-            finalErrorMessage = errorMessage;
-            this.publishActionLog(
-              serverBuildJobId,
-              target.buildType,
-              `Build target ${target.buildType} failed: ${errorMessage}`
-            );
-            await this.serverBuildService.markJobItemFailed(
-              serverBuildJobId,
-              target.buildType,
-              errorMessage
-            );
-            await this.publishJobSnapshot(serverBuildJobId);
-          }
-
-          break;
-        }
+        this.publishActionLog(
+          serverBuildJobId,
+          buildType,
+          `Build target ${buildType} failed: ${errorMessage}`
+        );
       }
-    } catch (error) {
-      const errorMessage = this.getErrorMessage(error);
-      finalStatus =
-        error instanceof BuildJobCanceledError ? 'canceled' : 'failed';
-      finalErrorMessage = errorMessage;
-      this.publishActionLog(
-        serverBuildJobId,
-        null,
-        `Build job ${finalStatus}: ${errorMessage}`
-      );
     } finally {
-      this.cancelRequested.delete(serverBuildJobId);
-      this.clearActiveProcess(serverBuildJobId);
-      this.flushRealtimeOutputBuffersByJob(serverBuildJobId);
+      this.clearActiveProcess(serverBuildJobId, buildType);
+      this.flushRealtimeOutputBuffersByExecution(serverBuildJobId, buildType);
       this.cleanupWorkspace(workspaceRoot);
 
-      if (finalStatus === 'completed') {
-        await this.serverBuildService.markJobCompleted(serverBuildJobId);
-        await this.publishJobSnapshot(serverBuildJobId);
-        this.publishActionLog(serverBuildJobId, null, 'Build job completed');
-        return;
-      }
-
-      if (finalStatus === 'canceled') {
-        await this.serverBuildService.markJobCanceled(
-          serverBuildJobId,
-          finalErrorMessage
-        );
-        await this.publishJobSnapshot(serverBuildJobId);
-        this.publishActionLog(serverBuildJobId, null, 'Build job canceled');
-        return;
-      }
-
-      await this.serverBuildService.markJobFailed(
-        serverBuildJobId,
-        finalErrorMessage ?? 'Build execution failed'
-      );
+      const status =
+        await this.serverBuildService.syncJobStatusFromItems(serverBuildJobId);
       await this.publishJobSnapshot(serverBuildJobId);
-      this.publishActionLog(serverBuildJobId, null, 'Build job failed');
+
+      if (status === EServerBuildJobStatus.completed) {
+        this.publishActionLog(serverBuildJobId, null, 'Build job completed');
+      } else if (status === EServerBuildJobStatus.failed) {
+        this.publishActionLog(serverBuildJobId, null, 'Build job failed');
+      } else if (status === EServerBuildJobStatus.canceled) {
+        this.publishActionLog(serverBuildJobId, null, 'Build job canceled');
+      }
+
+      if (
+        status === EServerBuildJobStatus.completed ||
+        status === EServerBuildJobStatus.failed ||
+        status === EServerBuildJobStatus.canceled
+      ) {
+        this.cancelRequested.delete(serverBuildJobId);
+      }
     }
+  }
+
+  async executeBuildJob(serverBuildJobId: string): Promise<void> {
+    await Promise.all(
+      this.buildTargets.map((target) =>
+        this.executeBuildJobItem(serverBuildJobId, target.buildType)
+      )
+    );
   }
 }

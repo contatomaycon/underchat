@@ -1080,5 +1080,7 @@
   "server_build_cancel_success": "Solicitacao de cancelamento de build enviada com sucesso!",
   "server_build_cancel_not_found": "Nenhum build em andamento para cancelar",
   "server_build_default_not_found": "Versao de build nao encontrada",
-  "server_build_default_update_success": "Versao default atualizada com sucesso!"
+  "server_build_default_update_success": "Versao default atualizada com sucesso!",
+  "server_build_retry_success": "Reprocessamento do target de build enviado com sucesso!",
+  "server_build_retry_not_allowed": "Nao foi possivel reprocessar o target de build informado."
 }

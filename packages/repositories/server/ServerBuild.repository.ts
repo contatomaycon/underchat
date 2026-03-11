@@ -20,7 +20,7 @@ import {
   ServerBuildVersion,
   ServerBuildViewResponse,
 } from '@core/schema/server/viewServerBuild/response.schema';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
@@ -41,6 +41,11 @@ export class ServerBuildRepository {
     EServerBuildJobStatus.queued,
     EServerBuildJobStatus.running,
     EServerBuildJobStatus.cancel_requested,
+  ];
+  private readonly terminalJobStatuses: EServerBuildJobStatus[] = [
+    EServerBuildJobStatus.completed,
+    EServerBuildJobStatus.failed,
+    EServerBuildJobStatus.canceled,
   ];
 
   private readonly buildTypes: EServerBuildType[] = [
@@ -355,51 +360,73 @@ export class ServerBuildRepository {
 
   requestCancelForActiveJob =
     async (): Promise<ICancelServerBuildResult | null> => {
-      const [activeJob] = await this.dbRw
-        .select({
-          server_build_job_id: serverBuildJob.server_build_job_id,
-          status: serverBuildJob.status,
-        })
-        .from(serverBuildJob)
-        .where(inArray(serverBuildJob.status, this.activeJobStatuses))
-        .orderBy(desc(serverBuildJob.created_at))
-        .limit(1)
-        .execute();
+      return this.dbRw.transaction(async (tx) => {
+        const now = currentTime();
+        const [activeJob] = await tx
+          .select({
+            server_build_job_id: serverBuildJob.server_build_job_id,
+            status: serverBuildJob.status,
+          })
+          .from(serverBuildJob)
+          .where(inArray(serverBuildJob.status, this.activeJobStatuses))
+          .orderBy(desc(serverBuildJob.created_at))
+          .limit(1)
+          .execute();
 
-      if (!activeJob) {
-        return null;
-      }
+        if (!activeJob) {
+          return null;
+        }
 
-      if (activeJob.status !== EServerBuildJobStatus.cancel_requested) {
-        const result = await this.dbRw
-          .update(serverBuildJob)
+        if (activeJob.status !== EServerBuildJobStatus.cancel_requested) {
+          const result = await tx
+            .update(serverBuildJob)
+            .set({
+              status: EServerBuildJobStatus.cancel_requested,
+              updated_at: now,
+            })
+            .where(
+              and(
+                eq(
+                  serverBuildJob.server_build_job_id,
+                  activeJob.server_build_job_id
+                ),
+                inArray(serverBuildJob.status, [
+                  EServerBuildJobStatus.queued,
+                  EServerBuildJobStatus.running,
+                ])
+              )
+            )
+            .execute();
+
+          if (result.rowCount !== 1) {
+            return null;
+          }
+        }
+
+        await tx
+          .update(serverBuildJobItem)
           .set({
-            status: EServerBuildJobStatus.cancel_requested,
-            updated_at: currentTime(),
+            status: EServerBuildJobItemStatus.canceled,
+            error_message: null,
+            updated_at: now,
+            finished_at: now,
           })
           .where(
             and(
               eq(
-                serverBuildJob.server_build_job_id,
+                serverBuildJobItem.server_build_job_id,
                 activeJob.server_build_job_id
               ),
-              inArray(serverBuildJob.status, [
-                EServerBuildJobStatus.queued,
-                EServerBuildJobStatus.running,
-              ])
+              eq(serverBuildJobItem.status, EServerBuildJobItemStatus.pending)
             )
           )
           .execute();
 
-        if (result.rowCount !== 1) {
-          return null;
-        }
-      }
-
-      return {
-        server_build_job_id: activeJob.server_build_job_id,
-        previous_status: activeJob.status,
-      };
+        return {
+          server_build_job_id: activeJob.server_build_job_id,
+          previous_status: activeJob.status,
+        };
+      });
     };
 
   rollbackCancelRequest = async (
@@ -413,19 +440,45 @@ export class ServerBuildRepository {
       return;
     }
 
-    await this.dbRw
-      .update(serverBuildJob)
-      .set({
-        status: previousStatus,
-        updated_at: currentTime(),
-      })
-      .where(
-        and(
-          eq(serverBuildJob.server_build_job_id, serverBuildJobId),
-          eq(serverBuildJob.status, EServerBuildJobStatus.cancel_requested)
+    const now = currentTime();
+
+    await this.dbRw.transaction(async (tx) => {
+      const result = await tx
+        .update(serverBuildJob)
+        .set({
+          status: previousStatus,
+          updated_at: now,
+          finished_at: null,
+        })
+        .where(
+          and(
+            eq(serverBuildJob.server_build_job_id, serverBuildJobId),
+            eq(serverBuildJob.status, EServerBuildJobStatus.cancel_requested)
+          )
         )
-      )
-      .execute();
+        .execute();
+
+      if (result.rowCount !== 1) {
+        return;
+      }
+
+      await tx
+        .update(serverBuildJobItem)
+        .set({
+          status: EServerBuildJobItemStatus.pending,
+          updated_at: now,
+          finished_at: null,
+          error_message: null,
+        })
+        .where(
+          and(
+            eq(serverBuildJobItem.server_build_job_id, serverBuildJobId),
+            eq(serverBuildJobItem.status, EServerBuildJobItemStatus.canceled),
+            isNull(serverBuildJobItem.started_at)
+          )
+        )
+        .execute();
+    });
   };
 
   markJobRunning = async (serverBuildJobId: string): Promise<boolean> => {
@@ -447,6 +500,81 @@ export class ServerBuildRepository {
       .execute();
 
     return result.rowCount === 1;
+  };
+
+  claimJobItemForExecution = async (
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): Promise<string | null> => {
+    const now = currentTime();
+
+    return this.dbRw.transaction(async (tx) => {
+      const [job] = await tx
+        .select({
+          status: serverBuildJob.status,
+          version: serverBuildJob.version,
+          started_at: serverBuildJob.started_at,
+        })
+        .from(serverBuildJob)
+        .where(eq(serverBuildJob.server_build_job_id, serverBuildJobId))
+        .limit(1)
+        .execute();
+
+      if (!job) {
+        return null;
+      }
+
+      if (
+        job.status === EServerBuildJobStatus.cancel_requested ||
+        this.terminalJobStatuses.includes(job.status)
+      ) {
+        return null;
+      }
+
+      const claimResult = await tx
+        .update(serverBuildJobItem)
+        .set({
+          status: EServerBuildJobItemStatus.running,
+          started_at: now,
+          finished_at: null,
+          updated_at: now,
+          error_message: null,
+        })
+        .where(
+          and(
+            eq(serverBuildJobItem.server_build_job_id, serverBuildJobId),
+            eq(serverBuildJobItem.build_type, buildType),
+            eq(serverBuildJobItem.status, EServerBuildJobItemStatus.pending)
+          )
+        )
+        .execute();
+
+      if (claimResult.rowCount !== 1) {
+        return null;
+      }
+
+      await tx
+        .update(serverBuildJob)
+        .set({
+          status: EServerBuildJobStatus.running,
+          started_at: job.started_at ?? now,
+          finished_at: null,
+          error_message: null,
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(serverBuildJob.server_build_job_id, serverBuildJobId),
+            inArray(serverBuildJob.status, [
+              EServerBuildJobStatus.queued,
+              EServerBuildJobStatus.running,
+            ])
+          )
+        )
+        .execute();
+
+      return job.version;
+    });
   };
 
   isCancelRequested = async (serverBuildJobId: string): Promise<boolean> => {
@@ -641,6 +769,188 @@ export class ServerBuildRepository {
         .execute();
 
       await this.keepOnlyLastFiveVersions(tx, input.build_type);
+    });
+  };
+
+  retryFailedJobItem = async (
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): Promise<string | null> => {
+    const now = currentTime();
+
+    try {
+      return await this.dbRw.transaction(async (tx) => {
+        const [job] = await tx
+          .select({
+            status: serverBuildJob.status,
+            version: serverBuildJob.version,
+            started_at: serverBuildJob.started_at,
+          })
+          .from(serverBuildJob)
+          .where(eq(serverBuildJob.server_build_job_id, serverBuildJobId))
+          .limit(1)
+          .execute();
+
+        if (!job) {
+          return null;
+        }
+
+        if (!this.terminalJobStatuses.includes(job.status)) {
+          return null;
+        }
+
+        const [otherActiveJob] = await tx
+          .select({
+            server_build_job_id: serverBuildJob.server_build_job_id,
+          })
+          .from(serverBuildJob)
+          .where(
+            and(
+              inArray(serverBuildJob.status, this.activeJobStatuses),
+              ne(serverBuildJob.server_build_job_id, serverBuildJobId)
+            )
+          )
+          .limit(1)
+          .execute();
+
+        if (otherActiveJob) {
+          return null;
+        }
+
+        const retryResult = await tx
+          .update(serverBuildJobItem)
+          .set({
+            status: EServerBuildJobItemStatus.pending,
+            image_reference: null,
+            error_message: null,
+            started_at: null,
+            finished_at: null,
+            updated_at: now,
+          })
+          .where(
+            and(
+              eq(serverBuildJobItem.server_build_job_id, serverBuildJobId),
+              eq(serverBuildJobItem.build_type, buildType),
+              eq(serverBuildJobItem.status, EServerBuildJobItemStatus.failed)
+            )
+          )
+          .execute();
+
+        if (retryResult.rowCount !== 1) {
+          return null;
+        }
+
+        await tx
+          .update(serverBuildJob)
+          .set({
+            status: EServerBuildJobStatus.running,
+            started_at: job.started_at,
+            finished_at: null,
+            error_message: null,
+            updated_at: now,
+          })
+          .where(eq(serverBuildJob.server_build_job_id, serverBuildJobId))
+          .execute();
+
+        return job.version;
+      });
+    } catch (error) {
+      if (this.isUniqueConflictError(error)) {
+        return null;
+      }
+
+      throw error;
+    }
+  };
+
+  syncJobStatusFromItems = async (
+    serverBuildJobId: string
+  ): Promise<EServerBuildJobStatus | null> => {
+    const now = currentTime();
+
+    return this.dbRw.transaction(async (tx) => {
+      const [job] = await tx
+        .select({
+          status: serverBuildJob.status,
+          started_at: serverBuildJob.started_at,
+          error_message: serverBuildJob.error_message,
+        })
+        .from(serverBuildJob)
+        .where(eq(serverBuildJob.server_build_job_id, serverBuildJobId))
+        .limit(1)
+        .execute();
+
+      if (!job) {
+        return null;
+      }
+
+      const items = await tx
+        .select({
+          status: serverBuildJobItem.status,
+          error_message: serverBuildJobItem.error_message,
+        })
+        .from(serverBuildJobItem)
+        .where(eq(serverBuildJobItem.server_build_job_id, serverBuildJobId))
+        .execute();
+
+      if (items.length === 0) {
+        return job.status;
+      }
+
+      const hasRunningOrPending = items.some(
+        (item) =>
+          item.status === EServerBuildJobItemStatus.running ||
+          item.status === EServerBuildJobItemStatus.pending
+      );
+
+      let nextStatus: EServerBuildJobStatus;
+      let nextErrorMessage: string | null = null;
+      let nextFinishedAt: string | null = null;
+
+      if (hasRunningOrPending) {
+        nextStatus =
+          job.status === EServerBuildJobStatus.cancel_requested
+            ? EServerBuildJobStatus.cancel_requested
+            : EServerBuildJobStatus.running;
+      } else if (
+        items.every((item) => item.status === EServerBuildJobItemStatus.success)
+      ) {
+        nextStatus = EServerBuildJobStatus.completed;
+      } else if (job.status === EServerBuildJobStatus.cancel_requested) {
+        nextStatus = EServerBuildJobStatus.canceled;
+      } else if (
+        items.some((item) => item.status === EServerBuildJobItemStatus.failed)
+      ) {
+        nextStatus = EServerBuildJobStatus.failed;
+        nextErrorMessage =
+          items.find((item) => item.status === EServerBuildJobItemStatus.failed)
+            ?.error_message ??
+          job.error_message ??
+          null;
+      } else {
+        nextStatus = EServerBuildJobStatus.canceled;
+      }
+
+      if (!hasRunningOrPending) {
+        nextFinishedAt = now;
+      }
+
+      await tx
+        .update(serverBuildJob)
+        .set({
+          status: nextStatus,
+          started_at: job.started_at,
+          finished_at: nextFinishedAt,
+          error_message:
+            nextStatus === EServerBuildJobStatus.completed
+              ? null
+              : nextErrorMessage,
+          updated_at: now,
+        })
+        .where(eq(serverBuildJob.server_build_job_id, serverBuildJobId))
+        .execute();
+
+      return nextStatus;
     });
   };
 

@@ -2753,6 +2753,9 @@
   "build_generate_conflict": "Ya existe un build en progreso.",
   "build_cancel_error": "Error al solicitar cancelación del build.",
   "build_cancel_success": "¡Solicitud de cancelación enviada con éxito!",
+  "build_retry_item": "Reprocesar",
+  "build_retry_error": "Error al solicitar reproceso del target.",
+  "build_retry_success": "¡Solicitud de reproceso enviada con éxito!",
   "build_set_default_error": "Error al cambiar la versión default.",
   "build_set_default_success": "¡Versión default actualizada con éxito!"
 }

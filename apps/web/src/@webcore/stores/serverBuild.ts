@@ -11,6 +11,7 @@ import {
   ServerBuildViewResponse,
 } from '@core/schema/server/viewServerBuild/response.schema';
 import { ServerBuildGenerateResponse } from '@core/schema/server/generateServerBuild/response.schema';
+import { RetryServerBuildRequest } from '@core/schema/server/retryServerBuild/request.schema';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
 import { IServerBuildCentrifugo } from '@core/common/interfaces/IServerBuildCentrifugo';
@@ -307,6 +308,43 @@ export const useServerBuildStore = defineStore('serverBuild', {
         if (error instanceof AxiosError) {
           message = error.response?.data?.message ?? message;
         }
+        this.showSnackbar(message, EColor.error);
+        this.loading = false;
+        return false;
+      }
+    },
+
+    async retryBuildItem(input: RetryServerBuildRequest): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<void>>(
+          '/server/build/retry',
+          input
+        );
+
+        this.loading = false;
+
+        const data = response.data;
+        if (!data?.status) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('build_retry_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('build_retry_success'),
+          EColor.success
+        );
+        return true;
+      } catch (error) {
+        let message = this.i18n.global.t('build_retry_error');
+        if (error instanceof AxiosError) {
+          message = error.response?.data?.message ?? message;
+        }
+
         this.showSnackbar(message, EColor.error);
         this.loading = false;
         return false;

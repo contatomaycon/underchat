@@ -66,6 +66,16 @@ export class ServerBuildService {
     return this.serverBuildRepository.markJobRunning(serverBuildJobId);
   };
 
+  claimJobItemForExecution = async (
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): Promise<string | null> => {
+    return this.serverBuildRepository.claimJobItemForExecution(
+      serverBuildJobId,
+      buildType
+    );
+  };
+
   isCancelRequested = async (serverBuildJobId: string): Promise<boolean> => {
     return this.serverBuildRepository.isCancelRequested(serverBuildJobId);
   };
@@ -112,6 +122,22 @@ export class ServerBuildService {
     input: IMarkServerBuildItemSuccessInput
   ): Promise<void> => {
     await this.serverBuildRepository.markJobItemSuccessAndPersistVersion(input);
+  };
+
+  retryFailedJobItem = async (
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): Promise<string | null> => {
+    return this.serverBuildRepository.retryFailedJobItem(
+      serverBuildJobId,
+      buildType
+    );
+  };
+
+  syncJobStatusFromItems = async (
+    serverBuildJobId: string
+  ): Promise<EServerBuildJobStatus | null> => {
+    return this.serverBuildRepository.syncJobStatusFromItems(serverBuildJobId);
   };
 
   markJobFailed = async (

@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { inject, singleton } from 'tsyringe';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
+import { EServerBuildType } from '@core/common/enums/EServerBuildType';
+import { IBuildVersionGeneratePayload } from '@core/common/interfaces/IBuildVersionGeneratePayload';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
@@ -10,9 +12,15 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { ServerBuildExecutorService } from '@core/services/serverBuildExecutor.service';
 
-interface IBuildVersionGeneratePayload {
+interface IBuildVersionGenerateLegacyPayload {
   server_build_job_id: string;
+  build_type?: undefined;
+  trigger?: undefined;
 }
+
+type BuildVersionGenerateConsumerPayload =
+  | IBuildVersionGeneratePayload
+  | IBuildVersionGenerateLegacyPayload;
 
 @singleton()
 export class BuildVersionGenerateConsume {
@@ -37,21 +45,43 @@ export class BuildVersionGenerateConsume {
 
   private parsePayload(
     value: Buffer | null
-  ): IBuildVersionGeneratePayload | null {
+  ): BuildVersionGenerateConsumerPayload | null {
     if (!value) {
       return null;
     }
 
     try {
-      const parsed = JSON.parse(
-        value.toString('utf8')
-      ) as IBuildVersionGeneratePayload;
+      const parsed = JSON.parse(value.toString('utf8')) as
+        | (Partial<IBuildVersionGeneratePayload> & {
+            server_build_job_id?: string;
+            build_type?: EServerBuildType;
+          })
+        | null;
 
       if (!parsed?.server_build_job_id) {
         return null;
       }
 
-      return parsed;
+      if (typeof parsed.build_type !== 'undefined') {
+        const isValidBuildType =
+          parsed.build_type === EServerBuildType.baileys ||
+          parsed.build_type === EServerBuildType.wwebjs ||
+          parsed.build_type === EServerBuildType.balance_api;
+
+        if (!isValidBuildType) {
+          return null;
+        }
+
+        return {
+          server_build_job_id: parsed.server_build_job_id,
+          build_type: parsed.build_type,
+          trigger: parsed.trigger,
+        };
+      }
+
+      return {
+        server_build_job_id: parsed.server_build_job_id,
+      };
     } catch {
       return null;
     }
@@ -91,12 +121,23 @@ export class BuildVersionGenerateConsume {
       }
 
       try {
-        await this.serverBuildExecutorService.executeBuildJob(
-          payload.server_build_job_id
-        );
+        if (payload.build_type) {
+          await this.serverBuildExecutorService.executeBuildJobItem(
+            payload.server_build_job_id,
+            payload.build_type
+          );
+        } else {
+          await this.serverBuildExecutorService.executeBuildJob(
+            payload.server_build_job_id
+          );
+        }
       } catch (error) {
         server.log.error(
-          { err: error, server_build_job_id: payload.server_build_job_id },
+          {
+            err: error,
+            server_build_job_id: payload.server_build_job_id,
+            build_type: payload.build_type,
+          },
           'Failed to execute build generate payload'
         );
       } finally {

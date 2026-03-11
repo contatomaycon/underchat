@@ -1080,5 +1080,7 @@
   "server_build_cancel_success": "Build cancellation request sent successfully!",
   "server_build_cancel_not_found": "No active build job to cancel",
   "server_build_default_not_found": "Build version not found",
-  "server_build_default_update_success": "Default build version updated successfully!"
+  "server_build_default_update_success": "Default build version updated successfully!",
+  "server_build_retry_success": "Build target retry request sent successfully!",
+  "server_build_retry_not_allowed": "Unable to retry the selected build target."
 }

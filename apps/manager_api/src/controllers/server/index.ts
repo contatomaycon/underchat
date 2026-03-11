@@ -11,6 +11,7 @@ import { listServerBuild } from './methods/listServerBuild';
 import { generateServerBuild } from './methods/generateServerBuild';
 import { cancelServerBuild } from './methods/cancelServerBuild';
 import { setServerBuildDefault } from './methods/setServerBuildDefault';
+import { retryServerBuild } from './methods/retryServerBuild';
 
 @injectable()
 class ServerController {
@@ -26,6 +27,7 @@ class ServerController {
   public generateServerBuild = generateServerBuild;
   public cancelServerBuild = cancelServerBuild;
   public setServerBuildDefault = setServerBuildDefault;
+  public retryServerBuild = retryServerBuild;
 }
 
 export default ServerController;

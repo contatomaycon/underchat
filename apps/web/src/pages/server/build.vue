@@ -10,7 +10,10 @@ import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { serverBuildCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { IServerBuildCentrifugo } from '@core/common/interfaces/IServerBuildCentrifugo';
-import { ServerBuildJob } from '@core/schema/server/viewServerBuild/response.schema';
+import {
+  ServerBuildJob,
+  ServerBuildJobItem,
+} from '@core/schema/server/viewServerBuild/response.schema';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
@@ -57,6 +60,11 @@ const activeStatusSet = new Set<string>([
   EServerBuildJobStatus.queued,
   EServerBuildJobStatus.running,
   EServerBuildJobStatus.cancel_requested,
+]);
+const terminalStatusSet = new Set<string>([
+  EServerBuildJobStatus.completed,
+  EServerBuildJobStatus.failed,
+  EServerBuildJobStatus.canceled,
 ]);
 
 const isBuildRealtimeSubscribed = ref(false);
@@ -166,6 +174,16 @@ const getJobRealtimeLogs = (serverBuildJobId: string): string => {
   return logs.join('\n');
 };
 
+const getRetryableItems = (job: ServerBuildJob): ServerBuildJobItem[] => {
+  if (!terminalStatusSet.has(job.status)) {
+    return [];
+  }
+
+  return job.items.filter(
+    (item) => item.status === EServerBuildJobItemStatus.failed
+  );
+};
+
 const handleBuildRealtimeMessage = (data: IServerBuildCentrifugo): void => {
   serverBuildStore.applyRealtimeEvent(data);
 };
@@ -213,6 +231,21 @@ const handleGenerateVersion = async (): Promise<void> => {
 const handleCancelBuild = async (): Promise<void> => {
   const canceled = await serverBuildStore.cancelActiveBuild();
   if (!canceled) {
+    return;
+  }
+
+  await refreshBuilds();
+};
+
+const handleRetryBuildItem = async (
+  serverBuildJobId: string,
+  buildType: EServerBuildType
+): Promise<void> => {
+  const retried = await serverBuildStore.retryBuildItem({
+    server_build_job_id: serverBuildJobId,
+    build_type: buildType,
+  });
+  if (!retried) {
     return;
   }
 
@@ -460,6 +493,7 @@ onBeforeUnmount(async () => {
                   <th>{{ $t('build_started_at') }}</th>
                   <th>{{ $t('build_finished_at') }}</th>
                   <th>{{ $t('error') }}</th>
+                  <th>{{ $t('actions') }}</th>
                   <th>{{ $t('build_realtime_logs') }}</th>
                 </tr>
               </thead>
@@ -484,6 +518,36 @@ onBeforeUnmount(async () => {
                   </td>
                   <td class="build-error-cell">
                     {{ getJobErrorMessage(job) }}
+                  </td>
+                  <td class="build-actions-cell">
+                    <div
+                      v-if="
+                        $canPermission(permissionsEdit) &&
+                        getRetryableItems(job).length > 0
+                      "
+                      class="d-flex flex-column gap-2"
+                    >
+                      <VBtn
+                        v-for="item in getRetryableItems(job)"
+                        :key="`${job.server_build_job_id}:${item.build_type}`"
+                        size="x-small"
+                        color="primary"
+                        variant="tonal"
+                        :disabled="serverBuildStore.loading"
+                        @click="
+                          handleRetryBuildItem(
+                            job.server_build_job_id,
+                            item.build_type
+                          )
+                        "
+                      >
+                        {{
+                          `${$t('build_retry_item')} ${getBuildTypeLabel(item.build_type)}`
+                        }}
+                      </VBtn>
+                    </div>
+
+                    <span v-else>-</span>
                   </td>
                   <td class="build-log-cell">
                     <pre class="build-log-pre">{{
@@ -533,6 +597,11 @@ onBeforeUnmount(async () => {
 .build-log-cell {
   max-inline-size: 500px;
   min-inline-size: 260px;
+  vertical-align: top;
+}
+
+.build-actions-cell {
+  min-inline-size: 180px;
   vertical-align: top;
 }
 
