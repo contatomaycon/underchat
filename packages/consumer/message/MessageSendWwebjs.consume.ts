@@ -35,6 +35,14 @@ import { parseSerializedMessageId } from '@core/common/functions/parseSerialized
 import { MessageKeyLookupService } from '@core/services/messageKeyLookup.service';
 import { buildForwardExtraOptions } from '@core/services/wwebjs/util/buildForwardExtraOptions';
 import { isMessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
+import { MessageStatusService } from '@core/services/messageStatus.service';
+import Redis from 'ioredis';
+import { logger } from '@core/plugins/telemetry/logger';
+import {
+  captureException,
+  metricsCount,
+  metricsDistribution,
+} from '@core/plugins/telemetry/sentry';
 
 interface IPartitionCommitState {
   nextContiguousOffset: number | null;
@@ -66,13 +74,20 @@ interface INonRetryableError extends Error {
 
 @singleton()
 export class MessageSendWwebjsConsume {
+  private readonly PROVIDER = 'wwebjs';
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
   private readonly CHAT_QUEUE_TIMEOUT_MS = 10 * 60 * 1000;
   private readonly MAX_PROCESS_ATTEMPTS = 5;
+  private readonly MAX_REDRIVE_COUNT = 3;
+  private readonly MAX_DLQ_PUBLISH_ATTEMPTS = 5;
+  private readonly MAX_REDRIVE_PUBLISH_ATTEMPTS = 5;
+  private readonly DLQ_DEDUPE_TTL_SECONDS = 86400;
+  private readonly DLQ_DEDUPE_PREFIX = 'message-send:dlq-dedupe';
   private readonly RETRY_BASE_MS = 500;
   private readonly RETRY_MAX_MS = 8000;
   private readonly DLQ_PUBLISH_RETRY_DELAY_MS = 5000;
+  private readonly REDRIVE_PUBLISH_RETRY_DELAY_MS = 1500;
   private readonly FORWARD_SOURCE_KEY_MAX_WAIT_MS = 4000;
   private readonly FORWARD_SOURCE_KEY_POLL_INTERVAL_MS = 300;
   private readonly SYSTEM_QUEUE_KEY = 'system';
@@ -112,8 +127,218 @@ export class MessageSendWwebjsConsume {
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(KeyedSequencerService)
-    private readonly keyedSequencerService: KeyedSequencerService
+    private readonly keyedSequencerService: KeyedSequencerService,
+    @inject(MessageStatusService)
+    private readonly messageStatusService: MessageStatusService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
+
+  private logPipelineEvent(
+    event: string,
+    details: Record<string, unknown> = {},
+    level: 'info' | 'warn' | 'error' = 'info'
+  ): void {
+    const payload = {
+      module: 'worker_wwebjs',
+      component: 'message_send_consume',
+      type: 'message_send_pipeline',
+      provider: this.PROVIDER,
+      event,
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      account_id: wwebjsEnvironment.wwebjsAccountId,
+      ...details,
+    };
+
+    if (level === 'error') {
+      logger.error(payload, 'Wwebjs message send pipeline event');
+      return;
+    }
+
+    if (level === 'warn') {
+      logger.warn(payload, 'Wwebjs message send pipeline event');
+      return;
+    }
+
+    logger.info(payload, 'Wwebjs message send pipeline event');
+  }
+
+  private queueTypeFromKey(queueKey: string): string {
+    return queueKey.startsWith('chat:') ? 'chat' : 'system';
+  }
+
+  private attemptBucket(attempt: number): string {
+    if (attempt <= 1) return '1';
+    if (attempt <= 3) return '2-3';
+    return '4+';
+  }
+
+  private baseMetricAttributes(
+    envelope: IQueuedEnvelope,
+    result: string,
+    attempt: number,
+    redriveCount: number
+  ): Record<string, string | number> {
+    return {
+      provider: this.PROVIDER,
+      result,
+      queue_type: this.queueTypeFromKey(envelope.queueKey),
+      attempt_bucket: this.attemptBucket(attempt),
+      redrive_count: redriveCount,
+    };
+  }
+
+  private extractMessageId(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const value = (payload as { message_id?: unknown }).message_id;
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  private getDlqDedupeKey(messageId: string): string {
+    return `${this.DLQ_DEDUPE_PREFIX}:${this.PROVIDER}:${messageId}`;
+  }
+
+  private async acquireDlqDedupe(
+    messageId: string
+  ): Promise<'acquired' | 'duplicate' | 'error'> {
+    try {
+      const key = this.getDlqDedupeKey(messageId);
+      const acquired = await this.redis.set(
+        key,
+        '1',
+        'EX',
+        this.DLQ_DEDUPE_TTL_SECONDS,
+        'NX'
+      );
+      return acquired === 'OK' ? 'acquired' : 'duplicate';
+    } catch (error) {
+      this.logPipelineEvent(
+        'dlq_dedupe_error',
+        {
+          message_id: messageId,
+          error: this.errorMessage(error),
+        },
+        'error'
+      );
+      captureException(error, {
+        messageSendPipeline: {
+          provider: this.PROVIDER,
+          event: 'dlq_dedupe_error',
+          message_id: messageId,
+        },
+      });
+      return 'error';
+    }
+  }
+
+  private async isAlreadySent(messageId: string): Promise<boolean> {
+    try {
+      return await this.messageStatusService.isMessageAlreadySentByMessageId(
+        messageId
+      );
+    } catch (error) {
+      this.logPipelineEvent(
+        'already_sent_check_error',
+        {
+          message_id: messageId,
+          error: this.errorMessage(error),
+        },
+        'error'
+      );
+      captureException(error, {
+        messageSendPipeline: {
+          provider: this.PROVIDER,
+          event: 'already_sent_check_error',
+          message_id: messageId,
+        },
+      });
+      return false;
+    }
+  }
+
+  private async markMessageAsFailedToSend(
+    envelope: IQueuedEnvelope,
+    messageId: string,
+    reason: string,
+    attempt: number,
+    redriveCount: number,
+    rootError?: unknown
+  ): Promise<void> {
+    try {
+      await this.messageStatusService.markMessageAsNotSent(
+        wwebjsEnvironment.wwebjsAccountId,
+        messageId
+      );
+      this.logPipelineEvent('final_failed_marked', {
+        chat_id: envelope.chatId,
+        queue_key: envelope.queueKey,
+        partition: envelope.partition,
+        offset: envelope.offset,
+        message_id: messageId,
+        attempt,
+        redrive_count: redriveCount,
+        result: 'failed_marked',
+        reason,
+      });
+      metricsCount(
+        'message_send_final_failed',
+        1,
+        this.baseMetricAttributes(
+          envelope,
+          'final_failed_marked',
+          attempt,
+          redriveCount
+        )
+      );
+    } catch (error) {
+      this.logPipelineEvent(
+        'final_failed_mark_error',
+        {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          message_id: messageId,
+          attempt,
+          redrive_count: redriveCount,
+          result: 'failed_mark_error',
+          reason,
+          error: this.errorMessage(error),
+        },
+        'error'
+      );
+      captureException(error, {
+        messageSendPipeline: {
+          provider: this.PROVIDER,
+          event: 'final_failed_mark_error',
+          reason,
+          message_id: messageId,
+          root_error: this.errorMessage(rootError),
+        },
+      });
+    }
+  }
+
+  private createRedrivePayload(
+    payload: unknown,
+    redriveCount: number
+  ): unknown {
+    if (!payload || typeof payload !== 'object') {
+      return payload;
+    }
+
+    return {
+      ...(payload as Record<string, unknown>),
+      [this.REDRIVE_COUNT_FIELD]: redriveCount,
+    };
+  }
 
   private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) {
@@ -158,10 +383,30 @@ export class MessageSendWwebjsConsume {
     this.consumer.on('data', (message) => {
       const task = this.handleMessageEvent(topic, dlqTopic, message)
         .catch((error) => {
-          console.error('[MessageSendWwebjs] Failed to dispatch message', {
-            partition: message.partition,
-            offset: message.offset,
-            error: this.errorMessage(error),
+          this.logPipelineEvent(
+            'dispatch_error',
+            {
+              partition: message.partition,
+              offset: message.offset,
+              result: 'dispatch_error',
+              error: this.errorMessage(error),
+            },
+            'error'
+          );
+          metricsCount('message_send_error', 1, {
+            provider: this.PROVIDER,
+            result: 'dispatch_error',
+            queue_type: 'unknown',
+            attempt_bucket: '1',
+            redrive_count: 0,
+          });
+          captureException(error, {
+            messageSendPipeline: {
+              provider: this.PROVIDER,
+              event: 'dispatch_error',
+              partition: message.partition,
+              offset: message.offset,
+            },
           });
         })
         .finally(() => {
@@ -265,10 +510,23 @@ export class MessageSendWwebjsConsume {
   ): Promise<void> {
     const rawPayload = this.extractRawMessage(message.value);
     const payload = this.parseRawMessage(rawPayload);
+    const messageId = this.extractMessageId(payload);
+    const redriveCount = this.extractRedriveCount(payload);
 
     this.registerPendingOffset(message.partition, message.offset);
+    this.logPipelineEvent('consume_received', {
+      partition: message.partition,
+      offset: message.offset,
+      message_id: messageId,
+      redrive_count: redriveCount,
+    });
 
     if (!payload) {
+      this.logPipelineEvent('payload_invalid_skipped', {
+        partition: message.partition,
+        offset: message.offset,
+        result: 'payload_invalid_skipped',
+      });
       await this.completeOffset(topic, message.partition, message.offset);
       return;
     }
@@ -291,21 +549,58 @@ export class MessageSendWwebjsConsume {
       await this.enqueueByQueueKey(queueKey, async () => {
         await this.processEnvelopeWithRetry(envelope);
       });
-      shouldCompleteOffset = true;
-    } catch (error) {
-      console.error('[MessageSendWwebjs] Queue processing failed', {
+      this.logPipelineEvent('queue_enqueued', {
         chat_id: chatId,
         queue_key: queueKey,
         partition: message.partition,
         offset: message.offset,
-        result: 'enqueue_error',
-        error: this.errorMessage(error),
+        message_id: messageId,
+        redrive_count: redriveCount,
+      });
+      shouldCompleteOffset = true;
+    } catch (error) {
+      this.logPipelineEvent(
+        'enqueue_error',
+        {
+          chat_id: chatId,
+          queue_key: queueKey,
+          partition: message.partition,
+          offset: message.offset,
+          message_id: messageId,
+          redrive_count: redriveCount,
+          result: 'enqueue_error',
+          error: this.errorMessage(error),
+        },
+        'error'
+      );
+      metricsCount(
+        'message_send_error',
+        1,
+        this.baseMetricAttributes(
+          envelope,
+          'enqueue_error',
+          this.MAX_PROCESS_ATTEMPTS,
+          redriveCount
+        )
+      );
+      captureException(error, {
+        messageSendPipeline: {
+          provider: this.PROVIDER,
+          event: 'enqueue_error',
+          chat_id: chatId,
+          queue_key: queueKey,
+          partition: message.partition,
+          offset: message.offset,
+          message_id: messageId,
+        },
       });
 
-      await this.publishDlqWithRetry(
+      await this.routeFailedMessage(
         envelope,
         error,
-        this.MAX_PROCESS_ATTEMPTS
+        this.MAX_PROCESS_ATTEMPTS,
+        this.MAX_PROCESS_ATTEMPTS,
+        'enqueue_error'
       );
       shouldCompleteOffset = true;
     } finally {
@@ -402,78 +697,144 @@ export class MessageSendWwebjsConsume {
     envelope: IQueuedEnvelope
   ): Promise<void> {
     let lastError: unknown = null;
+    const messageId = this.extractMessageId(envelope.payload);
+    const redriveCount = this.extractRedriveCount(envelope.payload);
 
     for (let attempt = 1; attempt <= this.MAX_PROCESS_ATTEMPTS; attempt++) {
       const startedAt = Date.now();
       try {
         await this.processPayload(envelope.payload);
-        console.info('[MessageSendWwebjs] Message processed', {
+        const durationMs = Date.now() - startedAt;
+        this.logPipelineEvent('processed_success', {
           chat_id: envelope.chatId,
           queue_key: envelope.queueKey,
           partition: envelope.partition,
           offset: envelope.offset,
+          message_id: messageId,
+          redrive_count: redriveCount,
           attempt,
           result: 'success',
-          duration_ms: Date.now() - startedAt,
+          duration_ms: durationMs,
         });
+        metricsCount(
+          'message_send_success',
+          1,
+          this.baseMetricAttributes(envelope, 'success', attempt, redriveCount)
+        );
+        metricsDistribution(
+          'message_send_duration_ms',
+          durationMs,
+          this.baseMetricAttributes(envelope, 'success', attempt, redriveCount)
+        );
         return;
       } catch (error) {
         lastError = error;
         if (isMessageDeliveryConfirmationFailedError(error)) {
-          console.warn('[MessageSendWwebjs] Delivery confirmation failed', {
-            chat_id: envelope.chatId,
-            queue_key: envelope.queueKey,
-            partition: envelope.partition,
-            offset: envelope.offset,
-            attempt,
-            result: 'delivery_unconfirmed_to_dlq',
-            error: this.errorMessage(error),
-          });
-
-          await this.publishDlqWithRetry(
+          this.logPipelineEvent(
+            'delivery_unconfirmed',
+            {
+              chat_id: envelope.chatId,
+              queue_key: envelope.queueKey,
+              partition: envelope.partition,
+              offset: envelope.offset,
+              message_id: messageId,
+              redrive_count: redriveCount,
+              attempt,
+              result: 'delivery_unconfirmed',
+              error: this.errorMessage(error),
+            },
+            'warn'
+          );
+          metricsCount(
+            'message_send_delivery_unconfirmed',
+            1,
+            this.baseMetricAttributes(
+              envelope,
+              'delivery_unconfirmed',
+              attempt,
+              redriveCount
+            )
+          );
+          await this.routeFailedMessage(
             envelope,
             error,
-            error.maxAttempts ?? attempt
+            error.maxAttempts ?? attempt,
+            attempt,
+            'delivery_unconfirmed'
           );
           return;
         }
         const terminalReason = this.resolveTerminalReason(error);
 
         if (terminalReason) {
-          console.warn('[MessageSendWwebjs] Message processing failed', {
-            chat_id: envelope.chatId,
-            queue_key: envelope.queueKey,
-            partition: envelope.partition,
-            offset: envelope.offset,
-            attempt,
-            result: 'terminal',
-            error: terminalReason,
-          });
+          this.logPipelineEvent(
+            'terminal_skipped',
+            {
+              chat_id: envelope.chatId,
+              queue_key: envelope.queueKey,
+              partition: envelope.partition,
+              offset: envelope.offset,
+              message_id: messageId,
+              redrive_count: redriveCount,
+              attempt,
+              result: 'terminal',
+              error: terminalReason,
+            },
+            'warn'
+          );
+          metricsCount(
+            'message_send_error',
+            1,
+            this.baseMetricAttributes(
+              envelope,
+              'terminal',
+              attempt,
+              redriveCount
+            )
+          );
           return;
         }
 
         const isLastAttempt = attempt === this.MAX_PROCESS_ATTEMPTS;
 
-        console.warn('[MessageSendWwebjs] Message processing failed', {
-          chat_id: envelope.chatId,
-          queue_key: envelope.queueKey,
-          partition: envelope.partition,
-          offset: envelope.offset,
-          attempt,
-          result: isLastAttempt ? 'failed' : 'retrying',
-          error: this.errorMessage(error),
-        });
+        this.logPipelineEvent(
+          isLastAttempt ? 'processing_failed' : 'retry_scheduled',
+          {
+            chat_id: envelope.chatId,
+            queue_key: envelope.queueKey,
+            partition: envelope.partition,
+            offset: envelope.offset,
+            message_id: messageId,
+            redrive_count: redriveCount,
+            attempt,
+            result: isLastAttempt ? 'failed' : 'retrying',
+            error: this.errorMessage(error),
+          },
+          isLastAttempt ? 'warn' : 'info'
+        );
 
         if (!isLastAttempt) {
+          metricsCount(
+            'message_send_retry',
+            1,
+            this.baseMetricAttributes(
+              envelope,
+              'retrying',
+              attempt,
+              redriveCount
+            )
+          );
           await this.delay(this.calculateRetryDelayMs(attempt));
         }
       }
     }
 
-    await this.publishDlqWithRetry(
+    await this.routeFailedMessage(
       envelope,
       lastError,
-      this.MAX_PROCESS_ATTEMPTS
+      this.MAX_PROCESS_ATTEMPTS,
+      this.MAX_PROCESS_ATTEMPTS,
+      'processing_failed'
     );
   }
 
@@ -566,9 +927,28 @@ export class MessageSendWwebjsConsume {
       .catch(() => {})
       .then(operation)
       .catch((error) => {
-        console.error('[MessageSendWwebjs] Commit coordination error', {
-          partition,
-          error: this.errorMessage(error),
+        this.logPipelineEvent(
+          'commit_coordination_error',
+          {
+            partition,
+            result: 'commit_coordination_error',
+            error: this.errorMessage(error),
+          },
+          'error'
+        );
+        metricsCount('message_send_error', 1, {
+          provider: this.PROVIDER,
+          result: 'commit_coordination_error',
+          queue_type: 'unknown',
+          attempt_bucket: '1',
+          redrive_count: 0,
+        });
+        captureException(error, {
+          messageSendPipeline: {
+            provider: this.PROVIDER,
+            event: 'commit_coordination_error',
+            partition,
+          },
         });
       });
 
@@ -655,12 +1035,300 @@ export class MessageSendWwebjsConsume {
     return array[0] / (0xffffffff + 1);
   }
 
+  private async routeFailedMessage(
+    envelope: IQueuedEnvelope,
+    error: unknown,
+    attempts: number,
+    attempt: number,
+    failureEvent: 'delivery_unconfirmed' | 'processing_failed' | 'enqueue_error'
+  ): Promise<void> {
+    const messageId = this.extractMessageId(envelope.payload);
+    const redriveCount = this.extractRedriveCount(envelope.payload);
+
+    if (failureEvent === 'processing_failed') {
+      metricsCount(
+        'message_send_error',
+        1,
+        this.baseMetricAttributes(
+          envelope,
+          'processing_failed',
+          attempt,
+          redriveCount
+        )
+      );
+    }
+
+    if (!messageId) {
+      this.logPipelineEvent(
+        'missing_message_id_skipped',
+        {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          attempt,
+          redrive_count: redriveCount,
+          result: 'missing_message_id',
+          failure_event: failureEvent,
+          error: this.errorMessage(error),
+        },
+        'warn'
+      );
+      metricsCount(
+        'message_send_error',
+        1,
+        this.baseMetricAttributes(envelope, 'missing_message_id', attempt, 0)
+      );
+      return;
+    }
+
+    const alreadySent = await this.isAlreadySent(messageId);
+    if (alreadySent) {
+      this.logPipelineEvent('already_sent_skipped', {
+        chat_id: envelope.chatId,
+        queue_key: envelope.queueKey,
+        partition: envelope.partition,
+        offset: envelope.offset,
+        message_id: messageId,
+        attempt,
+        redrive_count: redriveCount,
+        result: 'already_sent_skipped',
+      });
+      metricsCount(
+        'message_send_already_sent_skipped',
+        1,
+        this.baseMetricAttributes(
+          envelope,
+          'already_sent_skipped',
+          attempt,
+          redriveCount
+        )
+      );
+      return;
+    }
+
+    if (redriveCount >= this.MAX_REDRIVE_COUNT) {
+      this.logPipelineEvent(
+        'redrive_limit_reached',
+        {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          message_id: messageId,
+          attempt,
+          redrive_count: redriveCount,
+          result: 'redrive_limit_reached',
+          error: this.errorMessage(error),
+        },
+        'warn'
+      );
+      await this.markMessageAsFailedToSend(
+        envelope,
+        messageId,
+        'redrive_limit_reached',
+        attempt,
+        redriveCount,
+        error
+      );
+      return;
+    }
+
+    if (redriveCount === 0) {
+      const dedupeStatus = await this.acquireDlqDedupe(messageId);
+      if (dedupeStatus === 'duplicate') {
+        this.logPipelineEvent('dlq_duplicate_skipped', {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          message_id: messageId,
+          attempt,
+          redrive_count: redriveCount,
+          result: 'dlq_duplicate_skipped',
+        });
+        metricsCount(
+          'message_send_dlq_duplicate_skipped',
+          1,
+          this.baseMetricAttributes(
+            envelope,
+            'dlq_duplicate_skipped',
+            attempt,
+            redriveCount
+          )
+        );
+        return;
+      }
+
+      if (dedupeStatus === 'error') {
+        await this.markMessageAsFailedToSend(
+          envelope,
+          messageId,
+          'dlq_dedupe_error',
+          attempt,
+          redriveCount,
+          error
+        );
+        return;
+      }
+
+      const published = await this.publishDlqWithRetry(
+        envelope,
+        error,
+        attempts,
+        messageId,
+        redriveCount,
+        attempt
+      );
+
+      if (!published) {
+        await this.markMessageAsFailedToSend(
+          envelope,
+          messageId,
+          'dlq_publish_failed',
+          attempt,
+          redriveCount,
+          error
+        );
+      }
+      return;
+    }
+
+    const nextRedriveCount = redriveCount + 1;
+    const requeued = await this.redriveToPrimaryWithRetry(
+      envelope,
+      messageId,
+      attempt,
+      nextRedriveCount
+    );
+
+    if (!requeued) {
+      await this.markMessageAsFailedToSend(
+        envelope,
+        messageId,
+        'redrive_publish_failed',
+        attempt,
+        redriveCount,
+        error
+      );
+    }
+  }
+
+  private async redriveToPrimaryWithRetry(
+    envelope: IQueuedEnvelope,
+    messageId: string,
+    attempt: number,
+    nextRedriveCount: number
+  ): Promise<boolean> {
+    const payload = this.createRedrivePayload(
+      envelope.payload,
+      nextRedriveCount
+    );
+    const key = envelope.chatId ?? `${envelope.partition}:${envelope.offset}`;
+    const startedAt = Date.now();
+
+    for (
+      let redriveAttempt = 1;
+      redriveAttempt <= this.MAX_REDRIVE_PUBLISH_ATTEMPTS;
+      redriveAttempt++
+    ) {
+      try {
+        await this.streamProducerService.send(envelope.topic, payload, key);
+        const durationMs = Date.now() - startedAt;
+        this.logPipelineEvent('redrive_requeued', {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          message_id: messageId,
+          attempt,
+          redrive_count: nextRedriveCount,
+          result: 'redrive_requeued',
+          duration_ms: durationMs,
+        });
+        metricsCount(
+          'message_send_redrive_requeued',
+          1,
+          this.baseMetricAttributes(
+            envelope,
+            'redrive_requeued',
+            attempt,
+            nextRedriveCount
+          )
+        );
+        metricsDistribution(
+          'message_send_redrive_duration_ms',
+          durationMs,
+          this.baseMetricAttributes(
+            envelope,
+            'redrive_requeued',
+            attempt,
+            nextRedriveCount
+          )
+        );
+        return true;
+      } catch (error) {
+        if (redriveAttempt >= this.MAX_REDRIVE_PUBLISH_ATTEMPTS) {
+          this.logPipelineEvent(
+            'redrive_publish_error',
+            {
+              chat_id: envelope.chatId,
+              queue_key: envelope.queueKey,
+              partition: envelope.partition,
+              offset: envelope.offset,
+              message_id: messageId,
+              attempt,
+              redrive_count: nextRedriveCount,
+              redrive_attempt: redriveAttempt,
+              result: 'redrive_publish_error',
+              error: this.errorMessage(error),
+            },
+            'error'
+          );
+          captureException(error, {
+            messageSendPipeline: {
+              provider: this.PROVIDER,
+              event: 'redrive_publish_error',
+              message_id: messageId,
+              attempt,
+              redrive_count: nextRedriveCount,
+            },
+          });
+          return false;
+        }
+
+        this.logPipelineEvent(
+          'redrive_publish_retry',
+          {
+            chat_id: envelope.chatId,
+            queue_key: envelope.queueKey,
+            partition: envelope.partition,
+            offset: envelope.offset,
+            message_id: messageId,
+            attempt,
+            redrive_count: nextRedriveCount,
+            redrive_attempt: redriveAttempt,
+            result: 'redrive_publish_retry',
+            error: this.errorMessage(error),
+          },
+          'warn'
+        );
+        await this.delay(this.REDRIVE_PUBLISH_RETRY_DELAY_MS);
+      }
+    }
+
+    return false;
+  }
+
   private async publishDlqWithRetry(
     envelope: IQueuedEnvelope,
     error: unknown,
-    attempts: number
-  ): Promise<void> {
-    const redriveCount = this.extractRedriveCount(envelope.payload);
+    attempts: number,
+    messageId: string,
+    redriveCount: number,
+    attempt: number
+  ): Promise<boolean> {
+    const startedAt = Date.now();
 
     const dlqPayload: IWorkerSendMessageDlq = {
       worker_id: wwebjsEnvironment.wwebjsWorkerId,
@@ -668,6 +1336,7 @@ export class MessageSendWwebjsConsume {
       partition: envelope.partition,
       offset: envelope.offset,
       chat_id: envelope.chatId,
+      message_id: messageId,
       queue_key: envelope.queueKey,
       attempts,
       redrive_count: redriveCount,
@@ -677,7 +1346,11 @@ export class MessageSendWwebjsConsume {
       failed_at: new Date().toISOString(),
     };
 
-    while (true) {
+    for (
+      let dlqAttempt = 1;
+      dlqAttempt <= this.MAX_DLQ_PUBLISH_ATTEMPTS;
+      dlqAttempt++
+    ) {
       try {
         await this.streamProducerService.send(
           envelope.dlqTopic,
@@ -685,29 +1358,92 @@ export class MessageSendWwebjsConsume {
           envelope.chatId ?? `${envelope.partition}:${envelope.offset}`
         );
 
-        console.error('[MessageSendWwebjs] Message sent to DLQ', {
+        const durationMs = Date.now() - startedAt;
+        this.logPipelineEvent('dlq_published', {
           chat_id: envelope.chatId,
           queue_key: envelope.queueKey,
           partition: envelope.partition,
           offset: envelope.offset,
-          result: 'dlq',
+          message_id: messageId,
+          attempt,
+          redrive_count: redriveCount,
+          dlq_attempt: dlqAttempt,
+          result: 'dlq_published',
+          duration_ms: durationMs,
           error: this.errorMessage(error),
         });
-        return;
+        metricsCount(
+          'message_send_dlq_published',
+          1,
+          this.baseMetricAttributes(
+            envelope,
+            'dlq_published',
+            attempt,
+            redriveCount
+          )
+        );
+        metricsDistribution(
+          'message_send_dlq_publish_duration_ms',
+          durationMs,
+          this.baseMetricAttributes(
+            envelope,
+            'dlq_published',
+            attempt,
+            redriveCount
+          )
+        );
+        return true;
       } catch (publishError) {
-        console.error(
-          '[MessageSendWwebjs] Failed to publish message to DLQ. Retrying.',
+        if (dlqAttempt >= this.MAX_DLQ_PUBLISH_ATTEMPTS) {
+          this.logPipelineEvent(
+            'dlq_publish_error',
+            {
+              chat_id: envelope.chatId,
+              queue_key: envelope.queueKey,
+              partition: envelope.partition,
+              offset: envelope.offset,
+              message_id: messageId,
+              attempt,
+              redrive_count: redriveCount,
+              dlq_attempt: dlqAttempt,
+              result: 'dlq_publish_error',
+              error: this.errorMessage(publishError),
+            },
+            'error'
+          );
+          captureException(publishError, {
+            messageSendPipeline: {
+              provider: this.PROVIDER,
+              event: 'dlq_publish_error',
+              message_id: messageId,
+              attempt,
+              redrive_count: redriveCount,
+            },
+          });
+          return false;
+        }
+
+        this.logPipelineEvent(
+          'dlq_publish_retry',
           {
             chat_id: envelope.chatId,
             queue_key: envelope.queueKey,
             partition: envelope.partition,
             offset: envelope.offset,
+            message_id: messageId,
+            attempt,
+            redrive_count: redriveCount,
+            dlq_attempt: dlqAttempt,
+            result: 'dlq_publish_retry',
             error: this.errorMessage(publishError),
-          }
+          },
+          'warn'
         );
         await this.delay(this.DLQ_PUBLISH_RETRY_DELAY_MS);
       }
     }
+
+    return false;
   }
 
   private errorMessage(error: unknown): string {

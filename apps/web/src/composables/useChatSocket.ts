@@ -18,6 +18,7 @@ import type { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import { useChatNotifications } from '@/composables/useChatNotifications';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import { getCentrifugoTelemetry } from '@/@webcore/centrifugoTelemetry';
 
 let isInitialized = false;
 let initializingPromise: Promise<void> | null = null;
@@ -35,11 +36,18 @@ const SYNC_DEBOUNCE_MS = 5_000;
 
 const MESSAGE_BATCH_DELAY_MS = 50;
 const CHAT_UPDATE_BATCH_DELAY_MS = 100;
+const MAX_MESSAGE_BATCH_SIZE = 500;
+const MAX_CHAT_UPDATE_BATCH_SIZE = 200;
+const MAX_PENDING_CHATS = 100;
+const MAX_PENDING_MESSAGES_PER_CHAT = 200;
 
 let messageBatchBuffer: IChatMessage[] = [];
 let messageBatchTimer: ReturnType<typeof setTimeout> | null = null;
 let chatUpdateBatchBuffer: IChat[] = [];
 let chatUpdateBatchTimer: ReturnType<typeof setTimeout> | null = null;
+let visibilityHandler: (() => void) | null = null;
+
+const telemetry = getCentrifugoTelemetry();
 
 const createChatSocket = () => {
   const chatStore = useChatStore();
@@ -117,7 +125,8 @@ const createChatSocket = () => {
         fetchHistoryAndProcess(chatAccountCentrifugo(accountId)),
         fetchHistoryAndProcess(chatQueueAccountCentrifugo(accountId)),
       ]);
-    } catch {
+    } catch (error) {
+      telemetry.trackError('sync_from_history', error);
     } finally {
       isSyncInProgress = false;
     }
@@ -141,6 +150,7 @@ const createChatSocket = () => {
   };
 
   const handleRecoveryFailed = (event: CustomEvent<{ channel: string }>) => {
+    telemetry.trackRecovery(event.detail.channel, false, 0);
     if (import.meta.env.DEV) {
       console.warn(
         '[ChatSocket] Recovery failed for channel:',
@@ -150,12 +160,53 @@ const createChatSocket = () => {
     syncFromCentrifugoHistory();
   };
 
+  /**
+   * BUG 6 FIX: Evict oldest entries from pending maps to prevent unbounded memory growth.
+   */
+  const evictPendingMessages = (chatId: string, messages: IChatMessage[]) => {
+    if (messages.length > MAX_PENDING_MESSAGES_PER_CHAT) {
+      messages.splice(0, messages.length - MAX_PENDING_MESSAGES_PER_CHAT);
+    }
+    pendingMessages.value.set(chatId, messages);
+
+    if (pendingMessages.value.size > MAX_PENDING_CHATS) {
+      const keys = Array.from(pendingMessages.value.keys());
+      const activeChatId = chatStore.activeChat?.chat_id;
+      const toRemove = keys
+        .filter((k) => k !== activeChatId)
+        .slice(0, keys.length - MAX_PENDING_CHATS);
+      for (const key of toRemove) {
+        pendingMessages.value.delete(key);
+      }
+    }
+  };
+
+  const evictPendingChatUpdates = (chatId: string, updates: IChat[]) => {
+    if (updates.length > MAX_PENDING_MESSAGES_PER_CHAT) {
+      updates.splice(0, updates.length - MAX_PENDING_MESSAGES_PER_CHAT);
+    }
+    pendingChatUpdates.value.set(chatId, updates);
+
+    if (pendingChatUpdates.value.size > MAX_PENDING_CHATS) {
+      const keys = Array.from(pendingChatUpdates.value.keys());
+      const activeChatId = chatStore.activeChat?.chat_id;
+      const toRemove = keys
+        .filter((k) => k !== activeChatId)
+        .slice(0, keys.length - MAX_PENDING_CHATS);
+      for (const key of toRemove) {
+        pendingChatUpdates.value.delete(key);
+      }
+    }
+  };
+
   const flushMessageBatch = () => {
     if (messageBatchBuffer.length === 0) return;
 
     const messages = [...messageBatchBuffer];
     messageBatchBuffer = [];
     messageBatchTimer = null;
+
+    telemetry.trackBatchFlush('message', messages.length);
 
     const messagesByChat = new Map<string, IChatMessage[]>();
     for (const msg of messages) {
@@ -193,7 +244,7 @@ const createChatSocket = () => {
 
       const pending = pendingMessages.value.get(chatId) ?? [];
       pending.push(...chatMessages);
-      pendingMessages.value.set(chatId, pending);
+      evictPendingMessages(chatId, pending);
     }
   };
 
@@ -203,6 +254,8 @@ const createChatSocket = () => {
     const updates = [...chatUpdateBatchBuffer];
     chatUpdateBatchBuffer = [];
     chatUpdateBatchTimer = null;
+
+    telemetry.trackBatchFlush('chatUpdate', updates.length);
 
     const latestByChatId = new Map<string, IChat>();
     for (const chat of updates) {
@@ -245,31 +298,54 @@ const createChatSocket = () => {
       const chatId = chatData.chat_id;
       const pendingUpdates = pendingChatUpdates.value.get(chatId) ?? [];
       pendingUpdates.push(chatData);
-      pendingChatUpdates.value.set(chatId, pendingUpdates);
+      evictPendingChatUpdates(chatId, pendingUpdates);
     }
   };
 
+  /**
+   * BUG 1 FIX: Changed from debounce to throttle pattern.
+   * The timer is only started if none is running. New messages accumulate in the buffer
+   * and get flushed when the timer fires. Under high load, messages are never starved.
+   * Additionally, a max buffer size forces immediate flush to prevent unbounded growth.
+   */
   const handleMessageEvent = (messageData: IChatMessage): void => {
     messageBatchBuffer.push(messageData);
 
-    if (messageBatchTimer) {
-      clearTimeout(messageBatchTimer);
+    if (messageBatchBuffer.length >= MAX_MESSAGE_BATCH_SIZE) {
+      if (messageBatchTimer) {
+        clearTimeout(messageBatchTimer);
+        messageBatchTimer = null;
+      }
+      flushMessageBatch();
+      return;
     }
 
-    messageBatchTimer = setTimeout(flushMessageBatch, MESSAGE_BATCH_DELAY_MS);
+    if (!messageBatchTimer) {
+      messageBatchTimer = setTimeout(flushMessageBatch, MESSAGE_BATCH_DELAY_MS);
+    }
   };
 
+  /**
+   * BUG 1 FIX: Same throttle pattern for chat updates.
+   */
   const handleChatUpdateEvent = (chatData: IChat): void => {
     chatUpdateBatchBuffer.push(chatData);
 
-    if (chatUpdateBatchTimer) {
-      clearTimeout(chatUpdateBatchTimer);
+    if (chatUpdateBatchBuffer.length >= MAX_CHAT_UPDATE_BATCH_SIZE) {
+      if (chatUpdateBatchTimer) {
+        clearTimeout(chatUpdateBatchTimer);
+        chatUpdateBatchTimer = null;
+      }
+      flushChatUpdateBatch();
+      return;
     }
 
-    chatUpdateBatchTimer = setTimeout(
-      flushChatUpdateBatch,
-      CHAT_UPDATE_BATCH_DELAY_MS
-    );
+    if (!chatUpdateBatchTimer) {
+      chatUpdateBatchTimer = setTimeout(
+        flushChatUpdateBatch,
+        CHAT_UPDATE_BATCH_DELAY_MS
+      );
+    }
   };
 
   const clearBatchTimers = () => {
@@ -285,9 +361,17 @@ const createChatSocket = () => {
     flushChatUpdateBatch();
   };
 
+  const removeVisibilityHandler = () => {
+    if (visibilityHandler) {
+      document.removeEventListener('visibilitychange', visibilityHandler);
+      visibilityHandler = null;
+    }
+  };
+
   const cleanupUnsubscribe = async () => {
     stopPeriodicSync();
     clearBatchTimers();
+    removeVisibilityHandler();
 
     globalThis.removeEventListener(
       'centrifugo-recovery-failed',
@@ -296,6 +380,7 @@ const createChatSocket = () => {
 
     const unsubscribePromises = subscriptions.map((sub) =>
       sub.unsubscribe().catch((error) => {
+        telemetry.trackError('unsubscribe_cleanup', error, sub.channel);
         if (import.meta.env.DEV) {
           console.error('Erro ao fazer unsubscribe:', error);
         }
@@ -397,7 +482,24 @@ const createChatSocket = () => {
 
         isInitialized = true;
         startPeriodicSync();
+
+        /**
+         * BUG 5 FIX: Sync when tab becomes visible again.
+         * Browsers may throttle/freeze WebSocket connections when tab is hidden.
+         */
+        removeVisibilityHandler();
+        visibilityHandler = () => {
+          if (document.visibilityState === 'visible') {
+            telemetry.trackVisibility('visible');
+            lastSyncTime = 0;
+            syncFromCentrifugoHistory();
+          } else {
+            telemetry.trackVisibility('hidden');
+          }
+        };
+        document.addEventListener('visibilitychange', visibilityHandler);
       } catch (error) {
+        telemetry.trackError('initialize_socket', error);
         if (import.meta.env.DEV) {
           console.error('Erro ao inicializar socket de chat:', error);
         }
@@ -412,6 +514,7 @@ const createChatSocket = () => {
   const cleanup = async () => {
     stopPeriodicSync();
     clearBatchTimers();
+    removeVisibilityHandler();
 
     globalThis.removeEventListener(
       'centrifugo-recovery-failed',
@@ -420,6 +523,7 @@ const createChatSocket = () => {
 
     const unsubscribePromises = subscriptions.map((sub) =>
       sub.unsubscribe().catch((error) => {
+        telemetry.trackError('cleanup_unsubscribe', error, sub.channel);
         if (import.meta.env.DEV) {
           console.error('Erro ao fazer unsubscribe:', error);
         }

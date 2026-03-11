@@ -152,6 +152,24 @@ export class MessageStatusService {
     return publishedMessage;
   }
 
+  async isMessageAlreadySentByMessageId(messageId: string): Promise<boolean> {
+    const normalizedMessageId = messageId?.trim();
+    if (!normalizedMessageId) {
+      return false;
+    }
+
+    const existingMessage = await this.findMessageByMessageIdWithRetry(
+      normalizedMessageId,
+      3
+    );
+    if (!existingMessage?.message_id) {
+      return false;
+    }
+
+    const summary = this.normalizeSummaryState(existingMessage.summary);
+    return summary.is_sent || summary.is_delivered || summary.is_seen;
+  }
+
   /**
    * Publishes message status update immediately without debounce or deduplication.
    * Uses the immediate publish method for critical real-time updates.

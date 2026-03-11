@@ -11,6 +11,7 @@ import { isAxiosError } from 'axios';
 import axios, { logoutAndRedirect } from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
+import { getCentrifugoTelemetry } from './centrifugoTelemetry';
 
 export type { Subscription };
 
@@ -28,6 +29,9 @@ const channelStreamPositions = new Map<
   string,
   { offset: number; epoch: string }
 >();
+
+const telemetry = getCentrifugoTelemetry();
+telemetry.setStreamPositionProvider(() => channelStreamPositions);
 
 const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
   const now = Date.now();
@@ -142,6 +146,123 @@ const waitForConnected = (
   });
 };
 
+/**
+ * Sets up publication, subscribed, and unsubscribed event handlers on a subscription.
+ * Extracted as helper to reuse in both onMessage() and reconnection re-subscription.
+ */
+const setupSubscriptionHandlers = (
+  sub: Subscription,
+  channel: string
+): void => {
+  sub.on('publication', (ctx) => {
+    // BUG 2 FIX: Update stream position on every publication
+    if (ctx.offset) {
+      const currentPos = channelStreamPositions.get(channel);
+      if (!currentPos || ctx.offset > currentPos.offset) {
+        channelStreamPositions.set(channel, {
+          offset: ctx.offset,
+          epoch: currentPos?.epoch ?? '',
+        });
+      }
+    }
+
+    telemetry.trackPublication(channel);
+
+    const handlersForChannel = channelHandlers.get(channel);
+    if (handlersForChannel) {
+      for (const h of handlersForChannel) {
+        try {
+          h(ctx.data, ctx);
+          telemetry.trackPublicationProcessed(channel);
+        } catch (error) {
+          telemetry.trackPublicationDropped(channel, error);
+          if (import.meta.env.DEV) {
+            console.error('Error in Centrifugo handler:', error, { channel });
+          }
+        }
+      }
+    }
+  });
+
+  sub.on('subscribed', (ctx: SubscribedContext) => {
+    if (ctx.streamPosition) {
+      channelStreamPositions.set(channel, {
+        offset: ctx.streamPosition.offset,
+        epoch: ctx.streamPosition.epoch,
+      });
+    }
+
+    if (ctx.wasRecovering && ctx.recovered) {
+      telemetry.trackSubscription(channel, 'recovered', {
+        recovered: true,
+        wasRecovering: true,
+      });
+      if (import.meta.env.DEV) {
+        console.info(`[Centrifugo] Channel ${channel} recovered successfully`);
+      }
+    } else if (ctx.wasRecovering && !ctx.recovered) {
+      telemetry.trackSubscription(channel, 'recovery_failed', {
+        recovered: false,
+        wasRecovering: true,
+      });
+      if (import.meta.env.DEV) {
+        console.warn(
+          `[Centrifugo] Channel ${channel} recovery failed, may have missed messages`
+        );
+      }
+      globalThis.dispatchEvent(
+        new CustomEvent('centrifugo-recovery-failed', {
+          detail: { channel },
+        })
+      );
+    } else {
+      telemetry.trackSubscription(channel, 'subscribed');
+    }
+  });
+
+  sub.on('unsubscribed', () => {
+    telemetry.trackSubscription(channel, 'unsubscribed');
+    if (import.meta.env.DEV) {
+      console.info(`[Centrifugo] Unsubscribed from ${channel}`);
+    }
+  });
+};
+
+/**
+ * BUG 4 FIX: Re-subscribe all channels that had active handlers after creating a new client.
+ * This ensures no messages are lost when the connection is recreated.
+ */
+const resubscribeActiveChannels = (client: Centrifuge): void => {
+  const channelsToResubscribe = Array.from(channelHandlers.keys());
+
+  for (const channel of channelsToResubscribe) {
+    const handlers = channelHandlers.get(channel);
+    if (!handlers || handlers.size === 0) continue;
+
+    // Skip if already subscribed on this client
+    const existingSub = client.getSubscription(channel);
+    if (existingSub && existingSub.state === SubscriptionState.Subscribed) {
+      channelSubscriptions.set(channel, existingSub);
+      continue;
+    }
+
+    const streamPosition = channelStreamPositions.get(channel);
+    const newSub = client.newSubscription(channel, {
+      recoverable: true,
+      ...(streamPosition && {
+        since: {
+          offset: streamPosition.offset,
+          epoch: streamPosition.epoch,
+        },
+      }),
+    });
+
+    channelSubscriptions.set(channel, newSub);
+    setupSubscriptionHandlers(newSub, channel);
+    newSub.subscribe();
+  }
+};
+
 const getConnection = async (): Promise<Centrifuge> => {
   if (centrifugeClient) {
     const state = centrifugeClient.state;
@@ -153,17 +274,26 @@ const getConnection = async (): Promise<Centrifuge> => {
     if (state === State.Disconnected) {
       try {
         centrifugeClient.disconnect();
-      } catch {}
+      } catch (error) {
+        telemetry.trackError('disconnect_cleanup', error);
+      }
       centrifugeClient = null;
+      // BUG 4 FIX: Clear stale subscription references
+      channelSubscriptions.clear();
     } else {
       try {
         await waitForConnected(centrifugeClient);
         return centrifugeClient;
-      } catch {
+      } catch (error) {
+        telemetry.trackError('wait_for_connected', error);
         try {
           centrifugeClient.disconnect();
-        } catch {}
+        } catch (disconnectError) {
+          telemetry.trackError('disconnect_after_wait_fail', disconnectError);
+        }
         centrifugeClient = null;
+        // BUG 4 FIX: Clear stale subscription references
+        channelSubscriptions.clear();
       }
     }
   }
@@ -177,6 +307,7 @@ const getConnection = async (): Promise<Centrifuge> => {
       try {
         return await generateToken();
       } catch (error) {
+        telemetry.trackError('token_refresh', error);
         throw error;
       }
     },
@@ -186,7 +317,13 @@ const getConnection = async (): Promise<Centrifuge> => {
     maxReconnectDelay: 10000,
   });
 
+  centrifugeClient.on('connected', () => {
+    telemetry.trackConnectionState('connected');
+  });
+
   centrifugeClient.on('disconnected', (ctx) => {
+    telemetry.trackConnectionState('disconnected', ctx.reason, ctx.code);
+
     if (ctx.reason !== 'clean' && ctx.code !== 1000) {
       setTimeout(() => {
         if (centrifugeClient && centrifugeClient.state === State.Disconnected) {
@@ -197,6 +334,7 @@ const getConnection = async (): Promise<Centrifuge> => {
   });
 
   centrifugeClient.on('error', (error) => {
+    telemetry.trackConnectionState('error', String(error));
     if (import.meta.env.DEV) {
       console.error('Centrifugo client error:', error);
     }
@@ -207,12 +345,18 @@ const getConnection = async (): Promise<Centrifuge> => {
   try {
     await waitForConnected(centrifugeClient);
   } catch (error) {
+    telemetry.trackError('initial_connection', error);
     try {
       centrifugeClient.disconnect();
-    } catch {}
+    } catch (disconnectError) {
+      telemetry.trackError('disconnect_after_init_fail', disconnectError);
+    }
     centrifugeClient = null;
     throw error;
   }
+
+  // BUG 4 FIX: Re-subscribe channels that had handlers on previous connection
+  resubscribeActiveChannels(centrifugeClient);
 
   return centrifugeClient;
 };
@@ -257,54 +401,7 @@ export const onMessage = async (
     }
     channelSubscriptions.set(channel, sub);
 
-    sub.on('publication', (ctx) => {
-      const handlersForChannel = channelHandlers.get(channel);
-      if (handlersForChannel) {
-        for (const h of handlersForChannel) {
-          try {
-            h(ctx.data, ctx);
-          } catch (error) {
-            if (import.meta.env.DEV) {
-              console.error('Error in Centrifugo handler:', error, { channel });
-            }
-          }
-        }
-      }
-    });
-
-    sub.on('subscribed', (ctx: SubscribedContext) => {
-      if (ctx.streamPosition) {
-        channelStreamPositions.set(channel, {
-          offset: ctx.streamPosition.offset,
-          epoch: ctx.streamPosition.epoch,
-        });
-      }
-
-      if (ctx.wasRecovering && ctx.recovered) {
-        if (import.meta.env.DEV) {
-          console.info(
-            `[Centrifugo] Channel ${channel} recovered successfully`
-          );
-        }
-      } else if (ctx.wasRecovering && !ctx.recovered) {
-        if (import.meta.env.DEV) {
-          console.warn(
-            `[Centrifugo] Channel ${channel} recovery failed, may have missed messages`
-          );
-        }
-        globalThis.dispatchEvent(
-          new CustomEvent('centrifugo-recovery-failed', {
-            detail: { channel },
-          })
-        );
-      }
-    });
-
-    sub.on('unsubscribed', () => {
-      if (import.meta.env.DEV) {
-        console.info(`[Centrifugo] Unsubscribed from ${channel}`);
-      }
-    });
+    setupSubscriptionHandlers(sub, channel);
 
     if (sub.state !== SubscriptionState.Subscribed) {
       sub.subscribe();
@@ -369,7 +466,9 @@ export const resetConnection = (): void => {
   if (centrifugeClient) {
     try {
       centrifugeClient.disconnect();
-    } catch {}
+    } catch (error) {
+      telemetry.trackError('reset_connection_disconnect', error);
+    }
     centrifugeClient = null;
   }
   tokenGenerationPromise = null;
@@ -391,19 +490,22 @@ export const clearStreamPosition = (channel: string): void => {
 
 const processPublicationThroughHandlers = (
   pub: { data: unknown; offset?: number },
-  handlers: Set<(data: any, ctx: PublicationContext) => void>
+  handlers: Set<(data: any, ctx: PublicationContext) => void>,
+  channel: string
 ): void => {
   for (const handler of handlers) {
     try {
       handler(pub.data, pub as PublicationContext);
-    } catch {}
+    } catch (error) {
+      telemetry.trackError('history_publication_handler', error, channel);
+    }
   }
 };
 
 /**
  * Fetches history from a channel since the last known position.
  * Returns publications that were missed and processes them through handlers.
- * This is used for periodic sync to catch any missed messages.
+ * BUG 3 FIX: Now paginates through all missed messages instead of fetching only 100.
  */
 export const fetchHistoryAndProcess = async (
   channel: string
@@ -420,53 +522,82 @@ export const fetchHistoryAndProcess = async (
     return { processed: 0 };
   }
 
+  const startTime = Date.now();
+
   try {
-    const historyResult = await sub.history({
-      limit: 100,
-      since: {
-        offset: currentPosition.offset,
-        epoch: currentPosition.epoch,
-      },
-    });
-
-    if (
-      !historyResult.publications ||
-      historyResult.publications.length === 0
-    ) {
-      return { processed: 0 };
-    }
-
     const handlers = channelHandlers.get(channel);
     if (!handlers || handlers.size === 0) {
       return { processed: 0 };
     }
 
+    let totalProcessed = 0;
     let maxOffset = currentPosition.offset;
+    let currentSince = {
+      offset: currentPosition.offset,
+      epoch: currentPosition.epoch,
+    };
+    const FETCH_LIMIT = 100;
+    const MAX_ITERATIONS = 10;
+    let pages = 0;
 
-    for (const pub of historyResult.publications) {
-      if (!pub.offset || pub.offset <= currentPosition.offset) {
-        continue;
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      const historyResult = await sub.history({
+        limit: FETCH_LIMIT,
+        since: currentSince,
+      });
+
+      if (
+        !historyResult.publications ||
+        historyResult.publications.length === 0
+      ) {
+        break;
       }
 
-      processPublicationThroughHandlers(pub, handlers);
+      pages++;
 
-      if (pub.offset > maxOffset) {
-        maxOffset = pub.offset;
+      for (const pub of historyResult.publications) {
+        if (!pub.offset || pub.offset <= currentSince.offset) {
+          continue;
+        }
+
+        processPublicationThroughHandlers(pub, handlers, channel);
+
+        if (pub.offset > maxOffset) {
+          maxOffset = pub.offset;
+        }
+      }
+
+      currentSince = {
+        offset: maxOffset,
+        epoch: historyResult.epoch || currentPosition.epoch,
+      };
+
+      totalProcessed += historyResult.publications.length;
+
+      if (historyResult.publications.length < FETCH_LIMIT) {
+        break;
       }
     }
 
     if (maxOffset > currentPosition.offset) {
       channelStreamPositions.set(channel, {
         offset: maxOffset,
-        epoch: historyResult.epoch || currentPosition.epoch,
+        epoch: currentSince.epoch,
       });
     }
 
+    const durationMs = Date.now() - startTime;
+    telemetry.trackHistorySync(channel, totalProcessed, pages, durationMs);
+
     return {
-      processed: historyResult.publications.length,
+      processed: totalProcessed,
       newOffset: maxOffset,
     };
-  } catch {
+  } catch (error) {
+    telemetry.trackError('fetch_history', error, channel);
+    if (import.meta.env.DEV) {
+      console.error(`[Centrifugo] History fetch failed for ${channel}:`, error);
+    }
     return { processed: 0 };
   }
 };

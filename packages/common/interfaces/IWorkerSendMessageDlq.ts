@@ -4,6 +4,7 @@ export interface IWorkerSendMessageDlq {
   partition: number;
   offset: number;
   chat_id: string | null;
+  message_id?: string | null;
   queue_key: string;
   attempts: number;
   redrive_count?: number;
