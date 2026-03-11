@@ -67,8 +67,6 @@ FROM node:24.12.0-bookworm-slim
 
 WORKDIR /app
 
-COPY .env ./
-
 COPY --from=builder /app/apps/balance_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./

@@ -53,6 +53,12 @@ import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 @injectable()
 export class WorkerService {
   private readonly docker: Docker;
+  private readonly ignoredInheritedEnvKeys = new Set<string>([
+    'PWD',
+    'OLDPWD',
+    'SHLVL',
+    '_',
+  ]);
 
   constructor(
     @inject(WorkerCreatorRepository)
@@ -110,6 +116,43 @@ export class WorkerService {
     @inject('Redis') private readonly redis: Redis
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
+  }
+
+  private buildContainerEnv(overrides: string[]): string[] {
+    const envMap = new Map<string, string>();
+
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value === undefined) {
+        continue;
+      }
+
+      if (!/^[A-Z0-9_]+$/.test(key)) {
+        continue;
+      }
+
+      if (this.ignoredInheritedEnvKeys.has(key)) {
+        continue;
+      }
+
+      if (key.startsWith('npm_') || key.startsWith('PNPM_')) {
+        continue;
+      }
+
+      envMap.set(key, value);
+    }
+
+    for (const envEntry of overrides) {
+      const separatorIndex = envEntry.indexOf('=');
+      if (separatorIndex <= 0) {
+        continue;
+      }
+
+      const key = envEntry.slice(0, separatorIndex);
+      const value = envEntry.slice(separatorIndex + 1);
+      envMap.set(key, value);
+    }
+
+    return [...envMap.entries()].map(([key, value]) => `${key}=${value}`);
   }
 
   public async existsContainerWorkerById(workerId: string): Promise<boolean> {
@@ -196,22 +239,24 @@ export class WorkerService {
       throw new Error('Volume creation failed');
     }
 
-    const env = [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`];
+    const envOverrides = [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`];
     if (grpcHost !== undefined && grpcPort !== undefined) {
-      env.push(
+      envOverrides.push(
         `BALANCER_GRPC_HOST=${grpcHost}`,
         `BALANCER_GRPC_PORT=${grpcPort}`
       );
     }
 
     if (proxy?.host && Number.isFinite(proxy.port)) {
-      env.push(`PROXY_HOST=${proxy.host}`, `PROXY_PORT=${proxy.port}`);
-      env.push(`PROXY_PROTOCOL=${proxy.protocol ?? EProxyProtocol.http}`);
+      envOverrides.push(`PROXY_HOST=${proxy.host}`, `PROXY_PORT=${proxy.port}`);
+      envOverrides.push(
+        `PROXY_PROTOCOL=${proxy.protocol ?? EProxyProtocol.http}`
+      );
       if (proxy.username) {
-        env.push(`PROXY_USERNAME=${proxy.username}`);
+        envOverrides.push(`PROXY_USERNAME=${proxy.username}`);
       }
       if (proxy.password) {
-        env.push(`PROXY_PASSWORD=${proxy.password}`);
+        envOverrides.push(`PROXY_PASSWORD=${proxy.password}`);
       }
     }
 
@@ -228,7 +273,7 @@ export class WorkerService {
       Volumes: {
         '/app/data': {},
       },
-      Env: env,
+      Env: this.buildContainerEnv(envOverrides),
     });
 
     await container.start();
