@@ -20,10 +20,11 @@ import {
   ServerBuildVersion,
   ServerBuildViewResponse,
 } from '@core/schema/server/viewServerBuild/response.schema';
-import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lte, ne } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
+import moment from 'moment-timezone';
 
 class ActiveBuildJobConflictError extends Error {
   constructor() {
@@ -717,7 +718,10 @@ export class ServerBuildRepository {
     errorMessage: string
   ): Promise<string[]> => {
     const now = currentTime();
-    const staleTimeoutSeconds = Math.max(1, Math.floor(staleTimeoutMs / 1000));
+    const staleThreshold = moment
+      .tz(new Date(), 'America/Sao_Paulo')
+      .subtract(staleTimeoutMs, 'milliseconds')
+      .format('YYYY-MM-DD HH:mm:ss');
 
     const staleRows = await this.dbRw
       .update(serverBuildJobItem)
@@ -728,8 +732,10 @@ export class ServerBuildRepository {
         finished_at: now,
       })
       .where(
-        sql`${serverBuildJobItem.status} = ${EServerBuildJobItemStatus.running}
-            and ${serverBuildJobItem.updated_at} <= NOW() - (${staleTimeoutSeconds} * INTERVAL '1 second')`
+        and(
+          eq(serverBuildJobItem.status, EServerBuildJobItemStatus.running),
+          lte(serverBuildJobItem.updated_at, staleThreshold)
+        )
       )
       .returning({
         server_build_job_id: serverBuildJobItem.server_build_job_id,
@@ -740,9 +746,7 @@ export class ServerBuildRepository {
       return [];
     }
 
-    return Array.from(
-      new Set(staleRows.map((row) => row.server_build_job_id))
-    );
+    return Array.from(new Set(staleRows.map((row) => row.server_build_job_id)));
   };
 
   markJobItemFailed = async (
