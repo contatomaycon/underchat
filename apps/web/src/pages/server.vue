@@ -13,7 +13,7 @@ import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { statusServerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 definePage({
   meta: {
@@ -67,6 +67,7 @@ const permissionsBuildView = [
 ];
 
 const { t } = useI18n();
+const route = useRoute();
 const router = useRouter();
 const serverStore = useServerStore();
 useSnackbarCleanup(serverStore);
@@ -157,6 +158,8 @@ const query = computed(() => ({
   status: options.value.status,
   search: debouncedSearch.value,
 }));
+
+const isServerBuildRoute = computed(() => route.name === 'server-build');
 
 const handleTableChange = (o: {
   page: number;
@@ -259,7 +262,9 @@ onBeforeUnmount(async () => {
 
 <template>
   <div>
-    <VCard :title="$t('server')" no-padding>
+    <RouterView v-if="isServerBuildRoute" />
+
+    <VCard v-else :title="$t('server')" no-padding>
       <VCardText>
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center mt-5">
@@ -286,7 +291,7 @@ onBeforeUnmount(async () => {
               v-if="$canPermission(permissionsBuildView)"
               color="error"
               prepend-icon="tabler-hammer"
-              @click="router.push('/server/build')"
+              @click="router.push({ name: 'server-build' })"
             >
               Build
             </VBtn>

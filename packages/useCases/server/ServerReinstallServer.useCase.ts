@@ -100,11 +100,24 @@ export class ServerReinstallServerUseCase {
       throw new Error(t('server_not_found'));
     }
 
-    await this.onServerCreated(t, serverId);
-
-    return this.serverService.updateServerStatusById(
+    const statusUpdated = await this.serverService.updateServerStatusById(
       serverId,
       EServerStatus.new
     );
+
+    if (!statusUpdated) {
+      throw new Error(t('server_reinstall_failed'));
+    }
+
+    try {
+      await this.onServerCreated(t, serverId);
+      return true;
+    } catch (error) {
+      await this.serverService.updateServerStatusById(
+        serverId,
+        EServerStatus.error
+      );
+      throw error;
+    }
   }
 }

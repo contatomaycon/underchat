@@ -8,6 +8,7 @@ import { EServerPermissions } from '@core/common/enums/EPermissions/server';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 
 definePage({
@@ -26,6 +27,7 @@ definePage({
 const serverBuildStore = useServerBuildStore();
 useSnackbarCleanup(serverBuildStore);
 const { t } = useI18n();
+const router = useRouter();
 
 const permissionsGenerate = [
   EGeneralPermissions.full_access,
@@ -195,6 +197,10 @@ const handleSetDefault = async (
   await refreshBuilds();
 };
 
+const handleBack = (): void => {
+  router.push({ name: 'server' });
+};
+
 watch(
   hasActiveJob,
   (active) => {
@@ -222,6 +228,14 @@ onBeforeUnmount(() => {
     <VCard :title="$t('build_versions')" no-padding>
       <VCardText>
         <div class="d-flex flex-wrap gap-3">
+          <VBtn
+            variant="tonal"
+            prepend-icon="tabler-arrow-left"
+            @click="handleBack"
+          >
+            {{ $t('back') }}
+          </VBtn>
+
           <VBtn
             v-if="$canPermission(permissionsGenerate)"
             color="primary"
