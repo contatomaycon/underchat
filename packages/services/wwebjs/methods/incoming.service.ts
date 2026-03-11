@@ -191,9 +191,89 @@ function getReactionIdSerialized(reaction: WwebjsReactionEvent): string {
   return `react_${Date.now()}`;
 }
 
+function getFromMeFromSerializedLike(value: unknown): boolean | undefined {
+  if (typeof value === 'string') {
+    const parsed = parseSerializedMessageId(value);
+    return typeof parsed?.fromMe === 'boolean' ? parsed.fromMe : undefined;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const objectValue = value as Record<string, unknown>;
+  const fromMe = parseBooleanLike(objectValue.fromMe ?? objectValue.from_me);
+  if (fromMe !== undefined) {
+    return fromMe;
+  }
+
+  const serialized =
+    getNonEmptyString(objectValue._serialized) ??
+    getNonEmptyString(objectValue.id);
+  if (!serialized) {
+    return undefined;
+  }
+
+  const parsed = parseSerializedMessageId(serialized);
+  return typeof parsed?.fromMe === 'boolean' ? parsed.fromMe : undefined;
+}
+
+function getReactionFromMeHint(
+  reaction: WwebjsReactionEvent
+): boolean | undefined {
+  return (
+    getFromMeFromSerializedLike(reaction.id) ??
+    getFromMeFromSerializedLike(reaction.msgKey)
+  );
+}
+
 function getReactionSenderId(
   reaction: WwebjsReactionEvent
 ): string | undefined {
+  const getJidLikeFromValue = (value: unknown): string | undefined => {
+    if (!value) return undefined;
+
+    if (typeof value === 'string') {
+      return getNonEmptyString(value);
+    }
+
+    if (typeof value !== 'object' || value === null) {
+      return undefined;
+    }
+
+    const objectValue = value as Record<string, unknown>;
+    return (
+      getNonEmptyString(objectValue._serialized) ??
+      getNonEmptyString(objectValue.id)
+    );
+  };
+
+  const getSenderFromMessageKey = (value: unknown): string | undefined => {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+
+    const keyObject = value as Record<string, unknown>;
+    const directFields = [
+      keyObject.participant,
+      keyObject.participantAlt,
+      keyObject.participant_alt,
+      keyObject.sender,
+      keyObject.senderId,
+      keyObject.author,
+      keyObject.from,
+    ];
+
+    for (const candidate of directFields) {
+      const jid = getJidLikeFromValue(candidate);
+      if (jid) {
+        return jid;
+      }
+    }
+
+    return undefined;
+  };
+
   const direct =
     getNonEmptyString(reaction.senderId) ??
     getNonEmptyString(reaction.senderUserJid);
@@ -216,13 +296,18 @@ function getReactionSenderId(
     reaction.senderUserJid !== null
   ) {
     const senderUserObject = reaction.senderUserJid as Record<string, unknown>;
-    return (
+    const senderFromObject =
       getNonEmptyString(senderUserObject._serialized) ??
-      getNonEmptyString(senderUserObject.id)
-    );
+      getNonEmptyString(senderUserObject.id);
+    if (senderFromObject) {
+      return senderFromObject;
+    }
   }
 
-  return undefined;
+  return (
+    getSenderFromMessageKey(reaction.id) ??
+    getSenderFromMessageKey(reaction.msgKey)
+  );
 }
 
 function getReactionEmoji(reaction: WwebjsReactionEvent): string {
@@ -1891,8 +1976,15 @@ export class WwebjsIncomingMessageService {
     const myJid =
       (this.currentClient?.info?.wid as { _serialized?: string } | undefined)
         ?._serialized ?? '';
-    const fromMe = isSameJidAccount(normalizedSenderId ?? senderId, myJid);
-    const participant = normalizedSenderId ?? senderId;
+    const fromMeBySender =
+      (normalizedSenderId || senderId) && myJid
+        ? isSameJidAccount(normalizedSenderId ?? senderId, myJid)
+        : undefined;
+    const fromMe = fromMeBySender ?? getReactionFromMeHint(reaction) ?? false;
+    const participant =
+      normalizedSenderId ??
+      senderId ??
+      (fromMe ? (normalizeJidForComparison(myJid) ?? myJid) : undefined);
     const timestamp =
       getReactionTimestampSeconds(reaction) ?? Math.floor(Date.now() / 1000);
 

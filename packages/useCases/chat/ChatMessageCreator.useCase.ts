@@ -1186,11 +1186,13 @@ export class ChatMessageCreatorUseCase {
     }
 
     const userId =
+      chatContext.chat.worker?.id ??
       messageContext.senderUser?.id ??
       messageContext.senderUserId ??
       chatContext.chat.user?.id ??
       '';
     const userName =
+      chatContext.chat.worker?.name ??
       messageContext.senderUser?.name ??
       messageContext.senderName ??
       chatContext.chat.user?.name ??
