@@ -1,10 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
-import {
-  buildEnvironment,
-  generalEnvironment,
-} from '@core/config/environments';
+import { buildEnvironment } from '@core/config/environments';
 import { readEnvFile } from './readEnvFile';
 import { IViewServerWebById } from '../interfaces/IViewServerWebById';
 import { IServerBuildDefaultImages } from '../interfaces/IServerBuildDefaultImages';
@@ -38,7 +35,6 @@ export async function installUbuntu2504(
     'dpkg --configure -a',
     'apt-get update',
 
-    'apt-get install git -y',
     'apt-get install curl -y',
     'apt-get install wget -y',
     'apt-get install htop -y',
@@ -100,9 +96,7 @@ export async function installUbuntu2504(
       sleep 3 && \
       hash -r"`,
 
-    `bash -c "mkdir -p /home/app && \
-      chown $USER:$USER /home/app && \
-      git -c http.extraHeader='Cache-Control: no-cache' clone --single-branch --branch ${generalEnvironment.gitBranch} https://${generalEnvironment.gitToken}@gitea.devunder.com/${generalEnvironment.gitRepo}.git /home/app"`,
+    `bash -c "mkdir -p /home/app && chown $USER:$USER /home/app"`,
 
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 

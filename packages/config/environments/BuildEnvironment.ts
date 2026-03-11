@@ -39,7 +39,7 @@ export class BuildEnvironment {
   }
 
   public get harborUsername(): string {
-    const username = process.env.HARBOR_USERNAME;
+    const username = process.env.HARBOR_USERNAME?.trim();
     if (!username) {
       throw new InvalidConfigurationError('HARBOR_USERNAME is not defined.');
     }
@@ -48,7 +48,7 @@ export class BuildEnvironment {
   }
 
   public get harborPassword(): string {
-    const password = process.env.HARBOR_PASSWORD;
+    const password = process.env.HARBOR_PASSWORD?.trim();
     if (!password) {
       throw new InvalidConfigurationError('HARBOR_PASSWORD is not defined.');
     }
