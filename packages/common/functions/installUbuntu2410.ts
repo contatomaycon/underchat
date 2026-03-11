@@ -94,7 +94,9 @@ export async function installUbuntu2410(
       systemctl enable docker && \
       systemctl start docker && \
       sleep 3 && \
-      hash -r"`,
+      hash -r && \
+      mkdir -p /root/.docker && \
+      echo '{}' > /root/.docker/config.json"`,
 
     `bash -c "mkdir -p /home/app && chown $USER:$USER /home/app"`,
 
@@ -163,7 +165,8 @@ export async function installUbuntu2410(
         exit 1; \
       fi"`,
 
-    `bash -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+    `bash -c 'set -o pipefail && \
+      export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       mkdir -p /home/server && \
       cd /home/app && \
