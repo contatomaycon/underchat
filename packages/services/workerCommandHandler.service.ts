@@ -866,23 +866,8 @@ export class WorkerCommandHandlerService {
       throw new Error('Worker creation failed');
     }
 
-    const wasOnline = data.previous_worker_status_id === EWorkerStatus.online;
-
     const healthy = await this.retryOperation(
-      async () => {
-        if (wasOnline) {
-          const serviceOk = await this.containerHealthService.isServiceHealthy(
-            containerId,
-            { maxAttempts: 5, delayMs: 2000 }
-          );
-          if (!serviceOk) return false;
-          return this.containerHealthService.isConnectionHealthy(containerId, {
-            maxAttempts: 10,
-            delayMs: 10000,
-          });
-        }
-        return this.containerHealthService.isServiceHealthy(containerId);
-      },
+      async () => this.containerHealthService.isServiceHealthy(containerId),
       (r) => !r
     );
 
@@ -893,11 +878,7 @@ export class WorkerCommandHandlerService {
         data.action,
         data.server_id
       );
-      throw new Error(
-        wasOnline
-          ? 'Worker service or connection health check failed'
-          : 'Worker service is not healthy'
-      );
+      throw new Error('Worker service is not healthy');
     }
 
     const inputUpdate: IUpdateWorker = {
@@ -927,22 +908,7 @@ export class WorkerCommandHandlerService {
       type: EBaileysConnectionType.qrcode,
     };
 
-    try {
-      await this.workerBaileysGrpcClientService.requestConnection(
-        data.worker_id,
-        payload,
-        data.worker_type_id as EWorkerType
-      );
-    } catch (err) {
-      if (!this.isTopicOrPartitionMissing(err)) {
-        console.error('Failed to request worker connection after recreate', {
-          workerId: data.worker_id,
-          accountId: data.account_id,
-          workerTypeId: data.worker_type_id,
-          error: getErrorMessage(err),
-        });
-      }
-    }
+    this.startConnectionRequestRetry(payload);
 
     const dataPublish: IBaileysConnectionState = {
       code: ECodeMessage.info,
@@ -1226,17 +1192,7 @@ export class WorkerCommandHandlerService {
           : {}),
       };
 
-      void this.workerBaileysGrpcClientService
-        .requestConnection(
-          data.worker_id,
-          payload,
-          data.worker_type_id as EWorkerType
-        )
-        .catch((err) => {
-          if (!this.isTopicOrPartitionMissing(err)) {
-            console.error('Failed to request worker connection:', err);
-          }
-        });
+      this.startConnectionRequestRetry(payload);
     }
 
     return {} as PublishResult;

@@ -22,6 +22,7 @@ const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
 const STATE_CHECK_TIMEOUT_MS = 10_000;
+const BOOTSTRAP_ORCHESTRATOR_GRACE_MS = 15_000;
 
 type WAState =
   | 'CONFLICT'
@@ -72,6 +73,7 @@ export class WwebjsHealthCheckService {
     | undefined;
   private bootstrapPromise: Promise<void> | undefined;
   private bootstrapLock = false;
+  private bootstrapFallbackTimer: NodeJS.Timeout | undefined;
 
   constructor(
     @inject(CentrifugoService)
@@ -106,6 +108,8 @@ export class WwebjsHealthCheckService {
   }
 
   stop(): void {
+    this.clearBootstrapFallbackTimer();
+
     if (!this.isRunning) {
       return;
     }
@@ -241,6 +245,79 @@ export class WwebjsHealthCheckService {
 
     console.log(
       '[WwebjsHealthCheck] Restorable session found. Waiting connection service orchestrator.'
+    );
+
+    this.scheduleBootstrapReconnectFallback();
+  }
+
+  private scheduleBootstrapReconnectFallback(): void {
+    this.clearBootstrapFallbackTimer();
+
+    console.log(
+      `[WwebjsHealthCheck] fallback_scheduled (delay=${BOOTSTRAP_ORCHESTRATOR_GRACE_MS}ms)`
+    );
+
+    this.bootstrapFallbackTimer = setTimeout(() => {
+      this.bootstrapFallbackTimer = undefined;
+
+      if (this.isConnectedAction?.()) {
+        console.log('[WwebjsHealthCheck] fallback_skipped (reason=connected)');
+        return;
+      }
+
+      if (!(this.hasSessionAction?.() ?? false)) {
+        console.log('[WwebjsHealthCheck] fallback_skipped (reason=no_session)');
+        return;
+      }
+
+      const currentStatus = this.statusGetter?.() ?? Status.initial;
+      const currentCode = this.codeGetter?.() ?? ECodeMessage.awaitConnection;
+      const awaitingUserAction = this.isAwaitingUserAction(currentCode);
+
+      if (currentStatus === Status.connecting) {
+        const reason = awaitingUserAction
+          ? 'awaiting_user_action'
+          : 'already_connecting';
+        console.log(`[WwebjsHealthCheck] fallback_skipped (reason=${reason})`);
+        return;
+      }
+
+      if (currentStatus === Status.connected) {
+        console.log(
+          '[WwebjsHealthCheck] fallback_skipped (reason=status_connected)'
+        );
+        return;
+      }
+
+      try {
+        this.reconnectAction?.({
+          initial_connection: true,
+          requested_by_user: false,
+          from_disconnect_restart: true,
+        });
+        console.log('[WwebjsHealthCheck] fallback_triggered');
+      } catch (error) {
+        console.error('[WwebjsHealthCheck] fallback_trigger_error', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }, BOOTSTRAP_ORCHESTRATOR_GRACE_MS);
+  }
+
+  private clearBootstrapFallbackTimer(): void {
+    if (!this.bootstrapFallbackTimer) {
+      return;
+    }
+
+    clearTimeout(this.bootstrapFallbackTimer);
+    this.bootstrapFallbackTimer = undefined;
+  }
+
+  private isAwaitingUserAction(code: ECodeMessage): boolean {
+    return (
+      code === ECodeMessage.awaitingReadQrCode ||
+      code === ECodeMessage.awaitingPairingCode ||
+      code === ECodeMessage.newLoginAttempt
     );
   }
 
