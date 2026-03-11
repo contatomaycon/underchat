@@ -22,7 +22,6 @@ export async function installUbuntu2404(
   const harborRegistryValue = buildEnvironment.harborRegistry;
   const harborUsernameValue = buildEnvironment.harborUsername;
   const harborPasswordValue = buildEnvironment.harborPassword;
-  const harborAuthValue = buildEnvironment.harborAuth;
   const baileysImage = escapeShellSingleQuotes(defaultImages.baileys);
   const wwebjsImage = escapeShellSingleQuotes(defaultImages.wwebjs);
   const balanceApiImage = escapeShellSingleQuotes(defaultImages.balance_api);
@@ -30,7 +29,6 @@ export async function installUbuntu2404(
     harborRegistry: harborRegistryValue,
     harborUsername: harborUsernameValue,
     harborPassword: harborPasswordValue,
-    harborAuth: harborAuthValue,
   });
 
   return [
@@ -118,7 +116,7 @@ export async function installUbuntu2404(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      if ! docker pull '${baileysImage}'; then \
+      if ! docker --config /home/app/.docker pull '${baileysImage}'; then \
         echo 'ERROR: Docker pull failed for under-worker-baileys' >&2; \
         exit 1; \
       fi && \
@@ -136,7 +134,7 @@ export async function installUbuntu2404(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      if ! docker pull '${wwebjsImage}'; then \
+      if ! docker --config /home/app/.docker pull '${wwebjsImage}'; then \
         echo 'ERROR: Docker pull failed for under-worker-wwebjs' >&2; \
         exit 1; \
       fi && \
@@ -156,7 +154,7 @@ export async function installUbuntu2404(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      if ! docker pull '${balanceApiImage}'; then \
+      if ! docker --config /home/app/.docker pull '${balanceApiImage}'; then \
         echo 'ERROR: Docker pull failed for under-balance-api' >&2; \
         exit 1; \
       fi && \

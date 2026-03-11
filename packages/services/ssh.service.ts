@@ -34,12 +34,34 @@ export class SshCommandExecutionError extends Error {
 }
 
 export class SshRunCommandsError extends Error {
+  private static getCauseSummary(causeError: unknown): string | null {
+    if (causeError instanceof SshCommandExecutionError) {
+      const output = causeError.output.replace(/\s+/g, ' ').trim().slice(-800);
+
+      if (output) {
+        return `${causeError.message}. Output: ${output}`;
+      }
+
+      return causeError.message;
+    }
+
+    if (causeError instanceof Error) {
+      return causeError.message;
+    }
+
+    return null;
+  }
+
   constructor(
     readonly command: string,
     readonly partialResults: IServerSshCentrifugo[],
     readonly causeError: unknown
   ) {
-    super(`SSH runCommands interrupted on command failure: ${command}`);
+    const baseMessage = `SSH runCommands interrupted on command failure: ${command}`;
+    const causeSummary = SshRunCommandsError.getCauseSummary(causeError);
+    super(
+      causeSummary ? `${baseMessage}. Cause: ${causeSummary}` : baseMessage
+    );
     this.name = 'SshRunCommandsError';
   }
 }
