@@ -42,3 +42,24 @@ export const serverReinstallPermissions = [
   EServerPermissions.server_group,
   EServerPermissions.server_reinstall,
 ];
+
+export const serverBuildViewPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EServerPermissions.server_group,
+  EServerPermissions.server_view,
+];
+
+export const serverBuildGeneratePermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EServerPermissions.server_group,
+  EServerPermissions.server_create,
+];
+
+export const serverBuildEditPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EServerPermissions.server_group,
+  EServerPermissions.server_edit,
+];

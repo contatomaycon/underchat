@@ -24,6 +24,15 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { getErrorMessage } from '@core/common/functions/toError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { ServerBuildService } from '@core/services/serverBuild.service';
+import { IServerBuildDefaultImages } from '@core/common/interfaces/IServerBuildDefaultImages';
+
+class MissingDefaultBuildImagesError extends Error {
+  constructor() {
+    super('Default build images not found');
+    this.name = 'MissingDefaultBuildImagesError';
+  }
+}
 
 @singleton()
 export class BalanceCreatorConsume {
@@ -39,7 +48,9 @@ export class BalanceCreatorConsume {
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
     @inject(KafkaServiceQueueService)
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(ServerBuildService)
+    private readonly serverBuildService: ServerBuildService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -170,6 +181,20 @@ export class BalanceCreatorConsume {
           return;
         }
 
+        if (err instanceof MissingDefaultBuildImagesError) {
+          server.log.warn(
+            `Skipping server ${data.server_id ?? 'unknown'}: ${getErrorMessage(err)}`
+          );
+          if (serverId) {
+            await this.serverService.updateServerStatusById(
+              serverId,
+              EServerStatus.error
+            );
+          }
+
+          return;
+        }
+
         if (serverId && (await this.isServerCanceled(serverId))) {
           server.log.warn(
             `Skipping server ${serverId}: installation canceled during retry flow`
@@ -208,7 +233,7 @@ export class BalanceCreatorConsume {
       serverId = data.server_id ?? null;
       if (!serverId) throw new Error('Server ID is not defined in the message');
 
-      const { getDistroAndVersion, sshConfig, webView } =
+      const { getDistroAndVersion, sshConfig, webView, defaultImages } =
         await this.validate(serverId);
 
       const [, installCommands] = await Promise.all([
@@ -216,7 +241,11 @@ export class BalanceCreatorConsume {
           serverId,
           EServerStatus.installing
         ),
-        this.sshService.getInstallCommands(getDistroAndVersion, webView),
+        this.sshService.getInstallCommands(
+          getDistroAndVersion,
+          webView,
+          defaultImages
+        ),
       ]);
 
       const logs = await this.sshService.runCommands(
@@ -295,10 +324,12 @@ export class BalanceCreatorConsume {
     getDistroAndVersion: IDistroInfo;
     sshConfig: ConnectConfig;
     webView: IViewServerWebById;
+    defaultImages: IServerBuildDefaultImages;
   }> {
-    const [sshView, webView] = await Promise.all([
+    const [sshView, webView, defaultImages] = await Promise.all([
       this.serverService.viewServerSshById(serverId),
       this.serverService.viewServerWebById(serverId),
+      this.serverBuildService.getDefaultImages(),
     ]);
 
     if (!sshView) {
@@ -307,6 +338,10 @@ export class BalanceCreatorConsume {
 
     if (!webView) {
       throw new Error('Web configuration not found');
+    }
+
+    if (!defaultImages) {
+      throw new MissingDefaultBuildImagesError();
     }
 
     const isNewOrInstalling =
@@ -338,7 +373,7 @@ export class BalanceCreatorConsume {
       throw new Error('Distribution and version not allowed');
     }
 
-    return { getDistroAndVersion: distro, sshConfig, webView };
+    return { getDistroAndVersion: distro, sshConfig, webView, defaultImages };
   }
 
   private async isInstalled(

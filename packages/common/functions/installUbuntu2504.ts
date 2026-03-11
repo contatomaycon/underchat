@@ -1,20 +1,38 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
-import { generalEnvironment } from '@core/config/environments';
+import {
+  buildEnvironment,
+  generalEnvironment,
+} from '@core/config/environments';
 import { readEnvFile } from './readEnvFile';
 import { IViewServerWebById } from '../interfaces/IViewServerWebById';
+import { IServerBuildDefaultImages } from '../interfaces/IServerBuildDefaultImages';
+import { escapeShellSingleQuotes } from './escapeShellSingleQuotes';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function installUbuntu2504(
-  webView: IViewServerWebById
+  webView: IViewServerWebById,
+  defaultImages: IServerBuildDefaultImages
 ): Promise<string[]> {
   const patchPackage = path.join(__dirname, '../../../package.json');
   const nodeVersion = getPackageNodeVersion(patchPackage);
 
   const patchEnv = path.join(__dirname, '../../../.env');
   const envContent = await readEnvFile(patchEnv);
+  const harborRegistry = escapeShellSingleQuotes(
+    buildEnvironment.harborRegistry
+  );
+  const harborUsername = escapeShellSingleQuotes(
+    buildEnvironment.harborUsername
+  );
+  const harborPassword = escapeShellSingleQuotes(
+    buildEnvironment.harborPassword
+  );
+  const baileysImage = escapeShellSingleQuotes(defaultImages.baileys);
+  const wwebjsImage = escapeShellSingleQuotes(defaultImages.wwebjs);
+  const balanceApiImage = escapeShellSingleQuotes(defaultImages.balance_api);
 
   return [
     'dpkg --configure -a',
@@ -96,14 +114,26 @@ export async function installUbuntu2504(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
+      if ! printf '%s' '${harborPassword}' | docker login '${harborRegistry}' -u '${harborUsername}' --password-stdin; then \
+        echo 'ERROR: Harbor docker login failed' >&2; \
+        exit 1; \
+      fi"`,
+
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
       docker stop under-worker-baileys 2>/dev/null || true && \
       docker rm -f under-worker-baileys 2>/dev/null || true"`,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      if ! docker build --no-cache -t under-worker-baileys:latest -f ./apps/worker_baileys/Dockerfile .; then \
-        echo 'ERROR: Docker build failed for under-worker-baileys' >&2; \
+      if ! docker pull '${baileysImage}'; then \
+        echo 'ERROR: Docker pull failed for under-worker-baileys' >&2; \
+        exit 1; \
+      fi && \
+      if ! docker tag '${baileysImage}' under-worker-baileys:latest; then \
+        echo 'ERROR: Docker tag failed for under-worker-baileys' >&2; \
         exit 1; \
       fi"`,
 
@@ -116,8 +146,12 @@ export async function installUbuntu2504(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      if ! docker build --no-cache -t under-worker-wwebjs:latest -f ./apps/worker_wwebjs/Dockerfile .; then \
-        echo 'ERROR: Docker build failed for under-worker-wwebjs' >&2; \
+      if ! docker pull '${wwebjsImage}'; then \
+        echo 'ERROR: Docker pull failed for under-worker-wwebjs' >&2; \
+        exit 1; \
+      fi && \
+      if ! docker tag '${wwebjsImage}' under-worker-wwebjs:latest; then \
+        echo 'ERROR: Docker tag failed for under-worker-wwebjs' >&2; \
         exit 1; \
       fi"`,
 
@@ -132,8 +166,12 @@ export async function installUbuntu2504(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      if ! docker build --no-cache -t under-balance-api:latest -f ./apps/balance_api/Dockerfile .; then \
-        echo 'ERROR: Docker build failed for under-balance-api' >&2; \
+      if ! docker pull '${balanceApiImage}'; then \
+        echo 'ERROR: Docker pull failed for under-balance-api' >&2; \
+        exit 1; \
+      fi && \
+      if ! docker tag '${balanceApiImage}' under-balance-api:latest; then \
+        echo 'ERROR: Docker tag failed for under-balance-api' >&2; \
         exit 1; \
       fi"`,
 

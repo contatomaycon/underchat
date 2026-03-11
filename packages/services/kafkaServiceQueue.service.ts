@@ -41,6 +41,8 @@ export class KafkaServiceQueueService {
     const chatHistoryEmbedding = this.chatHistoryEmbedding();
     const contactValidationUpdate = this.contactValidationUpdate();
     const configChannelsRecreateAll = this.configChannelsRecreateAll();
+    const buildVersionGenerateRequest = this.buildVersionGenerateRequest();
+    const buildVersionCancelRequest = this.buildVersionCancelRequest();
 
     return [
       createServer,
@@ -63,6 +65,8 @@ export class KafkaServiceQueueService {
       chatHistoryEmbedding,
       contactValidationUpdate,
       configChannelsRecreateAll,
+      buildVersionGenerateRequest,
+      buildVersionCancelRequest,
     ];
   };
 
@@ -154,5 +158,13 @@ export class KafkaServiceQueueService {
 
   configChannelsRecreateAll = () => {
     return 'config.channels.recreate.all';
+  };
+
+  buildVersionGenerateRequest = () => {
+    return 'build.version.generate.request';
+  };
+
+  buildVersionCancelRequest = () => {
+    return 'build.version.cancel.request';
   };
 }

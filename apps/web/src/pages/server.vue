@@ -13,6 +13,7 @@ import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { IStatusServerCentrifugo } from '@core/common/interfaces/IStatusServerCentrifugo';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { statusServerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { useRouter } from 'vue-router';
 
 definePage({
   meta: {
@@ -58,8 +59,15 @@ const permissionsCreate = [
   EServerPermissions.server_group,
   EServerPermissions.server_create,
 ];
+const permissionsBuildView = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EServerPermissions.server_group,
+  EServerPermissions.server_view,
+];
 
 const { t } = useI18n();
+const router = useRouter();
 const serverStore = useServerStore();
 useSnackbarCleanup(serverStore);
 
@@ -272,6 +280,15 @@ onBeforeUnmount(async () => {
               @click="isAddServerVisible = true"
             >
               {{ $t('add') }}
+            </VBtn>
+
+            <VBtn
+              v-if="$canPermission(permissionsBuildView)"
+              color="error"
+              prepend-icon="tabler-hammer"
+              @click="router.push('/server/build')"
+            >
+              Build
             </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">

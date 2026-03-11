@@ -7,6 +7,10 @@ import { listServer } from './methods/listServer';
 import { serverLogsInstall } from './methods/serverLogsInstall';
 import { reinstallServer } from './methods/reinstallServer';
 import { cancelInstallServer } from './methods/cancelInstallServer';
+import { listServerBuild } from './methods/listServerBuild';
+import { generateServerBuild } from './methods/generateServerBuild';
+import { cancelServerBuild } from './methods/cancelServerBuild';
+import { setServerBuildDefault } from './methods/setServerBuildDefault';
 
 @injectable()
 class ServerController {
@@ -18,6 +22,10 @@ class ServerController {
   public serverLogsInstall = serverLogsInstall;
   public reinstallServer = reinstallServer;
   public cancelInstallServer = cancelInstallServer;
+  public listServerBuild = listServerBuild;
+  public generateServerBuild = generateServerBuild;
+  public cancelServerBuild = cancelServerBuild;
+  public setServerBuildDefault = setServerBuildDefault;
 }
 
 export default ServerController;

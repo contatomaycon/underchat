@@ -1072,5 +1072,13 @@
   "user_attendance_hours_invalid_time_range": "Rango de horario inválido para {{day}}. Informe un intervalo con inicio menor que el fin.",
   "user_attendance_hours_rule_conflict": "Existe conflicto de horarios en {{day}}. Ajuste los intervalos para que no se superpongan.",
   "user_attendance_hours_login_blocked": "Fuera del horario de atención. Horarios de hoy: {{windows}}.",
-  "user_attendance_hours_blocked_use": "Fuera del horario de atención. Horarios de hoy: {{windows}}."
+  "user_attendance_hours_blocked_use": "Fuera del horario de atención. Horarios de hoy: {{windows}}.",
+  "server_build_list_success": "Versiones de build listadas con exito!",
+  "server_build_generate_success": "Solicitud de generacion de version enviada con exito!",
+  "server_build_generate_failed": "Error al solicitar la generacion del build",
+  "server_build_generate_conflict": "Ya existe un build en ejecucion. Espere a que termine o cancelalo.",
+  "server_build_cancel_success": "Solicitud de cancelacion de build enviada con exito!",
+  "server_build_cancel_not_found": "No hay un build activo para cancelar",
+  "server_build_default_not_found": "Version de build no encontrada",
+  "server_build_default_update_success": "Version default actualizada con exito!"
 }

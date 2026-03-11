@@ -1072,5 +1072,13 @@
   "user_attendance_hours_invalid_time_range": "Invalid time range for {{day}}. Provide a start time lower than end time.",
   "user_attendance_hours_rule_conflict": "There is a schedule conflict on {{day}}. Adjust windows so they do not overlap.",
   "user_attendance_hours_login_blocked": "Outside attendance hours. Today's windows: {{windows}}.",
-  "user_attendance_hours_blocked_use": "Outside attendance hours. Today's windows: {{windows}}."
+  "user_attendance_hours_blocked_use": "Outside attendance hours. Today's windows: {{windows}}.",
+  "server_build_list_success": "Build versions listed successfully!",
+  "server_build_generate_success": "Build version generation request sent successfully!",
+  "server_build_generate_failed": "Failed to request build generation",
+  "server_build_generate_conflict": "There is already a build job in progress. Wait for it to finish or cancel it.",
+  "server_build_cancel_success": "Build cancellation request sent successfully!",
+  "server_build_cancel_not_found": "No active build job to cancel",
+  "server_build_default_not_found": "Build version not found",
+  "server_build_default_update_success": "Default build version updated successfully!"
 }

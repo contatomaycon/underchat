@@ -12,6 +12,7 @@ import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifu
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { serverSshCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { IServerBuildDefaultImages } from '@core/common/interfaces/IServerBuildDefaultImages';
 
 export class SshCommandExecutionError extends Error {
   constructor(
@@ -527,15 +528,28 @@ export class SshService {
 
   async getInstallCommands(
     info: IDistroInfo,
-    webView: IViewServerWebById
+    webView: IViewServerWebById,
+    defaultImages: IServerBuildDefaultImages
   ): Promise<string[]> {
     const key = `${info.distro}:${info.version}` as EAllowedDistroVersion;
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
-      [EAllowedDistroVersion.Ubuntu_25_10]: await installUbuntu2510(webView),
-      [EAllowedDistroVersion.Ubuntu_25_04]: await installUbuntu2504(webView),
-      [EAllowedDistroVersion.Ubuntu_24_10]: await installUbuntu2410(webView),
-      [EAllowedDistroVersion.Ubuntu_24_04]: await installUbuntu2404(webView),
+      [EAllowedDistroVersion.Ubuntu_25_10]: await installUbuntu2510(
+        webView,
+        defaultImages
+      ),
+      [EAllowedDistroVersion.Ubuntu_25_04]: await installUbuntu2504(
+        webView,
+        defaultImages
+      ),
+      [EAllowedDistroVersion.Ubuntu_24_10]: await installUbuntu2410(
+        webView,
+        defaultImages
+      ),
+      [EAllowedDistroVersion.Ubuntu_24_04]: await installUbuntu2404(
+        webView,
+        defaultImages
+      ),
     };
 
     return commandsMap[key] ?? [];
@@ -567,16 +581,16 @@ export class SshService {
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
       [EAllowedDistroVersion.Ubuntu_25_10]: [
-        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1; then   echo true; else   echo false; fi"`,
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
       ],
       [EAllowedDistroVersion.Ubuntu_25_04]: [
-        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1; then   echo true; else   echo false; fi"`,
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
       ],
       [EAllowedDistroVersion.Ubuntu_24_10]: [
-        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1; then   echo true; else   echo false; fi"`,
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
       ],
       [EAllowedDistroVersion.Ubuntu_24_04]: [
-        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1; then   echo true; else   echo false; fi"`,
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
       ],
     };
 

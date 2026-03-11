@@ -3,6 +3,9 @@ import { container } from 'tsyringe';
 import { createServerSchema } from '@core/schema/server/createServer';
 import ServerController from '@/controllers/server';
 import {
+  serverBuildEditPermissions,
+  serverBuildGeneratePermissions,
+  serverBuildViewPermissions,
   serverCreatePermissions,
   serverDeletePermissions,
   serverEditPermissions,
@@ -17,6 +20,10 @@ import { listServerSchema } from '@core/schema/server/listServer';
 import { serverLogsInstallSchema } from '@core/schema/server/serverLogsInstall';
 import { reinstallServerSchema } from '@core/schema/server/reinstallServer';
 import { cancelInstallServerSchema } from '@core/schema/server/cancelInstallServer';
+import { serverBuildViewSchema } from '@core/schema/server/viewServerBuild';
+import { serverBuildGenerateSchema } from '@core/schema/server/generateServerBuild';
+import { serverBuildCancelSchema } from '@core/schema/server/cancelServerBuild';
+import { serverBuildDefaultSchema } from '@core/schema/server/setServerBuildDefault';
 
 export default function serverRoutes(server: FastifyInstance) {
   const serverController = container.resolve(ServerController);
@@ -72,6 +79,42 @@ export default function serverRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, serverReinstallPermissions),
+    ],
+  });
+
+  server.get('/server/build', {
+    schema: serverBuildViewSchema,
+    handler: serverController.listServerBuild,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverBuildViewPermissions),
+    ],
+  });
+
+  server.post('/server/build/generate', {
+    schema: serverBuildGenerateSchema,
+    handler: serverController.generateServerBuild,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverBuildGeneratePermissions),
+    ],
+  });
+
+  server.patch('/server/build/cancel', {
+    schema: serverBuildCancelSchema,
+    handler: serverController.cancelServerBuild,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverBuildEditPermissions),
+    ],
+  });
+
+  server.patch('/server/build/default/:server_build_version_id', {
+    schema: serverBuildDefaultSchema,
+    handler: serverController.setServerBuildDefault,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, serverBuildEditPermissions),
     ],
   });
 

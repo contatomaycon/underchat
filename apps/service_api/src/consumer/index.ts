@@ -18,6 +18,8 @@ import { startAiAgentPromptEmbeddingConsume } from './aiAgentPromptEmbedding.con
 import { startChatHistoryEmbeddingConsume } from './chatHistoryEmbedding.consume';
 import { startContactValidationUpdateConsume } from './contactValidationUpdate.consume';
 import { startConfigChannelsRecreateAllConsume } from './configChannelsRecreateAll.consume';
+import { startBuildVersionGenerateConsume } from './buildVersionGenerate.consume';
+import { startBuildVersionCancelConsume } from './buildVersionCancel.consume';
 import fp from 'fastify-plugin';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
@@ -49,6 +51,8 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
     () => startChatHistoryEmbeddingConsume(server),
     () => startContactValidationUpdateConsume(server),
     () => startConfigChannelsRecreateAllConsume(server),
+    () => startBuildVersionGenerateConsume(server),
+    () => startBuildVersionCancelConsume(server),
   ];
 
   for (const start of starters) {
