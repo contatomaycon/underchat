@@ -9,6 +9,8 @@
  *   window.__centrifugoTelemetry.getSummary()    // formatted text summary
  */
 
+import * as Sentry from '@sentry/vue';
+
 interface CircularBuffer<T> {
   push(item: T): void;
   toArray(): T[];
@@ -264,6 +266,18 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         lastDisconnectedAt = Date.now();
       }
 
+      Sentry.addBreadcrumb({
+        category: 'centrifugo.connection',
+        message: `Connection ${state}`,
+        level:
+          state === 'error'
+            ? 'error'
+            : state === 'disconnected'
+              ? 'warning'
+              : 'info',
+        data: { state, reason, code, reconnectionCount },
+      });
+
       if (state === 'disconnected' || state === 'error') {
         console.warn(
           `[Centrifugo Telemetry] ${state}`,
@@ -288,7 +302,22 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         console.warn(
           `[Centrifugo Telemetry] Recovery failed for channel: ${channel}`
         );
+        Sentry.captureMessage(`Centrifugo recovery failed: ${channel}`, {
+          level: 'warning',
+          tags: { centrifugo_channel: channel },
+          extra: {
+            recovered: ctx?.recovered,
+            wasRecovering: ctx?.wasRecovering,
+          },
+        });
       }
+
+      Sentry.addBreadcrumb({
+        category: 'centrifugo.subscription',
+        message: `Subscription ${state}: ${channel}`,
+        level: state === 'recovery_failed' ? 'warning' : 'info',
+        data: { channel, state, ...ctx },
+      });
     },
 
     trackPublication(channel) {
@@ -311,6 +340,20 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         error: errorToString(error),
         channel,
       });
+
+      Sentry.captureException(
+        error instanceof Error ? error : new Error(errorToString(error)),
+        {
+          tags: {
+            centrifugo_context: 'publication_dropped',
+            centrifugo_channel: channel,
+          },
+          extra: {
+            totalDropped: metrics.totalDropped,
+            totalReceived: metrics.totalReceived,
+          },
+        }
+      );
     },
 
     trackBatchFlush(type, bufferSize) {
@@ -332,6 +375,14 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         success,
         messagesRecovered,
       });
+
+      Sentry.addBreadcrumb({
+        category: 'centrifugo.recovery',
+        message: `Recovery ${success ? 'succeeded' : 'failed'}: ${channel}`,
+        level: success ? 'info' : 'warning',
+        data: { channel, success, messagesRecovered },
+      });
+
       if (!success) {
         console.warn(`[Centrifugo Telemetry] Recovery failed: ${channel}`);
       }
@@ -345,6 +396,13 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         pages,
         durationMs,
       });
+
+      Sentry.addBreadcrumb({
+        category: 'centrifugo.history_sync',
+        message: `History sync: ${channel} (${messagesProcessed} msgs, ${pages} pages, ${durationMs}ms)`,
+        level: 'info',
+        data: { channel, messagesProcessed, pages, durationMs },
+      });
     },
 
     trackError(context, error, channel?) {
@@ -355,6 +413,17 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         ...(channel && { channel }),
       };
       errors.push(entry);
+
+      Sentry.captureException(
+        error instanceof Error ? error : new Error(errorToString(error)),
+        {
+          tags: {
+            centrifugo_context: context,
+            ...(channel && { centrifugo_channel: channel }),
+          },
+          extra: { context, channel },
+        }
+      );
 
       if (import.meta.env.DEV) {
         console.error(
@@ -367,6 +436,13 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
 
     trackVisibility(state) {
       visibilityChanges.push({ timestamp: Date.now(), state });
+
+      Sentry.addBreadcrumb({
+        category: 'centrifugo.visibility',
+        message: `Tab ${state}`,
+        level: 'info',
+        data: { state },
+      });
     },
 
     setStreamPositionProvider(provider) {
