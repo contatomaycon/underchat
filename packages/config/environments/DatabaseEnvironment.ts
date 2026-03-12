@@ -112,9 +112,14 @@ export class DatabaseEnvironment {
   }
 
   public get dbPoolMin(): number {
-    const min = process.env.DB_POOL_MIN && Number(process.env.DB_POOL_MIN);
-    if (!min) {
+    const value = process.env.DB_POOL_MIN;
+    if (value === undefined) {
       throw new InvalidConfigurationError('DB_POOL_MIN is not defined.');
+    }
+
+    const min = Number(value);
+    if (!Number.isFinite(min) || min < 0) {
+      throw new InvalidConfigurationError('DB_POOL_MIN is invalid.');
     }
 
     return min;
