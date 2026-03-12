@@ -274,7 +274,7 @@ export const useChannelsStore = defineStore('channels', {
     ): Promise<number | null> {
       try {
         const response = await axios.get<IApiResponse<{ count: number }>>(
-          `/config/channels/${channelId}/open-conversations`
+          `/worker/${channelId}/open-conversations`
         );
 
         const data = response?.data;

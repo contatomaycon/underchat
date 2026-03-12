@@ -36,6 +36,7 @@ import { viewAiAgentConfig } from './methods/viewAiAgentConfig';
 import { updateAiAgentConfig } from './methods/updateAiAgentConfig';
 import { viewAttendanceHours } from './methods/viewAttendanceHours';
 import { updateAttendanceHours } from './methods/updateAttendanceHours';
+import { checkWorkerOpenConversations } from './methods/checkWorkerOpenConversations';
 
 @injectable()
 class WorkerController {
@@ -79,6 +80,7 @@ class WorkerController {
   public updateAiAgentConfig = updateAiAgentConfig;
   public viewAttendanceHours = viewAttendanceHours;
   public updateAttendanceHours = updateAttendanceHours;
+  public checkWorkerOpenConversations = checkWorkerOpenConversations;
 }
 
 export default WorkerController;

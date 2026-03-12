@@ -49,6 +49,7 @@ import { viewAiAgentConfigSchema } from '@core/schema/worker/viewAiAgentConfig';
 import { updateAiAgentConfigSchema } from '@core/schema/worker/updateAiAgentConfig';
 import { viewAttendanceHoursSchema } from '@core/schema/worker/viewAttendanceHours';
 import { updateAttendanceHoursSchema } from '@core/schema/worker/updateAttendanceHours';
+import { checkWorkerOpenConversationsSchema } from '@core/schema/worker/checkWorkerOpenConversations';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -116,6 +117,17 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/open-conversations', {
+    schema: checkWorkerOpenConversationsSchema,
+    handler: workerController.checkWorkerOpenConversations,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerDeletePermissions),
       planGuard,
       planStatus,
     ],
