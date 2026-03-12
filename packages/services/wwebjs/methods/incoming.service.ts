@@ -515,7 +515,8 @@ export class WwebjsIncomingMessageService {
     string,
     { phone: string | null; ts: number }
   >();
-  private readonly LID_PHONE_CACHE_TTL_MS = 300_000;
+  private readonly LID_PHONE_CACHE_TTL_MS = 86_400_000;
+  private readonly LID_PHONE_CACHE_NO_PHONE_TTL_MS = 300_000;
 
   constructor(
     @inject(StreamProducerService)
@@ -1186,8 +1187,13 @@ export class WwebjsIncomingMessageService {
     lidJid: string
   ): Promise<string | undefined> {
     const cached = this.LID_PHONE_CACHE.get(lidJid);
-    if (cached && Date.now() - cached.ts < this.LID_PHONE_CACHE_TTL_MS) {
-      return cached.phone ?? undefined;
+    if (cached) {
+      const ttl = cached.phone
+        ? this.LID_PHONE_CACHE_TTL_MS
+        : this.LID_PHONE_CACHE_NO_PHONE_TTL_MS;
+      if (Date.now() - cached.ts < ttl) {
+        return cached.phone ?? undefined;
+      }
     }
 
     const resolved =
