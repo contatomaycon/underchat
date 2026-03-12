@@ -938,6 +938,10 @@ export class ServerBuildExecutorService {
         );
       }
 
+      if (this.buildEngine === 'kaniko') {
+        fs.mkdirSync('/tmp/kaniko', { recursive: true });
+      }
+
       const buildCommand = resolveServerBuildCommand({
         buildEngine: this.buildEngine,
         imageReference,

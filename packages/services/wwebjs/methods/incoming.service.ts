@@ -1273,7 +1273,7 @@ export class WwebjsIncomingMessageService {
         }
       ).evaluate(async (jid: string) => {
         try {
-          const win = window as any;
+          const win = globalThis as any;
           const { lid, phone } = await win.WWebJS.enforceLidAndPnRetrieval(jid);
           if (phone?._serialized) {
             return phone._serialized as string;
