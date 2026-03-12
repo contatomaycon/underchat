@@ -33,6 +33,12 @@ export const listAiAgentHumanTransferSectorUsersSchema = {
       message: Type.String(),
       data: Type.Null(),
     }),
+    403: Type.Object({
+      id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      status: Type.Boolean({ default: false }),
+      message: Type.String(),
+      data: Type.Null(),
+    }),
     500: Type.Object({
       id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
       status: Type.Boolean({ default: false }),

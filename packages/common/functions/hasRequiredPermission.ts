@@ -5,8 +5,12 @@ export function hasRequiredPermission(
   actions: IJwtGroupHierarchy[],
   permissions?: EPermissionsRoles[] | null
 ): boolean {
-  if (!permissions?.length || !actions?.length) {
+  if (!permissions?.length) {
     return true;
+  }
+
+  if (!actions?.length) {
+    return false;
   }
 
   return actions.some((action) => permissions.includes(action.action_name));

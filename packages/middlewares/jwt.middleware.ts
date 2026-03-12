@@ -238,8 +238,8 @@ async function authenticateJwt(
 
     if (!hasPermission) {
       return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
+        message: t('permission_denied'),
+        httpStatusCode: EHTTPStatusCode.forbidden,
       });
     }
 
