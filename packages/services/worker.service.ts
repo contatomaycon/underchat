@@ -58,6 +58,11 @@ export class WorkerService {
     'OLDPWD',
     'SHLVL',
     '_',
+    'PUPPETEER_EXECUTABLE_PATH',
+    'PUPPETEER_SKIP_CHROMIUM_DOWNLOAD',
+    'CHROME_BIN',
+    'CHROME_PATH',
+    'NODE_EXTRA_CA_CERTS',
   ]);
 
   constructor(
@@ -240,6 +245,7 @@ export class WorkerService {
     }
 
     const envOverrides = [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`];
+
     if (grpcHost !== undefined && grpcPort !== undefined) {
       envOverrides.push(
         `BALANCER_GRPC_HOST=${grpcHost}`,
