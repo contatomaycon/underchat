@@ -75,8 +75,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       librdkafka1 \
       curl \
+      gnupg \
       ca-certificates \
-      chromium \
       fonts-liberation \
       libasound2 \
       libatk-bridge2.0-0 \
@@ -95,13 +95,24 @@ RUN apt-get update && \
       libxrandr2 \
       libxshmfence1 \
       xdg-utils && \
+    mkdir -p /usr/share/keyrings && \
+    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      google-chrome-stable && \
     update-ca-certificates && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome && \
+    ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome
 
 RUN chmod +x /usr/local/bin/worker-wwebjs-entrypoint.sh
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
+    CHROME_BIN=/usr/bin/google-chrome-stable \
+    CHROME_PATH=/usr/bin/google-chrome-stable
 
 EXPOSE 3005 50052
 
