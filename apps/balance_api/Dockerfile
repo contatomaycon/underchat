@@ -85,4 +85,4 @@ EXPOSE 3003 50051
 
 WORKDIR /app/apps/balance_api
 
-CMD ["node", "src/index.js"]
+CMD ["node", "--import", "../../packages/plugins/telemetry/instrumentation.js", "src/index.js"]

@@ -118,4 +118,4 @@ EXPOSE 3005 50052
 
 WORKDIR /app/apps/worker_wwebjs
 
-CMD ["/usr/local/bin/worker-wwebjs-entrypoint.sh", "node", "src/index.js"]
+CMD ["/usr/local/bin/worker-wwebjs-entrypoint.sh", "node", "--import", "../../packages/plugins/telemetry/instrumentation.js", "src/index.js"]

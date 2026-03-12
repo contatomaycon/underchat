@@ -26,7 +26,9 @@
     "src/**/*",
     "../../packages/common/types/**/*.d.ts",
     "../../packages/plugins/proto/workerGrpcServer.ts",
-    "../../packages/plugins/proto/workerConnectionGrpcServer.ts"
+    "../../packages/plugins/proto/workerConnectionGrpcServer.ts",
+    "../../packages/plugins/telemetry/instrumentation.ts",
+    "../../packages/plugins/telemetry/sdk.ts"
   ],
   "exclude": ["node_modules"]
 }

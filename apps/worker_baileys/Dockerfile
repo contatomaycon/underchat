@@ -83,4 +83,4 @@ EXPOSE 3005 50052
 
 WORKDIR /app/apps/worker_baileys
 
-CMD ["node", "src/index.js"]
+CMD ["node", "--import", "../../packages/plugins/telemetry/instrumentation.js", "src/index.js"]
