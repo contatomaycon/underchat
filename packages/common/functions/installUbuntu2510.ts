@@ -7,6 +7,10 @@ import { IViewServerWebById } from '../interfaces/IViewServerWebById';
 import { IServerBuildDefaultImages } from '../interfaces/IServerBuildDefaultImages';
 import { escapeShellSingleQuotes } from './escapeShellSingleQuotes';
 import { getHarborLoginCommand } from './getHarborLoginCommand';
+import {
+  getRemoveEnvVarsFromFileCommand,
+  getUpsertEnvVarInFileCommand,
+} from './getRemoveEnvVarsFromFileCommand';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,6 +34,13 @@ export async function installUbuntu2510(
     harborUsername: harborUsernameValue,
     harborPassword: harborPasswordValue,
   });
+  const removeEnvVarsFromAppEnvCommand =
+    getRemoveEnvVarsFromFileCommand('/home/app/.env');
+  const upsertOtelServiceNameInAppEnvCommand = getUpsertEnvVarInFileCommand(
+    '/home/app/.env',
+    'OTEL_SERVICE_NAME',
+    'balance'
+  );
 
   return [
     'dpkg --configure -a',
@@ -100,7 +111,10 @@ export async function installUbuntu2510(
 
     `bash -c "mkdir -p /home/app && chown $USER:$USER /home/app"`,
 
-    `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
+    `bash -c "printf '%b' '${envContent}' > /home/app/.env && \
+      ${removeEnvVarsFromAppEnvCommand} && \
+      ${upsertOtelServiceNameInAppEnvCommand} && \
+      chown $USER:$USER /home/app/.env"`,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
@@ -176,7 +190,6 @@ export async function installUbuntu2510(
         -p 50051:50051 \
         -v /var/run/docker.sock:/var/run/docker.sock \
         --env-file /home/app/.env \
-        -e NODE_EXTRA_CA_CERTS= \
         --network underchat \
         -e DOCKER_HOST=unix:///var/run/docker.sock \
         -e SERVER_ID=${webView.server_id} \

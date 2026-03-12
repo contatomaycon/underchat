@@ -246,6 +246,14 @@ export class WorkerService {
 
     const envOverrides = [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`];
 
+    if (imageName === EWorkerImage.baileys) {
+      envOverrides.push('OTEL_SERVICE_NAME=baileys');
+    }
+
+    if (imageName === EWorkerImage.wwebjs) {
+      envOverrides.push('OTEL_SERVICE_NAME=wwebjs');
+    }
+
     if (grpcHost !== undefined && grpcPort !== undefined) {
       envOverrides.push(
         `BALANCER_GRPC_HOST=${grpcHost}`,
