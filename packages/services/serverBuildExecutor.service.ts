@@ -762,6 +762,13 @@ export class ServerBuildExecutorService {
   private getBuildExecutionErrorMessage(error: unknown): string {
     const errorMessage = this.getErrorMessage(error);
 
+    if (
+      this.buildEngine === 'kaniko' &&
+      errorMessage.includes('/kaniko/Dockerfile: permission denied')
+    ) {
+      return `${errorMessage}\nHint: Kaniko needs write access to /kaniko. Rebuild and redeploy the service_api image with /kaniko writable, and ensure no old pods are still consuming build jobs.`;
+    }
+
     if (this.buildEngine !== 'docker') {
       return errorMessage;
     }

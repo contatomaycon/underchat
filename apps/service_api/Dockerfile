@@ -140,6 +140,7 @@ RUN apt-get update && \
       ln -sf /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx; \
     fi && \
     chmod +x /kaniko/executor && \
+    chmod 1777 /kaniko && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome && \
