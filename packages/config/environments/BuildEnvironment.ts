@@ -124,6 +124,15 @@ export class BuildEnvironment {
     return executorPath;
   }
 
+  public get buildKanikoDir(): string {
+    const kanikoDir = process.env.BUILD_KANIKO_DIR?.trim();
+    if (!kanikoDir) {
+      return '/tmp/kaniko';
+    }
+
+    return kanikoDir;
+  }
+
   public get serviceApiEnableBuildConsumers(): boolean {
     return this.parseOptionalBoolean(
       'SERVICE_API_ENABLE_BUILD_CONSUMERS',

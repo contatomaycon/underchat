@@ -48,6 +48,7 @@ export class ServerBuildExecutorService {
   private readonly buildEngine = buildEnvironment.buildEngine;
   private readonly kanikoExecutorPath =
     buildEnvironment.buildKanikoExecutorPath;
+  private readonly kanikoDir = buildEnvironment.buildKanikoDir;
   private readonly realtimeLogLineLimit = 2_000;
   private readonly realtimeLogBufferFlushThreshold = 8_000;
   private readonly realtimeLogBufferByStream = new Map<string, string>();
@@ -931,6 +932,10 @@ export class ServerBuildExecutorService {
         );
       }
 
+      if (this.buildEngine === 'kaniko') {
+        fs.mkdirSync(this.kanikoDir, { recursive: true });
+      }
+
       const buildCommand = resolveServerBuildCommand({
         buildEngine: this.buildEngine,
         imageReference,
@@ -938,6 +943,7 @@ export class ServerBuildExecutorService {
         dockerfileAbsolutePath,
         workspaceRoot,
         kanikoExecutorPath: this.kanikoExecutorPath,
+        kanikoDir: this.kanikoDir,
       });
 
       await this.runCommand(

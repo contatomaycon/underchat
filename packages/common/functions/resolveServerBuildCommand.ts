@@ -7,6 +7,7 @@ interface IResolveServerBuildCommandInput {
   dockerfileAbsolutePath: string;
   workspaceRoot: string;
   kanikoExecutorPath: string;
+  kanikoDir: string;
 }
 
 interface IResolvedServerBuildCommand {
@@ -41,6 +42,8 @@ export function resolveServerBuildCommand(
       `dir://${input.workspaceRoot}`,
       '--dockerfile',
       input.dockerfileAbsolutePath,
+      '--kaniko-dir',
+      input.kanikoDir,
       '--destination',
       input.imageReference,
       '--cache=false',
