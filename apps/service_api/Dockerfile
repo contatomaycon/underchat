@@ -140,7 +140,6 @@ RUN apt-get update && \
       ln -sf /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx; \
     fi && \
     chmod +x /kaniko/executor && \
-    chmod 1777 /kaniko && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome && \
@@ -155,7 +154,6 @@ RUN mkdir -p /home/pptruser/Downloads \
     /home/pptruser/.local/share/mime \
     /home/pptruser/.config \
     /home/pptruser/.cache \
-    /kaniko \
     /tmp/.chrome-user-data \
     /tmp/.chrome-crashpad \
     /tmp/.config \
@@ -163,7 +161,7 @@ RUN mkdir -p /home/pptruser/Downloads \
     /tmp/.local/share/applications \
     /tmp/.local/share/mime \
     /app && \
-    chown -R pptruser:pptruser /home/pptruser /kaniko /tmp/.chrome-user-data /tmp/.chrome-crashpad /app && \
+    chown -R pptruser:pptruser /home/pptruser /tmp/.chrome-user-data /tmp/.chrome-crashpad /app && \
     chmod -R 1777 /tmp/.chrome-user-data /tmp/.chrome-crashpad /tmp/.config /tmp/.cache /tmp/.local && \
     chmod -R 755 /home/pptruser/.local/share
 

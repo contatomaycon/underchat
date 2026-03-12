@@ -44,6 +44,8 @@ export function resolveServerBuildCommand(
       '--destination',
       input.imageReference,
       '--cache=false',
+      '--kaniko-dir',
+      '/tmp/kaniko',
     ],
   };
 }
