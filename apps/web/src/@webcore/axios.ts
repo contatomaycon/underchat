@@ -29,6 +29,7 @@ const createAxiosInstance = () => {
 const axiosAuth = createAxiosInstance();
 const WEB_SESSION_PLATFORM = 'web';
 let logoutAndRedirectPromise: Promise<void> | null = null;
+let permissionDeniedRedirectPromise: Promise<void> | null = null;
 let refreshSessionPromise: Promise<string | null> | null = null;
 let hasInvalidSession = false;
 
@@ -116,6 +117,16 @@ const getLoginHref = (): string => {
   }
 };
 
+const getNotAuthorizedHref = (): string => {
+  try {
+    return (
+      router.resolve({ name: 'not-authorized' }).href || '/not-authorized'
+    );
+  } catch {
+    return '/not-authorized';
+  }
+};
+
 const redirectToLoginWithFallback = async (): Promise<void> => {
   if (router.currentRoute.value?.name === 'login') {
     return;
@@ -132,6 +143,39 @@ const redirectToLoginWithFallback = async (): Promise<void> => {
 
   if (router.currentRoute.value?.name !== 'login') {
     globalThis.location.replace(loginHref);
+  }
+};
+
+const redirectToNotAuthorizedWithFallback = async (): Promise<void> => {
+  if (router.currentRoute.value?.name === 'not-authorized') {
+    return;
+  }
+
+  const notAuthorizedHref = getNotAuthorizedHref();
+
+  try {
+    await router.replace({ name: 'not-authorized' });
+  } catch {
+    globalThis.location.replace(notAuthorizedHref);
+    return;
+  }
+
+  if (router.currentRoute.value?.name !== 'not-authorized') {
+    globalThis.location.replace(notAuthorizedHref);
+  }
+};
+
+const redirectPermissionDeniedWithSingleFlight = async (): Promise<void> => {
+  if (permissionDeniedRedirectPromise) {
+    return permissionDeniedRedirectPromise;
+  }
+
+  permissionDeniedRedirectPromise = redirectToNotAuthorizedWithFallback();
+
+  try {
+    await permissionDeniedRedirectPromise;
+  } finally {
+    permissionDeniedRedirectPromise = null;
   }
 };
 
@@ -195,6 +239,28 @@ const retryWithRefreshedToken = async (
   return axiosAuth(originalRequest);
 };
 
+const getApiResponseMessage = (responseData: unknown): string | null => {
+  if (!responseData || typeof responseData !== 'object') {
+    return null;
+  }
+
+  const message = (responseData as { message?: unknown }).message;
+  return typeof message === 'string' ? message : null;
+};
+
+const isPermissionDeniedMessage = (message: string | null): boolean => {
+  if (!message) {
+    return false;
+  }
+
+  if (message === 'permission_denied') {
+    return true;
+  }
+
+  const translatedMessage = getI18n().global.t('permission_denied');
+  return typeof translatedMessage === 'string' && message === translatedMessage;
+};
+
 axiosAuth.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = getToken();
@@ -233,8 +299,10 @@ axiosAuth.interceptors.response.use(
     if (error.response?.status === 403) {
       const blockedData = error?.response?.data
         ?.data as UserAttendanceHoursBlockedData;
+      const isAttendanceBlocked =
+        blockedData?.reason === 'user_attendance_hours_blocked';
 
-      if (blockedData?.reason === 'user_attendance_hours_blocked') {
+      if (isAttendanceBlocked) {
         try {
           const { useAttendanceGuardStore } =
             await import('@webcore/stores/attendanceGuard');
@@ -244,6 +312,11 @@ axiosAuth.interceptors.response.use(
           );
         } catch {
           // ignore
+        }
+      } else {
+        const apiMessage = getApiResponseMessage(error?.response?.data);
+        if (isPermissionDeniedMessage(apiMessage)) {
+          await redirectPermissionDeniedWithSingleFlight();
         }
       }
     }
