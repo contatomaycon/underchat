@@ -48,9 +48,13 @@ export function resolveServerBuildCommand(
       '--kaniko-dir',
       '/tmp/kaniko',
       '--ignore-path',
-      '/tmp/underchat-build-source',
+      '/tmp',
       '--ignore-path',
-      '/tmp/kaniko',
+      '/kaniko',
+      '--ignore-path',
+      '/app',
+      '--ignore-path',
+      '/home',
     ],
   };
 }

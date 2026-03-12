@@ -1044,6 +1044,13 @@ export class ServerBuildExecutorService {
   }
 
   async executeBuildJob(serverBuildJobId: string): Promise<void> {
+    if (this.buildEngine === 'kaniko') {
+      for (const target of this.buildTargets) {
+        await this.executeBuildJobItem(serverBuildJobId, target.buildType);
+      }
+      return;
+    }
+
     await Promise.all(
       this.buildTargets.map((target) =>
         this.executeBuildJobItem(serverBuildJobId, target.buildType)
