@@ -10,7 +10,7 @@ import type {
   IElasticBulkResponse,
   IElasticBulkUpdateItem,
 } from '@core/common/interfaces/IElasticBulk';
-import { metricsCount } from '@core/plugins/telemetry/sentry';
+import { incrementCounter } from '@core/plugins/telemetry/observability';
 
 @injectable()
 export class ElasticDatabaseService {
@@ -855,7 +855,7 @@ export class ElasticDatabaseService {
 
         if (updateResult !== 'conflict') {
           if (attempt > 0) {
-            metricsCount('elastic.update.script.occ.retry', attempt, {
+            incrementCounter('elastic.update.script.occ.retry', attempt, {
               index,
               result: updateResult,
             });
@@ -866,10 +866,14 @@ export class ElasticDatabaseService {
         attempt++;
       } catch (error) {
         if (attempt >= maxRetries - 1) {
-          metricsCount('elastic.update.script.occ.max_retries_exceeded', 1, {
-            index,
-            max_retries: maxRetries,
-          });
+          incrementCounter(
+            'elastic.update.script.occ.max_retries_exceeded',
+            1,
+            {
+              index,
+              max_retries: maxRetries,
+            }
+          );
           throw new Error(
             `Failed to update with script OCC after retries: ${error}`
           );
@@ -879,7 +883,7 @@ export class ElasticDatabaseService {
       }
     }
 
-    metricsCount('elastic.update.script.occ.conflict_after_retries', 1, {
+    incrementCounter('elastic.update.script.occ.conflict_after_retries', 1, {
       index,
       max_retries: maxRetries,
     });
@@ -1647,7 +1651,7 @@ export class ElasticDatabaseService {
         });
       } catch (error) {
         if (this.isMappingConflictError(error)) {
-          metricsCount('elastic.indices.put_mapping.conflict', 1, {
+          incrementCounter('elastic.indices.put_mapping.conflict', 1, {
             index,
           });
           return true;

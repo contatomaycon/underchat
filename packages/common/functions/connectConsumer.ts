@@ -1,7 +1,7 @@
 import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
 import { getErrorMessage } from './toError';
 import { logger } from '@core/plugins/telemetry/logger';
-import { captureException } from '@core/plugins/telemetry/sentry';
+import { recordException } from '@core/plugins/telemetry/observability';
 
 const TIMEOUT_ERROR_CODE = -185;
 const FALLBACK_DELAY_MS = 1000;
@@ -90,7 +90,7 @@ function handleNonTimeoutError(topic: string, error: unknown): void {
     `Kafka consumer error for topic ${topic}`
   );
 
-  captureException(error, {
+  recordException(error, {
     kafka: {
       type: 'consumer_connection_error',
       topic,
@@ -154,7 +154,7 @@ function createReadyHandler(
         `Error subscribing to topic ${topic}`
       );
 
-      captureException(error, {
+      recordException(error, {
         kafka: {
           type: 'subscribe_error',
           topic,
@@ -252,7 +252,7 @@ function handleConnectException(
     `Kafka consumer connect() error for topic ${topic}`
   );
 
-  captureException(connectError, {
+  recordException(connectError, {
     kafka: {
       type: 'connect_error',
       topic,

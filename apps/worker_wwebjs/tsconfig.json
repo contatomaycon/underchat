@@ -6,6 +6,7 @@
     "moduleResolution": "bundler",
     "declaration": true,
     "outDir": "./dist",
+    "rootDir": "../../",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

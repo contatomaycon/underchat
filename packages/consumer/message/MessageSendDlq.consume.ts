@@ -14,10 +14,10 @@ import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import { logger } from '@core/plugins/telemetry/logger';
 import {
-  captureException,
-  metricsCount,
-  metricsDistribution,
-} from '@core/plugins/telemetry/sentry';
+  recordException,
+  incrementCounter,
+  recordHistogram,
+} from '@core/plugins/telemetry/observability';
 
 @singleton()
 export class MessageSendDlqConsume {
@@ -150,7 +150,7 @@ export class MessageSendDlqConsume {
                   redrive_count: data.redrive_count ?? 0,
                   result: 'already_sent_skipped',
                 });
-                metricsCount('message_send_already_sent_skipped', 1, {
+                incrementCounter('message_send_already_sent_skipped', 1, {
                   provider: this.PROVIDER,
                   result: 'already_sent_skipped',
                   queue_type: data.queue_key?.startsWith('chat:')
@@ -184,7 +184,7 @@ export class MessageSendDlqConsume {
                 data,
                 'global_redrive_limit'
               );
-              metricsCount('message_send_final_failed', 1, {
+              incrementCounter('message_send_final_failed', 1, {
                 provider: this.PROVIDER,
                 result: 'redrive_limit_reached',
                 queue_type: data.queue_key?.startsWith('chat:')
@@ -209,7 +209,7 @@ export class MessageSendDlqConsume {
               result: 'redrive_requeued',
               duration_ms: durationMs,
             });
-            metricsCount('message_send_redrive_requeued', 1, {
+            incrementCounter('message_send_redrive_requeued', 1, {
               provider: this.PROVIDER,
               result: 'redrive_requeued',
               queue_type: data.queue_key?.startsWith('chat:')
@@ -218,19 +218,15 @@ export class MessageSendDlqConsume {
               attempt_bucket: '1',
               redrive_count: nextRedriveCount,
             });
-            metricsDistribution(
-              'message_send_redrive_duration_ms',
-              durationMs,
-              {
-                provider: this.PROVIDER,
-                result: 'redrive_requeued',
-                queue_type: data.queue_key?.startsWith('chat:')
-                  ? 'chat'
-                  : 'system',
-                attempt_bucket: '1',
-                redrive_count: nextRedriveCount,
-              }
-            );
+            recordHistogram('message_send_redrive_duration_ms', durationMs, {
+              provider: this.PROVIDER,
+              result: 'redrive_requeued',
+              queue_type: data.queue_key?.startsWith('chat:')
+                ? 'chat'
+                : 'system',
+              attempt_bucket: '1',
+              redrive_count: nextRedriveCount,
+            });
           } catch (error) {
             this.logPipelineEvent(
               'redrive_publish_error',
@@ -247,7 +243,7 @@ export class MessageSendDlqConsume {
               },
               'error'
             );
-            metricsCount('message_send_error', 1, {
+            incrementCounter('message_send_error', 1, {
               provider: this.PROVIDER,
               result: 'redrive_publish_error',
               queue_type: data.queue_key?.startsWith('chat:')
@@ -256,7 +252,7 @@ export class MessageSendDlqConsume {
               attempt_bucket: '1',
               redrive_count: nextRedriveCount,
             });
-            captureException(error, {
+            recordException(error, {
               messageSendPipeline: {
                 provider: this.PROVIDER,
                 event: 'redrive_publish_error',
@@ -284,7 +280,7 @@ export class MessageSendDlqConsume {
             },
             'error'
           );
-          captureException(error, {
+          recordException(error, {
             messageSendPipeline: {
               provider: this.PROVIDER,
               event: 'partition_chain_error',
@@ -516,7 +512,7 @@ export class MessageSendDlqConsume {
         result: 'failed_marked',
         reason,
       });
-      metricsCount('message_send_final_failed', 1, {
+      incrementCounter('message_send_final_failed', 1, {
         provider: this.PROVIDER,
         result: 'failed_marked',
         queue_type: data.queue_key?.startsWith('chat:') ? 'chat' : 'system',
@@ -538,7 +534,7 @@ export class MessageSendDlqConsume {
         },
         'error'
       );
-      captureException(error, {
+      recordException(error, {
         messageSendPipeline: {
           provider: this.PROVIDER,
           event: 'final_failed_mark_error',

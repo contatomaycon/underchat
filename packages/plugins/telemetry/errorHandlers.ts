@@ -1,10 +1,16 @@
-import { addBreadcrumb, captureException, captureMessage } from './sentry';
+import { addEvent, recordException, recordMessage } from './observability';
 import { logger } from './logger';
 import type { FastifyInstance } from 'fastify';
-import * as Sentry from '@sentry/node';
-import { telemetryEnvironment } from '@core/config/environments';
+
+let handlersRegistered = false;
 
 export function setupErrorHandlers(): void {
+  if (handlersRegistered) {
+    return;
+  }
+
+  handlersRegistered = true;
+
   process.on('uncaughtException', (error: Error) => {
     logger.fatal(
       {
@@ -15,7 +21,7 @@ export function setupErrorHandlers(): void {
       'Uncaught exception detected'
     );
 
-    captureException(error, {
+    recordException(error, {
       uncaughtException: {
         message: error.message,
         stack: error.stack,
@@ -43,7 +49,7 @@ export function setupErrorHandlers(): void {
         'Unhandled rejection detected'
       );
 
-      captureException(error, {
+      recordException(error, {
         unhandledRejection: {
           message: error.message,
           stack: error.stack,
@@ -63,7 +69,7 @@ export function setupErrorHandlers(): void {
       'Process warning'
     );
 
-    captureMessage(warning.message, 'warning', {
+    recordMessage(warning.message, 'warn', {
       warning: {
         name: warning.name,
         stack: warning.stack,
@@ -85,11 +91,13 @@ export function setupGracefulShutdown(server: FastifyInstance): void {
     isShuttingDown = true;
 
     logger.info(`${signal} signal received, starting graceful shutdown`);
-    addBreadcrumb({
+    addEvent({
       message: `${signal} signal received, starting graceful shutdown`,
-      level: 'info',
       category: 'signal',
-      data: { signal },
+      level: 'info',
+      data: {
+        signal,
+      },
     });
 
     const forceExit = setTimeout(() => {
@@ -103,12 +111,6 @@ export function setupGracefulShutdown(server: FastifyInstance): void {
 
       logger.info('Server closed successfully');
 
-      if (telemetryEnvironment.enableSentry) {
-        try {
-          await Sentry.flush(2000);
-        } catch {}
-      }
-
       process.exit(0);
     } catch (error) {
       clearTimeout(forceExit);
@@ -121,7 +123,7 @@ export function setupGracefulShutdown(server: FastifyInstance): void {
         'Error during graceful shutdown'
       );
 
-      captureException(
+      recordException(
         error instanceof Error ? error : new Error(String(error)),
         {
           gracefulShutdown: {
@@ -130,12 +132,6 @@ export function setupGracefulShutdown(server: FastifyInstance): void {
           },
         }
       );
-
-      if (telemetryEnvironment.enableSentry) {
-        try {
-          await Sentry.flush(2000);
-        } catch {}
-      }
 
       process.exit(1);
     }

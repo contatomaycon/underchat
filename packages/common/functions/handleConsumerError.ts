@@ -1,6 +1,6 @@
 import { getErrorMessage } from './toError';
 import { logger } from '@core/plugins/telemetry/logger';
-import { captureException } from '@core/plugins/telemetry/sentry';
+import { recordException } from '@core/plugins/telemetry/observability';
 
 function isKnownConnectionError(error: unknown): boolean {
   if (!error || typeof error !== 'object') {
@@ -58,7 +58,7 @@ export function handleConsumerError(error: unknown, topic?: string): void {
     `Kafka consumer error${topic ? ` for topic ${topic}` : ''}`
   );
 
-  captureException(error, {
+  recordException(error, {
     kafka: {
       type: 'consumer_error',
       topic,

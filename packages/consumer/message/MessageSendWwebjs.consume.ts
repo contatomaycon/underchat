@@ -39,10 +39,10 @@ import { MessageStatusService } from '@core/services/messageStatus.service';
 import Redis from 'ioredis';
 import { logger } from '@core/plugins/telemetry/logger';
 import {
-  captureException,
-  metricsCount,
-  metricsDistribution,
-} from '@core/plugins/telemetry/sentry';
+  recordException,
+  incrementCounter,
+  recordHistogram,
+} from '@core/plugins/telemetry/observability';
 
 interface IPartitionCommitState {
   nextContiguousOffset: number | null;
@@ -227,7 +227,7 @@ export class MessageSendWwebjsConsume {
         },
         'error'
       );
-      captureException(error, {
+      recordException(error, {
         messageSendPipeline: {
           provider: this.PROVIDER,
           event: 'dlq_dedupe_error',
@@ -252,7 +252,7 @@ export class MessageSendWwebjsConsume {
         },
         'error'
       );
-      captureException(error, {
+      recordException(error, {
         messageSendPipeline: {
           provider: this.PROVIDER,
           event: 'already_sent_check_error',
@@ -287,7 +287,7 @@ export class MessageSendWwebjsConsume {
         result: 'failed_marked',
         reason,
       });
-      metricsCount(
+      incrementCounter(
         'message_send_final_failed',
         1,
         this.baseMetricAttributes(
@@ -314,7 +314,7 @@ export class MessageSendWwebjsConsume {
         },
         'error'
       );
-      captureException(error, {
+      recordException(error, {
         messageSendPipeline: {
           provider: this.PROVIDER,
           event: 'final_failed_mark_error',
@@ -393,14 +393,14 @@ export class MessageSendWwebjsConsume {
             },
             'error'
           );
-          metricsCount('message_send_error', 1, {
+          incrementCounter('message_send_error', 1, {
             provider: this.PROVIDER,
             result: 'dispatch_error',
             queue_type: 'unknown',
             attempt_bucket: '1',
             redrive_count: 0,
           });
-          captureException(error, {
+          recordException(error, {
             messageSendPipeline: {
               provider: this.PROVIDER,
               event: 'dispatch_error',
@@ -573,7 +573,7 @@ export class MessageSendWwebjsConsume {
         },
         'error'
       );
-      metricsCount(
+      incrementCounter(
         'message_send_error',
         1,
         this.baseMetricAttributes(
@@ -583,7 +583,7 @@ export class MessageSendWwebjsConsume {
           redriveCount
         )
       );
-      captureException(error, {
+      recordException(error, {
         messageSendPipeline: {
           provider: this.PROVIDER,
           event: 'enqueue_error',
@@ -716,12 +716,12 @@ export class MessageSendWwebjsConsume {
           result: 'success',
           duration_ms: durationMs,
         });
-        metricsCount(
+        incrementCounter(
           'message_send_success',
           1,
           this.baseMetricAttributes(envelope, 'success', attempt, redriveCount)
         );
-        metricsDistribution(
+        recordHistogram(
           'message_send_duration_ms',
           durationMs,
           this.baseMetricAttributes(envelope, 'success', attempt, redriveCount)
@@ -745,7 +745,7 @@ export class MessageSendWwebjsConsume {
             },
             'warn'
           );
-          metricsCount(
+          incrementCounter(
             'message_send_delivery_unconfirmed',
             1,
             this.baseMetricAttributes(
@@ -782,7 +782,7 @@ export class MessageSendWwebjsConsume {
             },
             'warn'
           );
-          metricsCount(
+          incrementCounter(
             'message_send_error',
             1,
             this.baseMetricAttributes(
@@ -814,7 +814,7 @@ export class MessageSendWwebjsConsume {
         );
 
         if (!isLastAttempt) {
-          metricsCount(
+          incrementCounter(
             'message_send_retry',
             1,
             this.baseMetricAttributes(
@@ -936,14 +936,14 @@ export class MessageSendWwebjsConsume {
           },
           'error'
         );
-        metricsCount('message_send_error', 1, {
+        incrementCounter('message_send_error', 1, {
           provider: this.PROVIDER,
           result: 'commit_coordination_error',
           queue_type: 'unknown',
           attempt_bucket: '1',
           redrive_count: 0,
         });
-        captureException(error, {
+        recordException(error, {
           messageSendPipeline: {
             provider: this.PROVIDER,
             event: 'commit_coordination_error',
@@ -1046,7 +1046,7 @@ export class MessageSendWwebjsConsume {
     const redriveCount = this.extractRedriveCount(envelope.payload);
 
     if (failureEvent === 'processing_failed') {
-      metricsCount(
+      incrementCounter(
         'message_send_error',
         1,
         this.baseMetricAttributes(
@@ -1074,7 +1074,7 @@ export class MessageSendWwebjsConsume {
         },
         'warn'
       );
-      metricsCount(
+      incrementCounter(
         'message_send_error',
         1,
         this.baseMetricAttributes(envelope, 'missing_message_id', attempt, 0)
@@ -1094,7 +1094,7 @@ export class MessageSendWwebjsConsume {
         redrive_count: redriveCount,
         result: 'already_sent_skipped',
       });
-      metricsCount(
+      incrementCounter(
         'message_send_already_sent_skipped',
         1,
         this.baseMetricAttributes(
@@ -1147,7 +1147,7 @@ export class MessageSendWwebjsConsume {
           redrive_count: redriveCount,
           result: 'dlq_duplicate_skipped',
         });
-        metricsCount(
+        incrementCounter(
           'message_send_dlq_duplicate_skipped',
           1,
           this.baseMetricAttributes(
@@ -1246,7 +1246,7 @@ export class MessageSendWwebjsConsume {
           result: 'redrive_requeued',
           duration_ms: durationMs,
         });
-        metricsCount(
+        incrementCounter(
           'message_send_redrive_requeued',
           1,
           this.baseMetricAttributes(
@@ -1256,7 +1256,7 @@ export class MessageSendWwebjsConsume {
             nextRedriveCount
           )
         );
-        metricsDistribution(
+        recordHistogram(
           'message_send_redrive_duration_ms',
           durationMs,
           this.baseMetricAttributes(
@@ -1285,7 +1285,7 @@ export class MessageSendWwebjsConsume {
             },
             'error'
           );
-          captureException(error, {
+          recordException(error, {
             messageSendPipeline: {
               provider: this.PROVIDER,
               event: 'redrive_publish_error',
@@ -1372,7 +1372,7 @@ export class MessageSendWwebjsConsume {
           duration_ms: durationMs,
           error: this.errorMessage(error),
         });
-        metricsCount(
+        incrementCounter(
           'message_send_dlq_published',
           1,
           this.baseMetricAttributes(
@@ -1382,7 +1382,7 @@ export class MessageSendWwebjsConsume {
             redriveCount
           )
         );
-        metricsDistribution(
+        recordHistogram(
           'message_send_dlq_publish_duration_ms',
           durationMs,
           this.baseMetricAttributes(
@@ -1411,7 +1411,7 @@ export class MessageSendWwebjsConsume {
             },
             'error'
           );
-          captureException(publishError, {
+          recordException(publishError, {
             messageSendPipeline: {
               provider: this.PROVIDER,
               event: 'dlq_publish_error',

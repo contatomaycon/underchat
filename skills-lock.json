@@ -11,6 +11,11 @@
       "sourceType": "github",
       "computedHash": "2e87927b93592fbc1cf48a58d6359d2894ad5e7611f7e824233bf4f6bb84db61"
     },
+    "opentelemetry": {
+      "source": "bobmatnyc/claude-mpm-skills",
+      "sourceType": "github",
+      "computedHash": "0c6bb77303278c9b829e37f6597aeffe44b8bf0cb7dcbdaff382877a6820401c"
+    },
     "turborepo": {
       "source": "vercel/turborepo",
       "sourceType": "github",

@@ -6,6 +6,7 @@ import fastify from 'fastify';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
+import telemetryPlugin from '@core/plugins/telemetry';
 import corsPlugin from '@core/plugins/cors';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
@@ -18,6 +19,7 @@ import redisPlugin from '@core/plugins/redis';
 import s3Plugin from '@core/plugins/s3';
 import workerConnectionGrpcServerPlugin from '@core/plugins/proto/workerConnectionGrpcServer';
 import baileysConsumersOnListenHook from './consumer';
+import { setupGracefulShutdown } from '@core/plugins/telemetry/errorHandlers';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -30,6 +32,7 @@ const server = fastify({
 server.decorateRequest('module', ERouteModule.worker_baileys);
 server.decorate('baileysInitialized', Promise.resolve());
 
+server.register(safePlugin(telemetryPlugin, 'telemetry'));
 server.register(safePlugin(corsPlugin, 'cors'));
 server.register(safePlugin(swaggerPlugin, 'swagger'));
 server.register(safePlugin(routes, 'routes', true), {
@@ -60,41 +63,10 @@ const start = async () => {
     await server.listen({ port: 3005, host: '0.0.0.0' });
 
     console.log('Server running');
+    setupGracefulShutdown(server);
   } catch {
     process.exit(1);
   }
 };
 
 start();
-
-let shuttingDown = false;
-
-const shutdown = async (signal: string) => {
-  if (shuttingDown) {
-    return;
-  }
-  shuttingDown = true;
-
-  try {
-    server.log.info(
-      { signal },
-      'Iniciando shutdown gracioso do worker_baileys'
-    );
-    await server.close();
-    process.exit(0);
-  } catch (err) {
-    server.log.error(
-      { err, signal },
-      'Erro durante shutdown gracioso do worker_baileys'
-    );
-    process.exit(1);
-  }
-};
-
-process.on('SIGTERM', () => {
-  void shutdown('SIGTERM');
-});
-
-process.on('SIGINT', () => {
-  void shutdown('SIGINT');
-});

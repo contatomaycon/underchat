@@ -13,7 +13,7 @@ import { createHash } from 'crypto';
 import Redis from 'ioredis';
 import { centrifugoEnvironment } from '@core/config/environments';
 import { logger } from '@core/plugins/telemetry/logger';
-import { captureException } from '@core/plugins/telemetry/sentry';
+import { recordException } from '@core/plugins/telemetry/observability';
 import {
   IQueuedPublish,
   ICachedPublish,
@@ -159,7 +159,7 @@ export class CentrifugoService {
             'Centrifugo circuit breaker opened'
           );
 
-          captureException(new Error('Centrifugo circuit breaker opened'), {
+          recordException(new Error('Centrifugo circuit breaker opened'), {
             level: 'error',
             centrifugo: { type: 'circuit_breaker_open', failures },
           });
@@ -207,7 +207,7 @@ export class CentrifugoService {
         'Centrifugo circuit breaker opened'
       );
 
-      captureException(new Error('Centrifugo circuit breaker opened'), {
+      recordException(new Error('Centrifugo circuit breaker opened'), {
         level: 'error',
         centrifugo: {
           type: 'circuit_breaker_open',
@@ -789,7 +789,7 @@ export class CentrifugoService {
             logMessage
           );
 
-          captureException(normalizedError, {
+          recordException(normalizedError, {
             level: isTimeout ? 'warning' : 'error',
             centrifugo: {
               type: 'publish_error',
@@ -835,7 +835,7 @@ export class CentrifugoService {
         logMessage
       );
 
-      captureException(lastError, {
+      recordException(lastError, {
         level: isTimeout ? 'warning' : 'error',
         centrifugo: {
           type: 'publish_error',
@@ -1010,7 +1010,7 @@ export class CentrifugoService {
         : `Centrifugo ${type} error - non-critical`
     );
 
-    captureException(errorObj, {
+    recordException(errorObj, {
       level: 'warning',
       centrifugo: {
         type,
@@ -1334,7 +1334,7 @@ export class CentrifugoService {
               'Centrifugo onMessageSub connection timeout - non-critical'
             );
 
-            captureException(error, {
+            recordException(error, {
               level: 'warning',
               centrifugo: {
                 type: 'on_message_sub_timeout',

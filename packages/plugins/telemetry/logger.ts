@@ -1,10 +1,29 @@
 import pino from 'pino';
+import { context, trace } from '@opentelemetry/api';
 import { telemetryEnvironment } from '@core/config/environments';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
 export const logger = pino({
   level: telemetryEnvironment.logLevel,
+  messageKey: 'message',
+  formatters: {
+    level: (label) => ({ level: label }),
+  },
+  mixin() {
+    const activeSpan = trace.getSpan(context.active());
+    const spanContext = activeSpan?.spanContext();
+
+    if (!spanContext) {
+      return {};
+    }
+
+    return {
+      trace_id: spanContext.traceId,
+      span_id: spanContext.spanId,
+      trace_flags: spanContext.traceFlags,
+    };
+  },
   transport: isDevelopment
     ? {
         target: 'pino-pretty',
@@ -15,13 +34,9 @@ export const logger = pino({
         },
       }
     : undefined,
-  formatters: {
-    level: (label) => {
-      return { level: label };
-    },
-  },
   base: {
-    env: process.env.APP_ENVIRONMENT || 'development',
+    env: telemetryEnvironment.deploymentEnvironment,
+    service: telemetryEnvironment.serviceNameForLogs,
   },
 });
 

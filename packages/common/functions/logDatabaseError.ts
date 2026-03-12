@@ -1,6 +1,6 @@
 import { DrizzleQueryError } from 'drizzle-orm';
 import { logger } from '@core/plugins/telemetry/logger';
-import { captureException } from '@core/plugins/telemetry/sentry';
+import { recordException } from '@core/plugins/telemetry/observability';
 
 export function logDatabaseError(
   error: unknown,
@@ -26,7 +26,7 @@ export function logDatabaseError(
     'Database error occurred'
   );
 
-  captureException(error, {
+  recordException(error, {
     database: {
       operation: context?.operation,
       table: context?.table,

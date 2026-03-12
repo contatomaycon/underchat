@@ -104,9 +104,9 @@ const redisPlugin = async (fastify: FastifyInstance) => {
       'Redis client error'
     );
 
-    import('@core/plugins/telemetry/sentry.js')
-      .then(({ captureException }) => {
-        captureException(error, {
+    import('@core/plugins/telemetry/observability.js')
+      .then(({ recordException }) => {
+        recordException(error, {
           redis: {
             type: 'client_error',
           },

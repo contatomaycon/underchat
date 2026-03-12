@@ -11,7 +11,7 @@ import {
 import Redis from 'ioredis';
 import { createHash } from 'node:crypto';
 import { logger } from '@core/plugins/telemetry/logger';
-import { captureException } from '@core/plugins/telemetry/sentry';
+import { recordException } from '@core/plugins/telemetry/observability';
 import type { WAMessageKey } from '@whiskeysockets/baileys';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
@@ -190,7 +190,7 @@ export class MessageStatusService {
         },
         'Failed to publish message status update to Centrifugo'
       );
-      captureException(error, {
+      recordException(error, {
         level: 'error',
         messageStatus: {
           type: 'centrifugo_publish_error',
@@ -398,7 +398,7 @@ export class MessageStatusService {
         'Elasticsearch circuit breaker opened'
       );
 
-      captureException(new Error('Elasticsearch circuit breaker opened'), {
+      recordException(new Error('Elasticsearch circuit breaker opened'), {
         level: 'error',
         elasticsearch: {
           type: 'circuit_breaker_open',

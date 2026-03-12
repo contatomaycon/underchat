@@ -4,7 +4,7 @@ import { createHash } from 'crypto';
 import Redis from 'ioredis';
 import { centrifugoEnvironment } from '@core/config/environments';
 import { logger } from '@core/plugins/telemetry/logger';
-import { captureException } from '@core/plugins/telemetry/sentry';
+import { recordException } from '@core/plugins/telemetry/observability';
 import {
   IQueuedPublish,
   ICachedPublish,
@@ -189,7 +189,7 @@ export class PresenceCentrifugoService {
             'Presence Centrifugo circuit breaker opened'
           );
 
-          captureException(
+          recordException(
             new Error('Presence Centrifugo circuit breaker opened'),
             {
               level: 'error',
@@ -240,16 +240,13 @@ export class PresenceCentrifugoService {
         'Presence Centrifugo circuit breaker opened'
       );
 
-      captureException(
-        new Error('Presence Centrifugo circuit breaker opened'),
-        {
-          level: 'error',
-          centrifugo: {
-            type: 'presence_circuit_breaker_open',
-            failures: this.circuitBreakerFailures,
-          },
-        }
-      );
+      recordException(new Error('Presence Centrifugo circuit breaker opened'), {
+        level: 'error',
+        centrifugo: {
+          type: 'presence_circuit_breaker_open',
+          failures: this.circuitBreakerFailures,
+        },
+      });
     }
   }
 
@@ -775,7 +772,7 @@ export class PresenceCentrifugoService {
             logMessage
           );
 
-          captureException(normalizedError, {
+          recordException(normalizedError, {
             level: isTimeout ? 'warning' : 'error',
             centrifugo: {
               type: 'presence_publish_error',
@@ -817,7 +814,7 @@ export class PresenceCentrifugoService {
         logMessage
       );
 
-      captureException(lastError, {
+      recordException(lastError, {
         level: isTimeout ? 'warning' : 'error',
         centrifugo: {
           type: 'presence_publish_error',
@@ -979,7 +976,7 @@ export class PresenceCentrifugoService {
         : `Presence Centrifugo ${type} error - non-critical`
     );
 
-    captureException(errorObj, {
+    recordException(errorObj, {
       level: 'warning',
       centrifugo: {
         type,

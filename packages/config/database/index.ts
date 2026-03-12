@@ -92,9 +92,9 @@ async function dbConnector(fastify: FastifyInstance) {
       .catch(() => {});
 
     if (!isConnectionTerminatedError(err)) {
-      import('@core/plugins/telemetry/sentry.js')
-        .then(({ captureException }) => {
-          captureException(err, {
+      import('@core/plugins/telemetry/observability.js')
+        .then(({ recordException }) => {
+          recordException(err, {
             database: {
               pool: 'rw',
               type: 'pool_error',
@@ -170,9 +170,9 @@ async function dbConnector(fastify: FastifyInstance) {
       .catch(() => {});
 
     if (!isConnectionTerminatedError(err)) {
-      import('@core/plugins/telemetry/sentry.js')
-        .then(({ captureException }) => {
-          captureException(err, {
+      import('@core/plugins/telemetry/observability.js')
+        .then(({ recordException }) => {
+          recordException(err, {
             database: {
               pool: 'ro',
               type: 'pool_error',

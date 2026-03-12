@@ -1,6 +1,4 @@
-import '@core/plugins/telemetry/instrument';
 import 'reflect-metadata';
-import * as Sentry from '@sentry/node';
 import fastify from 'fastify';
 import telemetryPlugin from '@core/plugins/telemetry';
 import dbConnector from '@core/config/database';
@@ -28,8 +26,6 @@ const server = fastify({
   genReqId: () => v7(),
   logger: true,
 });
-
-Sentry.setupFastifyErrorHandler(server);
 
 server.decorateRequest('module', ERouteModule.balancer);
 

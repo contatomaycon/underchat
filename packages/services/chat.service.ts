@@ -22,7 +22,7 @@ import {
   ChatPatch,
   ChatPatchOptions,
 } from '@core/common/interfaces/IChatPatch';
-import { metricsCount } from '@core/plugins/telemetry/sentry';
+import { incrementCounter } from '@core/plugins/telemetry/observability';
 import {
   createChatCacheKey,
   createChatCacheKeyChatId,
@@ -1418,7 +1418,7 @@ export class ChatService {
       );
 
     if (result === 'conflict') {
-      metricsCount('chat.summary.update.conflict', 1, {
+      incrementCounter('chat.summary.update.conflict', 1, {
         chat_id: chatId,
       });
     }

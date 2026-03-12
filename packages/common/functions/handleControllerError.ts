@@ -5,7 +5,7 @@ import { DrizzleQueryError } from 'drizzle-orm';
 import { TFunction } from 'i18next';
 import { logDatabaseError } from '@core/common/functions/logDatabaseError';
 import { logger } from '@core/plugins/telemetry/logger';
-import { captureException } from '@core/plugins/telemetry/sentry';
+import { recordException } from '@core/plugins/telemetry/observability';
 
 export function handleControllerError(
   error: unknown,
@@ -34,7 +34,7 @@ export function handleControllerError(
       'Database error in controller'
     );
 
-    captureException(error, {
+    recordException(error, {
       controller: {
         requestId,
         method,
@@ -67,7 +67,7 @@ export function handleControllerError(
     }
     logger.error(logPayload, 'Error in controller');
 
-    captureException(error, {
+    recordException(error, {
       controller: {
         requestId,
         method,
@@ -95,7 +95,7 @@ export function handleControllerError(
     'Unknown error in controller'
   );
 
-  captureException(new Error(String(error)), {
+  recordException(new Error(String(error)), {
     controller: {
       requestId,
       method,

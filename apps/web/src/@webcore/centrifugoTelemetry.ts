@@ -9,7 +9,7 @@
  *   window.__centrifugoTelemetry.getSummary()    // formatted text summary
  */
 
-import * as Sentry from '@sentry/vue';
+import { addEvent, recordException, recordMessage } from './observability';
 
 interface CircularBuffer<T> {
   push(item: T): void;
@@ -266,16 +266,21 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         lastDisconnectedAt = Date.now();
       }
 
-      Sentry.addBreadcrumb({
+      addEvent({
         category: 'centrifugo.connection',
         message: `Connection ${state}`,
         level:
           state === 'error'
             ? 'error'
             : state === 'disconnected'
-              ? 'warning'
+              ? 'warn'
               : 'info',
-        data: { state, reason, code, reconnectionCount },
+        data: {
+          state,
+          reason,
+          code,
+          reconnectionCount,
+        },
       });
 
       if (state === 'disconnected' || state === 'error') {
@@ -302,21 +307,22 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         console.warn(
           `[Centrifugo Telemetry] Recovery failed for channel: ${channel}`
         );
-        Sentry.captureMessage(`Centrifugo recovery failed: ${channel}`, {
-          level: 'warning',
-          tags: { centrifugo_channel: channel },
-          extra: {
-            recovered: ctx?.recovered,
-            wasRecovering: ctx?.wasRecovering,
-          },
+        recordMessage(`Centrifugo recovery failed: ${channel}`, 'warn', {
+          centrifugo_channel: channel,
+          recovered: ctx?.recovered,
+          wasRecovering: ctx?.wasRecovering,
         });
       }
 
-      Sentry.addBreadcrumb({
+      addEvent({
         category: 'centrifugo.subscription',
         message: `Subscription ${state}: ${channel}`,
-        level: state === 'recovery_failed' ? 'warning' : 'info',
-        data: { channel, state, ...ctx },
+        level: state === 'recovery_failed' ? 'warn' : 'info',
+        data: {
+          channel,
+          state,
+          ...ctx,
+        },
       });
     },
 
@@ -341,17 +347,13 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         channel,
       });
 
-      Sentry.captureException(
+      recordException(
         error instanceof Error ? error : new Error(errorToString(error)),
         {
-          tags: {
-            centrifugo_context: 'publication_dropped',
-            centrifugo_channel: channel,
-          },
-          extra: {
-            totalDropped: metrics.totalDropped,
-            totalReceived: metrics.totalReceived,
-          },
+          centrifugo_context: 'publication_dropped',
+          centrifugo_channel: channel,
+          totalDropped: metrics.totalDropped,
+          totalReceived: metrics.totalReceived,
         }
       );
     },
@@ -376,11 +378,15 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         messagesRecovered,
       });
 
-      Sentry.addBreadcrumb({
+      addEvent({
         category: 'centrifugo.recovery',
         message: `Recovery ${success ? 'succeeded' : 'failed'}: ${channel}`,
-        level: success ? 'info' : 'warning',
-        data: { channel, success, messagesRecovered },
+        level: success ? 'info' : 'warn',
+        data: {
+          channel,
+          success,
+          messagesRecovered,
+        },
       });
 
       if (!success) {
@@ -397,11 +403,16 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         durationMs,
       });
 
-      Sentry.addBreadcrumb({
+      addEvent({
         category: 'centrifugo.history_sync',
         message: `History sync: ${channel} (${messagesProcessed} msgs, ${pages} pages, ${durationMs}ms)`,
         level: 'info',
-        data: { channel, messagesProcessed, pages, durationMs },
+        data: {
+          channel,
+          messagesProcessed,
+          pages,
+          durationMs,
+        },
       });
     },
 
@@ -414,14 +425,11 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
       };
       errors.push(entry);
 
-      Sentry.captureException(
+      recordException(
         error instanceof Error ? error : new Error(errorToString(error)),
         {
-          tags: {
-            centrifugo_context: context,
-            ...(channel && { centrifugo_channel: channel }),
-          },
-          extra: { context, channel },
+          centrifugo_context: context,
+          ...(channel && { centrifugo_channel: channel }),
         }
       );
 
@@ -437,11 +445,13 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
     trackVisibility(state) {
       visibilityChanges.push({ timestamp: Date.now(), state });
 
-      Sentry.addBreadcrumb({
+      addEvent({
         category: 'centrifugo.visibility',
         message: `Tab ${state}`,
         level: 'info',
-        data: { state },
+        data: {
+          state,
+        },
       });
     },
 

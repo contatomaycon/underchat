@@ -16,9 +16,9 @@ import { commitOffset } from '@core/common/functions/commitOffset';
 import Redis from 'ioredis';
 import { logger } from '@core/plugins/telemetry/logger';
 import {
-  metricsCount,
-  metricsDistribution,
-} from '@core/plugins/telemetry/sentry';
+  incrementCounter,
+  recordHistogram,
+} from '@core/plugins/telemetry/observability';
 
 interface BufferedUpdate {
   data: IMessageStatusUpdate;
@@ -328,7 +328,7 @@ export class MessageStatusUpdateConsume {
       });
 
       if (isAlreadyProcessed) {
-        metricsCount('message_status_update_duplicate', buffered.length, {
+        incrementCounter('message_status_update_duplicate', buffered.length, {
           account_id: firstUpdate.account_id,
         });
 
@@ -354,11 +354,11 @@ export class MessageStatusUpdateConsume {
       });
 
       const duration = Date.now() - startTime;
-      metricsCount('message_status_update_success', buffered.length, {
+      incrementCounter('message_status_update_success', buffered.length, {
         account_id: firstUpdate.account_id,
         batched: 'true',
       });
-      metricsDistribution('message_status_update_duration', duration, {
+      recordHistogram('message_status_update_duration', duration, {
         account_id: firstUpdate.account_id,
         batch_size: buffered.length.toString(),
       });
@@ -384,11 +384,11 @@ export class MessageStatusUpdateConsume {
         'Erro ao processar atualização de status da mensagem em batch'
       );
 
-      metricsCount('message_status_update_error', buffered.length, {
+      incrementCounter('message_status_update_error', buffered.length, {
         account_id: firstUpdate.account_id,
         batched: 'true',
       });
-      metricsDistribution('message_status_update_error_duration', duration);
+      recordHistogram('message_status_update_error_duration', duration);
 
       const firstBuffered = buffered[0];
       this.markPartitionAsFailed(
