@@ -12,6 +12,7 @@ import axios, { logoutAndRedirect } from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
 import { getCentrifugoTelemetry } from './centrifugoTelemetry';
+import { recordException, recordMessage } from './observability';
 
 export type { Subscription };
 
@@ -29,6 +30,7 @@ const channelStreamPositions = new Map<
   string,
   { offset: number; epoch: string }
 >();
+const subscriptionHandlersBound = new WeakSet<Subscription>();
 
 const telemetry = getCentrifugoTelemetry();
 telemetry.setStreamPositionProvider(() => channelStreamPositions);
@@ -154,6 +156,12 @@ const setupSubscriptionHandlers = (
   sub: Subscription,
   channel: string
 ): void => {
+  if (subscriptionHandlersBound.has(sub)) {
+    return;
+  }
+
+  subscriptionHandlersBound.add(sub);
+
   sub.on('publication', (ctx) => {
     // BUG 2 FIX: Update stream position on every publication
     if (ctx.offset) {
@@ -176,9 +184,10 @@ const setupSubscriptionHandlers = (
           telemetry.trackPublicationProcessed(channel);
         } catch (error) {
           telemetry.trackPublicationDropped(channel, error);
-          if (import.meta.env.DEV) {
-            console.error('Error in Centrifugo handler:', error, { channel });
-          }
+          recordException(error, {
+            source: 'centrifugo.publication_handler',
+            channel,
+          });
         }
       }
     }
@@ -197,19 +206,23 @@ const setupSubscriptionHandlers = (
         recovered: true,
         wasRecovering: true,
       });
-      if (import.meta.env.DEV) {
-        console.info(`[Centrifugo] Channel ${channel} recovered successfully`);
-      }
+      recordMessage(`Channel ${channel} recovered successfully`, 'info', {
+        source: 'centrifugo.recovery',
+        channel,
+      });
     } else if (ctx.wasRecovering && !ctx.recovered) {
       telemetry.trackSubscription(channel, 'recovery_failed', {
         recovered: false,
         wasRecovering: true,
       });
-      if (import.meta.env.DEV) {
-        console.warn(
-          `[Centrifugo] Channel ${channel} recovery failed, may have missed messages`
-        );
-      }
+      recordMessage(
+        `Channel ${channel} recovery failed, may have missed messages`,
+        'warn',
+        {
+          source: 'centrifugo.recovery',
+          channel,
+        }
+      );
       globalThis.dispatchEvent(
         new CustomEvent('centrifugo-recovery-failed', {
           detail: { channel },
@@ -222,9 +235,10 @@ const setupSubscriptionHandlers = (
 
   sub.on('unsubscribed', () => {
     telemetry.trackSubscription(channel, 'unsubscribed');
-    if (import.meta.env.DEV) {
-      console.info(`[Centrifugo] Unsubscribed from ${channel}`);
-    }
+    recordMessage(`Unsubscribed from ${channel}`, 'info', {
+      source: 'centrifugo.subscription',
+      channel,
+    });
   });
 };
 
@@ -239,10 +253,15 @@ const resubscribeActiveChannels = (client: Centrifuge): void => {
     const handlers = channelHandlers.get(channel);
     if (!handlers || handlers.size === 0) continue;
 
-    // Skip if already subscribed on this client
     const existingSub = client.getSubscription(channel);
-    if (existingSub && existingSub.state === SubscriptionState.Subscribed) {
+    if (existingSub) {
       channelSubscriptions.set(channel, existingSub);
+      setupSubscriptionHandlers(existingSub, channel);
+
+      if (existingSub.state !== SubscriptionState.Subscribed) {
+        existingSub.subscribe();
+      }
+
       continue;
     }
 
@@ -335,9 +354,9 @@ const getConnection = async (): Promise<Centrifuge> => {
 
   centrifugeClient.on('error', (error) => {
     telemetry.trackConnectionState('error', String(error));
-    if (import.meta.env.DEV) {
-      console.error('Centrifugo client error:', error);
-    }
+    recordException(error, {
+      source: 'centrifugo.client.error',
+    });
   });
 
   centrifugeClient.connect();
@@ -595,9 +614,10 @@ export const fetchHistoryAndProcess = async (
     };
   } catch (error) {
     telemetry.trackError('fetch_history', error, channel);
-    if (import.meta.env.DEV) {
-      console.error(`[Centrifugo] History fetch failed for ${channel}:`, error);
-    }
+    recordException(error, {
+      source: 'centrifugo.fetch_history',
+      channel,
+    });
     return { processed: 0 };
   }
 };

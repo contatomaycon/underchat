@@ -21,19 +21,20 @@ import { telemetryEnvironment } from '@core/config/environments';
 let sdk: NodeSDK | null = null;
 let startupPromise: Promise<void> | null = null;
 
+function normalizeOtlpHttpBaseEndpoint(endpoint: string): string {
+  const withoutTrailingSlash = endpoint.endsWith('/')
+    ? endpoint.slice(0, -1)
+    : endpoint;
+
+  return withoutTrailingSlash.replace(/\/v1\/(traces|metrics|logs)$/u, '');
+}
+
 function toSignalHttpUrl(
   baseEndpoint: string,
   signal: 'traces' | 'metrics' | 'logs'
 ): string {
-  const normalized = baseEndpoint.endsWith('/')
-    ? baseEndpoint.slice(0, -1)
-    : baseEndpoint;
-
-  if (normalized.endsWith(`/v1/${signal}`)) {
-    return normalized;
-  }
-
-  return `${normalized}/v1/${signal}`;
+  const normalizedBase = normalizeOtlpHttpBaseEndpoint(baseEndpoint);
+  return `${normalizedBase}/v1/${signal}`;
 }
 
 function configureDiagLogger(): void {
@@ -49,85 +50,92 @@ async function initializeObservability(): Promise<void> {
     return;
   }
 
-  if (startupPromise) {
-    return startupPromise;
+  if (!startupPromise) {
+    startupPromise = (async () => {
+      if (sdk) {
+        return;
+      }
+
+      configureDiagLogger();
+
+      const protocol = telemetryEnvironment.otlpProtocol;
+      const endpoint = telemetryEnvironment.otlpEndpoint;
+      const traceSampleRate = telemetryEnvironment.traceSampleRate;
+
+      if (!process.env.OTEL_TRACES_SAMPLER) {
+        process.env.OTEL_TRACES_SAMPLER = 'parentbased_traceidratio';
+      }
+      if (!process.env.OTEL_TRACES_SAMPLER_ARG) {
+        process.env.OTEL_TRACES_SAMPLER_ARG = String(traceSampleRate);
+      }
+
+      const traceExporter =
+        protocol === 'grpc'
+          ? new OTLPGrpcTraceExporter({ url: endpoint })
+          : new OTLPHttpTraceExporter({
+              url: toSignalHttpUrl(endpoint, 'traces'),
+            });
+
+      const metricExporter =
+        protocol === 'grpc'
+          ? new OTLPGrpcMetricExporter({ url: endpoint })
+          : new OTLPHttpMetricExporter({
+              url: toSignalHttpUrl(endpoint, 'metrics'),
+            });
+
+      const logExporter =
+        protocol === 'grpc'
+          ? new OTLPGrpcLogExporter({ url: endpoint })
+          : new OTLPHttpLogExporter({
+              url: toSignalHttpUrl(endpoint, 'logs'),
+            });
+
+      const nextSdk = new NodeSDK({
+        resource: resourceFromAttributes(
+          telemetryEnvironment.resourceAttributes
+        ),
+        traceExporter,
+        metricReaders: [
+          new PeriodicExportingMetricReader({
+            exporter: metricExporter,
+            exportIntervalMillis: 15000,
+          }),
+        ],
+        logRecordProcessors: [new BatchLogRecordProcessor(logExporter)],
+        instrumentations: [
+          getNodeAutoInstrumentations(),
+          new PinoInstrumentation(),
+        ],
+      });
+
+      await nextSdk.start();
+      sdk = nextSdk;
+
+      logger.info(
+        {
+          protocol,
+          endpoint,
+          service: telemetryEnvironment.serviceName,
+          env: telemetryEnvironment.deploymentEnvironment,
+          traceSampleRate,
+        },
+        'OpenTelemetry initialized'
+      );
+    })();
   }
 
-  startupPromise = (async () => {
-    if (sdk) {
-      return;
-    }
-
-    configureDiagLogger();
-
-    const protocol = telemetryEnvironment.otlpProtocol;
-    const endpoint = telemetryEnvironment.otlpEndpoint;
-    const traceSampleRate = telemetryEnvironment.traceSampleRate;
-
-    if (!process.env.OTEL_TRACES_SAMPLER) {
-      process.env.OTEL_TRACES_SAMPLER = 'parentbased_traceidratio';
-    }
-    if (!process.env.OTEL_TRACES_SAMPLER_ARG) {
-      process.env.OTEL_TRACES_SAMPLER_ARG = String(traceSampleRate);
-    }
-
-    const traceExporter =
-      protocol === 'grpc'
-        ? new OTLPGrpcTraceExporter({ url: endpoint })
-        : new OTLPHttpTraceExporter({
-            url: toSignalHttpUrl(endpoint, 'traces'),
-          });
-
-    const metricExporter =
-      protocol === 'grpc'
-        ? new OTLPGrpcMetricExporter({ url: endpoint })
-        : new OTLPHttpMetricExporter({
-            url: toSignalHttpUrl(endpoint, 'metrics'),
-          });
-
-    const logExporter =
-      protocol === 'grpc'
-        ? new OTLPGrpcLogExporter({ url: endpoint })
-        : new OTLPHttpLogExporter({
-            url: toSignalHttpUrl(endpoint, 'logs'),
-          });
-
-    sdk = new NodeSDK({
-      resource: resourceFromAttributes(telemetryEnvironment.resourceAttributes),
-      traceExporter,
-      metricReader: new PeriodicExportingMetricReader({
-        exporter: metricExporter,
-        exportIntervalMillis: 15000,
-      }),
-      logRecordProcessors: [new BatchLogRecordProcessor(logExporter)],
-      instrumentations: [
-        getNodeAutoInstrumentations(),
-        new PinoInstrumentation(),
-      ],
-    });
-
-    await sdk.start();
-
-    logger.info(
-      {
-        protocol,
-        endpoint,
-        service: telemetryEnvironment.serviceName,
-        env: telemetryEnvironment.deploymentEnvironment,
-        traceSampleRate,
-      },
-      'OpenTelemetry initialized'
-    );
-  })().catch((error) => {
+  try {
+    await startupPromise;
+  } catch (error) {
+    sdk = null;
+    startupPromise = null;
     logger.error(
       {
         err: error,
       },
       'Failed to initialize OpenTelemetry'
     );
-  });
-
-  return startupPromise;
+  }
 }
 
 async function shutdownObservability(): Promise<void> {

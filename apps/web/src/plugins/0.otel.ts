@@ -16,6 +16,10 @@ import { recordException } from '@/@webcore/observability';
 
 let initialized = false;
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function parseSampleRate(raw: string | undefined): number {
   if (!raw) {
     return 1;
@@ -31,6 +35,42 @@ function parseSampleRate(raw: string | undefined): number {
 
 function normalizeCollectorUrl(url: string): string {
   return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+function parseRuntimeUrl(url: string | undefined): URL | null {
+  if (!url) {
+    return null;
+  }
+
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    if (/^https?:\/\//iu.test(trimmed)) {
+      return new URL(trimmed);
+    }
+
+    if (trimmed.startsWith('/')) {
+      return new URL(trimmed, window.location.origin);
+    }
+
+    return new URL(`http://${trimmed}`);
+  } catch {
+    return null;
+  }
+}
+
+function toOriginRegex(url: URL): RegExp {
+  return new RegExp(`^${escapeRegExp(url.origin)}\\/`, 'iu');
+}
+
+function toCollectorIgnoreRegex(collectorUrl: string): RegExp {
+  return new RegExp(
+    `^${escapeRegExp(collectorUrl)}\\/v1\\/(traces|metrics|logs)(\\?.*)?$`,
+    'iu'
+  );
 }
 
 function installGlobalErrorHandlers(app: App): void {
@@ -82,6 +122,13 @@ export default (app: App) => {
   const sampleRate = parseSampleRate(
     import.meta.env.VITE_OTEL_TRACE_SAMPLE_RATE
   );
+  const backendUrl = parseRuntimeUrl(import.meta.env.VITE_BACKEND_URL);
+  const publicApiUrl = parseRuntimeUrl(import.meta.env.VITE_API_PUBLIC_URL);
+  const propagationUrls = [backendUrl, publicApiUrl]
+    .filter((url): url is URL => url !== null)
+    .map((url) => toOriginRegex(url));
+  const ignoreUrls = [toCollectorIgnoreRegex(collectorUrl)];
+
   const exporter = new OTLPTraceExporter({
     url: `${collectorUrl}/v1/traces`,
   });
@@ -106,10 +153,12 @@ export default (app: App) => {
     instrumentations: [
       new DocumentLoadInstrumentation(),
       new FetchInstrumentation({
-        propagateTraceHeaderCorsUrls: [/.*/],
+        propagateTraceHeaderCorsUrls: propagationUrls,
+        ignoreUrls,
       }),
       new XMLHttpRequestInstrumentation({
-        propagateTraceHeaderCorsUrls: [/.*/],
+        propagateTraceHeaderCorsUrls: propagationUrls,
+        ignoreUrls,
       }),
     ],
   });

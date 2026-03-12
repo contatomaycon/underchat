@@ -284,11 +284,11 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
       });
 
       if (state === 'disconnected' || state === 'error') {
-        console.warn(
-          `[Centrifugo Telemetry] ${state}`,
-          reason || '',
-          code ?? ''
-        );
+        recordMessage(`Centrifugo state: ${state}`, 'warn', {
+          reason,
+          code,
+          reconnectionCount,
+        });
       }
     },
 
@@ -304,9 +304,6 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
       });
 
       if (state === 'recovery_failed') {
-        console.warn(
-          `[Centrifugo Telemetry] Recovery failed for channel: ${channel}`
-        );
         recordMessage(`Centrifugo recovery failed: ${channel}`, 'warn', {
           centrifugo_channel: channel,
           recovered: ctx?.recovered,
@@ -390,7 +387,10 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
       });
 
       if (!success) {
-        console.warn(`[Centrifugo Telemetry] Recovery failed: ${channel}`);
+        recordMessage(`Centrifugo recovery failed: ${channel}`, 'warn', {
+          centrifugo_channel: channel,
+          messagesRecovered,
+        });
       }
     },
 
@@ -433,13 +433,10 @@ function createCentrifugoTelemetry(): CentrifugoTelemetry {
         }
       );
 
-      if (import.meta.env.DEV) {
-        console.error(
-          `[Centrifugo Telemetry] ${context}:`,
-          error,
-          channel ? `(channel: ${channel})` : ''
-        );
-      }
+      recordMessage(`Centrifugo telemetry error: ${context}`, 'error', {
+        channel,
+        error: errorToString(error),
+      });
     },
 
     trackVisibility(state) {
