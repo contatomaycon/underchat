@@ -218,7 +218,7 @@ export default [
       ESectorPermissions.sector_group,
       ESectorPermissions.sector_view,
       ESectorPermissions.sector_create,
-      ESectorPermissions.sector_edit,
+      ESectorPermissions.sector_update,
       ESectorPermissions.sector_delete,
     ],
   },

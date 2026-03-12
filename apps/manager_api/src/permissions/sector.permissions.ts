@@ -17,7 +17,7 @@ export const sectorEditPermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
   ESectorPermissions.sector_group,
-  ESectorPermissions.sector_edit,
+  ESectorPermissions.sector_update,
 ];
 export const sectorCreatePermissions = [
   EGeneralPermissions.full_access,

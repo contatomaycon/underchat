@@ -21,7 +21,7 @@ definePage({
       ESectorPermissions.sector_group,
       ESectorPermissions.sector_view,
       ESectorPermissions.sector_create,
-      ESectorPermissions.sector_edit,
+      ESectorPermissions.sector_update,
       ESectorPermissions.sector_delete,
     ],
   },
@@ -31,7 +31,7 @@ const permissionsEdit = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
   ESectorPermissions.sector_group,
-  ESectorPermissions.sector_edit,
+  ESectorPermissions.sector_update,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
@@ -297,8 +297,7 @@ watch(
 
             <template #item.actions="{ item }">
               <div class="d-flex gap-1">
-                <IconBtn
-                  v-if="$canPermission(permissionsEdit) && item.account?.id"
+                <IconBtn v-if="$canPermission(permissionsEdit)"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"
@@ -310,8 +309,7 @@ watch(
                     @click="openEditDialog(item.sector_id)"
                 /></IconBtn>
 
-                <IconBtn
-                  v-if="$canPermission(permissionsDelete) && item.account?.id"
+                <IconBtn v-if="$canPermission(permissionsDelete)"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"
