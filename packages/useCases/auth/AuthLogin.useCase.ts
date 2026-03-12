@@ -157,6 +157,15 @@ export class AuthLoginUseCase {
     );
 
     if (!result) {
+      const hasValidCredentials = await this.authService.hasValidCredentials(
+        input.login,
+        input.password
+      );
+
+      if (hasValidCredentials) {
+        throw new Error(t('user_without_access_group'));
+      }
+
       throw new Error(t('login_invalid'));
     }
 

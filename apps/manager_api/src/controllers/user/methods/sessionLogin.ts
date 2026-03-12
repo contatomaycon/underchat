@@ -52,6 +52,16 @@ export const sessionLogin = async (
       });
     }
 
+    if (
+      error instanceof Error &&
+      error.message === t('user_without_access_group')
+    ) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.unauthorized,
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

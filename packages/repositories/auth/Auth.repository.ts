@@ -1,6 +1,5 @@
 import { EUserStatus } from '@core/common/enums/EUserStatus';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
-import { IAuthenticate } from '@core/common/interfaces/IAuthenticate';
 import * as schema from '@core/models';
 import {
   user,
@@ -20,6 +19,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { PresenceService } from '@core/services/presence.service';
+import type { IAuthenticate } from '@core/common/interfaces/IAuthenticate';
 
 @injectable()
 export class AuthRepository {
@@ -138,6 +138,26 @@ export class AuthRepository {
     }
 
     return userData as AuthUserResponse;
+  };
+
+  hasValidCredentials = async (input: IAuthenticate): Promise<boolean> => {
+    const result = await this.dbRo
+      .select({
+        user_id: user.user_id,
+      })
+      .from(user)
+      .where(
+        and(
+          eq(user.email_c, input.email),
+          eq(user.password, input.password),
+          eq(user.user_status_id, EUserStatus.active),
+          isNull(user.deleted_at)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return result.length > 0;
   };
 
   findUserById = async (userId: string): Promise<AuthUserResponse | null> => {

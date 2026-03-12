@@ -1018,7 +1018,7 @@
   "session_login_successfully": "¡Inicio de sesión en la sesión exitoso!",
   "session_login_error": "¡Error al iniciar sesión en la sesión!",
   "user_account_not_found": "¡Cuenta de usuario no encontrada!",
-  "user_without_access_group": "El usuario no tiene un grupo de acceso. Es necesario asignar un grupo de acceso al usuario antes de iniciar sesión en la sesión.",
+  "user_without_access_group": "Este usuario no tiene grupo de acceso. Solicite al administrador de la cuenta que asigne un grupo de acceso antes de iniciar sesión.",
   "push_vapid_not_configured": "Claves VAPID no configuradas. Las notificaciones push no funcionarán.",
   "push_subscription_registered_successfully": "¡Suscripción de notificación push registrada con éxito!",
   "push_public_key_retrieved_successfully": "¡Clave pública VAPID obtenida con éxito!",

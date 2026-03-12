@@ -1018,7 +1018,7 @@
   "session_login_successfully": "Login na sessão realizado com sucesso!",
   "session_login_error": "Erro ao fazer login na sessão!",
   "user_account_not_found": "Conta do usuário não encontrada!",
-  "user_without_access_group": "O usuário não possui grupo de acesso. É necessário vincular um grupo de acesso ao usuário antes de entrar na sessão.",
+  "user_without_access_group": "Este usuário está sem grupo de acesso. Solicite ao administrador da conta que vincule um grupo de acesso para liberar o login.",
   "push_vapid_not_configured": "Chaves VAPID não configuradas. Push notifications não funcionarão.",
   "push_subscription_registered_successfully": "Subscription de push notification registrada com sucesso!",
   "push_public_key_retrieved_successfully": "Chave pública VAPID obtida com sucesso!",

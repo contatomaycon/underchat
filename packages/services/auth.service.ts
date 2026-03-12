@@ -1,8 +1,8 @@
 import { AuthRepository } from '@core/repositories/auth/Auth.repository';
 import { injectable, inject } from 'tsyringe';
 import { EncryptService } from './encrypt.service';
-import { IAuthenticate } from '@core/common/interfaces/IAuthenticate';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
+import type { IAuthenticate } from '@core/common/interfaces/IAuthenticate';
 
 @injectable()
 export class AuthService {
@@ -13,16 +13,29 @@ export class AuthService {
     private readonly encryptService: EncryptService
   ) {}
 
-  authenticate = async (login: string, password: string) => {
+  private buildAuthenticateInput(login: string, password: string): IAuthenticate {
     const passwordEncrypted = this.encryptService.encrypt(password);
     const loginEncrypted = this.encryptService.encrypt(login);
 
-    const input: IAuthenticate = {
+    return {
       email: loginEncrypted,
       password: passwordEncrypted,
     };
+  }
+
+  authenticate = async (login: string, password: string) => {
+    const input = this.buildAuthenticateInput(login, password);
 
     return this.authRepository.authenticate(input);
+  };
+
+  hasValidCredentials = async (
+    login: string,
+    password: string
+  ): Promise<boolean> => {
+    const input = this.buildAuthenticateInput(login, password);
+
+    return this.authRepository.hasValidCredentials(input);
   };
 
   authenticateByUserId = async (
