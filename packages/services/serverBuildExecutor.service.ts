@@ -941,6 +941,14 @@ export class ServerBuildExecutorService {
 
       if (this.buildEngine === 'kaniko') {
         fs.mkdirSync('/tmp/kaniko', { recursive: true });
+
+        const kanikoDockerDir = '/tmp/kaniko/.docker';
+        fs.mkdirSync(kanikoDockerDir, { recursive: true });
+        const sourceConfig = path.join(dockerConfigDir, 'config.json');
+        const destConfig = path.join(kanikoDockerDir, 'config.json');
+        if (fs.existsSync(sourceConfig)) {
+          fs.copyFileSync(sourceConfig, destConfig);
+        }
       }
 
       const buildCommand = resolveServerBuildCommand({
