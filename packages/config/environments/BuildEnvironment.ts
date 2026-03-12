@@ -1,5 +1,7 @@
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 
+export type TBuildEngine = 'docker' | 'kaniko';
+
 export class BuildEnvironment {
   private parseOptionalPositiveNumber(
     envName: string,
@@ -18,6 +20,39 @@ export class BuildEnvironment {
     }
 
     return Math.floor(parsed);
+  }
+
+  private parseOptionalBoolean(
+    envName: string,
+    defaultValue: boolean
+  ): boolean {
+    const raw = process.env[envName]?.trim();
+    if (!raw) {
+      return defaultValue;
+    }
+
+    const normalized = raw.toLowerCase();
+    if (
+      normalized === '1' ||
+      normalized === 'true' ||
+      normalized === 'yes' ||
+      normalized === 'on'
+    ) {
+      return true;
+    }
+
+    if (
+      normalized === '0' ||
+      normalized === 'false' ||
+      normalized === 'no' ||
+      normalized === 'off'
+    ) {
+      return false;
+    }
+
+    throw new InvalidConfigurationError(
+      `${envName} must be a boolean value (true/false).`
+    );
   }
 
   public get harborRegistry(): string {
@@ -63,6 +98,44 @@ export class BuildEnvironment {
     }
 
     return '/tmp/underchat-build-source';
+  }
+
+  public get buildEngine(): TBuildEngine {
+    const engineRaw = process.env.BUILD_ENGINE?.trim().toLowerCase();
+    if (!engineRaw) {
+      return 'docker';
+    }
+
+    if (engineRaw !== 'docker' && engineRaw !== 'kaniko') {
+      throw new InvalidConfigurationError(
+        'BUILD_ENGINE must be one of: docker, kaniko.'
+      );
+    }
+
+    return engineRaw;
+  }
+
+  public get buildKanikoExecutorPath(): string {
+    const executorPath = process.env.BUILD_KANIKO_EXECUTOR_PATH?.trim();
+    if (!executorPath) {
+      return '/kaniko/executor';
+    }
+
+    return executorPath;
+  }
+
+  public get serviceApiEnableBuildConsumers(): boolean {
+    return this.parseOptionalBoolean(
+      'SERVICE_API_ENABLE_BUILD_CONSUMERS',
+      true
+    );
+  }
+
+  public get serviceApiEnableNonBuildConsumers(): boolean {
+    return this.parseOptionalBoolean(
+      'SERVICE_API_ENABLE_NON_BUILD_CONSUMERS',
+      true
+    );
   }
 
   public get buildCommandInactivityTimeoutMs(): number {

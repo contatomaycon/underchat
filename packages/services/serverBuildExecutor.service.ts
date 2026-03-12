@@ -9,6 +9,7 @@ import {
 import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { serverBuildCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { resolveServerBuildCommand } from '@core/common/functions/resolveServerBuildCommand';
 import { IRunServerBuildCommandOptions } from '@core/common/interfaces/IRunServerBuildCommandOptions';
 import { IServerBuildCentrifugo } from '@core/common/interfaces/IServerBuildCentrifugo';
 import { IServerBuildTarget } from '@core/common/interfaces/IServerBuildTarget';
@@ -44,6 +45,9 @@ export class ServerBuildExecutorService {
     buildEnvironment.buildStaleRunningItemTimeoutMs;
   private readonly staleRunningItemCheckIntervalMs =
     buildEnvironment.buildStaleCheckIntervalMs;
+  private readonly buildEngine = buildEnvironment.buildEngine;
+  private readonly kanikoExecutorPath =
+    buildEnvironment.buildKanikoExecutorPath;
   private readonly realtimeLogLineLimit = 2_000;
   private readonly realtimeLogBufferFlushThreshold = 8_000;
   private readonly realtimeLogBufferByStream = new Map<string, string>();
@@ -755,6 +759,25 @@ export class ServerBuildExecutorService {
     return 'Unknown build error';
   }
 
+  private getBuildExecutionErrorMessage(error: unknown): string {
+    const errorMessage = this.getErrorMessage(error);
+
+    if (this.buildEngine !== 'docker') {
+      return errorMessage;
+    }
+
+    const dockerDaemonUnavailable =
+      errorMessage.includes('Cannot connect to the Docker daemon') ||
+      errorMessage.includes('error during connect') ||
+      errorMessage.includes('docker.sock');
+
+    if (!dockerDaemonUnavailable) {
+      return errorMessage;
+    }
+
+    return `${errorMessage}\nHint: Docker daemon is unavailable. For Kubernetes pods without /var/run/docker.sock, set BUILD_ENGINE=kaniko.`;
+  }
+
   async requestCancel(serverBuildJobId: string): Promise<void> {
     this.cancelRequested.add(serverBuildJobId);
 
@@ -899,21 +922,29 @@ export class ServerBuildExecutorService {
         version
       );
 
+      if (
+        this.buildEngine === 'kaniko' &&
+        !fs.existsSync(this.kanikoExecutorPath)
+      ) {
+        throw new Error(
+          `Kaniko executor not found at ${this.kanikoExecutorPath}. Set BUILD_KANIKO_EXECUTOR_PATH correctly.`
+        );
+      }
+
+      const buildCommand = resolveServerBuildCommand({
+        buildEngine: this.buildEngine,
+        imageReference,
+        dockerfilePath: target.dockerfilePath,
+        dockerfileAbsolutePath,
+        workspaceRoot,
+        kanikoExecutorPath: this.kanikoExecutorPath,
+      });
+
       await this.runCommand(
         serverBuildJobId,
         buildType,
-        'docker',
-        [
-          'buildx',
-          'build',
-          '--no-cache',
-          '--push',
-          '-t',
-          imageReference,
-          '-f',
-          target.dockerfilePath,
-          '.',
-        ],
+        buildCommand.command,
+        buildCommand.args,
         {
           cwd: workspaceRoot,
           env: dockerCommandEnv,
@@ -935,7 +966,7 @@ export class ServerBuildExecutorService {
         `Build target ${buildType} finished successfully`
       );
     } catch (error) {
-      const errorMessage = this.getErrorMessage(error);
+      const errorMessage = this.getBuildExecutionErrorMessage(error);
       const canceled =
         error instanceof BuildJobCanceledError ||
         (await this.serverBuildService.isCancelRequested(serverBuildJobId));

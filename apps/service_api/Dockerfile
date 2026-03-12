@@ -64,6 +64,7 @@ RUN mkdir -p /build_locales
 COPY packages/plugins/i18next/locales /build_locales
 
 FROM docker:27-cli AS docker_cli
+FROM gcr.io/kaniko-project/executor:v1.23.2 AS kaniko
 
 FROM node:24.12.0-bookworm-slim
 
@@ -77,6 +78,7 @@ COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 COPY --from=builder /app/packages/proto ./packages/proto
 COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker_cli /usr/local/libexec/docker /usr/local/libexec/docker
+COPY --from=kaniko /kaniko/executor /kaniko/executor
 
 RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser
 
@@ -137,6 +139,7 @@ RUN apt-get update && \
       ln -sf /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/libexec/docker/cli-plugins/docker-buildx && \
       ln -sf /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/lib/docker/cli-plugins/docker-buildx; \
     fi && \
+    chmod +x /kaniko/executor && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome && \

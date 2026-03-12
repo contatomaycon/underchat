@@ -21,6 +21,8 @@ import { startConfigChannelsRecreateAllConsume } from './configChannelsRecreateA
 import { startBuildVersionGenerateConsume } from './buildVersionGenerate.consume';
 import { startBuildVersionCancelConsume } from './buildVersionCancel.consume';
 import fp from 'fastify-plugin';
+import { buildEnvironment } from '@core/config/environments';
+import { selectServiceApiConsumerStarters } from '@core/common/functions/selectServiceApiConsumerStarters';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
@@ -31,7 +33,11 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function startConsumers(server: FastifyInstance): Promise<void> {
-  const starters = [
+  const enableBuildConsumers = buildEnvironment.serviceApiEnableBuildConsumers;
+  const enableNonBuildConsumers =
+    buildEnvironment.serviceApiEnableNonBuildConsumers;
+
+  const nonBuildConsumerStarters = [
     () => startBalanceConsume(server),
     () => startMessageUpdateConsume(server),
     () => startMessageUpsertConsume(server),
@@ -51,9 +57,36 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
     () => startChatHistoryEmbeddingConsume(server),
     () => startContactValidationUpdateConsume(server),
     () => startConfigChannelsRecreateAllConsume(server),
+  ];
+  const buildConsumerStarters = [
     () => startBuildVersionGenerateConsume(server),
     () => startBuildVersionCancelConsume(server),
   ];
+  const starters = selectServiceApiConsumerStarters({
+    enableBuildConsumers,
+    enableNonBuildConsumers,
+    buildConsumerStarters,
+    nonBuildConsumerStarters,
+  });
+
+  if (!enableNonBuildConsumers) {
+    server.log.info(
+      'Service API: non-build Kafka consumers are disabled by SERVICE_API_ENABLE_NON_BUILD_CONSUMERS=false'
+    );
+  }
+
+  if (!enableBuildConsumers) {
+    server.log.info(
+      'Service API: build Kafka consumers are disabled by SERVICE_API_ENABLE_BUILD_CONSUMERS=false'
+    );
+  }
+
+  if (starters.length === 0) {
+    server.log.warn(
+      'Service API: all Kafka consumers are disabled by environment flags'
+    );
+    return;
+  }
 
   for (const start of starters) {
     try {
