@@ -429,17 +429,9 @@ function getMessageRemoteFromId(msg: Message): string | undefined {
 
   if (typeof msg.id === 'object' && msg.id !== null) {
     const value = msg.id as {
-      remoteJid?: unknown;
-      remote_jid?: unknown;
       remote?: unknown;
       _serialized?: unknown;
     };
-
-    const remoteJidValue =
-      getNonEmptyString(value.remoteJid) ?? getNonEmptyString(value.remote_jid);
-    if (remoteJidValue) {
-      return remoteJidValue;
-    }
 
     if (typeof value.remote === 'string' && value.remote) {
       return value.remote;
@@ -519,6 +511,11 @@ export class WwebjsIncomingMessageService {
   private readonly E2E_NOTIFICATION_DEDUPE_TTL = 31536000;
   private readonly CIPHERTEXT_FANOUT_DEDUPE_PREFIX = 'wwebjs:ciphertext:';
   private readonly CIPHERTEXT_FANOUT_DEDUPE_TTL = 31536000;
+  private readonly LID_PHONE_CACHE = new Map<
+    string,
+    { phone: string | null; ts: number }
+  >();
+  private readonly LID_PHONE_CACHE_TTL_MS = 300_000;
 
   constructor(
     @inject(StreamProducerService)
@@ -789,22 +786,16 @@ export class WwebjsIncomingMessageService {
     msg: Message,
     pinData?: IWwebjsPinEventData
   ): string | undefined {
-    const idValue =
+    const idRemote =
       typeof msg.id === 'object' && msg.id !== null
-        ? (msg.id as {
-            remoteJid?: unknown;
-            remote_jid?: unknown;
-            remote?: unknown;
-          })
+        ? getNonEmptyString((msg.id as { remote?: unknown }).remote)
         : undefined;
 
     const candidates = [
       pinData?.chatId,
       msg.fromMe ? msg.to || msg.from : msg.from || msg.to,
       getMessageRemoteFromId(msg),
-      getNonEmptyString(idValue?.remoteJid),
-      getNonEmptyString(idValue?.remote_jid),
-      getNonEmptyString(idValue?.remote),
+      idRemote,
       msg.from,
       msg.to,
     ];
@@ -1090,23 +1081,14 @@ export class WwebjsIncomingMessageService {
   }
 
   private getMessageJidCandidates(msg: Message): string[] {
-    const idValue =
+    const idRemote =
       typeof msg.id === 'object' && msg.id !== null
-        ? (msg.id as {
-            remoteJid?: unknown;
-            remote_jid?: unknown;
-            remote?: unknown;
-          })
+        ? getNonEmptyString((msg.id as { remote?: unknown }).remote)
         : undefined;
 
-    return [
-      msg.from,
-      msg.to,
-      getMessageRemoteFromId(msg),
-      getNonEmptyString(idValue?.remoteJid),
-      getNonEmptyString(idValue?.remote_jid),
-      getNonEmptyString(idValue?.remote),
-    ].filter((value): value is string => !!value);
+    return [msg.from, msg.to, getMessageRemoteFromId(msg), idRemote].filter(
+      (value): value is string => !!value
+    );
   }
 
   private shouldHandleFromMeCreatedMessage(msg: Message): boolean {
@@ -1199,19 +1181,47 @@ export class WwebjsIncomingMessageService {
     return !!jid && jid.endsWith('@lid');
   }
 
-  private resolveRemoteJids(
+  private async resolvePhoneFromLid(
+    client: Client,
+    lidJid: string
+  ): Promise<string | undefined> {
+    const cached = this.LID_PHONE_CACHE.get(lidJid);
+    if (cached && Date.now() - cached.ts < this.LID_PHONE_CACHE_TTL_MS) {
+      return cached.phone ?? undefined;
+    }
+
+    const getContactById = (
+      client as unknown as {
+        getContactById?: (id: string) => Promise<{ number?: string } | null>;
+      }
+    ).getContactById;
+
+    if (typeof getContactById !== 'function') {
+      return undefined;
+    }
+
+    try {
+      const contact = await getContactById.call(client, lidJid);
+      const phone = contact?.number?.replaceAll(/\D/g, '');
+      const resolved = phone && phone.length >= 8 ? phone : undefined;
+      this.LID_PHONE_CACHE.set(lidJid, {
+        phone: resolved ?? null,
+        ts: Date.now(),
+      });
+      return resolved;
+    } catch {
+      this.LID_PHONE_CACHE.set(lidJid, { phone: null, ts: Date.now() });
+      return undefined;
+    }
+  }
+
+  private async resolveRemoteJids(
     client: Client,
     msg: Message
-  ): WwebjsResolvedJids | null {
-    const idValue =
+  ): Promise<WwebjsResolvedJids | null> {
+    const idRemote =
       typeof msg.id === 'object' && msg.id !== null
-        ? (msg.id as {
-            remoteJid?: unknown;
-            remote_jid?: unknown;
-            remoteJidAlt?: unknown;
-            remote_jid_alt?: unknown;
-            remote?: unknown;
-          })
+        ? getNonEmptyString((msg.id as { remote?: unknown }).remote)
         : undefined;
 
     const normalizeCandidate = (value: unknown): string | undefined => {
@@ -1226,13 +1236,7 @@ export class WwebjsIncomingMessageService {
       return normalized;
     };
 
-    const idRemoteJid =
-      normalizeCandidate(idValue?.remoteJid) ??
-      normalizeCandidate(idValue?.remote_jid);
-    const idRemoteJidAlt =
-      normalizeCandidate(idValue?.remoteJidAlt) ??
-      normalizeCandidate(idValue?.remote_jid_alt);
-    const idRemote = normalizeCandidate(idValue?.remote);
+    const normalizedIdRemote = normalizeCandidate(idRemote);
     const serializedRemote = normalizeCandidate(getMessageRemoteFromId(msg));
 
     const preferredRaw = msg.fromMe
@@ -1240,11 +1244,12 @@ export class WwebjsIncomingMessageService {
       : msg.from || msg.to || '';
     const preferredJid = normalizeCandidate(preferredRaw);
 
+    const authorJid = normalizeCandidate(msg.author);
+
     const orderedCandidates = [
       preferredJid,
-      idRemoteJid,
-      idRemote,
-      idRemoteJidAlt,
+      normalizedIdRemote,
+      authorJid,
       serializedRemote,
     ].filter((candidate): candidate is string => !!candidate);
 
@@ -1279,6 +1284,15 @@ export class WwebjsIncomingMessageService {
       lidAlternative ??
       uniqueCandidates.find((candidate) => candidate !== primaryJid);
 
+    // If primary is LID and no non-LID alternative, resolve phone via Contact API
+    if (this.isLidJid(primaryJid)) {
+      const resolvedPhone = await this.resolvePhoneFromLid(client, primaryJid);
+      if (resolvedPhone) {
+        const phoneJid = `${resolvedPhone}@s.whatsapp.net`;
+        return { remoteJid: phoneJid, remoteJidAlt: primaryJid };
+      }
+    }
+
     return alternativeJid
       ? { remoteJid: primaryJid, remoteJidAlt: alternativeJid }
       : { remoteJid: primaryJid };
@@ -1291,7 +1305,7 @@ export class WwebjsIncomingMessageService {
     }
 
     try {
-      const resolvedJids = this.resolveRemoteJids(client, msg);
+      const resolvedJids = await this.resolveRemoteJids(client, msg);
       if (!resolvedJids) return;
       if (this.shouldSkipResolvedJids(resolvedJids)) return;
       if (this.isUnsupportedSystemNotification(msg)) return;
@@ -1359,7 +1373,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = this.resolveRemoteJids(client, msg);
+    const resolvedJids = await this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1856,7 +1870,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = this.resolveRemoteJids(client, after);
+    const resolvedJids = await this.resolveRemoteJids(client, after);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1888,7 +1902,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = this.resolveRemoteJids(client, msg);
+    const resolvedJids = await this.resolveRemoteJids(client, msg);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1919,7 +1933,7 @@ export class WwebjsIncomingMessageService {
       return;
     }
 
-    const resolvedJids = this.resolveRemoteJids(client, message);
+    const resolvedJids = await this.resolveRemoteJids(client, message);
     if (!resolvedJids) return;
     if (this.shouldSkipResolvedJids(resolvedJids)) return;
 
@@ -1945,7 +1959,7 @@ export class WwebjsIncomingMessageService {
     try {
       const parentMsg = await client.getMessageById(parentMsgId);
       if (parentMsg) {
-        const resolvedJids = this.resolveRemoteJids(client, parentMsg);
+        const resolvedJids = await this.resolveRemoteJids(client, parentMsg);
         remoteJid = resolvedJids?.remoteJid ?? '';
         remoteJidAlt = resolvedJids?.remoteJidAlt;
       }
@@ -2021,7 +2035,11 @@ export class WwebjsIncomingMessageService {
     if (this.processedCalls.has(callKey)) return;
     this.processedCalls.set(callKey, Date.now());
 
-    const phone = getPhoneFromJid(jid, null);
+    let phone = getPhoneFromJid(jid, null);
+    if (!phone && this.isLidJid(jid)) {
+      const resolved = await this.resolvePhoneFromLid(client, jid);
+      phone = resolved ?? null;
+    }
     if (!phone) return;
 
     const upsert = buildCallUpsert(

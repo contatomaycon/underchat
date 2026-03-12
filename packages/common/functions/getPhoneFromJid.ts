@@ -20,7 +20,7 @@ export function getPhoneFromJid(
     jidToUse = jid || jidAlt || null;
   }
 
-  if (!jidToUse) {
+  if (!jidToUse || jidToUse.endsWith('@lid')) {
     return null;
   }
 
