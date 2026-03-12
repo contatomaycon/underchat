@@ -1546,7 +1546,7 @@ export class WwebjsIncomingMessageService {
     if (msg.fromMe) {
       let contactCandidates = this.removeSelfPhotoCandidates(
         client,
-        this.buildPhotoCandidates([
+        await this.buildPhotoCandidates(client, [
           msg.to,
           resolvedJids.remoteJid,
           resolvedJids.remoteJidAlt,
@@ -1622,7 +1622,10 @@ export class WwebjsIncomingMessageService {
     return undefined;
   }
 
-  private buildPhotoCandidates(rawJids: Array<string | undefined>): string[] {
+  private async buildPhotoCandidates(
+    client: Client,
+    rawJids: Array<string | undefined>
+  ): Promise<string[]> {
     const candidates = new Set<string>();
 
     for (const raw of rawJids) {
@@ -1632,6 +1635,18 @@ export class WwebjsIncomingMessageService {
       if (!normalized) continue;
       if (this.shouldSkipChat(normalized)) continue;
       if (this.isGroupOrBroadcastJid(normalized)) continue;
+
+      if (this.isLidJid(normalized)) {
+        const resolvedPhone = await this.resolvePhoneFromLid(
+          client,
+          normalized
+        );
+        if (resolvedPhone) {
+          candidates.add(`${resolvedPhone}@c.us`);
+          candidates.add(`${resolvedPhone}@s.whatsapp.net`);
+        }
+        continue;
+      }
 
       candidates.add(normalized);
 
@@ -1774,7 +1789,7 @@ export class WwebjsIncomingMessageService {
     const directPeerJid = msg.fromMe ? msg.to : msg.from;
     let candidates = this.removeSelfPhotoCandidates(
       client,
-      this.buildPhotoCandidates([
+      await this.buildPhotoCandidates(client, [
         resolvedJids.remoteJid,
         resolvedJids.remoteJidAlt,
         directPeerJid,
@@ -1838,7 +1853,7 @@ export class WwebjsIncomingMessageService {
     client: Client,
     jid: string
   ): Promise<string | undefined> {
-    const candidates = this.buildPhotoCandidates([jid]);
+    const candidates = await this.buildPhotoCandidates(client, [jid]);
     if (!candidates.length) {
       return undefined;
     }
