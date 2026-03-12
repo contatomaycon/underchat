@@ -764,9 +764,10 @@ export class ServerBuildExecutorService {
 
     if (
       this.buildEngine === 'kaniko' &&
-      errorMessage.includes('/kaniko/Dockerfile: permission denied')
+      (errorMessage.includes('permission denied') ||
+        errorMessage.includes('operation not permitted'))
     ) {
-      return `${errorMessage}\nHint: Kaniko needs a writable directory. Rebuild and redeploy the service_api image, and ensure no old pods are still consuming build jobs.`;
+      return `${errorMessage}\nHint: Kaniko requires root privileges. Ensure the build runner pod runs as root (runAsUser: 0) in the Kubernetes security context.`;
     }
 
     if (this.buildEngine !== 'docker') {
