@@ -176,6 +176,7 @@ export async function installUbuntu2410(
         -p 50051:50051 \
         -v /var/run/docker.sock:/var/run/docker.sock \
         --env-file /home/app/.env \
+        -e NODE_EXTRA_CA_CERTS= \
         --network underchat \
         -e DOCKER_HOST=unix:///var/run/docker.sock \
         -e SERVER_ID=${webView.server_id} \

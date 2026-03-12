@@ -61,20 +61,73 @@ async function dbConnector(fastify: FastifyInstance) {
     );
   };
 
+  const TERMINATED_LOG_THROTTLE_MS = 30_000;
+  const terminatedLogState = new Map<
+    string,
+    {
+      lastLoggedAt: number;
+      suppressedCount: number;
+    }
+  >();
+
+  const serializeDatabaseError = (err: Error): Record<string, unknown> => {
+    const normalizedError = err as NodeJS.ErrnoException;
+    return {
+      name: normalizedError.name,
+      message: normalizedError.message,
+      ...(normalizedError.code ? { code: normalizedError.code } : {}),
+    };
+  };
+
+  const logTerminatedConnection = (
+    pool: 'rw' | 'ro',
+    type:
+      | 'database_connection_terminated'
+      | 'database_client_connection_terminated',
+    message: string,
+    err: Error
+  ): void => {
+    const key = `${pool}:${type}`;
+    const now = Date.now();
+    const previous = terminatedLogState.get(key);
+
+    if (previous && now - previous.lastLoggedAt < TERMINATED_LOG_THROTTLE_MS) {
+      terminatedLogState.set(key, {
+        ...previous,
+        suppressedCount: previous.suppressedCount + 1,
+      });
+      return;
+    }
+
+    const suppressedCount = previous?.suppressedCount ?? 0;
+    terminatedLogState.set(key, {
+      lastLoggedAt: now,
+      suppressedCount: 0,
+    });
+
+    import('@core/plugins/telemetry/logger.js')
+      .then(({ logger }) => {
+        logger.warn(
+          {
+            err: serializeDatabaseError(err),
+            type,
+            pool,
+            ...(suppressedCount > 0 ? { suppressedCount } : {}),
+          },
+          message
+        );
+      })
+      .catch(() => {});
+  };
+
   poolRw.on('error', (err) => {
     if (isConnectionTerminatedError(err)) {
-      import('@core/plugins/telemetry/logger.js')
-        .then(({ logger }) => {
-          logger.warn(
-            {
-              err,
-              type: 'database_connection_terminated',
-              pool: 'rw',
-            },
-            'Database connection terminated (RW)'
-          );
-        })
-        .catch(() => {});
+      logTerminatedConnection(
+        'rw',
+        'database_connection_terminated',
+        'Database connection terminated (RW)',
+        err
+      );
       return;
     }
 
@@ -108,18 +161,12 @@ async function dbConnector(fastify: FastifyInstance) {
   poolRw.on('connect', (client) => {
     client.on('error', (err) => {
       if (isConnectionTerminatedError(err)) {
-        import('@core/plugins/telemetry/logger.js')
-          .then(({ logger }) => {
-            logger.warn(
-              {
-                err,
-                type: 'database_client_connection_terminated',
-                pool: 'rw',
-              },
-              'Database client connection terminated (RW)'
-            );
-          })
-          .catch(() => {});
+        logTerminatedConnection(
+          'rw',
+          'database_client_connection_terminated',
+          'Database client connection terminated (RW)',
+          err
+        );
         return;
       }
     });
@@ -141,18 +188,12 @@ async function dbConnector(fastify: FastifyInstance) {
 
   poolRo.on('error', (err) => {
     if (isConnectionTerminatedError(err)) {
-      import('@core/plugins/telemetry/logger.js')
-        .then(({ logger }) => {
-          logger.warn(
-            {
-              err,
-              type: 'database_connection_terminated',
-              pool: 'ro',
-            },
-            'Database connection terminated (RO)'
-          );
-        })
-        .catch(() => {});
+      logTerminatedConnection(
+        'ro',
+        'database_connection_terminated',
+        'Database connection terminated (RO)',
+        err
+      );
       return;
     }
 
@@ -186,18 +227,12 @@ async function dbConnector(fastify: FastifyInstance) {
   poolRo.on('connect', (client) => {
     client.on('error', (err) => {
       if (isConnectionTerminatedError(err)) {
-        import('@core/plugins/telemetry/logger.js')
-          .then(({ logger }) => {
-            logger.warn(
-              {
-                err,
-                type: 'database_client_connection_terminated',
-                pool: 'ro',
-              },
-              'Database client connection terminated (RO)'
-            );
-          })
-          .catch(() => {});
+        logTerminatedConnection(
+          'ro',
+          'database_client_connection_terminated',
+          'Database client connection terminated (RO)',
+          err
+        );
         return;
       }
     });
