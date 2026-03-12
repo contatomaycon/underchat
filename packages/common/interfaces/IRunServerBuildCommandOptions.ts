@@ -6,4 +6,5 @@ export interface IRunServerBuildCommandOptions {
   displayArgs?: string[];
   buildType?: EServerBuildType | null;
   emitRealtimeLogs?: boolean;
+  env?: NodeJS.ProcessEnv;
 }

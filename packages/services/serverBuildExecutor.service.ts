@@ -512,7 +512,7 @@ export class ServerBuildExecutorService {
 
       const child = spawn(command, args, {
         cwd: options.cwd,
-        env: process.env,
+        env: options.env ?? process.env,
         stdio: 'pipe',
       });
 
@@ -868,6 +868,14 @@ export class ServerBuildExecutorService {
         throw new Error(`Dockerfile not found: ${dockerfileAbsolutePath}`);
       }
 
+      const dockerConfigDir = path.join(workspaceRoot, '.docker');
+      fs.mkdirSync(dockerConfigDir, { recursive: true });
+      const dockerCommandEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        HOME: workspaceRoot,
+        DOCKER_CONFIG: dockerConfigDir,
+      };
+
       await this.runCommand(
         serverBuildJobId,
         buildType,
@@ -882,6 +890,7 @@ export class ServerBuildExecutorService {
         {
           cwd: workspaceRoot,
           stdin: `${buildEnvironment.harborPassword}\n`,
+          env: dockerCommandEnv,
         }
       );
 
@@ -907,6 +916,7 @@ export class ServerBuildExecutorService {
         ],
         {
           cwd: workspaceRoot,
+          env: dockerCommandEnv,
         }
       );
 
