@@ -54,6 +54,7 @@ export class ServerBuildExecutorService {
   private staleRunningItemMonitorTimer: ReturnType<typeof setInterval> | null =
     null;
   private isRecoveringStaleItems = false;
+  private buildMutexChain: Promise<void> = Promise.resolve();
   private readonly buildTargets: IServerBuildTarget[] = [
     {
       buildType: EServerBuildType.baileys,
@@ -826,6 +827,15 @@ export class ServerBuildExecutorService {
     serverBuildJobId: string,
     buildType: EServerBuildType
   ): Promise<void> {
+    return this.withBuildMutex(() =>
+      this.executeBuildJobItemInternal(serverBuildJobId, buildType)
+    );
+  }
+
+  private async executeBuildJobItemInternal(
+    serverBuildJobId: string,
+    buildType: EServerBuildType
+  ): Promise<void> {
     const target = this.getBuildTarget(buildType);
     if (!target) {
       return;
@@ -1044,17 +1054,17 @@ export class ServerBuildExecutorService {
   }
 
   async executeBuildJob(serverBuildJobId: string): Promise<void> {
-    if (this.buildEngine === 'kaniko') {
-      for (const target of this.buildTargets) {
-        await this.executeBuildJobItem(serverBuildJobId, target.buildType);
-      }
-      return;
+    for (const target of this.buildTargets) {
+      await this.executeBuildJobItem(serverBuildJobId, target.buildType);
     }
+  }
 
-    await Promise.all(
-      this.buildTargets.map((target) =>
-        this.executeBuildJobItem(serverBuildJobId, target.buildType)
-      )
+  private withBuildMutex<T>(fn: () => Promise<T>): Promise<T> {
+    const result = this.buildMutexChain.then(fn, fn);
+    this.buildMutexChain = result.then(
+      () => {},
+      () => {}
     );
+    return result;
   }
 }
