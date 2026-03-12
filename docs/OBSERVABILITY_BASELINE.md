@@ -22,6 +22,24 @@ Provide a minimum, production-ready baseline for traces, metrics, logs, and aler
   - `OTEL_EXPORTER_OTLP_PROTOCOL`
   - `OTEL_EXPORTER_OTLP_ENDPOINT`
 
+## Dedicated Docker Services (balance, baileys, wwebjs)
+
+These services run outside Kubernetes, so Kubernetes log discovery (Promtail with
+`__meta_kubernetes_*`) does not see their stdout logs.
+
+To keep traces and logs aligned in Grafana:
+
+- Keep OTEL enabled in each container.
+- Set explicit `OTEL_SERVICE_NAME` in runtime env:
+  - `balance`
+  - `baileys`
+  - `wwebjs`
+- Use OTLP endpoint reachable from the dedicated host (for example `https://otel.devunder.com`).
+
+The telemetry plugin now emits logs both to stdout (for local/container debugging)
+and to OpenTelemetry logs API (OTLP), so dedicated Docker services can reach Loki
+through the OTel Collector logs pipeline.
+
 ## Collector/Ingress CORS (Web OTLP)
 
 The OTLP HTTP endpoint (for example `https://otel.devunder.com`) must allow browser preflight and POST:
