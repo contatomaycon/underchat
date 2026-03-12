@@ -2,6 +2,10 @@ import { context, trace, SpanStatusCode } from '@opentelemetry/api';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
+function isConsoleLoggingEnabled(): boolean {
+  return import.meta.env.VITE_OTEL_CONSOLE_LOGS === 'true';
+}
+
 export interface WebObservabilityEvent {
   message: string;
   category?: string;
@@ -108,6 +112,10 @@ export function recordMessage(
       message,
       ...attributes,
     });
+  }
+
+  if (!isConsoleLoggingEnabled()) {
+    return;
   }
 
   if (level === 'error') {
