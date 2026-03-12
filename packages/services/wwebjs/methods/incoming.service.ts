@@ -1190,9 +1190,27 @@ export class WwebjsIncomingMessageService {
       return cached.phone ?? undefined;
     }
 
+    const resolved =
+      (await this.resolvePhoneFromLidViaContact(client, lidJid)) ??
+      (await this.resolvePhoneFromLidViaPupPage(client, lidJid));
+
+    this.LID_PHONE_CACHE.set(lidJid, {
+      phone: resolved ?? null,
+      ts: Date.now(),
+    });
+    return resolved;
+  }
+
+  private async resolvePhoneFromLidViaContact(
+    client: Client,
+    lidJid: string
+  ): Promise<string | undefined> {
     const getContactById = (
       client as unknown as {
-        getContactById?: (id: string) => Promise<{ number?: string } | null>;
+        getContactById?: (id: string) => Promise<{
+          number?: string;
+          id?: { _serialized?: string };
+        } | null>;
       }
     ).getContactById;
 
@@ -1202,15 +1220,77 @@ export class WwebjsIncomingMessageService {
 
     try {
       const contact = await getContactById.call(client, lidJid);
-      const phone = contact?.number?.replaceAll(/\D/g, '');
-      const resolved = phone && phone.length >= 8 ? phone : undefined;
-      this.LID_PHONE_CACHE.set(lidJid, {
-        phone: resolved ?? null,
-        ts: Date.now(),
-      });
-      return resolved;
+      if (!contact) return undefined;
+
+      const phone = contact.number?.replaceAll(/\D/g, '');
+      if (phone && phone.length >= 8) {
+        return phone;
+      }
+
+      const contactJid = contact.id?._serialized;
+      if (
+        contactJid &&
+        !contactJid.endsWith('@lid') &&
+        contactJid.includes('@')
+      ) {
+        const phoneFromJid = contactJid.split('@')[0].replaceAll(/\D/g, '');
+        if (phoneFromJid && phoneFromJid.length >= 8) {
+          return phoneFromJid;
+        }
+      }
+
+      return undefined;
     } catch {
-      this.LID_PHONE_CACHE.set(lidJid, { phone: null, ts: Date.now() });
+      return undefined;
+    }
+  }
+
+  private async resolvePhoneFromLidViaPupPage(
+    client: Client,
+    lidJid: string
+  ): Promise<string | undefined> {
+    const pupPage = (client as unknown as { pupPage?: unknown }).pupPage;
+    if (
+      !pupPage ||
+      typeof (pupPage as { evaluate?: unknown }).evaluate !== 'function'
+    ) {
+      return undefined;
+    }
+
+    try {
+      const result: string | null = await (
+        pupPage as {
+          evaluate: (
+            fn: (jid: string) => Promise<string | null>,
+            jid: string
+          ) => Promise<string | null>;
+        }
+      ).evaluate(async (jid: string) => {
+        try {
+          const win = window as any;
+          const { lid, phone } = await win.WWebJS.enforceLidAndPnRetrieval(jid);
+          if (phone?._serialized) {
+            return phone._serialized as string;
+          }
+          if (lid?._serialized && !lid._serialized.endsWith('@lid')) {
+            return lid._serialized as string;
+          }
+          const phoneWid = win
+            .require('WAWebApiContact')
+            .getPhoneNumber(win.require('WAWebWidFactory').createWid(jid));
+          return (phoneWid?._serialized as string) ?? null;
+        } catch {
+          return null;
+        }
+      }, lidJid);
+
+      if (!result || result.endsWith('@lid')) {
+        return undefined;
+      }
+
+      const phone = result.split('@')[0].replaceAll(/\D/g, '');
+      return phone && phone.length >= 8 ? phone : undefined;
+    } catch {
       return undefined;
     }
   }
