@@ -154,15 +154,15 @@ RUN mkdir -p /home/pptruser/Downloads \
     /home/pptruser/.local/share/mime \
     /home/pptruser/.config \
     /home/pptruser/.cache \
+    /kaniko \
     /tmp/.chrome-user-data \
     /tmp/.chrome-crashpad \
-    /tmp/kaniko \
     /tmp/.config \
     /tmp/.cache \
     /tmp/.local/share/applications \
     /tmp/.local/share/mime \
     /app && \
-    chown -R pptruser:pptruser /home/pptruser /tmp/.chrome-user-data /tmp/.chrome-crashpad /tmp/kaniko /app && \
+    chown -R pptruser:pptruser /home/pptruser /kaniko /tmp/.chrome-user-data /tmp/.chrome-crashpad /app && \
     chmod -R 1777 /tmp/.chrome-user-data /tmp/.chrome-crashpad /tmp/.config /tmp/.cache /tmp/.local && \
     chmod -R 755 /home/pptruser/.local/share
 
