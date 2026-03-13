@@ -19,7 +19,7 @@
           "NSAllowsArbitraryLoads": true
         },
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["audio", "fetch", "remote-notification"]
+        "UIBackgroundModes": ["fetch", "remote-notification"]
       },
       "bundleIdentifier": "com.underchat.mobile"
     },
@@ -62,15 +62,15 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Permitir acesso à câmera para capturar fotos e vídeos.",
-          "microphonePermission": "Permitir acesso ao microfone para gravar vídeos.",
-          "photosPermission": "Permitir acesso para salvar e selecionar mídias."
+          "cameraPermission": "O Underchat precisa acessar sua câmera para que você possa tirar fotos e gravar vídeos diretamente na conversa. Por exemplo, ao atender um cliente no chat, você pode capturar uma foto de um produto ou gravar um vídeo curto e enviá-lo como anexo na mensagem.",
+          "microphonePermission": "O Underchat precisa acessar seu microfone para capturar o áudio ao gravar vídeos pela câmera do aplicativo. Por exemplo, ao gravar um vídeo para enviar a um cliente no chat, o microfone é usado para registrar o som junto com a imagem.",
+          "photosPermission": "O Underchat precisa acessar sua biblioteca de fotos para que você possa selecionar imagens e vídeos existentes e enviá-los como anexo nas conversas. Por exemplo, você pode escolher uma foto salva no seu dispositivo para compartilhá-la com um cliente durante o atendimento."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Permitir acesso à localização para compartilhar sua posição no chat.",
+          "locationWhenInUsePermission": "O Underchat precisa acessar sua localização para que você possa compartilhar sua posição em tempo real com contatos no chat. Por exemplo, ao combinar um ponto de encontro com um cliente, você pode enviar sua localização atual como mensagem na conversa.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
@@ -84,7 +84,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Permitir acesso ao microfone para gravar mensagens de voz.",
+          "microphonePermission": "O Underchat precisa acessar seu microfone para que você possa gravar mensagens de voz e enviá-las nas conversas com clientes. Por exemplo, ao atender um cliente, você pode segurar o botão de gravação para criar um áudio e enviá-lo diretamente no chat.",
           "recordAudioAndroid": true
         }
       ],

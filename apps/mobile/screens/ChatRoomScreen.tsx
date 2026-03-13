@@ -27,6 +27,7 @@ import {
   Alert,
   Keyboard,
   Switch,
+  BackHandler,
   NativeEventEmitter,
   NativeModules,
   useWindowDimensions,
@@ -36,7 +37,7 @@ import {
   type TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
+import { BlurView, BlurTargetView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -835,13 +836,8 @@ const mapDebugSupportInfo = [
 const hasNativeMapSupport =
   NativeMapView != null && Platform.OS !== 'web' && !isExpoGoStoreClient;
 
-const blurModuleExpoBlur = requireOptionalNativeModule('ExpoBlur');
-const blurModuleExpoBlurView = requireOptionalNativeModule('ExpoBlurView');
-const hasNativeBlurSupport =
-  Platform.OS !== 'web' &&
-  (blurModuleExpoBlur != null ||
-    blurModuleExpoBlurView != null ||
-    !isExpoGoStoreClient);
+const hasNativeBlurSupport = Platform.OS !== 'web';
+const MESSAGE_OVERLAY_BLUR_INTENSITY = Platform.OS === 'ios' ? 52 : 28;
 
 const LOCATION_MAP_DEFAULT_REGION: LocationMapRegion = {
   latitude: -14.235004,
@@ -2179,10 +2175,13 @@ function getLatestMessageText(msg: ListMessageResult): string {
     if (latestVersion) return latestVersion;
   }
 
-  if (c?.message) return c.message;
-  if (c?.image?.caption) return c.image.caption;
-  if (c?.video?.caption) return c.video.caption;
-  if (c?.audio?.url && c?.message) return c.message;
+  const messageText = readNonEmptyString(c?.message);
+  if (messageText) return messageText;
+  const imageCaption = readNonEmptyString(c?.image?.caption);
+  if (imageCaption) return imageCaption;
+  const videoCaption = readNonEmptyString(c?.video?.caption);
+  if (videoCaption) return videoCaption;
+  if (c?.audio?.url && messageText) return messageText;
   return '';
 }
 
@@ -2488,6 +2487,136 @@ function normalizeMessageSummary(
   };
 }
 
+const RENDERABLE_MESSAGE_CONTENT_KEYS = new Set<string>([
+  'message',
+  'quoted',
+  'link_preview',
+  'image',
+  'video',
+  'sticker',
+  'location',
+  'contact',
+  'contacts',
+  'audio',
+  'document',
+  'template',
+  'album',
+  'pin',
+  'ephemeral',
+  'forward',
+]);
+
+function isPlainObjectRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasRenderableContentValue(content: Record<string, unknown>): boolean {
+  for (const key of RENDERABLE_MESSAGE_CONTENT_KEYS) {
+    const value = content[key];
+    if (value == null) continue;
+
+    if (typeof value === 'string') {
+      if (value.trim().length === 0) continue;
+      return true;
+    }
+
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      return true;
+    }
+
+    if (isPlainObjectRecord(value)) {
+      if (Object.keys(value).length === 0) continue;
+      return true;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+function isEmptyRenderableValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === 'string') {
+    return value.trim().length === 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  if (isPlainObjectRecord(value)) {
+    return Object.keys(value).length === 0;
+  }
+  return false;
+}
+
+function mergeMessageContent(
+  previous: MessageContent | null | undefined,
+  incoming: MessageContent | null | undefined
+): MessageContent | null | undefined {
+  if (!isPlainObjectRecord(incoming)) {
+    return previous;
+  }
+
+  if (!isPlainObjectRecord(previous)) {
+    return incoming;
+  }
+
+  const next = { ...previous } as Record<string, unknown>;
+  const incomingRecord = incoming as Record<string, unknown>;
+  const incomingHasRenderableContent =
+    hasRenderableContentValue(incomingRecord);
+
+  for (const [key, value] of Object.entries(incomingRecord)) {
+    if (value === undefined) continue;
+
+    if (
+      !incomingHasRenderableContent &&
+      RENDERABLE_MESSAGE_CONTENT_KEYS.has(key)
+    ) {
+      if (isEmptyRenderableValue(value)) continue;
+    }
+
+    const previousValue = next[key];
+    if (isPlainObjectRecord(previousValue) && isPlainObjectRecord(value)) {
+      next[key] = {
+        ...previousValue,
+        ...value,
+      };
+      continue;
+    }
+
+    next[key] = value;
+  }
+
+  if (typeof next.type !== 'string' || next.type.trim().length === 0) {
+    next.type =
+      typeof previous.type === 'string' && previous.type.trim().length > 0
+        ? previous.type
+        : EMessageType.text;
+  }
+
+  return next as unknown as MessageContent;
+}
+
+function cloneMessageForOverlay(message: ListMessageResult): ListMessageResult {
+  try {
+    return JSON.parse(JSON.stringify(message)) as ListMessageResult;
+  } catch {
+    return {
+      ...message,
+      content: message.content
+        ? ({ ...message.content } as MessageContent)
+        : message.content,
+      summary: message.summary ? { ...message.summary } : message.summary,
+      message_key: message.message_key
+        ? { ...message.message_key }
+        : message.message_key,
+      user: message.user ? { ...message.user } : message.user,
+    };
+  }
+}
+
 function mergeMessageSummary(
   previous: ListMessageResult['summary'] | null | undefined,
   incoming: ListMessageResult['summary'] | null | undefined
@@ -2570,10 +2699,7 @@ function mergeMessageLists(
     const previous = next[existingIndex];
     const mergedContent =
       incoming.content && typeof incoming.content === 'object'
-        ? {
-            ...(previous.content ?? {}),
-            ...incoming.content,
-          }
+        ? mergeMessageContent(previous.content, incoming.content)
         : previous.content;
     const mergedSummary =
       incoming.summary && typeof incoming.summary === 'object'
@@ -2693,7 +2819,9 @@ function mergeSnapshotMessagesWithCurrent(
     );
     const reconciledMessage = previous
       ? {
+          ...previous,
           ...message,
+          content: mergeMessageContent(previous.content, message.content),
           hash: hash ?? readNonEmptyString(previous.hash),
           summary: mergedSummary,
         }
@@ -5307,7 +5435,7 @@ function MessageBubble({
       (content.contacts && content.contacts.length > 0) ||
       showForwardedIndicator ||
       content.quoted ||
-      content.message ||
+      readNonEmptyString(content.message) ||
       content.template);
   const feedbackIcon = resolveMessageFeedbackIcon(msg, fromMe);
   const responsiveBubbleMaxWidth = Math.max(
@@ -5582,6 +5710,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const recordingStartTokenRef = useRef(0);
   const cancelArmedRef = useRef(false);
   const messageInputRef = useRef<TextInput | null>(null);
+  const messageOverlayBlurTargetRef = useRef<View | null>(null);
   const inputRef = useRef('');
   const sendingRef = useRef(false);
   const isQueueOrUraStatusRef = useRef(false);
@@ -9013,6 +9142,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setReactionSearch('');
     setReactionCategory('recent');
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (!messageActionTarget) return;
+
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => {
+        closeMessageOverlay();
+        return true;
+      }
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [closeMessageOverlay, messageActionTarget]);
 
   const closeOpenedMessageSwipeable = useCallback(() => {
     openedMessageSwipeableRef.current?.close();
@@ -12805,13 +12951,220 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     [selectedQuickMessage]
   );
 
+  const messageActionOverlayContent = (
+    <KeyboardAvoidingView
+      style={styles.keyboardAvoiding}
+      behavior={keyboardAvoidingBehavior}
+      keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
+    >
+      <View
+        style={[styles.messageOverlayRoot, { paddingBottom: insets.bottom }]}
+      >
+        <Pressable
+          style={styles.messageOverlayBackdropPress}
+          onPress={() => {
+            if (reactionPickerVisible) {
+              setReactionPickerVisible(false);
+              return;
+            }
+            closeMessageOverlay();
+          }}
+        >
+          {hasNativeBlurSupport ? (
+            <BlurView
+              intensity={MESSAGE_OVERLAY_BLUR_INTENSITY}
+              tint="dark"
+              blurMethod={
+                Platform.OS === 'android' ? 'dimezisBlurView' : undefined
+              }
+              blurTarget={
+                Platform.OS === 'android'
+                  ? messageOverlayBlurTargetRef
+                  : undefined
+              }
+              style={styles.messageOverlayBlur}
+            />
+          ) : null}
+          <View
+            style={[
+              styles.messageOverlayDim,
+              hasNativeBlurSupport
+                ? styles.messageOverlayDimWithBlur
+                : styles.messageOverlayDimWithoutBlur,
+            ]}
+          />
+        </Pressable>
+
+        <View style={styles.messageOverlayCenterWrap}>
+          {messageOverlayAnchor?.showReactions !== false ? (
+            <View style={styles.messageOverlayReactions}>
+              {QUICK_REACTIONS.map((emoji) => (
+                <Pressable
+                  key={`overlay-reaction-${emoji}`}
+                  style={styles.messageOverlayReactionBtn}
+                  onPress={() => {
+                    void handleQuickReaction(emoji);
+                  }}
+                >
+                  <Text style={styles.messageOverlayReactionEmoji}>
+                    {emoji}
+                  </Text>
+                </Pressable>
+              ))}
+              <Pressable
+                style={styles.messageOverlayReactionMoreBtn}
+                onPress={() => {
+                  setReactionCategory('recent');
+                  setReactionSearch('');
+                  setReactionPickerVisible(true);
+                }}
+                accessibilityLabel={pt.more_actions}
+              >
+                <Ionicons name="add" size={18} color={colors.grey700} />
+              </Pressable>
+            </View>
+          ) : null}
+
+          {messageActionTarget ? (
+            <ScrollView
+              style={styles.messageOverlaySelectedScroll}
+              contentContainerStyle={styles.messageOverlayContentScrollInner}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.messageOverlaySelectedWrap}>
+                <MessageBubble
+                  msg={messageActionTarget}
+                  fromMe={
+                    messageActionTarget.type_user !== ETypeUserChat.client
+                  }
+                  chatInfo={chatInfo}
+                  currentUserName={currentUserName}
+                  highlighted
+                  canInteract={false}
+                  onOpenActions={() => {}}
+                  onPressQuoted={null}
+                  resolvedContactDisplay={
+                    resolvedContactCards[messageActionTarget.message_id]
+                  }
+                  audioCtrl={audioCtrl}
+                  imageGallery={null}
+                  onOpenImage={openImageViewer}
+                  onOpenVideo={openVideoViewer}
+                  onTemplateButtonPress={handleTemplateButtonPress}
+                  disableTemplateButtons={!canComposeInChat || sending}
+                  forceCollapsedLongText
+                  obfuscateContent={shouldObfuscateContent}
+                />
+              </View>
+            </ScrollView>
+          ) : null}
+
+          <View style={styles.messageOverlayMenu}>
+            {messageActions.map((action) => (
+              <Pressable
+                key={action.key}
+                style={styles.messageOverlayMenuItem}
+                onPress={action.onPress}
+              >
+                <Text
+                  style={[
+                    styles.messageOverlayMenuItemText,
+                    action.danger && styles.menuItemTextDanger,
+                  ]}
+                >
+                  {action.label}
+                </Text>
+                <Ionicons
+                  name={action.icon}
+                  size={20}
+                  color={action.danger ? colors.error : colors.grey700}
+                />
+              </Pressable>
+            ))}
+          </View>
+
+          {reactionPickerVisible ? (
+            <View style={styles.reactionPickerOverlayInline}>
+              <View style={styles.reactionPickerCard}>
+                <View style={styles.reactionPickerHandle} />
+
+                <View style={styles.reactionPickerSearchWrap}>
+                  <Ionicons
+                    name="search-outline"
+                    size={22}
+                    color={colors.grey500}
+                  />
+                  <TextInput
+                    value={reactionSearch}
+                    onChangeText={setReactionSearch}
+                    placeholder="Pesquisar emoji"
+                    placeholderTextColor={colors.grey500}
+                    style={styles.reactionPickerSearchInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                <ScrollView
+                  style={styles.reactionPickerEmojiScroll}
+                  contentContainerStyle={styles.reactionPickerEmojiGrid}
+                  showsVerticalScrollIndicator
+                >
+                  {reactionEmojisByCategory.map((emoji, index) => (
+                    <Pressable
+                      key={`reaction-picker-${reactionCategory}-${emoji}-${index}`}
+                      style={styles.reactionPickerEmojiBtn}
+                      onPress={() => {
+                        setReactionPickerVisible(false);
+                        void handleQuickReaction(emoji);
+                      }}
+                    >
+                      <Text style={styles.reactionPickerEmojiText}>
+                        {emoji}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                <View style={styles.reactionPickerTabs}>
+                  {reactionCategoryConfigs.map((category) => (
+                    <Pressable
+                      key={`reaction-category-${category.key}`}
+                      style={[
+                        styles.reactionPickerTab,
+                        reactionCategory === category.key &&
+                          styles.reactionPickerTabActive,
+                      ]}
+                      onPress={() => setReactionCategory(category.key)}
+                    >
+                      <Ionicons
+                        name={category.icon}
+                        size={21}
+                        color={
+                          reactionCategory === category.key
+                            ? colors.primary
+                            : colors.grey600
+                        }
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </KeyboardAvoidingView>
+  );
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={keyboardAvoidingBehavior}
       keyboardVerticalOffset={getKeyboardVerticalOffset(0)}
     >
-      <View style={[styles.chatHeader, { paddingTop: insets.top + 8 }]}>
+      <BlurTargetView ref={messageOverlayBlurTargetRef} style={styles.containerContent}>
+        <View style={[styles.chatHeader, { paddingTop: insets.top + 8 }]}>
         <View style={styles.chatHeaderTopRow}>
           <Pressable
             style={styles.chatHeaderBackBtn}
@@ -13021,7 +13374,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     canInteract={canOpenActionsForMessage(item.message)}
                     onOpenActions={(message) => {
                       closeOpenedMessageSwipeable();
-                      setMessageActionTarget(message);
+                      setMessageActionTarget(cloneMessageForOverlay(message));
                       setMessageOverlayAnchor({
                         showReactions: canInteractWithMessage(message),
                       });
@@ -13859,219 +14212,38 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         </>
       )}
 
-      {isOpeningVideoEditor ? (
-        <View style={styles.videoEditorOpeningOverlay}>
-          <View style={styles.videoEditorOpeningCard}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={styles.videoEditorOpeningText}>
-              {pt.video_editor_opening}
-            </Text>
-          </View>
-        </View>
-      ) : null}
-
-      <Modal
-        visible={messageActionTarget !== null}
-        transparent
-        statusBarTranslucent
-        navigationBarTranslucent
-        animationType="fade"
-        onRequestClose={closeMessageOverlay}
-      >
-        <KeyboardAvoidingView
-          style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
-        >
-          <View
-            style={[
-              styles.messageOverlayRoot,
-              { paddingBottom: insets.bottom },
-            ]}
-          >
-            <Pressable
-              style={styles.messageOverlayBackdropPress}
-              onPress={() => {
-                if (reactionPickerVisible) {
-                  setReactionPickerVisible(false);
-                  return;
-                }
-                closeMessageOverlay();
-              }}
-            >
-              {hasNativeBlurSupport ? (
-                <BlurView
-                  intensity={40}
-                  tint="dark"
-                  style={styles.messageOverlayBlur}
-                />
-              ) : null}
-              <View style={styles.messageOverlayDim} />
-            </Pressable>
-
-            <View style={styles.messageOverlayCenterWrap}>
-              {messageOverlayAnchor?.showReactions !== false ? (
-                <View style={styles.messageOverlayReactions}>
-                  {QUICK_REACTIONS.map((emoji) => (
-                    <Pressable
-                      key={`overlay-reaction-${emoji}`}
-                      style={styles.messageOverlayReactionBtn}
-                      onPress={() => {
-                        void handleQuickReaction(emoji);
-                      }}
-                    >
-                      <Text style={styles.messageOverlayReactionEmoji}>
-                        {emoji}
-                      </Text>
-                    </Pressable>
-                  ))}
-                  <Pressable
-                    style={styles.messageOverlayReactionMoreBtn}
-                    onPress={() => {
-                      setReactionCategory('recent');
-                      setReactionSearch('');
-                      setReactionPickerVisible(true);
-                    }}
-                    accessibilityLabel={pt.more_actions}
-                  >
-                    <Ionicons name="add" size={18} color={colors.grey700} />
-                  </Pressable>
-                </View>
-              ) : null}
-
-              {messageActionTarget ? (
-                <ScrollView
-                  style={styles.messageOverlaySelectedScroll}
-                  contentContainerStyle={
-                    styles.messageOverlayContentScrollInner
-                  }
-                  showsVerticalScrollIndicator={false}
-                >
-                  <View style={styles.messageOverlaySelectedWrap}>
-                    <MessageBubble
-                      msg={messageActionTarget}
-                      fromMe={
-                        messageActionTarget.type_user !== ETypeUserChat.client
-                      }
-                      chatInfo={chatInfo}
-                      currentUserName={currentUserName}
-                      highlighted
-                      canInteract={false}
-                      onOpenActions={() => {}}
-                      onPressQuoted={null}
-                      resolvedContactDisplay={
-                        resolvedContactCards[messageActionTarget.message_id]
-                      }
-                      audioCtrl={audioCtrl}
-                      imageGallery={null}
-                      onOpenImage={openImageViewer}
-                      onOpenVideo={openVideoViewer}
-                      onTemplateButtonPress={handleTemplateButtonPress}
-                      disableTemplateButtons={!canComposeInChat || sending}
-                      forceCollapsedLongText
-                      obfuscateContent={shouldObfuscateContent}
-                    />
-                  </View>
-                </ScrollView>
-              ) : null}
-
-              <View style={styles.messageOverlayMenu}>
-                {messageActions.map((action) => (
-                  <Pressable
-                    key={action.key}
-                    style={styles.messageOverlayMenuItem}
-                    onPress={action.onPress}
-                  >
-                    <Text
-                      style={[
-                        styles.messageOverlayMenuItemText,
-                        action.danger && styles.menuItemTextDanger,
-                      ]}
-                    >
-                      {action.label}
-                    </Text>
-                    <Ionicons
-                      name={action.icon}
-                      size={20}
-                      color={action.danger ? colors.error : colors.grey700}
-                    />
-                  </Pressable>
-                ))}
-              </View>
-
-              {reactionPickerVisible ? (
-                <View style={styles.reactionPickerOverlayInline}>
-                  <View style={styles.reactionPickerCard}>
-                    <View style={styles.reactionPickerHandle} />
-
-                    <View style={styles.reactionPickerSearchWrap}>
-                      <Ionicons
-                        name="search-outline"
-                        size={22}
-                        color={colors.grey500}
-                      />
-                      <TextInput
-                        value={reactionSearch}
-                        onChangeText={setReactionSearch}
-                        placeholder="Pesquisar emoji"
-                        placeholderTextColor={colors.grey500}
-                        style={styles.reactionPickerSearchInput}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-                    </View>
-
-                    <ScrollView
-                      style={styles.reactionPickerEmojiScroll}
-                      contentContainerStyle={styles.reactionPickerEmojiGrid}
-                      showsVerticalScrollIndicator
-                    >
-                      {reactionEmojisByCategory.map((emoji, index) => (
-                        <Pressable
-                          key={`reaction-picker-${reactionCategory}-${emoji}-${index}`}
-                          style={styles.reactionPickerEmojiBtn}
-                          onPress={() => {
-                            setReactionPickerVisible(false);
-                            void handleQuickReaction(emoji);
-                          }}
-                        >
-                          <Text style={styles.reactionPickerEmojiText}>
-                            {emoji}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-
-                    <View style={styles.reactionPickerTabs}>
-                      {reactionCategoryConfigs.map((category) => (
-                        <Pressable
-                          key={`reaction-category-${category.key}`}
-                          style={[
-                            styles.reactionPickerTab,
-                            reactionCategory === category.key &&
-                              styles.reactionPickerTabActive,
-                          ]}
-                          onPress={() => setReactionCategory(category.key)}
-                        >
-                          <Ionicons
-                            name={category.icon}
-                            size={21}
-                            color={
-                              reactionCategory === category.key
-                                ? colors.primary
-                                : colors.grey600
-                            }
-                          />
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              ) : null}
+        {isOpeningVideoEditor ? (
+          <View style={styles.videoEditorOpeningOverlay}>
+            <View style={styles.videoEditorOpeningCard}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.videoEditorOpeningText}>
+                {pt.video_editor_opening}
+              </Text>
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        ) : null}
+      </BlurTargetView>
+
+      {Platform.OS === 'android' ? (
+        messageActionTarget ? (
+          <View style={styles.messageOverlayInlineHost}>
+            {messageActionOverlayContent}
+          </View>
+        ) : null
+      ) : (
+        <Modal
+          visible={messageActionTarget !== null}
+          transparent
+          statusBarTranslucent
+          navigationBarTranslucent
+          presentationStyle="overFullScreen"
+          hardwareAccelerated
+          animationType="fade"
+          onRequestClose={closeMessageOverlay}
+        >
+          {messageActionOverlayContent}
+        </Modal>
+      )}
 
       <BottomSheetModal
         visible={editingMessageTarget !== null}
@@ -16132,6 +16304,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     position: 'relative',
+  },
+  containerContent: {
+    flex: 1,
   },
   skeletonContainer: {
     flex: 1,
@@ -18201,6 +18376,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  messageOverlayInlineHost: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 90,
+    elevation: 90,
+  },
   messageOverlayBackdropPress: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -18209,7 +18389,22 @@ const styles = StyleSheet.create({
   },
   messageOverlayDim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.10)',
+  },
+  messageOverlayDimWithBlur: {
+    backgroundColor:
+      Platform.OS === 'ios'
+        ? 'rgba(0,0,0,0.34)'
+        : Platform.OS === 'android'
+          ? 'rgba(0,0,0,0.40)'
+          : 'rgba(0,0,0,0.36)',
+  },
+  messageOverlayDimWithoutBlur: {
+    backgroundColor:
+      Platform.OS === 'ios'
+        ? 'rgba(0,0,0,0.46)'
+        : Platform.OS === 'android'
+          ? 'rgba(0,0,0,0.54)'
+          : 'rgba(0,0,0,0.50)',
   },
   messageOverlayReactions: {
     width: '100%',
