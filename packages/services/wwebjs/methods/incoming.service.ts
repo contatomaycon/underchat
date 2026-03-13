@@ -2131,6 +2131,7 @@ export class WwebjsIncomingMessageService {
     const jid = call.from;
     if (!jid) return;
     if (call.fromMe) return;
+    if (this.shouldSkipChat(jid)) return;
 
     const callKey = `${jid}:${call.id ?? ''}:offer`;
     if (this.processedCalls.has(callKey)) return;
@@ -2264,6 +2265,8 @@ export class WwebjsIncomingMessageService {
     const remoteJid = remoteJidRaw
       ? (normalizeJid(remoteJidRaw) ?? remoteJidRaw)
       : undefined;
+
+    if (remoteJid && this.shouldSkipChat(remoteJid)) return;
 
     const patch = this.mapAckToPatch(ack);
     if (!patch) return;
