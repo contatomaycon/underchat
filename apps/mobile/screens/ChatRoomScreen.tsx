@@ -9134,7 +9134,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ).catch(() => {});
   }, [recentReactionEmojis]);
 
-  const [blurRecoveryMessageId, setBlurRecoveryMessageId] = useState<string | null>(null);
+  const [blurRecoveryMessageId, setBlurRecoveryMessageId] = useState<
+    string | null
+  >(null);
   const blurRecoveryCountRef = useRef(0);
 
   const closeMessageOverlay = useCallback(() => {
@@ -13169,670 +13171,747 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     >
       <View style={styles.containerContent}>
         <View style={[styles.chatHeader, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.chatHeaderTopRow}>
-          <Pressable
-            style={styles.chatHeaderBackBtn}
-            onPress={() => navigation.goBack()}
-            accessibilityLabel={pt.close}
-          >
-            <Ionicons name="arrow-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          <View style={styles.chatHeaderTopRow}>
+            <Pressable
+              style={styles.chatHeaderBackBtn}
+              onPress={() => navigation.goBack()}
+              accessibilityLabel={pt.close}
+            >
+              <Ionicons name="arrow-back" size={22} color={colors.onSurface} />
+            </Pressable>
 
-          <Pressable
-            style={styles.chatHeaderContactWrap}
-            onPress={handlePressChatHeaderContact}
-            accessibilityRole="button"
-            accessibilityLabel={pt.contact}
-          >
-            <View style={styles.chatHeaderAvatarWrap}>
-              <AppAvatar
-                uri={chatInfo.contact?.photo ?? chatInfo.photo}
-                size={36}
-                style={styles.chatHeaderAvatar}
-                iconName="person"
-                iconSize={20}
-                iconColor={colors.grey600}
-              />
-            </View>
-
-            <View style={styles.chatHeaderContactInfo}>
-              <Text style={styles.chatHeaderName} numberOfLines={1}>
-                {chatInfo.contact?.name ?? chatInfo.name ?? pt.contact}
-              </Text>
-
-              <View style={styles.chatHeaderPhoneRow}>
-                <Text style={styles.chatHeaderPhone} numberOfLines={1}>
-                  {headerPhoneValue}
-                </Text>
-                {chatInfo.contact?.id ? (
-                  <Pressable
-                    onPress={(event) => {
-                      event.stopPropagation();
-                      void handleToggleHeaderPhoneVisibility();
-                    }}
-                    disabled={isHeaderPhoneLoading}
-                  >
-                    {isHeaderPhoneLoading ? (
-                      <ActivityIndicator size="small" color={colors.grey600} />
-                    ) : (
-                      <Ionicons
-                        name={
-                          isHeaderPhoneDecrypted
-                            ? 'eye-off-outline'
-                            : 'eye-outline'
-                        }
-                        size={16}
-                        color={colors.grey700}
-                      />
-                    )}
-                  </Pressable>
-                ) : null}
+            <Pressable
+              style={styles.chatHeaderContactWrap}
+              onPress={handlePressChatHeaderContact}
+              accessibilityRole="button"
+              accessibilityLabel={pt.contact}
+            >
+              <View style={styles.chatHeaderAvatarWrap}>
+                <AppAvatar
+                  uri={chatInfo.contact?.photo ?? chatInfo.photo}
+                  size={36}
+                  style={styles.chatHeaderAvatar}
+                  iconName="person"
+                  iconSize={20}
+                  iconColor={colors.grey600}
+                />
               </View>
-            </View>
-          </Pressable>
 
-          <Pressable
-            style={styles.chatHeaderMenuBtn}
-            onPress={() => setMenuVisible(true)}
-            accessibilityLabel={pt.settings}
-          >
-            <Ionicons
-              name="ellipsis-vertical"
-              size={20}
-              color={colors.onSurface}
-            />
-          </Pressable>
-        </View>
+              <View style={styles.chatHeaderContactInfo}>
+                <Text style={styles.chatHeaderName} numberOfLines={1}>
+                  {chatInfo.contact?.name ?? chatInfo.name ?? pt.contact}
+                </Text>
 
-        <View style={styles.chatHeaderMetaRow}>
-          {showProtocolInHeader && primaryProtocol ? (
-            <Pressable
-              style={styles.chatHeaderProtocolChip}
-              onPress={() => setProtocolModalVisible(true)}
-            >
-              <Ionicons
-                name="document-text-outline"
-                size={14}
-                color={colors.primary}
-              />
-              <Text style={styles.chatHeaderProtocolText} numberOfLines={1}>
-                {pt.protocol}: {primaryProtocol.protocol}
-              </Text>
-              {extraProtocolCount > 0 ? (
-                <View style={styles.chatHeaderCounterChip}>
-                  <Text style={styles.chatHeaderCounterChipText}>
-                    +{extraProtocolCount}
+                <View style={styles.chatHeaderPhoneRow}>
+                  <Text style={styles.chatHeaderPhone} numberOfLines={1}>
+                    {headerPhoneValue}
                   </Text>
+                  {chatInfo.contact?.id ? (
+                    <Pressable
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void handleToggleHeaderPhoneVisibility();
+                      }}
+                      disabled={isHeaderPhoneLoading}
+                    >
+                      {isHeaderPhoneLoading ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.grey600}
+                        />
+                      ) : (
+                        <Ionicons
+                          name={
+                            isHeaderPhoneDecrypted
+                              ? 'eye-off-outline'
+                              : 'eye-outline'
+                          }
+                          size={16}
+                          color={colors.grey700}
+                        />
+                      )}
+                    </Pressable>
+                  ) : null}
                 </View>
-              ) : null}
+              </View>
             </Pressable>
-          ) : null}
 
-          {primaryChatLabel ? (
             <Pressable
-              style={[
-                styles.chatHeaderLabelChip,
-                { borderColor: primaryChatLabel.color },
-              ]}
-              onPress={() => {
-                if (!canLabelAction) return;
-                void openLabelModal();
-              }}
+              style={styles.chatHeaderMenuBtn}
+              onPress={() => setMenuVisible(true)}
+              accessibilityLabel={pt.settings}
             >
               <Ionicons
-                name="pricetag-outline"
-                size={14}
-                color={primaryChatLabel.color}
+                name="ellipsis-vertical"
+                size={20}
+                color={colors.onSurface}
               />
-              <Text
-                style={[
-                  styles.chatHeaderLabelText,
-                  { color: primaryChatLabel.color },
-                ]}
-                numberOfLines={1}
+            </Pressable>
+          </View>
+
+          <View style={styles.chatHeaderMetaRow}>
+            {showProtocolInHeader && primaryProtocol ? (
+              <Pressable
+                style={styles.chatHeaderProtocolChip}
+                onPress={() => setProtocolModalVisible(true)}
               >
-                {primaryChatLabel.label}
-              </Text>
-              {remainingChatLabelsCount > 0 ? (
-                <View
+                <Ionicons
+                  name="document-text-outline"
+                  size={14}
+                  color={colors.primary}
+                />
+                <Text style={styles.chatHeaderProtocolText} numberOfLines={1}>
+                  {pt.protocol}: {primaryProtocol.protocol}
+                </Text>
+                {extraProtocolCount > 0 ? (
+                  <View style={styles.chatHeaderCounterChip}>
+                    <Text style={styles.chatHeaderCounterChipText}>
+                      +{extraProtocolCount}
+                    </Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            ) : null}
+
+            {primaryChatLabel ? (
+              <Pressable
+                style={[
+                  styles.chatHeaderLabelChip,
+                  { borderColor: primaryChatLabel.color },
+                ]}
+                onPress={() => {
+                  if (!canLabelAction) return;
+                  void openLabelModal();
+                }}
+              >
+                <Ionicons
+                  name="pricetag-outline"
+                  size={14}
+                  color={primaryChatLabel.color}
+                />
+                <Text
                   style={[
-                    styles.chatHeaderCounterChip,
-                    { backgroundColor: primaryChatLabel.color },
+                    styles.chatHeaderLabelText,
+                    { color: primaryChatLabel.color },
                   ]}
+                  numberOfLines={1}
                 >
-                  <Text style={styles.chatHeaderCounterChipText}>
-                    +{remainingChatLabelsCount}
-                  </Text>
-                </View>
-              ) : null}
-            </Pressable>
-          ) : null}
-
-          {isHistoryReadonly ? (
-            <View style={styles.chatHeaderReadonlyChip}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={13}
-                color={colors.grey700}
-              />
-              <Text style={styles.chatHeaderReadonlyText}>
-                {pt.history_readonly}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      </View>
-
-      <View style={styles.chatBody} onTouchStart={handleChatBodyTouchStart}>
-        {loading ? (
-          <ChatRoomSkeleton />
-        ) : (
-          <>
-            <FlatList
-              key={chatInfo.chat_id}
-              ref={listRef}
-              data={messagesWithSeparators}
-              keyboardDismissMode="on-drag"
-              keyExtractor={(item) =>
-                item.type === 'separator'
-                  ? `separator-${chatInfo.chat_id}-${item.separatorDate}`
-                  : `message-${chatInfo.chat_id}-${item.message.message_id}${
-                      blurRecoveryMessageId === item.message.message_id
-                        ? `-br${blurRecoveryCountRef.current}`
-                        : ''
-                    }`
-              }
-              renderItem={({ item }) => {
-                if (item.type === 'separator') {
-                  return <DateSeparator label={item.separatorLabel} />;
-                }
-
-                const quotedTargetId = resolveQuotedTargetMessageId(
-                  item.message,
-                  messages
-                );
-                const canGoToQuoted =
-                  !!quotedTargetId && messageIdSet.has(quotedTargetId);
-                const canSwipeReply =
-                  canComposeInChat &&
-                  !isHistoryReadonly &&
-                  !shouldObfuscateContent &&
-                  canInteractWithMessage(item.message);
-                const galleryMembership =
-                  imageGalleryLookup.membershipByMessageId[
-                    item.message.message_id
-                  ];
-                const imageGallery = galleryMembership
-                  ? (imageGalleryLookup.groupsById[galleryMembership.groupId] ??
-                    null)
-                  : null;
-
-                const bubble = (
-                  <MessageBubble
-                    msg={item.message}
-                    fromMe={item.message.type_user !== ETypeUserChat.client}
-                    chatInfo={chatInfo}
-                    imageGallery={imageGallery}
-                    currentUserName={currentUserName}
-                    highlighted={
-                      highlightedMessageId === item.message.message_id ||
-                      messageActionTarget?.message_id ===
-                        item.message.message_id
-                    }
-                    canInteract={canOpenActionsForMessage(item.message)}
-                    onOpenActions={(message) => {
-                      closeOpenedMessageSwipeable();
-                      setMessageActionTarget(cloneMessageForOverlay(message));
-                      setMessageOverlayAnchor({
-                        showReactions: canInteractWithMessage(message),
-                      });
-                      setReactionPickerVisible(false);
-                    }}
-                    onPressQuoted={
-                      canGoToQuoted && quotedTargetId
-                        ? () => scrollToMessageById(quotedTargetId)
-                        : null
-                    }
-                    resolvedContactDisplay={
-                      resolvedContactCards[item.message.message_id]
-                    }
-                    audioCtrl={audioCtrl}
-                    onOpenImage={openImageViewer}
-                    onOpenVideo={openVideoViewer}
-                    onPressContactCard={handlePressMessageContactCard}
-                    onPressContactsGroup={handlePressMessageContactsGroup}
-                    onTemplateButtonPress={handleTemplateButtonPress}
-                    disableTemplateButtons={!canComposeInChat || sending}
-                    obfuscateContent={shouldObfuscateContent}
-                  />
-                );
-
-                if (!canSwipeReply) {
-                  return bubble;
-                }
-
-                let rowSwipeable: Swipeable | null = null;
-
-                return (
-                  <Swipeable
-                    ref={(instance) => {
-                      rowSwipeable = instance;
-                    }}
-                    friction={MESSAGE_SWIPE_FRICTION}
-                    leftThreshold={MESSAGE_SWIPE_REPLY_THRESHOLD}
-                    overshootLeft={false}
-                    dragOffsetFromLeftEdge={MESSAGE_SWIPE_DRAG_OFFSET}
-                    containerStyle={styles.messageSwipeContainer}
-                    onSwipeableWillOpen={(direction) => {
-                      if (direction !== 'left') return;
-                      if (
-                        openedMessageSwipeableRef.current &&
-                        openedMessageSwipeableRef.current !== rowSwipeable
-                      ) {
-                        openedMessageSwipeableRef.current.close();
-                      }
-                    }}
-                    onSwipeableOpen={(direction) => {
-                      if (direction !== 'left') return;
-                      openedMessageSwipeableRef.current = rowSwipeable;
-                      rowSwipeable?.close();
-                      handleReplyFromMessage(item.message);
-                    }}
-                    onSwipeableClose={(direction) => {
-                      if (
-                        direction === 'left' &&
-                        openedMessageSwipeableRef.current === rowSwipeable
-                      ) {
-                        openedMessageSwipeableRef.current = null;
-                      }
-                    }}
-                    renderLeftActions={(progress, dragX) => {
-                      const translateX = dragX.interpolate({
-                        inputRange: [0, MESSAGE_SWIPE_REPLY_ACTION_WIDTH],
-                        outputRange: [-MESSAGE_SWIPE_REPLY_ACTION_WIDTH, 0],
-                        extrapolate: 'clamp',
-                      });
-                      const opacity = progress.interpolate({
-                        inputRange: [0, 0.35, 1],
-                        outputRange: [0.1, 0.65, 1],
-                        extrapolate: 'clamp',
-                      });
-
-                      return (
-                        <Animated.View
-                          style={[
-                            styles.messageSwipeRightAction,
-                            {
-                              width: MESSAGE_SWIPE_REPLY_ACTION_WIDTH,
-                              opacity,
-                              transform: [{ translateX }],
-                            },
-                          ]}
-                        >
-                          <View style={styles.messageSwipeRightActionInner}>
-                            <Ionicons
-                              name="arrow-undo-outline"
-                              size={18}
-                              color={colors.primary}
-                            />
-                            <Text style={styles.messageSwipeRightActionText}>
-                              {pt.reply}
-                            </Text>
-                          </View>
-                        </Animated.View>
-                      );
-                    }}
+                  {primaryChatLabel.label}
+                </Text>
+                {remainingChatLabelsCount > 0 ? (
+                  <View
+                    style={[
+                      styles.chatHeaderCounterChip,
+                      { backgroundColor: primaryChatLabel.color },
+                    ]}
                   >
-                    {bubble}
-                  </Swipeable>
-                );
-              }}
-              onScrollToIndexFailed={handleScrollToIndexFailed}
-              onScroll={handleListScroll}
-              onScrollBeginDrag={handleMessageListScrollBeginDrag}
-              scrollEventThrottle={16}
-              onContentSizeChange={handleListContentSizeChange}
-              contentContainerStyle={styles.listContent}
-              inverted={false}
-            />
-            {loadingOlder ? (
-              <View pointerEvents="none" style={styles.loadingOlderTopWrap}>
-                <View style={styles.loadingOlderTopChip}>
-                  <ActivityIndicator size="small" color={colors.onPrimary} />
-                  <Text style={styles.loadingOlderTopText}>
-                    {pt.loading_more_messages}
-                  </Text>
-                </View>
+                    <Text style={styles.chatHeaderCounterChipText}>
+                      +{remainingChatLabelsCount}
+                    </Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            ) : null}
+
+            {isHistoryReadonly ? (
+              <View style={styles.chatHeaderReadonlyChip}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={13}
+                  color={colors.grey700}
+                />
+                <Text style={styles.chatHeaderReadonlyText}>
+                  {pt.history_readonly}
+                </Text>
               </View>
             ) : null}
-          </>
-        )}
-      </View>
-      {showScrollToBottomButton ? (
-        <Pressable
-          style={[
-            styles.scrollToBottomButton,
-            isTyping && styles.scrollToBottomButtonWithTyping,
-          ]}
-          onPress={jumpToBottom}
-          accessibilityLabel={pt.scroll_to_latest}
-        >
-          <Ionicons name="chevron-down" size={20} color={colors.onPrimary} />
-        </Pressable>
-      ) : null}
-      {isTyping ? (
-        <View style={styles.typingIndicatorWrap}>
-          <Ionicons
-            name={
-              remoteActivityMode === 'recording'
-                ? 'mic-outline'
-                : 'create-outline'
-            }
-            size={18}
-            color={colors.primary}
-          />
-          <Text style={styles.typingIndicatorText} numberOfLines={1}>
-            {typingLabel}
-          </Text>
+          </View>
         </View>
-      ) : null}
-      {showAttendReopenBanner ? (
-        <View style={styles.attendReopenBanner}>
-          <Text style={styles.attendReopenBannerText}>
-            {attendReopenBannerMessage}
-          </Text>
+
+        <View style={styles.chatBody} onTouchStart={handleChatBodyTouchStart}>
+          {loading ? (
+            <ChatRoomSkeleton />
+          ) : (
+            <>
+              <FlatList
+                key={chatInfo.chat_id}
+                ref={listRef}
+                data={messagesWithSeparators}
+                keyboardDismissMode="on-drag"
+                keyExtractor={(item) =>
+                  item.type === 'separator'
+                    ? `separator-${chatInfo.chat_id}-${item.separatorDate}`
+                    : `message-${chatInfo.chat_id}-${item.message.message_id}${
+                        blurRecoveryMessageId === item.message.message_id
+                          ? `-br${blurRecoveryCountRef.current}`
+                          : ''
+                      }`
+                }
+                renderItem={({ item }) => {
+                  if (item.type === 'separator') {
+                    return <DateSeparator label={item.separatorLabel} />;
+                  }
+
+                  const quotedTargetId = resolveQuotedTargetMessageId(
+                    item.message,
+                    messages
+                  );
+                  const canGoToQuoted =
+                    !!quotedTargetId && messageIdSet.has(quotedTargetId);
+                  const canSwipeReply =
+                    canComposeInChat &&
+                    !isHistoryReadonly &&
+                    !shouldObfuscateContent &&
+                    canInteractWithMessage(item.message);
+                  const galleryMembership =
+                    imageGalleryLookup.membershipByMessageId[
+                      item.message.message_id
+                    ];
+                  const imageGallery = galleryMembership
+                    ? (imageGalleryLookup.groupsById[
+                        galleryMembership.groupId
+                      ] ?? null)
+                    : null;
+
+                  const bubble = (
+                    <MessageBubble
+                      msg={item.message}
+                      fromMe={item.message.type_user !== ETypeUserChat.client}
+                      chatInfo={chatInfo}
+                      imageGallery={imageGallery}
+                      currentUserName={currentUserName}
+                      highlighted={
+                        highlightedMessageId === item.message.message_id ||
+                        messageActionTarget?.message_id ===
+                          item.message.message_id
+                      }
+                      canInteract={canOpenActionsForMessage(item.message)}
+                      onOpenActions={(message) => {
+                        closeOpenedMessageSwipeable();
+                        setMessageActionTarget(cloneMessageForOverlay(message));
+                        setMessageOverlayAnchor({
+                          showReactions: canInteractWithMessage(message),
+                        });
+                        setReactionPickerVisible(false);
+                      }}
+                      onPressQuoted={
+                        canGoToQuoted && quotedTargetId
+                          ? () => scrollToMessageById(quotedTargetId)
+                          : null
+                      }
+                      resolvedContactDisplay={
+                        resolvedContactCards[item.message.message_id]
+                      }
+                      audioCtrl={audioCtrl}
+                      onOpenImage={openImageViewer}
+                      onOpenVideo={openVideoViewer}
+                      onPressContactCard={handlePressMessageContactCard}
+                      onPressContactsGroup={handlePressMessageContactsGroup}
+                      onTemplateButtonPress={handleTemplateButtonPress}
+                      disableTemplateButtons={!canComposeInChat || sending}
+                      obfuscateContent={shouldObfuscateContent}
+                    />
+                  );
+
+                  if (!canSwipeReply) {
+                    return bubble;
+                  }
+
+                  let rowSwipeable: Swipeable | null = null;
+
+                  return (
+                    <Swipeable
+                      ref={(instance) => {
+                        rowSwipeable = instance;
+                      }}
+                      friction={MESSAGE_SWIPE_FRICTION}
+                      leftThreshold={MESSAGE_SWIPE_REPLY_THRESHOLD}
+                      overshootLeft={false}
+                      dragOffsetFromLeftEdge={MESSAGE_SWIPE_DRAG_OFFSET}
+                      containerStyle={styles.messageSwipeContainer}
+                      onSwipeableWillOpen={(direction) => {
+                        if (direction !== 'left') return;
+                        if (
+                          openedMessageSwipeableRef.current &&
+                          openedMessageSwipeableRef.current !== rowSwipeable
+                        ) {
+                          openedMessageSwipeableRef.current.close();
+                        }
+                      }}
+                      onSwipeableOpen={(direction) => {
+                        if (direction !== 'left') return;
+                        openedMessageSwipeableRef.current = rowSwipeable;
+                        rowSwipeable?.close();
+                        handleReplyFromMessage(item.message);
+                      }}
+                      onSwipeableClose={(direction) => {
+                        if (
+                          direction === 'left' &&
+                          openedMessageSwipeableRef.current === rowSwipeable
+                        ) {
+                          openedMessageSwipeableRef.current = null;
+                        }
+                      }}
+                      renderLeftActions={(progress, dragX) => {
+                        const translateX = dragX.interpolate({
+                          inputRange: [0, MESSAGE_SWIPE_REPLY_ACTION_WIDTH],
+                          outputRange: [-MESSAGE_SWIPE_REPLY_ACTION_WIDTH, 0],
+                          extrapolate: 'clamp',
+                        });
+                        const opacity = progress.interpolate({
+                          inputRange: [0, 0.35, 1],
+                          outputRange: [0.1, 0.65, 1],
+                          extrapolate: 'clamp',
+                        });
+
+                        return (
+                          <Animated.View
+                            style={[
+                              styles.messageSwipeRightAction,
+                              {
+                                width: MESSAGE_SWIPE_REPLY_ACTION_WIDTH,
+                                opacity,
+                                transform: [{ translateX }],
+                              },
+                            ]}
+                          >
+                            <View style={styles.messageSwipeRightActionInner}>
+                              <Ionicons
+                                name="arrow-undo-outline"
+                                size={18}
+                                color={colors.primary}
+                              />
+                              <Text style={styles.messageSwipeRightActionText}>
+                                {pt.reply}
+                              </Text>
+                            </View>
+                          </Animated.View>
+                        );
+                      }}
+                    >
+                      {bubble}
+                    </Swipeable>
+                  );
+                }}
+                onScrollToIndexFailed={handleScrollToIndexFailed}
+                onScroll={handleListScroll}
+                onScrollBeginDrag={handleMessageListScrollBeginDrag}
+                scrollEventThrottle={16}
+                onContentSizeChange={handleListContentSizeChange}
+                contentContainerStyle={styles.listContent}
+                inverted={false}
+              />
+              {loadingOlder ? (
+                <View pointerEvents="none" style={styles.loadingOlderTopWrap}>
+                  <View style={styles.loadingOlderTopChip}>
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                    <Text style={styles.loadingOlderTopText}>
+                      {pt.loading_more_messages}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+            </>
+          )}
+        </View>
+        {showScrollToBottomButton ? (
           <Pressable
             style={[
-              styles.attendReopenBannerAction,
-              (!isAttendReopenActionAllowed || isAttendReopenLoading) &&
-                styles.attendReopenBannerActionDisabled,
+              styles.scrollToBottomButton,
+              isTyping && styles.scrollToBottomButtonWithTyping,
             ]}
-            onPress={() => {
-              void handleAttendOrReopen();
-            }}
-            disabled={!isAttendReopenActionAllowed || isAttendReopenLoading}
+            onPress={jumpToBottom}
+            accessibilityLabel={pt.scroll_to_latest}
           >
-            {isAttendReopenLoading ? (
-              <ActivityIndicator size="small" color={colors.onPrimary} />
-            ) : (
-              <Text style={styles.attendReopenBannerActionText}>
-                {attendReopenButtonLabel}
-              </Text>
-            )}
+            <Ionicons name="chevron-down" size={20} color={colors.onPrimary} />
           </Pressable>
-          {attendReopenBlockedReason ? (
-            <Text style={styles.attendReopenBlockedReason}>
-              {attendReopenBlockedReason}
+        ) : null}
+        {isTyping ? (
+          <View style={styles.typingIndicatorWrap}>
+            <Ionicons
+              name={
+                remoteActivityMode === 'recording'
+                  ? 'mic-outline'
+                  : 'create-outline'
+              }
+              size={18}
+              color={colors.primary}
+            />
+            <Text style={styles.typingIndicatorText} numberOfLines={1}>
+              {typingLabel}
             </Text>
-          ) : null}
-        </View>
-      ) : null}
-      {shouldObfuscateContent ? (
-        <View style={styles.protectedBanner}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={14}
-            color={colors.grey700}
-          />
-          <Text style={styles.protectedBannerText}>{pt.protected_content}</Text>
-        </View>
-      ) : null}
-      {isHistoryReadonly ? (
-        <View style={styles.readonlyFooter}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={14}
-            color={colors.grey700}
-          />
-          <Text style={styles.readonlyFooterText}>{pt.history_readonly}</Text>
-        </View>
-      ) : (
-        <>
-          {replyComposerPreview ? (
-            <View style={styles.replyComposerPreview}>
-              <View style={styles.replyComposerPreviewBar} />
-              {replyComposerPreview.thumbUri ? (
-                <Image
-                  source={{ uri: replyComposerPreview.thumbUri }}
-                  style={styles.replyComposerPreviewMedia}
-                  resizeMode="cover"
-                />
-              ) : replyComposerPreview.type === EMessageType.contact_card ||
-                replyComposerPreview.type === EMessageType.contacts ? (
-                replyComposerPreview.contactPhotoUri ? (
+          </View>
+        ) : null}
+        {showAttendReopenBanner ? (
+          <View style={styles.attendReopenBanner}>
+            <Text style={styles.attendReopenBannerText}>
+              {attendReopenBannerMessage}
+            </Text>
+            <Pressable
+              style={[
+                styles.attendReopenBannerAction,
+                (!isAttendReopenActionAllowed || isAttendReopenLoading) &&
+                  styles.attendReopenBannerActionDisabled,
+              ]}
+              onPress={() => {
+                void handleAttendOrReopen();
+              }}
+              disabled={!isAttendReopenActionAllowed || isAttendReopenLoading}
+            >
+              {isAttendReopenLoading ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.attendReopenBannerActionText}>
+                  {attendReopenButtonLabel}
+                </Text>
+              )}
+            </Pressable>
+            {attendReopenBlockedReason ? (
+              <Text style={styles.attendReopenBlockedReason}>
+                {attendReopenBlockedReason}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+        {shouldObfuscateContent ? (
+          <View style={styles.protectedBanner}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={14}
+              color={colors.grey700}
+            />
+            <Text style={styles.protectedBannerText}>
+              {pt.protected_content}
+            </Text>
+          </View>
+        ) : null}
+        {isHistoryReadonly ? (
+          <View style={styles.readonlyFooter}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={14}
+              color={colors.grey700}
+            />
+            <Text style={styles.readonlyFooterText}>{pt.history_readonly}</Text>
+          </View>
+        ) : (
+          <>
+            {replyComposerPreview ? (
+              <View style={styles.replyComposerPreview}>
+                <View style={styles.replyComposerPreviewBar} />
+                {replyComposerPreview.thumbUri ? (
                   <Image
-                    source={{ uri: replyComposerPreview.contactPhotoUri }}
-                    style={styles.replyComposerPreviewContactAvatar}
+                    source={{ uri: replyComposerPreview.thumbUri }}
+                    style={styles.replyComposerPreviewMedia}
                     resizeMode="cover"
                   />
-                ) : (
+                ) : replyComposerPreview.type === EMessageType.contact_card ||
+                  replyComposerPreview.type === EMessageType.contacts ? (
+                  replyComposerPreview.contactPhotoUri ? (
+                    <Image
+                      source={{ uri: replyComposerPreview.contactPhotoUri }}
+                      style={styles.replyComposerPreviewContactAvatar}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.replyComposerPreviewDocIcon}>
+                      <Ionicons
+                        name={
+                          replyComposerPreview.showContactGroupIcon
+                            ? 'people-outline'
+                            : 'person-outline'
+                        }
+                        size={20}
+                        color={colors.primary}
+                      />
+                    </View>
+                  )
+                ) : replyComposerPreview.showDocumentIcon ? (
                   <View style={styles.replyComposerPreviewDocIcon}>
                     <Ionicons
-                      name={
-                        replyComposerPreview.showContactGroupIcon
-                          ? 'people-outline'
-                          : 'person-outline'
-                      }
+                      name="document-text-outline"
                       size={20}
                       color={colors.primary}
                     />
                   </View>
-                )
-              ) : replyComposerPreview.showDocumentIcon ? (
-                <View style={styles.replyComposerPreviewDocIcon}>
-                  <Ionicons
-                    name="document-text-outline"
-                    size={20}
-                    color={colors.primary}
-                  />
-                </View>
-              ) : replyComposerPreview.showVideoIcon ? (
-                <View style={styles.replyComposerPreviewDocIcon}>
-                  <Ionicons
-                    name="play-circle-outline"
-                    size={20}
-                    color={colors.primary}
-                  />
-                </View>
-              ) : replyComposerPreview.showAudioIcon ? (
-                <View style={styles.replyComposerPreviewDocIcon}>
-                  <Ionicons
-                    name="mic-outline"
-                    size={20}
-                    color={colors.primary}
-                  />
-                </View>
-              ) : replyComposerPreview.showLocationIcon ? (
-                <View style={styles.replyComposerPreviewDocIcon}>
-                  <Ionicons
-                    name="location-outline"
-                    size={20}
-                    color={colors.primary}
-                  />
-                </View>
-              ) : replyComposerPreview.showStickerFallbackIcon ? (
-                <View style={styles.replyComposerPreviewDocIcon}>
-                  <Ionicons
-                    name="pricetag-outline"
-                    size={20}
-                    color={colors.primary}
-                  />
-                </View>
-              ) : null}
+                ) : replyComposerPreview.showVideoIcon ? (
+                  <View style={styles.replyComposerPreviewDocIcon}>
+                    <Ionicons
+                      name="play-circle-outline"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </View>
+                ) : replyComposerPreview.showAudioIcon ? (
+                  <View style={styles.replyComposerPreviewDocIcon}>
+                    <Ionicons
+                      name="mic-outline"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </View>
+                ) : replyComposerPreview.showLocationIcon ? (
+                  <View style={styles.replyComposerPreviewDocIcon}>
+                    <Ionicons
+                      name="location-outline"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </View>
+                ) : replyComposerPreview.showStickerFallbackIcon ? (
+                  <View style={styles.replyComposerPreviewDocIcon}>
+                    <Ionicons
+                      name="pricetag-outline"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </View>
+                ) : null}
 
-              <View style={styles.replyComposerPreviewContent}>
-                <Text style={styles.replyComposerPreviewName} numberOfLines={1}>
-                  {replyComposerPreview.name}
-                </Text>
-                <Text style={styles.replyComposerPreviewText} numberOfLines={1}>
-                  {replyComposerPreview.text}
-                </Text>
-                {replyComposerPreview.meta ? (
+                <View style={styles.replyComposerPreviewContent}>
                   <Text
-                    style={styles.replyComposerPreviewMeta}
+                    style={styles.replyComposerPreviewName}
                     numberOfLines={1}
                   >
-                    {replyComposerPreview.meta}
+                    {replyComposerPreview.name}
                   </Text>
-                ) : null}
-              </View>
-              <Pressable
-                style={styles.replyComposerPreviewClose}
-                onPress={() => setReplyMessageTarget(null)}
-                accessibilityLabel={pt.cancel_reply}
-              >
-                <Ionicons name="close" size={18} color={colors.grey700} />
-              </Pressable>
-            </View>
-          ) : null}
-
-          {showQuickMessageList &&
-          quickMessageTemplates.length > 0 &&
-          !selectedQuickMessage ? (
-            <View style={styles.quickMessageListCard}>
-              {quickMessageLoading ? (
-                <View style={styles.quickMessageListLoading}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              ) : null}
-              <ScrollView
-                style={styles.quickMessageListScroll}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode={
-                  Platform.OS === 'ios' ? 'interactive' : 'on-drag'
-                }
-              >
-                {quickMessageTemplates.map((template) => (
-                  <Pressable
-                    key={template.message_template_id}
-                    style={styles.quickMessageListItem}
-                    onPress={() => {
-                      void handleSelectQuickMessage(template);
-                    }}
+                  <Text
+                    style={styles.replyComposerPreviewText}
+                    numberOfLines={1}
                   >
-                    <Text style={styles.quickMessageListCommand}>
-                      /{template.command}
-                    </Text>
+                    {replyComposerPreview.text}
+                  </Text>
+                  {replyComposerPreview.meta ? (
                     <Text
-                      style={styles.quickMessageListMessage}
+                      style={styles.replyComposerPreviewMeta}
                       numberOfLines={1}
                     >
-                      {replaceTagsInQuickMessage(template.message) ||
-                        pt.quick_message_no_text}
+                      {replyComposerPreview.meta}
                     </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
-
-          {selectedQuickMessage ? (
-            <View style={styles.quickMessagePreviewCard}>
-              <View style={styles.quickMessagePreviewHeader}>
-                <Text style={styles.quickMessagePreviewTitle} numberOfLines={1}>
-                  /{selectedQuickMessage.command}
-                </Text>
-                <Pressable
-                  style={styles.quickMessagePreviewCloseBtn}
-                  onPress={handleCancelQuickMessage}
-                  accessibilityLabel={pt.close}
-                >
-                  <Ionicons name="close" size={17} color={colors.grey700} />
-                </Pressable>
-              </View>
-
-              {selectedQuickMessage.type === EMessageType.image &&
-              selectedQuickMessage.attachment_url ? (
-                <Image
-                  source={{
-                    uri:
-                      resolveMediaUri(selectedQuickMessage.attachment_url) ??
-                      selectedQuickMessage.attachment_url,
-                  }}
-                  style={styles.quickMessagePreviewImage}
-                  resizeMode="cover"
-                />
-              ) : null}
-
-              {(selectedQuickMessage.type === EMessageType.video ||
-                selectedQuickMessage.type === EMessageType.audio) &&
-              selectedQuickMessage.attachment_url ? (
-                <View style={styles.quickMessagePreviewMediaBadge}>
-                  <Ionicons
-                    name={
-                      selectedQuickMessage.type === EMessageType.video
-                        ? 'videocam-outline'
-                        : 'musical-notes-outline'
-                    }
-                    size={16}
-                    color={colors.primary}
-                  />
-                  <Text style={styles.quickMessagePreviewMediaText}>
-                    {selectedQuickMessage.type === EMessageType.video
-                      ? pt.videos
-                      : pt.audio}
-                  </Text>
+                  ) : null}
                 </View>
-              ) : null}
-
-              <ScrollView
-                style={styles.quickMessagePreviewTextScroll}
-                contentContainerStyle={
-                  styles.quickMessagePreviewTextScrollContent
-                }
-                nestedScrollEnabled
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode={
-                  Platform.OS === 'ios' ? 'interactive' : 'on-drag'
-                }
-              >
-                <Text style={styles.quickMessagePreviewText}>
-                  {quickMessagePreviewText || pt.quick_message_no_text}
-                </Text>
-              </ScrollView>
-
-              <View style={styles.quickMessagePreviewActions}>
                 <Pressable
-                  style={styles.secondaryBtn}
-                  onPress={handleCancelQuickMessage}
+                  style={styles.replyComposerPreviewClose}
+                  onPress={() => setReplyMessageTarget(null)}
+                  accessibilityLabel={pt.cancel_reply}
                 >
-                  <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+                  <Ionicons name="close" size={18} color={colors.grey700} />
                 </Pressable>
               </View>
-            </View>
-          ) : null}
+            ) : null}
 
-          <View
-            style={[
-              styles.inputRow,
-              isTyping && styles.inputRowWithTyping,
-              showRecordingComposer && styles.inputRowRecording,
-            ]}
-          >
-            {showRecordingComposer ? (
-              <View style={styles.recordingComposerWrap}>
-                {isRecordingLocked ? (
-                  <>
+            {showQuickMessageList &&
+            quickMessageTemplates.length > 0 &&
+            !selectedQuickMessage ? (
+              <View style={styles.quickMessageListCard}>
+                {quickMessageLoading ? (
+                  <View style={styles.quickMessageListLoading}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : null}
+                <ScrollView
+                  style={styles.quickMessageListScroll}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode={
+                    Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                  }
+                >
+                  {quickMessageTemplates.map((template) => (
                     <Pressable
-                      style={styles.recordActionBtn}
+                      key={template.message_template_id}
+                      style={styles.quickMessageListItem}
                       onPress={() => {
-                        void discardVoiceRecording();
+                        void handleSelectQuickMessage(template);
                       }}
-                      accessibilityLabel={pt.delete_recording}
                     >
-                      <Ionicons
-                        name="trash-outline"
-                        size={20}
-                        color="#EF4444"
-                      />
+                      <Text style={styles.quickMessageListCommand}>
+                        /{template.command}
+                      </Text>
+                      <Text
+                        style={styles.quickMessageListMessage}
+                        numberOfLines={1}
+                      >
+                        {replaceTagsInQuickMessage(template.message) ||
+                          pt.quick_message_no_text}
+                      </Text>
                     </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
 
-                    <View style={styles.recordingLockedCenter}>
-                      <View style={styles.recordingMetaRow}>
+            {selectedQuickMessage ? (
+              <View style={styles.quickMessagePreviewCard}>
+                <View style={styles.quickMessagePreviewHeader}>
+                  <Text
+                    style={styles.quickMessagePreviewTitle}
+                    numberOfLines={1}
+                  >
+                    /{selectedQuickMessage.command}
+                  </Text>
+                  <Pressable
+                    style={styles.quickMessagePreviewCloseBtn}
+                    onPress={handleCancelQuickMessage}
+                    accessibilityLabel={pt.close}
+                  >
+                    <Ionicons name="close" size={17} color={colors.grey700} />
+                  </Pressable>
+                </View>
+
+                {selectedQuickMessage.type === EMessageType.image &&
+                selectedQuickMessage.attachment_url ? (
+                  <Image
+                    source={{
+                      uri:
+                        resolveMediaUri(selectedQuickMessage.attachment_url) ??
+                        selectedQuickMessage.attachment_url,
+                    }}
+                    style={styles.quickMessagePreviewImage}
+                    resizeMode="cover"
+                  />
+                ) : null}
+
+                {(selectedQuickMessage.type === EMessageType.video ||
+                  selectedQuickMessage.type === EMessageType.audio) &&
+                selectedQuickMessage.attachment_url ? (
+                  <View style={styles.quickMessagePreviewMediaBadge}>
+                    <Ionicons
+                      name={
+                        selectedQuickMessage.type === EMessageType.video
+                          ? 'videocam-outline'
+                          : 'musical-notes-outline'
+                      }
+                      size={16}
+                      color={colors.primary}
+                    />
+                    <Text style={styles.quickMessagePreviewMediaText}>
+                      {selectedQuickMessage.type === EMessageType.video
+                        ? pt.videos
+                        : pt.audio}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <ScrollView
+                  style={styles.quickMessagePreviewTextScroll}
+                  contentContainerStyle={
+                    styles.quickMessagePreviewTextScrollContent
+                  }
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode={
+                    Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                  }
+                >
+                  <Text style={styles.quickMessagePreviewText}>
+                    {quickMessagePreviewText || pt.quick_message_no_text}
+                  </Text>
+                </ScrollView>
+
+                <View style={styles.quickMessagePreviewActions}>
+                  <Pressable
+                    style={styles.secondaryBtn}
+                    onPress={handleCancelQuickMessage}
+                  >
+                    <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
+            <View
+              style={[
+                styles.inputRow,
+                isTyping && styles.inputRowWithTyping,
+                showRecordingComposer && styles.inputRowRecording,
+              ]}
+            >
+              {showRecordingComposer ? (
+                <View style={styles.recordingComposerWrap}>
+                  {isRecordingLocked ? (
+                    <>
+                      <Pressable
+                        style={styles.recordActionBtn}
+                        onPress={() => {
+                          void discardVoiceRecording();
+                        }}
+                        accessibilityLabel={pt.delete_recording}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={20}
+                          color="#EF4444"
+                        />
+                      </Pressable>
+
+                      <View style={styles.recordingLockedCenter}>
+                        <View style={styles.recordingMetaRow}>
+                          <Animated.View
+                            style={[
+                              styles.recordingDot,
+                              isRecordingPaused && styles.recordingDotPaused,
+                              {
+                                transform: [{ scale: recordingPulse }],
+                              },
+                            ]}
+                          />
+                          <Text style={styles.recordingTimeText}>
+                            {recordingDurationLabel}
+                          </Text>
+                        </View>
+
+                        <View style={styles.recordingWaveformTrack}>
+                          {recordingWaveformBars.map((value, index) => (
+                            <View
+                              key={`record-locked-${index}`}
+                              style={[
+                                styles.recordingWaveformBar,
+                                {
+                                  height: `${Math.max(14, value * 100)}%`,
+                                },
+                              ]}
+                            />
+                          ))}
+                        </View>
+                      </View>
+
+                      <Pressable
+                        style={styles.recordActionBtn}
+                        onPress={togglePauseVoiceRecording}
+                        accessibilityLabel={
+                          isRecordingPaused
+                            ? pt.resume_recording
+                            : pt.pause_recording
+                        }
+                      >
+                        <Ionicons
+                          name={isRecordingPaused ? 'play' : 'pause'}
+                          size={19}
+                          color={colors.primary}
+                        />
+                      </Pressable>
+
+                      <Pressable
+                        style={[
+                          styles.recordActionBtn,
+                          styles.recordSendBtn,
+                          sendingVoiceRecording && styles.sendBtnDisabled,
+                        ]}
+                        onPress={() => {
+                          void sendRecordedVoiceMessage();
+                        }}
+                        disabled={sendingVoiceRecording}
+                        accessibilityLabel={pt.send_recording}
+                      >
+                        <Ionicons name="send" size={18} color="#FFFFFF" />
+                      </Pressable>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.recordingLiveMeta}>
                         <Animated.View
                           style={[
                             styles.recordingDot,
-                            isRecordingPaused && styles.recordingDotPaused,
                             {
                               transform: [{ scale: recordingPulse }],
                             },
@@ -13846,379 +13925,320 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                       <View style={styles.recordingWaveformTrack}>
                         {recordingWaveformBars.map((value, index) => (
                           <View
-                            key={`record-locked-${index}`}
+                            key={`record-live-${index}`}
                             style={[
                               styles.recordingWaveformBar,
                               {
-                                height: `${Math.max(14, value * 100)}%`,
+                                height: `${Math.max(12, value * 100)}%`,
                               },
                             ]}
                           />
                         ))}
                       </View>
-                    </View>
 
-                    <Pressable
-                      style={styles.recordActionBtn}
-                      onPress={togglePauseVoiceRecording}
-                      accessibilityLabel={
-                        isRecordingPaused
-                          ? pt.resume_recording
-                          : pt.pause_recording
-                      }
-                    >
-                      <Ionicons
-                        name={isRecordingPaused ? 'play' : 'pause'}
-                        size={19}
-                        color={colors.primary}
-                      />
-                    </Pressable>
-
-                    <Pressable
-                      style={[
-                        styles.recordActionBtn,
-                        styles.recordSendBtn,
-                        sendingVoiceRecording && styles.sendBtnDisabled,
-                      ]}
-                      onPress={() => {
-                        void sendRecordedVoiceMessage();
-                      }}
-                      disabled={sendingVoiceRecording}
-                      accessibilityLabel={pt.send_recording}
-                    >
-                      <Ionicons name="send" size={18} color="#FFFFFF" />
-                    </Pressable>
-                  </>
-                ) : (
-                  <>
-                    <View style={styles.recordingLiveMeta}>
                       <Animated.View
                         style={[
-                          styles.recordingDot,
+                          styles.recordingHintWrap,
                           {
-                            transform: [{ scale: recordingPulse }],
+                            opacity: recordingHintOpacity,
+                            transform: [{ translateY: recordingHintOffset }],
                           },
                         ]}
-                      />
-                      <Text style={styles.recordingTimeText}>
-                        {recordingDurationLabel}
-                      </Text>
-                    </View>
-
-                    <View style={styles.recordingWaveformTrack}>
-                      {recordingWaveformBars.map((value, index) => (
-                        <View
-                          key={`record-live-${index}`}
-                          style={[
-                            styles.recordingWaveformBar,
-                            {
-                              height: `${Math.max(12, value * 100)}%`,
-                            },
-                          ]}
-                        />
-                      ))}
-                    </View>
-
-                    <Animated.View
-                      style={[
-                        styles.recordingHintWrap,
-                        {
-                          opacity: recordingHintOpacity,
-                          transform: [{ translateY: recordingHintOffset }],
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name="chevron-up-outline"
-                        size={16}
-                        color={colors.primary}
-                      />
-                      <Text style={styles.recordingHintText}>
-                        {pt.slide_up_to_lock}
-                      </Text>
-                    </Animated.View>
-                  </>
-                )}
-              </View>
-            ) : (
-              <>
-                {!isRecordingVoice && !showRecordingHoldOverlay ? (
-                  <Pressable
-                    style={[
-                      styles.composerActionBtn,
-                      styles.plusActionBtn,
-                      !canUseComposerActions && styles.sendBtnDisabled,
-                    ]}
-                    onPress={handleOpenAttachmentPicker}
-                    disabled={!canUseComposerActions}
-                    accessibilityLabel={pt.open_attachments}
-                  >
-                    <Ionicons name="add" size={20} color={colors.grey700} />
-                  </Pressable>
-                ) : null}
-
-                <View style={styles.inputStack}>
-                  <TextInput
-                    ref={messageInputRef}
-                    style={styles.input}
-                    placeholder={pt.type_message}
-                    placeholderTextColor={colors.grey500}
-                    value={input}
-                    onChangeText={handleComposerInputChange}
-                    onPressIn={focusComposerInput}
-                    keyboardType="default"
-                    multiline
-                    maxLength={65535}
-                    editable={
-                      canComposeInChat &&
-                      !sendingQuickMessage &&
-                      !sending &&
-                      !sendingCapturedMedia &&
-                      !isPreparingRecording &&
-                      !isRecordingVoice
-                    }
-                  />
-                  {!showRecordingHoldOverlay ? (
-                    <Pressable
-                      style={[
-                        styles.emojiInputBtn,
-                        composerEmojiPickerVisible &&
-                          styles.emojiInputBtnActive,
-                      ]}
-                      onPress={handleEmojiPress}
-                      disabled={!canFocusInput}
-                      accessibilityLabel={pt.open_emoji_keyboard}
-                    >
-                      <Ionicons
-                        name="happy-outline"
-                        size={19}
-                        color={colors.grey600}
-                      />
-                    </Pressable>
-                  ) : null}
-                  {showRecordingHoldOverlay ? (
-                    <View
-                      pointerEvents="none"
-                      style={styles.recordingHoldOverlay}
-                    >
-                      <View style={styles.recordingHoldLeft}>
-                        <Animated.View
-                          style={[
-                            styles.recordingDot,
-                            !isRecordingVoice && styles.recordingDotPaused,
-                            {
-                              transform: [{ scale: recordingPulse }],
-                            },
-                          ]}
-                        />
-                        <Text style={styles.recordingHoldTime}>
-                          {recordingDurationLabel}
-                        </Text>
-                      </View>
-
-                      <View style={styles.recordingHoldCenter}>
-                        <Text
-                          style={[
-                            styles.recordingHoldCancelText,
-                            isRecordingCancelArmed &&
-                              styles.recordingHoldCancelTextArmed,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {isRecordingCancelArmed
-                            ? pt.release_to_cancel
-                            : pt.slide_left_to_cancel}
-                        </Text>
-                        <Ionicons
-                          name="chevron-back-outline"
-                          size={18}
-                          color={
-                            isRecordingCancelArmed ? '#EF4444' : colors.grey600
-                          }
-                        />
-                      </View>
-
-                      <View style={styles.recordingHoldRight}>
-                        <Ionicons
-                          name="lock-closed-outline"
-                          size={15}
-                          color={colors.grey600}
-                        />
-                        <Ionicons
-                          name="chevron-up-outline"
-                          size={18}
-                          color={colors.grey600}
-                        />
-                      </View>
-                    </View>
-                  ) : null}
-                </View>
-
-                {shouldShowComposerSendButton ? (
-                  <Pressable
-                    style={[
-                      styles.sendBtn,
-                      isComposerSendDisabled && styles.sendBtnDisabled,
-                    ]}
-                    onPress={handleSend}
-                    disabled={isComposerSendDisabled}
-                  >
-                    <Ionicons name="send" size={22} color="#fff" />
-                  </Pressable>
-                ) : (
-                  <View style={styles.composerActionsWrap}>
-                    {!isRecordingVoice && !showRecordingHoldOverlay ? (
-                      <Pressable
-                        style={[
-                          styles.composerActionBtn,
-                          !canUseComposerActions && styles.sendBtnDisabled,
-                        ]}
-                        onPress={() => {
-                          void handleQuickCameraCapture();
-                        }}
-                        disabled={!canUseComposerActions}
-                        accessibilityLabel={pt.open_camera}
                       >
                         <Ionicons
-                          name="camera-outline"
-                          size={21}
-                          color="#FFFFFF"
+                          name="chevron-up-outline"
+                          size={16}
+                          color={colors.primary}
+                        />
+                        <Text style={styles.recordingHintText}>
+                          {pt.slide_up_to_lock}
+                        </Text>
+                      </Animated.View>
+                    </>
+                  )}
+                </View>
+              ) : (
+                <>
+                  {!isRecordingVoice && !showRecordingHoldOverlay ? (
+                    <Pressable
+                      style={[
+                        styles.composerActionBtn,
+                        styles.plusActionBtn,
+                        !canUseComposerActions && styles.sendBtnDisabled,
+                      ]}
+                      onPress={handleOpenAttachmentPicker}
+                      disabled={!canUseComposerActions}
+                      accessibilityLabel={pt.open_attachments}
+                    >
+                      <Ionicons name="add" size={20} color={colors.grey700} />
+                    </Pressable>
+                  ) : null}
+
+                  <View style={styles.inputStack}>
+                    <TextInput
+                      ref={messageInputRef}
+                      style={styles.input}
+                      placeholder={pt.type_message}
+                      placeholderTextColor={colors.grey500}
+                      value={input}
+                      onChangeText={handleComposerInputChange}
+                      onPressIn={focusComposerInput}
+                      keyboardType="default"
+                      multiline
+                      maxLength={65535}
+                      editable={
+                        canComposeInChat &&
+                        !sendingQuickMessage &&
+                        !sending &&
+                        !sendingCapturedMedia &&
+                        !isPreparingRecording &&
+                        !isRecordingVoice
+                      }
+                    />
+                    {!showRecordingHoldOverlay ? (
+                      <Pressable
+                        style={[
+                          styles.emojiInputBtn,
+                          composerEmojiPickerVisible &&
+                            styles.emojiInputBtnActive,
+                        ]}
+                        onPress={handleEmojiPress}
+                        disabled={!canFocusInput}
+                        accessibilityLabel={pt.open_emoji_keyboard}
+                      >
+                        <Ionicons
+                          name="happy-outline"
+                          size={19}
+                          color={colors.grey600}
                         />
                       </Pressable>
                     ) : null}
-
-                    {canShowIconActions ? (
-                      <View style={styles.micGestureWrap} collapsable={false}>
-                        {showRecordingHoldOverlay && !isRecordingCancelArmed ? (
+                    {showRecordingHoldOverlay ? (
+                      <View
+                        pointerEvents="none"
+                        style={styles.recordingHoldOverlay}
+                      >
+                        <View style={styles.recordingHoldLeft}>
                           <Animated.View
-                            pointerEvents="none"
                             style={[
-                              styles.micLockHintPill,
+                              styles.recordingDot,
+                              !isRecordingVoice && styles.recordingDotPaused,
                               {
-                                opacity: recordingHintOpacity,
-                                transform: [
-                                  { translateY: recordingHintOffset },
-                                ],
+                                transform: [{ scale: recordingPulse }],
                               },
                             ]}
-                          >
-                            <Ionicons
-                              name="lock-closed"
-                              size={14}
-                              color={colors.grey700}
-                            />
-                            <Ionicons
-                              name="chevron-up-outline"
-                              size={18}
-                              color={colors.grey700}
-                            />
-                          </Animated.View>
-                        ) : null}
+                          />
+                          <Text style={styles.recordingHoldTime}>
+                            {recordingDurationLabel}
+                          </Text>
+                        </View>
 
-                        <Animated.View
-                          {...micPanResponder.panHandlers}
-                          collapsable={false}
-                          style={[
-                            styles.composerActionBtn,
-                            styles.micActionBtn,
-                            (isPreparingRecording || isRecordingVoice) &&
-                              styles.micActionBtnRecording,
-                            styles.micActionBtnLarge,
-                            !canUseComposerActions && styles.sendBtnDisabled,
-                            {
-                              transform: [{ scale: recordingPulse }],
-                            },
-                          ]}
-                        >
-                          {isPreparingRecording ? (
-                            <ActivityIndicator size="small" color="#FFFFFF" />
-                          ) : (
-                            <Ionicons name="mic" size={22} color="#FFFFFF" />
-                          )}
-                        </Animated.View>
+                        <View style={styles.recordingHoldCenter}>
+                          <Text
+                            style={[
+                              styles.recordingHoldCancelText,
+                              isRecordingCancelArmed &&
+                                styles.recordingHoldCancelTextArmed,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {isRecordingCancelArmed
+                              ? pt.release_to_cancel
+                              : pt.slide_left_to_cancel}
+                          </Text>
+                          <Ionicons
+                            name="chevron-back-outline"
+                            size={18}
+                            color={
+                              isRecordingCancelArmed
+                                ? '#EF4444'
+                                : colors.grey600
+                            }
+                          />
+                        </View>
+
+                        <View style={styles.recordingHoldRight}>
+                          <Ionicons
+                            name="lock-closed-outline"
+                            size={15}
+                            color={colors.grey600}
+                          />
+                          <Ionicons
+                            name="chevron-up-outline"
+                            size={18}
+                            color={colors.grey600}
+                          />
+                        </View>
                       </View>
                     ) : null}
                   </View>
-                )}
-              </>
-            )}
-          </View>
 
-          {composerEmojiPickerVisible ? (
-            <View style={styles.composerEmojiPickerWrap}>
-              <View style={styles.composerEmojiPickerCard}>
-                <View
-                  style={styles.reactionPickerHandle}
-                  {...composerEmojiDismissPanResponder.panHandlers}
-                />
-
-                <View style={styles.reactionPickerSearchWrap}>
-                  <Ionicons
-                    name="search-outline"
-                    size={22}
-                    color={colors.grey500}
-                  />
-                  <TextInput
-                    value={composerEmojiSearch}
-                    onChangeText={setComposerEmojiSearch}
-                    placeholder="Pesquisar emoji"
-                    placeholderTextColor={colors.grey500}
-                    style={styles.reactionPickerSearchInput}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-
-                <ScrollView
-                  style={styles.reactionPickerEmojiScroll}
-                  contentContainerStyle={styles.reactionPickerEmojiGrid}
-                  showsVerticalScrollIndicator
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode={
-                    Platform.OS === 'ios' ? 'interactive' : 'on-drag'
-                  }
-                >
-                  {composerEmojisByCategory.map((emoji, index) => (
+                  {shouldShowComposerSendButton ? (
                     <Pressable
-                      key={`composer-emoji-${composerEmojiCategory}-${emoji}-${index}`}
-                      style={styles.reactionPickerEmojiBtn}
-                      onPress={() => handleSelectComposerEmoji(emoji)}
-                    >
-                      <Text style={styles.reactionPickerEmojiText}>
-                        {emoji}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-
-                <View style={styles.reactionPickerTabs}>
-                  {reactionCategoryConfigs.map((category) => (
-                    <Pressable
-                      key={`composer-reaction-category-${category.key}`}
                       style={[
-                        styles.reactionPickerTab,
-                        composerEmojiCategory === category.key &&
-                          styles.reactionPickerTabActive,
+                        styles.sendBtn,
+                        isComposerSendDisabled && styles.sendBtnDisabled,
                       ]}
-                      onPress={() => setComposerEmojiCategory(category.key)}
+                      onPress={handleSend}
+                      disabled={isComposerSendDisabled}
                     >
-                      <Ionicons
-                        name={category.icon}
-                        size={21}
-                        color={
-                          composerEmojiCategory === category.key
-                            ? colors.primary
-                            : colors.grey600
-                        }
-                      />
+                      <Ionicons name="send" size={22} color="#fff" />
                     </Pressable>
-                  ))}
+                  ) : (
+                    <View style={styles.composerActionsWrap}>
+                      {!isRecordingVoice && !showRecordingHoldOverlay ? (
+                        <Pressable
+                          style={[
+                            styles.composerActionBtn,
+                            !canUseComposerActions && styles.sendBtnDisabled,
+                          ]}
+                          onPress={() => {
+                            void handleQuickCameraCapture();
+                          }}
+                          disabled={!canUseComposerActions}
+                          accessibilityLabel={pt.open_camera}
+                        >
+                          <Ionicons
+                            name="camera-outline"
+                            size={21}
+                            color="#FFFFFF"
+                          />
+                        </Pressable>
+                      ) : null}
+
+                      {canShowIconActions ? (
+                        <View style={styles.micGestureWrap} collapsable={false}>
+                          {showRecordingHoldOverlay &&
+                          !isRecordingCancelArmed ? (
+                            <Animated.View
+                              pointerEvents="none"
+                              style={[
+                                styles.micLockHintPill,
+                                {
+                                  opacity: recordingHintOpacity,
+                                  transform: [
+                                    { translateY: recordingHintOffset },
+                                  ],
+                                },
+                              ]}
+                            >
+                              <Ionicons
+                                name="lock-closed"
+                                size={14}
+                                color={colors.grey700}
+                              />
+                              <Ionicons
+                                name="chevron-up-outline"
+                                size={18}
+                                color={colors.grey700}
+                              />
+                            </Animated.View>
+                          ) : null}
+
+                          <Animated.View
+                            {...micPanResponder.panHandlers}
+                            collapsable={false}
+                            style={[
+                              styles.composerActionBtn,
+                              styles.micActionBtn,
+                              (isPreparingRecording || isRecordingVoice) &&
+                                styles.micActionBtnRecording,
+                              styles.micActionBtnLarge,
+                              !canUseComposerActions && styles.sendBtnDisabled,
+                              {
+                                transform: [{ scale: recordingPulse }],
+                              },
+                            ]}
+                          >
+                            {isPreparingRecording ? (
+                              <ActivityIndicator size="small" color="#FFFFFF" />
+                            ) : (
+                              <Ionicons name="mic" size={22} color="#FFFFFF" />
+                            )}
+                          </Animated.View>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
+                </>
+              )}
+            </View>
+
+            {composerEmojiPickerVisible ? (
+              <View style={styles.composerEmojiPickerWrap}>
+                <View style={styles.composerEmojiPickerCard}>
+                  <View
+                    style={styles.reactionPickerHandle}
+                    {...composerEmojiDismissPanResponder.panHandlers}
+                  />
+
+                  <View style={styles.reactionPickerSearchWrap}>
+                    <Ionicons
+                      name="search-outline"
+                      size={22}
+                      color={colors.grey500}
+                    />
+                    <TextInput
+                      value={composerEmojiSearch}
+                      onChangeText={setComposerEmojiSearch}
+                      placeholder="Pesquisar emoji"
+                      placeholderTextColor={colors.grey500}
+                      style={styles.reactionPickerSearchInput}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                  </View>
+
+                  <ScrollView
+                    style={styles.reactionPickerEmojiScroll}
+                    contentContainerStyle={styles.reactionPickerEmojiGrid}
+                    showsVerticalScrollIndicator
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode={
+                      Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                    }
+                  >
+                    {composerEmojisByCategory.map((emoji, index) => (
+                      <Pressable
+                        key={`composer-emoji-${composerEmojiCategory}-${emoji}-${index}`}
+                        style={styles.reactionPickerEmojiBtn}
+                        onPress={() => handleSelectComposerEmoji(emoji)}
+                      >
+                        <Text style={styles.reactionPickerEmojiText}>
+                          {emoji}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+
+                  <View style={styles.reactionPickerTabs}>
+                    {reactionCategoryConfigs.map((category) => (
+                      <Pressable
+                        key={`composer-reaction-category-${category.key}`}
+                        style={[
+                          styles.reactionPickerTab,
+                          composerEmojiCategory === category.key &&
+                            styles.reactionPickerTabActive,
+                        ]}
+                        onPress={() => setComposerEmojiCategory(category.key)}
+                      >
+                        <Ionicons
+                          name={category.icon}
+                          size={21}
+                          color={
+                            composerEmojiCategory === category.key
+                              ? colors.primary
+                              : colors.grey600
+                          }
+                        />
+                      </Pressable>
+                    ))}
+                  </View>
                 </View>
               </View>
-            </View>
-          ) : null}
-        </>
-      )}
+            ) : null}
+          </>
+        )}
 
         {isOpeningVideoEditor ? (
           <View style={styles.videoEditorOpeningOverlay}>
