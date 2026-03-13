@@ -9135,13 +9135,26 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     ).catch(() => {});
   }, [recentReactionEmojis]);
 
+  const [blurRecoveryMessageId, setBlurRecoveryMessageId] = useState<string | null>(null);
+  const blurRecoveryCountRef = useRef(0);
+
   const closeMessageOverlay = useCallback(() => {
+    const closingMessageId = messageActionTarget?.message_id ?? null;
     setMessageActionTarget(null);
     setMessageOverlayAnchor(null);
     setReactionPickerVisible(false);
     setReactionSearch('');
     setReactionCategory('recent');
-  }, []);
+
+    if (Platform.OS === 'android' && closingMessageId) {
+      // Force remount of the affected message to fix dimezisBlurView rendering corruption
+      blurRecoveryCountRef.current += 1;
+      setBlurRecoveryMessageId(closingMessageId);
+      requestAnimationFrame(() => {
+        setBlurRecoveryMessageId(null);
+      });
+    }
+  }, [messageActionTarget]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -13332,7 +13345,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               keyExtractor={(item) =>
                 item.type === 'separator'
                   ? `separator-${chatInfo.chat_id}-${item.separatorDate}`
-                  : `message-${chatInfo.chat_id}-${item.message.message_id}`
+                  : `message-${chatInfo.chat_id}-${item.message.message_id}${
+                      blurRecoveryMessageId === item.message.message_id
+                        ? `-br${blurRecoveryCountRef.current}`
+                        : ''
+                    }`
               }
               renderItem={({ item }) => {
                 if (item.type === 'separator') {
