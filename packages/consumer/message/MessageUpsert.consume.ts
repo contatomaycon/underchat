@@ -84,6 +84,11 @@ import {
 } from '@core/common/functions/attendanceHoursConfig';
 import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
 import { getActiveChatbotWorkingHoursRule } from '@core/common/functions/chatbotWorkingHours';
+import { logger } from '@core/plugins/telemetry/logger';
+import {
+  incrementCounter,
+  recordException,
+} from '@core/plugins/telemetry/observability';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -255,7 +260,20 @@ export class MessageUpsertConsume {
     return Promise.allSettled([
       this.centrifugoService.publishSub(accountChannel, dataPublish),
       this.centrifugoService.publishSub(queueChannel, dataPublish),
-    ]).then(([, queueResult]) => {
+    ]).then(([accountResult, queueResult]) => {
+      if (accountResult.status === 'rejected') {
+        logger.error({
+          type: 'centrifugo_queue_publish_account_channel_failed',
+          message: 'Failed to publish to account channel in queue publish',
+          channel: accountChannel,
+          error:
+            accountResult.reason instanceof Error
+              ? accountResult.reason.message
+              : accountResult.reason,
+        });
+        incrementCounter('centrifugo_account_publish_failed');
+      }
+
       if (queueResult.status === 'rejected') {
         throw queueResult.reason;
       }
@@ -2335,7 +2353,7 @@ export class MessageUpsertConsume {
 
           const channelAccountId = updatedChat.account.id;
 
-          await Promise.allSettled([
+          const [accountResult, queueResult] = await Promise.allSettled([
             this.centrifugoService.publishSub(
               chatAccountCentrifugo(channelAccountId),
               updatedChat
@@ -2345,6 +2363,32 @@ export class MessageUpsertConsume {
               updatedChat
             ),
           ]);
+
+          if (accountResult.status === 'rejected') {
+            logger.error({
+              type: 'message_upsert_centrifugo_account_publish_failed',
+              message: 'Failed to publish to account channel',
+              channel: chatAccountCentrifugo(channelAccountId),
+              error:
+                accountResult.reason instanceof Error
+                  ? accountResult.reason.message
+                  : accountResult.reason,
+            });
+            incrementCounter('centrifugo_account_publish_failed');
+          }
+
+          if (queueResult.status === 'rejected') {
+            logger.error({
+              type: 'message_upsert_centrifugo_queue_publish_failed',
+              message: 'Failed to publish to queue channel',
+              channel: chatQueueAccountCentrifugo(channelAccountId),
+              error:
+                queueResult.reason instanceof Error
+                  ? queueResult.reason.message
+                  : queueResult.reason,
+            });
+            incrementCounter('centrifugo_queue_publish_failed');
+          }
 
           if (inputChatMessage.type_user !== ETypeUserChat.operator) {
             const isFromMe = inputChatMessage.message_key?.from_me === true;
@@ -2361,10 +2405,18 @@ export class MessageUpsertConsume {
 
       return true;
     } catch (error) {
-      console.error(
-        `[MessageUpsert] Error in createChatMessage for chat ${getChat.chat_id}:`,
-        error instanceof Error ? error.message : error
-      );
+      logger.error({
+        type: 'message_upsert_create_chat_message_error',
+        message: `Error in createChatMessage for chat ${getChat.chat_id}`,
+        error: error instanceof Error ? error.message : error,
+        chat_id: getChat.chat_id,
+        account_id: data.account_id,
+      });
+      recordException(error, {
+        type: 'message_upsert_create_chat_message_error',
+        chat_id: getChat.chat_id,
+      });
+      incrementCounter('message_upsert_create_chat_message_error');
       throw error;
     }
   }
@@ -3689,16 +3741,16 @@ export class MessageUpsertConsume {
           ]);
 
           if (result === 'timeout') {
-            console.error(
-              `[MessageUpsert] CRITICAL: Message processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms`,
-              {
-                partition,
-                offset,
-                account_id: data.account_id,
-                worker_id: data.worker_id,
-                message_key_id: data.message?.key?.id,
-              }
-            );
+            logger.error({
+              type: 'message_upsert_timeout',
+              message: `Message processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms`,
+              partition,
+              offset,
+              account_id: data.account_id,
+              worker_id: data.worker_id,
+              message_key_id: data.message?.key?.id,
+            });
+            incrementCounter('message_upsert_timeout');
 
             const dlqSent = await this.sendToDlq(
               data,
@@ -3714,9 +3766,13 @@ export class MessageUpsertConsume {
                 this.partitionFailureCounts.get(partition) ?? 0;
 
               if (failureCount >= this.MAX_CONSECUTIVE_FAILURES) {
-                console.error(
-                  `[MessageUpsert] CRITICAL: ${failureCount} consecutive failures on partition ${partition}. Force committing to unblock partition.`
-                );
+                logger.error({
+                  type: 'message_upsert_partition_force_commit',
+                  message: `${failureCount} consecutive failures on partition ${partition}. Force committing to unblock.`,
+                  partition,
+                  failureCount,
+                });
+                incrementCounter('message_upsert_partition_force_commit');
                 this.partitionFailureCounts.set(partition, 0);
                 await this.commitNext(topic, partition, offset);
               }
@@ -3729,24 +3785,39 @@ export class MessageUpsertConsume {
           }
 
           if (typeof result === 'object' && 'error' in result) {
-            console.error(
-              `[MessageUpsert] Error processing message:`,
-              result.error
-            );
+            logger.error({
+              type: 'message_upsert_processing_error',
+              message: 'Error processing message',
+              error:
+                result.error instanceof Error
+                  ? result.error.message
+                  : result.error,
+              partition,
+              offset,
+              account_id: data.account_id,
+              worker_id: data.worker_id,
+            });
+            recordException(result.error, {
+              type: 'message_upsert_processing_error',
+              partition: String(partition),
+            });
+            incrementCounter('message_upsert_processing_error');
 
             this.incrementPartitionFailure(partition);
             const failureCount =
               this.partitionFailureCounts.get(partition) ?? 0;
 
             if (failureCount >= this.MAX_CONSECUTIVE_FAILURES) {
-              console.error(
-                `[MessageUpsert] CRITICAL: ${failureCount} consecutive failures on partition ${partition}. Force committing to unblock partition. Message lost:`,
-                {
-                  account_id: data.account_id,
-                  worker_id: data.worker_id,
-                  message_key_id: data.message?.key?.id,
-                }
-              );
+              logger.error({
+                type: 'message_upsert_partition_force_commit',
+                message: `${failureCount} consecutive failures on partition ${partition}. Force committing. Message lost.`,
+                partition,
+                failureCount,
+                account_id: data.account_id,
+                worker_id: data.worker_id,
+                message_key_id: data.message?.key?.id,
+              });
+              incrementCounter('message_upsert_message_lost');
               this.partitionFailureCounts.set(partition, 0);
               await this.commitNext(topic, partition, offset);
             }
@@ -3759,10 +3830,18 @@ export class MessageUpsertConsume {
           }
         })
         .catch((error) => {
-          console.error(
-            `[MessageUpsert] CRITICAL: Unhandled error in partition ${partition}, offset ${offset}:`,
-            error
-          );
+          logger.error({
+            type: 'message_upsert_unhandled_error',
+            message: `Unhandled error in partition ${partition}, offset ${offset}`,
+            error: error instanceof Error ? error.message : error,
+            partition,
+            offset,
+          });
+          recordException(error, {
+            type: 'message_upsert_unhandled_error',
+            partition: String(partition),
+          });
+          incrementCounter('message_upsert_unhandled_error');
           this.incrementPartitionFailure(partition);
         });
 
