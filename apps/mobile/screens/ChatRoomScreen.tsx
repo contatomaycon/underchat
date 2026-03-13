@@ -37,7 +37,7 @@ import {
   type TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView, BlurTargetView } from 'expo-blur';
+import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -5710,7 +5710,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const recordingStartTokenRef = useRef(0);
   const cancelArmedRef = useRef(false);
   const messageInputRef = useRef<TextInput | null>(null);
-  const messageOverlayBlurTargetRef = useRef<View | null>(null);
   const inputRef = useRef('');
   const sendingRef = useRef(false);
   const isQueueOrUraStatusRef = useRef(false);
@@ -9147,7 +9146,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setReactionCategory('recent');
 
     if (Platform.OS === 'android' && closingMessageId) {
-      // Force remount of the affected message to fix dimezisBlurView rendering corruption
+      // Force remount of the affected message to fix overlay rendering corruption
       blurRecoveryCountRef.current += 1;
       setBlurRecoveryMessageId(closingMessageId);
       requestAnimationFrame(() => {
@@ -12987,14 +12986,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <BlurView
               intensity={MESSAGE_OVERLAY_BLUR_INTENSITY}
               tint="dark"
-              blurMethod={
-                Platform.OS === 'android' ? 'dimezisBlurView' : undefined
-              }
-              blurTarget={
-                Platform.OS === 'android'
-                  ? messageOverlayBlurTargetRef
-                  : undefined
-              }
               style={styles.messageOverlayBlur}
             />
           ) : null}
@@ -13176,7 +13167,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       behavior={keyboardAvoidingBehavior}
       keyboardVerticalOffset={getKeyboardVerticalOffset(0)}
     >
-      <BlurTargetView ref={messageOverlayBlurTargetRef} style={styles.containerContent}>
+      <View style={styles.containerContent}>
         <View style={[styles.chatHeader, { paddingTop: insets.top + 8 }]}>
         <View style={styles.chatHeaderTopRow}>
           <Pressable
@@ -14239,7 +14230,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             </View>
           </View>
         ) : null}
-      </BlurTargetView>
+      </View>
 
       {Platform.OS === 'android' ? (
         messageActionTarget ? (
@@ -16324,6 +16315,7 @@ const styles = StyleSheet.create({
   },
   containerContent: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   skeletonContainer: {
     flex: 1,
