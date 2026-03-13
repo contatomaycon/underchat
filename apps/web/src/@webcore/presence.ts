@@ -8,6 +8,7 @@ import { publish } from '@webcore/centrifugo';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { recordException, recordMessage } from '@webcore/observability';
+import { getActivePinia } from 'pinia';
 
 type PresenceMode = EChatUserStatus;
 
@@ -23,8 +24,20 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let listenersBound = false;
 let currentMode: PresenceMode | null = null;
 let hasPermissionError = false;
+let chatStoreCache: ReturnType<typeof useChatStore> | null = null;
 
-const chatStore = useChatStore();
+const resolveChatStore = (): ReturnType<typeof useChatStore> | null => {
+  if (chatStoreCache) {
+    return chatStoreCache;
+  }
+
+  if (!getActivePinia()) {
+    return null;
+  }
+
+  chatStoreCache = useChatStore();
+  return chatStoreCache;
+};
 
 const hasManualStatusPermission = (): boolean => {
   const permissions = getPermissions();
@@ -39,6 +52,9 @@ const hasManualStatusPermission = (): boolean => {
 };
 
 const updateLocalPresenceStatus = (status: EChatUserStatus): void => {
+  const chatStore = resolveChatStore();
+  if (!chatStore) return;
+
   const currentUser = chatStore.user;
 
   if (!currentUser) return;
@@ -64,6 +80,9 @@ const updateLocalPresenceStatus = (status: EChatUserStatus): void => {
 };
 
 const resolveUserStatus = (): EChatUserStatus | null => {
+  const chatStore = resolveChatStore();
+  if (!chatStore) return null;
+
   const status = chatStore.user?.chat_user?.status;
 
   return (status as EChatUserStatus) ?? null;
@@ -89,6 +108,9 @@ const sendPresence = async (
   asHeartbeat = false
 ): Promise<void> => {
   if (!isLoggedIn()) return;
+
+  const chatStore = resolveChatStore();
+  if (!chatStore) return;
 
   const userId = chatStore.user?.user_id;
   if (!userId) return;
@@ -261,6 +283,9 @@ const bindPresenceListeners = (): void => {
 
   const sendOfflineOnUnload = (): void => {
     if (!isLoggedIn()) return;
+
+    const chatStore = resolveChatStore();
+    if (!chatStore) return;
 
     const userId = chatStore.user?.user_id;
     if (!userId) return;

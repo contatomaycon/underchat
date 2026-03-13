@@ -115,7 +115,8 @@ export class SshService {
         throw err;
       }
 
-      await this.sleep(delayMs);
+      const jitter = delayMs * 0.5 * Math.random();
+      await this.sleep(delayMs + jitter);
       return this.connectWithRetry(config, attempt + 1, delayMs * 2);
     }
   }

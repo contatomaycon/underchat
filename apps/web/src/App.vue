@@ -11,6 +11,7 @@ import ChatNotificationToast from '@/components/chat/ChatNotificationToast.vue';
 import { useChatNotificationToast } from '@/composables/useChatNotificationToast';
 import { useAttendanceGuardStore } from '@/@webcore/stores/attendanceGuard';
 import AppAttendanceGuardLock from '@/components/AppAttendanceGuardLock.vue';
+import { presenceOnline } from '@/@webcore/presence';
 
 const { global } = useTheme();
 
@@ -33,6 +34,8 @@ watch(
       await chatSocket.cleanup();
       return;
     }
+
+    void presenceOnline().catch(() => {});
 
     if (!chatSocket.isInitialized()) {
       await chatSocket.initializeSocket();

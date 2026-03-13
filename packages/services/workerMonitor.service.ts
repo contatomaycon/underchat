@@ -23,10 +23,35 @@ import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { IConnectionFailureTracker } from '@core/common/interfaces/IConnectionFailureTracker';
 
+const mapConcurrent = async <T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> => {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  const worker = async (): Promise<void> => {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i]);
+    }
+  };
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => worker()
+  );
+  await Promise.all(workers);
+  return results;
+};
+
 @injectable()
 export class WorkerMonitorService {
   private readonly timeoutMinutes = 5;
   private readonly maxConnectionFailures = 3;
+  private readonly sshConcurrencyPerServer = 5;
+  private readonly serverConcurrency = 2;
   private readonly connectionCheckIntervalMs = 60 * 1000;
   private readonly stoppedTimeoutMinutes = 24 * 60;
   private readonly connectionFailureTrackers = new Map<
@@ -71,10 +96,9 @@ export class WorkerMonitorService {
       workersByServer.set(worker.server_id, list);
     }
 
-    const tasks = servers.map((server) =>
+    await mapConcurrent(servers, this.serverConcurrency, (server) =>
       this.checkServer(server, workersById, workersByServer)
     );
-    await Promise.all(tasks);
   };
 
   private readonly checkServer = async (
@@ -90,25 +114,25 @@ export class WorkerMonitorService {
     );
     const setContainers = new Set(workerIds);
 
-    const containerTasks = workerIds.map((workerId) =>
-      this.processContainer(workerId, server, sshConfig, workersById)
-    );
-
     const serverWorkers = workersByServer.get(server.server_id) ?? [];
     const missingWorkers = serverWorkers.filter(
       (worker) => !setContainers.has(worker.worker_id)
     );
 
-    const missingTasks = missingWorkers.map((worker) =>
-      this.handleMissingContainer(worker, server, sshConfig)
-    );
-
-    const allTasks = [...containerTasks, ...missingTasks];
-    if (!allTasks.length) {
+    const allItems = [
+      ...workerIds.map(
+        (workerId) => () =>
+          this.processContainer(workerId, server, sshConfig, workersById)
+      ),
+      ...missingWorkers.map(
+        (worker) => () => this.handleMissingContainer(worker, server, sshConfig)
+      ),
+    ];
+    if (!allItems.length) {
       return;
     }
 
-    await Promise.all(allTasks);
+    await mapConcurrent(allItems, this.sshConcurrencyPerServer, (fn) => fn());
   };
 
   private readonly processContainer = async (

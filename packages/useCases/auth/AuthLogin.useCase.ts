@@ -17,7 +17,7 @@ import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
 import { randomUUID } from 'node:crypto';
 import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
 import type { SessionPlatform } from '@core/common/types/SessionPlatform';
-import { hasChatUserStatusUpdatePermissionByPermissions } from '@core/common/functions/chatUserStatusPermission';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 @injectable()
 export class AuthLoginUseCase {
@@ -233,14 +233,12 @@ export class AuthLoginUseCase {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
 
-    const canUpdateOwnChatStatus =
-      hasChatUserStatusUpdatePermissionByPermissions(permissions);
+    await this.presenceService.setUserOnline(result.user_id);
 
-    if (canUpdateOwnChatStatus) {
-      await this.presenceService.setUserAway(result.user_id);
-    } else {
-      await this.presenceService.setUserOnline(result.user_id);
+    if (result.chat_user) {
+      result.chat_user.status = EChatUserStatus.online;
     }
+
     await this.setActiveSession(
       result.account_id,
       result.user_id,

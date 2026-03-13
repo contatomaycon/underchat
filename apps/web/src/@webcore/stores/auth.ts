@@ -21,6 +21,7 @@ import {
   initializePlanStatus,
   persistPlanStatus,
 } from '../localStorage/user';
+import { useChatStore } from './chat';
 import { updateAbilityPermissions } from '@/plugins/0.casl/ability';
 import { normalizeBaseUrl } from '../utils/helpers';
 import { AuthForgotPasswordSendCodeRequest } from '@core/schema/auth/forgotPassword/sendCode/request.schema';
@@ -44,6 +45,10 @@ export const useAuthStore = defineStore('auth', {
     planIsActive: initializePlanStatus(),
   }),
   actions: {
+    syncChatUserSession(): void {
+      const chatStore = useChatStore();
+      chatStore.updateUser();
+    },
     showSnackbar(message: string, color: EColor) {
       this.snackbar.message = message;
       this.snackbar.color = color;
@@ -133,6 +138,7 @@ export const useAuthStore = defineStore('auth', {
         setChannels(data.data.channels ?? []);
         persistPlanStatus(this.planIsActive);
         updateAbilityPermissions(this.permissions);
+        this.syncChatUserSession();
         await this.initializeAttendanceGuard(data.data.attendance_guard);
 
         return true;
@@ -190,6 +196,7 @@ export const useAuthStore = defineStore('auth', {
         setChannels(data.data.channels ?? []);
         persistPlanStatus(this.planIsActive);
         updateAbilityPermissions(this.permissions);
+        this.syncChatUserSession();
         await this.initializeAttendanceGuard(data.data.attendance_guard);
 
         return true;
@@ -220,6 +227,7 @@ export const useAuthStore = defineStore('auth', {
       setChannels(data.channels ?? []);
       persistPlanStatus(this.planIsActive);
       updateAbilityPermissions(this.permissions);
+      this.syncChatUserSession();
     },
 
     async forgotPasswordSendCode(

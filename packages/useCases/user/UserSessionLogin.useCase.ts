@@ -16,7 +16,7 @@ import { AuthService } from '@core/services/auth.service';
 import Redis from 'ioredis';
 import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
 import type { SessionPlatform } from '@core/common/types/SessionPlatform';
-import { hasChatUserStatusUpdatePermissionByPermissions } from '@core/common/functions/chatUserStatusPermission';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 @injectable()
 export class UserSessionLoginUseCase {
@@ -228,14 +228,12 @@ export class UserSessionLoginUseCase {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
 
-    const canUpdateOwnChatStatus =
-      hasChatUserStatusUpdatePermissionByPermissions(permissions);
+    await this.presenceService.setUserOnline(targetUserId);
 
-    if (canUpdateOwnChatStatus) {
-      await this.presenceService.setUserAway(targetUserId);
-    } else {
-      await this.presenceService.setUserOnline(targetUserId);
+    if (userAuthData.chat_user) {
+      userAuthData.chat_user.status = EChatUserStatus.online;
     }
+
     await this.setActiveSession(
       userAccountId,
       targetUserId,

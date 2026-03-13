@@ -261,6 +261,22 @@ export default function App() {
     }, SOCKET_DISCONNECT_OFFLINE_GRACE_MS);
   }, []);
 
+  const forceOnlineAtSessionStart = useCallback(async (): Promise<void> => {
+    forcedOfflineBySocketRef.current = false;
+    reconnectTargetStatusRef.current = 'online';
+
+    await patchUser({
+      chat_user: {
+        status: 'online',
+      },
+    }).catch(() => {
+      // ignore
+    });
+
+    emitCurrentUserPresenceStatus('online');
+    await publishPresence('online').catch(() => false);
+  }, []);
+
   const clearAttendanceTimer = (): void => {
     if (!attendanceTimerRef.current) {
       return;
@@ -472,10 +488,7 @@ export default function App() {
         });
       }
 
-      emitCurrentUserPresenceStatus(readChatUserStatus(user));
-      reconnectTargetStatusRef.current = normalizePresenceStatus(
-        readChatUserStatus(user)
-      );
+      await forceOnlineAtSessionStart();
 
       if (isUserNotificationEnabled(user)) {
         await enableMobilePushNotifications().catch(() => ({
@@ -491,7 +504,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [authenticated]);
+  }, [authenticated, forceOnlineAtSessionStart]);
 
   useEffect(() => {
     return addCurrentUserPresenceStatusListener(
@@ -548,10 +561,6 @@ export default function App() {
         if (cancelled) return;
         const accountId = getUserAccountId(user);
         const loggedUserId = getUserId(user);
-        emitCurrentUserPresenceStatus(readChatUserStatus(user));
-        reconnectTargetStatusRef.current = normalizePresenceStatus(
-          readChatUserStatus(user)
-        );
 
         if (accountId) {
           await initializeChatSocket(accountId).catch(() => {});
