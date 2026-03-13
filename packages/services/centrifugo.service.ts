@@ -26,8 +26,8 @@ export class CentrifugoService {
   private readonly publishRetryMaxDelayMs = 2_000;
   private readonly connectTimeoutMs = 15_000;
   private readonly httpApiTimeoutMs = 15_000;
-  private readonly circuitBreakerThreshold = 50;
-  private readonly circuitBreakerResetMs = 20_000;
+  private readonly circuitBreakerThreshold = 100;
+  private readonly circuitBreakerResetMs = 30_000;
   private readonly rateLimitPerSecond = 1_000;
   private readonly debounceWindowMs = 50;
   private readonly queueProcessIntervalMs = 25;
@@ -68,6 +68,7 @@ export class CentrifugoService {
       process.env.USE_DISTRIBUTED_CENTRIFUGO === 'true' && !!this.redis;
     this.startQueueProcessor();
     this.startCacheCleanup();
+    this.startStatusRetryWorker();
   }
 
   private toError(e: unknown): Error {
@@ -1475,9 +1476,112 @@ export class CentrifugoService {
     };
   }
 
+  private readonly statusRetryKey = 'centrifugo:status:retry';
+  private readonly statusRetryIntervalMs = 5_000;
+  private readonly statusRetryMaxAttempts = 3;
+  private readonly statusRetryBatchSize = 50;
+  private statusRetryTimer: ReturnType<typeof setInterval> | null = null;
+
+  startStatusRetryWorker(): void {
+    if (this.statusRetryTimer) {
+      return;
+    }
+
+    this.statusRetryTimer = setInterval(() => {
+      this.processStatusRetryQueue().catch((error) => {
+        logger.error(
+          { err: error, type: 'centrifugo_status_retry_worker_error' },
+          'Error in Centrifugo status retry worker'
+        );
+      });
+    }, this.statusRetryIntervalMs);
+  }
+
+  private stopStatusRetryWorker(): void {
+    if (this.statusRetryTimer) {
+      clearInterval(this.statusRetryTimer);
+      this.statusRetryTimer = null;
+    }
+  }
+
+  private async processStatusRetryQueue(): Promise<void> {
+    if (!this.redis) {
+      return;
+    }
+
+    const items = await this.redis
+      .rpop(this.statusRetryKey, this.statusRetryBatchSize)
+      .catch(() => null);
+
+    if (!items || items.length === 0) {
+      return;
+    }
+
+    const rawItems = Array.isArray(items) ? items : [items];
+
+    for (const raw of rawItems) {
+      try {
+        const item = JSON.parse(raw) as {
+          channel: string;
+          message_id: string;
+          data: unknown;
+          enqueued_at: number;
+          attempts?: number;
+        };
+
+        const age = Date.now() - item.enqueued_at;
+        if (age > 60_000) {
+          logger.warn(
+            {
+              type: 'centrifugo_status_retry_expired',
+              message_id: item.message_id,
+              channel: item.channel,
+              age_ms: age,
+            },
+            'Discarding expired Centrifugo status retry item'
+          );
+          continue;
+        }
+
+        const attempts = (item.attempts ?? 0) + 1;
+
+        try {
+          await this.publishViaHttpApiDirectWithHistory(
+            item.channel,
+            item.data
+          );
+        } catch (error) {
+          if (attempts < this.statusRetryMaxAttempts) {
+            const requeue = JSON.stringify({
+              ...item,
+              attempts,
+            });
+            await this.redis
+              .lpush(this.statusRetryKey, requeue)
+              .catch(() => {});
+          } else {
+            logger.error(
+              {
+                err: error,
+                type: 'centrifugo_status_retry_exhausted',
+                message_id: item.message_id,
+                channel: item.channel,
+                attempts,
+              },
+              'Centrifugo status retry exhausted, discarding'
+            );
+          }
+        }
+      } catch {
+        // malformed JSON, discard
+      }
+    }
+  }
+
   cleanup(): void {
     this.stopQueueProcessor();
     this.stopCacheCleanup();
+    this.stopStatusRetryWorker();
 
     for (const timer of this.debounceMap.values()) {
       clearTimeout(timer);

@@ -1,6 +1,11 @@
 import { inject, singleton } from 'tsyringe';
 import Redis from 'ioredis';
 import { Buffer } from 'node:buffer';
+import { logger } from '@core/plugins/telemetry/logger';
+import {
+  incrementCounter,
+  recordException,
+} from '@core/plugins/telemetry/observability';
 import {
   AnyMessageContent,
   Contact,
@@ -1088,11 +1093,26 @@ export class BaileysIncomingMessageService {
         }
       }
 
-      console.error('[BAILEYS] Failed to enqueue message status update', {
+      logger.error(
+        {
+          err: lastError,
+          account_id: statusUpdate.account_id,
+          message_id: statusUpdate.message_id,
+          patch: statusUpdate.patch,
+          type: 'baileys_status_enqueue_error',
+        },
+        'Failed to enqueue message status update to Kafka after 3 attempts'
+      );
+      incrementCounter('baileys_status_enqueue_error', 1, {
         account_id: statusUpdate.account_id,
-        message_id: statusUpdate.message_id,
-        patch: statusUpdate.patch,
-        error: lastError,
+      });
+      recordException(lastError, {
+        level: 'error',
+        baileys: {
+          type: 'status_enqueue_error',
+          account_id: statusUpdate.account_id,
+          message_id: statusUpdate.message_id,
+        },
       });
     } catch {}
   }

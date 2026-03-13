@@ -33,10 +33,15 @@ export class MessageStatusUpdateConsume {
   private isRunning = false;
   private partitionChains: Map<number, Promise<void>> = new Map();
   private failedPartitions = new Set<number>();
+  private partitionFailureCounts = new Map<number, number>();
   private readonly idempotencyTtlSeconds = 86400;
   private readonly idempotencyPrefix = 'status-update:';
   private readonly batchWindowMs = 50;
   private readonly batchMaxSize = 20;
+  private readonly maxConsecutiveFailures = 10;
+  private readonly partitionRecoveryIntervalMs = 60_000;
+  private partitionRecoveryTimer: ReturnType<typeof setInterval> | null = null;
+  private currentTopic: string | null = null;
 
   private messagePatchBuffer = new Map<string, BufferedUpdate[]>();
   private batchTimers = new Map<string, NodeJS.Timeout>();
@@ -89,10 +94,14 @@ export class MessageStatusUpdateConsume {
       this.kafkaServiceQueueService.getReplicationFactor()
     );
 
+    this.currentTopic = topic;
+
     this.consumer = createConsumer(
       this.kafka,
       'group-underchat-message-status-update'
     );
+
+    this.startPartitionRecovery();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
@@ -148,6 +157,11 @@ export class MessageStatusUpdateConsume {
   }
 
   public async close(): Promise<void> {
+    if (this.partitionRecoveryTimer) {
+      clearInterval(this.partitionRecoveryTimer);
+      this.partitionRecoveryTimer = null;
+    }
+
     for (const timer of this.batchTimers.values()) {
       clearTimeout(timer);
     }
@@ -176,6 +190,8 @@ export class MessageStatusUpdateConsume {
       this.consumer = null;
       this.partitionChains.clear();
       this.failedPartitions.clear();
+      this.partitionFailureCounts.clear();
+      this.currentTopic = null;
     }
   }
 
@@ -213,6 +229,26 @@ export class MessageStatusUpdateConsume {
     error: unknown,
     details?: { account_id?: string; message_id?: string }
   ): void {
+    const currentCount = (this.partitionFailureCounts.get(partition) ?? 0) + 1;
+    this.partitionFailureCounts.set(partition, currentCount);
+
+    if (currentCount < this.maxConsecutiveFailures) {
+      logger.warn(
+        {
+          err: error,
+          topic,
+          partition,
+          consecutive_failures: currentCount,
+          max_failures: this.maxConsecutiveFailures,
+          account_id: details?.account_id,
+          message_id: details?.message_id,
+          type: 'message_status_update_partition_transient_failure',
+        },
+        `Transient failure on partition ${partition} (${currentCount}/${this.maxConsecutiveFailures}), will retry`
+      );
+      return;
+    }
+
     if (this.failedPartitions.has(partition)) {
       return;
     }
@@ -224,12 +260,17 @@ export class MessageStatusUpdateConsume {
         err: error,
         topic,
         partition,
+        consecutive_failures: currentCount,
         account_id: details?.account_id,
         message_id: details?.message_id,
         type: 'message_status_update_partition_paused',
       },
-      'Partição pausada após falha crítica no processamento de status'
+      `Partition ${partition} paused after ${currentCount} consecutive failures (will auto-recover in ${this.partitionRecoveryIntervalMs / 1000}s)`
     );
+
+    incrementCounter('message_status_update_partition_paused', 1, {
+      partition: partition.toString(),
+    });
 
     try {
       this.consumerOrThrow.pause([{ topic, partition }]);
@@ -243,6 +284,66 @@ export class MessageStatusUpdateConsume {
         },
         'Falha ao pausar partição após erro crítico'
       );
+    }
+  }
+
+  private resetPartitionFailureCount(partition: number): void {
+    if (this.partitionFailureCounts.has(partition)) {
+      this.partitionFailureCounts.set(partition, 0);
+    }
+  }
+
+  private startPartitionRecovery(): void {
+    if (this.partitionRecoveryTimer) {
+      clearInterval(this.partitionRecoveryTimer);
+    }
+
+    this.partitionRecoveryTimer = setInterval(() => {
+      this.attemptPartitionRecovery();
+    }, this.partitionRecoveryIntervalMs);
+  }
+
+  private attemptPartitionRecovery(): void {
+    if (
+      this.failedPartitions.size === 0 ||
+      !this.consumer ||
+      !this.currentTopic
+    ) {
+      return;
+    }
+
+    const partitionsToResume = Array.from(this.failedPartitions);
+
+    for (const partition of partitionsToResume) {
+      try {
+        this.consumerOrThrow.resume([{ topic: this.currentTopic, partition }]);
+        this.failedPartitions.delete(partition);
+        this.partitionFailureCounts.set(partition, 0);
+
+        logger.info(
+          {
+            topic: this.currentTopic,
+            partition,
+            remaining_paused: this.failedPartitions.size,
+            type: 'message_status_update_partition_resumed',
+          },
+          `Partition ${partition} resumed after recovery interval`
+        );
+
+        incrementCounter('message_status_update_partition_resumed', 1, {
+          partition: partition.toString(),
+        });
+      } catch (resumeError) {
+        logger.error(
+          {
+            err: resumeError,
+            topic: this.currentTopic,
+            partition,
+            type: 'message_status_update_partition_resume_error',
+          },
+          `Failed to resume partition ${partition}`
+        );
+      }
     }
   }
 
@@ -347,6 +448,10 @@ export class MessageStatusUpdateConsume {
         mergedPatch,
         firstUpdate.key
       );
+
+      for (const item of buffered) {
+        this.resetPartitionFailureCount(item.partition);
+      }
 
       await this.markAsProcessed({
         ...firstUpdate,

@@ -11,7 +11,10 @@ import {
 import Redis from 'ioredis';
 import { createHash } from 'node:crypto';
 import { logger } from '@core/plugins/telemetry/logger';
-import { recordException } from '@core/plugins/telemetry/observability';
+import {
+  recordException,
+  incrementCounter,
+} from '@core/plugins/telemetry/observability';
 import type { WAMessageKey } from '@whiskeysockets/baileys';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
@@ -32,7 +35,7 @@ type MessageKeyLike = WAMessageKey & {
 @injectable()
 export class MessageStatusService {
   private readonly cacheTtlSeconds = 3600;
-  private readonly lockTtlSeconds = 10;
+  private readonly lockTtlSeconds = 30;
   private readonly messageCachePrefix = 'msg:';
   private readonly lockPrefix = 'lock:update-status:';
   private readonly circuitBreakerThreshold = 20;
@@ -173,6 +176,8 @@ export class MessageStatusService {
   /**
    * Publishes message status update immediately without debounce or deduplication.
    * Uses the immediate publish method for critical real-time updates.
+   * Best-effort: failures are logged and enqueued for retry, but do NOT propagate
+   * to the caller since the Elasticsearch update already succeeded.
    */
   private async publishCentrifugoImmediate(
     channel: string,
@@ -188,7 +193,7 @@ export class MessageStatusService {
           message_id: message.message_id,
           channel,
         },
-        'Failed to publish message status update to Centrifugo'
+        'Failed to publish message status update to Centrifugo (best-effort, enqueuing retry)'
       );
       recordException(error, {
         level: 'error',
@@ -198,8 +203,34 @@ export class MessageStatusService {
           channel,
         },
       });
-      throw error;
+      incrementCounter('message_status_centrifugo_publish_failed', 1, {
+        channel,
+      });
+      this.enqueueCentrifugoRetry(channel, message);
     }
+  }
+
+  private readonly centrifugoRetryKey = 'centrifugo:status:retry';
+  private readonly centrifugoRetryMaxSize = 5_000;
+
+  private enqueueCentrifugoRetry(channel: string, message: IChatMessage): void {
+    const payload = JSON.stringify({
+      channel,
+      message_id: message.message_id,
+      data: message,
+      enqueued_at: Date.now(),
+    });
+
+    this.redis
+      .lpush(this.centrifugoRetryKey, payload)
+      .then(() =>
+        this.redis.ltrim(
+          this.centrifugoRetryKey,
+          0,
+          this.centrifugoRetryMaxSize - 1
+        )
+      )
+      .catch(() => {});
   }
 
   private hasPatch(patch: MessageSummaryPatch): boolean {
