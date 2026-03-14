@@ -532,9 +532,21 @@ export class WwebjsIncomingMessageService {
     private readonly deliveryConfirmation: WwebjsDeliveryConfirmationService
   ) {}
 
+  private logEvent(eventName: string, payload: Record<string, unknown>): void {
+    console.log(`[wwebjs] event:${eventName}`, payload);
+  }
+
   bindTo(client: Client): void {
     this.currentClient = client;
     client.on('message', (msg: Message) => {
+      this.logEvent('message', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+      });
+
       if (this.shouldSkipIncomingMessage(msg, 'message')) {
         return;
       }
@@ -545,6 +557,14 @@ export class WwebjsIncomingMessageService {
       void this.handleIncomingMessage(msg);
     });
     client.on('message_ciphertext', (msg: Message) => {
+      this.logEvent('message_ciphertext', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+      });
+
       if (!this.shouldHandleCiphertextMessage(msg)) {
         return;
       }
@@ -556,9 +576,24 @@ export class WwebjsIncomingMessageService {
       void this.handleIncomingMessage(msg);
     });
     client.on('message_ciphertext_failed', (msg: Message) => {
+      this.logEvent('message_ciphertext_failed', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+      });
       this.handleCiphertextFailed(msg);
     });
     client.on('message_create', (msg: Message) => {
+      this.logEvent('message_create', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+      });
+
       if (!this.shouldHandleFromMeCreatedMessage(msg)) {
         return;
       }
@@ -573,18 +608,52 @@ export class WwebjsIncomingMessageService {
       void this.handleIncomingMessage(msg);
     });
     client.on('message_revoke_everyone', (after: Message, before?: Message) => {
+      this.logEvent('message_revoke_everyone', {
+        afterId: getMessageIdSerialized(after),
+        beforeId: before ? getMessageIdSerialized(before) : undefined,
+        fromMe: after.fromMe,
+        from: after.from,
+        to: after.to,
+        type: after.type,
+      });
+
       void this.handleRevokeEveryone(after, before);
     });
     client.on('message_revoke_me', (msg: Message) => {
+      this.logEvent('message_revoke_me', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+      });
+
       void this.handleRevokeMe(msg);
     });
     client.on(
       'message_edit',
       (message: Message, newBody: string, prevBody: string) => {
+        this.logEvent('message_edit', {
+          id: getMessageIdSerialized(message),
+          fromMe: message.fromMe,
+          from: message.from,
+          to: message.to,
+          type: message.type,
+          hasNewBody: Boolean(getNonEmptyString(newBody)),
+          hasPrevBody: Boolean(getNonEmptyString(prevBody)),
+        });
+
         void this.handleMessageEdit(message, newBody, prevBody);
       }
     );
     client.on('message_reaction', (reaction: WwebjsReactionEvent) => {
+      this.logEvent('message_reaction', {
+        reactionId: getReactionIdSerialized(reaction),
+        parentMsgId: getReactionMsgIdSerialized(reaction),
+        senderId: getReactionSenderId(reaction),
+        emoji: getReactionEmoji(reaction),
+      });
+
       void this.handleMessageReaction(client, reaction);
     });
     client.on(
@@ -597,15 +666,44 @@ export class WwebjsIncomingMessageService {
         isVideo?: boolean;
         reject?: () => Promise<void>;
       }) => {
+        this.logEvent('call', {
+          id: call.id,
+          from: call.from,
+          fromMe: call.fromMe,
+          timestamp: call.timestamp,
+          isVideo: call.isVideo,
+        });
+
         void this.handleCall(call);
       }
     );
     client.on('message_ack', (msg: Message, ack: number) => {
+      this.logEvent('message_ack', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        ack,
+      });
+
       void this.handleMessageAck(msg, ack);
     });
     client.on(
       'message_pinned',
       (message: Message, pinData?: IWwebjsPinEventData) => {
+        this.logEvent('message_pinned', {
+          id: getMessageIdSerialized(message),
+          fromMe: message.fromMe,
+          from: message.from,
+          to: message.to,
+          type: message.type,
+          pinType: pinData?.pinType,
+          isPinned: pinData?.isPinned,
+          chatId: pinData?.chatId,
+          parentMessageId: pinData?.parentMessageId,
+        });
+
         void this.handlePinnedMessage(message, pinData);
       }
     );
