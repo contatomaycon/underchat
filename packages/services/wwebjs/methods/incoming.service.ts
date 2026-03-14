@@ -617,6 +617,10 @@ export class WwebjsIncomingMessageService {
         type: after.type,
       });
 
+      if (this.isStatusOrBroadcastMessage(after)) {
+        return;
+      }
+
       void this.handleRevokeEveryone(after, before);
     });
     client.on('message_revoke_me', (msg: Message) => {
@@ -627,6 +631,10 @@ export class WwebjsIncomingMessageService {
         to: msg.to,
         type: msg.type,
       });
+
+      if (this.isStatusOrBroadcastMessage(msg)) {
+        return;
+      }
 
       void this.handleRevokeMe(msg);
     });
@@ -642,6 +650,10 @@ export class WwebjsIncomingMessageService {
           hasNewBody: Boolean(getNonEmptyString(newBody)),
           hasPrevBody: Boolean(getNonEmptyString(prevBody)),
         });
+
+        if (this.isStatusOrBroadcastMessage(message)) {
+          return;
+        }
 
         void this.handleMessageEdit(message, newBody, prevBody);
       }
@@ -687,6 +699,10 @@ export class WwebjsIncomingMessageService {
         ack,
       });
 
+      if (this.isStatusOrBroadcastMessage(msg)) {
+        return;
+      }
+
       void this.handleMessageAck(msg, ack);
     });
     client.on(
@@ -703,6 +719,10 @@ export class WwebjsIncomingMessageService {
           chatId: pinData?.chatId,
           parentMessageId: pinData?.parentMessageId,
         });
+
+        if (this.isStatusOrBroadcastMessage(message)) {
+          return;
+        }
 
         void this.handlePinnedMessage(message, pinData);
       }
