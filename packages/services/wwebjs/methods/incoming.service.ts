@@ -666,6 +666,23 @@ export class WwebjsIncomingMessageService {
         emoji: getReactionEmoji(reaction),
       });
 
+      const reactionRemote = getRemoteFromSerializedMessageId(
+        getReactionIdSerialized(reaction)
+      );
+      const parentRemote = getRemoteFromSerializedMessageId(
+        getReactionMsgIdSerialized(reaction) ?? ''
+      );
+      if (
+        (reactionRemote &&
+          this.shouldSkipChat(
+            normalizeJid(reactionRemote) ?? reactionRemote
+          )) ||
+        (parentRemote &&
+          this.shouldSkipChat(normalizeJid(parentRemote) ?? parentRemote))
+      ) {
+        return;
+      }
+
       void this.handleMessageReaction(client, reaction);
     });
     client.on(
