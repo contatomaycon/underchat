@@ -3,6 +3,7 @@ import { getToken } from '../storage/authStorage';
 import { emitAttendanceBlocked } from '../utils/authEvents';
 import type { AttendanceBlockedPayload } from '../types/attendanceHours';
 import { teardownMobileSessionOnUnauthorized } from '../utils/sessionTeardown';
+import { refreshSessionTokenWithSingleFlight } from './sessionRefresh';
 
 const BASE = `${BACKEND_URL}/v1`;
 
@@ -104,9 +105,10 @@ async function parseJsonDetailed<T>(
 }
 
 async function buildAuthHeaders(
-  contentType?: 'application/json'
+  contentType?: 'application/json',
+  tokenOverride?: string
 ): Promise<Record<string, string> | null> {
-  const token = await getToken();
+  const token = tokenOverride ?? (await getToken());
   if (!token) return null;
 
   const headers: Record<string, string> = {
@@ -123,13 +125,49 @@ async function buildAuthHeaders(
   return headers;
 }
 
+async function requestWithAuthRetry(
+  contentType: 'application/json' | undefined,
+  execute: (headers: Record<string, string>) => Promise<Response>
+): Promise<Response | null> {
+  const initialHeaders = await buildAuthHeaders(contentType);
+  if (!initialHeaders) {
+    return null;
+  }
+
+  const initialResponse = await execute(initialHeaders);
+
+  if (initialResponse.status !== 401) {
+    return initialResponse;
+  }
+
+  const refreshedToken = await refreshSessionTokenWithSingleFlight();
+
+  if (!refreshedToken) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  const retryHeaders = await buildAuthHeaders(contentType, refreshedToken);
+
+  if (!retryHeaders) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  const retriedResponse = await execute(retryHeaders);
+
+  if (retriedResponse.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  return retriedResponse;
+}
+
 export async function apiGet<T>(
   path: string,
   params?: Record<string, QueryParamValue>
 ): Promise<{ status: boolean; data: T } | null> {
-  const headers = await buildAuthHeaders('application/json');
-  if (!headers) return null;
-
   const url = new URL(
     path.startsWith('http')
       ? path
@@ -155,13 +193,14 @@ export async function apiGet<T>(
     }
   }
 
-  const res = await fetch(url.toString(), {
-    method: 'GET',
-    headers,
-  });
+  const res = await requestWithAuthRetry('application/json', (headers) =>
+    fetch(url.toString(), {
+      method: 'GET',
+      headers,
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -176,21 +215,19 @@ export async function apiPost<T>(
   path: string,
   body: unknown
 ): Promise<{ status: boolean; data: T } | null> {
-  const headers = await buildAuthHeaders('application/json');
-  if (!headers) return null;
-
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
+  const res = await requestWithAuthRetry('application/json', (headers) =>
+    fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -205,21 +242,19 @@ export async function apiPostWithMessage<T>(
   path: string,
   body: unknown
 ): Promise<ApiDetailedResponse<T> | null> {
-  const headers = await buildAuthHeaders('application/json');
-  if (!headers) return null;
-
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
+  const res = await requestWithAuthRetry('application/json', (headers) =>
+    fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -234,21 +269,19 @@ export async function apiPostForm<T>(
   path: string,
   body: FormData
 ): Promise<{ status: boolean; data: T } | null> {
-  const headers = await buildAuthHeaders();
-  if (!headers) return null;
-
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body,
-  });
+  const res = await requestWithAuthRetry(undefined, (headers) =>
+    fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -263,21 +296,19 @@ export async function apiPostFormWithMessage<T>(
   path: string,
   body: FormData
 ): Promise<ApiDetailedResponse<T> | null> {
-  const headers = await buildAuthHeaders();
-  if (!headers) return null;
-
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body,
-  });
+  const res = await requestWithAuthRetry(undefined, (headers) =>
+    fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -292,21 +323,19 @@ export async function apiPatch<T>(
   path: string,
   body: unknown
 ): Promise<{ status: boolean; data: T } | null> {
-  const headers = await buildAuthHeaders('application/json');
-  if (!headers) return null;
-
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers,
-    body: JSON.stringify(body),
-  });
+  const res = await requestWithAuthRetry('application/json', (headers) =>
+    fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -321,21 +350,19 @@ export async function apiPatchWithMessage<T>(
   path: string,
   body: unknown
 ): Promise<ApiDetailedResponse<T> | null> {
-  const headers = await buildAuthHeaders('application/json');
-  if (!headers) return null;
-
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers,
-    body: JSON.stringify(body),
-  });
+  const res = await requestWithAuthRetry('application/json', (headers) =>
+    fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -350,21 +377,19 @@ export async function apiPut<T>(
   path: string,
   body: unknown
 ): Promise<{ status: boolean; data: T } | null> {
-  const headers = await buildAuthHeaders('application/json');
-  if (!headers) return null;
-
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await fetch(url, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify(body),
-  });
+  const res = await requestWithAuthRetry('application/json', (headers) =>
+    fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body),
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -379,21 +404,19 @@ export async function apiPatchForm<T>(
   path: string,
   body: FormData
 ): Promise<{ status: boolean; data: T } | null> {
-  const headers = await buildAuthHeaders();
-  if (!headers) return null;
-
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers,
-    body,
-  });
+  const res = await requestWithAuthRetry(undefined, (headers) =>
+    fetch(url, {
+      method: 'PATCH',
+      headers,
+      body,
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -408,21 +431,19 @@ export async function apiPatchFormWithMessage<T>(
   path: string,
   body: FormData
 ): Promise<ApiDetailedResponse<T> | null> {
-  const headers = await buildAuthHeaders();
-  if (!headers) return null;
-
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers,
-    body,
-  });
+  const res = await requestWithAuthRetry(undefined, (headers) =>
+    fetch(url, {
+      method: 'PATCH',
+      headers,
+      body,
+    })
+  );
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 
@@ -437,28 +458,25 @@ export async function apiDelete<T>(
   path: string,
   body?: unknown
 ): Promise<{ status: boolean; data: T } | null> {
-  const headers = await buildAuthHeaders(
-    body !== undefined ? 'application/json' : undefined
-  );
-  if (!headers) return null;
-
+  const contentType = body !== undefined ? 'application/json' : undefined;
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const requestInit: RequestInit = {
-    method: 'DELETE',
-    headers,
-  };
+  const res = await requestWithAuthRetry(contentType, (headers) => {
+    const requestInit: RequestInit = {
+      method: 'DELETE',
+      headers,
+    };
 
-  if (body !== undefined) {
-    requestInit.body = JSON.stringify(body);
-  }
+    if (body !== undefined) {
+      requestInit.body = JSON.stringify(body);
+    }
 
-  const res = await fetch(url, requestInit);
+    return fetch(url, requestInit);
+  });
 
-  if (res.status === 401) {
-    await handleUnauthorized();
+  if (!res) {
     return null;
   }
 

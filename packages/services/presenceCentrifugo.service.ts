@@ -1,4 +1,4 @@
-import { injectable, inject, container } from 'tsyringe';
+import { singleton, inject, container } from 'tsyringe';
 import { Centrifuge, PublishResult } from 'centrifuge';
 import { createHash } from 'crypto';
 import Redis from 'ioredis';
@@ -10,7 +10,7 @@ import {
   ICachedPublish,
 } from '@core/common/interfaces/ICentrifugo';
 
-@injectable()
+@singleton()
 export class PresenceCentrifugoService {
   private readonly publishRetryAttempts = 3;
   private readonly publishRetryBaseDelayMs = 500;

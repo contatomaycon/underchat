@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import Redis from 'ioredis';
 import {
+  createJwtCacheVersionKey,
   createJwtSessionKey,
   createUserAttendanceRulesCacheKey,
 } from '@core/common/functions/createCacheKey';
@@ -15,35 +16,12 @@ export class AuthLogoutUseCase {
     private readonly presenceService: PresenceService
   ) {}
 
-  private async scanAndDeleteByPattern(pattern: string): Promise<void> {
-    const stream = this.redis.scanStream({
-      match: pattern,
-      count: 100,
-    });
-
-    const keysToDelete: string[] = [];
-
-    stream.on('data', (keys: string[]) => {
-      keysToDelete.push(...keys);
-    });
-
-    await new Promise<void>((resolve) => {
-      stream.on('end', () => {
-        resolve();
-      });
-    });
-
-    if (keysToDelete.length > 0) {
-      await this.redis.del(...keysToDelete);
-    }
-  }
-
   private async invalidateUserJwtCache(
     accountId: string,
     userId: string
   ): Promise<void> {
-    const pattern = `jwtCache:${accountId}:${userId}*`;
-    await this.scanAndDeleteByPattern(pattern);
+    const cacheVersionKey = createJwtCacheVersionKey(accountId, userId);
+    await this.redis.incr(cacheVersionKey);
   }
 
   private async invalidateUserAttendanceRulesCache(

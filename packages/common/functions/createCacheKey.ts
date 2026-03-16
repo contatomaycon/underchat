@@ -13,7 +13,8 @@ function joinParts(parts: string[]): string {
 export function createJwtCacheKey(
   accountId: string,
   userId: string,
-  routeModule: string
+  routeModule: string,
+  version = '0'
 ): string {
   if (!accountId) {
     throw new Error('account id is required');
@@ -27,8 +28,30 @@ export function createJwtCacheKey(
     throw new Error('route module is required');
   }
 
+  const normalizedVersion = version.trim().length > 0 ? version : '0';
   const encodedRouteModule = encodeURIComponent(routeModule);
-  return joinParts(['jwtCache', accountId, userId, encodedRouteModule]);
+  return joinParts([
+    'jwtCache',
+    accountId,
+    userId,
+    normalizedVersion,
+    encodedRouteModule,
+  ]);
+}
+
+export function createJwtCacheVersionKey(
+  accountId: string,
+  userId: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!userId) {
+    throw new Error('user id is required');
+  }
+
+  return joinParts(['jwtCacheVersion', accountId, userId]);
 }
 
 export function createKeyApiCacheKey(

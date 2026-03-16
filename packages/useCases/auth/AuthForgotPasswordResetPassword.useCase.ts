@@ -13,7 +13,10 @@ import { PresenceService } from '@core/services/presence.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import Redis from 'ioredis';
-import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
+import {
+  createJwtCacheVersionKey,
+  createJwtSessionKey,
+} from '@core/common/functions/createCacheKey';
 import { randomUUID } from 'node:crypto';
 import { AuthRepository } from '@core/repositories/auth/Auth.repository';
 import { UserAttendanceHoursBlockedError } from '@core/common/exceptions/UserAttendanceHoursBlockedError';
@@ -42,27 +45,8 @@ export class AuthForgotPasswordResetPasswordUseCase {
     accountId: string,
     userId: string
   ): Promise<void> {
-    const pattern = `jwtCache:${accountId}:${userId}*`;
-    const stream = this.redis.scanStream({
-      match: pattern,
-      count: 100,
-    });
-
-    const keysToDelete: string[] = [];
-
-    stream.on('data', (keys: string[]) => {
-      keysToDelete.push(...keys);
-    });
-
-    await new Promise<void>((resolve) => {
-      stream.on('end', () => {
-        resolve();
-      });
-    });
-
-    if (keysToDelete.length > 0) {
-      await this.redis.del(...keysToDelete);
-    }
+    const cacheVersionKey = createJwtCacheVersionKey(accountId, userId);
+    await this.redis.incr(cacheVersionKey);
   }
 
   private async notifyPreviousSession(

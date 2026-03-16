@@ -10,6 +10,7 @@ import {
 import { BACKEND_URL } from '../config';
 import { getToken } from '../storage/authStorage';
 import { teardownMobileSessionOnUnauthorized } from '../utils/sessionTeardown';
+import { refreshSessionTokenWithSingleFlight } from '../api/sessionRefresh';
 
 export type { Subscription };
 
@@ -43,6 +44,19 @@ const channelStreamPositions = new Map<
 const recoveryFailedListeners = new Set<(channel: string) => void>();
 const connectionListeners = new Set<(connected: boolean) => void>();
 
+const clearCachedToken = (): void => {
+  cachedToken = null;
+  tokenGenerationPromise = null;
+};
+
+const isTokenExpiredSignal = (code: number, reason: string): boolean => {
+  if (code === 109 || code === 3501) {
+    return true;
+  }
+
+  return reason.toLowerCase().includes('token expired');
+};
+
 const emitConnectionState = (connected: boolean): void => {
   for (const listener of connectionListeners) {
     try {
@@ -53,13 +67,16 @@ const emitConnectionState = (connected: boolean): void => {
   }
 };
 
-const requestCentrifugoAuthToken = async (): Promise<AuthTokenResponse> => {
-  const token = await getToken();
+const requestCentrifugoAuthToken = async (
+  tokenOverride?: string
+): Promise<Response> => {
+  const token = tokenOverride ?? (await getToken());
+
   if (!token || !BACKEND_URL) {
     throw new Error('Unable to request Centrifugo token');
   }
 
-  const response = await fetch(`${BACKEND_URL}${CENTRIFUGO_AUTH_TOKEN_PATH}`, {
+  return fetch(`${BACKEND_URL}${CENTRIFUGO_AUTH_TOKEN_PATH}`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -70,24 +87,37 @@ const requestCentrifugoAuthToken = async (): Promise<AuthTokenResponse> => {
     },
     body: '{}',
   });
-
-  if (response.status === 401) {
-    await teardownMobileSessionOnUnauthorized();
-    throw new Error('Unauthorized Centrifugo token request');
-  }
-
-  if (!response.ok) {
-    throw new Error('Failed to request Centrifugo token');
-  }
-
-  const payload = (await response.json()) as ApiEnvelope<AuthTokenResponse>;
-  const authData = payload?.data;
-  if (!payload?.status || !authData?.token || !authData?.url) {
-    throw new Error('Invalid Centrifugo auth response');
-  }
-
-  return authData;
 };
+
+const requestCentrifugoAuthTokenWithRetry =
+  async (): Promise<AuthTokenResponse> => {
+    let response = await requestCentrifugoAuthToken();
+
+    if (response.status === 401) {
+      const refreshedToken = await refreshSessionTokenWithSingleFlight();
+
+      if (refreshedToken) {
+        response = await requestCentrifugoAuthToken(refreshedToken);
+      }
+    }
+
+    if (response.status === 401) {
+      await teardownMobileSessionOnUnauthorized();
+      throw new Error('Unauthorized Centrifugo token request');
+    }
+
+    if (!response.ok) {
+      throw new Error('Failed to request Centrifugo token');
+    }
+
+    const payload = (await response.json()) as ApiEnvelope<AuthTokenResponse>;
+    const authData = payload?.data;
+    if (!payload?.status || !authData?.token || !authData?.url) {
+      throw new Error('Invalid Centrifugo auth response');
+    }
+
+    return authData;
+  };
 
 const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
   const now = Date.now();
@@ -102,7 +132,7 @@ const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
 
   tokenGenerationPromise = (async () => {
     try {
-      const response = await requestCentrifugoAuthToken();
+      const response = await requestCentrifugoAuthTokenWithRetry();
 
       cachedToken = {
         token: response.token,
@@ -233,6 +263,10 @@ const getConnection = async (): Promise<Centrifuge> => {
 
   centrifugeClient.on('disconnected', (ctx) => {
     emitConnectionState(false);
+    if (isTokenExpiredSignal(ctx.code, ctx.reason)) {
+      clearCachedToken();
+    }
+
     if (ctx.reason !== 'clean' && ctx.code !== 1000) {
       setTimeout(() => {
         if (centrifugeClient && centrifugeClient.state === State.Disconnected) {
@@ -242,8 +276,22 @@ const getConnection = async (): Promise<Centrifuge> => {
     }
   });
 
-  centrifugeClient.on('error', () => {
-    //
+  centrifugeClient.on('error', (ctx: unknown) => {
+    if (!ctx || typeof ctx !== 'object') {
+      return;
+    }
+
+    const payload = ctx as { code?: unknown; message?: unknown };
+    const code =
+      typeof payload.code === 'number' && Number.isFinite(payload.code)
+        ? payload.code
+        : 0;
+    const reason =
+      typeof payload.message === 'string' ? payload.message : 'unknown';
+
+    if (isTokenExpiredSignal(code, reason)) {
+      clearCachedToken();
+    }
   });
 
   centrifugeClient.connect();

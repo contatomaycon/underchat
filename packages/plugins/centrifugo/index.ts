@@ -7,6 +7,8 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { Centrifuge, UnauthorizedError, State } from 'centrifuge';
 import WebSocket from 'ws';
 import { recordException } from '@core/plugins/telemetry/observability';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { PresenceCentrifugoService } from '@core/services/presenceCentrifugo.service';
 
 interface CentrifugoPluginOptions {
   module: ERouteModule;
@@ -120,6 +122,18 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
       }
     } catch (error) {
       fastify.log.warn({ err: error }, 'Error during Centrifugo cleanup');
+    }
+
+    try {
+      container.resolve(CentrifugoService).cleanup();
+    } catch {
+      // service may not have been instantiated in this process
+    }
+
+    try {
+      container.resolve(PresenceCentrifugoService).cleanup();
+    } catch {
+      // service may not have been instantiated in this process
     }
   };
 

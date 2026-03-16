@@ -6,6 +6,7 @@ import { ApiJwtViewerUseCase } from '@core/useCases/api/ApiJwtViewer.useCase';
 import { container } from 'tsyringe';
 import {
   createJwtCacheKey,
+  createJwtCacheVersionKey,
   createJwtSessionKey,
 } from '@core/common/functions/createCacheKey';
 import { getRootPath } from '@core/common/functions/getRootPath';
@@ -22,6 +23,59 @@ import { UserService } from '@core/services/user.service';
 import { USER_ATTENDANCE_HOURS_BLOCK_REASON } from '@core/common/functions/userAttendanceHours';
 import { normalizeSessionPlatform } from '@core/common/functions/sessionPlatform';
 import type { SessionPlatform } from '@core/common/types/SessionPlatform';
+
+type AuthFailureReason =
+  | 'jwt_verify_failed'
+  | 'route_not_found'
+  | 'module_mismatch'
+  | 'account_id_missing'
+  | 'session_id_missing'
+  | 'redis_cache_version_error'
+  | 'redis_session_lookup_error'
+  | 'session_not_found'
+  | 'session_mismatch'
+  | 'auth_viewer_empty'
+  | 'token_access_account_id_missing'
+  | 'unexpected_error';
+
+function logAuthFailure(
+  request: FastifyRequest,
+  reason: AuthFailureReason,
+  details: Record<string, unknown> = {}
+): void {
+  request.log.warn(
+    {
+      type: 'auth_failure_reason',
+      auth_failure_reason: reason,
+      path: request.url,
+      method: request.method,
+      ...details,
+    },
+    'JWT authentication denied'
+  );
+}
+
+function sendUnauthorized(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  reason: AuthFailureReason,
+  details: Record<string, unknown> = {}
+): ReturnType<typeof sendResponse> {
+  logAuthFailure(request, reason, details);
+  return sendResponse(reply, {
+    message: request.t('not_authorized'),
+    httpStatusCode: EHTTPStatusCode.unauthorized,
+  });
+}
+
+function normalizeCacheVersion(value: string | null): string {
+  if (!value) {
+    return '0';
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : '0';
+}
 
 async function handleApiKeyCacheWithCachedValue(
   redis: Redis,
@@ -107,20 +161,21 @@ async function authenticateJwt(
   reply: FastifyReply,
   permissions?: EPermissionsRoles[] | null
 ): Promise<void> {
-  const { t } = request;
   const { Redis } = request.server;
   const routePath = routePathWithoutPrefix(request);
   const shouldBypassAttendanceGuard =
     routePath === '/user/me/attendance-hours/status';
 
+  let decoded: {
+    user_id: string;
+    module: ERouteModule;
+    account_id: string;
+    session_id: string;
+    session_platform?: string;
+  };
+
   try {
-    const decoded: {
-      user_id: string;
-      module: ERouteModule;
-      account_id: string;
-      session_id: string;
-      session_platform?: string;
-    } = await request.jwtVerify({
+    decoded = await request.jwtVerify({
       verify: {
         key: generalEnvironment.jwtSecret,
       },
@@ -128,33 +183,30 @@ async function authenticateJwt(
         complete: true,
       },
     });
+  } catch (error) {
+    return sendUnauthorized(request, reply, 'jwt_verify_failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
+  try {
     if (!decoded || !routePath) {
-      return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
-      });
+      return sendUnauthorized(request, reply, 'route_not_found');
     }
 
     if (decoded.module !== request.module) {
-      return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
+      return sendUnauthorized(request, reply, 'module_mismatch', {
+        token_module: decoded.module,
+        request_module: request.module,
       });
     }
 
     if (!decoded.account_id) {
-      return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
-      });
+      return sendUnauthorized(request, reply, 'account_id_missing');
     }
 
     if (!decoded.session_id) {
-      return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
-      });
+      return sendUnauthorized(request, reply, 'session_id_missing');
     }
 
     const decodedSessionPlatform = normalizeSessionPlatform(
@@ -168,28 +220,51 @@ async function authenticateJwt(
         )
       : createJwtSessionKey(decoded.account_id, decoded.user_id);
     const routeModule = getRootPath(routePath, request.module);
+    const cacheVersionKey = createJwtCacheVersionKey(
+      decoded.account_id,
+      decoded.user_id
+    );
+    let cacheVersion = '0';
+
+    try {
+      const cacheVersionRaw = await Redis.get(cacheVersionKey);
+      cacheVersion = normalizeCacheVersion(cacheVersionRaw);
+    } catch (error) {
+      return sendUnauthorized(request, reply, 'redis_cache_version_error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     const cacheKey = createJwtCacheKey(
       decoded.account_id,
       decoded.user_id,
-      routeModule
+      routeModule,
+      cacheVersion
     );
 
-    const [activeSession, cachedPermissions] = await Promise.all([
-      Redis.get(sessionKey),
-      Redis.get(cacheKey),
-    ]);
+    let activeSession: string | null = null;
+    let cachedPermissions: string | null = null;
+
+    try {
+      [activeSession, cachedPermissions] = await Promise.all([
+        Redis.get(sessionKey),
+        Redis.get(cacheKey),
+      ]);
+    } catch (error) {
+      return sendUnauthorized(request, reply, 'redis_session_lookup_error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     if (!activeSession) {
-      return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
+      return sendUnauthorized(request, reply, 'session_not_found', {
+        session_platform: decodedSessionPlatform,
       });
     }
 
     if (activeSession !== decoded.session_id) {
-      return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
+      return sendUnauthorized(request, reply, 'session_mismatch', {
+        session_platform: decodedSessionPlatform,
       });
     }
 
@@ -202,7 +277,7 @@ async function authenticateJwt(
 
       if (attendanceGuard.is_blocked_now) {
         return sendResponse(reply, {
-          message: t('user_attendance_hours_blocked_use', {
+          message: request.t('user_attendance_hours_blocked_use', {
             windows: attendanceGuard.today_windows_label ?? '--',
           }),
           httpStatusCode: EHTTPStatusCode.forbidden,
@@ -225,10 +300,7 @@ async function authenticateJwt(
     );
 
     if (!responseAuth) {
-      return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
-      });
+      return sendUnauthorized(request, reply, 'auth_viewer_empty');
     }
 
     const hasPermission = hasRequiredPermission(
@@ -238,7 +310,7 @@ async function authenticateJwt(
 
     if (!hasPermission) {
       return sendResponse(reply, {
-        message: t('permission_denied'),
+        message: request.t('permission_denied'),
         httpStatusCode: EHTTPStatusCode.forbidden,
       });
     }
@@ -251,20 +323,20 @@ async function authenticateJwt(
     );
 
     if (!tokenJwtData.account_id) {
-      return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
-      });
+      return sendUnauthorized(
+        request,
+        reply,
+        'token_access_account_id_missing'
+      );
     }
 
     request.tokenJwtData = tokenJwtData;
     request.permissionsRoute = permissions ?? null;
 
     return;
-  } catch {
-    return sendResponse(reply, {
-      message: t('not_authorized'),
-      httpStatusCode: EHTTPStatusCode.unauthorized,
+  } catch (error) {
+    return sendUnauthorized(request, reply, 'unexpected_error', {
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }

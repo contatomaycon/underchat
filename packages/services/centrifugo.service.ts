@@ -1,4 +1,4 @@
-import { injectable, inject, container } from 'tsyringe';
+import { singleton, inject, container } from 'tsyringe';
 import {
   Centrifuge,
   PublicationContext,
@@ -19,7 +19,7 @@ import {
   ICachedPublish,
 } from '@core/common/interfaces/ICentrifugo';
 
-@injectable()
+@singleton()
 export class CentrifugoService {
   private readonly publishRetryAttempts = 3;
   private readonly publishRetryBaseDelayMs = 300;

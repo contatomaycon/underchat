@@ -8,7 +8,7 @@ import {
   SubscribedContext,
 } from 'centrifuge';
 import { isAxiosError } from 'axios';
-import axios, { logoutAndRedirect } from '@webcore/axios';
+import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
 import { getCentrifugoTelemetry } from './centrifugoTelemetry';
@@ -34,6 +34,19 @@ const subscriptionHandlersBound = new WeakSet<Subscription>();
 
 const telemetry = getCentrifugoTelemetry();
 telemetry.setStreamPositionProvider(() => channelStreamPositions);
+
+const clearCachedToken = (): void => {
+  cachedToken = null;
+  tokenGenerationPromise = null;
+};
+
+const isTokenExpiredSignal = (code: number, reason: string): boolean => {
+  if (code === 109 || code === 3501) {
+    return true;
+  }
+
+  return reason.toLowerCase().includes('token expired');
+};
 
 const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
   const now = Date.now();
@@ -67,7 +80,7 @@ const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
       return data.data;
     } catch (error) {
       if (isAxiosError(error) && error.response?.status === 401) {
-        await logoutAndRedirect();
+        clearCachedToken();
       }
 
       throw error;
@@ -342,6 +355,9 @@ const getConnection = async (): Promise<Centrifuge> => {
 
   centrifugeClient.on('disconnected', (ctx) => {
     telemetry.trackConnectionState('disconnected', ctx.reason, ctx.code);
+    if (isTokenExpiredSignal(ctx.code, ctx.reason)) {
+      clearCachedToken();
+    }
 
     if (ctx.reason !== 'clean' && ctx.code !== 1000) {
       setTimeout(() => {
@@ -357,6 +373,22 @@ const getConnection = async (): Promise<Centrifuge> => {
     recordException(error, {
       source: 'centrifugo.client.error',
     });
+
+    if (!error || typeof error !== 'object') {
+      return;
+    }
+
+    const payload = error as { code?: unknown; message?: unknown };
+    const code =
+      typeof payload.code === 'number' && Number.isFinite(payload.code)
+        ? payload.code
+        : 0;
+    const reason =
+      typeof payload.message === 'string' ? payload.message : 'unknown';
+
+    if (isTokenExpiredSignal(code, reason)) {
+      clearCachedToken();
+    }
   });
 
   centrifugeClient.connect();

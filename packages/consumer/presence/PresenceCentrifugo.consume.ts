@@ -11,12 +11,21 @@ import { hasChatUserStatusUpdatePermissionByPermissions } from '@core/common/fun
 @singleton()
 export class PresenceCentrifugoConsume {
   private isRunning = false;
+  private isSubscribed = false;
+  private readonly presenceChannel = 'presence:updates';
   private readonly accountIdCachePrefix = 'presence:account_id:';
   private readonly accountIdCacheTtl = 3600;
   private readonly userExistsCachePrefix = 'presence:user:exists:';
   private readonly userExistsCacheTtl = 86400;
   private readonly statusPermissionCachePrefix = 'presence:status:permission:';
   private readonly statusPermissionCacheTtl = 300;
+  private readonly messageHandler = async (data: unknown) => {
+    if (!this.isRunning) {
+      return;
+    }
+
+    await this.handlePresenceMessage(data);
+  };
 
   constructor(
     @inject(CentrifugoService)
@@ -33,13 +42,16 @@ export class PresenceCentrifugoConsume {
     if (this.isRunning) return;
 
     this.isRunning = true;
-
-    const channel = 'presence:updates';
+    if (this.isSubscribed) {
+      return;
+    }
 
     try {
-      await this.centrifugoService.onMessage(channel, async (data: unknown) => {
-        await this.handlePresenceMessage(data);
-      });
+      await this.centrifugoService.onMessage(
+        this.presenceChannel,
+        this.messageHandler
+      );
+      this.isSubscribed = true;
     } catch (error) {
       console.error('Failed to subscribe to presence channel', error);
       this.isRunning = false;
@@ -183,6 +195,10 @@ export class PresenceCentrifugoConsume {
 
   private async handlePresenceMessage(data: unknown): Promise<void> {
     try {
+      if (!this.isRunning) {
+        return;
+      }
+
       if (!data || typeof data !== 'object') return;
 
       const message = data as IPresenceMessage;
