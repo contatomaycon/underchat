@@ -10,6 +10,7 @@ const E2E_ENCRYPT_NOTIFICATION_TEXT =
   'As mensagens e chamadas são protegidas com criptografia de ponta a ponta. Ninguém fora desta conversa, nem mesmo o WhatsApp, pode ler ou ouvi-las.';
 const CIPHERTEXT_FANOUT_NOTIFICATION_TEXT =
   'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';
+const SYSTEM_MESSAGE_JID_ALIASES = new Set(['0@c.us', '0@s.whatsapp.net']);
 
 function getMessageId(msg: Message): string | undefined {
   if (!msg?.id) return undefined;
@@ -27,6 +28,25 @@ function getNonEmptyString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isSystemMessageJid(value: string): boolean {
+  const raw = getNonEmptyString(value)?.toLowerCase();
+  if (!raw) {
+    return false;
+  }
+
+  const normalized = (normalizeJid(raw) ?? raw).toLowerCase();
+  if (SYSTEM_MESSAGE_JID_ALIASES.has(normalized)) {
+    return true;
+  }
+
+  const [user, domain] = normalized.split('@');
+  if (!user || !domain) {
+    return false;
+  }
+
+  return user === '0' && (domain === 'c.us' || domain === 's.whatsapp.net');
 }
 
 function mapWwebjsTypeToMessageType(
@@ -1227,9 +1247,12 @@ export async function wwebjsMessageToUpsert(
   const remoteJid = resolvedJids?.remoteJid ?? fallbackRemoteJid;
   if (!remoteJid) return null;
   const remoteJidAlt = resolvedJids?.remoteJidAlt;
-  const normalizedRemoteJid = normalizeJid(remoteJid) ?? remoteJid;
+  const normalizedRemoteJid = (
+    normalizeJid(remoteJid) ?? remoteJid
+  ).toLowerCase();
 
   if (
+    isSystemMessageJid(normalizedRemoteJid) ||
     normalizedRemoteJid === 'status@broadcast' ||
     normalizedRemoteJid.endsWith('@broadcast') ||
     normalizedRemoteJid.endsWith('@g.us') ||

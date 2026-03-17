@@ -35,6 +35,10 @@ const ACK_DEVICE = 2;
 const ACK_READ = 3;
 const ACK_PLAYED = 4;
 const SYSTEM_MESSAGE_JID = '0@c.us';
+const SYSTEM_MESSAGE_JID_ALIASES = new Set([
+  SYSTEM_MESSAGE_JID,
+  '0@s.whatsapp.net',
+]);
 
 interface WwebjsResolvedJids {
   remoteJid: string;
@@ -94,6 +98,25 @@ function getMessageIdSerialized(msg: { id?: unknown }): string | undefined {
     return (msg.id as { _serialized: string })._serialized;
   }
   return String(msg.id);
+}
+
+function isSystemMessageJid(value: string): boolean {
+  const raw = getNonEmptyString(value)?.toLowerCase();
+  if (!raw) {
+    return false;
+  }
+
+  const normalized = (normalizeJid(raw) ?? raw).toLowerCase();
+  if (SYSTEM_MESSAGE_JID_ALIASES.has(normalized)) {
+    return true;
+  }
+
+  const [user, domain] = normalized.split('@');
+  if (!user || !domain) {
+    return false;
+  }
+
+  return user === '0' && (domain === 'c.us' || domain === 's.whatsapp.net');
 }
 
 function parseBooleanLike(value: unknown): boolean | undefined {
@@ -747,11 +770,17 @@ export class WwebjsIncomingMessageService {
   }
 
   private shouldSkipChat(remoteJid: string): boolean {
-    if (!remoteJid) return true;
-    if (remoteJid === SYSTEM_MESSAGE_JID) return true;
-    if (remoteJid === 'status@broadcast') return true;
-    if (remoteJid.endsWith('@broadcast')) return true;
-    if (remoteJid.endsWith('@newsletter')) return true;
+    const normalized = getNonEmptyString(remoteJid);
+    if (!normalized) return true;
+
+    const normalizedJid = (
+      normalizeJid(normalized) ?? normalized
+    ).toLowerCase();
+
+    if (isSystemMessageJid(normalizedJid)) return true;
+    if (normalizedJid === 'status@broadcast') return true;
+    if (normalizedJid.endsWith('@broadcast')) return true;
+    if (normalizedJid.endsWith('@newsletter')) return true;
     return false;
   }
 

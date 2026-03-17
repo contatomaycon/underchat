@@ -424,6 +424,25 @@ export class MessageUpsertConsume {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
+  private isSystemMessageJid(value: string): boolean {
+    const raw = this.toNonEmptyString(value)?.toLowerCase();
+    if (!raw) {
+      return false;
+    }
+
+    const normalized = (normalizeJid(raw) ?? raw).toLowerCase();
+    if (normalized === '0@c.us' || normalized === '0@s.whatsapp.net') {
+      return true;
+    }
+
+    const [user, domain] = normalized.split('@');
+    if (!user || !domain) {
+      return false;
+    }
+
+    return user === '0' && (domain === 'c.us' || domain === 's.whatsapp.net');
+  }
+
   private normalizeReactionActorId(value: unknown): string | undefined {
     const normalized = this.toNonEmptyString(value);
     if (!normalized) {
@@ -2579,6 +2598,7 @@ export class MessageUpsertConsume {
 
       const normalized = normalizeJid(raw) ?? raw;
       if (
+        this.isSystemMessageJid(normalized) ||
         normalized === 'status@broadcast' ||
         normalized.endsWith('@broadcast') ||
         normalized.endsWith('@g.us')
