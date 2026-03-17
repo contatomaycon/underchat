@@ -13,7 +13,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "5",
+      "buildNumber": "6",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
@@ -24,7 +24,7 @@
       "bundleIdentifier": "com.underchat.mobile"
     },
     "android": {
-      "versionCode": 5,
+      "versionCode": 6,
       "package": "com.underchat.mobile",
       "googleServicesFile": "./google-services.json",
       "icon": "./assets/android-icon-safe.png",
