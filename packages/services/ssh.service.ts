@@ -88,6 +88,9 @@ interface IRunningServerCommand {
 export class SshService {
   private readonly connectMaxRetries = 3;
   private readonly connectRetryBaseDelayMs = 1000;
+  private readonly aptLockRetryMaxAttempts = 18;
+  private readonly aptLockRetryBaseDelayMs = 5000;
+  private readonly aptLockRetryMaxDelayMs = 20000;
   private readonly runningCommandsByServer = new Map<
     string,
     IRunningServerCommand
@@ -151,6 +154,218 @@ export class SshService {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private isAptOrDpkgCommand(command: string): boolean {
+    const normalized = command.toLowerCase();
+    return (
+      normalized.includes('apt-get') ||
+      normalized.includes(' apt ') ||
+      normalized.includes('dpkg')
+    );
+  }
+
+  private isAptDpkgLockError(error: unknown): boolean {
+    const fullText =
+      error instanceof SshCommandExecutionError
+        ? `${error.message}\n${error.output}`
+        : error instanceof Error
+          ? error.message
+          : '';
+
+    if (!fullText) {
+      return false;
+    }
+
+    const normalized = fullText.toLowerCase();
+
+    return (
+      normalized.includes('frontend lock was locked by another process') ||
+      normalized.includes('dpkg frontend lock') ||
+      normalized.includes('lock-frontend') ||
+      normalized.includes('could not get lock /var/lib/dpkg/lock') ||
+      normalized.includes('could not get lock /var/lib/apt/lists/lock') ||
+      normalized.includes('could not get lock /var/cache/apt/archives/lock') ||
+      normalized.includes('unable to acquire the dpkg frontend lock') ||
+      normalized.includes('is another process using it')
+    );
+  }
+
+  private getAptLockRetryDelayMs(attempt: number): number {
+    const delay = this.aptLockRetryBaseDelayMs * (attempt + 1);
+    return Math.min(delay, this.aptLockRetryMaxDelayMs);
+  }
+
+  private appendCommandOutput(
+    serverId: string,
+    command: string,
+    output: string,
+    results: IServerSshCentrifugo[],
+    sendCentrifugo: boolean
+  ): void {
+    const date = new Date();
+    const outputStripAnsi = stripAnsi(output);
+    const commandStripAnsi = stripAnsi(command);
+
+    const serverSshCentrifugo: IServerSshCentrifugo = {
+      server_id: serverId,
+      command: commandStripAnsi,
+      output: outputStripAnsi,
+      date,
+    };
+
+    results.push(serverSshCentrifugo);
+
+    if (sendCentrifugo) {
+      this.centrifugoService.publish(
+        serverSshCentrifugoQueue(),
+        serverSshCentrifugo
+      );
+    }
+  }
+
+  private clearRunningCommandStream(
+    runningCommand: IRunningServerCommand | null
+  ): void {
+    if (runningCommand) {
+      runningCommand.stream = null;
+    }
+  }
+
+  private buildCancelledRunCommandsError(
+    serverId: string,
+    command: string,
+    results: IServerSshCentrifugo[],
+    causeError?: unknown
+  ): SshRunCommandsCancelledError {
+    return new SshRunCommandsCancelledError(
+      serverId,
+      command,
+      results,
+      causeError
+    );
+  }
+
+  private handleRunningCommandStreamReady(
+    runningCommand: IRunningServerCommand | null,
+    stream: ClientChannel
+  ): void {
+    if (!runningCommand) {
+      return;
+    }
+
+    runningCommand.stream = stream;
+
+    if (!runningCommand.canceled) {
+      return;
+    }
+
+    try {
+      stream.close();
+    } catch {}
+  }
+
+  private shouldRetryAptLock(
+    command: string,
+    error: unknown,
+    attempts: number
+  ): boolean {
+    if (attempts >= this.aptLockRetryMaxAttempts) {
+      return false;
+    }
+
+    if (!this.isAptOrDpkgCommand(command)) {
+      return false;
+    }
+
+    return this.isAptDpkgLockError(error);
+  }
+
+  private async executeCommandWithAptLockRetry(
+    conn: Client,
+    params: {
+      serverId: string;
+      command: string;
+      failOnNonZero: boolean;
+      sendCentrifugo: boolean;
+      results: IServerSshCentrifugo[];
+      cancellationId: string;
+      runningCommand: IRunningServerCommand | null;
+    }
+  ): Promise<void> {
+    const {
+      serverId,
+      command,
+      failOnNonZero,
+      sendCentrifugo,
+      results,
+      cancellationId,
+      runningCommand,
+    } = params;
+    let aptLockAttempts = 0;
+
+    while (true) {
+      try {
+        await this.execCommand(conn, command, {
+          pty: true,
+          failOnNonZero,
+          isCancelled: () => runningCommand?.canceled ?? false,
+          createCancelError: () =>
+            this.buildCancelledRunCommandsError(
+              cancellationId,
+              command,
+              results
+            ),
+          onStreamReady: (stream) =>
+            this.handleRunningCommandStreamReady(runningCommand, stream),
+          onData: (line) => {
+            this.appendCommandOutput(
+              serverId,
+              command,
+              line,
+              results,
+              sendCentrifugo
+            );
+          },
+        });
+
+        return;
+      } catch (error) {
+        if (error instanceof SshRunCommandsCancelledError) {
+          throw error;
+        }
+
+        if (runningCommand?.canceled) {
+          throw this.buildCancelledRunCommandsError(
+            cancellationId,
+            command,
+            results,
+            error
+          );
+        }
+
+        if (!this.shouldRetryAptLock(command, error, aptLockAttempts)) {
+          throw new SshRunCommandsError(command, results, error);
+        }
+
+        const waitMs = this.getAptLockRetryDelayMs(aptLockAttempts);
+        aptLockAttempts += 1;
+
+        this.appendCommandOutput(
+          serverId,
+          command,
+          `[ssh][apt-lock] lock detectado, aguardando ${Math.ceil(
+            waitMs / 1000
+          )}s para retry ${aptLockAttempts}/${this.aptLockRetryMaxAttempts}\n`,
+          results,
+          sendCentrifugo
+        );
+
+        await this.sleep(waitMs);
+      } finally {
+        this.clearRunningCommandStream(runningCommand);
+      }
+    }
   }
 
   private connectOnce(config: ConnectConfig): Promise<Client> {
@@ -455,85 +670,22 @@ export class SshService {
     try {
       for (const cmd of commands) {
         if (runningCommand?.canceled) {
-          throw new SshRunCommandsCancelledError(
+          throw this.buildCancelledRunCommandsError(
             cancellationKey ?? serverId,
             cmd,
             results
           );
         }
 
-        try {
-          await this.execCommand(conn, cmd, {
-            pty: true,
-            failOnNonZero,
-            isCancelled: () => runningCommand?.canceled ?? false,
-            createCancelError: () =>
-              new SshRunCommandsCancelledError(
-                cancellationKey ?? serverId,
-                cmd,
-                results
-              ),
-            onStreamReady: (stream) => {
-              if (!runningCommand) {
-                return;
-              }
-
-              runningCommand.stream = stream;
-
-              if (runningCommand.canceled) {
-                try {
-                  stream.close();
-                } catch {}
-              }
-            },
-            onData: (linha) => {
-              const date = new Date();
-
-              const outputStripAnsi = stripAnsi(linha);
-              const commandStripAnsi = stripAnsi(cmd);
-
-              const serverSshCentrifugo: IServerSshCentrifugo = {
-                server_id: serverId,
-                command: commandStripAnsi,
-                output: outputStripAnsi,
-                date,
-              };
-
-              results.push({
-                command: commandStripAnsi,
-                output: outputStripAnsi,
-                date,
-                server_id: serverId,
-              });
-
-              if (sendCentrifugo) {
-                this.centrifugoService.publish(
-                  serverSshCentrifugoQueue(),
-                  serverSshCentrifugo
-                );
-              }
-            },
-          });
-        } catch (error) {
-          if (error instanceof SshRunCommandsCancelledError) {
-            throw error;
-          }
-
-          if (runningCommand?.canceled) {
-            throw new SshRunCommandsCancelledError(
-              cancellationKey ?? serverId,
-              cmd,
-              results,
-              error
-            );
-          }
-
-          throw new SshRunCommandsError(cmd, results, error);
-        } finally {
-          if (runningCommand) {
-            runningCommand.stream = null;
-          }
-        }
+        await this.executeCommandWithAptLockRetry(conn, {
+          serverId,
+          command: cmd,
+          failOnNonZero,
+          sendCentrifugo,
+          results,
+          cancellationId: cancellationKey ?? serverId,
+          runningCommand,
+        });
       }
 
       return results;
