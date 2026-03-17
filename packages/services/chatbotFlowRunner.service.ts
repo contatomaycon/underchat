@@ -59,6 +59,7 @@ import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMe
 import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
+import { SendMessageOptions } from '@core/common/interfaces/ISendMessageOptions';
 import {
   HumanTransferMode,
   IPromptTransferDecision,
@@ -78,6 +79,13 @@ export class ChatbotFlowRunnerService {
   private readonly AI_AGENT_API_RETRY_ATTEMPTS = 3;
   private readonly AI_AGENT_API_RETRY_BASE_DELAY_MS = 500;
   private readonly RANDOM_MESSAGE_CYCLE_TTL_SECONDS = 28800;
+  private readonly AUTOMATION_CHAT_STATUSES: ReadonlySet<EChatStatus> =
+    new Set<EChatStatus>([
+      EChatStatus.ura,
+      EChatStatus.ura_output,
+      EChatStatus.ura_schedule,
+      EChatStatus.ura_webhook,
+    ]);
   private static readonly MIN_PREFIX_MATCH_LENGTH = 8;
 
   private static readonly STOP_WORDS = new Set<string>([
@@ -271,6 +279,143 @@ export class ChatbotFlowRunnerService {
     chatId: string
   ): string {
     return `chatbot:ai-agent:user-selection:${accountId}:${workerId}:${chatId}`;
+  }
+
+  private isAutomationChatStatus(
+    status: IChat['status'] | null | undefined
+  ): boolean {
+    if (!status) {
+      return false;
+    }
+
+    return this.AUTOMATION_CHAT_STATUSES.has(status);
+  }
+
+  private async loadCurrentChatState(createChat: IChat): Promise<IChat | null> {
+    return this.chatService.findChatByChatId(
+      createChat.account.id,
+      createChat.chat_id
+    );
+  }
+
+  private async clearChatbotRuntimeStateByIds(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): Promise<void> {
+    const flowCacheKey = this.getChatbotFlowCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const inactivityCacheKey = this.getInactivityCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const failedAttemptsCacheKey = this.getFailedAttemptsCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const menuDebounceCacheKey = this.getMenuDebounceCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const aiAgentDebounceCacheKey = this.getAiAgentDebounceCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const sectorSelectionCacheKey = this.getSectorSelectionCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const userSelectionCacheKey = this.getUserSelectionCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const scheduleKey = this.getInactivityScheduleKey();
+
+    await this.redis
+      .multi()
+      .del(
+        flowCacheKey,
+        inactivityCacheKey,
+        failedAttemptsCacheKey,
+        menuDebounceCacheKey,
+        aiAgentDebounceCacheKey,
+        sectorSelectionCacheKey,
+        userSelectionCacheKey
+      )
+      .zrem(scheduleKey, inactivityCacheKey)
+      .exec();
+  }
+
+  private async getAutomationChatIfAllowed(
+    createChat: IChat,
+    options?: { allowClosedStatus?: boolean }
+  ): Promise<IChat | null> {
+    const currentChat = await this.loadCurrentChatState(createChat);
+
+    if (!currentChat) {
+      if (this.isAutomationChatStatus(createChat.status)) {
+        return createChat;
+      }
+
+      await this.clearChatbotRuntimeStateByIds(
+        createChat.account.id,
+        createChat.worker.id,
+        createChat.chat_id
+      );
+      return null;
+    }
+
+    if (this.isAutomationChatStatus(currentChat.status)) {
+      return currentChat;
+    }
+
+    if (
+      options?.allowClosedStatus &&
+      currentChat.status === EChatStatus.closed
+    ) {
+      return currentChat;
+    }
+
+    await this.clearChatbotRuntimeStateByIds(
+      currentChat.account.id,
+      currentChat.worker.id,
+      currentChat.chat_id
+    );
+    return null;
+  }
+
+  private async canRunAutomation(createChat: IChat): Promise<boolean> {
+    const currentChat = await this.getAutomationChatIfAllowed(createChat);
+    return currentChat !== null;
+  }
+
+  private async sendMessageWithStatusGuard(
+    t: TFunction<'translation', undefined>,
+    options: SendMessageOptions,
+    guardOptions?: { allowClosedStatus?: boolean }
+  ): Promise<boolean> {
+    const guardedChat = await this.getAutomationChatIfAllowed(options.chat, {
+      allowClosedStatus: guardOptions?.allowClosedStatus,
+    });
+
+    if (!guardedChat) {
+      return false;
+    }
+
+    return this.chatMessageService.sendMessage(t, {
+      ...options,
+      chat: guardedChat,
+      accountId: guardedChat.account.id,
+    });
   }
 
   private getRagCacheKey(
@@ -512,6 +657,10 @@ export class ChatbotFlowRunnerService {
           return;
         }
 
+        if (!(await this.canRunAutomation(createChat))) {
+          return;
+        }
+
         await this.deleteAiAgentDebounce(createChat);
 
         const combinedText = debounceData.messages
@@ -566,6 +715,10 @@ export class ChatbotFlowRunnerService {
           return;
         }
 
+        if (!(await this.canRunAutomation(createChat))) {
+          return;
+        }
+
         await this.deleteMenuDebounce(createChat);
 
         const rawBaseMessage = nodeData.message;
@@ -586,7 +739,7 @@ export class ChatbotFlowRunnerService {
 
         const menuMessage = [baseMessage, '', ...lines].join('\n');
 
-        await this.chatMessageService.sendMessage(t, {
+        await this.sendMessageWithStatusGuard(t, {
           chat: createChat,
           accountId: createChat.account.id,
           type: EMessageType.text,
@@ -1209,7 +1362,7 @@ export class ChatbotFlowRunnerService {
       createChat.user,
       createChat.sector
     );
-    return this.chatMessageService.sendMessage(t, {
+    return this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.system,
@@ -1236,7 +1389,7 @@ export class ChatbotFlowRunnerService {
       createChat.user,
       createChat.sector
     );
-    return this.chatMessageService.sendMessage(t, {
+    return this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.system,
@@ -1263,7 +1416,7 @@ export class ChatbotFlowRunnerService {
       createChat.user,
       createChat.sector
     );
-    return this.chatMessageService.sendMessage(t, {
+    return this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.system,
@@ -1290,7 +1443,7 @@ export class ChatbotFlowRunnerService {
       createChat.user,
       createChat.sector
     );
-    return this.chatMessageService.sendMessage(t, {
+    return this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.system,
@@ -1553,7 +1706,7 @@ export class ChatbotFlowRunnerService {
     const attachmentHeight = node.data?.attachmentHeight;
 
     if (messageType === 'image' && attachmentUrl) {
-      return this.chatMessageService.sendMessage(t, {
+      return this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.image,
@@ -1567,7 +1720,7 @@ export class ChatbotFlowRunnerService {
     }
 
     if (messageType === 'video' && attachmentUrl) {
-      return this.chatMessageService.sendMessage(t, {
+      return this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.video,
@@ -1582,7 +1735,7 @@ export class ChatbotFlowRunnerService {
     }
 
     if (messageType === 'audio' && attachmentUrl) {
-      return this.chatMessageService.sendMessage(t, {
+      return this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.audio,
@@ -1595,7 +1748,7 @@ export class ChatbotFlowRunnerService {
     }
 
     if (messageType === 'document' && attachmentUrl) {
-      return this.chatMessageService.sendMessage(t, {
+      return this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.document,
@@ -1606,7 +1759,7 @@ export class ChatbotFlowRunnerService {
       });
     }
 
-    return this.chatMessageService.sendMessage(t, {
+    return this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.text,
@@ -1805,7 +1958,7 @@ export class ChatbotFlowRunnerService {
 
     const menuMessage = [baseMessage, '', ...lines].join('\n');
 
-    return this.chatMessageService.sendMessage(t, {
+    return this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.text,
@@ -1820,48 +1973,51 @@ export class ChatbotFlowRunnerService {
     customMessage?: string,
     enabled?: boolean
   ): Promise<boolean> {
-    const closedAt = new Date().toISOString();
-    const cacheKey = this.getChatbotFlowCacheKey(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id
-    );
+    const activeChat = await this.getAutomationChatIfAllowed(createChat);
+    if (!activeChat) {
+      return false;
+    }
 
-    const promises: Promise<unknown>[] = [
-      this.chatService.updateChatStatus(
-        createChat.chat_id,
-        EChatStatus.closed,
-        null,
-        null,
-        closedAt
-      ),
-      this.redis.del(cacheKey),
-      this.cancelInactivityCheck(createChat),
-      this.chatService.invalidateChatCache(createChat),
-    ];
+    const closedAt = new Date().toISOString();
 
     if (enabled !== false) {
       const rawMessage = customMessage || t('chatbot_service_finished');
       const message = await this.replaceVariables(
         t,
         rawMessage,
-        createChat,
-        createChat.user,
-        createChat.sector
+        activeChat,
+        activeChat.user,
+        activeChat.sector
       );
 
-      promises.push(
-        this.chatMessageService.sendMessage(t, {
-          chat: createChat,
-          accountId: createChat.account.id,
+      await this.sendMessageWithStatusGuard(
+        t,
+        {
+          chat: activeChat,
+          accountId: activeChat.account.id,
           type: EMessageType.system,
           message,
           typeUser: ETypeUserChat.bot,
-        })
+        },
+        { allowClosedStatus: true }
       );
     }
 
-    await Promise.all(promises);
+    await this.chatService.updateChatStatus(
+      activeChat.chat_id,
+      EChatStatus.closed,
+      null,
+      null,
+      closedAt
+    );
+    await Promise.all([
+      this.clearChatbotRuntimeStateByIds(
+        activeChat.account.id,
+        activeChat.worker.id,
+        activeChat.chat_id
+      ),
+      this.chatService.invalidateChatCache(activeChat),
+    ]);
 
     return true;
   }
@@ -1918,8 +2074,7 @@ export class ChatbotFlowRunnerService {
     workerId: string,
     chatId: string
   ): Promise<void> {
-    const cacheKey = this.getChatbotFlowCacheKey(accountId, workerId, chatId);
-    await this.redis.del(cacheKey);
+    await this.clearChatbotRuntimeStateByIds(accountId, workerId, chatId);
   }
 
   private getQuestionTextForDataType(
@@ -1958,7 +2113,7 @@ export class ChatbotFlowRunnerService {
     const questionText = this.getQuestionTextForDataType(node);
 
     if (questionText) {
-      await this.chatMessageService.sendMessage(t, {
+      await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
@@ -1976,6 +2131,10 @@ export class ChatbotFlowRunnerService {
     customMessages?: IChatbotCustomMessages,
     data?: IUpsertMessage
   ): Promise<boolean> {
+    if (!(await this.canRunAutomation(createChat))) {
+      return false;
+    }
+
     const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
 
     if (!nextFlowNode) {
@@ -2037,7 +2196,7 @@ export class ChatbotFlowRunnerService {
           if (aiAgent) {
             await this.generateAndSendAiWelcomeMessage(t, createChat, aiAgent);
           } else {
-            await this.chatMessageService.sendMessage(t, {
+            await this.sendMessageWithStatusGuard(t, {
               chat: createChat,
               accountId: createChat.account.id,
               type: EMessageType.text,
@@ -2441,7 +2600,7 @@ export class ChatbotFlowRunnerService {
       createChat.sector
     );
 
-    await this.chatMessageService.sendMessage(t, {
+    await this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.annotation,
@@ -2541,8 +2700,18 @@ export class ChatbotFlowRunnerService {
     user: IChat['user'] | null | undefined,
     sector: IChat['sector'] | null | undefined
   ): Promise<IChat> {
+    const activeChat = await this.getAutomationChatIfAllowed(createChat);
+    if (!activeChat) {
+      const currentChat = await this.loadCurrentChatState(createChat);
+      if (currentChat) {
+        return currentChat;
+      }
+
+      return createChat;
+    }
+
     const updatedChat: IChat = {
-      ...createChat,
+      ...activeChat,
       user,
       sector,
       status: EChatStatus.queue,
@@ -2552,6 +2721,12 @@ export class ChatbotFlowRunnerService {
     if (!saved) {
       throw new Error(t('chat_update_failed'));
     }
+
+    await this.clearChatbotRuntimeStateByIds(
+      updatedChat.account.id,
+      updatedChat.worker.id,
+      updatedChat.chat_id
+    );
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
@@ -2591,15 +2766,6 @@ export class ChatbotFlowRunnerService {
         photo: responsibleAttendant.photo ?? null,
       };
 
-      const updatedChat = await this.updateAndPublishChat(
-        t,
-        createChat,
-        user,
-        undefined
-      );
-
-      await this.cancelInactivityCheck(updatedChat);
-
       const rawTransferMessage =
         customMessages?.transfer_message_user ||
         t('chatbot_transfer_message_user_default');
@@ -2608,18 +2774,25 @@ export class ChatbotFlowRunnerService {
         const transferMessage = await this.replaceVariables(
           t,
           rawTransferMessage,
-          updatedChat,
+          createChat,
           user,
           undefined
         );
-        await this.chatMessageService.sendMessage(t, {
-          chat: updatedChat,
-          accountId: updatedChat.account.id,
+        await this.sendMessageWithStatusGuard(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
           type: EMessageType.system,
           message: transferMessage,
           typeUser: ETypeUserChat.bot,
         });
       }
+
+      const updatedChat = await this.updateAndPublishChat(
+        t,
+        createChat,
+        user,
+        undefined
+      );
 
       const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
 
@@ -2674,15 +2847,6 @@ export class ChatbotFlowRunnerService {
       }
     }
 
-    const updatedChat = await this.updateAndPublishChat(
-      t,
-      createChat,
-      user,
-      sector
-    );
-
-    await this.cancelInactivityCheck(updatedChat);
-
     let rawTransferMessage: string | undefined;
     let enabled: boolean | undefined = undefined;
     if (redirectType === 'user' && user) {
@@ -2708,18 +2872,25 @@ export class ChatbotFlowRunnerService {
       const transferMessage = await this.replaceVariables(
         t,
         rawTransferMessage,
-        updatedChat,
+        createChat,
         user,
         sector
       );
-      await this.chatMessageService.sendMessage(t, {
-        chat: updatedChat,
-        accountId: updatedChat.account.id,
+      await this.sendMessageWithStatusGuard(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
         type: EMessageType.system,
         message: transferMessage,
         typeUser: ETypeUserChat.bot,
       });
     }
+
+    const updatedChat = await this.updateAndPublishChat(
+      t,
+      createChat,
+      user,
+      sector
+    );
 
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
 
@@ -3081,7 +3252,7 @@ export class ChatbotFlowRunnerService {
 
       const menuMessage = [baseMessage, '', ...lines].join('\n');
 
-      await this.chatMessageService.sendMessage(t, {
+      await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
@@ -3447,7 +3618,7 @@ export class ChatbotFlowRunnerService {
       createChat.user,
       createChat.sector
     );
-    await this.chatMessageService.sendMessage(t, {
+    await this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.system,
@@ -3538,22 +3709,17 @@ export class ChatbotFlowRunnerService {
       return false;
     }
 
-    const updatedChat = await this.updateAndPublishChat(
-      t,
-      createChat,
-      user,
-      undefined
-    );
-
     await this.sendTransferMessageIfNeeded(
       t,
-      updatedChat,
+      createChat,
       'user',
       user,
       undefined,
       customMessages,
       enabledFlags
     );
+
+    await this.updateAndPublishChat(t, createChat, user, undefined);
 
     return true;
   }
@@ -3586,22 +3752,17 @@ export class ChatbotFlowRunnerService {
       ? await this.getUserForRedirect(selectedSectorUser)
       : undefined;
 
-    const updatedChat = await this.updateAndPublishChat(
-      t,
-      createChat,
-      user,
-      sector
-    );
-
     await this.sendTransferMessageIfNeeded(
       t,
-      updatedChat,
+      createChat,
       'sector',
       user,
       sector,
       customMessages,
       enabledFlags
     );
+
+    await this.updateAndPublishChat(t, createChat, user, sector);
 
     return true;
   }
@@ -3795,18 +3956,9 @@ export class ChatbotFlowRunnerService {
       createChat
     );
 
-    const updatedChat = await this.updateAndPublishChat(
-      t,
-      createChat,
-      user,
-      sector
-    );
-
-    await this.cancelInactivityCheck(updatedChat);
-
     await this.sendTransferMessageIfNeeded(
       t,
-      updatedChat,
+      createChat,
       redirectFailedAttempts.redirect_type,
       user,
       sector,
@@ -3820,6 +3972,8 @@ export class ChatbotFlowRunnerService {
           customMessages?.transfer_message_sector_user_enabled,
       }
     );
+
+    await this.updateAndPublishChat(t, createChat, user, sector);
 
     return true;
   }
@@ -3927,7 +4081,7 @@ export class ChatbotFlowRunnerService {
 
   private async sendTransferMessageIfNeeded(
     t: TFunction<'translation', undefined>,
-    updatedChat: IChat,
+    chatContext: IChat,
     redirectType?: string,
     user?: IChat['user'] | null | undefined,
     sector?: IChat['sector'] | null | undefined,
@@ -3954,14 +4108,14 @@ export class ChatbotFlowRunnerService {
     const transferMessage = await this.replaceVariables(
       t,
       rawTransferMessage,
-      updatedChat,
+      chatContext,
       user,
       sector
     );
 
-    await this.chatMessageService.sendMessage(t, {
-      chat: updatedChat,
-      accountId: updatedChat.account.id,
+    await this.sendMessageWithStatusGuard(t, {
+      chat: chatContext,
+      accountId: chatContext.account.id,
       type: EMessageType.system,
       message: transferMessage,
       typeUser: ETypeUserChat.bot,
@@ -4393,7 +4547,7 @@ export class ChatbotFlowRunnerService {
   ): Promise<void> {
     if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
       const fallback = t('ai_agent_default_question');
-      await this.chatMessageService.sendMessage(t, {
+      await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
@@ -4450,7 +4604,7 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
     );
 
     if (!voiceSent) {
-      await this.chatMessageService.sendMessage(t, {
+      await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
@@ -4511,7 +4665,7 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
         return false;
       }
 
-      await this.chatMessageService.sendMessage(t, {
+      await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.audio,
@@ -4993,7 +5147,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         1800
       );
       const userMessage = this.buildUserSelectionMessage(usersForSector);
-      await this.chatMessageService.sendMessage(t, {
+      await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
@@ -5020,7 +5174,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       1800
     );
     const sectorMessage = this.buildSectorSelectionMessage(sectors);
-    await this.chatMessageService.sendMessage(t, {
+    await this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.text,
@@ -5105,22 +5259,13 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       : null;
     const chatUser = user ?? null;
 
-    const updatedChat = await this.updateAndPublishChat(
-      t,
-      createChat,
-      chatUser,
-      chatSector
-    );
-
-    await this.cancelInactivityCheck(updatedChat);
-
     const hasOverride = typeof transferMessageOverride === 'string';
     if (hasOverride) {
       const transferMessage = transferMessageOverride.trim();
       if (transferMessage.length > 0) {
-        await this.chatMessageService.sendMessage(t, {
-          chat: updatedChat,
-          accountId: updatedChat.account.id,
+        await this.sendMessageWithStatusGuard(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
           type: EMessageType.system,
           message: transferMessage,
           typeUser: ETypeUserChat.bot,
@@ -5150,19 +5295,26 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         const transferMessage = await this.replaceVariables(
           t,
           rawTransferMessage,
-          updatedChat,
+          createChat,
           chatUser,
           chatSector
         );
-        await this.chatMessageService.sendMessage(t, {
-          chat: updatedChat,
-          accountId: updatedChat.account.id,
+        await this.sendMessageWithStatusGuard(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
           type: EMessageType.system,
           message: transferMessage,
           typeUser: ETypeUserChat.bot,
         });
       }
     }
+
+    const updatedChat = await this.updateAndPublishChat(
+      t,
+      createChat,
+      chatUser,
+      chatSector
+    );
 
     const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
       chatbotFlow,
@@ -5539,7 +5691,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
           1800
         );
         const sectorMessage = this.buildSectorSelectionMessage(listSectors);
-        await this.chatMessageService.sendMessage(t, {
+        await this.sendMessageWithStatusGuard(t, {
           chat: createChat,
           accountId: createChat.account.id,
           type: EMessageType.text,
@@ -5667,7 +5819,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       1800
     );
     const userMessage = this.buildUserSelectionMessage(eligibleUsers);
-    await this.chatMessageService.sendMessage(t, {
+    await this.sendMessageWithStatusGuard(t, {
       chat: createChat,
       accountId: createChat.account.id,
       type: EMessageType.text,
@@ -7319,7 +7471,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
               : null;
 
           if (uploadResult) {
-            await this.chatMessageService.sendMessage(t, {
+            await this.sendMessageWithStatusGuard(t, {
               chat: createChat,
               accountId: createChat.account.id,
               type: EMessageType.audio,
@@ -7340,7 +7492,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       }
     }
     if (!messageSent) {
-      await this.chatMessageService.sendMessage(t, {
+      await this.sendMessageWithStatusGuard(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
@@ -7431,6 +7583,10 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     chatbotId: string,
     options?: IProcessFlowNodeOptions
   ): Promise<boolean> {
+    if (!(await this.canRunAutomation(createChat))) {
+      return false;
+    }
+
     const inactivityAlert = options?.inactivityAlert;
     const redirectFailedAttempts = options?.redirectFailedAttempts;
     const customMessages = options?.customMessages;
@@ -8010,15 +8166,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
           photo: responsibleAttendant.photo ?? null,
         };
 
-        const updatedChat = await this.updateAndPublishChat(
-          t,
-          createChat,
-          user,
-          undefined
-        );
-
-        await this.cancelInactivityCheck(updatedChat);
-
         const rawTransferMessage =
           flowTransferMessages?.transfer_message_user ||
           t('chatbot_transfer_message_user_default');
@@ -8029,18 +8176,25 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
           const transferMessage = await this.replaceVariables(
             t,
             rawTransferMessage,
-            updatedChat,
+            createChat,
             user,
             undefined
           );
-          await this.chatMessageService.sendMessage(t, {
-            chat: updatedChat,
-            accountId: updatedChat.account.id,
+          await this.sendMessageWithStatusGuard(t, {
+            chat: createChat,
+            accountId: createChat.account.id,
             type: EMessageType.system,
             message: transferMessage,
             typeUser: ETypeUserChat.bot,
           });
         }
+
+        const updatedChat = await this.updateAndPublishChat(
+          t,
+          createChat,
+          user,
+          undefined
+        );
 
         const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
 
@@ -8156,15 +8310,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       );
     }
 
-    const updatedChat = await this.updateAndPublishChat(
-      t,
-      createChat,
-      selectedUser,
-      selectedSector
-    );
-
-    await this.cancelInactivityCheck(updatedChat);
-
     let rawTransferMessage: string | undefined = undefined;
     let enabled: boolean | undefined = undefined;
 
@@ -8190,18 +8335,25 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       const transferMessage = await this.replaceVariables(
         t,
         rawTransferMessage,
-        updatedChat,
+        createChat,
         selectedUser,
         selectedSector
       );
-      await this.chatMessageService.sendMessage(t, {
-        chat: updatedChat,
-        accountId: updatedChat.account.id,
+      await this.sendMessageWithStatusGuard(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
         type: EMessageType.system,
         message: transferMessage,
         typeUser: ETypeUserChat.bot,
       });
     }
+
+    const updatedChat = await this.updateAndPublishChat(
+      t,
+      createChat,
+      selectedUser,
+      selectedSector
+    );
 
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
 
@@ -8242,7 +8394,12 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     createChat: IChat,
     chatbotId: string
   ): Promise<string | null> => {
-    if (createChat.contact?.ignore === EContactIgnore.ignore_automation) {
+    const activeChat = await this.getAutomationChatIfAllowed(createChat);
+    if (!activeChat) {
+      return null;
+    }
+
+    if (activeChat.contact?.ignore === EContactIgnore.ignore_automation) {
       return null;
     }
 
@@ -8252,7 +8409,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const configurations =
       await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
-        createChat.account.id,
+        activeChat.account.id,
         chatbotId
       );
 
@@ -8278,7 +8435,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
         await this.sendFinishMessage(
           t,
-          createChat,
+          activeChat,
           customServiceFinishedMessage,
           serviceFinishedMessageEnabled
         );
@@ -8288,7 +8445,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     }
 
     const chatbotFlow = await this.chatbotService.findChatbotFlowByChatbotId(
-      createChat.account.id,
+      activeChat.account.id,
       chatbotId
     );
 
@@ -8327,7 +8484,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
       chatbotFlow,
-      createChat
+      activeChat
     );
 
     if (!currentFlowId) {
@@ -8337,7 +8494,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     await this.processFlowNode(
       t,
       data,
-      createChat,
+      activeChat,
       chatbotFlow,
       currentFlowId,
       chatbotId,
