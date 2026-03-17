@@ -88,6 +88,30 @@ export class OrderPaymentCreatorUseCase {
     return input.installments ?? null;
   };
 
+  private readonly isAsaasPaymentSuccessful = (status: string): boolean => {
+    return (
+      status === 'RECEIVED' ||
+      status === 'CONFIRMED' ||
+      status === 'RECEIVED_IN_CASH'
+    );
+  };
+
+  private readonly mapAsaasStatusToPaymentStatus = (status: string): string => {
+    if (status === 'RECEIVED') {
+      return EPaymentStatus.received;
+    }
+
+    if (status === 'CONFIRMED') {
+      return EPaymentStatus.confirmed;
+    }
+
+    if (status === 'RECEIVED_IN_CASH') {
+      return EPaymentStatus.received_in_cash;
+    }
+
+    return EPaymentStatus.pending;
+  };
+
   private async processTestPlan(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -403,11 +427,9 @@ export class OrderPaymentCreatorUseCase {
 
     const paymentId = creditCardResult.payment.id;
 
-    const paymentStatus =
-      creditCardResult.payment.status === 'CONFIRMED' ||
-      creditCardResult.payment.status === 'RECEIVED'
-        ? EPaymentStatus.received
-        : EPaymentStatus.pending;
+    const paymentStatus = this.mapAsaasStatusToPaymentStatus(
+      creditCardResult.payment.status
+    );
 
     const accountPaymentId = await this.planService.createAccountPayment({
       accountId: data.accountId,
@@ -435,7 +457,7 @@ export class OrderPaymentCreatorUseCase {
       billingPeriod: data.billingPeriod,
     });
 
-    if (paymentStatus === EPaymentStatus.received) {
+    if (this.isAsaasPaymentSuccessful(creditCardResult.payment.status)) {
       const paymentDate =
         creditCardResult.payment.paymentDate || new Date().toISOString();
 
@@ -461,7 +483,9 @@ export class OrderPaymentCreatorUseCase {
     return {
       payment_id: creditCardResult.payment.id,
       status: creditCardResult.payment.status,
-      is_confirmed: paymentStatus === EPaymentStatus.received,
+      is_confirmed: this.isAsaasPaymentSuccessful(
+        creditCardResult.payment.status
+      ),
     };
   };
 

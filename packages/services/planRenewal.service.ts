@@ -125,14 +125,32 @@ export class PlanRenewalService {
     return 'monthly';
   };
 
-  private readonly isPaymentRefused = (status: string): boolean => {
-    const successfulStatuses = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'];
+  private readonly isAsaasPaymentSuccessful = (status: string): boolean => {
+    return (
+      status === 'RECEIVED' ||
+      status === 'CONFIRMED' ||
+      status === 'RECEIVED_IN_CASH'
+    );
+  };
 
-    if (successfulStatuses.includes(status)) {
-      return false;
+  private readonly mapAsaasStatusToPaymentStatus = (status: string): string => {
+    if (status === 'RECEIVED') {
+      return EPaymentStatus.received;
     }
 
-    return true;
+    if (status === 'CONFIRMED') {
+      return EPaymentStatus.confirmed;
+    }
+
+    if (status === 'RECEIVED_IN_CASH') {
+      return EPaymentStatus.received_in_cash;
+    }
+
+    return EPaymentStatus.pending;
+  };
+
+  private readonly isPaymentRefused = (status: string): boolean => {
+    return !this.isAsaasPaymentSuccessful(status);
   };
 
   private readonly processRenewal = async (
@@ -252,11 +270,9 @@ export class PlanRenewalService {
       return;
     }
 
-    const paymentStatusId =
-      paymentResult.payment.status === 'RECEIVED' ||
-      paymentResult.payment.status === 'CONFIRMED'
-        ? EPaymentStatus.received
-        : EPaymentStatus.pending;
+    const paymentStatusId = this.mapAsaasStatusToPaymentStatus(
+      paymentResult.payment.status
+    );
 
     const accountPaymentId = await this.planService.createAccountPayment({
       accountId: planAccount.account_id,
@@ -291,7 +307,7 @@ export class PlanRenewalService {
       });
     }
 
-    if (paymentStatusId === EPaymentStatus.received) {
+    if (this.isAsaasPaymentSuccessful(paymentResult.payment.status)) {
       const paymentDate =
         paymentResult.payment.paymentDate || new Date().toISOString();
 

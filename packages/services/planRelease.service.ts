@@ -53,12 +53,28 @@ export class PlanReleaseService {
     return statusMap[asaasStatus] || null;
   };
 
-  private readonly isPaymentSuccessful = (status: string): boolean => {
-    return (
-      status === 'RECEIVED' ||
-      status === 'CONFIRMED' ||
-      status === 'RECEIVED_IN_CASH'
-    );
+  private readonly mapPaymentStatusToAsaasStatus = (
+    paymentStatusId: string
+  ): string | null => {
+    const statusMap: Record<string, string> = {
+      [EPaymentStatus.pending]: 'PENDING',
+      [EPaymentStatus.received]: 'RECEIVED',
+      [EPaymentStatus.confirmed]: 'CONFIRMED',
+      [EPaymentStatus.overdue]: 'OVERDUE',
+      [EPaymentStatus.refunded]: 'REFUNDED',
+      [EPaymentStatus.received_in_cash]: 'RECEIVED_IN_CASH',
+      [EPaymentStatus.refund_requested]: 'REFUND_REQUESTED',
+      [EPaymentStatus.refund_in_progress]: 'REFUND_IN_PROGRESS',
+      [EPaymentStatus.chargeback_requested]: 'CHARGEBACK_REQUESTED',
+      [EPaymentStatus.chargeback_dispute]: 'CHARGEBACK_DISPUTE',
+      [EPaymentStatus.awaiting_chargeback_reversal]:
+        'AWAITING_CHARGEBACK_REVERSAL',
+      [EPaymentStatus.dunning_requested]: 'DUNNING_REQUESTED',
+      [EPaymentStatus.dunning_received]: 'DUNNING_RECEIVED',
+      [EPaymentStatus.awaiting_risk_analysis]: 'AWAITING_RISK_ANALYSIS',
+    };
+
+    return statusMap[paymentStatusId] || null;
   };
 
   private readonly isPaymentStatusSuccessful = (
@@ -68,6 +84,33 @@ export class PlanReleaseService {
       paymentStatusId === EPaymentStatus.received ||
       paymentStatusId === EPaymentStatus.confirmed ||
       paymentStatusId === EPaymentStatus.received_in_cash
+    );
+  };
+
+  private readonly isPrePaymentStatus = (paymentStatusId: string): boolean => {
+    return (
+      paymentStatusId === EPaymentStatus.pending ||
+      paymentStatusId === EPaymentStatus.overdue ||
+      paymentStatusId === EPaymentStatus.awaiting_risk_analysis ||
+      paymentStatusId === EPaymentStatus.dunning_requested
+    );
+  };
+
+  private readonly isPaidToPrePaymentRegression = (
+    currentPaymentStatusId: string,
+    incomingPaymentStatusId: string
+  ): boolean => {
+    const isCurrentSuccessful = this.isPaymentStatusSuccessful(
+      currentPaymentStatusId
+    );
+    const isIncomingSuccessful = this.isPaymentStatusSuccessful(
+      incomingPaymentStatusId
+    );
+
+    return (
+      isCurrentSuccessful &&
+      !isIncomingSuccessful &&
+      this.isPrePaymentStatus(incomingPaymentStatusId)
     );
   };
 
@@ -155,31 +198,28 @@ export class PlanReleaseService {
     return Math.round(totalValue * 100) / 100 + '';
   };
 
-  private readonly checkIfPlanAlreadyReleased = async (
+  private readonly findReleasedPlanAccountByPayment = async (
     accountPaymentId: string,
     planId: string
-  ): Promise<boolean> => {
+  ): Promise<{
+    plan_account_id: string;
+    plan_id: string;
+    next_payment_date: string | null;
+  } | null> => {
     const existingPlanAccount =
       await this.planReleaseRepository.findPlanAccountByAccountPaymentId(
         accountPaymentId
       );
 
     if (!existingPlanAccount) {
-      return false;
+      return null;
     }
 
     if (existingPlanAccount.plan_id !== planId) {
-      return false;
+      return null;
     }
 
-    if (!existingPlanAccount.next_payment_date) {
-      return false;
-    }
-
-    const nextPaymentDate = new Date(existingPlanAccount.next_payment_date);
-    const now = new Date();
-
-    return nextPaymentDate > now;
+    return existingPlanAccount;
   };
 
   private readonly updatePaymentStatusOnly = async (data: {
@@ -312,17 +352,12 @@ export class PlanReleaseService {
     pixTransaction: string | null,
     paymentAsaasId: string
   ): Promise<void> => {
-    const isPlanAlreadyReleased = await this.checkIfPlanAlreadyReleased(
+    const releasedPlanAccount = await this.findReleasedPlanAccountByPayment(
       accountPaymentData.account_payment_id,
       accountPaymentData.plan_id
     );
 
-    if (isPlanAlreadyReleased) {
-      const existingPlanAccount =
-        await this.planReleaseRepository.findPlanAccountByAccountPaymentId(
-          accountPaymentData.account_payment_id
-        );
-
+    if (releasedPlanAccount) {
       await this.updatePaymentStatusOnly({
         accountPaymentId: accountPaymentData.account_payment_id,
         paymentStatusId,
@@ -334,30 +369,12 @@ export class PlanReleaseService {
         billingPeriodId: accountPaymentData.billing_period_id,
         value: accountPaymentData.value,
         nextPaymentDate:
-          existingPlanAccount?.next_payment_date || new Date().toISOString(),
+          releasedPlanAccount.next_payment_date || new Date().toISOString(),
       });
 
       await this.createInvoiceForPayment(
         accountPaymentData.account_payment_id,
         paymentAsaasId
-      );
-
-      const isRenewal = await this.checkIfPlanAccountExists(
-        accountPaymentData.account_id
-      );
-      const isTestPlan = await this.planReleaseRepository.findPlanIsTestById(
-        accountPaymentData.plan_id
-      );
-
-      const notificationTypeId = this.getNotificationTypeId(
-        isRenewal,
-        isTestPlan
-      );
-
-      await this.notificationMessageService.sendPlanNotification(
-        accountPaymentData.account_id,
-        accountPaymentData.plan_id,
-        notificationTypeId
       );
 
       return;
@@ -376,6 +393,44 @@ export class PlanReleaseService {
       paymentAsaasId,
       shouldSendNotification: true,
     });
+  };
+
+  private readonly processAlreadySuccessfulPayment = async (
+    accountPaymentData: NonNullable<
+      Awaited<
+        ReturnType<
+          typeof this.planReleaseRepository.findAccountPaymentByBilling
+        >
+      >
+    >,
+    paymentStatusId: string,
+    paymentDate: string,
+    pixTransaction: string | null,
+    paymentAsaasId: string
+  ): Promise<void> => {
+    const releasedPlanAccount = await this.findReleasedPlanAccountByPayment(
+      accountPaymentData.account_payment_id,
+      accountPaymentData.plan_id
+    );
+
+    await this.updatePaymentStatusOnly({
+      accountPaymentId: accountPaymentData.account_payment_id,
+      paymentStatusId,
+      paymentDate,
+      pixTransaction,
+      accountId: accountPaymentData.account_id,
+      planId: accountPaymentData.plan_id,
+      recurringPayment: accountPaymentData.recurring_payment,
+      billingPeriodId: accountPaymentData.billing_period_id,
+      value: accountPaymentData.value,
+      nextPaymentDate:
+        releasedPlanAccount?.next_payment_date || new Date().toISOString(),
+    });
+
+    await this.createInvoiceForPayment(
+      accountPaymentData.account_payment_id,
+      paymentAsaasId
+    );
   };
 
   private readonly processUnsuccessfulPayment = async (
@@ -404,33 +459,6 @@ export class PlanReleaseService {
     });
   };
 
-  private readonly checkIfCreditCardPlanAlreadyReleased = async (
-    accountPaymentId: string,
-    planId: string
-  ): Promise<boolean> => {
-    const existingPlanAccount =
-      await this.planReleaseRepository.findPlanAccountByAccountPaymentId(
-        accountPaymentId
-      );
-
-    if (!existingPlanAccount) {
-      return false;
-    }
-
-    if (existingPlanAccount.plan_id !== planId) {
-      return false;
-    }
-
-    if (!existingPlanAccount.next_payment_date) {
-      return false;
-    }
-
-    const nextPaymentDate = new Date(existingPlanAccount.next_payment_date);
-    const now = new Date();
-
-    return nextPaymentDate > now;
-  };
-
   processPaymentWebhook = async (
     data: AsaasInvoiceWebhookRequest
   ): Promise<void> => {
@@ -451,12 +479,55 @@ export class PlanReleaseService {
       throw new Error(`Pagamento não encontrado: ${data.payment.id}`);
     }
 
-    const isSuccessful = this.isPaymentSuccessful(data.payment.status);
+    if (
+      this.isPaidToPrePaymentRegression(
+        accountPaymentData.payment_status_id,
+        paymentStatusId
+      )
+    ) {
+      const safeStatus = this.mapPaymentStatusToAsaasStatus(
+        accountPaymentData.payment_status_id
+      );
+
+      await this.notifyPaymentStatusUpdate(
+        accountPaymentData.account_id,
+        data.payment.id,
+        safeStatus || data.payment.status,
+        accountPaymentData.payment_date
+      );
+
+      return;
+    }
+
+    const isSuccessful = this.isPaymentStatusSuccessful(paymentStatusId);
+    const wasAlreadySuccessful = this.isPaymentStatusSuccessful(
+      accountPaymentData.payment_status_id
+    );
     const paymentDate = isSuccessful
       ? data.payment.paymentDate ||
         data.payment.confirmedDate ||
+        accountPaymentData.payment_date ||
         new Date().toISOString()
-      : null;
+      : accountPaymentData.payment_date;
+
+    if (isSuccessful && wasAlreadySuccessful && paymentDate) {
+      await this.processAlreadySuccessfulPayment(
+        accountPaymentData,
+        paymentStatusId,
+        paymentDate,
+        data.payment.pixTransaction || null,
+        data.payment.id
+      );
+
+      await this.notifyPaymentStatusUpdate(
+        accountPaymentData.account_id,
+        data.payment.id,
+        data.payment.status,
+        paymentDate
+      );
+
+      return;
+    }
 
     if (isSuccessful && paymentDate) {
       await this.processSuccessfulPayment(
@@ -472,7 +543,7 @@ export class PlanReleaseService {
       await this.processUnsuccessfulPayment(
         accountPaymentData,
         paymentStatusId,
-        paymentDate,
+        paymentDate || null,
         data.payment.pixTransaction || null
       );
     }
@@ -512,32 +583,15 @@ export class PlanReleaseService {
       throw new Error(`Pagamento não encontrado: ${data.accountPaymentId}`);
     }
 
-    const isPlanAlreadyReleased =
-      await this.checkIfCreditCardPlanAlreadyReleased(
-        data.accountPaymentId,
-        data.planId
-      );
+    const releasedPlanAccount = await this.findReleasedPlanAccountByPayment(
+      data.accountPaymentId,
+      data.planId
+    );
 
-    if (isPlanAlreadyReleased) {
+    if (releasedPlanAccount) {
       await this.createInvoiceForPayment(
         data.accountPaymentId,
         accountPaymentData.billing || ''
-      );
-
-      const isRenewal = await this.checkIfPlanAccountExists(data.accountId);
-      const isTestPlan = await this.planReleaseRepository.findPlanIsTestById(
-        data.planId
-      );
-
-      const notificationTypeId = this.getNotificationTypeId(
-        isRenewal,
-        isTestPlan
-      );
-
-      await this.notificationMessageService.sendPlanNotification(
-        data.accountId,
-        data.planId,
-        notificationTypeId
       );
 
       return;
@@ -745,15 +799,6 @@ export class PlanReleaseService {
         error
       );
     }
-  };
-
-  private readonly checkIfPlanAccountExists = async (
-    accountId: string
-  ): Promise<boolean> => {
-    const existingPlanAccount =
-      await this.planReleaseRepository.findPlanAccountByAccountId(accountId);
-
-    return existingPlanAccount !== null;
   };
 
   private readonly getNotificationTypeId = (
