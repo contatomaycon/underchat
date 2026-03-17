@@ -2,13 +2,15 @@ import * as schema from '@core/models';
 import {
   plan,
   planCrossSell,
+  planAccount,
   accountPayment,
   accountPaymentCrossSell,
   planAccountExclusive,
+  billingPeriod,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, gt, sql } from 'drizzle-orm';
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 import { UpgradeDiscountCalculatorRepository } from './UpgradeDiscountCalculator.repository';
 import { randomUUID } from 'node:crypto';
@@ -23,6 +25,10 @@ export class OrderPaymentCreatorRepository {
     @inject(UpgradeDiscountCalculatorRepository)
     private readonly upgradeDiscountCalculator: UpgradeDiscountCalculatorRepository
   ) {}
+
+  private readonly roundTo2 = (value: number): number => {
+    return Math.round(value * 100) / 100;
+  };
 
   calculateOrderPayment = async (
     accountId: string,
@@ -101,6 +107,7 @@ export class OrderPaymentCreatorRepository {
     billingPeriodId: string | null;
     invoiceUrl: string | null;
     recurringPayment: boolean;
+    isAddonOnly: boolean;
     userCardId?: string | null;
     installment?: string | null;
     boleto?: string | null;
@@ -123,6 +130,7 @@ export class OrderPaymentCreatorRepository {
       billing_period_id: data.billingPeriodId,
       invoice_url: data.invoiceUrl,
       recurring_payment: data.recurringPayment,
+      is_addon_only: data.isAddonOnly,
       user_card_id: data.userCardId || null,
       installment: data.installment || null,
       boleto: data.boleto || null,
@@ -135,7 +143,7 @@ export class OrderPaymentCreatorRepository {
 
   createAccountPaymentCrossSells = async (data: {
     accountPaymentId: string;
-    addons: Array<{ plan_cross_sell_id: string }>;
+    addons: Array<{ plan_cross_sell_id: string; value?: number }>;
     billingPeriod: 'monthly' | 'annual';
   }): Promise<void> => {
     if (!data.addons || data.addons.length === 0) {
@@ -159,6 +167,9 @@ export class OrderPaymentCreatorRepository {
       )
       .execute();
 
+    const crossSellMap = new Map(
+      crossSells.map((crossSell) => [crossSell.plan_cross_sell_id, crossSell])
+    );
     const multiplier = data.billingPeriod === 'annual' ? 12 : 1;
     const crossSellRecords: Array<{
       account_payment_cross_sell_id: string;
@@ -171,14 +182,15 @@ export class OrderPaymentCreatorRepository {
     }> = [];
 
     for (const addon of data.addons) {
-      const crossSell = crossSells.find(
-        (cs) => cs.plan_cross_sell_id === addon.plan_cross_sell_id
-      );
+      const crossSell = crossSellMap.get(addon.plan_cross_sell_id);
       if (!crossSell) {
         continue;
       }
 
-      const totalValue = Number(crossSell.price) * multiplier;
+      const totalValue =
+        addon.value !== undefined
+          ? this.roundTo2(addon.value)
+          : this.roundTo2(Number(crossSell.price) * multiplier);
 
       crossSellRecords.push({
         account_payment_cross_sell_id: randomUUID(),
@@ -253,11 +265,18 @@ export class OrderPaymentCreatorRepository {
       )
       .execute();
 
+    const crossSellCountMap = new Map<string, number>();
+    for (const planCrossSellId of planCrossSellIds) {
+      const count = crossSellCountMap.get(planCrossSellId) || 0;
+      crossSellCountMap.set(planCrossSellId, count + 1);
+    }
+
     const multiplier = billingPeriod === 'annual' ? 12 : 1;
 
     return crossSells.reduce((total, crossSell) => {
-      const addonValue = Number(crossSell.price) * multiplier;
-      return total + addonValue;
+      const count = crossSellCountMap.get(crossSell.plan_cross_sell_id) || 0;
+      const addonValue = Number(crossSell.price) * multiplier * count;
+      return total + this.roundTo2(addonValue);
     }, 0);
   };
 
@@ -268,6 +287,56 @@ export class OrderPaymentCreatorRepository {
     };
 
     return billingPeriodMap[billingPeriod] || null;
+  };
+
+  getCurrentActivePlanAccount = async (accountId: string) => {
+    const result = await this.dbRo
+      .select({
+        plan_id: planAccount.plan_id,
+        billing_period_id: planAccount.billing_period_id,
+        billing_period_name: billingPeriod.name,
+        last_payment_date: planAccount.last_payment_date,
+        next_payment_date: planAccount.next_payment_date,
+      })
+      .from(planAccount)
+      .leftJoin(
+        billingPeriod,
+        eq(planAccount.billing_period_id, billingPeriod.billing_period_id)
+      )
+      .where(
+        and(
+          eq(planAccount.account_id, accountId),
+          gt(planAccount.next_payment_date, sql`NOW()`)
+        )
+      )
+      .orderBy(sql`${planAccount.updated_at} DESC`)
+      .limit(1)
+      .execute();
+
+    const row = result[0];
+
+    if (!row) {
+      return null;
+    }
+
+    const billingPeriodName =
+      row.billing_period_name === 'annual'
+        ? 'annual'
+        : row.billing_period_name === 'monthly'
+          ? 'monthly'
+          : row.billing_period_id === EBillingPeriod.annual
+            ? 'annual'
+            : row.billing_period_id === EBillingPeriod.monthly
+              ? 'monthly'
+              : null;
+
+    return {
+      plan_id: row.plan_id,
+      billing_period_id: row.billing_period_id,
+      billing_period: billingPeriodName,
+      last_payment_date: row.last_payment_date,
+      next_payment_date: row.next_payment_date,
+    };
   };
 
   private readonly checkExclusivePlanAccess = async (

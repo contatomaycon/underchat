@@ -41,6 +41,7 @@ import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/vie
 import { GenerateAccountPaymentNfseResponse } from '@core/schema/accountSettings/generateAccountPaymentNfse/response.schema';
 import { CancelPlanAccountResponse } from '@core/schema/accountSettings/cancelPlanAccount/response.schema';
 import { ReactivatePlanAccountResponse } from '@core/schema/accountSettings/reactivatePlanAccount/response.schema';
+import { CancelAccountAddonResponse } from '@core/schema/accountSettings/cancelAccountAddon/response.schema';
 import { getUser } from '@/@webcore/localStorage/user';
 import { ViewAccountCustomizationResponse } from '@core/schema/accountSettings/viewAccountCustomization/response.schema';
 import { ListMethodPaymentsResponse } from '@core/schema/accountSettings/listMethodPayments/response.schema';
@@ -884,6 +885,47 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
       } catch (error) {
         this.loading = false;
         let errorMessage = this.i18n.global.t('subscription_cancel_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async cancelAccountAddon(
+      planCrossSellAccountId: string
+    ): Promise<CancelAccountAddonResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<CancelAccountAddonResponse>
+        >(`/account-settings/addons/${planCrossSellAccountId}/cancel`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('addon_cancel_failed');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ?? data.data.message,
+          data.data.success ? EColor.success : EColor.error
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('addon_cancel_failed');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

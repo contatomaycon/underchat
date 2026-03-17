@@ -14,6 +14,16 @@ import { UserService } from '@core/services/user.service';
 import { MethodPaymentService } from '@core/services/methodPayment.service';
 import { EMethodPayment } from '@core/common/enums/EMethodPayment';
 import { randomUUID } from 'node:crypto';
+import type {
+  IOrderPaymentAddonSelection,
+  IOrderPaymentBoletoInput,
+  IOrderPaymentContext,
+  IOrderPaymentCreditCardFeeInstallmentInput,
+  IOrderPaymentCreditCardInput,
+  IOrderPaymentPixInput,
+  IOrderPaymentTestPlan,
+  OrderPaymentOrderType,
+} from '@core/common/interfaces/IOrderPaymentCreator';
 
 @injectable()
 export class OrderPaymentCreatorUseCase {
@@ -36,6 +46,10 @@ export class OrderPaymentCreatorUseCase {
     private readonly methodPaymentService: MethodPaymentService
   ) {}
 
+  private readonly roundTo2 = (value: number): number => {
+    return Math.round(value * 100) / 100;
+  };
+
   private readonly applyCreditCardFee = (
     totalAmount: number,
     feeRate: number
@@ -44,10 +58,16 @@ export class OrderPaymentCreatorUseCase {
       return totalAmount;
     }
     const multiplier = 1 + feeRate / 100;
-    return Math.round(totalAmount * multiplier * 100) / 100;
+    return this.roundTo2(totalAmount * multiplier);
   };
 
   private readonly monthlyCreditCardFeeInstallment = 3;
+
+  private readonly resolveOrderType = (
+    input: CreateOrderPaymentRequest
+  ): OrderPaymentOrderType => {
+    return input.order_type === 'addon' ? 'addon' : 'plan';
+  };
 
   private readonly getCreditCardFeeRate = async (
     t: TFunction<'translation', undefined>,
@@ -75,17 +95,17 @@ export class OrderPaymentCreatorUseCase {
   };
 
   private readonly getCreditCardFeeInstallment = (
-    input: CreateOrderPaymentRequest
+    data: IOrderPaymentCreditCardFeeInstallmentInput
   ): number | null => {
-    if (input.payment_method !== 'credit_card') {
+    if (data.paymentMethod !== 'credit_card') {
       return null;
     }
 
-    if (input.billing_period === 'monthly') {
+    if (data.billingPeriod === 'monthly') {
       return this.monthlyCreditCardFeeInstallment;
     }
 
-    return input.installments ?? null;
+    return data.installments ?? null;
   };
 
   private readonly isAsaasPaymentSuccessful = (status: string): boolean => {
@@ -112,11 +132,207 @@ export class OrderPaymentCreatorUseCase {
     return EPaymentStatus.pending;
   };
 
+  private readonly validatePlanSingleUseAddons = async (
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    planId: string,
+    addons: IOrderPaymentAddonSelection[]
+  ): Promise<void> => {
+    if (addons.length === 0) {
+      return;
+    }
+
+    const [availableCrossSells, plansWithItems] = await Promise.all([
+      this.planService.listAvailableCrossSells({
+        accountId,
+        pricingMode: 'full',
+      }),
+      this.planService.listPlanWithItems(accountId),
+    ]);
+
+    const selectedPlan = plansWithItems.find((plan) => plan.plan_id === planId);
+    const selectedPlanProductQuantity = new Map<string, number>();
+
+    for (const planItem of selectedPlan?.plan_items || []) {
+      const currentQuantity =
+        selectedPlanProductQuantity.get(planItem.plan_product_id) || 0;
+      selectedPlanProductQuantity.set(
+        planItem.plan_product_id,
+        currentQuantity + Number(planItem.quantity || 0)
+      );
+    }
+
+    const crossSellMap = new Map(
+      availableCrossSells.map((crossSell) => [
+        crossSell.plan_cross_sell_id,
+        crossSell,
+      ])
+    );
+
+    const singleUseCountByProduct = new Map<string, number>();
+
+    for (const addon of addons) {
+      const crossSell = crossSellMap.get(addon.plan_cross_sell_id);
+      if (!crossSell) {
+        throw new Error(t('addon_not_found'));
+      }
+
+      if (!crossSell.is_single_use) {
+        continue;
+      }
+
+      const count =
+        (singleUseCountByProduct.get(crossSell.plan_product_id) || 0) + 1;
+      singleUseCountByProduct.set(crossSell.plan_product_id, count);
+
+      const renewableInstances = Math.max(
+        0,
+        Number(crossSell.renewable_instances || 0)
+      );
+      const planProductQuantity =
+        selectedPlanProductQuantity.get(crossSell.plan_product_id) || 0;
+      const maxAllowedByAccountState =
+        crossSell.can_purchase === false ? renewableInstances : 1;
+      const maxAllowed = planProductQuantity > 0 ? 0 : maxAllowedByAccountState;
+
+      if (count > maxAllowed) {
+        throw new Error(t('single_use_addon_limit_exceeded'));
+      }
+    }
+  };
+
+  private readonly buildPlanOrderContext = async (
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    input: CreateOrderPaymentRequest
+  ): Promise<IOrderPaymentContext> => {
+    const addons = (input.addons || []).map((addon) => ({
+      plan_cross_sell_id: addon.plan_cross_sell_id,
+    }));
+
+    await this.validatePlanSingleUseAddons(t, accountId, input.plan_id, addons);
+
+    const orderCalculation = await this.planService.calculateOrderPayment(
+      accountId,
+      input
+    );
+
+    return {
+      orderType: 'plan',
+      planId: input.plan_id,
+      billingPeriod: input.billing_period,
+      addons,
+      planPrice: orderCalculation.planPrice,
+      addonsTotal: orderCalculation.addonsTotal,
+      discountAmount: orderCalculation.discountAmount,
+      totalAmount: orderCalculation.totalAmount,
+      recurringPayment: input.recurring_payment || false,
+    };
+  };
+
+  private readonly buildAddonOrderContext = async (
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    input: CreateOrderPaymentRequest
+  ): Promise<IOrderPaymentContext> => {
+    const selectedAddons = (input.addons || []).map((addon) => ({
+      plan_cross_sell_id: addon.plan_cross_sell_id,
+    }));
+
+    if (selectedAddons.length === 0) {
+      throw new Error(t('addon_order_requires_addons'));
+    }
+
+    const currentPlan =
+      await this.planService.getCurrentActivePlanAccount(accountId);
+
+    if (!currentPlan?.plan_id || !currentPlan.billing_period) {
+      throw new Error(t('addon_order_requires_active_plan'));
+    }
+
+    const billingPeriod = currentPlan.billing_period;
+    if (billingPeriod !== 'monthly' && billingPeriod !== 'annual') {
+      throw new Error(t('addon_order_requires_active_plan'));
+    }
+
+    if (currentPlan.plan_id !== input.plan_id) {
+      throw new Error(t('addon_order_plan_mismatch'));
+    }
+
+    const availableCrossSells = await this.planService.listAvailableCrossSells({
+      accountId,
+      pricingMode: 'proportional',
+    });
+
+    if (availableCrossSells.length === 0) {
+      throw new Error(t('addon_order_requires_addons'));
+    }
+
+    const crossSellMap = new Map(
+      availableCrossSells.map((crossSell) => [
+        crossSell.plan_cross_sell_id,
+        crossSell,
+      ])
+    );
+
+    const singleUseCountByProduct = new Map<string, number>();
+    const addons: IOrderPaymentAddonSelection[] = [];
+    let addonsTotal = 0;
+
+    for (const addon of selectedAddons) {
+      const crossSell = crossSellMap.get(addon.plan_cross_sell_id);
+      if (!crossSell) {
+        throw new Error(t('addon_not_found'));
+      }
+
+      if (!crossSell.can_purchase) {
+        throw new Error(t('addon_not_available_for_purchase'));
+      }
+
+      if (crossSell.is_single_use) {
+        const count =
+          (singleUseCountByProduct.get(crossSell.plan_product_id) || 0) + 1;
+        singleUseCountByProduct.set(crossSell.plan_product_id, count);
+
+        if (count > 1) {
+          throw new Error(t('single_use_addon_limit_exceeded'));
+        }
+      }
+
+      const addonValue = this.roundTo2(
+        Number(
+          crossSell.price_proportional ??
+            crossSell.price_per_cycle ??
+            crossSell.price
+        )
+      );
+
+      addons.push({
+        plan_cross_sell_id: addon.plan_cross_sell_id,
+        value: addonValue,
+      });
+
+      addonsTotal = this.roundTo2(addonsTotal + addonValue);
+    }
+
+    return {
+      orderType: 'addon',
+      planId: currentPlan.plan_id,
+      billingPeriod,
+      addons,
+      planPrice: 0,
+      addonsTotal,
+      discountAmount: 0,
+      totalAmount: addonsTotal,
+      recurringPayment: false,
+    };
+  };
+
   private async processTestPlan(
     t: TFunction<'translation', undefined>,
     accountId: string,
     planId: string,
-    plan: { is_test: boolean; days_trial: number | null },
+    plan: IOrderPaymentTestPlan,
     input: CreateOrderPaymentRequest
   ): Promise<CreateOrderPaymentResponse> {
     if (input.addons && input.addons.length > 0) {
@@ -173,6 +389,7 @@ export class OrderPaymentCreatorUseCase {
 
     return {
       order_id: randomUUID(),
+      order_type: 'plan',
       total_amount: 0,
       plan_price: 0,
       addons_total: 0,
@@ -188,24 +405,21 @@ export class OrderPaymentCreatorUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     input: CreateOrderPaymentRequest,
-    remoteIp: string
+    remoteIp: string,
+    context: IOrderPaymentContext
   ): Promise<CreateOrderPaymentResponse> {
     const customer = await this.paymentService.getOrCreateCustomer(
       t,
       accountId
     );
 
-    const orderCalculation = await this.planService.calculateOrderPayment(
-      accountId,
-      input
-    );
+    let totalAmount = context.totalAmount;
 
-    const planPrice = orderCalculation.planPrice;
-    const addonsTotal = orderCalculation.addonsTotal;
-    const discountAmount = orderCalculation.discountAmount;
-    let totalAmount = orderCalculation.totalAmount;
-
-    const creditCardFeeInstallment = this.getCreditCardFeeInstallment(input);
+    const creditCardFeeInstallment = this.getCreditCardFeeInstallment({
+      paymentMethod: input.payment_method,
+      billingPeriod: context.billingPeriod,
+      installments: input.installments,
+    });
 
     if (creditCardFeeInstallment) {
       const feeRate = await this.getCreditCardFeeRate(
@@ -223,11 +437,12 @@ export class OrderPaymentCreatorUseCase {
             t,
             accountId,
             customer,
-            planId: input.plan_id,
+            planId: context.planId,
             totalAmount,
             orderId,
-            billingPeriod: input.billing_period,
-            addons: input.addons || [],
+            billingPeriod: context.billingPeriod,
+            addons: context.addons,
+            isAddonOnly: context.orderType === 'addon',
           })
         : undefined;
 
@@ -237,11 +452,13 @@ export class OrderPaymentCreatorUseCase {
             t,
             accountId,
             customer,
-            planId: input.plan_id,
+            planId: context.planId,
             totalAmount,
             orderId,
-            billingPeriod: input.billing_period,
-            addons: input.addons || [],
+            billingPeriod: context.billingPeriod,
+            addons: context.addons,
+            isAddonOnly: context.orderType === 'addon',
+            recurringPayment: context.recurringPayment,
             remoteIp,
             input,
           })
@@ -253,20 +470,22 @@ export class OrderPaymentCreatorUseCase {
             t,
             accountId,
             customer,
-            planId: input.plan_id,
+            planId: context.planId,
             totalAmount,
             orderId,
-            billingPeriod: input.billing_period,
-            addons: input.addons || [],
+            billingPeriod: context.billingPeriod,
+            addons: context.addons,
+            isAddonOnly: context.orderType === 'addon',
           })
         : undefined;
 
     return {
       order_id: orderId,
+      order_type: context.orderType,
       total_amount: totalAmount,
-      plan_price: planPrice,
-      addons_total: addonsTotal,
-      upgrade_discount: discountAmount,
+      plan_price: context.planPrice,
+      addons_total: context.addonsTotal,
+      upgrade_discount: context.discountAmount,
       payment_method: input.payment_method,
       pix_payment: pixPaymentData,
       credit_card_payment: creditCardPaymentData,
@@ -281,6 +500,25 @@ export class OrderPaymentCreatorUseCase {
     remoteIp: string
   ): Promise<CreateOrderPaymentResponse> => {
     try {
+      const orderType = this.resolveOrderType(input);
+
+      if (orderType === 'addon') {
+        await this.validatePaymentMethod(t, input.payment_method);
+        const addonContext = await this.buildAddonOrderContext(
+          t,
+          accountId,
+          input
+        );
+
+        return this.processRegularPayment(
+          t,
+          accountId,
+          input,
+          remoteIp,
+          addonContext
+        );
+      }
+
       const plan = await this.planService.getPlan(input.plan_id);
       if (!plan) {
         throw new Error(t('plan_not_found'));
@@ -295,7 +533,15 @@ export class OrderPaymentCreatorUseCase {
         return this.processTestPlan(t, accountId, input.plan_id, plan, input);
       }
 
-      return this.processRegularPayment(t, accountId, input, remoteIp);
+      const planContext = await this.buildPlanOrderContext(t, accountId, input);
+
+      return this.processRegularPayment(
+        t,
+        accountId,
+        input,
+        remoteIp,
+        planContext
+      );
     } catch (error) {
       if (error instanceof Error) {
         throw error;
@@ -318,16 +564,7 @@ export class OrderPaymentCreatorUseCase {
     }
   };
 
-  private readonly processPixPayment = async (data: {
-    t: TFunction<'translation', undefined>;
-    accountId: string;
-    customer: { user_customer_id: string; user_customer: string };
-    planId: string;
-    totalAmount: number;
-    orderId: string;
-    billingPeriod: 'monthly' | 'annual';
-    addons: Array<{ plan_cross_sell_id: string }>;
-  }) => {
+  private readonly processPixPayment = async (data: IOrderPaymentPixInput) => {
     const billingPeriodId = this.planService.getBillingPeriodId(
       data.billingPeriod
     );
@@ -335,10 +572,14 @@ export class OrderPaymentCreatorUseCase {
       throw new Error(data.t('billing_period_not_found'));
     }
 
+    const paymentDescription = data.isAddonOnly
+      ? `Pagamento de adicional do plano ${data.planId}`
+      : `Pagamento do plano ${data.planId}`;
+
     const pixResult = await this.paymentService.createPixPayment(
       data.customer.user_customer,
       data.totalAmount,
-      `Pagamento do plano ${data.planId}`,
+      paymentDescription,
       data.orderId,
       data.accountId
     );
@@ -360,6 +601,7 @@ export class OrderPaymentCreatorUseCase {
       billingPeriodId,
       invoiceUrl: pixResult.payment.invoiceUrl || null,
       recurringPayment: false,
+      isAddonOnly: data.isAddonOnly,
     });
 
     await this.planService.createAccountPaymentCrossSells({
@@ -376,19 +618,10 @@ export class OrderPaymentCreatorUseCase {
     };
   };
 
-  private readonly processCreditCardPayment = async (data: {
-    t: TFunction<'translation', undefined>;
-    accountId: string;
-    customer: { user_customer_id: string; user_customer: string };
-    planId: string;
-    totalAmount: number;
-    orderId: string;
-    billingPeriod: 'monthly' | 'annual';
-    addons: Array<{ plan_cross_sell_id: string }>;
-    remoteIp: string;
-    input: CreateOrderPaymentRequest;
-  }) => {
-    if (data.input.billing_period !== 'annual' && data.input.installments) {
+  private readonly processCreditCardPayment = async (
+    data: IOrderPaymentCreditCardInput
+  ) => {
+    if (data.billingPeriod !== 'annual' && data.input.installments) {
       throw new Error(data.t('installments_only_for_annual_plans'));
     }
 
@@ -406,18 +639,22 @@ export class OrderPaymentCreatorUseCase {
       throw new Error(data.t('billing_period_not_found'));
     }
 
+    const paymentDescription = data.isAddonOnly
+      ? `Pagamento de adicional do plano ${data.planId}`
+      : `Pagamento do plano ${data.planId}`;
+
     const creditCardResult = await this.paymentService.createCreditCardPayment(
       data.accountId,
       data.customer.user_customer,
       data.totalAmount,
-      `Pagamento do plano ${data.planId}`,
+      paymentDescription,
       data.orderId,
       data.remoteIp,
       {
         creditCardId: data.input.credit_card_id,
         newCard: data.input.new_card,
         installments: data.input.installments,
-        recurringPayment: data.input.recurring_payment || false,
+        recurringPayment: data.recurringPayment,
       }
     );
 
@@ -443,7 +680,8 @@ export class OrderPaymentCreatorUseCase {
       paymentStatusId: paymentStatus,
       billingPeriodId,
       invoiceUrl: creditCardResult.payment.invoiceUrl || null,
-      recurringPayment: data.input.recurring_payment || false,
+      recurringPayment: data.recurringPayment,
+      isAddonOnly: data.isAddonOnly,
       userCardId:
         data.input.credit_card_id || creditCardResult.userCardId || null,
       installment: data.input.installments
@@ -467,7 +705,7 @@ export class OrderPaymentCreatorUseCase {
           accountId: data.accountId,
           planId: data.planId,
           billingPeriodId,
-          recurringPayment: data.input.recurring_payment || false,
+          recurringPayment: data.recurringPayment,
           value: data.totalAmount.toString(),
           paymentDate,
           paymentStatusId: paymentStatus,
@@ -489,16 +727,9 @@ export class OrderPaymentCreatorUseCase {
     };
   };
 
-  private readonly processBoletoPayment = async (data: {
-    t: TFunction<'translation', undefined>;
-    accountId: string;
-    customer: { user_customer_id: string; user_customer: string };
-    planId: string;
-    totalAmount: number;
-    orderId: string;
-    billingPeriod: 'monthly' | 'annual';
-    addons: Array<{ plan_cross_sell_id: string }>;
-  }) => {
+  private readonly processBoletoPayment = async (
+    data: IOrderPaymentBoletoInput
+  ) => {
     const billingPeriodId = this.planService.getBillingPeriodId(
       data.billingPeriod
     );
@@ -506,10 +737,14 @@ export class OrderPaymentCreatorUseCase {
       throw new Error(data.t('billing_period_not_found'));
     }
 
+    const paymentDescription = data.isAddonOnly
+      ? `Pagamento de adicional do plano ${data.planId}`
+      : `Pagamento do plano ${data.planId}`;
+
     const boletoResult = await this.paymentService.createBoletoPayment(
       data.customer.user_customer,
       data.totalAmount,
-      `Pagamento do plano ${data.planId}`,
+      paymentDescription,
       data.orderId,
       data.accountId
     );
@@ -533,6 +768,7 @@ export class OrderPaymentCreatorUseCase {
       billingPeriodId,
       invoiceUrl: boletoResult.payment.invoiceUrl || null,
       recurringPayment: false,
+      isAddonOnly: data.isAddonOnly,
       boleto: boletoResult.identificationField.identificationField,
       boletoNumber: boletoResult.identificationField.nossoNumero,
       boletoPdf: boletoResult.payment.bankSlipUrl || null,

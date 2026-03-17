@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   accountPayment,
   planAccount,
@@ -31,6 +31,7 @@ export class PlanReleaseRepository {
     plan_id: string;
     billing_period_id: string | null;
     recurring_payment: boolean;
+    is_addon_only: boolean;
     value: string;
     payment_date: string | null;
     payment_status_id: string;
@@ -43,6 +44,7 @@ export class PlanReleaseRepository {
         plan_id: true,
         billing_period_id: true,
         recurring_payment: true,
+        is_addon_only: true,
         value: true,
         payment_date: true,
         payment_status_id: true,
@@ -60,6 +62,7 @@ export class PlanReleaseRepository {
     plan_id: string;
     billing_period_id: string | null;
     recurring_payment: boolean;
+    is_addon_only: boolean;
     value: string;
     payment_date: string | null;
     payment_status_id: string;
@@ -73,6 +76,7 @@ export class PlanReleaseRepository {
         plan_id: true,
         billing_period_id: true,
         recurring_payment: true,
+        is_addon_only: true,
         value: true,
         payment_date: true,
         payment_status_id: true,
@@ -334,6 +338,7 @@ export class PlanReleaseRepository {
     nextPaymentDate: string;
     value: string;
     shouldReleasePlan: boolean;
+    isAddonOnly?: boolean;
   }): Promise<void> => {
     await this.dbRw.transaction(async (tx) => {
       await this.updateAccountPaymentStatus(
@@ -358,7 +363,16 @@ export class PlanReleaseRepository {
 
         await this.updateAccountStatusToActive(tx, data.accountId);
 
-        await this.syncPlanCrossSellAccount(tx, {
+        await this.replacePlanCrossSellAccount(tx, {
+          accountId: data.accountId,
+          accountPaymentId: data.accountPaymentId,
+        });
+
+        return;
+      }
+
+      if (data.isAddonOnly) {
+        await this.appendPlanCrossSellAccount(tx, {
           accountId: data.accountId,
           accountPaymentId: data.accountPaymentId,
         });
@@ -382,7 +396,7 @@ export class PlanReleaseRepository {
     return crossSells;
   };
 
-  private readonly findPlanCrossSellAccountsByAccountId = async (
+  private readonly findActivePlanCrossSellAccountsByAccountId = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
@@ -390,130 +404,38 @@ export class PlanReleaseRepository {
   ): Promise<
     Array<{
       plan_cross_sell_account_id: string;
-      plan_cross_sell_id: string;
-      deleted_at: string | null;
     }>
   > => {
     const accounts = await tx.query.planCrossSellAccount.findMany({
-      where: eq(planCrossSellAccount.account_id, accountId),
+      where: and(
+        eq(planCrossSellAccount.account_id, accountId),
+        isNull(planCrossSellAccount.deleted_at)
+      ),
       columns: {
         plan_cross_sell_account_id: true,
-        plan_cross_sell_id: true,
-        deleted_at: true,
       },
     });
 
     return accounts;
   };
 
-  private readonly syncPlanCrossSellAccount = async (
+  private readonly softDeletePlanCrossSellAccounts = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
-    data: {
-      accountId: string;
-      accountPaymentId: string;
-    }
+    accounts: Array<{ plan_cross_sell_account_id: string }>
   ): Promise<void> => {
-    const [paymentCrossSells, existingCrossSellAccounts] = await Promise.all([
-      this.findAccountPaymentCrossSells(tx, data.accountPaymentId),
-      this.findPlanCrossSellAccountsByAccountId(tx, data.accountId),
-    ]);
-
-    const paymentCrossSellIdsSet = new Set(
-      paymentCrossSells.map((cs) => cs.plan_cross_sell_id)
-    );
-    const paymentCrossSellIds = Array.from(paymentCrossSellIdsSet);
-
-    if (paymentCrossSellIds.length === 0) {
-      await this.deleteAllCrossSellAccounts(tx, existingCrossSellAccounts);
+    if (accounts.length === 0) {
       return;
     }
 
-    const { toRestore, toCreate, toDelete } = this.categorizeCrossSellAccounts(
-      paymentCrossSellIds,
-      existingCrossSellAccounts
-    );
-
-    await Promise.all([
-      this.restoreCrossSellAccounts(tx, toRestore),
-      this.createCrossSellAccounts(tx, toCreate, data.accountId),
-      this.deleteCrossSellAccounts(tx, toDelete),
-    ]);
-  };
-
-  private readonly categorizeCrossSellAccounts = (
-    paymentCrossSellIds: string[],
-    existingCrossSellAccounts: Array<{
-      plan_cross_sell_account_id: string;
-      plan_cross_sell_id: string;
-      deleted_at: string | null;
-    }>
-  ): {
-    toRestore: Array<{
-      plan_cross_sell_account_id: string;
-      plan_cross_sell_id: string;
-    }>;
-    toCreate: string[];
-    toDelete: Array<{ plan_cross_sell_account_id: string }>;
-  } => {
-    const existingMap = new Map(
-      existingCrossSellAccounts.map((eca) => [eca.plan_cross_sell_id, eca])
-    );
-
-    const toRestore: Array<{
-      plan_cross_sell_account_id: string;
-      plan_cross_sell_id: string;
-    }> = [];
-    const toCreate: string[] = [];
-    const paymentCrossSellIdsSet = new Set(paymentCrossSellIds);
-
-    for (const paymentCrossSellId of paymentCrossSellIds) {
-      const existingAccount = existingMap.get(paymentCrossSellId);
-
-      if (existingAccount) {
-        if (existingAccount.deleted_at) {
-          toRestore.push({
-            plan_cross_sell_account_id:
-              existingAccount.plan_cross_sell_account_id,
-            plan_cross_sell_id: paymentCrossSellId,
-          });
-        }
-        continue;
-      }
-
-      toCreate.push(paymentCrossSellId);
-    }
-
-    const toDelete = existingCrossSellAccounts
-      .filter((eca) => !paymentCrossSellIdsSet.has(eca.plan_cross_sell_id))
-      .map((eca) => ({
-        plan_cross_sell_account_id: eca.plan_cross_sell_account_id,
-      }));
-
-    return { toRestore, toCreate, toDelete };
-  };
-
-  private readonly deleteAllCrossSellAccounts = async (
-    tx: Parameters<
-      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
-    >[0],
-    existingCrossSellAccounts: Array<{
-      plan_cross_sell_account_id: string;
-      plan_cross_sell_id: string;
-      deleted_at: string | null;
-    }>
-  ): Promise<void> => {
-    if (existingCrossSellAccounts.length === 0) {
-      return;
-    }
-
-    const updatePromises = existingCrossSellAccounts.map((existing) =>
+    const now = new Date().toISOString();
+    const updatePromises = accounts.map((existing) =>
       tx
         .update(planCrossSellAccount)
         .set({
-          deleted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          deleted_at: now,
+          updated_at: now,
         })
         .where(
           eq(
@@ -526,87 +448,81 @@ export class PlanReleaseRepository {
     await Promise.all(updatePromises);
   };
 
-  private readonly restoreCrossSellAccounts = async (
+  private readonly createPlanCrossSellAccounts = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
-    toRestore: Array<{
-      plan_cross_sell_account_id: string;
-      plan_cross_sell_id: string;
-    }>
+    accountId: string,
+    paymentCrossSells: Array<{ plan_cross_sell_id: string }>
   ): Promise<void> => {
-    if (toRestore.length === 0) {
-      return;
-    }
-
-    const restorePromises = toRestore.map((item) =>
-      tx
-        .update(planCrossSellAccount)
-        .set({
-          deleted_at: null,
-          updated_at: new Date().toISOString(),
-        })
-        .where(
-          eq(
-            planCrossSellAccount.plan_cross_sell_account_id,
-            item.plan_cross_sell_account_id
-          )
-        )
-    );
-
-    await Promise.all(restorePromises);
-  };
-
-  private readonly createCrossSellAccounts = async (
-    tx: Parameters<
-      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
-    >[0],
-    toCreate: string[],
-    accountId: string
-  ): Promise<void> => {
-    if (toCreate.length === 0) {
+    if (paymentCrossSells.length === 0) {
       return;
     }
 
     const now = new Date().toISOString();
-    const insertValues = toCreate.map((planCrossSellId) => ({
+    const insertValues = paymentCrossSells.map((crossSell) => ({
       plan_cross_sell_account_id: randomUUID(),
-      plan_cross_sell_id: planCrossSellId,
+      plan_cross_sell_id: crossSell.plan_cross_sell_id,
       account_id: accountId,
       created_at: now,
       updated_at: now,
+      cancellation_date: null,
       deleted_at: null,
     }));
 
     await tx.insert(planCrossSellAccount).values(insertValues);
   };
 
-  private readonly deleteCrossSellAccounts = async (
+  private readonly replacePlanCrossSellAccount = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
-    toDelete: Array<{ plan_cross_sell_account_id: string }>
+    data: {
+      accountId: string;
+      accountPaymentId: string;
+    }
   ): Promise<void> => {
-    if (toDelete.length === 0) {
+    const [paymentCrossSells, existingCrossSellAccounts] = await Promise.all([
+      this.findAccountPaymentCrossSells(tx, data.accountPaymentId),
+      this.findActivePlanCrossSellAccountsByAccountId(tx, data.accountId),
+    ]);
+
+    await this.softDeletePlanCrossSellAccounts(tx, existingCrossSellAccounts);
+
+    if (paymentCrossSells.length === 0) {
       return;
     }
 
-    const deletePromises = toDelete.map((item) =>
-      tx
-        .update(planCrossSellAccount)
-        .set({
-          deleted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .where(
-          eq(
-            planCrossSellAccount.plan_cross_sell_account_id,
-            item.plan_cross_sell_account_id
-          )
-        )
+    await this.createPlanCrossSellAccounts(
+      tx,
+      data.accountId,
+      paymentCrossSells
+    );
+  };
+
+  private readonly appendPlanCrossSellAccount = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    data: {
+      accountId: string;
+      accountPaymentId: string;
+    }
+  ): Promise<void> => {
+    const paymentCrossSells = await this.findAccountPaymentCrossSells(
+      tx,
+      data.accountPaymentId
     );
 
-    await Promise.all(deletePromises);
+    if (paymentCrossSells.length === 0) {
+      return;
+    }
+
+    await this.createPlanCrossSellAccounts(
+      tx,
+      data.accountId,
+      paymentCrossSells
+    );
   };
 
   findPlanById = async (

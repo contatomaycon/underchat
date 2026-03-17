@@ -7,6 +7,7 @@ import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
+import { useRoute } from 'vue-router';
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListPlanResponse } from '@core/schema/plan/listPlan/response.schema';
@@ -43,6 +44,7 @@ const permissionsCreate = [
 ];
 
 const { t } = useI18n();
+const route = useRoute();
 const planStore = usePlanStore();
 useSnackbarCleanup(planStore);
 
@@ -94,6 +96,10 @@ const query = computed(() => ({
   search: debouncedSearch.value,
 }));
 
+const isPlanBuyAdditionalRoute = computed(() => {
+  return route.name === 'plan-buy-additional';
+});
+
 const handleTableChange = (o: {
   page: number;
   itemsPerPage: number;
@@ -133,215 +139,231 @@ const openAddItemDialog = (id: string) => {
 watch(
   query,
   async (q) => {
+    if (isPlanBuyAdditionalRoute.value) {
+      return;
+    }
+
     await planStore.listPlan(q);
   },
   { immediate: true, deep: true }
 );
+
+watch(isPlanBuyAdditionalRoute, async (isBuyAdditional) => {
+  if (isBuyAdditional) {
+    return;
+  }
+
+  await planStore.listPlan(query.value);
+});
 </script>
 
 <template>
   <div>
-    <VCard title="Listar Planos" no-padding>
-      <VCardText>
-        <div class="d-flex justify-space-between flex-wrap gap-4">
-          <div class="d-flex gap-4 align-center mt-5">
-            <div class="d-flex align-center gap-x-2">
-              <div>{{ $t('show') }}</div>
-              <AppSelect
-                :model-value="options.itemsPerPage"
-                :items="itemsPerPage"
-                @update:model-value="
-                  options.itemsPerPage = parseInt($event, 10)
-                "
-              />
-            </div>
+    <RouterView v-if="isPlanBuyAdditionalRoute" />
 
-            <VBtn
-              v-if="$canPermission(permissionsCreate)"
-              prepend-icon="tabler-plus"
-              @click="isAddPlanVisible = true"
+    <template v-else>
+      <VCard title="Listar Planos" no-padding>
+        <VCardText>
+          <div class="d-flex justify-space-between flex-wrap gap-4">
+            <div class="d-flex gap-4 align-center mt-5">
+              <div class="d-flex align-center gap-x-2">
+                <div>{{ $t('show') }}</div>
+                <AppSelect
+                  :model-value="options.itemsPerPage"
+                  :items="itemsPerPage"
+                  @update:model-value="
+                    options.itemsPerPage = parseInt($event, 10)
+                  "
+                />
+              </div>
+
+              <VBtn
+                v-if="$canPermission(permissionsCreate)"
+                prepend-icon="tabler-plus"
+                @click="isAddPlanVisible = true"
+              >
+                {{ $t('add') }}
+              </VBtn>
+            </div>
+            <div class="d-flex align-center flex-wrap gap-4">
+              <div class="invoice-list-filter">
+                <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
+                <AppTextField
+                  :placeholder="$t('search') + '...'"
+                  append-inner-icon="tabler-search"
+                  single-line
+                  hide-details
+                  dense
+                  outlined
+                  v-model="options.search"
+                />
+              </div>
+            </div>
+          </div>
+
+          <VDivider class="my-4" />
+
+          <div>
+            <VDataTableServer
+              class="data-table"
+              v-model:page="options.page"
+              v-model:items-per-page="options.itemsPerPage"
+              :headers="headers"
+              :items="planStore.list"
+              :items-length="planStore.pagings.total"
+              :loading="planStore.loading"
+              :sort-by="options.sortBy"
+              @update:options="handleTableChange"
+              :loading-text="$t('loading_text')"
             >
-              {{ $t('add') }}
-            </VBtn>
-          </div>
-          <div class="d-flex align-center flex-wrap gap-4">
-            <div class="invoice-list-filter">
-              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
-              <AppTextField
-                :placeholder="$t('search') + '...'"
-                append-inner-icon="tabler-search"
-                single-line
-                hide-details
-                dense
-                outlined
-                v-model="options.search"
-              />
-            </div>
-          </div>
-        </div>
+              <template #item.name="{ item }">
+                <div class="d-flex align-center gap-2">
+                  <VIcon v-if="item.icon" :icon="item.icon" size="20" />
+                  <span>{{ item.name }}</span>
+                </div>
+              </template>
 
-        <VDivider class="my-4" />
-
-        <div>
-          <VDataTableServer
-            class="data-table"
-            v-model:page="options.page"
-            v-model:items-per-page="options.itemsPerPage"
-            :headers="headers"
-            :items="planStore.list"
-            :items-length="planStore.pagings.total"
-            :loading="planStore.loading"
-            :sort-by="options.sortBy"
-            @update:options="handleTableChange"
-            :loading-text="$t('loading_text')"
-          >
-            <template #item.name="{ item }">
-              <div class="d-flex align-center gap-2">
-                <VIcon v-if="item.icon" :icon="item.icon" size="20" />
-                <span>{{ item.name }}</span>
-              </div>
-            </template>
-
-            <template #item.price="{ item }">
-              {{
-                new Intl.NumberFormat('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                }).format(item.price ?? 0)
-              }}
-            </template>
-
-            <template #item.price_old="{ item }">
-              <s>{{
-                new Intl.NumberFormat('pt-BR', {
-                  style: 'currency',
-                  currency: 'BRL',
-                }).format(item.price_old ?? 0)
-              }}</s>
-            </template>
-
-            <template #item.status="{ item }">
-              <VChip
-                :color="
-                  item.status === EPlanStatus.active ? 'success' : 'error'
-                "
-                size="small"
-                variant="tonal"
-              >
+              <template #item.price="{ item }">
                 {{
-                  item.status === EPlanStatus.active
-                    ? $t('active')
-                    : $t('inactive')
+                  new Intl.NumberFormat('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  }).format(item.price ?? 0)
                 }}
-              </VChip>
-            </template>
+              </template>
 
-            <template #item.is_exclusive="{ item }">
-              <VChip
-                :color="item.is_exclusive ? 'success' : 'default'"
-                size="small"
-                variant="tonal"
-              >
-                {{ item.is_exclusive ? $t('yes') : $t('no') }}
-              </VChip>
-            </template>
+              <template #item.price_old="{ item }">
+                <s>{{
+                  new Intl.NumberFormat('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  }).format(item.price_old ?? 0)
+                }}</s>
+              </template>
 
-            <template #item.created_at="{ item }">
-              <span>{{ formatDateTime(item.created_at ?? null) }}</span>
-            </template>
+              <template #item.status="{ item }">
+                <VChip
+                  :color="
+                    item.status === EPlanStatus.active ? 'success' : 'error'
+                  "
+                  size="small"
+                  variant="tonal"
+                >
+                  {{
+                    item.status === EPlanStatus.active
+                      ? $t('active')
+                      : $t('inactive')
+                  }}
+                </VChip>
+              </template>
 
-            <template #item.actions="{ item }">
-              <div class="d-flex gap-1">
-                <IconBtn v-if="$canPermission(permissionsCreate)">
-                  <VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('add_plan_item') }}</span>
-                  </VTooltip>
-                  <VIcon
-                    icon="tabler-plus"
-                    @click="openAddItemDialog(item.plan_id)"
-                  />
-                </IconBtn>
+              <template #item.is_exclusive="{ item }">
+                <VChip
+                  :color="item.is_exclusive ? 'success' : 'default'"
+                  size="small"
+                  variant="tonal"
+                >
+                  {{ item.is_exclusive ? $t('yes') : $t('no') }}
+                </VChip>
+              </template>
 
-                <IconBtn v-if="$canPermission(permissionsEdit)">
-                  <VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('edit_plan') }}</span>
-                  </VTooltip>
-                  <VIcon
-                    icon="tabler-edit"
-                    @click="openEditDialog(item.plan_id)"
-                  />
-                </IconBtn>
+              <template #item.created_at="{ item }">
+                <span>{{ formatDateTime(item.created_at ?? null) }}</span>
+              </template>
 
-                <IconBtn v-if="$canPermission(permissionsDelete)">
-                  <VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('delete_plan') }}</span>
-                  </VTooltip>
-                  <VIcon
-                    icon="tabler-trash"
-                    @click="deletePlan(item.plan_id)"
-                  />
-                </IconBtn>
-              </div>
-            </template>
+              <template #item.actions="{ item }">
+                <div class="d-flex gap-1">
+                  <IconBtn v-if="$canPermission(permissionsCreate)">
+                    <VTooltip
+                      location="top"
+                      transition="scale-transition"
+                      activator="parent"
+                    >
+                      <span>{{ $t('add_plan_item') }}</span>
+                    </VTooltip>
+                    <VIcon
+                      icon="tabler-plus"
+                      @click="openAddItemDialog(item.plan_id)"
+                    />
+                  </IconBtn>
 
-            <template #no-data>
-              {{ $t('no_data_available') }}
-            </template>
+                  <IconBtn v-if="$canPermission(permissionsEdit)">
+                    <VTooltip
+                      location="top"
+                      transition="scale-transition"
+                      activator="parent"
+                    >
+                      <span>{{ $t('edit_plan') }}</span>
+                    </VTooltip>
+                    <VIcon
+                      icon="tabler-edit"
+                      @click="openEditDialog(item.plan_id)"
+                    />
+                  </IconBtn>
 
-            <template #bottom>
-              <TablePagination
-                v-model:page="options.page"
-                :items-per-page="options.itemsPerPage"
-                :total-items="planStore.pagings.total"
-              />
-            </template>
-          </VDataTableServer>
-        </div>
-      </VCardText>
+                  <IconBtn v-if="$canPermission(permissionsDelete)">
+                    <VTooltip
+                      location="top"
+                      transition="scale-transition"
+                      activator="parent"
+                    >
+                      <span>{{ $t('delete_plan') }}</span>
+                    </VTooltip>
+                    <VIcon
+                      icon="tabler-trash"
+                      @click="deletePlan(item.plan_id)"
+                    />
+                  </IconBtn>
+                </div>
+              </template>
 
-      <VDialogHandler
-        v-if="isDialogDeleterShow"
-        v-model="isDialogDeleterShow"
-        :title="$t('delete_plan')"
-        :message="$t('delete_plan_confirmation')"
-        @confirm="handleDelete"
-      />
+              <template #no-data>
+                {{ $t('no_data_available') }}
+              </template>
 
-      <AppEditPlan
-        v-if="isDialogEditPlanShow"
-        v-model="isDialogEditPlanShow"
-        :plan-id="planToEdit"
-      />
+              <template #bottom>
+                <TablePagination
+                  v-model:page="options.page"
+                  :items-per-page="options.itemsPerPage"
+                  :total-items="planStore.pagings.total"
+                />
+              </template>
+            </VDataTableServer>
+          </div>
+        </VCardText>
 
-      <AppAddPlan v-if="isAddPlanVisible" v-model="isAddPlanVisible" />
+        <VDialogHandler
+          v-if="isDialogDeleterShow"
+          v-model="isDialogDeleterShow"
+          :title="$t('delete_plan')"
+          :message="$t('delete_plan_confirmation')"
+          @confirm="handleDelete"
+        />
 
-      <AppAddPlanItem
-        v-if="isAddPlanItemVisible"
-        v-model="isAddPlanItemVisible"
-        :plan-id="planToAddItem"
-      />
-    </VCard>
+        <AppEditPlan
+          v-if="isDialogEditPlanShow"
+          v-model="isDialogEditPlanShow"
+          :plan-id="planToEdit"
+        />
 
-    <VSnackbar
-      v-model="planStore.snackbar.status"
-      transition="scroll-y-reverse-transition"
-      location="top end"
-      :color="planStore.snackbar.color"
-    >
-      {{ planStore.snackbar.message }}
-    </VSnackbar>
+        <AppAddPlan v-if="isAddPlanVisible" v-model="isAddPlanVisible" />
+
+        <AppAddPlanItem
+          v-if="isAddPlanItemVisible"
+          v-model="isAddPlanItemVisible"
+          :plan-id="planToAddItem"
+        />
+      </VCard>
+
+      <VSnackbar
+        v-model="planStore.snackbar.status"
+        transition="scroll-y-reverse-transition"
+        location="top end"
+        :color="planStore.snackbar.color"
+      >
+        {{ planStore.snackbar.message }}
+      </VSnackbar>
+    </template>
   </div>
 </template>
 

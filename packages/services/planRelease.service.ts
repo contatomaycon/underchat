@@ -13,6 +13,15 @@ import { NotificationMessageService } from './notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 import Redis from 'ioredis';
 import { withLock } from '@core/common/functions/withLock';
+import type {
+  IPlanReleaseAccountPaymentData,
+  IPlanReleaseAddonOnlyPaymentInput,
+  IPlanReleaseCreateInvoiceOptions,
+  IPlanReleaseCreditCardInput,
+  IPlanReleasePaymentInput,
+  IPlanReleaseReleasedPlanAccount,
+  IPlanReleaseUpdatePaymentStatusInput,
+} from '@core/common/interfaces/IPlanReleaseService';
 
 @injectable()
 export class PlanReleaseService {
@@ -201,11 +210,7 @@ export class PlanReleaseService {
   private readonly findReleasedPlanAccountByPayment = async (
     accountPaymentId: string,
     planId: string
-  ): Promise<{
-    plan_account_id: string;
-    plan_id: string;
-    next_payment_date: string | null;
-  } | null> => {
+  ): Promise<IPlanReleaseReleasedPlanAccount | null> => {
     const existingPlanAccount =
       await this.planReleaseRepository.findPlanAccountByAccountPaymentId(
         accountPaymentId
@@ -222,18 +227,9 @@ export class PlanReleaseService {
     return existingPlanAccount;
   };
 
-  private readonly updatePaymentStatusOnly = async (data: {
-    accountPaymentId: string;
-    paymentStatusId: string;
-    paymentDate: string | null;
-    pixTransaction: string | null;
-    accountId: string;
-    planId: string;
-    recurringPayment: boolean;
-    billingPeriodId: string | null;
-    value: string;
-    nextPaymentDate: string;
-  }): Promise<void> => {
+  private readonly updatePaymentStatusOnly = async (
+    data: IPlanReleaseUpdatePaymentStatusInput
+  ): Promise<void> => {
     await withLock(
       this.redis,
       `plan-account:${data.accountId}`,
@@ -257,19 +253,41 @@ export class PlanReleaseService {
     );
   };
 
-  private readonly releasePlanForPayment = async (data: {
-    accountPaymentId: string;
-    paymentStatusId: string;
-    paymentDate: string;
-    pixTransaction: string | null;
-    accountId: string;
-    planId: string;
-    recurringPayment: boolean;
-    billingPeriodId: string | null;
-    value: string;
-    paymentAsaasId: string;
-    shouldSendNotification?: boolean;
-  }): Promise<void> => {
+  private readonly releaseAddonOnlyForPayment = async (
+    data: IPlanReleaseAddonOnlyPaymentInput
+  ): Promise<void> => {
+    await withLock(
+      this.redis,
+      `plan-account:${data.accountId}`,
+      () =>
+        this.planReleaseRepository.processPaymentAndReleasePlan({
+          accountPaymentId: data.accountPaymentId,
+          paymentStatusId: data.paymentStatusId,
+          paymentDate: data.paymentDate,
+          pixTransaction: data.pixTransaction,
+          accountId: data.accountId,
+          planId: data.planId,
+          accountPaymentIdForPlan: data.accountPaymentId,
+          recurringPayment: false,
+          billingPeriodId: null,
+          lastPaymentDate: data.paymentDate,
+          nextPaymentDate: data.paymentDate,
+          value: '0',
+          shouldReleasePlan: false,
+          isAddonOnly: true,
+        }),
+      { ttlMs: 20000 }
+    );
+
+    await this.createInvoiceForPayment(
+      data.accountPaymentId,
+      data.paymentAsaasId
+    );
+  };
+
+  private readonly releasePlanForPayment = async (
+    data: IPlanReleasePaymentInput
+  ): Promise<void> => {
     const currentPlanAccount =
       await this.planReleaseRepository.findPlanAccountByAccountId(
         data.accountId
@@ -340,18 +358,26 @@ export class PlanReleaseService {
   };
 
   private readonly processSuccessfulPayment = async (
-    accountPaymentData: NonNullable<
-      Awaited<
-        ReturnType<
-          typeof this.planReleaseRepository.findAccountPaymentByBilling
-        >
-      >
-    >,
+    accountPaymentData: IPlanReleaseAccountPaymentData,
     paymentStatusId: string,
     paymentDate: string,
     pixTransaction: string | null,
     paymentAsaasId: string
   ): Promise<void> => {
+    if (accountPaymentData.is_addon_only) {
+      await this.releaseAddonOnlyForPayment({
+        accountPaymentId: accountPaymentData.account_payment_id,
+        paymentStatusId,
+        paymentDate,
+        pixTransaction,
+        accountId: accountPaymentData.account_id,
+        planId: accountPaymentData.plan_id,
+        paymentAsaasId,
+      });
+
+      return;
+    }
+
     const releasedPlanAccount = await this.findReleasedPlanAccountByPayment(
       accountPaymentData.account_payment_id,
       accountPaymentData.plan_id
@@ -396,13 +422,7 @@ export class PlanReleaseService {
   };
 
   private readonly processAlreadySuccessfulPayment = async (
-    accountPaymentData: NonNullable<
-      Awaited<
-        ReturnType<
-          typeof this.planReleaseRepository.findAccountPaymentByBilling
-        >
-      >
-    >,
+    accountPaymentData: IPlanReleaseAccountPaymentData,
     paymentStatusId: string,
     paymentDate: string,
     pixTransaction: string | null,
@@ -434,13 +454,7 @@ export class PlanReleaseService {
   };
 
   private readonly processUnsuccessfulPayment = async (
-    accountPaymentData: NonNullable<
-      Awaited<
-        ReturnType<
-          typeof this.planReleaseRepository.findAccountPaymentByBilling
-        >
-      >
-    >,
+    accountPaymentData: IPlanReleaseAccountPaymentData,
     paymentStatusId: string,
     paymentDate: string | null,
     pixTransaction: string | null
@@ -556,16 +570,9 @@ export class PlanReleaseService {
     );
   };
 
-  releasePlanForCreditCard = async (data: {
-    accountPaymentId: string;
-    accountId: string;
-    planId: string;
-    billingPeriodId: string | null;
-    recurringPayment: boolean;
-    value: string;
-    paymentDate: string;
-    paymentStatusId: string;
-  }): Promise<void> => {
+  releasePlanForCreditCard = async (
+    data: IPlanReleaseCreditCardInput
+  ): Promise<void> => {
     const isCurrentStatusSuccessful = this.isPaymentStatusSuccessful(
       data.paymentStatusId
     );
@@ -581,6 +588,33 @@ export class PlanReleaseService {
 
     if (!accountPaymentData) {
       throw new Error(`Pagamento não encontrado: ${data.accountPaymentId}`);
+    }
+
+    if (accountPaymentData.is_addon_only) {
+      const alreadyProcessed =
+        accountPaymentData.payment_date !== null &&
+        this.isPaymentStatusSuccessful(accountPaymentData.payment_status_id);
+
+      if (alreadyProcessed) {
+        await this.createInvoiceForPayment(
+          data.accountPaymentId,
+          accountPaymentData.billing || ''
+        );
+
+        return;
+      }
+
+      await this.releaseAddonOnlyForPayment({
+        accountPaymentId: data.accountPaymentId,
+        paymentStatusId: data.paymentStatusId,
+        paymentDate: data.paymentDate,
+        pixTransaction: null,
+        accountId: data.accountId,
+        planId: data.planId,
+        paymentAsaasId: accountPaymentData.billing || '',
+      });
+
+      return;
     }
 
     const releasedPlanAccount = await this.findReleasedPlanAccountByPayment(
@@ -648,10 +682,7 @@ export class PlanReleaseService {
     accountPaymentId: string,
     paymentAsaasId: string,
     t?: TFunction<'translation', undefined>,
-    options?: {
-      skipGenerateInvoiceCheck?: boolean;
-      useCurrentEffectiveDate?: boolean;
-    }
+    options?: IPlanReleaseCreateInvoiceOptions
   ): Promise<void> => {
     const skipGenerateInvoiceCheck = options?.skipGenerateInvoiceCheck === true;
     const useCurrentEffectiveDate = options?.useCurrentEffectiveDate === true;

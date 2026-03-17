@@ -5,8 +5,10 @@ import { useRouter } from 'vue-router';
 import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import VDialogHandler from '@/components/VDialogHandler.vue';
+import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
+import { ListAccountAddonsResponse } from '@core/schema/accountSettings/listAccountAddons/response.schema';
 import { ListAccountPlanProductsResponse } from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ListMethodPaymentsResponse } from '@core/schema/accountSettings/listMethodPayments/response.schema';
@@ -32,8 +34,10 @@ useSnackbarCleanup(accountSettingsStore);
 const loading = ref(false);
 const planInvoice = ref<ViewCurrentPlanInvoiceResponse | null>(null);
 const cardsLoading = ref(false);
+const addonsLoading = ref(false);
 const planProductsLoading = ref(false);
 const userCards = ref<ListUserCardResponse[]>([]);
+const accountAddons = ref<ListAccountAddonsResponse[]>([]);
 const accountPlanProducts = ref<ListAccountPlanProductsResponse[]>([]);
 const enabledPaymentMethods = ref<ListMethodPaymentsResponse>([]);
 const loadingPaymentMethods = ref(false);
@@ -51,6 +55,9 @@ const detectedBrand = ref<string | null>(null);
 const expiryError = ref<string | null>(null);
 const showCvv = ref(false);
 const isAddingCard = ref(false);
+const cancellingAddonId = ref<string | null>(null);
+const isCancelAddonDialogOpen = ref(false);
+const addonToCancel = ref<ListAccountAddonsResponse | null>(null);
 
 const getCurrencyConfig = () => {
   const localeMap: Record<string, { locale: string; currency: string }> = {
@@ -243,6 +250,17 @@ const loadUserCards = async () => {
     userCards.value = result;
   }
   cardsLoading.value = false;
+};
+
+const loadAccountAddons = async () => {
+  addonsLoading.value = true;
+  const result = await accountSettingsStore.listAccountAddons();
+  if (result) {
+    accountAddons.value = result;
+  } else {
+    accountAddons.value = [];
+  }
+  addonsLoading.value = false;
 };
 
 const loadAccountPlanProducts = async () => {
@@ -578,6 +596,64 @@ const getPlanProductPlanProgressPercentage = (
   return Math.min(Math.max((planUsed / product.quantity_total) * 100, 0), 100);
 };
 
+const sortedAccountAddons = computed(() => {
+  return [...accountAddons.value].sort((a, b) => {
+    if (a.renewal_status === b.renewal_status) {
+      return a.name.localeCompare(b.name);
+    }
+
+    return a.renewal_status === 'active' ? -1 : 1;
+  });
+});
+
+const getAddonRenewalStatusColor = (
+  addon: ListAccountAddonsResponse
+): 'success' | 'warning' => {
+  return addon.renewal_status === 'active' ? 'success' : 'warning';
+};
+
+const getAddonRenewalStatusText = (
+  addon: ListAccountAddonsResponse
+): string => {
+  return addon.renewal_status === 'active'
+    ? t('addon_renewal_active')
+    : t('addon_renewal_scheduled_cancel');
+};
+
+const requestCancelAddon = (addon: ListAccountAddonsResponse) => {
+  if (addon.renewal_status !== 'active') {
+    return;
+  }
+
+  if (cancellingAddonId.value) {
+    return;
+  }
+
+  addonToCancel.value = addon;
+  isCancelAddonDialogOpen.value = true;
+};
+
+const cancelAddon = async () => {
+  if (!addonToCancel.value) {
+    return;
+  }
+
+  cancellingAddonId.value = addonToCancel.value.plan_cross_sell_account_id;
+  try {
+    const result = await accountSettingsStore.cancelAccountAddon(
+      addonToCancel.value.plan_cross_sell_account_id
+    );
+
+    if (result?.success) {
+      await Promise.all([loadAccountAddons(), loadAccountPlanProducts()]);
+    }
+  } finally {
+    cancellingAddonId.value = null;
+    addonToCancel.value = null;
+    isCancelAddonDialogOpen.value = false;
+  }
+};
+
 const isWithin7Days = computed(() => {
   if (!planInvoice.value?.last_payment_date) return false;
   const lastPaymentDate = new Date(planInvoice.value.last_payment_date);
@@ -767,10 +843,15 @@ const renewPlan = () => {
   router.push({ name: 'plans' });
 };
 
+const goToBuyAdditional = () => {
+  router.push({ path: '/plan/buy-additional' });
+};
+
 onMounted(() => {
   loadPlanInvoice();
   loadMethodPayments();
   loadUserCards();
+  loadAccountAddons();
   loadAccountPlanProducts();
 });
 </script>
@@ -1002,6 +1083,14 @@ onMounted(() => {
             <div class="d-flex gap-2">
               <VBtn color="primary" variant="flat" @click="renewPlan">
                 {{ renewButtonText }}
+              </VBtn>
+              <VBtn
+                v-if="isPlanActive"
+                color="primary"
+                variant="outlined"
+                @click="goToBuyAdditional"
+              >
+                {{ $t('buy_additional') }}
               </VBtn>
               <VBtn
                 v-if="
@@ -1290,6 +1379,83 @@ onMounted(() => {
                 </div>
               </div>
             </div>
+
+            <VDivider class="my-4" />
+
+            <div class="mb-2">
+              <div class="d-flex align-center justify-space-between mb-3">
+                <span class="text-h6">{{ $t('addons') }}</span>
+              </div>
+
+              <VProgressCircular
+                v-if="addonsLoading"
+                indeterminate
+                color="primary"
+                size="24"
+                class="mb-2"
+              />
+
+              <div
+                v-else-if="sortedAccountAddons.length === 0"
+                class="text-body-2 text-medium-emphasis"
+              >
+                {{ $t('no_addons_found') }}
+              </div>
+
+              <div v-else class="d-flex flex-column gap-2">
+                <VCard
+                  v-for="addon in sortedAccountAddons"
+                  :key="addon.plan_cross_sell_account_id"
+                  variant="outlined"
+                  class="pa-3"
+                >
+                  <div class="d-flex align-center justify-space-between gap-2">
+                    <div class="d-flex flex-column">
+                      <span class="text-body-1 font-weight-medium">
+                        {{ addon.name }}
+                        <span class="text-caption"
+                          >(x{{ addon.quantity }})</span
+                        >
+                      </span>
+                      <span class="text-body-2 text-medium-emphasis">
+                        {{ formatCurrency(addon.price_per_cycle) }}
+                      </span>
+                      <span
+                        v-if="addon.cancellation_date"
+                        class="text-caption text-medium-emphasis"
+                      >
+                        {{ $t('cancellation_date') }}:
+                        {{ formatDate(addon.cancellation_date) }}
+                      </span>
+                    </div>
+
+                    <div class="d-flex align-center gap-2">
+                      <VChip
+                        :color="getAddonRenewalStatusColor(addon)"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{ getAddonRenewalStatusText(addon) }}
+                      </VChip>
+
+                      <VBtn
+                        v-if="addon.renewal_status === 'active'"
+                        color="error"
+                        variant="outlined"
+                        size="small"
+                        :loading="
+                          cancellingAddonId === addon.plan_cross_sell_account_id
+                        "
+                        :disabled="!!cancellingAddonId"
+                        @click="requestCancelAddon(addon)"
+                      >
+                        {{ $t('cancel_renewal') }}
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCard>
+              </div>
+            </div>
           </VCardText>
         </VCard>
       </VCol>
@@ -1326,6 +1492,19 @@ onMounted(() => {
       @confirm="confirmCancelSubscription"
     />
 
+    <VDialogHandler
+      v-model="isCancelAddonDialogOpen"
+      :title="$t('cancel_addon_renewal_title')"
+      :message="
+        $t('cancel_addon_renewal_confirmation', {
+          addon: addonToCancel?.name || '',
+        })
+      "
+      :confirm-text="$t('confirm')"
+      :cancel-text="$t('cancel')"
+      @confirm="cancelAddon"
+    />
+
     <VDialog v-model="isDeleteDialogOpen" max-width="400">
       <VCard>
         <VCardTitle>{{ $t('delete_card') }}</VCardTitle>
@@ -1345,21 +1524,17 @@ onMounted(() => {
     </VDialog>
 
     <VDialog v-model="showAddCardModal" max-width="600" persistent>
+      <DialogCloseBtn
+        @click="
+          showAddCardModal = false;
+          resetNewCardForm();
+        "
+      />
       <VCard>
-        <VCardTitle class="d-flex align-center justify-space-between">
+        <VCardTitle>
           <span>{{ $t('add_new_card') }}</span>
-          <VBtn
-            icon
-            variant="text"
-            size="small"
-            @click="
-              showAddCardModal = false;
-              resetNewCardForm();
-            "
-          >
-            <VIcon icon="tabler-x" />
-          </VBtn>
         </VCardTitle>
+        <VDivider />
         <VCardText>
           <VForm>
             <VRow>

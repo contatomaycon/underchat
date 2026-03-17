@@ -16,6 +16,7 @@ import { listUserCards } from './methods/listUserCards';
 import { deleteUserCard } from './methods/deleteUserCard';
 import { updatePlanRecurring } from './methods/updatePlanRecurring';
 import { listAccountAddons } from './methods/listAccountAddons';
+import { cancelAccountAddon } from './methods/cancelAccountAddon';
 import { listAccountPlanProducts } from './methods/listAccountPlanProducts';
 import { updateUserCardDefault } from './methods/updateUserCardDefault';
 import { createUserCard } from './methods/createUserCard';
@@ -46,6 +47,7 @@ class AccountSettingsController {
   public deleteUserCard = deleteUserCard;
   public updatePlanRecurring = updatePlanRecurring;
   public listAccountAddons = listAccountAddons;
+  public cancelAccountAddon = cancelAccountAddon;
   public listAccountPlanProducts = listAccountPlanProducts;
   public updateUserCardDefault = updateUserCardDefault;
   public createUserCard = createUserCard;

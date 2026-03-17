@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
 import { ViewCurrentPlanResponse } from '@core/schema/plan/viewCurrentPlan/response.schema';
+import { calculateBillingPeriodByDates } from '@core/common/functions/calculateBillingPeriodByDates';
 
 @injectable()
 export class PlanCurrentViewerRepository {
@@ -21,11 +22,17 @@ export class PlanCurrentViewerRepository {
           columns: {
             plan_account_id: true,
             next_payment_date: true,
+            last_payment_date: true,
           },
           with: {
             ppl: {
               columns: {
                 plan_id: true,
+              },
+            },
+            bpl: {
+              columns: {
+                name: true,
               },
             },
           },
@@ -37,7 +44,12 @@ export class PlanCurrentViewerRepository {
     });
 
     if (!accountResult) {
-      return { plan_id: null };
+      return {
+        plan_id: null,
+        billing_period: null,
+        next_payment_date: null,
+        last_payment_date: null,
+      };
     }
 
     const now = new Date();
@@ -47,8 +59,32 @@ export class PlanCurrentViewerRepository {
       return nextPaymentDate > now;
     });
 
+    if (!activePlanAccount) {
+      return {
+        plan_id: null,
+        billing_period: null,
+        next_payment_date: null,
+        last_payment_date: null,
+      };
+    }
+
+    const billingPeriodName =
+      activePlanAccount.bpl?.name ||
+      calculateBillingPeriodByDates(
+        activePlanAccount.last_payment_date,
+        activePlanAccount.next_payment_date
+      );
+
     return {
-      plan_id: activePlanAccount?.ppl?.plan_id ?? null,
+      plan_id: activePlanAccount.ppl?.plan_id ?? null,
+      billing_period:
+        billingPeriodName === 'annual'
+          ? 'annual'
+          : billingPeriodName === 'monthly'
+            ? 'monthly'
+            : null,
+      next_payment_date: activePlanAccount.next_payment_date ?? null,
+      last_payment_date: activePlanAccount.last_payment_date ?? null,
     };
   };
 }

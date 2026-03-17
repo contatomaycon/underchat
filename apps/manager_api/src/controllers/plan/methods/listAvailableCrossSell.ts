@@ -4,9 +4,10 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { CrossSellAvailableListerUseCase } from '@core/useCases/plan/CrossSellAvailableLister.useCase';
+import { ListAvailableCrossSellRequest } from '@core/schema/plan/listAvailableCrossSell/request.schema';
 
 export const listAvailableCrossSell = async (
-  request: FastifyRequest,
+  request: FastifyRequest<{ Querystring: ListAvailableCrossSellRequest }>,
   reply: FastifyReply
 ) => {
   const crossSellAvailableListerUseCase = container.resolve(
@@ -15,7 +16,10 @@ export const listAvailableCrossSell = async (
   const { t } = request;
 
   try {
-    const response = await crossSellAvailableListerUseCase.execute();
+    const response = await crossSellAvailableListerUseCase.execute(
+      request.tokenJwtData.account_id,
+      request.query
+    );
 
     return sendResponse(reply, {
       message: t('cross_sell_available_list_successfully'),

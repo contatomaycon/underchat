@@ -74,7 +74,9 @@ export class AccountQuantityProductViewerRepository {
       return 0;
     }
 
-    return planCrossSellResult[0].quantity;
+    return planCrossSellResult.reduce((total, item) => {
+      return total + item.quantity;
+    }, 0);
   };
 
   viewAccountQuantityProduct = async (

@@ -36,6 +36,11 @@ export const boletoPaymentDataSchema = Type.Object({
 
 export const createOrderPaymentResponseSchema = Type.Object({
   order_id: Type.String({ format: 'uuid', description: 'ID do pedido criado' }),
+  order_type: Type.Optional(
+    Type.Union([Type.Literal('plan'), Type.Literal('addon')], {
+      description: 'Tipo do pedido processado',
+    })
+  ),
   total_amount: Type.Number({ description: 'Valor total a ser pago' }),
   plan_price: Type.Number({ description: 'Preço do plano' }),
   addons_total: Type.Number({ description: 'Total dos adicionais' }),

@@ -55,6 +55,7 @@ export const accountPayment = pgTable(
     billing_period_id: uuid().references(() => billingPeriod.billing_period_id),
     invoice_url: varchar({ length: 1000 }),
     recurring_payment: boolean().notNull().default(false),
+    is_addon_only: boolean().notNull().default(false),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,
@@ -73,6 +74,7 @@ export const accountPayment = pgTable(
     ),
     index('account_payment_payment_status_id_idx').on(table.payment_status_id),
     index('account_payment_payment_date_idx').on(table.payment_date),
+    index('account_payment_is_addon_only_idx').on(table.is_addon_only),
     index('account_payment_payment_status_id_created_at_idx').on(
       table.payment_status_id,
       table.created_at

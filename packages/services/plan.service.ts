@@ -174,10 +174,14 @@ export class PlanService {
     return this.paymentService.getOrCreateCustomer(t, accountId);
   };
 
-  listAvailableCrossSells = async (): Promise<
-    ListAvailableCrossSellResponse[]
-  > => {
-    return this.crossSellListerRepository.listAvailableCrossSells();
+  listAvailableCrossSells = async (input?: {
+    accountId?: string;
+    pricingMode?: 'full' | 'proportional';
+  }): Promise<ListAvailableCrossSellResponse[]> => {
+    return this.crossSellListerRepository.listAvailableCrossSells({
+      accountId: input?.accountId,
+      pricingMode: input?.pricingMode,
+    });
   };
 
   calculateOrderPayment = async (
@@ -212,6 +216,7 @@ export class PlanService {
     billingPeriodId: string | null;
     invoiceUrl: string | null;
     recurringPayment: boolean;
+    isAddonOnly: boolean;
     userCardId?: string | null;
     installment?: string | null;
     boleto?: string | null;
@@ -223,7 +228,7 @@ export class PlanService {
 
   createAccountPaymentCrossSells = async (data: {
     accountPaymentId: string;
-    addons: Array<{ plan_cross_sell_id: string }>;
+    addons: Array<{ plan_cross_sell_id: string; value?: number }>;
     billingPeriod: 'monthly' | 'annual';
   }): Promise<void> => {
     return this.orderPaymentCreatorRepository.createAccountPaymentCrossSells(
@@ -242,5 +247,11 @@ export class PlanService {
   } | null> => {
     const plan = await this.orderPaymentCreatorRepository.getPlan(planId);
     return plan || null;
+  };
+
+  getCurrentActivePlanAccount = async (accountId: string) => {
+    return this.orderPaymentCreatorRepository.getCurrentActivePlanAccount(
+      accountId
+    );
   };
 }

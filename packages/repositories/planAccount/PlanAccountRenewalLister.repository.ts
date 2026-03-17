@@ -56,6 +56,7 @@ export class PlanAccountRenewalListerRepository {
               columns: {
                 plan_cross_sell_account_id: true,
                 deleted_at: true,
+                cancellation_date: true,
               },
               with: {
                 pca: {
@@ -97,7 +98,13 @@ export class PlanAccountRenewalListerRepository {
 
       if (item.pac.pca) {
         for (const cs of item.pac.pca) {
-          if (cs && !cs.deleted_at && cs.pca && !cs.pca.deleted_at) {
+          if (
+            cs &&
+            !cs.deleted_at &&
+            !cs.cancellation_date &&
+            cs.pca &&
+            !cs.pca.deleted_at
+          ) {
             crossSells.push({
               plan_cross_sell_id: cs.pca.plan_cross_sell_id,
               plan_cross_sell_account_id: cs.plan_cross_sell_account_id,

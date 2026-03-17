@@ -288,6 +288,7 @@ export class PlanRenewalService {
       billingPeriodId: planAccount.billing_period_id,
       invoiceUrl: paymentResult.payment.invoiceUrl || null,
       recurringPayment: true,
+      isAddonOnly: false,
       userCardId: defaultCard.user_card_id,
       installment: null,
     });

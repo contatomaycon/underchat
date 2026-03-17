@@ -1,12 +1,12 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { listAvailableCrossSellFinalResponseSchema } from './response.schema';
-import { listAvailableCrossSellRequestSchema } from './request.schema';
+import { cancelAccountAddonRequestSchema } from './request.schema';
+import { cancelAccountAddonResponseSchema } from './response.schema';
 
-export const listAvailableCrossSellSchema = {
-  description: 'Lista as vendas cruzadas disponíveis para checkout',
-  tags: [ETagSwagger.plan],
+export const cancelAccountAddonSchema = {
+  description: 'Agenda o cancelamento de um adicional ao fim do ciclo',
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {
@@ -22,14 +22,14 @@ export const listAvailableCrossSellSchema = {
       })
     ),
   }),
-  querystring: listAvailableCrossSellRequestSchema,
+  params: cancelAccountAddonRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: listAvailableCrossSellFinalResponseSchema,
+        data: cancelAccountAddonResponseSchema,
       },
       { description: 'Successful' }
     ),

@@ -18,6 +18,7 @@ import { listUserCardsSchema } from '@core/schema/plan/listUserCards';
 import { deleteUserCardSchema } from '@core/schema/accountSettings/deleteUserCard';
 import { updatePlanRecurringSchema } from '@core/schema/accountSettings/updatePlanRecurring';
 import { listAccountAddonsSchema } from '@core/schema/accountSettings/listAccountAddons';
+import { cancelAccountAddonSchema } from '@core/schema/accountSettings/cancelAccountAddon';
 import { listAccountPlanProductsSchema } from '@core/schema/accountSettings/listAccountPlanProducts';
 import { updateUserCardDefaultSchema } from '@core/schema/accountSettings/updateUserCardDefault';
 import { createUserCardSchema } from '@core/schema/accountSettings/createUserCard';
@@ -221,6 +222,16 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.get('/account-settings/addons', {
     schema: listAccountAddonsSchema,
     handler: accountSettingsController.listAccountAddons,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
+    ],
+  });
+
+  server.post('/account-settings/addons/:plan_cross_sell_account_id/cancel', {
+    schema: cancelAccountAddonSchema,
+    handler: accountSettingsController.cancelAccountAddon,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

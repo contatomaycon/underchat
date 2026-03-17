@@ -11,5 +11,6 @@ export * from './viewCurrentPlanInvoice';
 export * from './viewAccountPaymentNfse';
 export * from './generateAccountPaymentNfse';
 export * from './cancelPlanAccount';
+export * from './cancelAccountAddon';
 export * from './viewAccountCustomization';
 export * from './upsertAccountCustomization';

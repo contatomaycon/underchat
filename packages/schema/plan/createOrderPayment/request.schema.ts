@@ -9,6 +9,12 @@ export const newCardSchema = Type.Object({
 });
 
 export const createOrderPaymentRequestSchema = Type.Object({
+  order_type: Type.Optional(
+    Type.Union([Type.Literal('plan'), Type.Literal('addon')], {
+      description: 'Tipo do pedido (plano completo ou apenas adicional)',
+      default: 'plan',
+    })
+  ),
   plan_id: Type.String({
     format: 'uuid',
     description: 'ID do plano escolhido',

@@ -74,15 +74,18 @@ const currentPlanInvoiceData = ref<{
   next_payment_date: string | null;
 } | null>(null);
 const availableCrossSells = ref<ListAvailableCrossSellResponse[]>([]);
-const selectedAddons = ref<
-  Array<{
-    plan_cross_sell_id: string;
-    plan_product_id: string;
-    name: string;
-    quantity: number;
-    price: number;
-  }>
->([]);
+type SelectedAddon = {
+  plan_cross_sell_id: string;
+  plan_product_id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  price_per_cycle: number;
+  price_proportional: number;
+  is_single_use: boolean;
+  can_purchase: boolean;
+};
+const selectedAddons = ref<SelectedAddon[]>([]);
 const selectedCrossSellByType = ref<Record<string, string | null>>({});
 const loadingProducts = ref(false);
 const creditCardFee = ref<ListCreditCardFeeResponse | null>(null);
@@ -334,12 +337,16 @@ const loadStep2 = async () => {
 
   loadingProducts.value = true;
   const [crossSells] = await Promise.all([
-    planStore.listAvailableCrossSell(),
+    planStore.listAvailableCrossSell({ pricing_mode: 'full' }),
     loadUpgradeDiscount(),
   ]);
   if (crossSells) {
     availableCrossSells.value = crossSells;
     selectedCrossSellByType.value = {};
+
+    if (selectedAddons.value.length === 0) {
+      prefillRenewalAddons();
+    }
   }
   loadingProducts.value = false;
   step2Loaded.value = true;
@@ -634,6 +641,10 @@ const groupedCrossSells = computed(() => {
   > = {};
 
   for (const crossSell of availableCrossSells.value) {
+    if (!crossSell.can_purchase && !crossSell.renewable_instances) {
+      continue;
+    }
+
     const productId = crossSell.plan_product_id;
     if (!grouped[productId]) {
       grouped[productId] = {
@@ -649,6 +660,64 @@ const groupedCrossSells = computed(() => {
   return Object.values(grouped);
 });
 
+const buildSelectedAddon = (
+  crossSell: ListAvailableCrossSellResponse
+): SelectedAddon => {
+  const fallbackMultiplier = billingPeriod.value === 'annual' ? 12 : 1;
+  const cyclePrice =
+    Math.round(Number(crossSell.price) * fallbackMultiplier * 100) / 100;
+  const proportionalPrice = cyclePrice;
+
+  return {
+    plan_cross_sell_id: crossSell.plan_cross_sell_id,
+    plan_product_id: crossSell.plan_product_id,
+    name: crossSell.plan_product?.name || '',
+    quantity: crossSell.quantity,
+    price: Number(crossSell.price),
+    price_per_cycle: cyclePrice,
+    price_proportional: proportionalPrice,
+    is_single_use: crossSell.is_single_use === true,
+    can_purchase: crossSell.can_purchase !== false,
+  };
+};
+
+const getSelectedAddonsCountByProduct = (planProductId: string): number => {
+  return selectedAddons.value.filter((a) => a.plan_product_id === planProductId)
+    .length;
+};
+
+const prefillRenewalAddons = () => {
+  if (
+    !selectedPlanForCheckout.value ||
+    !currentPlanId.value ||
+    selectedPlanForCheckout.value.plan_id !== currentPlanId.value ||
+    isPlanExpired.value
+  ) {
+    return;
+  }
+
+  const prefills: SelectedAddon[] = [];
+
+  for (const crossSell of availableCrossSells.value) {
+    const renewableInstances = Math.max(
+      0,
+      Number(crossSell.renewable_instances || 0)
+    );
+
+    if (renewableInstances === 0) {
+      continue;
+    }
+
+    for (let i = 0; i < renewableInstances; i += 1) {
+      prefills.push(buildSelectedAddon(crossSell));
+    }
+  }
+
+  if (prefills.length > 0) {
+    selectedAddons.value = prefills;
+  }
+};
+
 const addAddon = (planProductId: string) => {
   const selectedCrossSellId = selectedCrossSellByType.value[planProductId];
   if (!selectedCrossSellId) {
@@ -663,48 +732,68 @@ const addAddon = (planProductId: string) => {
     return;
   }
 
-  const existingAddon = selectedAddons.value.find(
-    (a) => a.plan_product_id === crossSell.plan_product_id
-  );
-
-  if (existingAddon) {
+  if (crossSell.can_purchase === false) {
     return;
   }
 
-  selectedAddons.value.push({
-    plan_cross_sell_id: crossSell.plan_cross_sell_id,
-    plan_product_id: crossSell.plan_product_id,
-    name: crossSell.plan_product?.name || '',
-    quantity: crossSell.quantity,
-    price: crossSell.price,
-  });
+  if (
+    crossSell.is_single_use &&
+    getSelectedAddonsCountByProduct(crossSell.plan_product_id) >= 1
+  ) {
+    return;
+  }
 
-  selectedCrossSellByType.value[planProductId] = null;
+  selectedAddons.value.push(buildSelectedAddon(crossSell));
 };
 
 const removeAddon = (planProductId: string) => {
-  const index = selectedAddons.value.findIndex(
-    (a) => a.plan_product_id === planProductId
-  );
+  let index = -1;
+  for (let i = selectedAddons.value.length - 1; i >= 0; i -= 1) {
+    if (selectedAddons.value[i].plan_product_id === planProductId) {
+      index = i;
+      break;
+    }
+  }
 
   if (index !== -1) {
     selectedAddons.value.splice(index, 1);
   }
 };
 
+const canRemoveAddonSelection = (planProductId: string): boolean => {
+  const selectedOption = getSelectedOptionForProduct(planProductId);
+  if (!selectedOption) {
+    return true;
+  }
+
+  if (selectedOption.is_single_use && selectedOption.can_purchase === false) {
+    return false;
+  }
+
+  return true;
+};
+
 const getAddonQuantity = (planProductId: string): number => {
-  const addon = selectedAddons.value.find(
-    (a) => a.plan_product_id === planProductId
-  );
-  return addon ? 1 : 0;
+  return getSelectedAddonsCountByProduct(planProductId);
 };
 
 const isAddonSelected = (planProductId: string): boolean => {
-  return selectedAddons.value.some((a) => a.plan_product_id === planProductId);
+  return getAddonQuantity(planProductId) > 0;
 };
 
-const getSelectedCrossSellForType = (planProductId: string): string | null => {
-  return selectedCrossSellByType.value[planProductId] || null;
+const getSelectedOptionForProduct = (
+  planProductId: string
+): ListAvailableCrossSellResponse | null => {
+  const selectedId = selectedCrossSellByType.value[planProductId];
+  if (!selectedId) {
+    return null;
+  }
+
+  return (
+    availableCrossSells.value.find(
+      (crossSell) => crossSell.plan_cross_sell_id === selectedId
+    ) || null
+  );
 };
 
 const canAddCrossSell = (planProductId: string): boolean => {
@@ -712,30 +801,74 @@ const canAddCrossSell = (planProductId: string): boolean => {
   if (!selectedId) {
     return false;
   }
-  return !isAddonSelected(planProductId);
+
+  const selectedCrossSell = availableCrossSells.value.find(
+    (crossSell) => crossSell.plan_cross_sell_id === selectedId
+  );
+  if (!selectedCrossSell) {
+    return false;
+  }
+
+  if (selectedCrossSell.can_purchase === false) {
+    return false;
+  }
+
+  if (
+    selectedCrossSell.is_single_use &&
+    getSelectedAddonsCountByProduct(planProductId) >= 1
+  ) {
+    return false;
+  }
+
+  return true;
 };
 
 const getCrossSellLabel = (
   crossSell: ListAvailableCrossSellResponse
 ): string => {
   const quantity = crossSell.quantity;
-  const price = formatCurrency(
-    crossSell.price * (billingPeriod.value === 'annual' ? 12 : 1)
-  );
+  const fallbackMultiplier = billingPeriod.value === 'annual' ? 12 : 1;
+  const cyclePrice =
+    Math.round(Number(crossSell.price) * fallbackMultiplier * 100) / 100;
+  const price = formatCurrency(cyclePrice);
   return `${quantity}x - ${price}`;
 };
 
-const getAddonPrice = (addon: {
-  plan_cross_sell_id: string;
-  plan_product_id: string;
-  name: string;
-  quantity: number;
-  price: number;
-}): number => {
-  const addonPrice = addon.price;
-  const multiplier = billingPeriod.value === 'annual' ? 12 : 1;
-  return addonPrice * multiplier;
+const getAddonPrice = (addon: SelectedAddon): number => {
+  return addon.price_per_cycle;
 };
+
+const selectedAddonsSummary = computed(() => {
+  const grouped = new Map<
+    string,
+    {
+      addon: SelectedAddon;
+      occurrences: number;
+      totalQuantity: number;
+      totalPrice: number;
+    }
+  >();
+
+  for (const addon of selectedAddons.value) {
+    const existing = grouped.get(addon.plan_cross_sell_id);
+    if (existing) {
+      existing.occurrences += 1;
+      existing.totalQuantity += addon.quantity;
+      existing.totalPrice =
+        Math.round((existing.totalPrice + getAddonPrice(addon)) * 100) / 100;
+      continue;
+    }
+
+    grouped.set(addon.plan_cross_sell_id, {
+      addon,
+      occurrences: 1,
+      totalQuantity: addon.quantity,
+      totalPrice: getAddonPrice(addon),
+    });
+  }
+
+  return Array.from(grouped.values());
+});
 
 const cardSelectItems = computed(() => {
   const items: Array<{
@@ -1503,12 +1636,29 @@ watch(currentStep, async (newStep) => {
   }
 });
 
-watch(selectedPlanForCheckout, (plan) => {
-  if (plan && isTestPlan(plan)) {
-    selectedAddons.value = [];
-    selectedCrossSellByType.value = {};
-  }
-});
+watch(
+  selectedPlanForCheckout,
+  (plan, previousPlan) => {
+    const hasPlanChanged = plan?.plan_id !== previousPlan?.plan_id;
+
+    if (hasPlanChanged) {
+      selectedAddons.value = [];
+      selectedCrossSellByType.value = {};
+
+      if (plan && !isTestPlan(plan) && step2Loaded.value) {
+        prefillRenewalAddons();
+      }
+
+      return;
+    }
+
+    if (plan && isTestPlan(plan)) {
+      selectedAddons.value = [];
+      selectedCrossSellByType.value = {};
+    }
+  },
+  { immediate: false }
+);
 
 watch(
   enabledPaymentMethods,
@@ -2085,27 +2235,7 @@ onMounted(async () => {
                                   </div>
                                 </div>
 
-                                <div
-                                  v-if="isAddonSelected(group.product_id)"
-                                  class="d-flex align-center justify-space-between"
-                                >
-                                  <VChip color="success" variant="tonal">
-                                    Adicionado
-                                  </VChip>
-                                  <VBtn
-                                    color="error"
-                                    variant="outlined"
-                                    size="small"
-                                    :disabled="
-                                      isTestPlan(selectedPlanForCheckout)
-                                    "
-                                    @click="removeAddon(group.product_id)"
-                                  >
-                                    {{ $t('remove') }}
-                                  </VBtn>
-                                </div>
-
-                                <div v-else class="d-flex align-center gap-2">
+                                <div class="d-flex align-center gap-2">
                                   <VSelect
                                     v-model="
                                       selectedCrossSellByType[group.product_id]
@@ -2138,6 +2268,33 @@ onMounted(async () => {
                                     @click="addAddon(group.product_id)"
                                   >
                                     {{ $t('add') }}
+                                  </VBtn>
+                                </div>
+
+                                <div
+                                  v-if="isAddonSelected(group.product_id)"
+                                  class="d-flex align-center justify-space-between"
+                                >
+                                  <VChip color="success" variant="tonal">
+                                    {{
+                                      $t('selected_quantity', {
+                                        quantity: getAddonQuantity(
+                                          group.product_id
+                                        ),
+                                      })
+                                    }}
+                                  </VChip>
+                                  <VBtn
+                                    color="error"
+                                    variant="outlined"
+                                    size="small"
+                                    :disabled="
+                                      isTestPlan(selectedPlanForCheckout) ||
+                                      !canRemoveAddonSelection(group.product_id)
+                                    "
+                                    @click="removeAddon(group.product_id)"
+                                  >
+                                    {{ $t('remove') }} 1
                                   </VBtn>
                                 </div>
                               </div>
@@ -2786,16 +2943,16 @@ onMounted(async () => {
                               class="d-flex flex-column gap-2 mb-2"
                             >
                               <div
-                                v-for="addon in selectedAddons"
-                                :key="addon.plan_cross_sell_id"
+                                v-for="addonItem in selectedAddonsSummary"
+                                :key="addonItem.addon.plan_cross_sell_id"
                                 class="d-flex justify-space-between align-center"
                               >
                                 <span class="text-body-2 text-medium-emphasis">
-                                  {{ addon.name }}
-                                  <span>(x{{ addon.quantity }})</span>:
+                                  {{ addonItem.addon.name }}
+                                  <span>(x{{ addonItem.totalQuantity }})</span>:
                                 </span>
                                 <span class="text-body-2 font-weight-medium">
-                                  {{ formatCurrency(getAddonPrice(addon)) }}
+                                  {{ formatCurrency(addonItem.totalPrice) }}
                                 </span>
                               </div>
                             </div>
@@ -3051,16 +3208,16 @@ onMounted(async () => {
                               class="d-flex flex-column gap-2 mb-2"
                             >
                               <div
-                                v-for="addon in selectedAddons"
-                                :key="addon.plan_cross_sell_id"
+                                v-for="addonItem in selectedAddonsSummary"
+                                :key="addonItem.addon.plan_cross_sell_id"
                                 class="d-flex justify-space-between align-center"
                               >
                                 <span class="text-body-2 text-medium-emphasis">
-                                  {{ addon.name }}
-                                  <span>(x{{ addon.quantity }})</span>:
+                                  {{ addonItem.addon.name }}
+                                  <span>(x{{ addonItem.totalQuantity }})</span>:
                                 </span>
                                 <span class="text-body-2 font-weight-medium">
-                                  {{ formatCurrency(getAddonPrice(addon)) }}
+                                  {{ formatCurrency(addonItem.totalPrice) }}
                                 </span>
                               </div>
                             </div>
@@ -3396,16 +3553,16 @@ onMounted(async () => {
                               class="d-flex flex-column gap-2 mb-2"
                             >
                               <div
-                                v-for="addon in selectedAddons"
-                                :key="addon.plan_cross_sell_id"
+                                v-for="addonItem in selectedAddonsSummary"
+                                :key="addonItem.addon.plan_cross_sell_id"
                                 class="d-flex justify-space-between align-center"
                               >
                                 <span class="text-body-2 text-medium-emphasis">
-                                  {{ addon.name }}
-                                  <span>(x{{ addon.quantity }})</span>:
+                                  {{ addonItem.addon.name }}
+                                  <span>(x{{ addonItem.totalQuantity }})</span>:
                                 </span>
                                 <span class="text-body-2 font-weight-medium">
-                                  {{ formatCurrency(getAddonPrice(addon)) }}
+                                  {{ formatCurrency(addonItem.totalPrice) }}
                                 </span>
                               </div>
                             </div>
@@ -3538,16 +3695,16 @@ onMounted(async () => {
                               class="d-flex flex-column gap-2 mb-2"
                             >
                               <div
-                                v-for="addon in selectedAddons"
-                                :key="addon.plan_cross_sell_id"
+                                v-for="addonItem in selectedAddonsSummary"
+                                :key="addonItem.addon.plan_cross_sell_id"
                                 class="d-flex justify-space-between align-center"
                               >
                                 <span class="text-body-2 text-medium-emphasis">
-                                  {{ addon.name }}
-                                  <span>(x{{ addon.quantity }})</span>:
+                                  {{ addonItem.addon.name }}
+                                  <span>(x{{ addonItem.totalQuantity }})</span>:
                                 </span>
                                 <span class="text-body-2 font-weight-medium">
-                                  {{ formatCurrency(getAddonPrice(addon)) }}
+                                  {{ formatCurrency(addonItem.totalPrice) }}
                                 </span>
                               </div>
                             </div>

@@ -81,12 +81,14 @@ export class AccountAddonsListerRepository {
       columns: {
         plan_cross_sell_account_id: true,
         plan_cross_sell_id: true,
+        cancellation_date: true,
       },
       with: {
         pca: {
           columns: {
             plan_cross_sell_id: true,
             quantity: true,
+            price: true,
           },
           with: {
             ppt: {
@@ -110,6 +112,23 @@ export class AccountAddonsListerRepository {
       return [];
     }
 
+    const addonTotalByProduct = new Map<string, number>();
+
+    for (const crossSell of crossSells) {
+      if (!crossSell.pca?.ppt?.plan_product_id) {
+        continue;
+      }
+
+      const productId = crossSell.pca.ppt.plan_product_id;
+      const current = addonTotalByProduct.get(productId) || 0;
+      addonTotalByProduct.set(
+        productId,
+        current + (crossSell.pca.quantity || 0)
+      );
+    }
+
+    const planQuantityByProduct = new Map<string, number>();
+    const quantityUsedByProduct = new Map<string, number>();
     const results: ListAccountAddonsResponse[] = [];
 
     for (const crossSell of crossSells) {
@@ -119,19 +138,37 @@ export class AccountAddonsListerRepository {
 
       const planProductId = crossSell.pca.ppt.plan_product_id;
       const addonQuantity = crossSell.pca.quantity || 0;
-      const planQuantity = await this.getPlanQuantityForProduct(
-        accountId,
-        planProductId
-      );
-      const quantityTotal = planQuantity + addonQuantity;
-      const quantityUsed = await this.getQuantityUsed(accountId, planProductId);
+      const planQuantity = planQuantityByProduct.has(planProductId)
+        ? planQuantityByProduct.get(planProductId) || 0
+        : await this.getPlanQuantityForProduct(accountId, planProductId);
+      if (!planQuantityByProduct.has(planProductId)) {
+        planQuantityByProduct.set(planProductId, planQuantity);
+      }
+
+      const quantityUsed = quantityUsedByProduct.has(planProductId)
+        ? quantityUsedByProduct.get(planProductId) || 0
+        : await this.getQuantityUsed(accountId, planProductId);
+      if (!quantityUsedByProduct.has(planProductId)) {
+        quantityUsedByProduct.set(planProductId, quantityUsed);
+      }
+
+      const totalAddonQuantity = addonTotalByProduct.get(planProductId) || 0;
+      const quantityTotal = planQuantity + totalAddonQuantity;
 
       const source = planQuantity > 0 ? ('plan' as const) : ('addon' as const);
 
       results.push({
+        plan_cross_sell_account_id: crossSell.plan_cross_sell_account_id,
         plan_cross_sell_id: crossSell.plan_cross_sell_id,
         plan_product_id: planProductId,
         name: crossSell.pca.ppt.ppd.name || '',
+        quantity: addonQuantity,
+        price: Number(crossSell.pca.price),
+        price_per_cycle: Number(crossSell.pca.price),
+        cancellation_date: crossSell.cancellation_date || null,
+        renewal_status: crossSell.cancellation_date
+          ? 'scheduled_cancellation'
+          : 'active',
         quantity_total: quantityTotal,
         quantity_used: quantityUsed,
         quantity_plan: planQuantity,

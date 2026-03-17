@@ -20,6 +20,10 @@ export const planCrossSellAccount = pgTable(
       mode: 'string',
       withTimezone: true,
     }).defaultNow(),
+    cancellation_date: timestamp('cancellation_date', {
+      mode: 'string',
+      withTimezone: true,
+    }),
     deleted_at: timestamp('deleted_at', { mode: 'string', withTimezone: true }),
   },
   (table) => [
@@ -28,9 +32,17 @@ export const planCrossSellAccount = pgTable(
     ),
     index('plan_cross_sell_account_account_id_idx').on(table.account_id),
     index('plan_cross_sell_account_deleted_at_idx').on(table.deleted_at),
+    index('plan_cross_sell_account_cancellation_date_idx').on(
+      table.cancellation_date
+    ),
     index('plan_cross_sell_account_account_id_deleted_at_idx').on(
       table.account_id,
       table.deleted_at
+    ),
+    index('plan_cross_sell_account_acc_del_can_date_idx').on(
+      table.account_id,
+      table.deleted_at,
+      table.cancellation_date
     ),
     index(
       'plan_cross_sell_account_account_id_plan_cross_sell_id_deleted_at_idx'

@@ -34,6 +34,7 @@ import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/r
 import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 import { ListMethodPaymentsResponse } from '@core/schema/plan/listMethodPayments/response.schema';
+import { ViewCurrentPlanResponse } from '@core/schema/plan/viewCurrentPlan/response.schema';
 
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -613,12 +614,12 @@ export const usePlanStore = defineStore('plan', {
       }
     },
 
-    async getCurrentPlan(): Promise<string | null> {
+    async getCurrentPlanDetails(): Promise<ViewCurrentPlanResponse | null> {
       try {
         this.loading = true;
 
         const response =
-          await axios.get<IApiResponse<{ plan_id: string | null }>>(
+          await axios.get<IApiResponse<ViewCurrentPlanResponse>>(
             '/plan/current-plan'
           );
 
@@ -630,11 +631,16 @@ export const usePlanStore = defineStore('plan', {
           return null;
         }
 
-        return data.data.plan_id;
+        return data.data;
       } catch {
         this.loading = false;
         return null;
       }
+    },
+
+    async getCurrentPlan(): Promise<string | null> {
+      const currentPlan = await this.getCurrentPlanDetails();
+      return currentPlan?.plan_id || null;
     },
 
     async checkTestPlanAlreadyUsed(): Promise<boolean> {
@@ -851,13 +857,17 @@ export const usePlanStore = defineStore('plan', {
       }
     },
 
-    async listAvailableCrossSell(): Promise<ListAvailableCrossSellResponse[]> {
+    async listAvailableCrossSell(input?: {
+      pricing_mode?: 'full' | 'proportional';
+    }): Promise<ListAvailableCrossSellResponse[]> {
       try {
         this.loading = true;
 
         const response = await axios.get<
           IApiResponse<ListAvailableCrossSellResponse[]>
-        >('/plan/cross-sell/available');
+        >('/plan/cross-sell/available', {
+          params: input,
+        });
 
         this.loading = false;
 
