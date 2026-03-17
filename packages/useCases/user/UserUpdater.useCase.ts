@@ -1078,7 +1078,8 @@ export class UserUpdaterUseCase {
   private async sanitizePermissionRoleUpdateForProtectedUsers(
     userId: string,
     body: UpdateUserRequest,
-    currentUserId?: string
+    currentUserId?: string,
+    currentUserPermissionRoleId?: string
   ): Promise<void> {
     if (body.permission_role_id === undefined) {
       return;
@@ -1091,8 +1092,18 @@ export class UserUpdaterUseCase {
 
     const targetUserRoleId = await this.userService.getUserRole(userId);
 
-    if (targetUserRoleId === EPermissionRole.master) {
+    if (targetUserRoleId === EPermissionRole.administrator) {
       delete body.permission_role_id;
+      return;
+    }
+
+    if (targetUserRoleId === EPermissionRole.master) {
+      const isCurrentUserAdministrator =
+        currentUserPermissionRoleId === EPermissionRole.administrator;
+
+      if (!isCurrentUserAdministrator) {
+        delete body.permission_role_id;
+      }
     }
   }
 
@@ -1102,7 +1113,8 @@ export class UserUpdaterUseCase {
     body: UpdateUserRequest,
     accountId: string,
     canOperateOnOthers: boolean,
-    currentUserId?: string
+    currentUserId?: string,
+    currentUserPermissionRoleId?: string
   ): Promise<boolean> {
     this.processSectorIdsFromMultipartFormData(body);
     this.processChannelIdsFromMultipartFormData(body);
@@ -1118,7 +1130,8 @@ export class UserUpdaterUseCase {
     await this.sanitizePermissionRoleUpdateForProtectedUsers(
       userId,
       body,
-      currentUserId
+      currentUserId,
+      currentUserPermissionRoleId
     );
 
     const updatePromises = await this.buildUpdatePromises(

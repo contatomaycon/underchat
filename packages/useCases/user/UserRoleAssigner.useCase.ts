@@ -69,7 +69,8 @@ export class UserRoleAssignerUseCase {
   private async validateProtectedUserRoleUpdate(
     t: TFunction<'translation', undefined>,
     userId: string,
-    currentUserId?: string
+    currentUserId?: string,
+    currentUserPermissionRoleId?: string
   ): Promise<void> {
     if (currentUserId && userId === currentUserId) {
       throw new Error(t('cannot_change_own_access_group'));
@@ -77,8 +78,14 @@ export class UserRoleAssignerUseCase {
 
     const targetUserRoleId = await this.userService.getUserRole(userId);
 
-    if (targetUserRoleId === EPermissionRole.master) {
+    if (targetUserRoleId === EPermissionRole.administrator) {
       throw new Error(t('permission_denied'));
+    }
+
+    if (targetUserRoleId === EPermissionRole.master) {
+      if (currentUserPermissionRoleId !== EPermissionRole.administrator) {
+        throw new Error(t('permission_denied'));
+      }
     }
   }
 
@@ -88,7 +95,8 @@ export class UserRoleAssignerUseCase {
     accountId: string,
     input: AssignUserRoleRequest,
     canOperateOnOthers: boolean,
-    currentUserId?: string
+    currentUserId?: string,
+    currentUserPermissionRoleId?: string
   ): Promise<boolean> {
     if (!canOperateOnOthers) {
       await this.validateUserExistsInAccount(t, userId, accountId);
@@ -103,7 +111,12 @@ export class UserRoleAssignerUseCase {
       ? (userAccountId ?? accountId)
       : accountId;
 
-    await this.validateProtectedUserRoleUpdate(t, userId, currentUserId);
+    await this.validateProtectedUserRoleUpdate(
+      t,
+      userId,
+      currentUserId,
+      currentUserPermissionRoleId
+    );
 
     await this.validatePermissionRoleExists(
       t,

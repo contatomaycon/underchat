@@ -29,7 +29,8 @@ export const assignUserRole = async (
       tokenJwtData.account_id,
       request.body,
       canOperateOnOthers,
-      tokenJwtData.user_id
+      tokenJwtData.user_id,
+      tokenJwtData.permission_role_id
     );
 
     if (response) {

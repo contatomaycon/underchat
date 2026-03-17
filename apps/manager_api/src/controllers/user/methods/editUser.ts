@@ -58,7 +58,8 @@ export const editUser = async (
       request.body,
       accountIdToUse,
       canOperateOnOthers,
-      tokenJwtData.user_id
+      tokenJwtData.user_id,
+      tokenJwtData.permission_role_id
     );
 
     if (response) {

@@ -42,6 +42,9 @@ const hasFullAccess = computed(() =>
   can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
 );
 const currentUser = computed(() => getUser());
+const currentUserRoleId = computed(
+  () => currentUser.value?.type?.user_type_id ?? null
+);
 const isEditingOwnUser = computed(() => {
   if (!userId.value || !currentUser.value) {
     return false;
@@ -67,9 +70,50 @@ const channelsOptions = ref<
 const isEditingInitialMasterUser = computed(
   () => initialPermissionRoleId.value === EPermissionRole.master
 );
-const canEditAccessGroup = computed(
-  () => !isEditingOwnUser.value && !isEditingInitialMasterUser.value
+const isEditingInitialAdministratorUser = computed(
+  () => initialPermissionRoleId.value === EPermissionRole.administrator
 );
+const isCurrentUserAdministrator = computed(
+  () => currentUserRoleId.value === EPermissionRole.administrator
+);
+const includeMasterRoleOption = (
+  items: Array<{ id: string; name: string }>
+): Array<{ id: string; name: string }> => {
+  if (!isCurrentUserAdministrator.value) {
+    return items;
+  }
+
+  const hasMasterOption = items.some(
+    (item) => item.id === EPermissionRole.master
+  );
+
+  if (hasMasterOption) {
+    return items;
+  }
+
+  return [
+    ...items,
+    {
+      id: EPermissionRole.master,
+      name: 'Master',
+    },
+  ];
+};
+const canEditAccessGroup = computed(() => {
+  if (isEditingOwnUser.value) {
+    return false;
+  }
+
+  if (isEditingInitialAdministratorUser.value) {
+    return false;
+  }
+
+  if (isEditingInitialMasterUser.value) {
+    return isCurrentUserAdministrator.value;
+  }
+
+  return true;
+});
 
 const uniqueSectorsOptions = computed(() => {
   const seen = new Set<string>();
@@ -2043,11 +2087,11 @@ const loadAccounts = async () => {
   }
 };
 
-const loadRoles = async () => {
-  const roles = await userStore.listUserRoles();
-  if (roles) {
-    rolesOptions.value = roles;
-  }
+const loadRoles = async (roleAccountId?: string | null) => {
+  const roles = await userStore.listUserRoles(roleAccountId);
+  const roleItems = [...(roles ?? [])];
+
+  rolesOptions.value = includeMasterRoleOption(roleItems);
 };
 
 const loadSectors = async () => {
@@ -2313,12 +2357,6 @@ const loadUserDataTab = async (force = false): Promise<void> => {
   isInitializing.value = true;
 
   await loadAccounts();
-  await loadRoles();
-  await loadSectors();
-  await loadChannels();
-  await loadUserRole();
-  await loadUserSectors();
-  await loadUserChannels();
 
   const responseUser = await userStore.viewUserById(userId.value);
   if (!responseUser) {
@@ -2328,6 +2366,19 @@ const loadUserDataTab = async (force = false): Promise<void> => {
   }
 
   loadBasicUserInfo(responseUser);
+
+  const targetAccountId = responseUser.account?.account_id ?? null;
+
+  if (targetAccountId) {
+    await loadRoles(targetAccountId);
+  } else {
+    rolesOptions.value = includeMasterRoleOption([]);
+  }
+  await loadSectors();
+  await loadChannels();
+  await loadUserRole();
+  await loadUserSectors();
+  await loadUserChannels();
 
   loadedTabs.value.add('user_data');
   await nextTick();
@@ -2735,7 +2786,7 @@ watch(
             <VWindowItem value="permissions">
               <VForm class="mt-4" @submit.prevent>
                 <VRow class="mb-4">
-                  <VCol v-if="canEditAccessGroup" cols="12" md="6">
+                  <VCol cols="12" md="6">
                     <VLabel class="text-body-2 mb-1"
                       >{{ $t('access_group') }}:</VLabel
                     >
@@ -2744,7 +2795,7 @@ watch(
                       :items="rolesOptions"
                       :placeholder="$t('select_role')"
                       :clearable="true"
-                      :disabled="isEditingOwnUser"
+                      :disabled="!canEditAccessGroup"
                       item-value="id"
                       item-title="name"
                     />
@@ -2780,7 +2831,7 @@ watch(
                       </template>
                     </AppSelectSearch>
                   </VCol>
-                  <VCol cols="12" :md="canEditAccessGroup ? 12 : 6">
+                  <VCol cols="12" md="12">
                     <AppSelectSearch
                       v-model="channelIds"
                       :items="uniqueChannelsOptions"

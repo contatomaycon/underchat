@@ -7,6 +7,8 @@ import {
   UpdateUserRequest,
 } from '@core/schema/user/editUser/request.schema';
 import { VForm } from 'vuetify/components/VForm';
+import { getUser } from '@/@webcore/localStorage/user';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 const userStore = useUsersStore();
 
@@ -26,13 +28,51 @@ const isVisible = computed({
 });
 
 const permissionRoleId = ref<string | null>(null);
+const initialPermissionRoleId = ref<string | null>(null);
+const targetAccountId = ref<string | null>(null);
 const refFormAssignRole = ref<VForm>();
+const currentUser = computed(() => getUser());
+const currentUserRoleId = computed(
+  () => currentUser.value?.type?.user_type_id ?? null
+);
+const isEditingOwnUser = computed(() => {
+  if (!props.userId || !currentUser.value) {
+    return false;
+  }
+
+  return props.userId === currentUser.value.user_id;
+});
+const isTargetMaster = computed(
+  () => initialPermissionRoleId.value === EPermissionRole.master
+);
+const isTargetAdministrator = computed(
+  () => initialPermissionRoleId.value === EPermissionRole.administrator
+);
+const canEditAccessGroup = computed(() => {
+  if (!targetAccountId.value) {
+    return false;
+  }
+
+  if (isEditingOwnUser.value) {
+    return false;
+  }
+
+  if (isTargetAdministrator.value) {
+    return false;
+  }
+
+  if (isTargetMaster.value) {
+    return currentUserRoleId.value === EPermissionRole.administrator;
+  }
+
+  return true;
+});
 
 const roleOptions = ref<{ id: string; name: string }[]>([]);
 
-const loadRoles = async () => {
+const loadRoles = async (accountId?: string | null) => {
   try {
-    const roles = await userStore.listUserRoles();
+    const roles = await userStore.listUserRoles(accountId);
     if (roles) {
       roleOptions.value = roles;
     } else {
@@ -48,10 +88,22 @@ const loadUserRole = async () => {
   if (!props.userId) return;
 
   try {
-    await loadRoles();
+    const targetUser = await userStore.viewUserById(props.userId);
+    targetAccountId.value = targetUser?.account?.account_id ?? null;
+
+    if (!targetAccountId.value) {
+      roleOptions.value = [];
+      permissionRoleId.value = null;
+      initialPermissionRoleId.value = null;
+      return;
+    }
+
+    await loadRoles(targetAccountId.value);
 
     await nextTick();
     const currentRole = await userStore.getUserRole(props.userId);
+    initialPermissionRoleId.value = currentRole;
+
     if (currentRole) {
       const roleExists = roleOptions.value.some(
         (role) => role.id === currentRole
@@ -73,6 +125,7 @@ const loadUserRole = async () => {
 
 const assignRole = async () => {
   if (!props.userId) return;
+  if (!canEditAccessGroup.value) return;
 
   if (permissionRoleId.value) {
     const payload: AssignUserRoleRequest = {
@@ -107,6 +160,8 @@ const assignRole = async () => {
 
 const resetForm = () => {
   permissionRoleId.value = null;
+  initialPermissionRoleId.value = null;
+  targetAccountId.value = null;
   refFormAssignRole.value?.resetValidation();
 };
 
@@ -147,6 +202,7 @@ onMounted(async () => {
                 :items="roleOptions"
                 :placeholder="$t('select_role')"
                 :clearable="true"
+                :disabled="!canEditAccessGroup"
                 item-value="id"
                 item-title="name"
               />
@@ -158,7 +214,9 @@ onMounted(async () => {
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="assignRole"> {{ $t('save') }} </VBtn>
+          <VBtn :disabled="!canEditAccessGroup" @click="assignRole">
+            {{ $t('save') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>

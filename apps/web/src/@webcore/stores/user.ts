@@ -73,6 +73,7 @@ export const useUsersStore = defineStore('users', {
               sort_by: input.sort_by,
               search: input.search,
               user_status: input.user_status,
+              permission_role_id: input.permission_role_id,
               account_id: input.account_id,
             }
           : undefined;
@@ -818,12 +819,18 @@ export const useUsersStore = defineStore('users', {
       }
     },
 
-    async listUserRoles(): Promise<ListUserRolesResponse | null> {
+    async listUserRoles(
+      accountId?: string | null
+    ): Promise<ListUserRolesResponse | null> {
       try {
         this.loading = true;
 
-        const response =
-          await axios.get<IApiResponse<ListUserRolesResponse>>(`/user/roles`);
+        const response = await axios.get<IApiResponse<ListUserRolesResponse>>(
+          `/user/roles`,
+          {
+            params: accountId ? { account_id: accountId } : undefined,
+          }
+        );
 
         this.loading = false;
 

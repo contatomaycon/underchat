@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { listUserRolesResponseSchema } from './response.schema';
+import { listUserRolesRequestSchema } from './request.schema';
 
 export const listUserRolesSchema = {
   description: 'Lista todos os grupos de acesso da conta do usuário',
@@ -21,6 +22,7 @@ export const listUserRolesSchema = {
       })
     ),
   }),
+  querystring: listUserRolesRequestSchema,
   response: {
     200: Type.Object(
       {

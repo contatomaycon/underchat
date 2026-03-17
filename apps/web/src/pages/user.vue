@@ -25,6 +25,7 @@ import { resetConnection } from '@/@webcore/centrifugo';
 import { resetPresencePermissionError } from '@/@webcore/presence';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EColor } from '@core/common/enums/EColor';
+import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 definePage({
   meta: {
@@ -77,8 +78,14 @@ const chatStore = useChatStore();
 useSnackbarCleanup(userStore);
 
 const currentUser = computed(() => getUser());
+const currentUserRoleId = computed(
+  () => currentUser.value?.type?.user_type_id ?? null
+);
 const hasFullAccess = computed(() =>
   can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
+);
+const isCurrentUserAdministrator = computed(
+  () => currentUserRoleId.value === EPermissionRole.administrator
 );
 
 const permissionsSessionLogin = [
@@ -112,6 +119,8 @@ const itemsStatus = ref([
 
 const itemsAccount = ref<Array<{ id: string; text: string }>>([]);
 const accountsLoading = ref(false);
+const itemsPermissionRole = ref<Array<{ id: string; text: string }>>([]);
+const rolesLoading = ref(false);
 
 const loadAccounts = async () => {
   if (!hasFullAccess.value || itemsAccount.value.length > 0) return;
@@ -146,6 +155,11 @@ const handleAccountIdChange = (value: SelectModelValue) => {
   } else {
     options.value.account_id = String(singleValue);
   }
+
+  if (options.value.account_id === 'all') {
+    options.value.permission_role_id = null;
+  }
+
   options.value.page = 1;
 };
 
@@ -182,7 +196,10 @@ const headers = computed<DataTableHeader<ListUserResponse>[]>(() => {
   ];
 
   if (hasFullAccess.value) {
-    baseHeaders.push({ title: t('account'), key: 'account' });
+    baseHeaders.push(
+      { title: t('account'), key: 'account' },
+      { title: t('name'), key: 'name' }
+    );
   } else {
     baseHeaders.push(
       { title: t('name'), key: 'name' },
@@ -207,9 +224,91 @@ const options = ref({
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
   user_status: null as string | null,
+  permission_role_id: null as string | null,
   account_id: undefined as string | null | undefined,
   search: null as string | null,
 });
+
+const roleFilterDisabled = computed(
+  () => hasFullAccess.value && options.value.account_id === 'all'
+);
+
+const roleFilterAccountId = computed(() => {
+  if (!hasFullAccess.value) {
+    return null;
+  }
+
+  if (options.value.account_id === 'all') {
+    return null;
+  }
+
+  if (options.value.account_id) {
+    return options.value.account_id;
+  }
+
+  return currentUser.value?.account_id ?? null;
+});
+
+const includeMasterRoleOption = (
+  items: Array<{ id: string; text: string }>
+): Array<{ id: string; text: string }> => {
+  if (!isCurrentUserAdministrator.value) {
+    return items;
+  }
+
+  const hasMasterOption = items.some(
+    (item) => item.id === EPermissionRole.master
+  );
+
+  if (hasMasterOption) {
+    return items;
+  }
+
+  return [
+    ...items,
+    {
+      id: EPermissionRole.master,
+      text: 'Master',
+    },
+  ];
+};
+
+const loadPermissionRoles = async () => {
+  if (roleFilterDisabled.value) {
+    itemsPermissionRole.value = includeMasterRoleOption([
+      { id: '', text: t('all') },
+    ]);
+    return;
+  }
+
+  rolesLoading.value = true;
+  try {
+    const roles = await userStore.listUserRoles(roleFilterAccountId.value);
+    itemsPermissionRole.value = includeMasterRoleOption([
+      { id: '', text: t('all') },
+      ...(roles ?? []).map((role) => ({
+        id: role.id,
+        text: role.name,
+      })),
+    ]);
+
+    if (
+      options.value.permission_role_id &&
+      !itemsPermissionRole.value.some(
+        (item) => item.id === options.value.permission_role_id
+      )
+    ) {
+      options.value.permission_role_id = null;
+    }
+  } catch (error) {
+    console.error('Erro ao carregar grupos de acesso:', error);
+    itemsPermissionRole.value = includeMasterRoleOption([
+      { id: '', text: t('all') },
+    ]);
+  } finally {
+    rolesLoading.value = false;
+  }
+};
 
 const debouncedSearch = refDebounced(
   computed(() => options.value.search),
@@ -225,12 +324,27 @@ const query = computed(() => {
     search: debouncedSearch.value,
   };
 
+  if (options.value.permission_role_id) {
+    q.permission_role_id = options.value.permission_role_id;
+  }
+
   if (hasFullAccess.value && options.value.account_id !== undefined) {
     q.account_id = options.value.account_id;
   }
 
   return q;
 });
+
+const userDisplayName = (item: ListUserResponse): string => {
+  if (!item.user_info?.name) {
+    return '-';
+  }
+
+  return `${item.user_info.name} ${item.user_info.last_name || ''}`.trim();
+};
+
+const isMasterUser = (item: ListUserResponse): boolean =>
+  item.permission_role?.permission_role_id === EPermissionRole.master;
 
 const handleTableChange = (o: {
   page: number;
@@ -404,6 +518,18 @@ watch(
 );
 
 watch(
+  [hasFullAccess, () => options.value.account_id],
+  async () => {
+    if (options.value.account_id === 'all') {
+      options.value.permission_role_id = null;
+    }
+
+    await loadPermissionRoles();
+  },
+  { immediate: true }
+);
+
+watch(
   query,
   async (q) => {
     await userStore.listUsers(q);
@@ -460,6 +586,22 @@ watch(
                 :items="itemsStatus"
                 :placeholder="$t('select_state')"
                 :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
+              />
+            </div>
+            <div class="status-filter">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('access_group') }}:</VLabel
+              >
+              <AppSelectSearch
+                v-model="options.permission_role_id"
+                :items="itemsPermissionRole"
+                :placeholder="$t('select_role')"
+                :clearable="true"
+                :loading="rolesLoading"
+                :disabled="roleFilterDisabled"
                 item-value="id"
                 item-title="text"
                 @update:modelValue="options.page = 1"
@@ -552,11 +694,15 @@ watch(
             </template>
 
             <template #item.name="{ item }">
-              {{
-                item.user_info?.name
-                  ? `${item.user_info.name} ${item.user_info.last_name || ''}`.trim()
-                  : '-'
-              }}
+              <div class="d-flex align-center gap-1">
+                <VIcon
+                  v-if="isMasterUser(item)"
+                  icon="tabler-crown"
+                  size="16"
+                  color="warning"
+                />
+                <span>{{ userDisplayName(item) }}</span>
+              </div>
             </template>
 
             <template #item.permission_role="{ item }">

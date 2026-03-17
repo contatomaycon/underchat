@@ -5,6 +5,7 @@ import {
   userInfo,
   userAddress,
   userDocument,
+  permissionAssignment,
   account,
   country,
 } from '@core/models';
@@ -19,7 +20,6 @@ import {
   or,
   ilike,
   inArray,
-  SQL,
 } from 'drizzle-orm';
 import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
@@ -104,12 +104,31 @@ export class UserListerRepository {
     return filters;
   };
 
-  private setFilters(query: ListUserRequest): SQL<unknown> | undefined {
+  private setFilters(query: ListUserRequest): SQLWrapper[] {
+    const filters: SQLWrapper[] = [];
+
     if (query.user_status) {
-      return eq(user.user_status_id, query.user_status);
+      filters.push(eq(user.user_status_id, query.user_status));
     }
 
-    return undefined;
+    if (query.permission_role_id) {
+      filters.push(
+        inArray(
+          user.user_id,
+          this.dbRo
+            .select({ user_id: permissionAssignment.user_id })
+            .from(permissionAssignment)
+            .where(
+              eq(
+                permissionAssignment.permission_role_id,
+                query.permission_role_id
+              )
+            )
+        )
+      );
+    }
+
+    return filters;
   }
 
   listUsers = async (
@@ -124,7 +143,7 @@ export class UserListerRepository {
 
     const whereConditions = [
       isNull(user.deleted_at),
-      filters,
+      ...filters,
       ...filtersUser,
     ].filter(isDefinedFilter);
 
@@ -342,7 +361,7 @@ export class UserListerRepository {
 
     const whereConditions = [
       isNull(user.deleted_at),
-      filters,
+      ...filters,
       ...filtersUser,
     ].filter(isDefinedFilter);
 
