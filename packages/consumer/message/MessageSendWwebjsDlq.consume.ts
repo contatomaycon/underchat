@@ -12,12 +12,14 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageStatusService } from '@core/services/messageStatus.service';
+import { MessageSendIdempotencyService } from '@core/services/messageSendIdempotency.service';
 import { logger } from '@core/plugins/telemetry/logger';
 import {
   recordException,
   incrementCounter,
   recordHistogram,
 } from '@core/plugins/telemetry/observability';
+import { resolveMessageSendIdentity } from '@core/common/functions/messageIdentity';
 
 @singleton()
 export class MessageSendWwebjsDlqConsume {
@@ -38,7 +40,9 @@ export class MessageSendWwebjsDlqConsume {
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(MessageStatusService)
-    private readonly messageStatusService: MessageStatusService
+    private readonly messageStatusService: MessageStatusService,
+    @inject(MessageSendIdempotencyService)
+    private readonly messageSendIdempotencyService: MessageSendIdempotencyService
   ) {}
 
   private logPipelineEvent(
@@ -134,6 +138,40 @@ export class MessageSendWwebjsDlqConsume {
           const startedAt = Date.now();
 
           try {
+            const idempotencyStatus = await this.lookupIdempotencyClaim(data);
+            if (idempotencyStatus === 'claimed') {
+              this.logPipelineEvent('idempotency_claimed_skipped', {
+                chat_id: data.chat_id,
+                queue_key: data.queue_key,
+                partition: data.partition,
+                offset: data.offset,
+                message_id: resolvedMessageId,
+                attempts: data.attempts,
+                redrive_count: data.redrive_count ?? 0,
+                result: 'idempotency_claimed_skipped',
+              });
+              incrementCounter('message_send_idempotency_claimed_skipped', 1, {
+                provider: this.PROVIDER,
+                result: 'idempotency_claimed_skipped',
+                queue_type: data.queue_key?.startsWith('chat:')
+                  ? 'chat'
+                  : 'system',
+                attempt_bucket: '1',
+                redrive_count: nextRedriveCount,
+              });
+              return;
+            }
+
+            if (idempotencyStatus !== 'not_found') {
+              await this.markMessageAsFailedToSend(
+                data,
+                idempotencyStatus === 'error'
+                  ? 'idempotency_lookup_error'
+                  : 'idempotency_identity_missing'
+              );
+              return;
+            }
+
             if (resolvedMessageId) {
               const alreadySent =
                 await this.messageStatusService.isMessageAlreadySentByMessageId(
@@ -569,6 +607,44 @@ export class MessageSendWwebjsDlqConsume {
     }
 
     return this.extractMessageId(data.payload);
+  }
+
+  private async lookupIdempotencyClaim(
+    data: IWorkerSendMessageDlq
+  ): Promise<'claimed' | 'not_found' | 'error' | 'missing_identity'> {
+    const identity = resolveMessageSendIdentity(data.payload);
+    if (!identity) {
+      return 'missing_identity';
+    }
+
+    const payload = data.payload;
+    if (payload && typeof payload === 'object') {
+      (payload as { hash?: string | null }).hash = identity.hash;
+    }
+
+    const status = await this.messageSendIdempotencyService.lookupClaim(
+      identity.accountId,
+      identity.hash
+    );
+
+    if (status === 'error') {
+      this.logPipelineEvent(
+        'idempotency_lookup_error',
+        {
+          queue_key: data.queue_key,
+          chat_id: data.chat_id,
+          partition: data.partition,
+          offset: data.offset,
+          message_id: identity.messageId,
+          message_hash: identity.hash,
+          result: 'idempotency_lookup_error',
+        },
+        'error'
+      );
+      return 'error';
+    }
+
+    return status;
   }
 
   private async commitNext(

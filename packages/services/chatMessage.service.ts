@@ -42,6 +42,7 @@ import {
   ISendContactMessageOptions,
 } from '@core/common/interfaces/ISendMessageOptions';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
+import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
 
 @injectable()
 export class ChatMessageService {
@@ -387,6 +388,8 @@ export class ChatMessageService {
   }
 
   private async publishMessage(message: IChatMessage): Promise<boolean> {
+    ensureMessageSendHash(message);
+
     const messageType = message.content?.type;
     const isAnnotation = messageType === EMessageType.annotation;
 

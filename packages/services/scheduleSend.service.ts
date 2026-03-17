@@ -50,6 +50,7 @@ import {
 import { ScheduleControlRepository } from '@core/repositories/schedule/ScheduleControl.repository';
 import { PhoneValidationService } from './phoneValidation.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
 
 @injectable()
 export class ScheduleSendService {
@@ -387,7 +388,7 @@ export class ScheduleSendService {
     const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
     const now = new Date().toISOString();
 
-    return {
+    const message: IChatMessage = {
       message_id: uuidv7(),
       chat_id: `${schedule.account_id}:${jid}`,
       message_key: {
@@ -419,6 +420,9 @@ export class ScheduleSendService {
       hash: null,
       send_delay_ms: null,
     };
+
+    ensureMessageSendHash(message);
+    return message;
   }
 
   private async createChatMessage(
@@ -1073,7 +1077,7 @@ export class ScheduleSendService {
     const phoneDdi =
       extractedFromJid?.phone_ddi ?? this.normalizePhoneDdi(contact.phone_ddi);
 
-    return {
+    const message: IChatMessage = {
       message_id: uuidv7(),
       chat_id: `${schedule.account_id}:${jid}`,
       message_key: {
@@ -1099,6 +1103,9 @@ export class ScheduleSendService {
       hash: null,
       content: { type: EMessageType.text, message: '' },
     };
+
+    ensureMessageSendHash(message);
+    return message;
   }
 
   private async persistScheduleChatbotSyntheticMessage(

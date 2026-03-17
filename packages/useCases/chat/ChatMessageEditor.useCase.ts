@@ -11,6 +11,7 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
 
 @injectable()
 export class ChatMessageEditorUseCase {
@@ -108,6 +109,7 @@ export class ChatMessageEditorUseCase {
         ...updatedContent,
       },
     };
+    ensureMessageSendHash(editedMessage);
 
     await this.streamProducerService.send(
       this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),

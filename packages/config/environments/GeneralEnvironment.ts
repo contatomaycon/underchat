@@ -155,4 +155,18 @@ export class GeneralEnvironment {
 
     return ip;
   }
+
+  public get messageSendIdempotencyTtlSeconds(): number {
+    const raw = process.env.MESSAGE_SEND_IDEMPOTENCY_TTL_SECONDS;
+    if (!raw) {
+      return 86400;
+    }
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 86400;
+    }
+
+    return Math.floor(parsed);
+  }
 }

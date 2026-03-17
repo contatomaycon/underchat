@@ -36,6 +36,7 @@ import { MessageKeyLookupService } from '@core/services/messageKeyLookup.service
 import { buildForwardExtraOptions } from '@core/services/wwebjs/util/buildForwardExtraOptions';
 import { isMessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { MessageStatusService } from '@core/services/messageStatus.service';
+import { MessageSendIdempotencyService } from '@core/services/messageSendIdempotency.service';
 import Redis from 'ioredis';
 import { logger } from '@core/plugins/telemetry/logger';
 import {
@@ -43,6 +44,7 @@ import {
   incrementCounter,
   recordHistogram,
 } from '@core/plugins/telemetry/observability';
+import { resolveMessageSendIdentity } from '@core/common/functions/messageIdentity';
 
 interface IPartitionCommitState {
   nextContiguousOffset: number | null;
@@ -130,6 +132,8 @@ export class MessageSendWwebjsConsume {
     private readonly keyedSequencerService: KeyedSequencerService,
     @inject(MessageStatusService)
     private readonly messageStatusService: MessageStatusService,
+    @inject(MessageSendIdempotencyService)
+    private readonly messageSendIdempotencyService: MessageSendIdempotencyService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -261,6 +265,94 @@ export class MessageSendWwebjsConsume {
       });
       return false;
     }
+  }
+
+  private async claimMessageSend(
+    envelope: IQueuedEnvelope,
+    payload: IChatMessage
+  ): Promise<'acquired' | 'duplicate' | 'error' | 'missing_identity'> {
+    const identity = resolveMessageSendIdentity(payload);
+    if (!identity) {
+      this.logPipelineEvent(
+        'idempotency_identity_missing',
+        {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          message_id: this.extractMessageId(payload),
+          result: 'idempotency_identity_missing',
+        },
+        'error'
+      );
+      return 'missing_identity';
+    }
+
+    payload.hash = identity.hash;
+
+    const claimStatus = await this.messageSendIdempotencyService.claimSend(
+      identity.accountId,
+      identity.hash,
+      {
+        provider: this.PROVIDER,
+        account_id: identity.accountId,
+        chat_id: identity.chatId,
+        message_id: identity.messageId,
+        worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      }
+    );
+
+    if (claimStatus === 'duplicate') {
+      this.logPipelineEvent('idempotency_duplicate_skipped', {
+        chat_id: envelope.chatId,
+        queue_key: envelope.queueKey,
+        partition: envelope.partition,
+        offset: envelope.offset,
+        message_id: identity.messageId,
+        message_hash: identity.hash,
+        result: 'idempotency_duplicate_skipped',
+      });
+      incrementCounter(
+        'message_send_idempotency_duplicate_skipped',
+        1,
+        this.baseMetricAttributes(
+          envelope,
+          'idempotency_duplicate_skipped',
+          1,
+          this.extractRedriveCount(envelope.payload)
+        )
+      );
+      return 'duplicate';
+    }
+
+    if (claimStatus === 'error') {
+      this.logPipelineEvent(
+        'idempotency_claim_error',
+        {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          message_id: identity.messageId,
+          message_hash: identity.hash,
+          result: 'idempotency_claim_error',
+        },
+        'error'
+      );
+      return 'error';
+    }
+
+    this.logPipelineEvent('idempotency_claim_acquired', {
+      chat_id: envelope.chatId,
+      queue_key: envelope.queueKey,
+      partition: envelope.partition,
+      offset: envelope.offset,
+      message_id: identity.messageId,
+      message_hash: identity.hash,
+      result: 'idempotency_claim_acquired',
+    });
+
+    return 'acquired';
   }
 
   private async markMessageAsFailedToSend(
@@ -699,11 +791,13 @@ export class MessageSendWwebjsConsume {
     let lastError: unknown = null;
     const messageId = this.extractMessageId(envelope.payload);
     const redriveCount = this.extractRedriveCount(envelope.payload);
+    const isSendPayload = this.isSendMessage(envelope.payload);
+    const maxAttempts = isSendPayload ? 1 : this.MAX_PROCESS_ATTEMPTS;
 
-    for (let attempt = 1; attempt <= this.MAX_PROCESS_ATTEMPTS; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const startedAt = Date.now();
       try {
-        await this.processPayload(envelope.payload);
+        await this.processPayload(envelope.payload, envelope);
         const durationMs = Date.now() - startedAt;
         this.logPipelineEvent('processed_success', {
           chat_id: envelope.chatId,
@@ -764,6 +858,43 @@ export class MessageSendWwebjsConsume {
           );
           return;
         }
+
+        if (isSendPayload) {
+          this.logPipelineEvent(
+            'at_most_once_terminal_failed',
+            {
+              chat_id: envelope.chatId,
+              queue_key: envelope.queueKey,
+              partition: envelope.partition,
+              offset: envelope.offset,
+              message_id: messageId,
+              redrive_count: redriveCount,
+              attempt,
+              result: 'at_most_once_terminal_failed',
+              error: this.errorMessage(error),
+            },
+            'warn'
+          );
+          incrementCounter(
+            'message_send_error',
+            1,
+            this.baseMetricAttributes(
+              envelope,
+              'at_most_once_terminal_failed',
+              attempt,
+              redriveCount
+            )
+          );
+          await this.routeFailedMessage(
+            envelope,
+            error,
+            attempt,
+            attempt,
+            'processing_failed'
+          );
+          return;
+        }
+
         const terminalReason = this.resolveTerminalReason(error);
 
         if (terminalReason) {
@@ -795,7 +926,7 @@ export class MessageSendWwebjsConsume {
           return;
         }
 
-        const isLastAttempt = attempt === this.MAX_PROCESS_ATTEMPTS;
+        const isLastAttempt = attempt === maxAttempts;
 
         this.logPipelineEvent(
           isLastAttempt ? 'processing_failed' : 'retry_scheduled',
@@ -832,13 +963,16 @@ export class MessageSendWwebjsConsume {
     await this.routeFailedMessage(
       envelope,
       lastError,
-      this.MAX_PROCESS_ATTEMPTS,
-      this.MAX_PROCESS_ATTEMPTS,
+      maxAttempts,
+      maxAttempts,
       'processing_failed'
     );
   }
 
-  private async processPayload(payload: unknown): Promise<void> {
+  private async processPayload(
+    payload: unknown,
+    envelope: IQueuedEnvelope
+  ): Promise<void> {
     if (this.isDeleteStatusMessage(payload)) {
       await this.processDeleteStatus(payload);
       return;
@@ -861,6 +995,15 @@ export class MessageSendWwebjsConsume {
           '[MessageSendWwebjs] Send payload without chatId. Message skipped.'
         );
         return;
+      }
+
+      const claimStatus = await this.claimMessageSend(envelope, payload);
+      if (claimStatus === 'duplicate') {
+        return;
+      }
+
+      if (claimStatus !== 'acquired') {
+        throw this.nonRetryableError(`message_send_idempotency_${claimStatus}`);
       }
 
       await this.processMessage(payload);
@@ -1042,6 +1185,7 @@ export class MessageSendWwebjsConsume {
     attempt: number,
     failureEvent: 'delivery_unconfirmed' | 'processing_failed' | 'enqueue_error'
   ): Promise<void> {
+    const isSendPayload = this.isSendMessage(envelope.payload);
     const messageId = this.extractMessageId(envelope.payload);
     const redriveCount = this.extractRedriveCount(envelope.payload);
 
@@ -1103,6 +1247,35 @@ export class MessageSendWwebjsConsume {
           attempt,
           redriveCount
         )
+      );
+      return;
+    }
+
+    if (isSendPayload) {
+      const terminalReason = `${failureEvent}_terminal`;
+      this.logPipelineEvent(
+        'at_most_once_terminal_mark',
+        {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          message_id: messageId,
+          attempt,
+          redrive_count: redriveCount,
+          result: 'at_most_once_terminal_mark',
+          reason: terminalReason,
+          error: this.errorMessage(error),
+        },
+        'warn'
+      );
+      await this.markMessageAsFailedToSend(
+        envelope,
+        messageId,
+        terminalReason,
+        attempt,
+        redriveCount,
+        error
       );
       return;
     }

@@ -30,6 +30,7 @@ import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey'
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { isUuidLike } from '@core/common/functions/isUuidLike';
+import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -1245,6 +1246,7 @@ export class ChatMessageCreatorUseCase {
       messageContext.typeUser,
       messageContext.senderUser
     );
+    ensureMessageSendHash(reactionMessage);
 
     await Promise.all([
       this.streamProducerService.send(
@@ -1333,6 +1335,7 @@ export class ChatMessageCreatorUseCase {
       context.typeUser,
       context.senderUser
     );
+    ensureMessageSendHash(deleteMessage);
 
     await Promise.all([
       this.streamProducerService.send(
