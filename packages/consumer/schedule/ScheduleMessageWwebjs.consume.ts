@@ -30,6 +30,8 @@ import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { resolveMessageSendIdentity } from '@core/common/functions/messageIdentity';
+import { MessageSendIdempotencyService } from '@core/services/messageSendIdempotency.service';
 
 @singleton()
 export class ScheduleMessageWwebjsConsume {
@@ -52,7 +54,9 @@ export class ScheduleMessageWwebjsConsume {
     @inject(WwebjsPhoneValidationService)
     private readonly wwebjsPhoneValidationService: WwebjsPhoneValidationService,
     @inject(ElasticDatabaseService)
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(MessageSendIdempotencyService)
+    private readonly messageSendIdempotencyService: MessageSendIdempotencyService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -94,6 +98,15 @@ export class ScheduleMessageWwebjsConsume {
 
       const stop = startHeartbeat(heartbeat);
       try {
+        const claimStatus = await this.claimMessageSend(data);
+        if (claimStatus === 'duplicate') {
+          return;
+        }
+
+        if (claimStatus !== 'acquired') {
+          throw new Error(`message_send_idempotency_${claimStatus}`);
+        }
+
         await withLock(
           this.redis,
           `schedule:send:${workerId}`,
@@ -160,6 +173,33 @@ export class ScheduleMessageWwebjsConsume {
     offset: number
   ): Promise<void> {
     await commitOffset(this.consumerOrThrow, topic, partition, offset);
+  }
+
+  private async claimMessageSend(
+    data: IScheduleMessage
+  ): Promise<'acquired' | 'duplicate' | 'error' | 'missing_identity'> {
+    const identity = resolveMessageSendIdentity(data.message);
+    if (!identity) {
+      return 'missing_identity';
+    }
+
+    data.message.hash = identity.hash;
+
+    const claimStatus = await this.messageSendIdempotencyService.claimSend(
+      identity.accountId,
+      identity.hash,
+      {
+        provider: 'wwebjs',
+        account_id: identity.accountId,
+        chat_id: identity.chatId,
+        message_id: identity.messageId,
+        worker_id: wwebjsEnvironment.wwebjsWorkerId,
+        schedule_id: data.schedule_id,
+        contact_id: data.contact_id,
+      }
+    );
+
+    return claimStatus;
   }
 
   private parseMessage(value: Buffer | null): IScheduleMessage | null {
