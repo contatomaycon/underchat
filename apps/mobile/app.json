@@ -85,7 +85,9 @@
         "expo-audio",
         {
           "microphonePermission": "O Underchat precisa acessar seu microfone para que você possa gravar mensagens de voz e enviá-las nas conversas com clientes. Por exemplo, ao atender um cliente, você pode segurar o botão de gravação para criar um áudio e enviá-lo diretamente no chat.",
-          "recordAudioAndroid": true
+          "recordAudioAndroid": true,
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
         }
       ],
       [
