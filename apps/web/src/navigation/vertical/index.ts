@@ -281,7 +281,6 @@ export default [
         title: 'buy_additional',
         to: { name: 'plan-buy-additional' as keyof RouteNamedMap },
         icon: { icon: 'tabler-shopping-cart-plus' },
-        allowedWhenExpired: true,
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,

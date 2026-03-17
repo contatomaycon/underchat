@@ -14,7 +14,6 @@ export const setupGuards = (router: Router) => {
       'account-settings',
       'plans',
       'plans-checkout',
-      'plan-buy-additional',
       'plan-expired',
     ]);
     const isPlanRouteAllowed =
