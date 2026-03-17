@@ -26,6 +26,8 @@ import { resetPresencePermissionError } from '@/@webcore/presence';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EColor } from '@core/common/enums/EColor';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import { EAccountFilterStatus } from '@core/common/enums/EAccountFilterStatus';
+import { useRouter } from 'vue-router';
 
 definePage({
   meta: {
@@ -68,6 +70,7 @@ const permissionsAssignRole = [
 
 const { t } = useI18n();
 const { global } = useTheme();
+const router = useRouter();
 const userStore = useUsersStore();
 const accountStore = useAccountStore();
 const authStore = useAuthStore();
@@ -345,6 +348,22 @@ const userDisplayName = (item: ListUserResponse): string => {
 
 const isMasterUser = (item: ListUserResponse): boolean =>
   item.permission_role?.permission_role_id === EPermissionRole.master;
+
+const openAccountFiltered = (item: ListUserResponse) => {
+  const accountId = item.account?.account_id;
+
+  if (!accountId) {
+    return;
+  }
+
+  router.push({
+    name: 'account-all',
+    query: {
+      account_id: accountId,
+      filter_status: EAccountFilterStatus.all,
+    },
+  });
+};
 
 const handleTableChange = (o: {
   page: number;
@@ -690,7 +709,15 @@ watch(
             </template>
 
             <template #item.account="{ item }">
-              {{ item.account?.name }}
+              <button
+                v-if="item.account?.account_id && item.account?.name"
+                type="button"
+                class="account-link"
+                @click="openAccountFiltered(item)"
+              >
+                {{ item.account.name }}
+              </button>
+              <span v-else>-</span>
             </template>
 
             <template #item.name="{ item }">
@@ -953,6 +980,22 @@ watch(
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.account-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: rgb(var(--v-theme-primary));
+  text-decoration: underline;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    opacity: 0.85;
+  }
 }
 
 .user-photo-square {

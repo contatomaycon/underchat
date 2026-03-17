@@ -29,6 +29,10 @@ export class AccountListerRepository {
   ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
+    if (query.account_id) {
+      filters.push(eq(account.account_id, query.account_id));
+    }
+
     if (query.name || query.plan) {
       const conditions: (SQLWrapper | undefined)[] = [
         query.name ? ilike(account.name, `%${query.name}%`) : undefined,

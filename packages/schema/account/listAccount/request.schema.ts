@@ -6,6 +6,7 @@ import { EAccountFilterStatus } from '@core/common/enums/EAccountFilterStatus';
 export const listAccountRequestSchema = Type.Object({
   ...pagingRequestSchema.properties,
   sort_by: Type.Optional(Type.Array(sortRequestSchema)),
+  account_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   account_status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   plan: Type.Optional(Type.Union([Type.String(), Type.Null()])),

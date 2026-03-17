@@ -15,6 +15,7 @@ import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import AppAccountExclusivePlans from '@/components/account/AppAccountExclusivePlans.vue';
 import AppAccountInvoices from '@/components/account/AppAccountInvoices.vue';
 import { EAccountFilterStatus } from '@core/common/enums/EAccountFilterStatus';
+import { useRoute } from 'vue-router';
 
 definePage({
   meta: {
@@ -31,10 +32,61 @@ const permissionsAccount = [
 ];
 
 const { t } = useI18n();
+const route = useRoute();
 const accountStore = useAccountStore();
 const accountSettingsStore = useAccountSettingsStore();
 useSnackbarCleanup(accountStore);
 useSnackbarCleanup(accountSettingsStore);
+
+const getRouteQueryValue = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (Array.isArray(value) && typeof value[0] === 'string') {
+    return value[0];
+  }
+
+  return null;
+};
+
+const parseSearchQuery = (value: unknown): string | null => {
+  const queryValue = getRouteQueryValue(value);
+
+  if (!queryValue) {
+    return null;
+  }
+
+  const trimmed = queryValue.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const parseAccountIdQuery = (value: unknown): string | null => {
+  const queryValue = getRouteQueryValue(value);
+
+  if (!queryValue) {
+    return null;
+  }
+
+  const trimmed = queryValue.trim();
+  return trimmed || null;
+};
+
+const parseFilterStatusQuery = (value: unknown): EAccountFilterStatus => {
+  const queryValue = getRouteQueryValue(value);
+
+  if (!queryValue) {
+    return EAccountFilterStatus.subscribers;
+  }
+
+  const isValid = Object.values(EAccountFilterStatus).includes(
+    queryValue as EAccountFilterStatus
+  );
+
+  return isValid
+    ? (queryValue as EAccountFilterStatus)
+    : EAccountFilterStatus.subscribers;
+};
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -110,8 +162,9 @@ const options = ref({
   page: 1,
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
-  search: null as string | null,
-  filterStatus: EAccountFilterStatus.subscribers,
+  accountId: parseAccountIdQuery(route.query.account_id),
+  search: parseSearchQuery(route.query.search),
+  filterStatus: parseFilterStatusQuery(route.query.filter_status),
 });
 
 const debouncedSearch = refDebounced(
@@ -123,6 +176,7 @@ const query = computed(() => ({
   page: options.value.page,
   per_page: options.value.itemsPerPage,
   sort_by: options.value.sortBy,
+  account_id: options.value.accountId,
   search: debouncedSearch.value,
   filter_status: options.value.filterStatus,
 }));

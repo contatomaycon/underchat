@@ -80,6 +80,7 @@ export const useAccountStore = defineStore('account', {
               current_page: input.page,
               per_page: input.per_page,
               sort_by: input.sort_by,
+              account_id: input.account_id,
               name: input.search,
               plan: input.search,
             }
@@ -133,6 +134,7 @@ export const useAccountStore = defineStore('account', {
               current_page: input.page,
               per_page: input.per_page,
               sort_by: input.sort_by,
+              account_id: input.account_id,
               name: input.search,
               plan: input.search,
               filter_status: input.filter_status,
