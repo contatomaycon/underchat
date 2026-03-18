@@ -19,7 +19,10 @@ export const recreateWorker = async (
     const response = await workerRecreatorUseCase.execute(
       t,
       tokenJwtData.account_id,
-      request.params.worker_id
+      request.params.worker_id,
+      {
+        remove_volume: true,
+      }
     );
 
     if (response) {

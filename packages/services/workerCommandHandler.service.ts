@@ -811,7 +811,7 @@ export class WorkerCommandHandlerService {
 
     const workerType = viewWorkerType.worker_type_id as EWorkerType;
     const shouldRemoveSession = data.remove_session === true;
-    const shouldRemoveVolume = data.remove_volume === true;
+    const shouldRemoveVolume = data.remove_volume !== false;
 
     if (shouldRemoveSession) {
       const disconnectPayload: StatusConnectionWorkerRequest = {

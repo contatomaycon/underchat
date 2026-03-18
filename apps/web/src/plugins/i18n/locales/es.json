@@ -456,7 +456,7 @@
   "recreate_channel_confirmation": "¿Estás seguro de que deseas recrear este canal?",
   "worker_recreation_failed": "Error al recrear el canal. Por favor, inténtalo de nuevo.",
   "worker_recreate_success": "Canal recreado exitosamente.",
-  "worker_connection_reset_success": "Conexion restablecida con limpieza completa y canal recreado con exito!",
+  "worker_connection_reset_success": "Conexion restablecida con limpieza de sesion y volumen, y canal recreado con exito!",
   "worker_connection_reset_error": "Error al restablecer por completo la conexion del canal. Por favor, intentalo de nuevo.",
   "deleting": "Eliminando",
   "recreating": "Recreando",

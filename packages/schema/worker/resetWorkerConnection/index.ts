@@ -5,7 +5,7 @@ import { resetWorkerConnectionRequestSchema } from './request.schema';
 
 export const resetWorkerConnectionSchema = {
   description:
-    'Remove conexao do canal com limpeza completa de sessao e volume, e recria o worker',
+    'Remove conexao do canal com limpeza de sessao e volume, e recria o worker',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [
