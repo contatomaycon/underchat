@@ -156,14 +156,6 @@ async function reconnectChannel(restart = false) {
   );
 }
 
-async function disconnectChannel() {
-  if (!channelId.value) return;
-
-  await channelStore.updateConnectionChannel(
-    buildRequest(EWorkerStatus.disponible)
-  );
-}
-
 async function recreateChannelWithFullCleanup() {
   if (!channelId.value) return;
 
@@ -758,11 +750,7 @@ onUnmounted(() => {
                 :disabled="isActionLocked"
                 :loading="channelStore.loading"
                 :color="isConnected ? 'error' : 'primary'"
-                @click="
-                  isConnected
-                    ? disconnectChannel()
-                    : recreateChannelWithFullCleanup()
-                "
+                @click="recreateChannelWithFullCleanup()"
               >
                 <VTooltip
                   location="top"
