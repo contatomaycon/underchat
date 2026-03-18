@@ -39,13 +39,13 @@ import {
   MessageStatusService,
 } from '@core/services/messageStatus.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
-import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IBaileysPendingMessage } from '@core/common/interfaces/IBaileysPendingMessage';
 import { BaileysUpsertMediaEnricher } from './upsertMediaEnricher.service';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { BaileysDeliveryConfirmationService } from './deliveryConfirmation.service';
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
+import { resolveCallEventJidAndPhone } from '../util/callEventResolver';
 
 @singleton()
 export class BaileysIncomingMessageService {
@@ -793,8 +793,11 @@ export class BaileysIncomingMessageService {
     return null;
   }
 
-  private getCallKey(callEvent: WACallEvent): string | null {
-    const jid = callEvent.chatId || callEvent.from;
+  private getCallKey(
+    callEvent: WACallEvent,
+    fallbackJid?: string | null
+  ): string | null {
+    const jid = callEvent.chatId || callEvent.from || fallbackJid;
     if (!jid) return null;
 
     const callId = callEvent.id ?? Date.now().toString();
@@ -838,13 +841,18 @@ export class BaileysIncomingMessageService {
         return;
       }
 
-      const jid = callEvent.chatId || callEvent.from;
-      if (!jid) {
+      const { callJid, callPhone } = resolveCallEventJidAndPhone({
+        chatId: callEvent.chatId,
+        from: callEvent.from,
+        caller: callEvent.caller,
+        callerPn: callEvent.callerPn ?? null,
+      });
+      if (!callJid) {
         console.warn('[WARN] Call event without jid, skipping');
         return;
       }
 
-      const callKey = this.getCallKey(callEvent);
+      const callKey = this.getCallKey(callEvent, callJid);
       if (!callKey) {
         console.warn('[WARN] Call event without key, skipping');
         return;
@@ -856,72 +864,73 @@ export class BaileysIncomingMessageService {
 
       this.processedCalls.set(callKey, Date.now());
 
-      const phone = getPhoneFromJid(jid, null);
-      if (!phone) {
-        console.warn('[WARN] Call event without phone, skipping:', jid);
-        this.processedCalls.delete(callKey);
-        return;
-      }
-
-      const normalizedJid = normalizeJid(jid) ?? jid;
-      const normalizedJidAlt = normalizedJid !== jid ? jid : null;
+      const normalizedJid = normalizeJid(callJid) ?? callJid;
+      const normalizedJidAlt = normalizedJid !== callJid ? callJid : null;
       const callId = callEvent.id ?? Date.now().toString();
       const isVideo = (callEvent as { isVideo?: boolean }).isVideo === true;
       const callText = isVideo
         ? 'Ligacão de vídeo recebida'
         : 'Ligacão recebida';
 
-      const callUpsert: IUpsertMessage = {
-        worker_id: baileysEnvironment.baileysWorkerId,
-        account_id: baileysEnvironment.baileysAccountId,
-        type: EMessageType.system,
-        message: {
-          key: {
-            id: `call_${callId}`,
-            remoteJid: normalizedJid,
-            remoteJidAlt: normalizedJidAlt ?? undefined,
-            fromMe: false,
-          },
+      let pendingItem: IBaileysPendingMessage | null = null;
+      if (callPhone) {
+        const callUpsert: IUpsertMessage = {
+          worker_id: baileysEnvironment.baileysWorkerId,
+          account_id: baileysEnvironment.baileysAccountId,
+          type: EMessageType.system,
           message: {
-            conversation: callText,
+            key: {
+              id: `call_${callId}`,
+              remoteJid: normalizedJid,
+              remoteJidAlt: normalizedJidAlt ?? undefined,
+              fromMe: false,
+            },
+            message: {
+              conversation: callText,
+            },
+            messageTimestamp: this.getCallTimestampSeconds(callEvent),
+            pushName: callEvent.callerPn ?? null,
           },
-          messageTimestamp: this.getCallTimestampSeconds(callEvent),
-          pushName: callEvent.callerPn ?? null,
-        },
-        photo: null,
-        has_quoted: false,
-        is_call_event: true,
-        call_phone: phone,
-        call_jid: normalizedJid,
-        call_jid_alt: normalizedJidAlt,
-        call_name: callEvent.callerPn ?? null,
-      };
+          photo: null,
+          has_quoted: false,
+          is_call_event: true,
+          call_phone: callPhone,
+          call_jid: normalizedJid,
+          call_jid_alt: normalizedJidAlt,
+          call_name: callEvent.callerPn ?? null,
+        };
 
-      const pendingItem = this.enqueueMessage(callUpsert, callKey);
-      if (!pendingItem) return;
-
-      this.fetchPhotoNonBlocking(socket, pendingItem, jid);
+        pendingItem = this.enqueueMessage(callUpsert, callKey);
+        if (pendingItem) {
+          this.fetchPhotoNonBlocking(socket, pendingItem, callJid);
+        }
+      } else {
+        console.warn(
+          '[WARN] Call event without phone, skipping call upsert only:',
+          callJid
+        );
+      }
 
       const callAction =
         await this.balanceWorkerStatusGrpcClientService.resolveIncomingCallAction(
           {
             worker_id: baileysEnvironment.baileysWorkerId,
             account_id: baileysEnvironment.baileysAccountId,
-            call_jid: jid,
-            call_phone: phone,
+            call_jid: callJid,
+            call_phone: callPhone ?? '',
             is_video: isVideo,
           }
         );
 
       if (callAction.reject_call && callEvent.id) {
-        socket.rejectCall(callEvent.id, jid).catch(() => {});
+        socket.rejectCall(callEvent.id, callJid).catch(() => {});
       }
 
       const text = callAction.show_message_text?.trim();
       if (callAction.show_message_on_call && text) {
         const sentMessage = await this.sendMessageWithConfirmation(
           socket,
-          jid,
+          callJid,
           { text }
         );
         const sentMessageId =
@@ -934,7 +943,7 @@ export class BaileysIncomingMessageService {
           text,
           sentMessageId
         );
-        systemMessageUpsert.photo = pendingItem.inputUpsert.photo ?? null;
+        systemMessageUpsert.photo = pendingItem?.inputUpsert.photo ?? null;
 
         const autoReplyKey = `${callKey}:auto_reply:${sentMessageId ?? Date.now().toString()}`;
         this.enqueueMessage(systemMessageUpsert, autoReplyKey);
