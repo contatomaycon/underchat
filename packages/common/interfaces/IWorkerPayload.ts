@@ -11,4 +11,6 @@ export interface IWorkerPayload {
   worker_type_id?: EWorkerType;
   name?: string;
   previous_worker_status_id?: EWorkerStatus;
+  remove_session?: boolean;
+  remove_volume?: boolean;
 }

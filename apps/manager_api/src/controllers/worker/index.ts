@@ -8,6 +8,7 @@ import { deleteWorker } from './methods/deleteWorker';
 import { changeStatusConnection } from './methods/changeStatusConnection';
 import { workerConnectionLogs } from './methods/workerConnectionLogs';
 import { recreateWorker } from './methods/recreateWorker';
+import { resetWorkerConnection } from './methods/resetWorkerConnection';
 import { uploadProfileStatus } from './methods/uploadProfileStatus';
 import { listProfileStatus } from './methods/listProfileStatus';
 import { updateProfileStatus } from './methods/updateProfileStatus';
@@ -49,6 +50,7 @@ class WorkerController {
   public changeStatusConnection = changeStatusConnection;
   public workerConnectionLogs = workerConnectionLogs;
   public recreateWorker = recreateWorker;
+  public resetWorkerConnection = resetWorkerConnection;
   public uploadProfileStatus = uploadProfileStatus;
   public listProfileStatus = listProfileStatus;
   public updateProfileStatus = updateProfileStatus;

@@ -809,9 +809,41 @@ export class WorkerCommandHandlerService {
       throw new Error('Worker not found');
     }
 
+    const workerType = viewWorkerType.worker_type_id as EWorkerType;
+    const shouldRemoveSession = data.remove_session === true;
+    const shouldRemoveVolume = data.remove_volume === true;
+
+    if (shouldRemoveSession) {
+      const disconnectPayload: StatusConnectionWorkerRequest = {
+        worker_id: data.worker_id,
+        status: EWorkerStatus.disponible,
+        type: EBaileysConnectionType.qrcode,
+        remove_session: true,
+      };
+
+      try {
+        await this.workerBaileysGrpcClientService.requestConnection(
+          data.worker_id,
+          disconnectPayload,
+          workerType
+        );
+      } catch (err) {
+        if (!this.isTopicOrPartitionMissing(err)) {
+          console.error('Failed to request worker disconnect before recreate', {
+            workerId: data.worker_id,
+            accountId: data.account_id,
+            error: getErrorMessage(err),
+          });
+        }
+      }
+    }
+
     const removed = await this.retryOperation(
       async () =>
-        this.workerService.removeContainerWorker(data.worker_id, false),
+        this.workerService.removeContainerWorker(
+          data.worker_id,
+          shouldRemoveVolume
+        ),
       (r) => !r
     );
 
@@ -825,7 +857,6 @@ export class WorkerCommandHandlerService {
       throw new Error('Worker removal failed');
     }
 
-    const workerType = viewWorkerType.worker_type_id as EWorkerType;
     const imageName = getImageWorker(workerType);
 
     try {

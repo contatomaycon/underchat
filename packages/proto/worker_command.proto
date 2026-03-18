@@ -21,6 +21,8 @@ message WorkerPayload {
   string worker_type_id = 6;
   string name = 7;
   string previous_worker_status_id = 8;
+  bool remove_session = 9;
+  bool remove_volume = 10;
 }
 
 message ChangeConnectionStatusRequest {

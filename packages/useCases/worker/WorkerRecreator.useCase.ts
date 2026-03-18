@@ -49,7 +49,8 @@ export class WorkerRecreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    workerId: string
+    workerId: string,
+    options?: { remove_session?: boolean; remove_volume?: boolean }
   ): Promise<boolean> {
     await this.validate(t, accountId);
 
@@ -71,6 +72,8 @@ export class WorkerRecreatorUseCase {
       previous_worker_status_id: viewWorker?.status?.id as
         | EWorkerStatus
         | undefined,
+      ...(options?.remove_session === true ? { remove_session: true } : {}),
+      ...(options?.remove_volume === true ? { remove_volume: true } : {}),
     };
 
     const inputUpdate: IUpdateWorker = {

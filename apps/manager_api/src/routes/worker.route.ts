@@ -21,6 +21,7 @@ import { deleteWorkerSchema } from '@core/schema/worker/deleteWorker';
 import { statusConnectionWorkerSchema } from '@core/schema/worker/statusConnection';
 import { workerConnectionLogsSchema } from '@core/schema/worker/workerConnectionLogs';
 import { recreateWorkerSchema } from '@core/schema/worker/recreateWorker';
+import { resetWorkerConnectionSchema } from '@core/schema/worker/resetWorkerConnection';
 import { uploadProfileStatusSchema } from '@core/schema/worker/uploadProfileStatus';
 import { listProfileStatusSchema } from '@core/schema/worker/listProfileStatus';
 import { updateProfileStatusSchema } from '@core/schema/worker/updateProfileStatus';
@@ -70,6 +71,17 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id', {
     schema: recreateWorkerSchema,
     handler: workerController.recreateWorker,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerRecreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/:worker_id/connection/reset', {
+    schema: resetWorkerConnectionSchema,
+    handler: workerController.resetWorkerConnection,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerRecreatePermissions),

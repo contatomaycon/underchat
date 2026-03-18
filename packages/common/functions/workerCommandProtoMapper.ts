@@ -36,6 +36,12 @@ export function protoToWorkerPayload(
     payload.previous_worker_status_id =
       proto.previous_worker_status_id as EWorkerStatus;
   }
+  if (proto.remove_session === true) {
+    payload.remove_session = true;
+  }
+  if (proto.remove_volume === true) {
+    payload.remove_volume = true;
+  }
 
   return payload;
 }
@@ -60,6 +66,12 @@ export function workerPayloadToProto(
   }
   if (payload.previous_worker_status_id) {
     proto.previous_worker_status_id = payload.previous_worker_status_id;
+  }
+  if (payload.remove_session === true) {
+    proto.remove_session = true;
+  }
+  if (payload.remove_volume === true) {
+    proto.remove_volume = true;
   }
   return proto;
 }

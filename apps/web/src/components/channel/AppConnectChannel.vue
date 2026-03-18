@@ -62,6 +62,7 @@ const connectionType = ref<EBaileysConnectionType>(
 const phoneConnection = ref<string | undefined>();
 
 const phoneSent = ref(false);
+const isResetting = ref(false);
 
 const secondsNextAttempt = ref(0);
 const connectionAttempt = ref<number | null>(null);
@@ -76,6 +77,9 @@ const isDisconnected = computed(
 );
 const isBrowserWorkerType = computed(
   () => channelType.value === EWorkerType.wwebjs
+);
+const isActionLocked = computed(
+  () => channelStore.loading || isResetting.value
 );
 
 const progress = computed(() => calculateProgress(elapsedSeconds.value).value);
@@ -155,9 +159,22 @@ async function reconnectChannel(restart = false) {
 async function disponibleChannel() {
   if (!channelId.value) return;
 
-  await channelStore.updateConnectionChannel(
-    buildRequest(EWorkerStatus.disponible, true)
-  );
+  const reseted = await channelStore.resetConnectionChannel(channelId.value);
+
+  if (!reseted) {
+    return;
+  }
+
+  // Keep the modal in a locked state while the worker is recreated.
+  isResetting.value = true;
+  statusConnection.value = EBaileysConnectionStatus.connecting;
+  statusCode.value = ECodeMessage.awaitConnection;
+  qrcode.value = null;
+  removeInPhone.value = false;
+  attempt.value = 0;
+  connectionAttempt.value = null;
+  connectionMaxAttempts.value = null;
+  clearTimer();
 }
 
 async function sendPhoneNumber() {
@@ -326,6 +343,7 @@ onMounted(async () => {
           }
 
           if (isConnectedEvent) {
+            isResetting.value = false;
             statusConnection.value = EBaileysConnectionStatus.connected;
             statusCode.value = ECodeMessage.connectionEstablished;
             phoneNumber.value = null;
@@ -344,6 +362,17 @@ onMounted(async () => {
             }
             secondsNextAttempt.value = 0;
             resetPairingCodes();
+          }
+        }
+
+        if (data.worker_status_id) {
+          if (data.worker_status_id === EWorkerStatus.recreating) {
+            isResetting.value = true;
+            statusConnection.value = EBaileysConnectionStatus.connecting;
+            qrcode.value = null;
+            clearTimer();
+          } else {
+            isResetting.value = false;
           }
         }
 
@@ -431,7 +460,16 @@ onUnmounted(() => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <div v-if="showQrSkeleton" class="qrcode-skeleton-wrapper">
+          <div v-if="isResetting">
+            <VCardText class="d-flex justify-center">
+              <VProgressCircular indeterminate color="info" size="84" />
+            </VCardText>
+            <VCardText class="text-center">
+              <i>{{ $t('recreating') }}...</i>
+            </VCardText>
+          </div>
+
+          <div v-else-if="showQrSkeleton" class="qrcode-skeleton-wrapper">
             <VCardText class="d-flex justify-center">
               <div class="qrcode-skeleton qrcode-skeleton--shimmer">
                 <svg
@@ -709,7 +747,8 @@ onUnmounted(() => {
           >
             <div class="d-flex gap-2">
               <VBtn
-                :disabled="!isConnected"
+                :disabled="!isConnected || isActionLocked"
+                :loading="channelStore.loading"
                 color="error"
                 @click="disponibleChannel"
               >
@@ -725,9 +764,11 @@ onUnmounted(() => {
 
               <VBtn
                 :disabled="
-                  !(attempt >= maxAttempts && !isConnected) &&
-                  !(isDisconnected && removeInPhone)
+                  isActionLocked ||
+                  (!(attempt >= maxAttempts && !isConnected) &&
+                    !(isDisconnected && removeInPhone))
                 "
+                :loading="channelStore.loading"
                 color="warning"
                 @click="reconnectChannel(true)"
               >

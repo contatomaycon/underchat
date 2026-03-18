@@ -7,4 +7,6 @@ export interface IWorkerPayloadProto {
   worker_type_id?: string;
   name?: string;
   previous_worker_status_id?: string;
+  remove_session?: boolean;
+  remove_volume?: boolean;
 }

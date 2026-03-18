@@ -369,6 +369,49 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    async resetConnectionChannel(workerId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/worker/${workerId}/connection/reset`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('worker_connection_reset_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data?.message ??
+            this.i18n.global.t('worker_connection_reset_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('worker_connection_reset_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
     async channelLogsConnection(
       channelId: string,
       input: WorkerConnectionLogsQuery
