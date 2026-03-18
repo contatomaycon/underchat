@@ -45,13 +45,19 @@ export const isNavLinkActive = (link: NavLink, router: Router) => {
   const targetLocation = link.to ? router.resolve(link.to) : null;
   const targetQuery = targetLocation?.query ?? {};
   const matchedRoutes = currentRoute.matched;
+  const isExactRouteMatch = currentRoute.name === resolveRoutedName;
 
-  const matchesRoute =
-    matchedRoutes.some(
-      (route) =>
-        route.name === resolveRoutedName ||
-        route.meta.navActiveLink === resolveRoutedName
-    ) || currentRoute.name === resolveRoutedName;
+  const isMetaActiveMatch = matchedRoutes.some(
+    (route) => route.meta.navActiveLink === resolveRoutedName
+  );
+
+  const isNestedRouteMatch = matchedRoutes.some(
+    (route) => route.name === resolveRoutedName
+  );
+
+  const matchesRoute = link.exactActive
+    ? isExactRouteMatch
+    : isExactRouteMatch || isMetaActiveMatch || isNestedRouteMatch;
 
   if (!matchesRoute) return false;
 

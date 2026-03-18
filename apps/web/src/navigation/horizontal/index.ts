@@ -292,6 +292,7 @@ export default [
         title: 'listar',
         to: { name: 'plan' as keyof RouteNamedMap },
         icon: { icon: 'tabler-list' },
+        exactActive: true,
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,
