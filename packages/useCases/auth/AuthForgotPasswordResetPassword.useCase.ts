@@ -182,6 +182,13 @@ export class AuthForgotPasswordResetPasswordUseCase {
       );
     }
 
+    const permissions =
+      await this.permissionService.viewPermissionByUserId(userId);
+
+    if (!permissions.length) {
+      throw new Error(t('user_without_access_permissions'));
+    }
+
     const hadDuplicateLogin = await this.handleDuplicateLogin(
       userId,
       accountId,
@@ -205,8 +212,7 @@ export class AuthForgotPasswordResetPasswordUseCase {
       }
     );
 
-    const [permissions, accountInfo, sectors, channels] = await Promise.all([
-      this.permissionService.viewPermissionByUserId(userId),
+    const [accountInfo, sectors, channels] = await Promise.all([
       this.accountService.viewAccountInfoByAccountId(accountId),
       this.userService.listUserSectors(accountId, userId),
       this.userService.listUserChannelsWithNames(accountId, userId),

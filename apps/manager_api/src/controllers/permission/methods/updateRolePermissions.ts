@@ -38,6 +38,16 @@ export const updateRolePermissions = async (
       data: { success: true } as UpdateRolePermissionsResponse,
     });
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === t('role_permissions_required')
+    ) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.bad_request,
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

@@ -83,6 +83,17 @@ export const forgotPasswordResetPassword = async (
         data: null,
       });
     }
+
+    if (
+      error instanceof Error &&
+      error.message === t('user_without_access_permissions')
+    ) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.bad_request,
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

@@ -52,14 +52,20 @@ export const sessionLogin = async (
       });
     }
 
-    if (
-      error instanceof Error &&
-      error.message === t('user_without_access_group')
-    ) {
-      return sendResponse(reply, {
-        message: error.message,
-        httpStatusCode: EHTTPStatusCode.unauthorized,
-      });
+    if (error instanceof Error) {
+      if (error.message === t('user_without_access_group')) {
+        return sendResponse(reply, {
+          message: error.message,
+          httpStatusCode: EHTTPStatusCode.unauthorized,
+        });
+      }
+
+      if (error.message === t('user_without_access_permissions')) {
+        return sendResponse(reply, {
+          message: error.message,
+          httpStatusCode: EHTTPStatusCode.forbidden,
+        });
+      }
     }
 
     handleControllerError(error, reply, t);

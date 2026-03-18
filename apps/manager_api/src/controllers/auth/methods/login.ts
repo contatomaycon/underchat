@@ -55,7 +55,8 @@ export const login = async (
     if (
       error instanceof Error &&
       (error.message === t('login_invalid') ||
-        error.message === t('user_without_access_group'))
+        error.message === t('user_without_access_group') ||
+        error.message === t('user_without_access_permissions'))
     ) {
       return sendResponse(reply, {
         message: error.message,

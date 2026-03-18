@@ -175,6 +175,14 @@ export class AuthLoginUseCase {
       );
     }
 
+    const permissions = await this.permissionService.viewPermissionByUserId(
+      result.user_id
+    );
+
+    if (!permissions.length) {
+      throw new Error(t('user_without_access_permissions'));
+    }
+
     const hadDuplicateLogin = await this.handleDuplicateLogin(
       result.user_id,
       result.account_id,
@@ -199,8 +207,7 @@ export class AuthLoginUseCase {
       }
     );
 
-    const [permissions, accountInfo, sectors, channels] = await Promise.all([
-      this.permissionService.viewPermissionByUserId(result.user_id),
+    const [accountInfo, sectors, channels] = await Promise.all([
       this.accountService.viewAccountInfoByAccountId(result.account_id),
       this.userService.listUserSectors(result.account_id, result.user_id),
       this.userService.listUserChannelsWithNames(

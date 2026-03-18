@@ -54,7 +54,7 @@ export const sessionLoginSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ default: false }),
         message: Type.String(),
-        data: userAttendanceHoursBlockedDataSchema,
+        data: Type.Union([Type.Null(), userAttendanceHoursBlockedDataSchema]),
       },
       { description: 'Forbidden' }
     ),

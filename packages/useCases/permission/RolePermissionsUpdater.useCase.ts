@@ -71,6 +71,14 @@ export class RolePermissionsUpdaterUseCase {
     return filteredGroups;
   }
 
+  private hasAnySelectedPermission(groups: PermissionGroupRequest[]): boolean {
+    return groups.some(
+      (group) =>
+        group.selected ||
+        group.permissions.some((permission) => permission.selected)
+    );
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     permissionRoleId: string,
@@ -94,6 +102,10 @@ export class RolePermissionsUpdaterUseCase {
     }
 
     const filteredGroups = this.filterGroupsByPermissions(groups, userActions);
+
+    if (!this.hasAnySelectedPermission(filteredGroups)) {
+      throw new Error(t('role_permissions_required'));
+    }
 
     await this.permissionService.updateRolePermissions(
       permissionRoleId,
