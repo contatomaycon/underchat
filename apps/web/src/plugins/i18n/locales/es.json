@@ -373,6 +373,7 @@
   "worker_status_update_success": "¡Estado del trabajador actualizado exitosamente!",
   "conection": "Conexión",
   "remove": "Eliminar",
+  "disconnect": "Desconectar",
   "reconnect": "Reconectar",
   "open_whatsapp": "Abrir WhatsApp",
   "certify_latest_version": "Asegúrate de que estás utilizando la última versión.",

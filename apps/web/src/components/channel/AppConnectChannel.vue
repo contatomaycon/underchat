@@ -156,7 +156,15 @@ async function reconnectChannel(restart = false) {
   );
 }
 
-async function disponibleChannel() {
+async function disconnectChannel() {
+  if (!channelId.value) return;
+
+  await channelStore.updateConnectionChannel(
+    buildRequest(EWorkerStatus.disponible)
+  );
+}
+
+async function recreateChannelWithFullCleanup() {
   if (!channelId.value) return;
 
   const reseted = await channelStore.resetConnectionChannel(channelId.value);
@@ -747,22 +755,31 @@ onUnmounted(() => {
           >
             <div class="d-flex gap-2">
               <VBtn
-                :disabled="!isConnected || isActionLocked"
+                :disabled="isActionLocked"
                 :loading="channelStore.loading"
-                color="error"
-                @click="disponibleChannel"
+                :color="isConnected ? 'error' : 'primary'"
+                @click="
+                  isConnected
+                    ? disconnectChannel()
+                    : recreateChannelWithFullCleanup()
+                "
               >
                 <VTooltip
                   location="top"
                   activator="parent"
                   transition="scroll-x-transition"
                 >
-                  <span>{{ $t('remove') }}</span>
+                  <span>{{
+                    isConnected ? $t('disconnect') : $t('recreate')
+                  }}</span>
                 </VTooltip>
-                <VIcon icon="tabler-circle-off" />
+                <VIcon
+                  :icon="isConnected ? 'tabler-circle-off' : 'tabler-reload'"
+                />
               </VBtn>
 
               <VBtn
+                v-if="!isDisconnected"
                 :disabled="
                   isActionLocked ||
                   (!(attempt >= maxAttempts && !isConnected) &&

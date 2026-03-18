@@ -373,6 +373,7 @@
   "worker_status_update_success": "Status do canal atualizado com sucesso!",
   "conection": "Conexão",
   "remove": "Remover",
+  "disconnect": "Desconectar",
   "reconnect": "Reconectar",
   "open_whatsapp": "Abra o WhatsApp no seu celular",
   "certify_latest_version": "Certifique-se de que você está usando a versão mais recente.",
