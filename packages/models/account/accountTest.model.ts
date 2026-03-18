@@ -1,4 +1,11 @@
-import { pgTable, uuid, timestamp, varchar, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  timestamp,
+  varchar,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 
 export const accountTest = pgTable(
   'account_test',
@@ -23,5 +30,8 @@ export const accountTest = pgTable(
     index('account_test_document_idx').on(table.document),
     index('account_test_phone_idx').on(table.phone),
     index('account_test_email_idx').on(table.email),
+    uniqueIndex('account_test_document_c_unique').on(table.document_c),
+    uniqueIndex('account_test_phone_c_unique').on(table.phone_c),
+    uniqueIndex('account_test_email_c_unique').on(table.email_c),
   ]
 );

@@ -257,6 +257,7 @@ const accountIdForPayment = ref<string | null>(null);
 const registerCentrifugeClient = ref<Centrifuge | null>(null);
 const testPlanModalOpen = ref(false);
 const testPlanSuccess = ref(false);
+const isSubmitting = ref(false);
 const installments = ref<number>(1);
 const recurringPayment = ref(false);
 const nextButtonLabel = computed(() => {
@@ -432,7 +433,10 @@ watch(selectedPaymentMethod, (method) => {
 });
 
 watch(currentStep, async (step) => {
-  if (step === LAST_STEP_INDEX.value && !isTestPlan(selectedPlanForCheckout.value)) {
+  if (
+    step === LAST_STEP_INDEX.value &&
+    !isTestPlan(selectedPlanForCheckout.value)
+  ) {
     if (methodPayments.value.length === 0) {
       await loadPaymentMethods();
     }
@@ -630,61 +634,69 @@ const buildRegisterPaymentData =
   };
 
 const handleSubmitOrderPayment = async () => {
+  if (isSubmitting.value) return;
+
   const payload = buildRegisterPaymentData();
   if (!payload) return;
 
-  const isTest = isTestPlan(selectedPlanForCheckout.value);
+  isSubmitting.value = true;
 
-  if (isTest) {
-    paymentModalLoading.value = true;
-    testPlanModalOpen.value = true;
-    testPlanSuccess.value = false;
+  try {
+    const isTest = isTestPlan(selectedPlanForCheckout.value);
 
-    const result = await registerStore.createOrderPayment(payload);
-    paymentModalLoading.value = false;
+    if (isTest) {
+      paymentModalLoading.value = true;
+      testPlanModalOpen.value = true;
+      testPlanSuccess.value = false;
 
-    if (!result) {
-      testPlanModalOpen.value = false;
+      const result = await registerStore.createOrderPayment(payload);
+      paymentModalLoading.value = false;
+
+      if (!result) {
+        testPlanModalOpen.value = false;
+        return;
+      }
+
+      testPlanSuccess.value = true;
       return;
     }
 
-    testPlanSuccess.value = true;
-    return;
+    paymentModalLoading.value = true;
+    pixPaymentData.value = null;
+    boletoPaymentData.value = null;
+    pixPaymentStatus.value = null;
+    pixPaymentConfirmed.value = false;
+    pixPaymentInitiated.value = false;
+    accountIdForPayment.value = null;
+    await openPaymentModal();
+    const result = await registerStore.createOrderPayment(payload);
+    paymentModalLoading.value = false;
+    if (!result) {
+      pixModalOpen.value = false;
+      return;
+    }
+    if (result.account_id) {
+      accountIdForPayment.value = result.account_id;
+    }
+    if (result.pix_payment) {
+      await processPixPayment(result.pix_payment);
+      return;
+    }
+    if (result.boleto_payment) {
+      await processBoletoPayment(result.boleto_payment);
+      return;
+    }
+    if (result.credit_card_payment) {
+      await processCreditCardPayment(result.credit_card_payment);
+      return;
+    }
+    registerStore.showSnackbar(
+      t('order_payment_created_successfully'),
+      EColor.success
+    );
+  } finally {
+    isSubmitting.value = false;
   }
-
-  paymentModalLoading.value = true;
-  pixPaymentData.value = null;
-  boletoPaymentData.value = null;
-  pixPaymentStatus.value = null;
-  pixPaymentConfirmed.value = false;
-  pixPaymentInitiated.value = false;
-  accountIdForPayment.value = null;
-  await openPaymentModal();
-  const result = await registerStore.createOrderPayment(payload);
-  paymentModalLoading.value = false;
-  if (!result) {
-    pixModalOpen.value = false;
-    return;
-  }
-  if (result.account_id) {
-    accountIdForPayment.value = result.account_id;
-  }
-  if (result.pix_payment) {
-    await processPixPayment(result.pix_payment);
-    return;
-  }
-  if (result.boleto_payment) {
-    await processBoletoPayment(result.boleto_payment);
-    return;
-  }
-  if (result.credit_card_payment) {
-    await processCreditCardPayment(result.credit_card_payment);
-    return;
-  }
-  registerStore.showSnackbar(
-    t('order_payment_created_successfully'),
-    EColor.success
-  );
 };
 
 const handleStep0 = () => {
@@ -752,6 +764,8 @@ const handleDefaultStep = () => {
 };
 
 const handleNext = async () => {
+  if (isSubmitting.value) return;
+
   if (currentStep.value === LAST_STEP_INDEX.value) {
     await handleSubmitOrderPayment();
     return;
@@ -1729,7 +1743,8 @@ const loadPaymentMethods = async () => {
 
 const enabledPaymentMethods = computed(() => {
   return methodPayments.value.filter(
-    (m) => m.status === true && ['boleto', 'credit_card', 'pix'].includes(m.type)
+    (m) =>
+      m.status === true && ['boleto', 'credit_card', 'pix'].includes(m.type)
   );
 });
 
@@ -1920,7 +1935,7 @@ watch(currentStep, async (newStep) => {
     <VCol
       cols="12"
       md="8"
-      class="auth-card-v2 d-flex align-center justify-center pa-10"
+      class="auth-card-v2 d-flex align-center justify-center pa-4 pa-sm-6 pa-md-10"
       style="background-color: rgb(var(--v-theme-surface))"
     >
       <VCard flat class="mt-12 mt-sm-0">
@@ -2409,13 +2424,7 @@ watch(currentStep, async (newStep) => {
 
                 <div v-if="loadingPlans">
                   <VRow>
-                    <VCol
-                      v-for="n in 3"
-                      :key="n"
-                      cols="12"
-                      sm="6"
-                      md="4"
-                    >
+                    <VCol v-for="n in 3" :key="n" cols="12" sm="6" md="4">
                       <VCard variant="outlined" class="plan-card">
                         <VSkeletonLoader type="image" height="200" />
                         <VCardText>
@@ -2431,7 +2440,11 @@ watch(currentStep, async (newStep) => {
                             height="16"
                             class="mb-2"
                           />
-                          <VSkeletonLoader type="text" width="80%" height="16" />
+                          <VSkeletonLoader
+                            type="text"
+                            width="80%"
+                            height="16"
+                          />
                         </VCardText>
                       </VCard>
                     </VCol>
@@ -2642,7 +2655,11 @@ watch(currentStep, async (newStep) => {
                             height="16"
                             class="mb-2"
                           />
-                          <VSkeletonLoader type="text" width="60%" height="16" />
+                          <VSkeletonLoader
+                            type="text"
+                            width="60%"
+                            height="16"
+                          />
                         </VCardText>
                       </VCard>
                     </VCol>
@@ -3560,6 +3577,7 @@ watch(currentStep, async (newStep) => {
             :disabled="
               (currentStep === 0 && !isValidationStepValid) ||
               (currentStep === 3 && !selectedPlanForCheckout) ||
+              isSubmitting ||
               registerStore.isLoading
             "
             :loading="isNextButtonLoading"
@@ -4007,6 +4025,10 @@ watch(currentStep, async (newStep) => {
 .otp-input-custom {
   .v-otp-input {
     gap: 0.75rem;
+
+    @media (max-width: 600px) {
+      gap: 0.35rem;
+    }
   }
 
   .v-field {
@@ -4025,10 +4047,21 @@ watch(currentStep, async (newStep) => {
       box-shadow 0.2s ease,
       border-color 0.2s ease;
 
+    @media (max-width: 600px) {
+      min-width: 40px;
+      height: 48px;
+      font-size: 0.95rem;
+      border-radius: 8px;
+    }
+
     .v-field__input {
       text-align: center;
       text-transform: uppercase;
       padding-block: 10px;
+
+      @media (max-width: 600px) {
+        padding-block: 6px;
+      }
     }
 
     &.v-field--focused {
@@ -4055,6 +4088,11 @@ watch(currentStep, async (newStep) => {
   position: relative;
   overflow: hidden;
 
+  @media (max-width: 600px) {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
   &::after {
     content: '';
     position: absolute;
@@ -4078,6 +4116,11 @@ watch(currentStep, async (newStep) => {
   gap: 12px;
   position: relative;
   z-index: 1;
+  flex-wrap: wrap;
+
+  @media (max-width: 600px) {
+    gap: 8px;
+  }
 }
 
 .otp-card__badge {

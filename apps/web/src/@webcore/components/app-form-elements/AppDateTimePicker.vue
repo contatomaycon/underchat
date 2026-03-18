@@ -247,6 +247,7 @@ const defaultConfig: FlatpickrOptions = {
   altFormat: 'd/m/Y',
   allowInput: true,
   clickOpens: true,
+  disableMobile: true,
   onOpen: (selectedDates, dateStr, instance) => {
     if (!props.modelValue && selectedDates.length === 0) {
       const now = new Date();
@@ -260,6 +261,22 @@ const defaultConfig: FlatpickrOptions = {
     if (originalInput) {
       originalInput.style.display = 'none';
     }
+
+    const altInput = instance.altInput as HTMLInputElement;
+    if (altInput) {
+      altInput.style.position = 'absolute';
+      altInput.style.inset = '0';
+      altInput.style.width = '100%';
+      altInput.style.height = '100%';
+      altInput.style.outline = 'none';
+      altInput.style.paddingInline = 'var(--v-field-padding-start)';
+      altInput.style.pointerEvents = 'auto';
+      altInput.style.cursor = 'pointer';
+      altInput.style.color = 'inherit';
+      altInput.style.backgroundColor = 'transparent';
+      altInput.style.border = 'none';
+    }
+
     updateAltInputFormat(selectedDates, instance);
     nextTick(() => {
       enableYearEditing();
@@ -946,6 +963,32 @@ const elementId = computed(() => {
   outline: none;
   padding-block: 0;
   padding-inline: var(--v-field-padding-start);
+
+  &[readonly] {
+    cursor: pointer;
+  }
+}
+
+.app-picker-field {
+  .v-field {
+    cursor: pointer;
+  }
+
+  input.form-control.input {
+    position: absolute;
+    color: inherit;
+    inline-size: 100%;
+    inset: 0;
+    outline: none;
+    padding-block: 0;
+    padding-inline: var(--v-field-padding-start);
+    pointer-events: auto;
+    cursor: pointer;
+
+    &[readonly] {
+      cursor: pointer;
+    }
+  }
 }
 
 $heading-color: rgba(

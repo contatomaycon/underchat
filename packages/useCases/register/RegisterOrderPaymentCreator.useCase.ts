@@ -178,6 +178,13 @@ export class RegisterOrderPaymentCreatorUseCase {
         throw new Error(t('account_name_cannot_exceed_10_characters'));
       }
 
+      const emailAlreadyExists = await this.userService.existsUserEmailById(
+        input.user.email.trim()
+      );
+      if (emailAlreadyExists) {
+        throw new Error(t('email_already_registered'));
+      }
+
       const accountInput = this.buildAccountInput(input);
       const accountId =
         await this.accountService.createAccountWithPlanAndApiKey(accountInput);
