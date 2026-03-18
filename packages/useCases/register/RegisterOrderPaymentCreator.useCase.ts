@@ -208,6 +208,12 @@ export class RegisterOrderPaymentCreatorUseCase {
 
       const paymentInput = this.buildPaymentInput(input);
 
+      const userContext = {
+        email: input.user.email.trim(),
+        document: input.user.document.trim(),
+        phone: this.sanitizePhone(input.user.phone_ddd, input.user.phone),
+      };
+
       const result = await this.orderPaymentCreatorUseCase.execute(
         t,
         accountId,
@@ -229,7 +235,8 @@ export class RegisterOrderPaymentCreatorUseCase {
           recurring_payment: paymentInput.recurring_payment,
           installments: paymentInput.installments,
         },
-        remoteIp
+        remoteIp,
+        userContext
       );
 
       return {

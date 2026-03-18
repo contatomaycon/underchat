@@ -22,6 +22,7 @@ import type {
   IOrderPaymentCreditCardInput,
   IOrderPaymentPixInput,
   IOrderPaymentTestPlan,
+  IOrderPaymentUserContext,
   OrderPaymentOrderType,
 } from '@core/common/interfaces/IOrderPaymentCreator';
 
@@ -333,41 +334,57 @@ export class OrderPaymentCreatorUseCase {
     accountId: string,
     planId: string,
     plan: IOrderPaymentTestPlan,
-    input: CreateOrderPaymentRequest
+    input: CreateOrderPaymentRequest,
+    userContext?: IOrderPaymentUserContext
   ): Promise<CreateOrderPaymentResponse> {
     if (input.addons && input.addons.length > 0) {
       throw new Error(t('test_plan_cannot_have_addons'));
     }
 
-    const masterUser =
-      await this.userMasterViewerRepository.findMasterUserByAccountId(
-        accountId
-      );
+    let document: string;
+    let phone: string;
+    let email: string;
 
-    if (!masterUser) {
-      throw new Error(t('master_user_not_found'));
-    }
+    if (userContext) {
+      document = userContext.document;
+      phone = userContext.phone;
+      email = userContext.email;
+    } else {
+      const masterUser =
+        await this.userMasterViewerRepository.findMasterUserByAccountId(
+          accountId
+        );
 
-    const sensitiveData = await this.userService.getUserSensitiveDataDecrypted(
-      masterUser.user_id
-    );
+      if (!masterUser) {
+        throw new Error(t('master_user_not_found'));
+      }
 
-    if (!sensitiveData) {
-      throw new Error(t('user_sensitive_data_not_found'));
-    }
+      const sensitiveData =
+        await this.userService.getUserSensitiveDataDecrypted(
+          masterUser.user_id
+        );
 
-    if (
-      !sensitiveData.document ||
-      !sensitiveData.phone ||
-      !sensitiveData.email
-    ) {
-      throw new Error(t('test_plan_required_fields'));
+      if (!sensitiveData) {
+        throw new Error(t('user_sensitive_data_not_found'));
+      }
+
+      if (
+        !sensitiveData.document ||
+        !sensitiveData.phone ||
+        !sensitiveData.email
+      ) {
+        throw new Error(t('test_plan_required_fields'));
+      }
+
+      document = sensitiveData.document;
+      phone = sensitiveData.phone;
+      email = sensitiveData.email;
     }
 
     const hasExistingTest = await this.accountTestService.checkExistingTest({
-      document: sensitiveData.document,
-      phone: sensitiveData.phone,
-      email: sensitiveData.email,
+      document,
+      phone,
+      email,
     });
 
     if (hasExistingTest) {
@@ -382,9 +399,9 @@ export class OrderPaymentCreatorUseCase {
       accountId,
       planId,
       daysTrial: plan.days_trial,
-      document: sensitiveData.document,
-      phone: sensitiveData.phone,
-      email: sensitiveData.email,
+      document,
+      phone,
+      email,
     });
 
     return {
@@ -497,7 +514,8 @@ export class OrderPaymentCreatorUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     input: CreateOrderPaymentRequest,
-    remoteIp: string
+    remoteIp: string,
+    userContext?: IOrderPaymentUserContext
   ): Promise<CreateOrderPaymentResponse> => {
     try {
       const orderType = this.resolveOrderType(input);
@@ -530,7 +548,14 @@ export class OrderPaymentCreatorUseCase {
       }
 
       if (isTestPlan) {
-        return this.processTestPlan(t, accountId, input.plan_id, plan, input);
+        return this.processTestPlan(
+          t,
+          accountId,
+          input.plan_id,
+          plan,
+          input,
+          userContext
+        );
       }
 
       const planContext = await this.buildPlanOrderContext(t, accountId, input);

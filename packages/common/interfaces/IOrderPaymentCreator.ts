@@ -74,3 +74,9 @@ export interface IOrderPaymentBoletoInput {
   addons: IOrderPaymentAddonSelection[];
   isAddonOnly: boolean;
 }
+
+export interface IOrderPaymentUserContext {
+  email: string;
+  document: string;
+  phone: string;
+}
