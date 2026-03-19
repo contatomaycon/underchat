@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { user } from '@core/models';
+import { user, userAddress } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -74,38 +74,6 @@ export class UserViewerRepository {
             },
           },
         },
-        uua: {
-          columns: {
-            user_address_id: true,
-            zip_code: true,
-            address1_partial: true,
-            address2_partial: true,
-            city_fiscal_code: true,
-            state_fiscal_code: true,
-            district: true,
-            deleted_at: true,
-          },
-          with: {
-            uuc: {
-              columns: {
-                country_id: true,
-                iso_code: true,
-                name: true,
-              },
-            },
-            uzc: {
-              columns: {
-                city: true,
-              },
-            },
-            uzs: {
-              columns: {
-                state: true,
-                abbreviation: true,
-              },
-            },
-          },
-        },
       },
       columns: {
         user_id: true,
@@ -118,8 +86,42 @@ export class UserViewerRepository {
       return null;
     }
 
-    const userAddressData =
-      result.uua && !result.uua.deleted_at ? result.uua : null;
+    const userAddressData = await this.dbRo.query.userAddress.findFirst({
+      where: and(
+        eq(userAddress.user_id, result.user_id),
+        isNull(userAddress.deleted_at)
+      ),
+      orderBy: (ua, { desc }) => [desc(ua.updated_at)],
+      with: {
+        uuc: {
+          columns: {
+            country_id: true,
+            iso_code: true,
+            name: true,
+          },
+        },
+        uzc: {
+          columns: {
+            city: true,
+          },
+        },
+        uzs: {
+          columns: {
+            state: true,
+            abbreviation: true,
+          },
+        },
+      },
+      columns: {
+        user_address_id: true,
+        zip_code: true,
+        address1_partial: true,
+        address2_partial: true,
+        city_fiscal_code: true,
+        state_fiscal_code: true,
+        district: true,
+      },
+    });
 
     const cityName = userAddressData?.uzc?.city ?? null;
     let stateName: string | null = null;

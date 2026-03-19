@@ -665,6 +665,54 @@ export class PlanReleaseService {
       .trim();
   };
 
+  private readonly normalizeCentiFailureMessage = (value: string): string => {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+  };
+
+  private readonly shouldFallbackToAsaasAfterCentiFailure = (input: {
+    messages: string[];
+  }): boolean => {
+    if (input.messages.length === 0) {
+      return true;
+    }
+
+    const combinedMessages = this.normalizeCentiFailureMessage(
+      input.messages.join(' ')
+    );
+
+    const hasAddressField =
+      /\b(cep|endereco|logradouro|bairro|numero|municipio|uf)\b/.test(
+        combinedMessages
+      );
+    const hasValidationSignal =
+      /\b(informe|invalido|incompleto|obrigatorio|obrigatoria|ausente|preench)\b/.test(
+        combinedMessages
+      );
+
+    if (hasAddressField && hasValidationSignal) {
+      return false;
+    }
+
+    const hasSignatureOrCertificateError =
+      /\b(assinatura|certificado|certif|x509|digital invalida|digital invalida|chave privada|pfx|p12)\b/.test(
+        combinedMessages
+      );
+
+    const hasCredentialOrAuthorizationError =
+      /\b(credencial|senha|usuario|nao autorizado|não autorizado|unauthoriz|forbidden|forbid)\b/.test(
+        combinedMessages
+      );
+
+    if (hasSignatureOrCertificateError || hasCredentialOrAuthorizationError) {
+      return false;
+    }
+
+    return true;
+  };
+
   private readonly canGenerateInvoiceForAccount = async (
     accountId: string
   ): Promise<boolean> => {
@@ -905,6 +953,17 @@ export class PlanReleaseService {
       }
 
       if (centiResult?.kind === 'explicit_failure') {
+        if (
+          !this.shouldFallbackToAsaasAfterCentiFailure({
+            messages: centiResult.messages,
+          })
+        ) {
+          const details = centiResult.messages.join(' | ');
+          const baseMessage = 'Falha na emissão NFSe via Centi';
+
+          throw new Error(details ? `${baseMessage}. ${details}` : baseMessage);
+        }
+
         console.warn('Centi emission failed, fallback to Asaas.', {
           reason: centiResult.reason,
           messages: centiResult.messages,

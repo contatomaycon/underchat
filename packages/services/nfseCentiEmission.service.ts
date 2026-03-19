@@ -18,6 +18,30 @@ const XMLDSIG_ENVELOPED =
 const XMLDSIG_RSA_SHA1 = 'http://www.w3.org/2000/09/xmldsig#rsa-sha1';
 const XMLDSIG_SHA1 = 'http://www.w3.org/2000/09/xmldsig#sha1';
 
+type ForgeComparable = {
+  compareTo(other: ForgeComparable): number;
+};
+
+type ForgeCertificateLike = {
+  publicKey?: {
+    n?: ForgeComparable;
+    e?: ForgeComparable;
+  };
+};
+
+type ForgePrivateKeyLike = {
+  n?: ForgeComparable;
+  e?: ForgeComparable;
+};
+
+type ForgeCertBagLike = {
+  cert?: ForgeCertificateLike;
+};
+
+type ForgeKeyBagLike = {
+  key?: ForgePrivateKeyLike;
+};
+
 interface NfseCentiConfig {
   integration_base_url: string | null;
   integration_uf: string | null;
@@ -330,6 +354,7 @@ export class NfseCentiEmissionService {
       nfseConfig.integration_rps_series || 'A1',
       5
     );
+    const rpsSignatureId = this.buildRpsSignatureId(generatedRpsNumber);
 
     const tomadorXml = this.buildTomadorXml({
       name: tomador.name,
@@ -392,7 +417,7 @@ export class NfseCentiEmissionService {
       `<GerarNfseEnvio xmlns="${CENTI_XML_NAMESPACE}">`,
       '<Rps>',
       `<InfDeclaracaoPrestacaoServico xmlns="${CENTI_XML_NAMESPACE}">`,
-      '<Rps>',
+      `<Rps Id="${this.escapeXml(rpsSignatureId)}" xmlns="${CENTI_XML_NAMESPACE}">`,
       '<IdentificacaoRps>',
       `<Numero>${generatedRpsNumber}</Numero>`,
       `<Serie>${this.escapeXml(rpsSerie)}</Serie>`,
@@ -550,20 +575,26 @@ export class NfseCentiEmissionService {
       certificatePassword
     );
 
-    const digestValue = this.sha1Base64(this.canonicalizeXml(unsignedXml));
+    const referenceTarget = this.resolveSignatureReferenceTarget(unsignedXml);
+    const digestInput = referenceTarget
+      ? referenceTarget.xml
+      : this.canonicalizeXml(unsignedXml);
+    const digestValue = this.sha1Base64(digestInput);
+    const referenceUri = referenceTarget ? `#${referenceTarget.id}` : '';
+
     const signedInfo = [
-      `<dsig:SignedInfo xmlns:dsig="${XMLDSIG_NAMESPACE}">`,
-      `<dsig:CanonicalizationMethod Algorithm="${XMLDSIG_C14N}"/>`,
-      `<dsig:SignatureMethod Algorithm="${XMLDSIG_RSA_SHA1}"/>`,
-      '<dsig:Reference URI="">',
-      '<dsig:Transforms>',
-      `<dsig:Transform Algorithm="${XMLDSIG_ENVELOPED}"/>`,
-      `<dsig:Transform Algorithm="${XMLDSIG_C14N}"/>`,
-      '</dsig:Transforms>',
-      `<dsig:DigestMethod Algorithm="${XMLDSIG_SHA1}"/>`,
-      `<dsig:DigestValue>${digestValue}</dsig:DigestValue>`,
-      '</dsig:Reference>',
-      '</dsig:SignedInfo>',
+      `<SignedInfo xmlns="${XMLDSIG_NAMESPACE}">`,
+      `<CanonicalizationMethod Algorithm="${XMLDSIG_C14N}"/>`,
+      `<SignatureMethod Algorithm="${XMLDSIG_RSA_SHA1}"/>`,
+      `<Reference URI="${this.escapeXml(referenceUri)}">`,
+      '<Transforms>',
+      `<Transform Algorithm="${XMLDSIG_ENVELOPED}"/>`,
+      `<Transform Algorithm="${XMLDSIG_C14N}"/>`,
+      '</Transforms>',
+      `<DigestMethod Algorithm="${XMLDSIG_SHA1}"/>`,
+      `<DigestValue>${digestValue}</DigestValue>`,
+      '</Reference>',
+      '</SignedInfo>',
     ].join('');
 
     const signatureValue = this.signWithPrivateKey(
@@ -572,15 +603,15 @@ export class NfseCentiEmissionService {
     );
 
     const signatureXml = [
-      `<dsig:Signature xmlns:dsig="${XMLDSIG_NAMESPACE}">`,
+      `<Signature xmlns="${XMLDSIG_NAMESPACE}">`,
       signedInfo,
-      `<dsig:SignatureValue>${signatureValue}</dsig:SignatureValue>`,
-      '<dsig:KeyInfo>',
-      '<dsig:X509Data>',
-      `<dsig:X509Certificate>${credentials.certificateBase64}</dsig:X509Certificate>`,
-      '</dsig:X509Data>',
-      '</dsig:KeyInfo>',
-      '</dsig:Signature>',
+      `<SignatureValue>${signatureValue}</SignatureValue>`,
+      '<KeyInfo>',
+      '<X509Data>',
+      `<X509Certificate>${credentials.certificateBase64}</X509Certificate>`,
+      '</X509Data>',
+      '</KeyInfo>',
+      '</Signature>',
     ].join('');
 
     const lastRpsCloseIndex = unsignedXml.lastIndexOf('</Rps>');
@@ -589,6 +620,36 @@ export class NfseCentiEmissionService {
     }
 
     return `${unsignedXml.slice(0, lastRpsCloseIndex)}${signatureXml}${unsignedXml.slice(lastRpsCloseIndex)}`;
+  }
+
+  private buildRpsSignatureId(generatedRpsNumber: string): string {
+    const digits = this.onlyDigits(generatedRpsNumber).slice(0, 15);
+    return `rps${digits || Date.now().toString().slice(-10)}`;
+  }
+
+  private resolveSignatureReferenceTarget(unsignedXml: string): {
+    id: string;
+    xml: string;
+  } | null {
+    const match = unsignedXml.match(
+      /<Rps\b[^>]*\bId="([^"]+)"[^>]*>[\s\S]*?<\/Rps>/i
+    );
+
+    if (!match) {
+      return null;
+    }
+
+    const id = match[1]?.trim();
+    const xml = match[0];
+
+    if (!id || !xml) {
+      return null;
+    }
+
+    return {
+      id,
+      xml: this.canonicalizeXml(xml),
+    };
   }
 
   private extractCertificateCredentials(
@@ -605,13 +666,23 @@ export class NfseCentiEmissionService {
     const keyBagType = forge.pki.oids.keyBag;
     const certBagType = forge.pki.oids.certBag;
 
-    const privateKeyBags =
-      p12.getBags({ bagType: privateKeyBagType })[privateKeyBagType] || [];
-    const keyBags = p12.getBags({ bagType: keyBagType })[keyBagType] || [];
-    const certBags = p12.getBags({ bagType: certBagType })[certBagType] || [];
+    const privateKeyBags = (p12.getBags({ bagType: privateKeyBagType })[
+      privateKeyBagType
+    ] || []) as ForgeKeyBagLike[];
+    const keyBags = (p12.getBags({ bagType: keyBagType })[keyBagType] ||
+      []) as ForgeKeyBagLike[];
+    const certBags = (p12.getBags({ bagType: certBagType })[certBagType] ||
+      []) as ForgeCertBagLike[];
 
     const privateKey = privateKeyBags[0]?.key || keyBags[0]?.key;
-    const cert = certBags[0]?.cert;
+    const certificateCandidates = certBags
+      .map((bag: ForgeCertBagLike) => bag.cert)
+      .filter((cert): cert is ForgeCertificateLike => !!cert);
+
+    const cert =
+      certificateCandidates.find((candidate: ForgeCertificateLike) =>
+        this.certificateMatchesPrivateKey(candidate, privateKey)
+      ) || certificateCandidates[0];
 
     if (!privateKey || !cert) {
       throw new Error(
@@ -619,8 +690,8 @@ export class NfseCentiEmissionService {
       );
     }
 
-    const privateKeyPem = forge.pki.privateKeyToPem(privateKey);
-    const certAsn1 = forge.pki.certificateToAsn1(cert);
+    const privateKeyPem = forge.pki.privateKeyToPem(privateKey as any);
+    const certAsn1 = forge.pki.certificateToAsn1(cert as any);
     const certDer = forge.asn1.toDer(certAsn1).getBytes();
     const certificateBase64 = forge.util.encode64(certDer);
 
@@ -628,6 +699,34 @@ export class NfseCentiEmissionService {
       privateKeyPem,
       certificateBase64,
     };
+  }
+
+  private certificateMatchesPrivateKey(
+    cert: ForgeCertificateLike | undefined,
+    privateKey: ForgePrivateKeyLike | undefined
+  ): boolean {
+    if (!cert || !privateKey) {
+      return false;
+    }
+
+    const certPublicKey = cert.publicKey;
+    if (
+      !certPublicKey?.n ||
+      !certPublicKey?.e ||
+      !privateKey?.n ||
+      !privateKey?.e
+    ) {
+      return false;
+    }
+
+    try {
+      return (
+        certPublicKey.n.compareTo(privateKey.n) === 0 &&
+        certPublicKey.e.compareTo(privateKey.e) === 0
+      );
+    } catch {
+      return false;
+    }
   }
 
   private signWithPrivateKey(data: string, privateKeyPem: string): string {
@@ -933,31 +1032,71 @@ export class NfseCentiEmissionService {
     }
 
     const parsedJson = this.tryParseJson(body);
-    if (parsedJson) {
-      return this.extractMessagesFromJson(parsedJson);
+    if (parsedJson !== null) {
+      return this.extractMessagesFromUnknown(parsedJson);
     }
 
-    if (this.isXmlContent(null, body)) {
-      const messages = this.extractXmlMessages(body);
+    return this.extractMessagesFromString(body);
+  }
+
+  private tryParseJson(value: string): unknown | null {
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  private extractMessagesFromUnknown(payload: unknown): string[] {
+    if (typeof payload === 'string') {
+      return this.extractMessagesFromString(payload);
+    }
+
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const messages = this.extractMessagesFromJson(
+        payload as Record<string, unknown>
+      );
       if (messages.length > 0) {
         return messages;
       }
     }
 
-    if (this.looksLikeErrorText(body)) {
-      return [body];
+    if (Array.isArray(payload)) {
+      const nestedMessages = payload.flatMap((value) =>
+        this.extractMessagesFromUnknown(value)
+      );
+      return Array.from(new Set(nestedMessages));
     }
 
     return [];
   }
 
-  private tryParseJson(value: string): Record<string, unknown> | null {
-    try {
-      const parsed = JSON.parse(value) as Record<string, unknown>;
-      return parsed && typeof parsed === 'object' ? parsed : null;
-    } catch {
-      return null;
+  private extractMessagesFromString(rawValue: string): string[] {
+    const value = rawValue.trim();
+    if (!value) {
+      return [];
     }
+
+    const nestedJson = this.tryParseJson(value);
+    if (nestedJson !== null) {
+      const nestedMessages = this.extractMessagesFromUnknown(nestedJson);
+      if (nestedMessages.length > 0) {
+        return nestedMessages;
+      }
+    }
+
+    if (this.isXmlContent(null, value)) {
+      const messages = this.extractXmlMessages(value);
+      if (messages.length > 0) {
+        return messages;
+      }
+    }
+
+    if (this.looksLikeErrorText(value)) {
+      return [value];
+    }
+
+    return [];
   }
 
   private extractMessagesFromJson(payload: Record<string, unknown>): string[] {
@@ -965,12 +1104,24 @@ export class NfseCentiEmissionService {
 
     const message = payload.message;
     if (typeof message === 'string' && message.trim().length > 0) {
-      messages.push(message.trim());
+      const normalizedMessage = message.trim();
+      const parsedMessages = this.extractMessagesFromString(normalizedMessage);
+      if (parsedMessages.length > 0) {
+        messages.push(...parsedMessages);
+      } else {
+        messages.push(normalizedMessage);
+      }
     }
 
     const mensagem = payload.mensagem;
     if (typeof mensagem === 'string' && mensagem.trim().length > 0) {
-      messages.push(mensagem.trim());
+      const normalizedMessage = mensagem.trim();
+      const parsedMessages = this.extractMessagesFromString(normalizedMessage);
+      if (parsedMessages.length > 0) {
+        messages.push(...parsedMessages);
+      } else {
+        messages.push(normalizedMessage);
+      }
     }
 
     const errors = payload.errors;
@@ -981,7 +1132,15 @@ export class NfseCentiEmissionService {
           (value): value is string =>
             typeof value === 'string' && value.trim().length > 0
         )
-        .map((value) => value.trim());
+        .flatMap((value) => {
+          const normalizedMessage = value.trim();
+          const parsedMessages =
+            this.extractMessagesFromString(normalizedMessage);
+          if (parsedMessages.length > 0) {
+            return parsedMessages;
+          }
+          return [normalizedMessage];
+        });
 
       messages.push(...errorMessages);
     }
@@ -1014,7 +1173,7 @@ export class NfseCentiEmissionService {
 
   private extractFirstTagBlock(xml: string, tagName: string): string | null {
     const regex = new RegExp(
-      `<(?:\\\\w+:)?${tagName}\\\\b[^>]*>[\\\\s\\\\S]*?<\\\\/(?:\\\\w+:)?${tagName}>`,
+      `<(?:\\w+:)?${tagName}\\b[^>]*>[\\s\\S]*?<\\/(?:\\w+:)?${tagName}>`,
       'i'
     );
 
@@ -1023,7 +1182,7 @@ export class NfseCentiEmissionService {
 
   private extractTagBlocks(xml: string, tagName: string): string[] {
     const regex = new RegExp(
-      `<(?:\\\\w+:)?${tagName}\\\\b[^>]*>[\\\\s\\\\S]*?<\\\\/(?:\\\\w+:)?${tagName}>`,
+      `<(?:\\w+:)?${tagName}\\b[^>]*>[\\s\\S]*?<\\/(?:\\w+:)?${tagName}>`,
       'gi'
     );
 
@@ -1032,7 +1191,7 @@ export class NfseCentiEmissionService {
 
   private extractFirstTagValue(xml: string, tagName: string): string | null {
     const regex = new RegExp(
-      `<(?:\\\\w+:)?${tagName}\\\\b[^>]*>([\\\\s\\\\S]*?)<\\\\/(?:\\\\w+:)?${tagName}>`,
+      `<(?:\\w+:)?${tagName}\\b[^>]*>([\\s\\S]*?)<\\/(?:\\w+:)?${tagName}>`,
       'i'
     );
 
@@ -1058,7 +1217,11 @@ export class NfseCentiEmissionService {
       return true;
     }
 
-    return body.startsWith('{') || body.startsWith('[');
+    if (body.startsWith('{') || body.startsWith('[') || body.startsWith('"')) {
+      return true;
+    }
+
+    return this.tryParseJson(body) !== null;
   }
 
   private isXmlContent(contentType: string | null, body: string): boolean {

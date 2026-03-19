@@ -32,9 +32,15 @@ export class CreateInvoiceService {
         const errorData = error.response?.data as IAsaasErrorResponse;
 
         if (errorData?.errors && errorData.errors.length > 0) {
-          const firstErrorDescription = errorData.errors[0].description;
+          const descriptions = errorData.errors
+            .map((item) => item.description?.trim())
+            .filter(
+              (description): description is string => !!description?.length
+            );
 
-          throw new Error(firstErrorDescription);
+          if (descriptions.length > 0) {
+            throw new Error(descriptions.join('; '));
+          }
         }
 
         throw new Error('Erro ao agendar nota fiscal');
