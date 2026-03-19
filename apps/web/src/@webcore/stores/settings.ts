@@ -12,6 +12,8 @@ import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/resp
 import { ListNfseResponse } from '@core/schema/config/listNfse/response.schema';
 import { UpdateNfseRequest } from '@core/schema/config/updateNfse/request.schema';
 import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.schema';
+import { UpdateNfseIntegrationRequest } from '@core/schema/config/updateNfseIntegration/request.schema';
+import { UpdateNfseIntegrationResponse } from '@core/schema/config/updateNfseIntegration/response.schema';
 import { UploadNfseCertificateResponse } from '@core/schema/config/uploadNfseCertificate/response.schema';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/response.schema';
@@ -212,6 +214,51 @@ export const useSettingsStore = defineStore('settings', {
       } catch (error) {
         this.loading = false;
         let errorMessage = this.i18n.global.t('nfse_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async updateNfseIntegration(
+      input: UpdateNfseIntegrationRequest
+    ): Promise<UpdateNfseIntegrationResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<
+          IApiResponse<UpdateNfseIntegrationResponse>
+        >('/config/nfse/integration', input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('nfse_integration_update_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t('nfse_integration_updated_successfully'),
+          EColor.success
+        );
+
+        this.nfse = data.data;
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('nfse_integration_update_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

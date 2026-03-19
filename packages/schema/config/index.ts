@@ -1,5 +1,6 @@
 export * from './listNfse';
 export * from './updateNfse';
+export * from './updateNfseIntegration';
 export * from './uploadNfseCertificate';
 export * from './listChannels';
 export * from './listAccounts';

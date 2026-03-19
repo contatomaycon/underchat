@@ -5,6 +5,7 @@ import { NfseUpdaterRepository } from '@core/repositories/config/NfseUpdater.rep
 import { ListNfseResponse } from '@core/schema/config/listNfse/response.schema';
 import { UpdateNfseRequest } from '@core/schema/config/updateNfse/request.schema';
 import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.schema';
+import { UpdateNfseIntegrationRequest } from '@core/schema/config/updateNfseIntegration/request.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { NfseCertificateStorageService } from '@core/services/nfseCertificateStorage.service';
@@ -31,6 +32,74 @@ export class NfseService {
     input: UpdateNfseRequest
   ): Promise<UpdateNfseResponse> => {
     return this.nfseUpdaterRepository.upsertNfse(t, input);
+  };
+
+  upsertNfseIntegration = async (
+    t: TFunction<'translation', undefined>,
+    input: UpdateNfseIntegrationRequest
+  ): Promise<UpdateNfseResponse> => {
+    const current =
+      await this.nfseUpdaterRepository.viewDefaultNfseIntegrationMetadata();
+
+    if (!current) {
+      throw new Error(t('nfse_not_found'));
+    }
+
+    if (!input.integration_enabled) {
+      return this.nfseUpdaterRepository.updateNfseIntegration(current.nfse_id, {
+        integration_enabled: false,
+      });
+    }
+
+    const baseUrlRaw = input.integration_base_url?.trim();
+    if (!baseUrlRaw) {
+      throw new Error(t('nfse_integration_base_url_required'));
+    }
+
+    try {
+      new URL(baseUrlRaw);
+    } catch {
+      throw new Error(t('nfse_integration_base_url_invalid'));
+    }
+
+    const ufRaw = input.integration_uf?.trim().toUpperCase();
+    if (!ufRaw) {
+      throw new Error(t('nfse_integration_uf_required'));
+    }
+
+    if (!/^[A-Z]{2}$/.test(ufRaw)) {
+      throw new Error(t('nfse_integration_uf_invalid'));
+    }
+
+    const tenantRaw = input.integration_tenant?.trim();
+    if (!tenantRaw) {
+      throw new Error(t('nfse_integration_tenant_required'));
+    }
+
+    const usernameRaw = input.integration_username?.trim();
+    if (!usernameRaw) {
+      throw new Error(t('nfse_integration_username_required'));
+    }
+
+    const passwordRaw = input.integration_password?.trim();
+    const hasNewPassword = !!passwordRaw;
+
+    if (!hasNewPassword && !current.integration_password_encrypted) {
+      throw new Error(t('nfse_integration_password_required'));
+    }
+
+    const encryptedPassword = hasNewPassword
+      ? this.passwordEncryptorService.encrypt(passwordRaw)
+      : undefined;
+
+    return this.nfseUpdaterRepository.updateNfseIntegration(current.nfse_id, {
+      integration_enabled: true,
+      integration_base_url: baseUrlRaw,
+      integration_uf: ufRaw,
+      integration_tenant: tenantRaw,
+      integration_username: usernameRaw,
+      integration_password_encrypted: encryptedPassword,
+    });
   };
 
   uploadNfseCertificate = async (

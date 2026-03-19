@@ -26,6 +26,12 @@ interface NfseRecordForResponse {
   ir_value: string | null;
   pis_value: string | null;
   deductions: string | null;
+  integration_enabled: boolean;
+  integration_base_url: string | null;
+  integration_uf: string | null;
+  integration_tenant: string | null;
+  integration_username: string | null;
+  integration_password_encrypted: string | null;
   certificate_bucket: string | null;
   certificate_key: string | null;
   certificate_file_name: string | null;
@@ -82,6 +88,28 @@ export class NfseUpdaterRepository {
     };
   };
 
+  viewDefaultNfseIntegrationMetadata = async (): Promise<{
+    nfse_id: string;
+    integration_password_encrypted: string | null;
+  } | null> => {
+    const record = await this.dbRw.query.nfse.findFirst({
+      where: eq(nfse.default_product, true),
+      columns: {
+        nfse_id: true,
+        integration_password_encrypted: true,
+      },
+    });
+
+    if (!record) {
+      return null;
+    }
+
+    return {
+      nfse_id: record.nfse_id,
+      integration_password_encrypted: record.integration_password_encrypted,
+    };
+  };
+
   updateNfseCertificate = async (
     nfseId: string,
     input: {
@@ -122,6 +150,12 @@ export class NfseUpdaterRepository {
           ir_value: true,
           pis_value: true,
           deductions: true,
+          integration_enabled: true,
+          integration_base_url: true,
+          integration_uf: true,
+          integration_tenant: true,
+          integration_username: true,
+          integration_password_encrypted: true,
           certificate_bucket: true,
           certificate_key: true,
           certificate_file_name: true,
@@ -135,6 +169,94 @@ export class NfseUpdaterRepository {
 
       if (!updated) {
         throw new Error('Failed to retrieve updated NFSe certificate');
+      }
+
+      return this.buildResponse(updated);
+    });
+  };
+
+  updateNfseIntegration = async (
+    nfseId: string,
+    input:
+      | {
+          integration_enabled: false;
+        }
+      | {
+          integration_enabled: true;
+          integration_base_url: string;
+          integration_uf: string;
+          integration_tenant: string;
+          integration_username: string;
+          integration_password_encrypted?: string;
+        }
+  ): Promise<UpdateNfseResponse> => {
+    return this.dbRw.transaction(async (tx) => {
+      if (!input.integration_enabled) {
+        await tx
+          .update(nfse)
+          .set({
+            integration_enabled: false,
+            updated_at: new Date().toISOString(),
+          })
+          .where(eq(nfse.nfse_id, nfseId))
+          .execute();
+      } else {
+        const updatePayload: Partial<typeof nfse.$inferInsert> = {
+          integration_enabled: true,
+          integration_base_url: input.integration_base_url,
+          integration_uf: input.integration_uf,
+          integration_tenant: input.integration_tenant,
+          integration_username: input.integration_username,
+          updated_at: new Date().toISOString(),
+        };
+
+        if (input.integration_password_encrypted !== undefined) {
+          updatePayload.integration_password_encrypted =
+            input.integration_password_encrypted;
+        }
+
+        await tx
+          .update(nfse)
+          .set(updatePayload)
+          .where(eq(nfse.nfse_id, nfseId))
+          .execute();
+      }
+
+      const updated = await tx.query.nfse.findFirst({
+        where: eq(nfse.nfse_id, nfseId),
+        columns: {
+          nfse_id: true,
+          external_id: true,
+          name: true,
+          municipal_service_code: true,
+          municipal_service_description_field: true,
+          retain_iss: true,
+          iss_value: true,
+          cofins_value: true,
+          csll_value: true,
+          inss_value: true,
+          ir_value: true,
+          pis_value: true,
+          deductions: true,
+          integration_enabled: true,
+          integration_base_url: true,
+          integration_uf: true,
+          integration_tenant: true,
+          integration_username: true,
+          integration_password_encrypted: true,
+          certificate_bucket: true,
+          certificate_key: true,
+          certificate_file_name: true,
+          certificate_password_encrypted: true,
+          certificate_uploaded_at: true,
+          default_product: true,
+          created_at: true,
+          updated_at: true,
+        },
+      });
+
+      if (!updated) {
+        throw new Error('Failed to retrieve updated NFSe integration');
       }
 
       return this.buildResponse(updated);
@@ -220,6 +342,7 @@ export class NfseUpdaterRepository {
       ir_value: input.ir_value ?? null,
       pis_value: input.pis_value ?? null,
       deductions: input.deductions ?? null,
+      integration_enabled: false,
       default_product: true,
     };
   }
@@ -244,6 +367,12 @@ export class NfseUpdaterRepository {
       ir_value: nfseRecord.ir_value,
       pis_value: nfseRecord.pis_value,
       deductions: nfseRecord.deductions,
+      integration_enabled: nfseRecord.integration_enabled,
+      integration_base_url: nfseRecord.integration_base_url,
+      integration_uf: nfseRecord.integration_uf,
+      integration_tenant: nfseRecord.integration_tenant,
+      integration_username: nfseRecord.integration_username,
+      has_integration_password: !!nfseRecord.integration_password_encrypted,
       has_certificate: hasCertificate,
       certificate_file_name: nfseRecord.certificate_file_name,
       certificate_uploaded_at: nfseRecord.certificate_uploaded_at,
@@ -287,6 +416,12 @@ export class NfseUpdaterRepository {
         ir_value: true,
         pis_value: true,
         deductions: true,
+        integration_enabled: true,
+        integration_base_url: true,
+        integration_uf: true,
+        integration_tenant: true,
+        integration_username: true,
+        integration_password_encrypted: true,
         certificate_bucket: true,
         certificate_key: true,
         certificate_file_name: true,
@@ -333,6 +468,12 @@ export class NfseUpdaterRepository {
         ir_value: true,
         pis_value: true,
         deductions: true,
+        integration_enabled: true,
+        integration_base_url: true,
+        integration_uf: true,
+        integration_tenant: true,
+        integration_username: true,
+        integration_password_encrypted: true,
         certificate_bucket: true,
         certificate_key: true,
         certificate_file_name: true,

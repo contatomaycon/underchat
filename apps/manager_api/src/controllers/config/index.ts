@@ -5,6 +5,7 @@ import { listWorkers } from '@/controllers/notifications/methods/listWorkers';
 import { listSentNotifications } from '@/controllers/notifications/methods/listSentNotifications';
 import { listNfse } from './methods/listNfse';
 import { updateNfse } from './methods/updateNfse';
+import { updateNfseIntegration } from './methods/updateNfseIntegration';
 import { uploadNfseCertificate } from './methods/uploadNfseCertificate';
 import { listChannels } from './methods/listChannels';
 import { listAccounts } from './methods/listAccounts';
@@ -28,6 +29,7 @@ class ConfigController {
   public listSentNotifications = listSentNotifications;
   public listNfse = listNfse;
   public updateNfse = updateNfse;
+  public updateNfseIntegration = updateNfseIntegration;
   public uploadNfseCertificate = uploadNfseCertificate;
   public listChannels = listChannels;
   public listAccounts = listAccounts;
