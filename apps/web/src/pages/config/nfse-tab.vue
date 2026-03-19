@@ -66,6 +66,10 @@ const integrationForm = ref<UpdateNfseIntegrationRequest>({
   integration_uf: '',
   integration_tenant: '',
   integration_username: '',
+  integration_municipality_code: '',
+  integration_rps_series: 'A1',
+  integration_prestador_document: '',
+  integration_prestador_municipal_inscription: '',
   integration_password: '',
 });
 
@@ -91,6 +95,11 @@ const syncNfseForms = (result: ListNfseResponse) => {
     integration_uf: result.integration_uf ?? '',
     integration_tenant: result.integration_tenant ?? '',
     integration_username: result.integration_username ?? '',
+    integration_municipality_code: result.integration_municipality_code ?? '',
+    integration_rps_series: result.integration_rps_series ?? 'A1',
+    integration_prestador_document: result.integration_prestador_document ?? '',
+    integration_prestador_municipal_inscription:
+      result.integration_prestador_municipal_inscription ?? '',
     integration_password: '',
   };
 };
@@ -198,6 +207,66 @@ const integrationPasswordValidator = (value: unknown): string | boolean => {
   return t('nfse_integration_password_required');
 };
 
+const integrationMunicipalityCodeValidator = (
+  value: unknown
+): string | boolean => {
+  if (!integrationForm.value.integration_enabled) {
+    return true;
+  }
+
+  const normalized = String(value ?? '').trim();
+  if (!normalized) {
+    return t('nfse_integration_municipality_code_required');
+  }
+
+  return (
+    /^\d{7}$/.test(normalized) ||
+    t('nfse_integration_municipality_code_invalid')
+  );
+};
+
+const integrationRpsSeriesValidator = (value: unknown): string | boolean => {
+  if (!integrationForm.value.integration_enabled) {
+    return true;
+  }
+
+  const normalized = String(value ?? '').trim();
+  if (!normalized) {
+    return t('nfse_integration_rps_series_required');
+  }
+
+  return normalized.length <= 5 || t('nfse_integration_rps_series_invalid');
+};
+
+const integrationPrestadorDocumentValidator = (
+  value: unknown
+): string | boolean => {
+  if (!integrationForm.value.integration_enabled) {
+    return true;
+  }
+
+  const normalized = String(value ?? '')
+    .replaceAll(/\D/g, '')
+    .trim();
+  if (!normalized) {
+    return t('nfse_integration_prestador_document_required');
+  }
+
+  return (
+    /^(\d{11}|\d{14})$/.test(normalized) ||
+    t('nfse_integration_prestador_document_invalid')
+  );
+};
+
+const integrationPrestadorMunicipalInscriptionValidator = (
+  value: unknown
+): string | boolean => {
+  return integrationRequiredValidator(
+    value,
+    'nfse_integration_prestador_municipal_inscription_required'
+  );
+};
+
 const saveNfseIntegration = async () => {
   const { valid } = await refFormNfseIntegration.value!.validate();
   if (!valid) return;
@@ -222,6 +291,21 @@ const saveNfseIntegration = async () => {
           ).trim(),
           integration_username: String(
             integrationForm.value.integration_username ?? ''
+          ).trim(),
+          integration_municipality_code: String(
+            integrationForm.value.integration_municipality_code ?? ''
+          ).trim(),
+          integration_rps_series: String(
+            integrationForm.value.integration_rps_series ?? ''
+          ).trim(),
+          integration_prestador_document: String(
+            integrationForm.value.integration_prestador_document ?? ''
+          )
+            .replaceAll(/\D/g, '')
+            .trim(),
+          integration_prestador_municipal_inscription: String(
+            integrationForm.value.integration_prestador_municipal_inscription ??
+              ''
           ).trim(),
         };
 
@@ -536,6 +620,63 @@ onMounted(() => {
                     <AppTextField
                       v-model="integrationForm.integration_username"
                       :rules="[integrationUsernameValidator]"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">
+                      {{ $t('nfse_integration_municipality_code') }}:
+                    </VLabel>
+                    <AppTextField
+                      v-model="integrationForm.integration_municipality_code"
+                      :placeholder="
+                        $t('nfse_integration_municipality_code_placeholder')
+                      "
+                      maxlength="7"
+                      :rules="[integrationMunicipalityCodeValidator]"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">
+                      {{ $t('nfse_integration_rps_series') }}:
+                    </VLabel>
+                    <AppTextField
+                      v-model="integrationForm.integration_rps_series"
+                      :placeholder="
+                        $t('nfse_integration_rps_series_placeholder')
+                      "
+                      maxlength="5"
+                      :rules="[integrationRpsSeriesValidator]"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">
+                      {{ $t('nfse_integration_prestador_document') }}:
+                    </VLabel>
+                    <AppTextField
+                      v-model="integrationForm.integration_prestador_document"
+                      :placeholder="
+                        $t('nfse_integration_prestador_document_placeholder')
+                      "
+                      :rules="[integrationPrestadorDocumentValidator]"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">
+                      {{
+                        $t('nfse_integration_prestador_municipal_inscription')
+                      }}:
+                    </VLabel>
+                    <AppTextField
+                      v-model="
+                        integrationForm.integration_prestador_municipal_inscription
+                      "
+                      :rules="[
+                        integrationPrestadorMunicipalInscriptionValidator,
+                      ]"
                     />
                   </VCol>
 

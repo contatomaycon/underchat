@@ -2,6 +2,7 @@ import { inject, injectable } from 'tsyringe';
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -180,5 +181,43 @@ export class NfseCertificateStorageService {
         })
       ),
     ]);
+  }
+
+  private async downloadCertificateWithClient(
+    client: S3Client,
+    bucket: string,
+    key: string
+  ): Promise<Buffer> {
+    const response = await client.send(
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      })
+    );
+
+    if (!response.Body) {
+      throw new Error('NFSE_CERTIFICATE_NOT_FOUND');
+    }
+
+    if (typeof response.Body.transformToByteArray === 'function') {
+      const array = await response.Body.transformToByteArray();
+      return Buffer.from(array);
+    }
+
+    const body = response.Body as AsyncIterable<Uint8Array>;
+    const chunks: Buffer[] = [];
+    for await (const chunk of body) {
+      chunks.push(Buffer.from(chunk));
+    }
+
+    return Buffer.concat(chunks);
+  }
+
+  async downloadCertificate(bucket: string, key: string): Promise<Buffer> {
+    try {
+      return await this.downloadCertificateWithClient(this.client, bucket, key);
+    } catch {
+      return this.downloadCertificateWithClient(this.backupClient, bucket, key);
+    }
   }
 }

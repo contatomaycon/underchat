@@ -13,6 +13,9 @@ import { NotificationMessageService } from './notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 import Redis from 'ioredis';
 import { withLock } from '@core/common/functions/withLock';
+import { UserService } from '@core/services/user.service';
+import { NfseCentiEmissionService } from '@core/services/nfseCentiEmission.service';
+import { NfseCentiDocumentService } from '@core/services/nfseCentiDocument.service';
 import type {
   IPlanReleaseAccountPaymentData,
   IPlanReleaseAddonOnlyPaymentInput,
@@ -34,6 +37,12 @@ export class PlanReleaseService {
     private readonly asaasService: AsaasService,
     @inject(AccountPaymentNfSeUpserterRepository)
     private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository,
+    @inject(UserService)
+    private readonly userService: UserService,
+    @inject(NfseCentiEmissionService)
+    private readonly nfseCentiEmissionService: NfseCentiEmissionService,
+    @inject(NfseCentiDocumentService)
+    private readonly nfseCentiDocumentService: NfseCentiDocumentService,
     @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
     @inject('Redis') private readonly redis: Redis
@@ -789,6 +798,120 @@ export class PlanReleaseService {
         pis: Number(nfseData.pis_value || 0),
       },
     };
+
+    if (nfseData.integration_enabled) {
+      let centiResult: Awaited<
+        ReturnType<NfseCentiEmissionService['emitInvoice']>
+      > | null = null;
+
+      try {
+        const [userView, userSensitiveData] = await Promise.all([
+          this.userService.viewUserById(
+            userCustomerData.user_id,
+            paymentData.account_id
+          ),
+          this.userService.getUserSensitiveDataDecrypted(
+            userCustomerData.user_id
+          ),
+        ]);
+
+        const fullName = this.sanitizeTextForInvoice(
+          `${userView?.user_info?.name || ''} ${userView?.user_info?.last_name || ''}`
+        );
+
+        centiResult = await this.nfseCentiEmissionService.emitInvoice({
+          accountPaymentId,
+          paymentAsaasId,
+          userCustomer: userCustomerData.user_customer,
+          invoiceRequest,
+          nfseConfig: {
+            integration_base_url: nfseData.integration_base_url,
+            integration_uf: nfseData.integration_uf,
+            integration_tenant: nfseData.integration_tenant,
+            integration_username: nfseData.integration_username,
+            integration_password_encrypted:
+              nfseData.integration_password_encrypted,
+            integration_municipality_code:
+              nfseData.integration_municipality_code,
+            integration_rps_series: nfseData.integration_rps_series,
+            integration_prestador_document:
+              nfseData.integration_prestador_document,
+            integration_prestador_municipal_inscription:
+              nfseData.integration_prestador_municipal_inscription,
+            certificate_bucket: nfseData.certificate_bucket,
+            certificate_key: nfseData.certificate_key,
+            certificate_password_encrypted:
+              nfseData.certificate_password_encrypted,
+          },
+          tomador: {
+            name: fullName || planData.name,
+            document: userSensitiveData?.document || null,
+            email: userSensitiveData?.email || null,
+            phone: userSensitiveData?.phone || null,
+            address1: userSensitiveData?.address1 || null,
+            address2: userSensitiveData?.address2 || null,
+            district: userView?.user_address?.district || null,
+            zipCode: userView?.user_address?.zip_code || null,
+            municipalityCode: userView?.user_address?.city_fiscal_code || null,
+            stateUf: nfseData.integration_uf || null,
+          },
+        });
+      } catch (error) {
+        console.warn('Centi emission unexpected error, fallback to Asaas.', {
+          accountPaymentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      if (centiResult?.kind === 'success') {
+        const invoiceData = {
+          ...centiResult.invoice,
+        };
+
+        try {
+          const uploadedDocuments =
+            await this.nfseCentiDocumentService.generateAndUploadDocuments({
+              accountId: paymentData.account_id,
+              accountPaymentId,
+              invoice: centiResult.invoice,
+              rawXml: centiResult.rawResponse,
+            });
+
+          invoiceData.pdfUrl = uploadedDocuments.pdfUrl;
+          invoiceData.xmlUrl = uploadedDocuments.xmlUrl;
+        } catch (error) {
+          console.warn(
+            'Centi emitted NFSe, but document upload failed. Persisting without document URLs.',
+            {
+              accountPaymentId,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+        }
+
+        await this.accountPaymentNfSeUpserterRepository.upsertAccountPaymentNfSe(
+          accountPaymentId,
+          invoiceData
+        );
+        return;
+      }
+
+      if (centiResult?.kind === 'ambiguous') {
+        const baseMessage = t
+          ? t('nfse_centi_ambiguous_response')
+          : 'Resposta ambígua da Centi ao emitir NFSe.';
+        const details = centiResult.messages.join(' | ');
+        throw new Error(details ? `${baseMessage} ${details}` : baseMessage);
+      }
+
+      if (centiResult?.kind === 'explicit_failure') {
+        console.warn('Centi emission failed, fallback to Asaas.', {
+          reason: centiResult.reason,
+          messages: centiResult.messages,
+          accountPaymentId,
+        });
+      }
+    }
 
     const invoice = await this.asaasService.createInvoice(invoiceRequest);
 

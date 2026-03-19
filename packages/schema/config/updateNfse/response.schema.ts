@@ -19,6 +19,13 @@ export const updateNfseResponseSchema = Type.Object({
   integration_uf: Type.Union([Type.String(), Type.Null()]),
   integration_tenant: Type.Union([Type.String(), Type.Null()]),
   integration_username: Type.Union([Type.String(), Type.Null()]),
+  integration_municipality_code: Type.Union([Type.String(), Type.Null()]),
+  integration_rps_series: Type.Union([Type.String(), Type.Null()]),
+  integration_prestador_document: Type.Union([Type.String(), Type.Null()]),
+  integration_prestador_municipal_inscription: Type.Union([
+    Type.String(),
+    Type.Null(),
+  ]),
   has_integration_password: Type.Boolean(),
   has_certificate: Type.Boolean(),
   certificate_file_name: Type.Union([Type.String(), Type.Null()]),

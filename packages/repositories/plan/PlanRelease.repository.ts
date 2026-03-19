@@ -653,7 +653,7 @@ export class PlanReleaseRepository {
 
   findUserCustomerByAccountPaymentId = async (
     accountPaymentId: string
-  ): Promise<{ user_customer: string } | null> => {
+  ): Promise<{ user_customer: string; user_id: string } | null> => {
     const payment = await this.dbRo.query.accountPayment.findFirst({
       where: eq(accountPayment.account_payment_id, accountPaymentId),
       columns: {
@@ -663,6 +663,7 @@ export class PlanReleaseRepository {
         auc: {
           columns: {
             user_customer: true,
+            user_id: true,
           },
         },
       },
@@ -674,6 +675,7 @@ export class PlanReleaseRepository {
 
     return {
       user_customer: payment.auc.user_customer,
+      user_id: payment.auc.user_id,
     };
   };
 
@@ -704,6 +706,20 @@ export class PlanReleaseRepository {
     ir_value: string | null;
     pis_value: string | null;
     deductions: string | null;
+    integration_enabled: boolean;
+    integration_base_url: string | null;
+    integration_uf: string | null;
+    integration_tenant: string | null;
+    integration_username: string | null;
+    integration_password_encrypted: string | null;
+    integration_municipality_code: string | null;
+    integration_rps_series: string | null;
+    integration_prestador_document: string | null;
+    integration_prestador_municipal_inscription: string | null;
+    certificate_bucket: string | null;
+    certificate_key: string | null;
+    certificate_file_name: string | null;
+    certificate_password_encrypted: string | null;
   } | null> => {
     const nfseRecord = await this.dbRo.query.nfse.findFirst({
       where: eq(nfse.default_product, true),
@@ -721,6 +737,20 @@ export class PlanReleaseRepository {
         ir_value: true,
         pis_value: true,
         deductions: true,
+        integration_enabled: true,
+        integration_base_url: true,
+        integration_uf: true,
+        integration_tenant: true,
+        integration_username: true,
+        integration_password_encrypted: true,
+        integration_municipality_code: true,
+        integration_rps_series: true,
+        integration_prestador_document: true,
+        integration_prestador_municipal_inscription: true,
+        certificate_bucket: true,
+        certificate_key: true,
+        certificate_file_name: true,
+        certificate_password_encrypted: true,
       },
     });
 

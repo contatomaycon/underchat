@@ -31,6 +31,10 @@ interface NfseRecordForResponse {
   integration_uf: string | null;
   integration_tenant: string | null;
   integration_username: string | null;
+  integration_municipality_code: string | null;
+  integration_rps_series: string | null;
+  integration_prestador_document: string | null;
+  integration_prestador_municipal_inscription: string | null;
   integration_password_encrypted: string | null;
   certificate_bucket: string | null;
   certificate_key: string | null;
@@ -155,6 +159,10 @@ export class NfseUpdaterRepository {
           integration_uf: true,
           integration_tenant: true,
           integration_username: true,
+          integration_municipality_code: true,
+          integration_rps_series: true,
+          integration_prestador_document: true,
+          integration_prestador_municipal_inscription: true,
           integration_password_encrypted: true,
           certificate_bucket: true,
           certificate_key: true,
@@ -187,6 +195,10 @@ export class NfseUpdaterRepository {
           integration_uf: string;
           integration_tenant: string;
           integration_username: string;
+          integration_municipality_code: string;
+          integration_rps_series: string;
+          integration_prestador_document: string;
+          integration_prestador_municipal_inscription: string;
           integration_password_encrypted?: string;
         }
   ): Promise<UpdateNfseResponse> => {
@@ -207,6 +219,11 @@ export class NfseUpdaterRepository {
           integration_uf: input.integration_uf,
           integration_tenant: input.integration_tenant,
           integration_username: input.integration_username,
+          integration_municipality_code: input.integration_municipality_code,
+          integration_rps_series: input.integration_rps_series,
+          integration_prestador_document: input.integration_prestador_document,
+          integration_prestador_municipal_inscription:
+            input.integration_prestador_municipal_inscription,
           updated_at: new Date().toISOString(),
         };
 
@@ -243,6 +260,10 @@ export class NfseUpdaterRepository {
           integration_uf: true,
           integration_tenant: true,
           integration_username: true,
+          integration_municipality_code: true,
+          integration_rps_series: true,
+          integration_prestador_document: true,
+          integration_prestador_municipal_inscription: true,
           integration_password_encrypted: true,
           certificate_bucket: true,
           certificate_key: true,
@@ -372,6 +393,11 @@ export class NfseUpdaterRepository {
       integration_uf: nfseRecord.integration_uf,
       integration_tenant: nfseRecord.integration_tenant,
       integration_username: nfseRecord.integration_username,
+      integration_municipality_code: nfseRecord.integration_municipality_code,
+      integration_rps_series: nfseRecord.integration_rps_series,
+      integration_prestador_document: nfseRecord.integration_prestador_document,
+      integration_prestador_municipal_inscription:
+        nfseRecord.integration_prestador_municipal_inscription,
       has_integration_password: !!nfseRecord.integration_password_encrypted,
       has_certificate: hasCertificate,
       certificate_file_name: nfseRecord.certificate_file_name,
@@ -421,6 +447,10 @@ export class NfseUpdaterRepository {
         integration_uf: true,
         integration_tenant: true,
         integration_username: true,
+        integration_municipality_code: true,
+        integration_rps_series: true,
+        integration_prestador_document: true,
+        integration_prestador_municipal_inscription: true,
         integration_password_encrypted: true,
         certificate_bucket: true,
         certificate_key: true,
@@ -473,6 +503,10 @@ export class NfseUpdaterRepository {
         integration_uf: true,
         integration_tenant: true,
         integration_username: true,
+        integration_municipality_code: true,
+        integration_rps_series: true,
+        integration_prestador_document: true,
+        integration_prestador_municipal_inscription: true,
         integration_password_encrypted: true,
         certificate_bucket: true,
         certificate_key: true,

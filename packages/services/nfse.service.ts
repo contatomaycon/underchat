@@ -81,6 +81,43 @@ export class NfseService {
       throw new Error(t('nfse_integration_username_required'));
     }
 
+    const municipalityCodeRaw = input.integration_municipality_code?.trim();
+    if (!municipalityCodeRaw) {
+      throw new Error(t('nfse_integration_municipality_code_required'));
+    }
+
+    if (!/^\d{7}$/.test(municipalityCodeRaw)) {
+      throw new Error(t('nfse_integration_municipality_code_invalid'));
+    }
+
+    const rpsSeriesRaw = input.integration_rps_series?.trim();
+    if (!rpsSeriesRaw) {
+      throw new Error(t('nfse_integration_rps_series_required'));
+    }
+
+    if (rpsSeriesRaw.length > 5) {
+      throw new Error(t('nfse_integration_rps_series_invalid'));
+    }
+
+    const prestadorDocumentRaw = input.integration_prestador_document
+      ?.replaceAll(/\D/g, '')
+      .trim();
+    if (!prestadorDocumentRaw) {
+      throw new Error(t('nfse_integration_prestador_document_required'));
+    }
+
+    if (!/^\d{11}$|^\d{14}$/.test(prestadorDocumentRaw)) {
+      throw new Error(t('nfse_integration_prestador_document_invalid'));
+    }
+
+    const prestadorMunicipalInscriptionRaw =
+      input.integration_prestador_municipal_inscription?.trim();
+    if (!prestadorMunicipalInscriptionRaw) {
+      throw new Error(
+        t('nfse_integration_prestador_municipal_inscription_required')
+      );
+    }
+
     const passwordRaw = input.integration_password?.trim();
     const hasNewPassword = !!passwordRaw;
 
@@ -98,6 +135,11 @@ export class NfseService {
       integration_uf: ufRaw,
       integration_tenant: tenantRaw,
       integration_username: usernameRaw,
+      integration_municipality_code: municipalityCodeRaw,
+      integration_rps_series: rpsSeriesRaw,
+      integration_prestador_document: prestadorDocumentRaw,
+      integration_prestador_municipal_inscription:
+        prestadorMunicipalInscriptionRaw,
       integration_password_encrypted: encryptedPassword,
     });
   };
