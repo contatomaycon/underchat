@@ -4,7 +4,7 @@ import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import axios from '@webcore/axios';
-import { AxiosError } from 'axios';
+import { AxiosError, AxiosRequestConfig } from 'axios';
 import { ListNotificationsResponse } from '@core/schema/notifications/listNotifications/response.schema';
 import { UpdateNotificationsRequest } from '@core/schema/notifications/updateNotifications/request.schema';
 import { UpdateNotificationsResponse } from '@core/schema/notifications/updateNotifications/response.schema';
@@ -12,6 +12,7 @@ import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/resp
 import { ListNfseResponse } from '@core/schema/config/listNfse/response.schema';
 import { UpdateNfseRequest } from '@core/schema/config/updateNfse/request.schema';
 import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.schema';
+import { UploadNfseCertificateResponse } from '@core/schema/config/uploadNfseCertificate/response.schema';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/response.schema';
 import { ListChannelServersResponse } from '@core/schema/config/listChannelServers/response.schema';
@@ -211,6 +212,62 @@ export const useSettingsStore = defineStore('settings', {
       } catch (error) {
         this.loading = false;
         let errorMessage = this.i18n.global.t('nfse_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async uploadNfseCertificate(
+      certificate: File,
+      certificatePassword: string
+    ): Promise<UploadNfseCertificateResponse | null> {
+      try {
+        this.loading = true;
+
+        const formData = new FormData();
+        formData.append('certificate', certificate);
+        formData.append('certificate_password', certificatePassword);
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
+        const response = await axios.post<
+          IApiResponse<UploadNfseCertificateResponse>
+        >('/config/nfse/certificate', formData, config);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('nfse_certificate_upload_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t('nfse_certificate_uploaded_successfully'),
+          EColor.success
+        );
+
+        this.nfse = data.data;
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('nfse_certificate_upload_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

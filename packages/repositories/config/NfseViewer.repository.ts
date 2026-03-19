@@ -28,6 +28,11 @@ export class NfseViewerRepository {
         ir_value: true,
         pis_value: true,
         deductions: true,
+        certificate_bucket: true,
+        certificate_key: true,
+        certificate_file_name: true,
+        certificate_password_encrypted: true,
+        certificate_uploaded_at: true,
         default_product: true,
         created_at: true,
         updated_at: true,
@@ -37,6 +42,10 @@ export class NfseViewerRepository {
     if (!nfseRecord) {
       return null;
     }
+
+    const hasCertificate = !!(
+      nfseRecord.certificate_bucket && nfseRecord.certificate_key
+    );
 
     return {
       nfse_id: nfseRecord.nfse_id,
@@ -53,6 +62,10 @@ export class NfseViewerRepository {
       ir_value: nfseRecord.ir_value,
       pis_value: nfseRecord.pis_value,
       deductions: nfseRecord.deductions,
+      has_certificate: hasCertificate,
+      certificate_file_name: nfseRecord.certificate_file_name,
+      certificate_uploaded_at: nfseRecord.certificate_uploaded_at,
+      has_certificate_password: !!nfseRecord.certificate_password_encrypted,
       default_product: nfseRecord.default_product,
       created_at: nfseRecord.created_at || '',
       updated_at: nfseRecord.updated_at || '',

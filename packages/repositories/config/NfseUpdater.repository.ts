@@ -12,6 +12,30 @@ import { randomUUID } from 'node:crypto';
 import { UpdateNfseRequest } from '@core/schema/config/updateNfse/request.schema';
 import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.schema';
 
+interface NfseRecordForResponse {
+  nfse_id: string;
+  external_id: number | null;
+  name: string;
+  municipal_service_code: string | null;
+  municipal_service_description_field: string | null;
+  retain_iss: boolean;
+  iss_value: string | null;
+  cofins_value: string | null;
+  csll_value: string | null;
+  inss_value: string | null;
+  ir_value: string | null;
+  pis_value: string | null;
+  deductions: string | null;
+  certificate_bucket: string | null;
+  certificate_key: string | null;
+  certificate_file_name: string | null;
+  certificate_password_encrypted: string | null;
+  certificate_uploaded_at: string | null;
+  default_product: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 @injectable()
 export class NfseUpdaterRepository {
   constructor(
@@ -30,6 +54,90 @@ export class NfseUpdaterRepository {
       }
 
       return this.createNfseTx(tx, input);
+    });
+  };
+
+  viewDefaultNfseCertificateMetadata = async (): Promise<{
+    nfse_id: string;
+    certificate_bucket: string | null;
+    certificate_key: string | null;
+  } | null> => {
+    const record = await this.dbRw.query.nfse.findFirst({
+      where: eq(nfse.default_product, true),
+      columns: {
+        nfse_id: true,
+        certificate_bucket: true,
+        certificate_key: true,
+      },
+    });
+
+    if (!record) {
+      return null;
+    }
+
+    return {
+      nfse_id: record.nfse_id,
+      certificate_bucket: record.certificate_bucket,
+      certificate_key: record.certificate_key,
+    };
+  };
+
+  updateNfseCertificate = async (
+    nfseId: string,
+    input: {
+      certificate_bucket: string;
+      certificate_key: string;
+      certificate_file_name: string;
+      certificate_password_encrypted: string;
+      certificate_uploaded_at: string;
+    }
+  ): Promise<UpdateNfseResponse> => {
+    return this.dbRw.transaction(async (tx) => {
+      await tx
+        .update(nfse)
+        .set({
+          certificate_bucket: input.certificate_bucket,
+          certificate_key: input.certificate_key,
+          certificate_file_name: input.certificate_file_name,
+          certificate_password_encrypted: input.certificate_password_encrypted,
+          certificate_uploaded_at: input.certificate_uploaded_at,
+          updated_at: new Date().toISOString(),
+        })
+        .where(eq(nfse.nfse_id, nfseId))
+        .execute();
+
+      const updated = await tx.query.nfse.findFirst({
+        where: eq(nfse.nfse_id, nfseId),
+        columns: {
+          nfse_id: true,
+          external_id: true,
+          name: true,
+          municipal_service_code: true,
+          municipal_service_description_field: true,
+          retain_iss: true,
+          iss_value: true,
+          cofins_value: true,
+          csll_value: true,
+          inss_value: true,
+          ir_value: true,
+          pis_value: true,
+          deductions: true,
+          certificate_bucket: true,
+          certificate_key: true,
+          certificate_file_name: true,
+          certificate_password_encrypted: true,
+          certificate_uploaded_at: true,
+          default_product: true,
+          created_at: true,
+          updated_at: true,
+        },
+      });
+
+      if (!updated) {
+        throw new Error('Failed to retrieve updated NFSe certificate');
+      }
+
+      return this.buildResponse(updated);
     });
   };
 
@@ -116,24 +224,11 @@ export class NfseUpdaterRepository {
     };
   }
 
-  private buildResponse(nfseRecord: {
-    nfse_id: string;
-    external_id: number | null;
-    name: string;
-    municipal_service_code: string | null;
-    municipal_service_description_field: string | null;
-    retain_iss: boolean;
-    iss_value: string | null;
-    cofins_value: string | null;
-    csll_value: string | null;
-    inss_value: string | null;
-    ir_value: string | null;
-    pis_value: string | null;
-    deductions: string | null;
-    default_product: boolean;
-    created_at: string | null;
-    updated_at: string | null;
-  }): UpdateNfseResponse {
+  private buildResponse(nfseRecord: NfseRecordForResponse): UpdateNfseResponse {
+    const hasCertificate = !!(
+      nfseRecord.certificate_bucket && nfseRecord.certificate_key
+    );
+
     return {
       nfse_id: nfseRecord.nfse_id,
       external_id: nfseRecord.external_id,
@@ -149,6 +244,10 @@ export class NfseUpdaterRepository {
       ir_value: nfseRecord.ir_value,
       pis_value: nfseRecord.pis_value,
       deductions: nfseRecord.deductions,
+      has_certificate: hasCertificate,
+      certificate_file_name: nfseRecord.certificate_file_name,
+      certificate_uploaded_at: nfseRecord.certificate_uploaded_at,
+      has_certificate_password: !!nfseRecord.certificate_password_encrypted,
       default_product: nfseRecord.default_product,
       created_at: nfseRecord.created_at || '',
       updated_at: nfseRecord.updated_at || '',
@@ -188,6 +287,11 @@ export class NfseUpdaterRepository {
         ir_value: true,
         pis_value: true,
         deductions: true,
+        certificate_bucket: true,
+        certificate_key: true,
+        certificate_file_name: true,
+        certificate_password_encrypted: true,
+        certificate_uploaded_at: true,
         default_product: true,
         created_at: true,
         updated_at: true,
@@ -229,6 +333,11 @@ export class NfseUpdaterRepository {
         ir_value: true,
         pis_value: true,
         deductions: true,
+        certificate_bucket: true,
+        certificate_key: true,
+        certificate_file_name: true,
+        certificate_password_encrypted: true,
+        certificate_uploaded_at: true,
         default_product: true,
         created_at: true,
         updated_at: true,

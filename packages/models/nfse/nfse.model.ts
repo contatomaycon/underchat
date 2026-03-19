@@ -27,6 +27,14 @@ export const nfse = pgTable(
     ir_value: numeric({ precision: 10, scale: 5 }),
     pis_value: numeric({ precision: 10, scale: 5 }),
     deductions: numeric({ precision: 10, scale: 5 }),
+    certificate_bucket: varchar({ length: 255 }),
+    certificate_key: varchar({ length: 1000 }),
+    certificate_file_name: varchar({ length: 500 }),
+    certificate_password_encrypted: varchar({ length: 4000 }),
+    certificate_uploaded_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }),
     default_product: boolean().notNull().default(false),
     created_at: timestamp({
       mode: 'string',

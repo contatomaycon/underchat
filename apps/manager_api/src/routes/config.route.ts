@@ -7,6 +7,7 @@ import { listWorkersSchema } from '@core/schema/notifications/listWorkers';
 import { listSentNotificationsSchema } from '@core/schema/notifications/listSentNotifications';
 import { listNfseSchema } from '@core/schema/config/listNfse';
 import { updateNfseSchema } from '@core/schema/config/updateNfse';
+import { uploadNfseCertificateSchema } from '@core/schema/config/uploadNfseCertificate';
 import { listChannelsSchema } from '@core/schema/config/listChannels';
 import { listAccountsSchema } from '@core/schema/config/listAccounts';
 import { listChannelServersSchema } from '@core/schema/config/listChannelServers';
@@ -73,6 +74,15 @@ export default async function configRoutes(server: FastifyInstance) {
   server.patch('/config/nfse', {
     schema: updateNfseSchema,
     handler: configController.updateNfse,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.post('/config/nfse/certificate', {
+    schema: uploadNfseCertificateSchema,
+    handler: configController.uploadNfseCertificate,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),

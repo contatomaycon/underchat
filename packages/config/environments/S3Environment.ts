@@ -35,6 +35,10 @@ export class S3Environment {
     return process.env.S3_ENDPOINT;
   }
 
+  public get s3NfseCertificateBucket(): string {
+    return process.env.S3_NFSE_CERTIFICATE_BUCKET ?? 'nfs';
+  }
+
   public get s3BucketPrefix(): string | undefined {
     return process.env.S3_BUCKET_PREFIX ?? undefined;
   }
