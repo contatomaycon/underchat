@@ -8,6 +8,8 @@ interface GenerateAndUploadNfseCentiDocumentsInput {
   accountPaymentId: string;
   invoice: IGetAsaasInvoiceResponse;
   rawXml: string;
+  centiTenant: string | null;
+  centiUf: string | null;
 }
 
 interface GenerateAndUploadNfseCentiDocumentsOutput {
@@ -29,7 +31,13 @@ export class NfseCentiDocumentService {
     const pdfKey = `nfse/centi/${input.accountPaymentId}/${documentBaseName}.pdf`;
     const xmlKey = `nfse/centi/${input.accountPaymentId}/${documentBaseName}.xml`;
 
-    const pdfBuffer = await this.generatePdfBuffer(input.invoice);
+    const officialPdfBuffer = await this.tryDownloadCentiOfficialPdf({
+      rawXml: input.rawXml,
+      tenant: input.centiTenant,
+      uf: input.centiUf,
+    });
+    const pdfBuffer =
+      officialPdfBuffer || (await this.generatePdfBuffer(input.invoice));
 
     const pdfUrl = await this.storageService.uploadPdf(
       pdfBuffer,
@@ -75,6 +83,101 @@ export class NfseCentiDocumentService {
 
   private toSafeSegment(value: string): string {
     return value.replaceAll(/[^A-Za-z0-9_-]/g, '').slice(0, 60) || 'document';
+  }
+
+  private async tryDownloadCentiOfficialPdf(input: {
+    rawXml: string;
+    tenant: string | null;
+    uf: string | null;
+  }): Promise<Buffer | null> {
+    const portalPdfUrl = this.resolveCentiPortalPdfUrl(input);
+    if (!portalPdfUrl) {
+      return null;
+    }
+
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), 12000);
+
+    try {
+      const response = await fetch(portalPdfUrl, {
+        method: 'GET',
+        signal: timeoutController.signal,
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      if (buffer.length === 0) {
+        return null;
+      }
+
+      if (this.isPdfContent(contentType, buffer)) {
+        return buffer;
+      }
+
+      return null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private resolveCentiPortalPdfUrl(input: {
+    rawXml: string;
+    tenant: string | null;
+    uf: string | null;
+  }): string | null {
+    const embeddedPortalUrl = this.extractEmbeddedPortalUrl(input.rawXml);
+    if (embeddedPortalUrl) {
+      return embeddedPortalUrl;
+    }
+
+    const infNfseId = this.extractInfNfseId(input.rawXml);
+    if (!infNfseId) {
+      return null;
+    }
+
+    const normalizedTenant = (input.tenant || '').trim();
+    const normalizedUf = (input.uf || '')
+      .trim()
+      .replaceAll(/[^A-Za-z]/g, '')
+      .toLowerCase();
+
+    if (!normalizedTenant || normalizedUf.length !== 2) {
+      return null;
+    }
+
+    return `https://${normalizedUf}.centi.com.br/wcf06/wcf/portal/v2/nfse/${encodeURIComponent(normalizedTenant)}/${encodeURIComponent(infNfseId)}`;
+  }
+
+  private extractInfNfseId(rawXml: string): string | null {
+    const match = rawXml.match(/<(?:\w+:)?InfNfse\b[^>]*\bId="([^"]+)"/i);
+    const id = match?.[1]?.trim();
+    return id || null;
+  }
+
+  private extractEmbeddedPortalUrl(rawXml: string): string | null {
+    const matches = rawXml.match(/https?:\/\/[^<>"'\s]+/gi) || [];
+
+    const portalUrl = matches.find((value) =>
+      /\/portal\/v2\/nfse\//i.test(value)
+    );
+
+    return portalUrl || null;
+  }
+
+  private isPdfContent(contentType: string, buffer: Buffer): boolean {
+    if (contentType.toLowerCase().includes('application/pdf')) {
+      return true;
+    }
+
+    return buffer.subarray(0, 5).toString('utf8') === '%PDF-';
   }
 
   private generatePdfBuffer(

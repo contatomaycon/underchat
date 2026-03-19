@@ -923,6 +923,8 @@ export class PlanReleaseService {
               accountPaymentId,
               invoice: centiResult.invoice,
               rawXml: centiResult.rawResponse,
+              centiTenant: nfseData.integration_tenant,
+              centiUf: nfseData.integration_uf,
             });
 
           invoiceData.pdfUrl = uploadedDocuments.pdfUrl;
