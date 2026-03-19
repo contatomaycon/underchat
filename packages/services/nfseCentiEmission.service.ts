@@ -92,6 +92,7 @@ type NfseCentiParsedResponse =
       validationCode: string | null;
       rpsSerie: string | null;
       rpsNumber: string | null;
+      portalPdfUrl: string | null;
       messages: string[];
       rawBody: string;
     }
@@ -114,6 +115,7 @@ export type NfseCentiEmissionResult =
       invoice: IGetAsaasInvoiceResponse;
       rawResponse: string;
       statusDescription: string;
+      portalPdfUrl: string | null;
     }
   | {
       kind: 'explicit_failure';
@@ -249,6 +251,7 @@ export class NfseCentiEmissionService {
       invoice,
       rawResponse: parsed.rawBody,
       statusDescription: description,
+      portalPdfUrl: parsed.portalPdfUrl,
     };
   };
 
@@ -811,6 +814,50 @@ export class NfseCentiEmissionService {
     }
 
     if (this.isJsonContent(response.contentType, body)) {
+      const jsonPayload = this.tryParseJson(body);
+      if (jsonPayload !== null) {
+        const embeddedXml = this.findFirstXmlValue(jsonPayload);
+        if (embeddedXml) {
+          const xmlMessages = this.extractXmlMessages(embeddedXml);
+          const xmlSuccess = this.extractSuccessFromXmlBody(
+            embeddedXml,
+            xmlMessages
+          );
+
+          if (xmlSuccess) {
+            return xmlSuccess;
+          }
+
+          if (xmlMessages.length > 0) {
+            return {
+              kind: 'explicit_failure',
+              reason: 'CENTI_JSON_ERROR',
+              messages: xmlMessages,
+              rawBody: body,
+            };
+          }
+        }
+
+        const messages = this.extractMessagesFromUnknown(jsonPayload);
+        if (messages.length > 0) {
+          return {
+            kind: 'explicit_failure',
+            reason: 'CENTI_JSON_ERROR',
+            messages,
+            rawBody: body,
+          };
+        }
+
+        const jsonSuccess = this.extractSuccessFromJsonPayload(
+          jsonPayload,
+          body
+        );
+
+        if (jsonSuccess) {
+          return jsonSuccess;
+        }
+      }
+
       const messages = this.extractErrorMessages(body);
       if (messages.length > 0) {
         return {
@@ -830,34 +877,11 @@ export class NfseCentiEmissionService {
     }
 
     if (this.isXmlContent(response.contentType, body)) {
-      const hasCompNfse = /<(?:\w+:)?CompNfse\b/i.test(body);
       const messages = this.extractXmlMessages(body);
+      const xmlSuccess = this.extractSuccessFromXmlBody(body, messages);
 
-      if (hasCompNfse) {
-        const infNfse = this.extractFirstTagBlock(body, 'InfNfse');
-        const identificacaoRps = this.extractFirstTagBlock(
-          body,
-          'IdentificacaoRps'
-        );
-
-        return {
-          kind: 'success',
-          number: this.extractFirstTagValue(infNfse || body, 'Numero'),
-          validationCode: this.extractFirstTagValue(
-            infNfse || body,
-            'CodigoVerificacao'
-          ),
-          rpsSerie: this.extractFirstTagValue(
-            identificacaoRps || body,
-            'Serie'
-          ),
-          rpsNumber: this.extractFirstTagValue(
-            identificacaoRps || body,
-            'Numero'
-          ),
-          messages,
-          rawBody: body,
-        };
+      if (xmlSuccess) {
+        return xmlSuccess;
       }
 
       if (messages.length > 0) {
@@ -894,6 +918,189 @@ export class NfseCentiEmissionService {
     };
   }
 
+  private extractSuccessFromXmlBody(
+    xmlBody: string,
+    existingMessages: string[] = []
+  ): Extract<NfseCentiParsedResponse, { kind: 'success' }> | null {
+    const hasCompNfse = /<(?:\w+:)?CompNfse\b/i.test(xmlBody);
+    const hasInfNfse = /<(?:\w+:)?InfNfse\b/i.test(xmlBody);
+
+    if (!hasCompNfse && !hasInfNfse) {
+      return null;
+    }
+
+    const infNfse = this.extractFirstTagBlock(xmlBody, 'InfNfse');
+    const identificacaoRps = this.extractFirstTagBlock(
+      xmlBody,
+      'IdentificacaoRps'
+    );
+    const portalPdfUrl = this.extractPortalUrlFromString(xmlBody);
+
+    return {
+      kind: 'success',
+      number: this.extractFirstTagValue(infNfse || xmlBody, 'Numero'),
+      validationCode: this.extractFirstTagValue(
+        infNfse || xmlBody,
+        'CodigoVerificacao'
+      ),
+      rpsSerie: this.extractFirstTagValue(identificacaoRps || xmlBody, 'Serie'),
+      rpsNumber: this.extractFirstTagValue(
+        identificacaoRps || xmlBody,
+        'Numero'
+      ),
+      portalPdfUrl,
+      messages: existingMessages,
+      rawBody: xmlBody,
+    };
+  }
+
+  private extractSuccessFromJsonPayload(
+    payload: unknown,
+    rawBody: string
+  ): Extract<NfseCentiParsedResponse, { kind: 'success' }> | null {
+    const serializedPayload = this.safeSerializeJson(payload) || rawBody;
+    const portalPdfUrl = this.extractPortalUrlFromString(serializedPayload);
+
+    const number = this.findFirstJsonValueByKey(
+      payload,
+      /(^|_)(numero|nfse(numero)?)(_|$)/i
+    );
+    const validationCode = this.findFirstJsonValueByKey(
+      payload,
+      /(codigo(_)?verificacao|validation(_)?code)/i
+    );
+    const rpsSerie = this.findFirstJsonValueByKey(
+      payload,
+      /(rps(_)?serie|serie(_)?rps)/i
+    );
+    const rpsNumber = this.findFirstJsonValueByKey(
+      payload,
+      /(rps(_)?numero|numero(_)?rps|rps(_)?number)/i
+    );
+
+    const hasStrongSuccessSignal =
+      !!portalPdfUrl || !!number || !!validationCode || !!rpsNumber;
+
+    if (!hasStrongSuccessSignal) {
+      return null;
+    }
+
+    return {
+      kind: 'success',
+      number,
+      validationCode,
+      rpsSerie,
+      rpsNumber,
+      portalPdfUrl,
+      messages: [],
+      rawBody,
+    };
+  }
+
+  private findFirstXmlValue(payload: unknown): string | null {
+    if (typeof payload === 'string') {
+      const value = payload.trim();
+
+      if (this.isXmlContent(null, value)) {
+        return value;
+      }
+
+      const nestedJson = this.tryParseJson(value);
+      if (nestedJson !== null) {
+        return this.findFirstXmlValue(nestedJson);
+      }
+
+      return null;
+    }
+
+    if (Array.isArray(payload)) {
+      for (const value of payload) {
+        const found = this.findFirstXmlValue(value);
+        if (found) {
+          return found;
+        }
+      }
+
+      return null;
+    }
+
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    for (const value of Object.values(payload)) {
+      const found = this.findFirstXmlValue(value);
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  private findFirstJsonValueByKey(
+    payload: unknown,
+    keyPattern: RegExp
+  ): string | null {
+    if (Array.isArray(payload)) {
+      for (const item of payload) {
+        const value = this.findFirstJsonValueByKey(item, keyPattern);
+        if (value) {
+          return value;
+        }
+      }
+
+      return null;
+    }
+
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    for (const [key, value] of Object.entries(payload)) {
+      if (keyPattern.test(key)) {
+        const normalized = this.normalizeJsonValue(value);
+        if (normalized) {
+          return normalized;
+        }
+      }
+
+      const nested = this.findFirstJsonValueByKey(value, keyPattern);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeJsonValue(value: unknown): string | null {
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      return normalized.length > 0 ? normalized : null;
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+
+    return null;
+  }
+
+  private safeSerializeJson(payload: unknown): string | null {
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return null;
+    }
+  }
+
+  private extractPortalUrlFromString(value: string): string | null {
+    const matches = value.match(/https?:\/\/[^<>"'\s]+/gi) || [];
+    const portalUrl = matches.find((url) => /\/portal\/v2\/nfse\//i.test(url));
+    return portalUrl || null;
+  }
+
   private mapParsedFailureToEmissionResult(
     parsed: Exclude<NfseCentiParsedResponse, { kind: 'success' }>
   ): Exclude<NfseCentiEmissionResult, { kind: 'success' }> {
@@ -928,7 +1135,7 @@ export class NfseCentiEmissionService {
       type: 'NFS-e',
       statusDescription: input.statusDescription,
       serviceDescription: request.serviceDescription,
-      pdfUrl: null,
+      pdfUrl: input.parsed.portalPdfUrl,
       xmlUrl: null,
       rpsSerie:
         input.parsed.rpsSerie || input.input.nfseConfig.integration_rps_series,
