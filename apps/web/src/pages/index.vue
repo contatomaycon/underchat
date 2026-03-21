@@ -28,7 +28,10 @@ useSnackbarCleanup(dashboardStore);
 const ability = useAbility();
 const canViewReleases = computed(
   () =>
-    ability.can(EGeneralPermissions.full_access, EGeneralPermissions.full_access) ||
+    ability.can(
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access
+    ) ||
     ability.can(
       EGeneralPermissions.full_access_group,
       EGeneralPermissions.full_access_group
@@ -134,6 +137,25 @@ const messageTemplatesTotal = computed(
 const labelTemplatesTotal = computed(
   () => dashboardStore.additional?.label_templates ?? 0
 );
+
+const mobileAppLinks = [
+  {
+    key: 'ios',
+    icon: 'tabler-brand-apple',
+    titleKey: 'dashboard_mobile_ios_title',
+    href: 'https://apps.apple.com/br/app/underchat-v2/id6760209894',
+    badgeSrc:
+      'https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/pt-br?size=250x83',
+  },
+  {
+    key: 'android',
+    icon: 'tabler-brand-android',
+    titleKey: 'dashboard_mobile_android_title',
+    href: 'https://play.google.com/store/apps/details?id=com.underchat.mobile&hl=pt_BR',
+    badgeSrc:
+      'https://play.google.com/intl/pt_br/badges/static/images/badges/pt-br_badge_web_generic.png',
+  },
+];
 
 const avgResponseTime = computed(
   () =>
@@ -620,7 +642,11 @@ onMounted(async () => {
             {{ latestUnreadRelease.title }}
           </p>
         </div>
-        <VIcon icon="tabler-chevron-right" size="20" class="text-medium-emphasis" />
+        <VIcon
+          icon="tabler-chevron-right"
+          size="20"
+          class="text-medium-emphasis"
+        />
       </VCardText>
     </VCard>
 
@@ -692,6 +718,70 @@ onMounted(async () => {
           :series="chatsSeries"
           :chart-options="chatsChartOptions"
         />
+      </VCol>
+    </VRow>
+
+    <VRow class="mb-4 dashboard-row">
+      <VCol cols="12" class="d-flex">
+        <VCard class="flex-grow-1 mobile-apps-card">
+          <VCardText>
+            <div class="mobile-apps-header">
+              <div>
+                <p class="text-h6 font-weight-bold mb-1">
+                  {{ t('dashboard_mobile_apps_title') }}
+                </p>
+                <p class="text-body-2 text-medium-emphasis mb-0">
+                  {{ t('dashboard_mobile_apps_description') }}
+                </p>
+              </div>
+              <VChip color="primary" variant="tonal" size="small">
+                {{ t('dashboard_mobile_apps_chip') }}
+              </VChip>
+            </div>
+
+            <VRow class="mt-1">
+              <VCol
+                v-for="app in mobileAppLinks"
+                :key="app.key"
+                cols="12"
+                sm="6"
+                class="d-flex"
+              >
+                <VCard variant="tonal" class="mobile-link-card flex-grow-1">
+                  <VCardText
+                    class="d-flex align-center justify-space-between gap-3 mobile-link-content"
+                  >
+                    <div class="d-flex align-center gap-3">
+                      <VAvatar color="primary" variant="tonal" size="42">
+                        <VIcon :icon="app.icon" size="22" />
+                      </VAvatar>
+                      <div>
+                        <p class="text-body-1 font-weight-medium mb-0">
+                          {{ t(app.titleKey) }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <a
+                      class="mobile-store-link"
+                      :href="app.href"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <img
+                        class="mobile-store-badge"
+                        :class="`mobile-store-badge--${app.key}`"
+                        :src="app.badgeSrc"
+                        :alt="t(app.titleKey)"
+                        loading="lazy"
+                      />
+                    </a>
+                  </VCardText>
+                </VCard>
+              </VCol>
+            </VRow>
+          </VCardText>
+        </VCard>
       </VCol>
     </VRow>
 
@@ -1178,11 +1268,108 @@ onMounted(async () => {
 }
 
 .dashboard-unread-release-banner {
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
 
   &:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     transform: translateY(-1px);
+  }
+}
+
+.mobile-apps-card {
+  border: 1px solid rgba(var(--v-theme-primary), 0.2);
+  background:
+    radial-gradient(
+      circle at 90% 10%,
+      rgba(var(--v-theme-primary), 0.08),
+      transparent 35%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(var(--v-theme-surface), 1) 0%,
+      rgba(var(--v-theme-surface), 0.94) 100%
+    );
+}
+
+.mobile-apps-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mobile-link-card {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.mobile-link-content {
+  min-height: 110px;
+}
+
+.mobile-store-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 210px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: 10px;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.mobile-store-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.mobile-store-badge {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.mobile-store-badge--ios {
+  width: 170px;
+  height: 52px;
+}
+
+.mobile-store-badge--android {
+  width: 188px;
+  height: 52px;
+  transform: scale(1.2);
+  transform-origin: center;
+}
+
+@media (max-width: 600px) {
+  .mobile-apps-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .mobile-link-content {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+
+  .mobile-store-badge--ios {
+    width: 168px;
+    height: 48px;
+  }
+
+  .mobile-store-badge--android {
+    width: 172px;
+    height: 48px;
+    transform: scale(1.1);
+  }
+
+  .mobile-store-link {
+    width: 190px;
+    height: 58px;
   }
 }
 </style>
