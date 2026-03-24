@@ -1,5 +1,10 @@
 import * as schema from '@core/models';
-import { aiAgent, aiAgentPrompt, aiAgentUsage } from '@core/models';
+import {
+  aiAgent,
+  aiAgentPrompt,
+  aiAgentUsage,
+  workerConfig,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq } from 'drizzle-orm';
@@ -41,6 +46,11 @@ export class AiAgentDeleterRepository {
     await this.dbRw
       .delete(aiAgentUsage)
       .where(eq(aiAgentUsage.ai_agent_id, aiAgentId))
+      .execute();
+
+    await this.dbRw
+      .delete(workerConfig)
+      .where(eq(workerConfig.ai_agent_id, aiAgentId))
       .execute();
 
     const result = await this.dbRw
