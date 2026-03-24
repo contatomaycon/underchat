@@ -68,6 +68,44 @@ export class ChatService {
     return normalizedChat;
   }
 
+  private hasAnyProtocol(chat: IChat): boolean {
+    const hasProtocolValues = (protocols: string[] | null | undefined) => {
+      if (!Array.isArray(protocols) || protocols.length === 0) {
+        return false;
+      }
+
+      return protocols.some(
+        (protocol) => typeof protocol === 'string' && protocol.trim().length > 0
+      );
+    };
+
+    return (
+      hasProtocolValues(chat.protocol_start) ||
+      hasProtocolValues(chat.protocol_transfer) ||
+      hasProtocolValues(chat.protocol_ura)
+    );
+  }
+
+  ensureProtocolForNewChat = async (chat: IChat): Promise<IChat> => {
+    if (!chat.worker?.id) {
+      return chat;
+    }
+
+    if (this.hasAnyProtocol(chat)) {
+      return chat;
+    }
+
+    const workerConfig = await this.viewWorkerConfigForChat(chat.worker.id);
+    if (workerConfig?.show_protocol_in_chat !== true) {
+      return chat;
+    }
+
+    return {
+      ...chat,
+      protocol_start: [generateProtocol()],
+    };
+  };
+
   private buildParticipantFilter(userId: string): Record<string, unknown> {
     return {
       bool: {

@@ -2967,9 +2967,12 @@ export class MessageUpsertConsume {
       inputChatMessage.chatbot_webhook_id = data.webhook_chatbot_id;
     }
 
-    await this.saveChatWithCaches(inputChatMessage);
+    const chatWithProtocol =
+      await this.chatService.ensureProtocolForNewChat(inputChatMessage);
 
-    return inputChatMessage;
+    await this.saveChatWithCaches(chatWithProtocol);
+
+    return chatWithProtocol;
   }
 
   private parseMessage(value: Buffer | null): IUpsertMessage | null {

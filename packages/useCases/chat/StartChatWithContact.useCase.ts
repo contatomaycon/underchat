@@ -612,14 +612,19 @@ export class StartChatWithContactUseCase {
       forward_to_output_chatbot: true,
     };
 
-    const result = await this.chatService.saveChat(newChat, { refresh: true });
+    const chatWithProtocol =
+      await this.chatService.ensureProtocolForNewChat(newChat);
+
+    const result = await this.chatService.saveChat(chatWithProtocol, {
+      refresh: true,
+    });
     if (!result) {
       throw new Error('chat_create_error');
     }
 
-    await this.publishChatUpdate(newChat);
+    await this.publishChatUpdate(chatWithProtocol);
 
-    return newChat;
+    return chatWithProtocol;
   }
 
   private async publishChatUpdate(chat: IChat): Promise<void> {

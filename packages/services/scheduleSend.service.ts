@@ -1176,8 +1176,10 @@ export class ScheduleSendService {
       async () => {
         const now = new Date().toISOString();
         const chat = this.buildScheduleChatbotChat(schedule, contact, jid, now);
+        const chatWithProtocol =
+          await this.chatService.ensureProtocolForNewChat(chat);
 
-        const savedChat = await this.chatService.saveChat(chat, {
+        const savedChat = await this.chatService.saveChat(chatWithProtocol, {
           refresh: true,
         });
         if (!savedChat) {
@@ -1194,7 +1196,7 @@ export class ScheduleSendService {
         const flowFailure = await this.runScheduleChatbotFlow(
           t,
           minimalData,
-          chat,
+          chatWithProtocol,
           chatbotId,
           schedule,
           contact
