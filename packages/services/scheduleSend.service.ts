@@ -212,14 +212,8 @@ export class ScheduleSendService {
     contactId: string
   ): Promise<boolean> {
     const lockKey = this.getDuplicateLockKey(scheduleId, contactId);
-    const exists = await this.redis.get(lockKey);
-
-    if (exists) {
-      return false;
-    }
-
-    await this.redis.set(lockKey, '1', 'EX', 86400);
-    return true;
+    const acquired = await this.redis.set(lockKey, '1', 'EX', 86400, 'NX');
+    return acquired === 'OK';
   }
 
   private async checkMessageSent(

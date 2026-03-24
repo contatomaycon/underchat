@@ -1,5 +1,8 @@
 import { singleton, inject } from 'tsyringe';
-import { baileysEnvironment } from '@core/config/environments';
+import {
+  baileysEnvironment,
+  generalEnvironment,
+} from '@core/config/environments';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
 import type { KafkaConsumer } from 'node-rdkafka';
@@ -13,11 +16,16 @@ import { BaileysPhoneValidationService } from '@core/services/baileys/methods/ph
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import Redis from 'ioredis';
 
 @singleton()
 export class NotificationMessageSendConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
+  private readonly NOTIFICATION_DEDUPE_PREFIX =
+    'notification-send:idempotency:v1';
+  private readonly NOTIFICATION_DEDUPE_TTL_SECONDS =
+    generalEnvironment.automationSendDedupeTtlSeconds;
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -28,7 +36,8 @@ export class NotificationMessageSendConsume {
     @inject(BaileysPhoneValidationService)
     private readonly baileysPhoneValidationService: BaileysPhoneValidationService,
     @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService
+    private readonly streamProducerService: StreamProducerService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -156,6 +165,14 @@ export class NotificationMessageSendConsume {
   ): Promise<void> {
     if (!data.message_whatsapp) return;
 
+    const claimStatus = await this.claimNotificationSendAttempt(data);
+    if (claimStatus === 'duplicate') {
+      return;
+    }
+    if (claimStatus !== 'acquired') {
+      throw new Error(`notification_send_idempotency_${claimStatus}`);
+    }
+
     if (data.message_key?.remote_jid) {
       await this.baileysMessageTextService.sendText(
         data.message_key.remote_jid,
@@ -179,6 +196,54 @@ export class NotificationMessageSendConsume {
 
     if (data?.user_id) {
       await this.sendPhoneJidUpdateRequest(data.user_id, result.jid);
+    }
+  }
+
+  private buildNotificationDestination(data: INotificationMessage): string {
+    const remoteJid = data.message_key?.remote_jid?.trim();
+    if (remoteJid) {
+      return `jid:${remoteJid}`;
+    }
+
+    const phoneDdi = data.message_key?.phone_ddi?.trim();
+    const phoneNumber = data.message_key?.phone_number?.trim();
+    if (phoneDdi && phoneNumber) {
+      return `phone:${phoneDdi}:${phoneNumber}`;
+    }
+
+    return '';
+  }
+
+  private buildNotificationDedupeKey(data: INotificationMessage): string {
+    const accountId = data.account?.id?.trim() ?? 'unknown';
+    const notificationId = data.notification_id?.trim() ?? '';
+    const destination = this.buildNotificationDestination(data);
+    return `${this.NOTIFICATION_DEDUPE_PREFIX}:baileys:${accountId}:${notificationId}:${destination}`;
+  }
+
+  private async claimNotificationSendAttempt(
+    data: INotificationMessage
+  ): Promise<'acquired' | 'duplicate' | 'missing_identity' | 'error'> {
+    const notificationId = data.notification_id?.trim();
+    const destination = this.buildNotificationDestination(data);
+
+    if (!notificationId || !destination) {
+      return 'missing_identity';
+    }
+
+    const dedupeKey = this.buildNotificationDedupeKey(data);
+    try {
+      const acquired = await this.redis.set(
+        dedupeKey,
+        '1',
+        'EX',
+        this.NOTIFICATION_DEDUPE_TTL_SECONDS,
+        'NX'
+      );
+
+      return acquired === 'OK' ? 'acquired' : 'duplicate';
+    } catch {
+      return 'error';
     }
   }
 

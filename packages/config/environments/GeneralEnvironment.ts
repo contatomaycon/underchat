@@ -169,4 +169,18 @@ export class GeneralEnvironment {
 
     return Math.floor(parsed);
   }
+
+  public get automationSendDedupeTtlSeconds(): number {
+    const raw = process.env.AUTOMATION_SEND_DEDUPE_TTL_SECONDS;
+    if (!raw) {
+      return 86400;
+    }
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 86400;
+    }
+
+    return Math.floor(parsed);
+  }
 }

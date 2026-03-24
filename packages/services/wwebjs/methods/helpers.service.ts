@@ -12,9 +12,8 @@ const { MessageMedia } = whatsappWeb;
 
 @injectable()
 export class WwebjsHelpersService {
-  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 3;
+  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 1;
   private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
-  private readonly SEND_CONFIRMATION_BACKOFF_MS = [500, 1000];
 
   constructor(
     @inject(WwebjsConnectionService)
@@ -49,72 +48,42 @@ export class WwebjsHelpersService {
     options?: Parameters<Client['sendMessage']>[2]
   ): Promise<Awaited<ReturnType<Client['sendMessage']>>> {
     const client = this.getClient();
-
-    let lastError: unknown = null;
-    let lastMessageId: string | undefined;
-    let lastOutcome: 'failed' | 'timeout' = 'timeout';
-    let hadConfirmationFailure = false;
-
-    for (
-      let attempt = 1;
-      attempt <= this.SEND_CONFIRMATION_MAX_ATTEMPTS;
-      attempt++
-    ) {
-      try {
-        const sentMessage = await this.sendMessageRaw(
-          client,
-          jid,
-          content,
-          options
-        );
-        const sentMessageId = this.extractMessageId(sentMessage);
-        if (!sentMessageId) {
-          throw new Error('Wwebjs send returned message without id');
-        }
-
-        lastMessageId = sentMessageId;
-        const outcome = await this.deliveryConfirmation.waitForOutcome(
-          sentMessageId,
-          this.SEND_CONFIRMATION_TIMEOUT_MS
-        );
-
-        if (outcome === 'sent') {
-          return sentMessage;
-        }
-
-        hadConfirmationFailure = true;
-        lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
-        lastError =
-          outcome === 'failed'
-            ? new Error(
-                `Message delivery failed acknowledgement for ${sentMessageId}`
-              )
-            : new Error(
-                `Message delivery confirmation timeout for ${sentMessageId}`
-              );
-      } catch (error) {
-        lastError = error;
-      }
-
-      if (attempt < this.SEND_CONFIRMATION_MAX_ATTEMPTS) {
-        const backoffIndex = Math.min(
-          attempt - 1,
-          this.SEND_CONFIRMATION_BACKOFF_MS.length - 1
-        );
-        await this.sleep(this.SEND_CONFIRMATION_BACKOFF_MS[backoffIndex]);
-      }
+    const sentMessage = await this.sendMessageRaw(
+      client,
+      jid,
+      content,
+      options
+    );
+    const sentMessageId = this.extractMessageId(sentMessage);
+    if (!sentMessageId) {
+      throw new Error('Wwebjs send returned message without id');
     }
 
-    if (hadConfirmationFailure) {
-      throw new MessageDeliveryConfirmationFailedError({
-        maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
-        lastMessageId,
-        lastOutcome,
-        cause: lastError,
-      });
+    const outcome = await this.deliveryConfirmation.waitForOutcome(
+      sentMessageId,
+      this.SEND_CONFIRMATION_TIMEOUT_MS
+    );
+
+    if (outcome === 'sent') {
+      return sentMessage;
     }
 
-    throw (lastError as Error) ?? new Error('Wwebjs send failed');
+    const lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
+    const confirmationError =
+      outcome === 'failed'
+        ? new Error(
+            `Message delivery failed acknowledgement for ${sentMessageId}`
+          )
+        : new Error(
+            `Message delivery confirmation timeout for ${sentMessageId}`
+          );
+
+    throw new MessageDeliveryConfirmationFailedError({
+      maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
+      lastMessageId: sentMessageId,
+      lastOutcome,
+      cause: confirmationError,
+    });
   }
 
   private sendMessageRaw(

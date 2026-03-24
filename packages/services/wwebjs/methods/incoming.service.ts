@@ -9,7 +9,10 @@ import {
   MessageSummaryPatch,
 } from '@core/services/messageStatus.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
-import { wwebjsEnvironment } from '@core/config/environments';
+import {
+  wwebjsEnvironment,
+  generalEnvironment,
+} from '@core/config/environments';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import type { IWwebjsPinEventData } from '@core/common/interfaces/IWwebjsPinEventData';
 import { wwebjsMessageToUpsert } from '../util/wwebjsMessageToUpsert';
@@ -527,9 +530,11 @@ export class WwebjsIncomingMessageService {
   private readonly NAME_CACHE_PREFIX = 'name:jid:';
   private readonly NAME_CACHE_NO_NAME = '__no_name__';
   private readonly PROFILE_PIC_TIMEOUT_MS = 3000;
-  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 3;
+  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 1;
   private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
-  private readonly SEND_CONFIRMATION_BACKOFF_MS = [500, 1000];
+  private readonly CALL_AUTO_REPLY_DEDUPE_PREFIX = 'call:auto-reply';
+  private readonly CALL_AUTO_REPLY_DEDUPE_TTL_SECONDS =
+    generalEnvironment.automationSendDedupeTtlSeconds;
   private readonly E2E_NOTIFICATION_DEDUPE_PREFIX = 'wwebjs:e2e:';
   private readonly E2E_NOTIFICATION_DEDUPE_TTL = 31536000;
   private readonly CIPHERTEXT_FANOUT_DEDUPE_PREFIX = 'wwebjs:ciphertext:';
@@ -2339,6 +2344,13 @@ export class WwebjsIncomingMessageService {
 
       const text = callAction.show_message_text?.trim();
       if (callAction.show_message_on_call && text) {
+        const callIdentity = call.id?.trim() || callKey;
+        const canSendAutoReply =
+          await this.acquireCallAutoReplySendAttempt(callIdentity);
+        if (!canSendAutoReply) {
+          return;
+        }
+
         const sentMessage = await this.sendMessageWithConfirmation(
           client,
           jid,
@@ -2393,6 +2405,36 @@ export class WwebjsIncomingMessageService {
       has_quoted: false,
       photo: null,
     };
+  }
+
+  private getCallAutoReplyDedupeKey(callIdentity: string): string {
+    return `${this.CALL_AUTO_REPLY_DEDUPE_PREFIX}:wwebjs:${wwebjsEnvironment.wwebjsAccountId}:${wwebjsEnvironment.wwebjsWorkerId}:${callIdentity}`;
+  }
+
+  private async acquireCallAutoReplySendAttempt(
+    callIdentity: string
+  ): Promise<boolean> {
+    const dedupeKey = this.getCallAutoReplyDedupeKey(callIdentity);
+
+    try {
+      const acquired = await this.redis.set(
+        dedupeKey,
+        '1',
+        'EX',
+        this.CALL_AUTO_REPLY_DEDUPE_TTL_SECONDS,
+        'NX'
+      );
+
+      return acquired === 'OK';
+    } catch (error) {
+      console.error('[wwebjs] Failed to acquire call auto-reply dedupe key', {
+        error,
+        dedupeKey,
+        account_id: wwebjsEnvironment.wwebjsAccountId,
+        worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      });
+      return false;
+    }
   }
 
   private mapAckToPatch(ack: number): MessageSummaryPatch | null {
@@ -2456,74 +2498,41 @@ export class WwebjsIncomingMessageService {
     jid: string,
     text: string
   ): Promise<Message> {
-    let lastError: unknown = null;
-    let lastMessageId: string | undefined;
-    let lastOutcome: 'failed' | 'timeout' = 'timeout';
-    let hadConfirmationFailure = false;
-
-    for (
-      let attempt = 1;
-      attempt <= this.SEND_CONFIRMATION_MAX_ATTEMPTS;
-      attempt++
-    ) {
-      try {
-        const sentMessage = await client.sendMessage(jid, text, {
-          waitUntilMsgSent: true,
-        });
-        const sentMessageId = getMessageIdSerialized(sentMessage);
-        if (!sentMessageId) {
-          throw new Error(
-            'Wwebjs call auto-reply send returned message without id'
-          );
-        }
-
-        lastMessageId = sentMessageId;
-        const outcome = await this.deliveryConfirmation.waitForOutcome(
-          sentMessageId,
-          this.SEND_CONFIRMATION_TIMEOUT_MS
-        );
-
-        if (outcome === 'sent') {
-          return sentMessage;
-        }
-
-        hadConfirmationFailure = true;
-        lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
-        lastError =
-          outcome === 'failed'
-            ? new Error(
-                `Message delivery failed acknowledgement for ${sentMessageId}`
-              )
-            : new Error(
-                `Message delivery confirmation timeout for ${sentMessageId}`
-              );
-      } catch (error) {
-        lastError = error;
-      }
-
-      if (attempt < this.SEND_CONFIRMATION_MAX_ATTEMPTS) {
-        const backoffIndex = Math.min(
-          attempt - 1,
-          this.SEND_CONFIRMATION_BACKOFF_MS.length - 1
-        );
-        await new Promise((resolve) =>
-          setTimeout(resolve, this.SEND_CONFIRMATION_BACKOFF_MS[backoffIndex])
-        );
-      }
+    const sentMessage = await client.sendMessage(jid, text, {
+      waitUntilMsgSent: true,
+    });
+    const sentMessageId = getMessageIdSerialized(sentMessage);
+    if (!sentMessageId) {
+      throw new Error(
+        'Wwebjs call auto-reply send returned message without id'
+      );
     }
 
-    if (hadConfirmationFailure) {
-      throw new MessageDeliveryConfirmationFailedError({
-        maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
-        lastMessageId,
-        lastOutcome,
-        cause: lastError,
-      });
-    }
-
-    throw (
-      (lastError as Error) ?? new Error('Wwebjs call auto-reply send failed')
+    const outcome = await this.deliveryConfirmation.waitForOutcome(
+      sentMessageId,
+      this.SEND_CONFIRMATION_TIMEOUT_MS
     );
+
+    if (outcome === 'sent') {
+      return sentMessage;
+    }
+
+    const lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
+    const confirmationError =
+      outcome === 'failed'
+        ? new Error(
+            `Message delivery failed acknowledgement for ${sentMessageId}`
+          )
+        : new Error(
+            `Message delivery confirmation timeout for ${sentMessageId}`
+          );
+
+    throw new MessageDeliveryConfirmationFailedError({
+      maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
+      lastMessageId: sentMessageId,
+      lastOutcome,
+      cause: confirmationError,
+    });
   }
 
   unbind(): void {

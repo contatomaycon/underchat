@@ -24,7 +24,10 @@ import {
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
-import { baileysEnvironment } from '@core/config/environments';
+import {
+  baileysEnvironment,
+  generalEnvironment,
+} from '@core/config/environments';
 import { getChatKind } from '@core/common/functions/getChatKind';
 import { EChatKind } from '@core/common/enums/EChatKind';
 import { EMessageUpsertType } from '@core/common/enums/EMessageUpsertType';
@@ -75,9 +78,11 @@ export class BaileysIncomingMessageService {
   private readonly MESSAGE_CACHE_TTL_SECONDS_DEFAULT = 60 * 60 * 8;
   private readonly MESSAGE_CACHE_TTL_SECONDS_POLL = 60 * 60 * 24 * 7;
   private readonly MESSAGE_CACHE_PREFIX = 'wa:msg:';
-  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 3;
+  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 1;
   private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
-  private readonly SEND_CONFIRMATION_BACKOFF_MS = [500, 1000];
+  private readonly CALL_AUTO_REPLY_DEDUPE_PREFIX = 'call:auto-reply';
+  private readonly CALL_AUTO_REPLY_DEDUPE_TTL_SECONDS =
+    generalEnvironment.automationSendDedupeTtlSeconds;
   private readonly FORWARDABLE_CACHE_TYPES = new Set<EMessageType>([
     EMessageType.text,
     EMessageType.image,
@@ -805,6 +810,51 @@ export class BaileysIncomingMessageService {
     return `${jid}:${callId}:${callEvent.status}`;
   }
 
+  private getCallAutoReplyDedupeKey(callIdentity: string): string {
+    return `${this.CALL_AUTO_REPLY_DEDUPE_PREFIX}:baileys:${baileysEnvironment.baileysAccountId}:${baileysEnvironment.baileysWorkerId}:${callIdentity}`;
+  }
+
+  private async acquireCallAutoReplySendAttempt(
+    callIdentity: string
+  ): Promise<boolean> {
+    const dedupeKey = this.getCallAutoReplyDedupeKey(callIdentity);
+
+    try {
+      const acquired = await this.redis.set(
+        dedupeKey,
+        '1',
+        'EX',
+        this.CALL_AUTO_REPLY_DEDUPE_TTL_SECONDS,
+        'NX'
+      );
+
+      return acquired === 'OK';
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          type: 'baileys_call_auto_reply_dedupe_error',
+          dedupe_key: dedupeKey,
+          account_id: baileysEnvironment.baileysAccountId,
+          worker_id: baileysEnvironment.baileysWorkerId,
+        },
+        'Failed to acquire call auto-reply dedupe key'
+      );
+      recordException(error, {
+        level: 'error',
+        baileys: {
+          type: 'call_auto_reply_dedupe_error',
+          account_id: baileysEnvironment.baileysAccountId,
+          worker_id: baileysEnvironment.baileysWorkerId,
+        },
+      });
+      incrementCounter('baileys_call_auto_reply_dedupe_error', 1, {
+        account_id: baileysEnvironment.baileysAccountId,
+      });
+      return false;
+    }
+  }
+
   private getCallTimestampSeconds(callEvent: WACallEvent): number {
     const rawDate = (callEvent as { date?: unknown }).date;
 
@@ -928,6 +978,13 @@ export class BaileysIncomingMessageService {
 
       const text = callAction.show_message_text?.trim();
       if (callAction.show_message_on_call && text) {
+        const callIdentity = callEvent.id?.trim() || callKey;
+        const canSendAutoReply =
+          await this.acquireCallAutoReplySendAttempt(callIdentity);
+        if (!canSendAutoReply) {
+          return;
+        }
+
         const sentMessage = await this.sendMessageWithConfirmation(
           socket,
           callJid,
@@ -1200,70 +1257,37 @@ export class BaileysIncomingMessageService {
       quoted?: WAMessage;
     }
   ): Promise<WAMessage> {
-    let lastError: unknown = null;
-    let lastMessageId: string | undefined;
-    let lastOutcome: 'failed' | 'timeout' = 'timeout';
-    let hadConfirmationFailure = false;
-
-    for (
-      let attempt = 1;
-      attempt <= this.SEND_CONFIRMATION_MAX_ATTEMPTS;
-      attempt++
-    ) {
-      try {
-        const sentMessage = await socket.sendMessage(jid, content, options);
-        const sentMessageId = sentMessage?.key?.id;
-        if (!sentMessageId) {
-          throw new Error('Baileys send returned message without key.id');
-        }
-
-        lastMessageId = sentMessageId;
-        const outcome = await this.deliveryConfirmation.waitForOutcome(
-          sentMessageId,
-          this.SEND_CONFIRMATION_TIMEOUT_MS
-        );
-
-        if (outcome === 'sent') {
-          return sentMessage;
-        }
-
-        hadConfirmationFailure = true;
-        lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
-        lastError =
-          outcome === 'failed'
-            ? new Error(
-                `Message delivery failed acknowledgement for ${sentMessageId}`
-              )
-            : new Error(
-                `Message delivery confirmation timeout for ${sentMessageId}`
-              );
-      } catch (error) {
-        lastError = error;
-      }
-
-      if (attempt < this.SEND_CONFIRMATION_MAX_ATTEMPTS) {
-        const backoffIndex = Math.min(
-          attempt - 1,
-          this.SEND_CONFIRMATION_BACKOFF_MS.length - 1
-        );
-        await new Promise((resolve) =>
-          setTimeout(resolve, this.SEND_CONFIRMATION_BACKOFF_MS[backoffIndex])
-        );
-      }
+    const sentMessage = await socket.sendMessage(jid, content, options);
+    const sentMessageId = sentMessage?.key?.id;
+    if (!sentMessageId) {
+      throw new Error('Baileys send returned message without key.id');
     }
 
-    if (hadConfirmationFailure) {
-      throw new MessageDeliveryConfirmationFailedError({
-        maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
-        lastMessageId,
-        lastOutcome,
-        cause: lastError,
-      });
-    }
-
-    throw (
-      (lastError as Error) ?? new Error('Baileys send with confirmation failed')
+    const outcome = await this.deliveryConfirmation.waitForOutcome(
+      sentMessageId,
+      this.SEND_CONFIRMATION_TIMEOUT_MS
     );
+
+    if (outcome === 'sent') {
+      return sentMessage;
+    }
+
+    const lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
+    const confirmationError =
+      outcome === 'failed'
+        ? new Error(
+            `Message delivery failed acknowledgement for ${sentMessageId}`
+          )
+        : new Error(
+            `Message delivery confirmation timeout for ${sentMessageId}`
+          );
+
+    throw new MessageDeliveryConfirmationFailedError({
+      maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
+      lastMessageId: sentMessageId,
+      lastOutcome,
+      cause: confirmationError,
+    });
   }
 
   async reply(jid: string, quoted: WAMessage, content: AnyMessageContent) {

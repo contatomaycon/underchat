@@ -20,9 +20,8 @@ import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/
 
 @injectable()
 export class BaileysHelpersService {
-  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 3;
+  private readonly SEND_CONFIRMATION_MAX_ATTEMPTS = 1;
   private readonly SEND_CONFIRMATION_TIMEOUT_MS = 20_000;
-  private readonly SEND_CONFIRMATION_BACKOFF_MS = [500, 1000];
 
   constructor(
     @inject(BaileysConnectionService)
@@ -54,66 +53,33 @@ export class BaileysHelpersService {
       await this.simulateHumanTyping(jid, content);
     }
 
-    let lastError: unknown = null;
-    let lastMessageId: string | undefined;
-    let lastOutcome: 'failed' | 'timeout' = 'timeout';
-    let hadConfirmationFailure = false;
-
-    for (
-      let attempt = 1;
-      attempt <= this.SEND_CONFIRMATION_MAX_ATTEMPTS;
-      attempt++
-    ) {
-      try {
-        const result = await this.sendOnce(sock, jid, content, options);
-        const messageId = result?.key?.id;
-        if (!messageId) {
-          throw new Error(`Failed to send message to ${jid}: missing key.id`);
-        }
-
-        lastMessageId = messageId;
-        const outcome = await this.deliveryConfirmation.waitForOutcome(
-          messageId,
-          this.SEND_CONFIRMATION_TIMEOUT_MS
-        );
-
-        if (outcome === 'sent') {
-          return result;
-        }
-
-        hadConfirmationFailure = true;
-        lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
-        lastError =
-          outcome === 'failed'
-            ? new Error(
-                `Message delivery failed acknowledgement for ${messageId}`
-              )
-            : new Error(
-                `Message delivery confirmation timeout for ${messageId}`
-              );
-      } catch (error) {
-        lastError = error;
-      }
-
-      if (attempt < this.SEND_CONFIRMATION_MAX_ATTEMPTS) {
-        const backoffIndex = Math.min(
-          attempt - 1,
-          this.SEND_CONFIRMATION_BACKOFF_MS.length - 1
-        );
-        await this.sleep(this.SEND_CONFIRMATION_BACKOFF_MS[backoffIndex]);
-      }
+    const result = await this.sendOnce(sock, jid, content, options);
+    const messageId = result?.key?.id;
+    if (!messageId) {
+      throw new Error(`Failed to send message to ${jid}: missing key.id`);
     }
 
-    if (hadConfirmationFailure) {
-      throw new MessageDeliveryConfirmationFailedError({
-        maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
-        lastMessageId,
-        lastOutcome,
-        cause: lastError,
-      });
+    const outcome = await this.deliveryConfirmation.waitForOutcome(
+      messageId,
+      this.SEND_CONFIRMATION_TIMEOUT_MS
+    );
+
+    if (outcome === 'sent') {
+      return result;
     }
 
-    throw (lastError as Error) ?? new Error(`Failed to send message to ${jid}`);
+    const lastOutcome = outcome === 'failed' ? 'failed' : 'timeout';
+    const confirmationError =
+      outcome === 'failed'
+        ? new Error(`Message delivery failed acknowledgement for ${messageId}`)
+        : new Error(`Message delivery confirmation timeout for ${messageId}`);
+
+    throw new MessageDeliveryConfirmationFailedError({
+      maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
+      lastMessageId: messageId,
+      lastOutcome,
+      cause: confirmationError,
+    });
   }
 
   private async sendOnce(

@@ -84,6 +84,7 @@ import {
 } from '@core/common/functions/attendanceHoursConfig';
 import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
 import { getActiveChatbotWorkingHoursRule } from '@core/common/functions/chatbotWorkingHours';
+import { generalEnvironment } from '@core/config/environments';
 import { logger } from '@core/plugins/telemetry/logger';
 import {
   incrementCounter,
@@ -102,6 +103,10 @@ export class MessageUpsertConsume {
   private readonly OUTSIDE_HOURS_DEBOUNCE_SECONDS = 5;
   private readonly OUTSIDE_HOURS_DEFAULT_MESSAGE =
     'Olá {{ name }}, nosso horário de atendimento está encerrado no momento. Retornaremos assim que estivermos disponíveis.';
+  private readonly AUTOMATION_SEND_DEDUPE_PREFIX =
+    'automation-send:idempotency:v1';
+  private readonly AUTOMATION_SEND_DEDUPE_TTL_SECONDS =
+    generalEnvironment.automationSendDedupeTtlSeconds;
 
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING = 3;
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE = 4;
@@ -3024,6 +3029,14 @@ export class MessageUpsertConsume {
       return;
     }
 
+    const canExecuteFlow = await this.acquireAutomationSendAttempt(
+      data,
+      'chatbot_flow'
+    );
+    if (!canExecuteFlow) {
+      return;
+    }
+
     if (options?.beforeExecute) {
       await options.beforeExecute(chat);
     }
@@ -3316,6 +3329,77 @@ export class MessageUpsertConsume {
     return `underchat:attendance-hours:debounce:${accountId}:${chatId}`;
   }
 
+  private getAutomationSourceMessageKey(data: IUpsertMessage): string | null {
+    const messageId = this.toNonEmptyString(data.message?.key?.id);
+    if (!messageId) {
+      return null;
+    }
+
+    const rawJid =
+      remoteJid(data.message?.key) || remoteJidAlt(data.message?.key);
+    const normalizedJid = rawJid
+      ? (normalizeJid(rawJid) ?? rawJid)
+      : 'unknown_jid';
+    const fromMeTag = data.message?.key?.fromMe === true ? '1' : '0';
+
+    return `${fromMeTag}:${normalizedJid}:${messageId}`;
+  }
+
+  private getAutomationDedupeKey(
+    data: IUpsertMessage,
+    automationType: 'chatbot_flow' | 'outside_hours',
+    sourceMessageKey: string
+  ): string {
+    return `${this.AUTOMATION_SEND_DEDUPE_PREFIX}:${data.account_id}:${data.worker_id}:${automationType}:${sourceMessageKey}`;
+  }
+
+  private async acquireAutomationSendAttempt(
+    data: IUpsertMessage,
+    automationType: 'chatbot_flow' | 'outside_hours'
+  ): Promise<boolean> {
+    const sourceMessageKey = this.getAutomationSourceMessageKey(data);
+    if (!sourceMessageKey) {
+      logger.warn({
+        type: 'message_upsert_automation_dedupe_missing_source_key',
+        automation_type: automationType,
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+      });
+      return false;
+    }
+
+    const dedupeKey = this.getAutomationDedupeKey(
+      data,
+      automationType,
+      sourceMessageKey
+    );
+
+    try {
+      const acquired = await this.redis.set(
+        dedupeKey,
+        '1',
+        'EX',
+        this.AUTOMATION_SEND_DEDUPE_TTL_SECONDS,
+        'NX'
+      );
+      return acquired === 'OK';
+    } catch (error) {
+      logger.error({
+        type: 'message_upsert_automation_dedupe_error',
+        automation_type: automationType,
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        source_message_key: sourceMessageKey,
+        error: error instanceof Error ? error.message : error,
+      });
+      recordException(error, {
+        type: 'message_upsert_automation_dedupe_error',
+        automation_type: automationType,
+      });
+      return false;
+    }
+  }
+
   private async sendOutsideHoursMessageWithDebounce(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -3326,6 +3410,14 @@ export class MessageUpsertConsume {
       chat.contact?.ignore === EContactIgnore.ignore_automation ||
       chat.contact?.ignore === EContactIgnore.ignore_totally
     ) {
+      return;
+    }
+
+    const canSendOutsideHours = await this.acquireAutomationSendAttempt(
+      data,
+      'outside_hours'
+    );
+    if (!canSendOutsideHours) {
       return;
     }
 
