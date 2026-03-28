@@ -7264,38 +7264,6 @@ onBeforeUnmount(() => {
             />
           </VCol>
 
-          <VCol cols="12">
-            <VCheckbox
-              v-model="transferKeepInChat"
-              density="compact"
-              hide-details
-              :label="t('keep_in_chat')"
-            />
-            <div class="text-caption text-medium-emphasis mt-1">
-              {{ t('keep_in_chat_description') }}
-            </div>
-          </VCol>
-
-          <VCol v-if="shouldShowTransferSendMessageToggle" cols="12">
-            <div class="d-flex align-center justify-space-between gap-4">
-              <div>
-                <div class="text-body-1 font-weight-medium">
-                  {{ t('send_message_on_transfer') }}
-                </div>
-                <div class="text-body-2 text-medium-emphasis">
-                  {{ t('send_message_on_transfer_description') }}
-                </div>
-              </div>
-
-              <VSwitch
-                v-model="transferSendMessageOnTransfer"
-                color="primary"
-                hide-details
-                inset
-              />
-            </div>
-          </VCol>
-
           <VCol v-if="transferType === 'user'" cols="12">
             <VLabel class="text-body-2 mb-1">{{ $t('user') }}:</VLabel>
             <AppSelectSearch
@@ -7435,6 +7403,38 @@ onBeforeUnmount(() => {
               </AppSelectSearch>
             </VCol>
           </template>
+
+          <VCol cols="12">
+            <VCheckbox
+              v-model="transferKeepInChat"
+              density="compact"
+              hide-details
+              :label="t('keep_in_chat')"
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ t('keep_in_chat_description') }}
+            </div>
+          </VCol>
+
+          <VCol v-if="shouldShowTransferSendMessageToggle" cols="12">
+            <div class="d-flex align-center justify-space-between gap-4">
+              <div>
+                <div class="text-body-1 font-weight-medium">
+                  {{ t('send_message_on_transfer') }}
+                </div>
+                <div class="text-body-2 text-medium-emphasis">
+                  {{ t('send_message_on_transfer_description') }}
+                </div>
+              </div>
+
+              <VSwitch
+                v-model="transferSendMessageOnTransfer"
+                color="primary"
+                hide-details
+                inset
+              />
+            </div>
+          </VCol>
 
           <VCol cols="12">
             <div class="d-flex align-center gap-2 mb-2">

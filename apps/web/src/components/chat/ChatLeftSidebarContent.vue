@@ -129,7 +129,7 @@ const bulkTransferSector = ref<string | null>(null);
 const bulkTransferSectorUser = ref<string | null>(null);
 const bulkTransferAnnotation = ref('');
 const bulkTransferKeepInChat = ref(false);
-const bulkTransferSendMessageOnTransfer = ref(true);
+const bulkTransferSendMessageOnTransfer = ref(false);
 const bulkTransferChannels = ref<TransferChannelOption[]>([]);
 const bulkTransferUsers = ref<
   Array<{
@@ -156,7 +156,7 @@ const isLoadingBulkTransferSectors = ref(false);
 const isLoadingBulkTransferSectorUsers = ref(false);
 const bulkTransferWorkerConfigForChat =
   ref<ViewWorkerConfigForChatResponse | null>(null);
-const bulkCloseSendMessageOnFinishAttendance = ref(true);
+const bulkCloseSendMessageOnFinishAttendance = ref(false);
 
 const contactFilterLabel = ref<string | null>(null);
 const contactFilterPhoneDdi = ref<string | null>(null);
@@ -833,7 +833,7 @@ const resetBulkTransferForm = () => {
   bulkTransferSectorUser.value = null;
   bulkTransferAnnotation.value = '';
   bulkTransferKeepInChat.value = false;
-  bulkTransferSendMessageOnTransfer.value = true;
+  bulkTransferSendMessageOnTransfer.value = false;
   bulkTransferChannels.value = [];
   bulkTransferUsers.value = [];
   bulkTransferSectors.value = [];
@@ -959,7 +959,7 @@ watch(bulkTransferChannel, async (channelId) => {
   bulkTransferUsers.value = [];
   bulkTransferSectorUsers.value = [];
   bulkTransferWorkerConfigForChat.value = null;
-  bulkTransferSendMessageOnTransfer.value = true;
+  bulkTransferSendMessageOnTransfer.value = false;
 
   await loadBulkTransferWorkerConfig(channelId);
 
@@ -2527,7 +2527,7 @@ const openBulkCloseDialog = () => {
     return;
   }
 
-  bulkCloseSendMessageOnFinishAttendance.value = true;
+  bulkCloseSendMessageOnFinishAttendance.value = false;
   isBulkCloseDialogOpen.value = true;
 };
 
@@ -2601,7 +2601,7 @@ const runBulkTransferAction = async () => {
     bulkSummary.value = result;
     isBulkSummaryDialogOpen.value = true;
     isBulkTransferDialogOpen.value = false;
-    resetBulkSelection();
+    disableBulkMode();
     await refreshChatsForCurrentFilter();
   } finally {
     isBulkActionRunning.value = false;
@@ -2638,7 +2638,7 @@ const runBulkCloseAction = async () => {
     bulkSummary.value = result;
     isBulkSummaryDialogOpen.value = true;
     isBulkCloseDialogOpen.value = false;
-    resetBulkSelection();
+    disableBulkMode();
     await refreshChatsForCurrentFilter();
   } finally {
     isBulkActionRunning.value = false;
@@ -4831,6 +4831,7 @@ defineExpose({
   />
 
   <VDialog v-model="isBulkTransferDialogOpen" max-width="620">
+    <DialogCloseBtn @click="isBulkTransferDialogOpen = false" />
     <VCard :title="$t('bulk_transfer_dialog_title')">
       <VCardText>
         <VRow>
@@ -4860,38 +4861,6 @@ defineExpose({
               item-value="value"
               item-title="title"
             />
-          </VCol>
-
-          <VCol cols="12">
-            <VCheckbox
-              v-model="bulkTransferKeepInChat"
-              density="compact"
-              hide-details
-              :label="$t('keep_in_chat')"
-            />
-            <div class="text-caption text-medium-emphasis mt-1">
-              {{ $t('keep_in_chat_description') }}
-            </div>
-          </VCol>
-
-          <VCol v-if="shouldShowBulkTransferSendMessageToggle" cols="12">
-            <div class="d-flex align-center justify-space-between gap-4">
-              <div>
-                <div class="text-body-1 font-weight-medium">
-                  {{ $t('send_message_on_transfer') }}
-                </div>
-                <div class="text-body-2 text-medium-emphasis">
-                  {{ $t('send_message_on_transfer_description') }}
-                </div>
-              </div>
-
-              <VSwitch
-                v-model="bulkTransferSendMessageOnTransfer"
-                color="primary"
-                hide-details
-                inset
-              />
-            </div>
           </VCol>
 
           <VCol v-if="bulkTransferType === 'user'" cols="12">
@@ -4939,6 +4908,38 @@ defineExpose({
           </template>
 
           <VCol cols="12">
+            <VCheckbox
+              v-model="bulkTransferKeepInChat"
+              density="compact"
+              hide-details
+              :label="$t('keep_in_chat')"
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ $t('keep_in_chat_description') }}
+            </div>
+          </VCol>
+
+          <VCol v-if="shouldShowBulkTransferSendMessageToggle" cols="12">
+            <div class="d-flex align-center justify-space-between gap-4">
+              <div>
+                <div class="text-body-1 font-weight-medium">
+                  {{ $t('send_message_on_transfer') }}
+                </div>
+                <div class="text-body-2 text-medium-emphasis">
+                  {{ $t('send_message_on_transfer_description') }}
+                </div>
+              </div>
+
+              <VSwitch
+                v-model="bulkTransferSendMessageOnTransfer"
+                color="primary"
+                hide-details
+                inset
+              />
+            </div>
+          </VCol>
+
+          <VCol cols="12">
             <VLabel class="text-body-2 mb-1">{{ $t('annotation') }}:</VLabel>
             <VTextarea
               v-model="bulkTransferAnnotation"
@@ -4981,6 +4982,7 @@ defineExpose({
   </VDialog>
 
   <VDialog v-model="isBulkCloseDialogOpen" max-width="520">
+    <DialogCloseBtn @click="isBulkCloseDialogOpen = false" />
     <VCard :title="$t('bulk_close_dialog_title')">
       <VCardText>
         <div class="text-body-2 mb-3">
