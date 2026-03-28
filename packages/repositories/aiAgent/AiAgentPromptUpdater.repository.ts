@@ -49,6 +49,8 @@ export class AiAgentPromptUpdaterRepository {
       return true;
     }
 
+    updateInput.updated_at = new Date().toISOString();
+
     const result = await this.dbRw
       .update(aiAgentPrompt)
       .set(updateInput)
@@ -80,7 +82,10 @@ export class AiAgentPromptUpdaterRepository {
 
     const result = await this.dbRw
       .update(aiAgentPrompt)
-      .set({ openai_file_id: openaiFileId })
+      .set({
+        openai_file_id: openaiFileId,
+        updated_at: new Date().toISOString(),
+      })
       .where(eq(aiAgentPrompt.ai_agent_prompt_id, aiAgentPromptId))
       .execute();
 

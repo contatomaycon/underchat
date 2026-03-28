@@ -4,8 +4,10 @@ import { AiAgentService } from '@core/services/aiAgent.service';
 import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { EmbeddingService } from '@core/services/embedding.service';
 import { IAiAgentPromptEmbeddingRequest } from '@core/common/interfaces/IAiAgentPromptEmbeddingRequest';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 
 @injectable()
 export class AiAgentPromptRefresherUseCase {
@@ -17,7 +19,9 @@ export class AiAgentPromptRefresherUseCase {
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(EmbeddingService)
+    private readonly embeddingService: EmbeddingService
   ) {}
 
   async execute(
@@ -32,6 +36,23 @@ export class AiAgentPromptRefresherUseCase {
 
     if (!aiAgentPrompt) {
       throw new Error(t('ai_agent_prompt_not_found'));
+    }
+
+    if (aiAgentPrompt.status !== EAiAgentStatus.active) {
+      await this.embeddingService.deletePromptEmbeddings(aiAgentPromptId);
+      if (aiAgentPrompt.openai_file_id) {
+        await this.cleanupPromptOpenAIFile(
+          aiAgentPrompt.ai_agent_id,
+          accountId,
+          aiAgentPrompt.openai_file_id
+        );
+        await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
+          aiAgentPromptId,
+          accountId,
+          null
+        );
+      }
+      return true;
     }
 
     const agent = await this.aiAgentService.viewAiAgent(
@@ -82,7 +103,8 @@ export class AiAgentPromptRefresherUseCase {
       accountId,
       aiAgentPrompt.ai_agent_id,
       aiAgentPromptId,
-      aiAgentPrompt.value
+      aiAgentPrompt.value,
+      'refresh'
     );
 
     return true;
@@ -92,7 +114,8 @@ export class AiAgentPromptRefresherUseCase {
     accountId: string,
     aiAgentId: string,
     aiAgentPromptId: string,
-    value: string
+    value: string,
+    source: IAiAgentPromptEmbeddingRequest['source']
   ): Promise<void> {
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
 
@@ -102,10 +125,39 @@ export class AiAgentPromptRefresherUseCase {
       ai_agent_prompt_id: aiAgentPromptId,
       ai_agent_type_id: agent?.ai_agent_type_id,
       value,
+      source,
+      retry_count: 0,
     };
 
     const topic = this.kafkaServiceQueueService.aiAgentPromptEmbedding();
 
     await this.streamProducerService.send(topic, payload, aiAgentPromptId);
+  }
+
+  private async cleanupPromptOpenAIFile(
+    aiAgentId: string,
+    accountId: string,
+    fileId: string
+  ): Promise<void> {
+    const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
+    if (
+      !agent ||
+      agent.ai_agent_type_id !== EAiAgentType.gpt ||
+      !agent.api_key ||
+      !agent.base_url
+    ) {
+      return;
+    }
+
+    try {
+      await this.openAIAssistantService.cleanupOpenAIFile(
+        agent.api_key,
+        agent.base_url,
+        agent.openai_vector_store_id,
+        fileId
+      );
+    } catch (error) {
+      console.error('Erro ao limpar arquivo OpenAI no refresh:', error);
+    }
   }
 }

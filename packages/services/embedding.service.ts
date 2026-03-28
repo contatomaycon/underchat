@@ -30,6 +30,7 @@ export class EmbeddingService {
   private readonly indexName = EElasticIndex.ai_agent_prompt_embedding;
   private readonly chatHistoryIndexName = EElasticIndex.chat_history_embedding;
   private readonly embeddingDimensions = 1536;
+  private readonly maxChunkTokensForFaq = 800;
 
   constructor(
     @inject('DatabaseElasticClient') private readonly elasticClient: Client,
@@ -69,42 +70,218 @@ export class EmbeddingService {
     chunkSize: number,
     overlap: number
   ): IChunk[] {
-    const chunks: IChunk[] = [];
-
-    const words = text.split(/\s+/);
-    let currentChunkWords: string[] = [];
-    let chunkIndex = 0;
-
-    for (const word of words) {
-      currentChunkWords.push(word);
-      const currentText = currentChunkWords.join(' ');
-      const tokenEstimate = Math.ceil(currentText.length / 4);
-
-      if (tokenEstimate >= chunkSize) {
-        chunks.push({
-          text: currentText.trim(),
-          index: chunkIndex,
-        });
-        chunkIndex++;
-
-        const overlapWords = Math.ceil(
-          (overlap / chunkSize) * currentChunkWords.length
-        );
-        currentChunkWords = currentChunkWords.slice(-overlapWords);
-      }
+    const normalized = text.trim();
+    if (!normalized) {
+      return [];
     }
 
-    if (currentChunkWords.length > 0) {
-      const remainingText = currentChunkWords.join(' ').trim();
-      if (remainingText.length > 0) {
+    const effectiveChunkSize = Math.max(
+      120,
+      Math.min(chunkSize, this.maxChunkTokensForFaq)
+    );
+    const semanticBlocks = this.splitIntoSemanticBlocks(normalized);
+
+    const chunks: IChunk[] = [];
+    let chunkIndex = 0;
+
+    for (const block of semanticBlocks) {
+      const blockChunks = this.splitBlockWithTokenBudget(
+        block,
+        effectiveChunkSize,
+        overlap
+      );
+
+      for (const chunkText of blockChunks) {
         chunks.push({
-          text: remainingText,
+          text: chunkText,
           index: chunkIndex,
         });
+        chunkIndex += 1;
       }
     }
 
     return chunks;
+  }
+
+  private splitIntoSemanticBlocks(text: string): string[] {
+    const paragraphs = text
+      .split(/\n\s*\n/g)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (paragraphs.length === 0) {
+      return [text];
+    }
+
+    const blocks: string[] = [];
+    let currentBlock: string[] = [];
+    let seenQuestionInCurrentBlock = false;
+
+    const flushBlock = (): void => {
+      if (currentBlock.length === 0) {
+        return;
+      }
+      blocks.push(currentBlock.join('\n\n').trim());
+      currentBlock = [];
+      seenQuestionInCurrentBlock = false;
+    };
+
+    for (const paragraph of paragraphs) {
+      const startsNewFaqItem = this.isLikelyFaqQuestion(paragraph);
+
+      if (
+        startsNewFaqItem &&
+        currentBlock.length > 0 &&
+        seenQuestionInCurrentBlock
+      ) {
+        flushBlock();
+      }
+
+      currentBlock.push(paragraph);
+      if (startsNewFaqItem) {
+        seenQuestionInCurrentBlock = true;
+      }
+    }
+
+    flushBlock();
+
+    return blocks.length > 0 ? blocks : [text];
+  }
+
+  private splitBlockWithTokenBudget(
+    block: string,
+    chunkSize: number,
+    overlap: number
+  ): string[] {
+    const paragraphs = block
+      .split(/\n\s*\n/g)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (paragraphs.length === 0) {
+      return [];
+    }
+
+    const chunks: string[] = [];
+    let currentChunk: string[] = [];
+
+    const estimateTokens = (value: string): number =>
+      Math.ceil(value.length / 4);
+
+    for (const paragraph of paragraphs) {
+      if (estimateTokens(paragraph) > chunkSize) {
+        if (currentChunk.length > 0) {
+          chunks.push(currentChunk.join('\n\n').trim());
+          currentChunk = [];
+        }
+
+        const splitParagraphs = this.splitLongParagraph(paragraph, chunkSize);
+        chunks.push(...splitParagraphs);
+        continue;
+      }
+
+      if (currentChunk.length === 0) {
+        currentChunk.push(paragraph);
+        continue;
+      }
+
+      const nextCandidate = [...currentChunk, paragraph].join('\n\n');
+      if (estimateTokens(nextCandidate) <= chunkSize) {
+        currentChunk.push(paragraph);
+        continue;
+      }
+
+      chunks.push(currentChunk.join('\n\n').trim());
+      currentChunk = this.buildOverlapPrefix(currentChunk, overlap, chunkSize);
+      currentChunk.push(paragraph);
+    }
+
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk.join('\n\n').trim());
+    }
+
+    return chunks.filter(Boolean);
+  }
+
+  private splitLongParagraph(paragraph: string, chunkSize: number): string[] {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      return [];
+    }
+
+    const chunks: string[] = [];
+    let currentWords: string[] = [];
+
+    for (const word of words) {
+      const next = [...currentWords, word].join(' ');
+      const tokenEstimate = Math.ceil(next.length / 4);
+      if (tokenEstimate > chunkSize && currentWords.length > 0) {
+        chunks.push(currentWords.join(' ').trim());
+        currentWords = [word];
+        continue;
+      }
+
+      currentWords.push(word);
+    }
+
+    if (currentWords.length > 0) {
+      chunks.push(currentWords.join(' ').trim());
+    }
+
+    return chunks;
+  }
+
+  private buildOverlapPrefix(
+    paragraphs: string[],
+    overlap: number,
+    chunkSize: number
+  ): string[] {
+    if (overlap <= 0 || paragraphs.length === 0 || chunkSize <= 0) {
+      return [];
+    }
+
+    const overlapTarget = Math.max(1, Math.floor(overlap));
+    const result: string[] = [];
+    let accumulatedTokens = 0;
+
+    for (let i = paragraphs.length - 1; i >= 0; i -= 1) {
+      const paragraph = paragraphs[i];
+      const tokenEstimate = Math.ceil(paragraph.length / 4);
+      if (
+        accumulatedTokens + tokenEstimate > overlapTarget &&
+        result.length > 0
+      ) {
+        break;
+      }
+      result.unshift(paragraph);
+      accumulatedTokens += tokenEstimate;
+      if (accumulatedTokens >= overlapTarget) {
+        break;
+      }
+    }
+
+    return result;
+  }
+
+  private isLikelyFaqQuestion(paragraph: string): boolean {
+    const lines = paragraph
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length === 0) {
+      return false;
+    }
+
+    const firstLine = lines[0];
+    if (firstLine.length < 10 || firstLine.length > 260) {
+      return false;
+    }
+
+    if (firstLine.endsWith('?')) {
+      return true;
+    }
+
+    return /^(pergunta|q)[:\-]/i.test(firstLine);
   }
 
   private isGeminiAgent(aiAgentTypeId: string): boolean {
@@ -493,8 +670,25 @@ export class EmbeddingService {
     accountId: string,
     aiAgentId: string,
     queryVector: number[],
-    topK: number
+    topK: number,
+    options?: {
+      allowedPromptIds?: string[];
+    }
   ): any {
+    const filterClauses: any[] = [
+      { term: { account_id: accountId } },
+      { term: { ai_agent_id: aiAgentId } },
+      { term: { has_embedding: true } },
+    ];
+
+    if (options?.allowedPromptIds && options.allowedPromptIds.length > 0) {
+      filterClauses.push({
+        terms: {
+          ai_agent_prompt_id: options.allowedPromptIds,
+        },
+      });
+    }
+
     return {
       index: this.indexName,
       size: topK,
@@ -505,11 +699,7 @@ export class EmbeddingService {
               script_score: {
                 query: {
                   bool: {
-                    filter: [
-                      { term: { account_id: accountId } },
-                      { term: { ai_agent_id: aiAgentId } },
-                      { term: { has_embedding: true } },
-                    ],
+                    filter: filterClauses,
                   },
                 },
                 script: {
@@ -543,18 +733,31 @@ export class EmbeddingService {
   private buildTextSearchQuery(
     accountId: string,
     aiAgentId: string,
-    topK: number
+    topK: number,
+    options?: {
+      allowedPromptIds?: string[];
+    }
   ): any {
+    const filterClauses: any[] = [
+      { term: { account_id: accountId } },
+      { term: { ai_agent_id: aiAgentId } },
+      { term: { has_embedding: false } },
+    ];
+
+    if (options?.allowedPromptIds && options.allowedPromptIds.length > 0) {
+      filterClauses.push({
+        terms: {
+          ai_agent_prompt_id: options.allowedPromptIds,
+        },
+      });
+    }
+
     return {
       index: this.indexName,
       size: topK,
       query: {
         bool: {
-          filter: [
-            { term: { account_id: accountId } },
-            { term: { ai_agent_id: aiAgentId } },
-            { term: { has_embedding: false } },
-          ],
+          filter: filterClauses,
         },
       },
       sort: [
@@ -568,8 +771,15 @@ export class EmbeddingService {
     accountId: string,
     aiAgentId: string,
     queryText: string,
-    topK = 5
+    topK = 5,
+    options?: {
+      allowedPromptIds?: string[];
+    }
   ): Promise<Array<{ text: string; score: number; promptId: string }>> {
+    if (options?.allowedPromptIds && options.allowedPromptIds.length === 0) {
+      return [];
+    }
+
     const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
       aiAgentId,
       accountId
@@ -585,7 +795,14 @@ export class EmbeddingService {
     const hasEmbeddingModel = !!aiAgent.embedding_model;
 
     if (embeddingOptional && !hasEmbeddingModel) {
-      const searchQuery = this.buildTextSearchQuery(accountId, aiAgentId, topK);
+      const searchQuery = this.buildTextSearchQuery(
+        accountId,
+        aiAgentId,
+        topK,
+        {
+          allowedPromptIds: options?.allowedPromptIds,
+        }
+      );
 
       const response = await this.elasticClient.search(searchQuery);
 
@@ -622,7 +839,10 @@ export class EmbeddingService {
       accountId,
       aiAgentId,
       queryVector,
-      topK
+      topK,
+      {
+        allowedPromptIds: options?.allowedPromptIds,
+      }
     );
 
     const response = await this.elasticClient.search(searchQuery);

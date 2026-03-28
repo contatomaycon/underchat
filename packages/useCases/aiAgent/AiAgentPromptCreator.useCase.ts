@@ -179,7 +179,8 @@ export class AiAgentPromptCreatorUseCase {
     accountId: string,
     aiAgentId: string,
     aiAgentPromptId: string,
-    value: string
+    value: string,
+    source: IAiAgentPromptEmbeddingRequest['source']
   ): Promise<void> {
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
 
@@ -189,6 +190,8 @@ export class AiAgentPromptCreatorUseCase {
       ai_agent_prompt_id: aiAgentPromptId,
       ai_agent_type_id: agent?.ai_agent_type_id,
       value,
+      source,
+      retry_count: 0,
     };
 
     const topic = this.kafkaServiceQueueService.aiAgentPromptEmbedding();
@@ -216,6 +219,7 @@ export class AiAgentPromptCreatorUseCase {
       value: finalValue,
       status: status ?? EAiAgentStatus.active,
     };
+    const finalStatus = processedInput.status;
 
     const aiAgentPromptId = await this.createPrompt(
       processedInput,
@@ -223,13 +227,18 @@ export class AiAgentPromptCreatorUseCase {
       t
     );
 
+    if (finalStatus !== EAiAgentStatus.active) {
+      return aiAgentPromptId;
+    }
+
     await this.ensureOpenAIIfNeeded(accountId, aiAgentId);
 
     await this.sendToEmbeddingQueue(
       accountId,
       aiAgentId,
       aiAgentPromptId,
-      finalValue
+      finalValue,
+      'create'
     );
 
     return aiAgentPromptId;

@@ -6,6 +6,7 @@ import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { StorageService } from '@core/services/storage.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { EmbeddingService } from '@core/services/embedding.service';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
@@ -23,7 +24,9 @@ export class AiAgentPromptUpdaterUseCase {
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(EmbeddingService)
+    private readonly embeddingService: EmbeddingService
   ) {}
 
   private getValueFromMultipart<T>(
@@ -159,6 +162,40 @@ export class AiAgentPromptUpdaterUseCase {
     return this.uploadFileToS3(file, accountId, t);
   }
 
+  private async removePromptSearchArtifacts(
+    accountId: string,
+    aiAgentId: string,
+    aiAgentPromptId: string,
+    openaiFileId: string | null | undefined
+  ): Promise<void> {
+    await this.embeddingService.deletePromptEmbeddings(aiAgentPromptId);
+
+    if (!openaiFileId) {
+      return;
+    }
+
+    const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
+    const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
+    if (isGpt && agent?.api_key && agent?.base_url) {
+      try {
+        await this.openAIAssistantService.cleanupOpenAIFile(
+          agent.api_key,
+          agent.base_url,
+          agent.openai_vector_store_id,
+          openaiFileId
+        );
+      } catch (error) {
+        console.error('Erro ao limpar arquivo OpenAI:', error);
+      }
+    }
+
+    await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
+      aiAgentPromptId,
+      accountId,
+      null
+    );
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     aiAgentPromptId: string,
@@ -198,6 +235,7 @@ export class AiAgentPromptUpdaterUseCase {
         this.getFieldFromMultipartBody<EAiAgentStatus>(bodyRecord, 'status') ??
         undefined,
     };
+    const finalStatus = updateBody.status ?? aiAgentPromptExists.status;
 
     const aiAgentPromptUpdater =
       await this.aiAgentService.updateAiAgentPromptById(
@@ -210,6 +248,16 @@ export class AiAgentPromptUpdaterUseCase {
       throw new Error(t('ai_agent_prompt_update_error'));
     }
 
+    if (finalStatus !== EAiAgentStatus.active) {
+      await this.removePromptSearchArtifacts(
+        accountId,
+        aiAgentPromptExists.ai_agent_id,
+        aiAgentPromptId,
+        aiAgentPromptExists.openai_file_id
+      );
+      return true;
+    }
+
     await this.ensureOpenAIAndCleanupIfNeeded(
       accountId,
       aiAgentPromptExists.ai_agent_id,
@@ -220,7 +268,8 @@ export class AiAgentPromptUpdaterUseCase {
       accountId,
       aiAgentPromptExists.ai_agent_id,
       aiAgentPromptId,
-      finalValue
+      finalValue,
+      'update'
     );
 
     return aiAgentPromptUpdater;
@@ -278,7 +327,8 @@ export class AiAgentPromptUpdaterUseCase {
     accountId: string,
     aiAgentId: string,
     aiAgentPromptId: string,
-    value: string
+    value: string,
+    source: IAiAgentPromptEmbeddingRequest['source']
   ): Promise<void> {
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
 
@@ -288,6 +338,8 @@ export class AiAgentPromptUpdaterUseCase {
       ai_agent_prompt_id: aiAgentPromptId,
       ai_agent_type_id: agent?.ai_agent_type_id,
       value,
+      source,
+      retry_count: 0,
     };
 
     const topic = this.kafkaServiceQueueService.aiAgentPromptEmbedding();
