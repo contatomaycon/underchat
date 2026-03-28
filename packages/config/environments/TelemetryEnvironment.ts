@@ -1,6 +1,6 @@
-import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
-
 export type OtlpProtocol = 'grpc' | 'http/protobuf';
+
+const DEFAULT_OTEL_SERVICE_NAME = 'underchat';
 
 const DEFAULT_GRPC_ENDPOINT =
   'http://otel-collector-opentelemetry-collector.observability.svc.cluster.local:4317';
@@ -45,18 +45,12 @@ export class TelemetryEnvironment {
   }
 
   public get serviceName(): string {
-    const serviceName =
-      process.env.OTEL_SERVICE_NAME ||
-      process.env.npm_package_name ||
-      process.env.SERVICE_NAME;
-
-    if (!serviceName) {
-      throw new InvalidConfigurationError(
-        'OTEL_SERVICE_NAME is not defined and service name could not be inferred.'
-      );
-    }
-
-    return serviceName;
+    return (
+      process.env.OTEL_SERVICE_NAME?.trim() ||
+      process.env.npm_package_name?.trim() ||
+      process.env.SERVICE_NAME?.trim() ||
+      DEFAULT_OTEL_SERVICE_NAME
+    );
   }
 
   public get resourceAttributes(): Record<string, string> {
