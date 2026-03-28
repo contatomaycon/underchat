@@ -2308,17 +2308,23 @@ export class MessageSendConsume {
     key:
       | {
           remote_jid?: string | null;
+          remote_jid_alt?: string | null;
           from_me?: boolean | null;
           id?: string | null;
           participant?: string | null;
+          participant_alt?: string | null;
+          addressing_mode?: string | null;
         }
       | undefined,
     fallbackRemoteJid = ''
   ): {
     remoteJid: string;
+    remoteJidAlt?: string;
     fromMe: boolean;
     id: string;
     participant?: string;
+    participantAlt?: string;
+    addressingMode?: string;
   } | null {
     const rawId = key?.id?.trim();
     const parsed = parseSerializedMessageId(rawId);
@@ -2327,11 +2333,26 @@ export class MessageSendConsume {
       return null;
     }
 
+    const normalizedRemoteJid =
+      normalizeJid(key?.remote_jid) ??
+      normalizeJid(parsed?.remoteJid) ??
+      normalizeJid(fallbackRemoteJid) ??
+      fallbackRemoteJid;
+    const normalizedRemoteJidAlt =
+      normalizeJid(key?.remote_jid_alt) ?? key?.remote_jid_alt ?? undefined;
+    const normalizedParticipant =
+      normalizeJid(key?.participant) ?? key?.participant ?? undefined;
+    const normalizedParticipantAlt =
+      normalizeJid(key?.participant_alt) ?? key?.participant_alt ?? undefined;
+
     return {
-      remoteJid: key?.remote_jid ?? parsed?.remoteJid ?? fallbackRemoteJid,
+      remoteJid: normalizedRemoteJid,
+      remoteJidAlt: normalizedRemoteJidAlt,
       fromMe: key?.from_me ?? parsed?.fromMe ?? false,
       id: normalizedId,
-      participant: key?.participant || undefined,
+      participant: normalizedParticipant,
+      participantAlt: normalizedParticipantAlt,
+      addressingMode: key?.addressing_mode ?? undefined,
     };
   }
 
@@ -2610,10 +2631,14 @@ export class MessageSendConsume {
   private async processText(jid: string, data: IChatMessage): Promise<void> {
     const hasVersions =
       data.content?.version && data.content.version.length > 0;
-    const hasMessageKey = data.message_key?.id && data.message_key?.remote_jid;
+    const hasMessageKey = !!data.message_key?.id;
 
     if (hasVersions && hasMessageKey && data.message_key && data.content) {
-      const messageKey = this.buildBaileysMessageKey(data.message_key);
+      if (data.message_key.from_me !== true) {
+        throw new Error('Message edit is not allowed for non-own message');
+      }
+
+      const messageKey = this.buildBaileysMessageKey(data.message_key, jid);
       if (!messageKey) return;
 
       const latestVersion = data.content.version
@@ -2624,13 +2649,42 @@ export class MessageSendConsume {
 
       const newText = latestVersion?.message ?? data.content?.message ?? '';
 
-      const result = await this.baileysMessageEditDeleteService.editText(
-        jid,
-        newText,
-        messageKey
-      );
+      let result: WAMessage | undefined;
+      try {
+        result = await this.baileysMessageEditDeleteService.editText(
+          jid,
+          newText,
+          messageKey
+        );
+      } catch (error) {
+        this.logPipelineEvent(
+          'edit_send_failed',
+          {
+            chat_id: data.chat_id,
+            message_id: data.message_id,
+            edit_key_id: messageKey.id,
+            edit_remote_jid: messageKey.remoteJid,
+            edit_addressing_mode: messageKey.addressingMode,
+            error: this.errorMessage(error),
+          },
+          'warn'
+        );
+        throw error;
+      }
 
       if (!result) {
+        this.logPipelineEvent(
+          'edit_send_failed',
+          {
+            chat_id: data.chat_id,
+            message_id: data.message_id,
+            edit_key_id: messageKey.id,
+            edit_remote_jid: messageKey.remoteJid,
+            edit_addressing_mode: messageKey.addressingMode,
+            error: 'empty_result',
+          },
+          'warn'
+        );
         throw new Error('Failed to edit message');
       }
 

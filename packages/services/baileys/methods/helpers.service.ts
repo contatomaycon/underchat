@@ -59,6 +59,10 @@ export class BaileysHelpersService {
       throw new Error(`Failed to send message to ${jid}: missing key.id`);
     }
 
+    if (this.isEditMessage(content)) {
+      return result;
+    }
+
     const outcome = await this.deliveryConfirmation.waitForOutcome(
       messageId,
       this.SEND_CONFIRMATION_TIMEOUT_MS
@@ -335,6 +339,10 @@ export class BaileysHelpersService {
 
   private isReactionOrEdit(content: AnyMessageContent): boolean {
     return !!(content as any)?.react || !!(content as any)?.edit;
+  }
+
+  private isEditMessage(content: AnyMessageContent): boolean {
+    return !!(content as { edit?: unknown })?.edit;
   }
 
   private shouldSimulateTyping(content: AnyMessageContent): boolean {
