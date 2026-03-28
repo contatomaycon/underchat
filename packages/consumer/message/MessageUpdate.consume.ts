@@ -255,6 +255,22 @@ export class MessageUpdateConsume {
   }
 
   private async handleMessage(data: IUpdateMessage): Promise<void> {
+    const patch = this.buildMessageKeyPatch(data);
+    console.log('[BAILEYS_EDIT_DEBUG] message_update_consume_received', {
+      data_message_id: data.data?.message_id ?? null,
+      data_chat_id: data.data?.chat_id ?? null,
+      outgoing_key: {
+        id: data.message?.key?.id ?? null,
+        fromMe: data.message?.key?.fromMe ?? null,
+        remoteJid: data.message?.key?.remoteJid ?? null,
+        remoteJidAlt: (data.message?.key as any)?.remoteJidAlt ?? null,
+        participant: data.message?.key?.participant ?? null,
+        participantAlt: (data.message?.key as any)?.participantAlt ?? null,
+        addressingMode: (data.message?.key as any)?.addressingMode ?? null,
+      },
+      patch,
+    });
+
     await this.updateChatIfMissingRemoteJid(data);
     await this.updateMessageIfMissingKey(data);
   }
