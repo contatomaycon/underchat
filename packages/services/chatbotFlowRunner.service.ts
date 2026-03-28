@@ -2008,13 +2008,45 @@ export class ChatbotFlowRunnerService {
       );
     }
 
-    await this.chatService.updateChatStatus(
+    const statusUpdated = await this.chatService.updateChatStatus(
       activeChat.chat_id,
       EChatStatus.closed,
       null,
       null,
       closedAt
     );
+
+    if (!statusUpdated) {
+      return false;
+    }
+
+    const persistedChatSnapshot = await this.loadCurrentChatState(activeChat);
+    const closedChat: IChat = {
+      ...(persistedChatSnapshot ?? activeChat),
+      status: EChatStatus.closed,
+      closed_at: closedAt,
+    };
+
+    const channelAccountId = closedChat.account?.id ?? activeChat.account.id;
+
+    const publishResults = await Promise.allSettled([
+      this.centrifugoService.publishSubImmediate(
+        chatAccountCentrifugo(channelAccountId),
+        closedChat
+      ),
+      this.centrifugoService.publishSubImmediate(
+        chatQueueAccountCentrifugo(channelAccountId),
+        closedChat
+      ),
+    ]);
+
+    if (publishResults.some((result) => result.status === 'rejected')) {
+      console.error('[ChatbotFlow] failed to publish closed chat update', {
+        chat_id: closedChat.chat_id,
+        account_id: channelAccountId,
+      });
+    }
+
     await Promise.all([
       this.clearChatbotRuntimeStateByIds(
         activeChat.account.id,
@@ -4693,6 +4725,100 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
     recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
     humanSupportEnabled: boolean
   ): Promise<'needs_help' | 'resolved' | 'human_support'> {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return 'needs_help';
+    }
+
+    try {
+      const controlAction = await this.classifyConversationControlAction(
+        aiAgent,
+        userText,
+        recentMessages,
+        humanSupportEnabled
+      );
+
+      if (!controlAction) {
+        const resolvedByFallback = await this.confirmResolvedIntentWithAgent(
+          aiAgent,
+          userText,
+          recentMessages,
+          0
+        );
+        return resolvedByFallback ? 'resolved' : 'needs_help';
+      }
+
+      if (controlAction.action === 'human_support') {
+        return humanSupportEnabled ? 'human_support' : 'needs_help';
+      }
+
+      const resolvedConfirmed = await this.confirmResolvedIntentWithAgent(
+        aiAgent,
+        userText,
+        recentMessages,
+        controlAction.confidence
+      );
+      if (resolvedConfirmed) {
+        return 'resolved';
+      }
+
+      return 'needs_help';
+    } catch (error) {
+      console.error('[ChatbotFlow] analyzeUserIntentWithContext failed', error);
+      return 'needs_help';
+    }
+  }
+
+  private async classifyConversationControlAction(
+    aiAgent: ViewAiAgentResponse,
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    humanSupportEnabled: boolean
+  ): Promise<{
+    action: 'continue' | 'finish' | 'human_support';
+    confidence: number;
+  } | null> {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return null;
+    }
+
+    const basePrompt = this.buildConversationControlActionPrompt(
+      userText,
+      recentMessages,
+      humanSupportEnabled
+    );
+    const prompts = [
+      basePrompt,
+      `${basePrompt}\n\nATENÇÃO: Sua resposta anterior foi inválida. Retorne somente JSON válido exatamente no formato solicitado.`,
+    ];
+
+    for (const prompt of prompts) {
+      const analysis = await this.callAiAgentChatApiWithRetry(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        prompt,
+        userText,
+        recentMessages.slice(-20)
+      );
+
+      const parsed = this.parseConversationControlActionResult(analysis);
+      if (parsed) {
+        if (parsed.action === 'human_support' && !humanSupportEnabled) {
+          return { action: 'continue', confidence: 1 };
+        }
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  private buildConversationControlActionPrompt(
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    humanSupportEnabled: boolean
+  ): string {
     const conversationContext = recentMessages
       .slice(-20)
       .map(
@@ -4701,90 +4827,45 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
       )
       .join('\n');
 
-    const humanSupportSection = humanSupportEnabled
-      ? `- "human_support": O usuário quer EXPLICITAMENTE falar com um atendente humano, operador ou pessoa real. Exemplos: "quero falar com humano", "quero falar com um operador", "falar com operador", "falar com atendente", "quero falar com suporte", "me transfere para uma pessoa", "preciso falar com um atendente".\n`
-      : '';
+    const humanSupportRule = humanSupportEnabled
+      ? '- Se o usuário pedir explicitamente atendimento humano (atendente, operador, pessoa real, suporte humano), marque action = "human_support".'
+      : '- Transferência humana está desabilitada. Neste caso, NUNCA use action = "human_support". Use "continue".';
 
-    const validOptions = humanSupportEnabled
-      ? 'needs_help|resolved|human_support'
-      : 'needs_help|resolved';
+    return `Você é um classificador semântico de controle de atendimento.
 
-    const analysisPrompt = `Você é um classificador de intenção especializado em atendimento ao cliente. Analise a mensagem mais recente do usuário NO CONTEXTO da conversa completa para determinar a intenção.
+Objetivo:
+Classificar a ÚLTIMA mensagem do usuário para decidir a ação do fluxo.
 
-Classificações possíveis:
-- "needs_help": O usuário tem uma pergunta, precisa de assistência, quer mais informações, está continuando a conversa sobre qualquer tópico, ou enviou qualquer mensagem que não seja CLARAMENTE uma despedida ou encerramento. Use esta classificação para QUALQUER dúvida, mesmo que pareça simples.
-- "resolved": O usuário sinalizou CLARA e EXPLICITAMENTE que sua questão foi resolvida e não precisa de mais ajuda. Exemplos: "obrigado, era só isso", "não preciso de mais nada", "pode encerrar", "já resolvi minha dúvida", "tudo certo, obrigado, era isso mesmo", "é só isso mesmo", "não tenho mais dúvidas".
-${humanSupportSection}
-REGRAS IMPORTANTES:
-1. Se o usuário pedir EXPLICITAMENTE para falar com humano/operador/atendente/suporte/pessoa real, classifique como "human_support" (prioridade máxima, mesmo que exista contexto anterior).
-2. Se a transferência humana NÃO estiver habilitada, NUNCA classifique como "human_support". Nesses casos, classifique como "needs_help".
-3. Quando houver QUALQUER dúvida, classifique como "needs_help". O padrão é SEMPRE "needs_help".
-4. Um simples "obrigado", "ok", "valeu" ou "entendi" sozinho NÃO é suficiente para "resolved" - o usuário DEVE sinalizar explicitamente que não precisa de mais ajuda.
-5. Se o usuário fizer qualquer pergunta ou continuar interagindo sobre o tema, SEMPRE classifique como "needs_help".
-6. Só classifique como "resolved" quando for ABSOLUTAMENTE claro pelo contexto que o usuário não tem mais dúvidas e quer encerrar.
-7. Se o usuário disser algo como "obrigado" seguido de uma pergunta ou comentário, classifique como "needs_help".
-8. Considere o contexto COMPLETO da conversa para tomar a decisão.
-9. Mensagens curtas como "ok", "certo", "entendi" sem contexto de encerramento devem ser "needs_help".
+Ações possíveis:
+- "continue": continuar atendimento normal.
+- "finish": usuário quer encerrar/finalizar o atendimento e não deseja mais ajuda.
+- "human_support": usuário quer falar com humano.
 
-Histórico recente da conversa:
+Regras:
+1. Se a última mensagem trouxer nova pergunta, novo pedido, nova dúvida ou continuação de tema, use "continue".
+2. Se a última mensagem indicar claramente intenção de finalizar o atendimento, use "finish".
+3. ${humanSupportRule}
+4. Em ambiguidade, use "continue".
+5. Seja conservador: jamais finalize quando houver dúvida sobre a intenção.
+
+Exemplos que normalmente indicam "finish":
+- "obrigado, era isso"
+- "quero finalizar o atendimento"
+- "pode encerrar"
+- "não preciso de mais ajuda"
+
+Histórico recente:
 ${conversationContext || '(sem histórico anterior)'}
 
-Mensagem mais recente do usuário: "${userText}"
+Última mensagem do usuário:
+"${userText}"
 
-Retorne APENAS JSON válido (sem markdown), no formato:
-{"intent":"${validOptions}","confidence":0.0}
-
-Regras da saída:
-- confidence deve ser um número entre 0 e 1.
-- Se houver qualquer dúvida, retorne intent = "needs_help".`;
-
-    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
-      return 'needs_help';
-    }
-
-    try {
-      const analysis = await this.callAiAgentChatApiWithRetry(
-        aiAgent.base_url,
-        aiAgent.api_key,
-        aiAgent.model,
-        aiAgent.ai_agent_type_id,
-        analysisPrompt,
-        userText,
-        recentMessages.slice(-20)
-      );
-
-      const parsed = this.parseUserIntentAnalysisResult(
-        analysis,
-        humanSupportEnabled
-      );
-      if (!parsed) {
-        return 'needs_help';
-      }
-
-      if (parsed.intent === 'resolved') {
-        const resolvedConfirmed = await this.confirmResolvedIntentWithAgent(
-          aiAgent,
-          userText,
-          recentMessages,
-          parsed.confidence
-        );
-        if (!resolvedConfirmed) {
-          return 'needs_help';
-        }
-      }
-
-      return parsed.intent;
-    } catch (error) {
-      console.error('[ChatbotFlow] analyzeUserIntentWithContext failed', error);
-      return 'needs_help';
-    }
+Retorne APENAS JSON válido (sem markdown):
+{"action":"continue|finish|human_support","confidence":0.0}`;
   }
 
-  private parseUserIntentAnalysisResult(
-    analysis: string,
-    humanSupportEnabled: boolean
-  ): {
-    intent: 'needs_help' | 'resolved' | 'human_support';
+  private parseConversationControlActionResult(analysis: string): {
+    action: 'continue' | 'finish' | 'human_support';
     confidence: number;
   } | null {
     if (!analysis || typeof analysis !== 'string') {
@@ -4798,15 +4879,15 @@ Regras da saída:
 
     try {
       const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-      const rawIntent = String(parsed.intent ?? '')
+      const rawAction = String(parsed.action ?? '')
         .trim()
         .toLowerCase()
         .replace(/\s+/g, '_');
 
       if (
-        rawIntent !== 'needs_help' &&
-        rawIntent !== 'resolved' &&
-        rawIntent !== 'human_support'
+        rawAction !== 'continue' &&
+        rawAction !== 'finish' &&
+        rawAction !== 'human_support'
       ) {
         return null;
       }
@@ -4822,15 +4903,13 @@ Regras da saída:
           ? Math.min(1, Math.max(0, rawConfidence))
           : 0.5;
 
-      const intent = rawIntent as 'needs_help' | 'resolved' | 'human_support';
-      if (intent === 'human_support' && !humanSupportEnabled) {
-        return { intent: 'needs_help', confidence: 1 };
-      }
-
-      return { intent, confidence };
+      return {
+        action: rawAction as 'continue' | 'finish' | 'human_support',
+        confidence,
+      };
     } catch (error) {
       console.error(
-        '[ChatbotFlow] parseUserIntentAnalysisResult failed',
+        '[ChatbotFlow] parseConversationControlActionResult failed',
         error
       );
       return null;
@@ -4847,30 +4926,37 @@ Regras da saída:
       return false;
     }
 
-    const prompt = this.buildResolvedIntentReviewPrompt(
+    const basePrompt = this.buildResolvedIntentReviewPrompt(
       userText,
       recentMessages,
       firstPassConfidence
     );
+    const prompts = [
+      basePrompt,
+      `${basePrompt}\n\nATENÇÃO: Sua resposta anterior foi inválida. Retorne somente JSON válido no formato solicitado.`,
+    ];
 
     try {
-      const review = await this.callAiAgentChatApiWithRetry(
-        aiAgent.base_url,
-        aiAgent.api_key,
-        aiAgent.model,
-        aiAgent.ai_agent_type_id,
-        prompt,
-        userText,
-        recentMessages.slice(-20)
-      );
+      for (const prompt of prompts) {
+        const review = await this.callAiAgentChatApiWithRetry(
+          aiAgent.base_url,
+          aiAgent.api_key,
+          aiAgent.model,
+          aiAgent.ai_agent_type_id,
+          prompt,
+          userText,
+          recentMessages.slice(-20)
+        );
 
-      const parsed = this.parseResolvedIntentReviewResult(review);
-      if (!parsed) {
-        return false;
+        const parsed = this.parseResolvedIntentReviewResult(review);
+        if (!parsed) {
+          continue;
+        }
+
+        const minimumConfidence = 0.75;
+        return parsed.shouldClose && parsed.confidence >= minimumConfidence;
       }
-
-      const minimumConfidence = 0.75;
-      return parsed.shouldClose && parsed.confidence >= minimumConfidence;
+      return false;
     } catch (error) {
       console.error(
         '[ChatbotFlow] confirmResolvedIntentWithAgent failed',
