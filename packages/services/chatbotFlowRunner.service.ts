@@ -91,96 +91,6 @@ export class ChatbotFlowRunnerService {
       EChatStatus.ura_schedule,
       EChatStatus.ura_webhook,
     ]);
-  private static readonly STOP_WORDS = new Set<string>([
-    'a',
-    'o',
-    'os',
-    'as',
-    'um',
-    'uma',
-    'uns',
-    'umas',
-    'de',
-    'do',
-    'da',
-    'dos',
-    'das',
-    'e',
-    'ou',
-    'que',
-    'como',
-    'qual',
-    'quais',
-    'quando',
-    'onde',
-    'quem',
-    'por',
-    'porque',
-    'pra',
-    'para',
-    'com',
-    'sem',
-    'nao',
-    'sim',
-    'se',
-    'em',
-    'no',
-    'na',
-    'nos',
-    'nas',
-    'sobre',
-    'isso',
-    'isto',
-    'essa',
-    'esse',
-    'aquela',
-    'aquele',
-    'aqui',
-    'ali',
-    'ja',
-    'so',
-    'sou',
-    'estou',
-    'esta',
-    'estao',
-    'ser',
-    'ter',
-    'me',
-    'minha',
-    'meu',
-    'meus',
-    'minhas',
-    'sua',
-    'seu',
-    'seus',
-    'suas',
-    'nosso',
-    'nossa',
-    'voces',
-    'voce',
-    'eu',
-    'tu',
-    'ele',
-    'ela',
-    'eles',
-    'elas',
-    'tudo',
-    'mais',
-    'menos',
-    'tambem',
-    'mesmo',
-    'mesma',
-    'ainda',
-    'agora',
-    'favor',
-    'porfavor',
-    'poderia',
-    'pode',
-    'poder',
-    'quer',
-    'quero',
-    'gostaria',
-  ]);
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -7476,6 +7386,12 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
               accountId: createChat.account.id,
               allPrompts,
               userText,
+              aiAgent: {
+                base_url: aiAgent.base_url,
+                api_key: aiAgent.api_key,
+                model: aiAgent.model,
+                ai_agent_type_id: aiAgent.ai_agent_type_id,
+              },
               allowExternalContext,
               combinedAllowed,
               effectivePrompt,
@@ -7564,7 +7480,13 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       const runtimeFallback = await this.tryRuntimePromptFallback(
         createChat.account.id,
         allPrompts,
-        userText
+        userText,
+        {
+          base_url: aiAgent.base_url,
+          api_key: aiAgent.api_key,
+          model: aiAgent.model,
+          ai_agent_type_id: aiAgent.ai_agent_type_id,
+        }
       );
 
       if (runtimeFallback) {
@@ -7675,6 +7597,12 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       updated_at: string | null;
     }>;
     userText: string;
+    aiAgent: {
+      base_url: string | null;
+      api_key: string | null;
+      model: string | null;
+      ai_agent_type_id: string;
+    };
     allowExternalContext: boolean;
     combinedAllowed: boolean;
     effectivePrompt: string;
@@ -7701,7 +7629,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     const runtimeFallback = await this.tryRuntimePromptFallback(
       input.accountId,
       input.allPrompts,
-      input.userText
+      input.userText,
+      input.aiAgent
     );
 
     if (!runtimeFallback) {
@@ -7814,8 +7743,18 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       status: string;
       updated_at: string | null;
     }>,
-    userText: string
+    userText: string,
+    aiAgent: {
+      base_url: string | null;
+      api_key: string | null;
+      model: string | null;
+      ai_agent_type_id: string;
+    }
   ): Promise<{ contextText: string; contextHints: string[] } | null> {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return null;
+    }
+
     const activeFilePrompts = prompts.filter(
       (prompt) =>
         prompt.status === EAiAgentStatus.active &&
@@ -7838,7 +7777,21 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         continue;
       }
 
-      const match = this.findBestRuntimePromptMatch(userText, promptText);
+      const candidates = this.buildRuntimeFallbackCandidates(promptText);
+      if (candidates.length === 0) {
+        continue;
+      }
+
+      const match = await this.selectRuntimeFallbackCandidateWithAgent(
+        {
+          base_url: aiAgent.base_url,
+          api_key: aiAgent.api_key,
+          model: aiAgent.model,
+          ai_agent_type_id: aiAgent.ai_agent_type_id,
+        },
+        userText,
+        candidates
+      );
       if (!match) {
         continue;
       }
@@ -7912,121 +7865,257 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     }
   }
 
-  private findBestRuntimePromptMatch(
+  private buildRuntimeFallbackCandidates(promptText: string): Array<{
+    selectionText: string;
+    contextText: string;
+    contextHints: string[];
+  }> {
+    const candidates: Array<{
+      selectionText: string;
+      contextText: string;
+      contextHints: string[];
+    }> = [];
+
+    const faqEntries = this.splitPromptTextIntoFaqEntries(promptText);
+    for (const entry of faqEntries) {
+      const question = entry.question.replace(/\s+/g, ' ').trim();
+      const answer = entry.answer.replace(/\s+/g, ' ').trim();
+      if (!question || !answer) {
+        continue;
+      }
+
+      candidates.push({
+        selectionText:
+          question.length > 220
+            ? `${question.slice(0, 217).trimEnd()}...`
+            : question,
+        contextText: [
+          `Pergunta encontrada na base: ${question}`,
+          `Resposta oficial: ${answer}`,
+        ].join('\n'),
+        contextHints: [question],
+      });
+    }
+
+    if (candidates.length > 0) {
+      return candidates.slice(0, 250);
+    }
+
+    const paragraphs = promptText
+      .split(/\n\s*\n/g)
+      .map((part) => part.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+
+    for (const paragraph of paragraphs) {
+      if (paragraph.length < 40) {
+        continue;
+      }
+
+      const selectionText =
+        paragraph.length > 220
+          ? `${paragraph.slice(0, 217).trimEnd()}...`
+          : paragraph;
+
+      candidates.push({
+        selectionText,
+        contextText: `Trecho relevante da base:\n${paragraph}`,
+        contextHints: [selectionText],
+      });
+    }
+
+    return candidates.slice(0, 250);
+  }
+
+  private async selectRuntimeFallbackCandidateWithAgent(
+    aiAgent: {
+      base_url: string;
+      api_key: string;
+      model: string;
+      ai_agent_type_id: string;
+    },
     userText: string,
-    promptText: string
-  ): { score: number; contextText: string; contextHints: string[] } | null {
-    const queryTokens = this.extractKeywordTokens(userText);
-    if (queryTokens.length === 0) {
+    candidates: Array<{
+      selectionText: string;
+      contextText: string;
+      contextHints: string[];
+    }>
+  ): Promise<{
+    score: number;
+    contextText: string;
+    contextHints: string[];
+  } | null> {
+    if (candidates.length === 0) {
       return null;
     }
 
-    const queryTokenSet = new Set(queryTokens);
-    const normalizedQuery = this.normalizeTextForComparison(userText);
-    const faqEntries = this.splitPromptTextIntoFaqEntries(promptText);
+    const maxBatches = 6;
+    const batchSize = 40;
+    const minimumConfidence = 0.55;
     let best: {
       score: number;
       contextText: string;
       contextHints: string[];
     } | null = null;
 
-    for (const entry of faqEntries) {
-      const questionTokens = this.extractKeywordTokens(entry.question);
-      if (questionTokens.length === 0) {
+    for (
+      let offset = 0, batch = 0;
+      offset < candidates.length && batch < maxBatches;
+      offset += batchSize, batch += 1
+    ) {
+      const candidateBatch = candidates.slice(offset, offset + batchSize);
+      if (candidateBatch.length === 0) {
         continue;
       }
 
-      const questionTokenSet = new Set(questionTokens);
-      const overlap = queryTokens.filter((token) =>
-        questionTokenSet.has(token)
-      ).length;
-      const questionCoverage = overlap / queryTokens.length;
-
-      const answerTokens = this.extractKeywordTokens(entry.answer);
-      const answerOverlap = answerTokens.filter((token) =>
-        queryTokenSet.has(token)
-      ).length;
-      const answerCoverage =
-        answerTokens.length > 0 ? answerOverlap / answerTokens.length : 0;
-      const exactBoost =
-        this.normalizeTextForComparison(entry.question).includes(
-          normalizedQuery
-        ) ||
-        normalizedQuery.includes(
-          this.normalizeTextForComparison(entry.question)
-        )
-          ? 0.25
-          : 0;
-      const score = Math.min(
-        1,
-        questionCoverage * 0.75 + answerCoverage * 0.25 + exactBoost
+      const selection = await this.classifyRuntimeFallbackBatch(
+        aiAgent,
+        userText,
+        candidateBatch
       );
-
-      if (score < 0.58) {
+      if (!selection || selection.selectedIndex <= 0) {
         continue;
       }
 
-      const contextText = [
-        `Pergunta encontrada na base: ${entry.question}`,
-        `Resposta oficial: ${entry.answer}`,
-      ].join('\n');
-      const contextHints = this.extractKeywordTokens(
-        `${entry.question} ${entry.answer}`
-      ).slice(0, 4);
+      const selectedCandidate = candidateBatch[selection.selectedIndex - 1];
+      if (!selectedCandidate) {
+        continue;
+      }
 
-      if (!best || score > best.score) {
+      if (!best || selection.confidence > best.score) {
         best = {
-          score,
-          contextText,
-          contextHints,
+          score: selection.confidence,
+          contextText: selectedCandidate.contextText,
+          contextHints: selectedCandidate.contextHints,
         };
       }
     }
 
-    if (best) {
-      return best;
-    }
-
-    const paragraphs = promptText
-      .split(/\n\s*\n/g)
-      .map((part) => part.trim())
-      .filter(Boolean);
-    let bestParagraph: {
-      score: number;
-      paragraph: string;
-    } | null = null;
-    for (const paragraph of paragraphs) {
-      const paragraphTokens = this.extractKeywordTokens(paragraph);
-      if (paragraphTokens.length === 0) {
-        continue;
-      }
-      const overlap = queryTokens.filter((token) =>
-        paragraphTokens.includes(token)
-      ).length;
-      const score = overlap / queryTokens.length;
-      if (score < 0.6) {
-        continue;
-      }
-      if (!bestParagraph || score > bestParagraph.score) {
-        bestParagraph = {
-          score,
-          paragraph,
-        };
-      }
-    }
-
-    if (!bestParagraph) {
+    if (!best || best.score < minimumConfidence) {
       return null;
     }
 
-    return {
-      score: bestParagraph.score,
-      contextText: `Trecho relevante da base:\n${bestParagraph.paragraph}`,
-      contextHints: this.extractKeywordTokens(bestParagraph.paragraph).slice(
-        0,
-        4
-      ),
-    };
+    return best;
+  }
+
+  private async classifyRuntimeFallbackBatch(
+    aiAgent: {
+      base_url: string;
+      api_key: string;
+      model: string;
+      ai_agent_type_id: string;
+    },
+    userText: string,
+    candidates: Array<{ selectionText: string }>
+  ): Promise<{ selectedIndex: number; confidence: number } | null> {
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const candidatesText = candidates
+      .map((candidate, index) => `${index + 1}. ${candidate.selectionText}`)
+      .join('\n');
+
+    const basePrompt = `Você é um classificador semântico de relevância para base de conhecimento.
+
+Objetivo:
+- Analisar a pergunta do usuário e selecionar o candidato que melhor responde a pergunta.
+- Faça avaliação semântica (intenção e significado), não comparação literal.
+
+Regras:
+1. Se nenhum candidato realmente responder à pergunta, retorne selected_index = 0.
+2. Retorne confidence entre 0 e 1.
+3. Não invente candidato. Use apenas índices da lista.
+4. Em caso de dúvida, prefira selected_index = 0.
+
+Pergunta do usuário:
+"${userText}"
+
+Candidatos:
+${candidatesText}
+
+Retorne APENAS JSON válido (sem markdown):
+{"selected_index":0|1..${candidates.length},"confidence":0.0}`;
+    const prompts = [
+      basePrompt,
+      `${basePrompt}\n\nATENÇÃO: Sua resposta anterior foi inválida. Retorne somente JSON válido no formato solicitado.`,
+    ];
+
+    for (const prompt of prompts) {
+      const rawResponse = await this.callAiAgentChatApiWithRetry(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        prompt,
+        userText
+      );
+
+      const parsed = this.parseRuntimeFallbackSelection(
+        rawResponse,
+        candidates.length
+      );
+      if (parsed) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  private parseRuntimeFallbackSelection(
+    analysis: string,
+    maxIndex: number
+  ): { selectedIndex: number; confidence: number } | null {
+    if (!analysis || typeof analysis !== 'string') {
+      return null;
+    }
+
+    const jsonMatch = analysis.match(/\{[\s\S]*?\}/);
+    if (!jsonMatch) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      const rawSelectedIndex =
+        typeof parsed.selected_index === 'number'
+          ? parsed.selected_index
+          : typeof parsed.selectedIndex === 'number'
+            ? parsed.selectedIndex
+            : typeof parsed.index === 'number'
+              ? parsed.index
+              : Number(parsed.selected_index ?? parsed.selectedIndex ?? 0);
+      if (!Number.isFinite(rawSelectedIndex)) {
+        return null;
+      }
+
+      const selectedIndex = Math.max(0, Math.floor(rawSelectedIndex));
+      if (selectedIndex > maxIndex) {
+        return null;
+      }
+
+      const rawConfidence =
+        typeof parsed.confidence === 'number'
+          ? parsed.confidence
+          : typeof parsed.score === 'number'
+            ? parsed.score
+            : 0;
+      const confidence =
+        Number.isFinite(rawConfidence) && rawConfidence >= 0
+          ? Math.min(1, rawConfidence)
+          : 0;
+
+      return {
+        selectedIndex,
+        confidence,
+      };
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] parseRuntimeFallbackSelection failed',
+        error
+      );
+      return null;
+    }
   }
 
   private splitPromptTextIntoFaqEntries(
@@ -8466,20 +8555,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
-  }
-
-  private extractKeywordTokens(text: string): string[] {
-    const normalized = this.normalizeTextForComparison(text);
-    if (!normalized) {
-      return [];
-    }
-
-    return normalized
-      .split(' ')
-      .filter(
-        (token) =>
-          token.length >= 3 && !ChatbotFlowRunnerService.STOP_WORDS.has(token)
-      );
   }
 
   private hashText(text: string): string {
