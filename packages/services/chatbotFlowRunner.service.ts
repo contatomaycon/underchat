@@ -7950,7 +7950,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const maxBatches = 6;
     const batchSize = 40;
-    const minimumConfidence = 0.55;
+    const minimumConfidence = 0.35;
     let best: {
       score: number;
       contextText: string;
@@ -8015,17 +8015,23 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       .map((candidate, index) => `${index + 1}. ${candidate.selectionText}`)
       .join('\n');
 
-    const basePrompt = `Você é um classificador semântico de relevância para base de conhecimento.
+    const basePrompt =
+      `Você é um classificador semântico de relevância para base de conhecimento.
 
 Objetivo:
 - Analisar a pergunta do usuário e selecionar o candidato que melhor responde a pergunta.
 - Faça avaliação semântica (intenção e significado), não comparação literal.
 
 Regras:
-1. Se nenhum candidato realmente responder à pergunta, retorne selected_index = 0.
-2. Retorne confidence entre 0 e 1.
-3. Não invente candidato. Use apenas índices da lista.
-4. Em caso de dúvida, prefira selected_index = 0.
+1. Se houver candidato semanticamente relacionado e útil para responder, selecione o melhor candidato.
+2. Retorne selected_index = 0 APENAS quando nenhum candidato tiver relação semântica suficiente.
+3. Considere paráfrases, variações de redação e perguntas que pedem um detalhe específico da resposta (ex.: pergunta sobre e-mail dentro de um candidato sobre canais de contato).
+4. Retorne confidence entre 0 e 1.
+5. Não invente candidato. Use apenas índices da lista.
+6. Em empate, prefira o candidato mais específico para a pergunta.
+7. Não use ` +
+      '`selected_index = 0`' +
+      ` por excesso de conservadorismo quando houver candidato plausível.
 
 Pergunta do usuário:
 "${userText}"
@@ -8099,7 +8105,7 @@ Retorne APENAS JSON válido (sem markdown):
           ? parsed.confidence
           : typeof parsed.score === 'number'
             ? parsed.score
-            : 0;
+            : Number(parsed.confidence ?? parsed.score ?? 0);
       const confidence =
         Number.isFinite(rawConfidence) && rawConfidence >= 0
           ? Math.min(1, rawConfidence)
