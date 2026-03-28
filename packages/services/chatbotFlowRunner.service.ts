@@ -1016,6 +1016,96 @@ export class ChatbotFlowRunnerService {
     throw lastError;
   }
 
+  private getErrorMessage(error: unknown): string {
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    if (error instanceof Error) {
+      return error.message ?? '';
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error ?? '');
+    }
+  }
+
+  private isAiInteractionError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+
+    if (error instanceof InvalidConfigurationError) {
+      return false;
+    }
+
+    const normalizedMessage = this.getErrorMessage(error).trim().toLowerCase();
+    if (!normalizedMessage) {
+      return false;
+    }
+
+    if (
+      normalizedMessage.includes('ai agent api error:') ||
+      normalizedMessage.includes('gemini api error:')
+    ) {
+      return true;
+    }
+
+    const interactionMarkers = [
+      'resource_exhausted',
+      'quota exceeded',
+      'too many requests',
+      'rate limit',
+      'timeout',
+      'timed out',
+      'etimedout',
+      'aborterror',
+      'fetch failed',
+      'network error',
+      'service unavailable',
+      'temporarily unavailable',
+      'gateway timeout',
+      'connection reset',
+      'econnreset',
+      'socket hang up',
+      'token expired',
+      'invalid api key',
+      'unauthorized',
+      'forbidden',
+    ];
+
+    return interactionMarkers.some((marker) =>
+      normalizedMessage.includes(marker)
+    );
+  }
+
+  private async tryProcessAiInteractionFallback(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: IChatbotCustomMessages
+  ): Promise<boolean> {
+    const nextFlowId = this.getNextFlowIdByFallbackHandle(
+      chatbotFlow,
+      currentFlowId
+    );
+    if (!nextFlowId) {
+      return false;
+    }
+
+    await this.updateCache(createChat, nextFlowId);
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
+  }
+
   private async ensureBootstrapSummary(
     bootstrapSummaryKey: string,
     promptsText: string,
@@ -4763,6 +4853,9 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
 
       return 'needs_help';
     } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        throw error;
+      }
       console.error('[ChatbotFlow] analyzeUserIntentWithContext failed', error);
       return 'needs_help';
     }
@@ -4958,6 +5051,9 @@ Retorne APENAS JSON válido (sem markdown):
       }
       return false;
     } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        throw error;
+      }
       console.error(
         '[ChatbotFlow] confirmResolvedIntentWithAgent failed',
         error
@@ -5050,7 +5146,8 @@ Retorne APENAS JSON válido (sem markdown):
     createChat: IChat,
     aiAgent: ViewAiAgentResponse,
     userText: string,
-    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    options?: { throwOnAiInteractionError?: boolean }
   ): Promise<string | null> {
     if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
       return null;
@@ -5092,6 +5189,12 @@ Retorne APENAS JSON válido (sem markdown):
 
       return parsed.response;
     } catch (error) {
+      if (
+        options?.throwOnAiInteractionError &&
+        this.isAiInteractionError(error)
+      ) {
+        throw error;
+      }
       console.error(
         '[ChatbotFlow] tryBuildConversationalNoEvidenceReply failed',
         error
@@ -5482,6 +5585,9 @@ Regras de saída:
         message: decision.message ?? '',
       };
     } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        throw error;
+      }
       console.error('[ChatbotFlow] resolveHumanTransferByPrompt failed', error);
       return {
         shouldTransfer: false,
@@ -6829,14 +6935,42 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     let suppressTransferMention = false;
 
     if (transferMode === 'prompt') {
-      const promptTransferDecision = await this.resolveHumanTransferByPrompt(
-        aiAgent,
-        createChat,
-        userText,
-        recentMessages
-      );
+      let promptTransferDecision: {
+        shouldTransfer: boolean;
+        sector: ITransferSectorOption | null;
+        user: IChat['user'] | null;
+        message: string;
+      } | null = null;
 
-      if (promptTransferDecision.shouldTransfer) {
+      try {
+        promptTransferDecision = await this.resolveHumanTransferByPrompt(
+          aiAgent,
+          createChat,
+          userText,
+          recentMessages
+        );
+      } catch (error) {
+        if (this.isAiInteractionError(error)) {
+          console.error(
+            '[ChatbotFlow] AI interaction failed on transfer resolution, routing fallback',
+            error
+          );
+          const fallbackHandled = await this.tryProcessAiInteractionFallback(
+            t,
+            createChat,
+            chatbotFlow,
+            currentFlowId,
+            customMessages
+          );
+          if (fallbackHandled) {
+            return true;
+          }
+        } else {
+          throw error;
+        }
+      }
+
+      if (promptTransferDecision?.shouldTransfer) {
         return this.executeHumanSupportTransfer(
           t,
           createChat,
@@ -6852,12 +6986,35 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const humanSupportEnabled = transferMode === 'standard';
 
-    const intent = await this.analyzeUserIntentWithContext(
-      aiAgent,
-      userText,
-      recentMessages,
-      humanSupportEnabled
-    );
+    let intent: 'needs_help' | 'resolved' | 'human_support' = 'needs_help';
+
+    try {
+      intent = await this.analyzeUserIntentWithContext(
+        aiAgent,
+        userText,
+        recentMessages,
+        humanSupportEnabled
+      );
+    } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        console.error(
+          '[ChatbotFlow] AI interaction failed on intent analysis, routing fallback',
+          error
+        );
+        const fallbackHandled = await this.tryProcessAiInteractionFallback(
+          t,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          customMessages
+        );
+        if (fallbackHandled) {
+          return true;
+        }
+      } else {
+        throw error;
+      }
+    }
 
     if (intent === 'resolved') {
       const resolvedNextFlowId = this.getNextFlowIdByOption(
@@ -6974,6 +7131,22 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       contextAllowed = promptData.contextAllowed;
       contextHints = promptData.contextHints;
     } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        console.error(
+          '[ChatbotFlow] AI interaction failed while building enhanced prompt, routing fallback',
+          error
+        );
+        const fallbackHandled = await this.tryProcessAiInteractionFallback(
+          t,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          customMessages
+        );
+        if (fallbackHandled) {
+          return true;
+        }
+      }
       console.error(
         '[ChatbotFlow] buildEnhancedPromptForAiAgent failed, using fallback prompt',
         error
@@ -6997,13 +7170,35 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     let aiResponse: string;
     let shouldStoreLastAgentResponse = false;
     if (!contextAllowed) {
-      const conversationalReply =
-        await this.tryBuildConversationalNoEvidenceReply(
+      let conversationalReply: string | null = null;
+      try {
+        conversationalReply = await this.tryBuildConversationalNoEvidenceReply(
           createChat,
           aiAgent,
           userText,
-          recentMessages
+          recentMessages,
+          { throwOnAiInteractionError: true }
         );
+      } catch (error) {
+        if (this.isAiInteractionError(error)) {
+          console.error(
+            '[ChatbotFlow] AI interaction failed on no-evidence conversational reply, routing fallback',
+            error
+          );
+          const fallbackHandled = await this.tryProcessAiInteractionFallback(
+            t,
+            createChat,
+            chatbotFlow,
+            currentFlowId,
+            customMessages
+          );
+          if (fallbackHandled) {
+            return true;
+          }
+        }
+        throw error;
+      }
+
       if (conversationalReply) {
         aiResponse = conversationalReply;
         shouldStoreLastAgentResponse = true;
@@ -7058,20 +7253,16 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
           );
         }
       } catch (error) {
-        const nextFlowId = this.getNextFlowIdByFallbackHandle(
+        const fallbackHandled = await this.tryProcessAiInteractionFallback(
+          t,
+          createChat,
           chatbotFlow,
-          currentFlowId
+          currentFlowId,
+          customMessages
         );
 
-        if (nextFlowId) {
-          await this.updateCache(createChat, nextFlowId);
-          return this.processNextNode(
-            t,
-            createChat,
-            chatbotFlow,
-            nextFlowId,
-            customMessages
-          );
+        if (fallbackHandled) {
+          return true;
         }
 
         throw error;
