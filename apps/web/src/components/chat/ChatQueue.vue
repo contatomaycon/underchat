@@ -16,13 +16,25 @@ const { global } = useTheme();
 const chatStore = useChatStore();
 const channelsStore = useChannelsStore();
 
+const emit = defineEmits<{
+  (e: 'checkbox-change', checked: boolean): void;
+}>();
+
 const props = withDefaults(
   defineProps<{
     user: ListChatsResult;
     disabled?: boolean;
     showChatbotTypeIndicator?: boolean;
+    showCheckbox?: boolean;
+    checked?: boolean;
+    checkboxDisabled?: boolean;
   }>(),
-  { showChatbotTypeIndicator: false }
+  {
+    showChatbotTypeIndicator: false,
+    showCheckbox: false,
+    checked: false,
+    checkboxDisabled: false,
+  }
 );
 
 const isChatContactActive = computed(() => {
@@ -246,6 +258,7 @@ watch(
       :class="{
         'chat-active': isChatContactActive,
         'chat-disabled': props.disabled,
+        'chat-with-checkbox': props.showCheckbox,
         'chat-has-label':
           (showWorkerNameLabel && workerName) || chatLabelForList,
         'chat-has-sector': sectorName,
@@ -253,6 +266,15 @@ watch(
       }"
       :aria-disabled="props.disabled ? 'true' : undefined"
     >
+      <div v-if="props.showCheckbox" class="chat-checkbox-wrapper" @click.stop>
+        <VCheckboxBtn
+          :model-value="props.checked"
+          :disabled="props.checkboxDisabled"
+          density="compact"
+          @update:model-value="emit('checkbox-change', Boolean($event))"
+          @click.stop
+        />
+      </div>
       <div
         v-if="(showWorkerNameLabel && workerName) || chatLabelForList"
         class="chat-worker-label-wrapper"
@@ -475,6 +497,17 @@ watch(
   &.chat-has-attendant {
     padding-inline-end: calc(12px + var(--chat-attendant-label-size));
   }
+
+  &.chat-with-checkbox {
+    padding-inline-start: 44px;
+  }
+}
+
+.chat-checkbox-wrapper {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 4;
 }
 
 .chat-sector-label {

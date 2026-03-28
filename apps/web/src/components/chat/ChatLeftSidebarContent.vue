@@ -30,6 +30,10 @@ import {
   TransferWorker,
   TransferSector,
 } from '@core/schema/chat/listTransferOptions/response.schema';
+import type { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
+import type { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
+import type { BulkActionChatRequest } from '@core/schema/chat/bulkAction/request.schema';
+import type { BulkActionChatResponse } from '@core/schema/chat/bulkAction/response.schema';
 
 type OpenChatOptions = {
   skipClearSummary?: boolean;
@@ -96,6 +100,63 @@ const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
 const isAdvancedFiltersModalOpen = ref(false);
 const hasAppliedAdvancedFilters = ref(false);
 const isContactAdvancedFiltersModalOpen = ref(false);
+
+type BulkCategory = Extract<
+  FilterType,
+  'all' | 'in_chat' | 'queue' | 'my_chats' | 'chatbot' | 'scheduled'
+>;
+
+type TransferChannelOption = {
+  value: string;
+  title: string;
+  name: string;
+  number: string | null;
+};
+
+const isBulkModeEnabled = ref(false);
+const bulkSelectAllFiltered = ref(false);
+const bulkSelectedChatIds = ref<Set<string>>(new Set());
+const isBulkActionRunning = ref(false);
+const isBulkTransferDialogOpen = ref(false);
+const isBulkCloseDialogOpen = ref(false);
+const isBulkSummaryDialogOpen = ref(false);
+const bulkSummary = ref<BulkActionChatResponse | null>(null);
+
+const bulkTransferType = ref<'user' | 'sector' | null>(null);
+const bulkTransferChannel = ref<string | null>(null);
+const bulkTransferUser = ref<string | null>(null);
+const bulkTransferSector = ref<string | null>(null);
+const bulkTransferSectorUser = ref<string | null>(null);
+const bulkTransferAnnotation = ref('');
+const bulkTransferKeepInChat = ref(false);
+const bulkTransferSendMessageOnTransfer = ref(true);
+const bulkTransferChannels = ref<TransferChannelOption[]>([]);
+const bulkTransferUsers = ref<
+  Array<{
+    value: string;
+    title: string;
+    photo: string | null;
+    status: string | null;
+  }>
+>([]);
+const bulkTransferSectors = ref<
+  Array<{ value: string; title: string; color: string | null }>
+>([]);
+const bulkTransferSectorUsers = ref<
+  Array<{
+    value: string;
+    title: string;
+    photo: string | null;
+    status: string | null;
+  }>
+>([]);
+const isLoadingBulkTransferChannels = ref(false);
+const isLoadingBulkTransferUsers = ref(false);
+const isLoadingBulkTransferSectors = ref(false);
+const isLoadingBulkTransferSectorUsers = ref(false);
+const bulkTransferWorkerConfigForChat =
+  ref<ViewWorkerConfigForChatResponse | null>(null);
+const bulkCloseSendMessageOnFinishAttendance = ref(true);
 
 const contactFilterLabel = ref<string | null>(null);
 const contactFilterPhoneDdi = ref<string | null>(null);
@@ -567,6 +628,378 @@ const scheduledCount = computed(() => {
   return chatStore.listScheduled.length;
 });
 
+const bulkSupportedFilters: BulkCategory[] = [
+  'all',
+  'in_chat',
+  'queue',
+  'my_chats',
+  'chatbot',
+  'scheduled',
+];
+
+const isBulkModeAvailable = computed(() => {
+  return bulkSupportedFilters.includes(activeFilter.value as BulkCategory);
+});
+
+const resolveBulkCategory = (): BulkCategory | null => {
+  if (!isBulkModeAvailable.value) {
+    return null;
+  }
+
+  return activeFilter.value as BulkCategory;
+};
+
+const resetBulkSelection = () => {
+  bulkSelectAllFiltered.value = false;
+  bulkSelectedChatIds.value = new Set();
+};
+
+const disableBulkMode = () => {
+  isBulkModeEnabled.value = false;
+  resetBulkSelection();
+};
+
+const toggleBulkMode = () => {
+  if (!isBulkModeAvailable.value) {
+    return;
+  }
+
+  if (isBulkModeEnabled.value) {
+    disableBulkMode();
+    return;
+  }
+
+  isBulkModeEnabled.value = true;
+  resetBulkSelection();
+};
+
+const isBulkSelectableChat = (chat: ListChatsResult): boolean => {
+  const category = resolveBulkCategory();
+  if (!category) {
+    return false;
+  }
+
+  const status = chat.status as EChatStatus;
+
+  if (category === 'all') {
+    return status === EChatStatus.in_chat || status === EChatStatus.queue;
+  }
+
+  if (category === 'in_chat') {
+    return status === EChatStatus.in_chat;
+  }
+
+  if (category === 'queue') {
+    return status === EChatStatus.queue;
+  }
+
+  if (category === 'my_chats') {
+    const userId = chatStore.user?.user_id;
+    if (!userId) return false;
+
+    const isAllowedStatus =
+      status === EChatStatus.in_chat || status === EChatStatus.queue;
+    if (!isAllowedStatus) {
+      return false;
+    }
+
+    return isChatForCurrentUser(chat, userId);
+  }
+
+  if (category === 'chatbot') {
+    return (
+      status === EChatStatus.ura ||
+      status === EChatStatus.ura_output ||
+      status === EChatStatus.ura_webhook
+    );
+  }
+
+  if (category === 'scheduled') {
+    return status === EChatStatus.ura_schedule;
+  }
+
+  return false;
+};
+
+const isChatBulkSelected = (chatId: string): boolean => {
+  return bulkSelectAllFiltered.value || bulkSelectedChatIds.value.has(chatId);
+};
+
+const setChatBulkSelected = (chatId: string, selected: boolean): void => {
+  const nextSet = new Set(bulkSelectedChatIds.value);
+
+  if (selected) {
+    nextSet.add(chatId);
+  } else {
+    nextSet.delete(chatId);
+  }
+
+  bulkSelectedChatIds.value = nextSet;
+};
+
+const toggleChatBulkSelected = (chatId: string): void => {
+  if (bulkSelectAllFiltered.value) {
+    return;
+  }
+
+  setChatBulkSelected(chatId, !bulkSelectedChatIds.value.has(chatId));
+};
+
+const bulkSelectedCount = computed(() => {
+  return bulkSelectedChatIds.value.size;
+});
+
+const bulkTargetCount = computed(() => {
+  if (!isBulkModeEnabled.value || !isBulkModeAvailable.value) {
+    return 0;
+  }
+
+  if (bulkSelectAllFiltered.value) {
+    const category = resolveBulkCategory();
+    if (!category) return 0;
+
+    if (category === 'all') {
+      return inChatCount.value + queueCount.value;
+    }
+    if (category === 'in_chat') {
+      return inChatCount.value;
+    }
+    if (category === 'queue') {
+      return queueCount.value;
+    }
+    if (category === 'my_chats') {
+      return myChatsCount.value;
+    }
+    if (category === 'chatbot') {
+      return chatbotCount.value;
+    }
+    if (category === 'scheduled') {
+      return scheduledCount.value;
+    }
+  }
+
+  return bulkSelectedCount.value;
+});
+
+const hasBulkSelection = computed(() => {
+  return bulkTargetCount.value > 0;
+});
+
+const handleBulkSelectAllFilteredChange = (selected: boolean) => {
+  bulkSelectAllFiltered.value = selected;
+  if (selected) {
+    bulkSelectedChatIds.value = new Set();
+  }
+};
+
+const handleChatQueueCheckboxChange = (
+  chat: ListChatsResult,
+  selected: boolean
+) => {
+  if (!isBulkModeEnabled.value || !isBulkSelectableChat(chat)) {
+    return;
+  }
+
+  if (bulkSelectAllFiltered.value) {
+    return;
+  }
+
+  setChatBulkSelected(chat.chat_id, selected);
+};
+
+const handleDefaultChatClick = (chat: ListChatsResult) => {
+  if (isBulkModeEnabled.value && isBulkSelectableChat(chat)) {
+    toggleChatBulkSelected(chat.chat_id);
+    return;
+  }
+
+  emit('openChat', chat.chat_id);
+};
+
+const handleQueueCardClick = (chat: ListChatsResult, index: number): void => {
+  if (isBulkModeEnabled.value && isBulkSelectableChat(chat)) {
+    toggleChatBulkSelected(chat.chat_id);
+    return;
+  }
+
+  handleQueueClick(chat.chat_id, index);
+};
+
+const resetBulkTransferForm = () => {
+  bulkTransferType.value = null;
+  bulkTransferChannel.value = null;
+  bulkTransferUser.value = null;
+  bulkTransferSector.value = null;
+  bulkTransferSectorUser.value = null;
+  bulkTransferAnnotation.value = '';
+  bulkTransferKeepInChat.value = false;
+  bulkTransferSendMessageOnTransfer.value = true;
+  bulkTransferChannels.value = [];
+  bulkTransferUsers.value = [];
+  bulkTransferSectors.value = [];
+  bulkTransferSectorUsers.value = [];
+  bulkTransferWorkerConfigForChat.value = null;
+};
+
+const loadBulkTransferChannels = async () => {
+  isLoadingBulkTransferChannels.value = true;
+
+  try {
+    const options = await chatStore.listTransferOptions();
+
+    bulkTransferChannels.value =
+      options?.workers.map((worker) => {
+        const formattedNumber = formatChannelNumber(worker.number || null);
+
+        return {
+          value: worker.id,
+          title: formattedNumber
+            ? `${worker.name} (${formattedNumber})`
+            : worker.name,
+          name: worker.name,
+          number: formattedNumber,
+        };
+      }) ?? [];
+  } finally {
+    isLoadingBulkTransferChannels.value = false;
+  }
+};
+
+const loadBulkTransferWorkerConfig = async (channelId?: string | null) => {
+  if (!channelId) {
+    bulkTransferWorkerConfigForChat.value = null;
+    return;
+  }
+
+  try {
+    const config = await channelsStore.fetchWorkerConfigForChat(channelId);
+    bulkTransferWorkerConfigForChat.value = config;
+  } catch (error) {
+    bulkTransferWorkerConfigForChat.value = null;
+  }
+};
+
+const loadBulkTransferUsers = async (channelId?: string | null) => {
+  if (!channelId) {
+    bulkTransferUsers.value = [];
+    return;
+  }
+
+  isLoadingBulkTransferUsers.value = true;
+
+  try {
+    const users: TransferUserResponse[] = await chatStore.listTransferUsers(
+      undefined,
+      channelId
+    );
+
+    bulkTransferUsers.value = users.map((user) => ({
+      value: user.id,
+      title: user.name,
+      photo: user.photo ?? null,
+      status: user.status ?? null,
+    }));
+  } finally {
+    isLoadingBulkTransferUsers.value = false;
+  }
+};
+
+const loadBulkTransferSectors = async () => {
+  isLoadingBulkTransferSectors.value = true;
+
+  try {
+    const sectors = await chatStore.listTransferSectors();
+
+    bulkTransferSectors.value = sectors.map((sector) => ({
+      value: sector.id,
+      title: sector.name,
+      color: sector.color ?? null,
+    }));
+  } finally {
+    isLoadingBulkTransferSectors.value = false;
+  }
+};
+
+const loadBulkTransferSectorUsers = async (
+  sectorId?: string | null,
+  channelId?: string | null
+) => {
+  if (!sectorId || !channelId) {
+    bulkTransferSectorUsers.value = [];
+    return;
+  }
+
+  isLoadingBulkTransferSectorUsers.value = true;
+
+  try {
+    const users: TransferSectorUserResponse[] =
+      await chatStore.listTransferSectorUsers(sectorId, undefined, channelId);
+
+    bulkTransferSectorUsers.value = users.map((user) => ({
+      value: user.id,
+      title: user.name,
+      photo: user.photo ?? null,
+      status: user.status ?? null,
+    }));
+  } finally {
+    isLoadingBulkTransferSectorUsers.value = false;
+  }
+};
+
+watch(bulkTransferType, () => {
+  bulkTransferUser.value = null;
+  bulkTransferSector.value = null;
+  bulkTransferSectorUser.value = null;
+  bulkTransferSectorUsers.value = [];
+});
+
+watch(bulkTransferChannel, async (channelId) => {
+  bulkTransferUser.value = null;
+  bulkTransferSectorUser.value = null;
+  bulkTransferUsers.value = [];
+  bulkTransferSectorUsers.value = [];
+  bulkTransferWorkerConfigForChat.value = null;
+  bulkTransferSendMessageOnTransfer.value = true;
+
+  await loadBulkTransferWorkerConfig(channelId);
+
+  if (!channelId) {
+    return;
+  }
+
+  await loadBulkTransferUsers(channelId);
+
+  if (bulkTransferSector.value) {
+    await loadBulkTransferSectorUsers(bulkTransferSector.value, channelId);
+  }
+});
+
+watch(bulkTransferSector, (sectorId) => {
+  bulkTransferSectorUser.value = null;
+  bulkTransferSectorUsers.value = [];
+
+  if (sectorId && bulkTransferChannel.value) {
+    loadBulkTransferSectorUsers(sectorId, bulkTransferChannel.value);
+  }
+});
+
+watch(isBulkTransferDialogOpen, async (isOpen) => {
+  if (!isOpen) {
+    resetBulkTransferForm();
+    return;
+  }
+
+  resetBulkTransferForm();
+  await Promise.all([loadBulkTransferChannels(), loadBulkTransferSectors()]);
+});
+
+watch(isBulkModeEnabled, (enabled) => {
+  if (!enabled) {
+    isBulkTransferDialogOpen.value = false;
+    isBulkCloseDialogOpen.value = false;
+  }
+});
+
 const showInChatTitle = computed(() => {
   return activeFilter.value === 'all';
 });
@@ -600,6 +1033,23 @@ const queueSelectionPermissions = [
 ];
 
 const canSelectAnyQueueChat = computed(() => can(queueSelectionPermissions));
+
+const disableSendMessageOnTransferPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EChatPermissions.disable_send_message_on_transfer,
+];
+
+const canDisableSendMessageOnTransfer = computed(() =>
+  can(disableSendMessageOnTransferPermissions)
+);
+
+const shouldShowBulkTransferSendMessageToggle = computed(() => {
+  return (
+    bulkTransferWorkerConfigForChat.value?.send_message_on_transfer_enabled ===
+      true && canDisableSendMessageOnTransfer.value
+  );
+});
 
 const chatbotFilterPermissions = [
   EGeneralPermissions.full_access,
@@ -986,6 +1436,29 @@ const currentFilterDateStart = ref<string | null>(null);
 const currentFilterDateEnd = ref<string | null>(null);
 const currentSortField = ref<string | null>('summary.last_message');
 const currentSortOrder = ref<string | null>('desc');
+
+watch(
+  [
+    activeFilter,
+    debouncedSearchQuery,
+    hasAppliedAdvancedFilters,
+    currentFilterLabelTemplateId,
+    currentFilterWorkerId,
+    currentFilterUserId,
+    currentFilterSectorId,
+    currentFilterName,
+    currentFilterPhone,
+    currentFilterProtocol,
+    currentFilterDateStart,
+    currentFilterDateEnd,
+  ],
+  () => {
+    resetBulkSelection();
+    if (!isBulkModeAvailable.value) {
+      isBulkModeEnabled.value = false;
+    }
+  }
+);
 
 const getSortFieldFromChatUser = (
   field:
@@ -1953,6 +2426,225 @@ const handleScheduledReachEnd = async () => {
   await updateScrollbar();
 };
 
+const buildBulkActionBasePayload = (): Omit<
+  BulkActionChatRequest,
+  | 'action'
+  | 'selection_mode'
+  | 'chat_ids'
+  | 'category'
+  | 'transfer_payload'
+  | 'close_payload'
+> => {
+  return {
+    search: debouncedSearchQuery.value?.trim() || '',
+    has_applied_advanced_filters: hasAppliedAdvancedFilters.value,
+    filter_label_template_id: currentFilterLabelTemplateId.value,
+    filter_worker_id: currentFilterWorkerId.value,
+    filter_user_id: currentFilterUserId.value,
+    filter_sector_id: currentFilterSectorId.value,
+    filter_name: currentFilterName.value,
+    filter_phone: currentFilterPhone.value,
+    filter_protocol: currentFilterProtocol.value,
+    filter_date_start: currentFilterDateStart.value,
+    filter_date_end: currentFilterDateEnd.value,
+    sort_field: currentSortField.value,
+    sort_order: currentSortOrder.value,
+  };
+};
+
+const buildBulkSelectionPayload = ():
+  | Pick<BulkActionChatRequest, 'selection_mode' | 'chat_ids'>
+  | Pick<BulkActionChatRequest, 'selection_mode' | 'category'> => {
+  if (bulkSelectAllFiltered.value) {
+    const category = resolveBulkCategory();
+    if (!category) {
+      return {
+        selection_mode: 'selected',
+        chat_ids: [],
+      };
+    }
+
+    return {
+      selection_mode: 'filtered',
+      category,
+    };
+  }
+
+  return {
+    selection_mode: 'selected',
+    chat_ids: Array.from(bulkSelectedChatIds.value),
+  };
+};
+
+const refreshChatsForCurrentFilter = async () => {
+  if (debouncedSearchQuery.value?.trim().length) {
+    await performSearch();
+    return;
+  }
+
+  if (
+    activeFilter.value === 'all' ||
+    activeFilter.value === 'in_chat' ||
+    activeFilter.value === 'queue' ||
+    activeFilter.value === 'my_chats'
+  ) {
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
+    await loadChatsByFilter();
+    return;
+  }
+
+  if (activeFilter.value === 'chatbot') {
+    chatStore.chatbotPagings.current_page = 1;
+    await loadChatbotChats();
+    return;
+  }
+
+  if (activeFilter.value === 'scheduled') {
+    chatStore.scheduledPagings.current_page = 1;
+    await loadScheduledChats();
+  }
+};
+
+const openBulkTransferDialog = () => {
+  if (!hasBulkSelection.value) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('bulk_no_selection'),
+      EColor.warning
+    );
+    return;
+  }
+
+  isBulkTransferDialogOpen.value = true;
+};
+
+const openBulkCloseDialog = () => {
+  if (!hasBulkSelection.value) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('bulk_no_selection'),
+      EColor.warning
+    );
+    return;
+  }
+
+  bulkCloseSendMessageOnFinishAttendance.value = true;
+  isBulkCloseDialogOpen.value = true;
+};
+
+const runBulkTransferAction = async () => {
+  if (!hasBulkSelection.value) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('bulk_no_selection'),
+      EColor.warning
+    );
+    return;
+  }
+
+  if (!bulkTransferChannel.value) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('channel_required'),
+      EColor.error
+    );
+    return;
+  }
+
+  if (bulkTransferType.value === 'user' && !bulkTransferUser.value) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('user_required'),
+      EColor.error
+    );
+    return;
+  }
+
+  if (bulkTransferType.value === 'sector' && !bulkTransferSector.value) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('sector_required'),
+      EColor.error
+    );
+    return;
+  }
+
+  const selectedUserId =
+    bulkTransferType.value === 'user'
+      ? bulkTransferUser.value
+      : bulkTransferType.value === 'sector'
+        ? bulkTransferSectorUser.value || null
+        : null;
+
+  const selectedSectorId =
+    bulkTransferType.value === 'sector' ? bulkTransferSector.value : null;
+
+  const payload: BulkActionChatRequest = {
+    action: 'transfer',
+    ...buildBulkSelectionPayload(),
+    ...buildBulkActionBasePayload(),
+    transfer_payload: {
+      worker_id: bulkTransferChannel.value,
+      user_id: selectedUserId ?? undefined,
+      sector_id: selectedSectorId ?? undefined,
+      annotation: bulkTransferAnnotation.value.trim() || undefined,
+      keep_in_chat: bulkTransferKeepInChat.value,
+      send_message_on_transfer: shouldShowBulkTransferSendMessageToggle.value
+        ? bulkTransferSendMessageOnTransfer.value
+        : undefined,
+    },
+  };
+
+  isBulkActionRunning.value = true;
+
+  try {
+    const result = await chatStore.bulkActionChats(payload);
+    if (!result) {
+      return;
+    }
+
+    bulkSummary.value = result;
+    isBulkSummaryDialogOpen.value = true;
+    isBulkTransferDialogOpen.value = false;
+    resetBulkSelection();
+    await refreshChatsForCurrentFilter();
+  } finally {
+    isBulkActionRunning.value = false;
+  }
+};
+
+const runBulkCloseAction = async () => {
+  if (!hasBulkSelection.value) {
+    chatStore.showSnackbar(
+      chatStore.i18n.global.t('bulk_no_selection'),
+      EColor.warning
+    );
+    return;
+  }
+
+  const payload: BulkActionChatRequest = {
+    action: 'close',
+    ...buildBulkSelectionPayload(),
+    ...buildBulkActionBasePayload(),
+    close_payload: {
+      send_message_on_finish_attendance:
+        bulkCloseSendMessageOnFinishAttendance.value,
+    },
+  };
+
+  isBulkActionRunning.value = true;
+
+  try {
+    const result = await chatStore.bulkActionChats(payload);
+    if (!result) {
+      return;
+    }
+
+    bulkSummary.value = result;
+    isBulkSummaryDialogOpen.value = true;
+    isBulkCloseDialogOpen.value = false;
+    resetBulkSelection();
+    await refreshChatsForCurrentFilter();
+  } finally {
+    isBulkActionRunning.value = false;
+  }
+};
+
 const handleAddContactModalClose = (isOpen: boolean) => {
   if (!isOpen) {
     currentPageContacts.value = 1;
@@ -2794,37 +3486,111 @@ defineExpose({
         class="chat-filter-expanded-full d-flex align-center justify-space-between"
       >
         <span>{{ expandedFilterText }}</span>
-        <IconBtn
-          v-if="
-            expandedFilter === 'in_chat' ||
-            expandedFilter === 'queue' ||
-            expandedFilter === 'my_chats' ||
-            expandedFilter === 'chatbot'
-          "
-          size="small"
-          variant="text"
-          @click="
-            openSortModal(
-              expandedFilter as 'in_chat' | 'queue' | 'my_chats' | 'chatbot'
-            )
-          "
+        <div class="chat-filter-expanded-actions d-flex align-center gap-1">
+          <IconBtn
+            v-if="
+              expandedFilter === 'in_chat' ||
+              expandedFilter === 'queue' ||
+              expandedFilter === 'my_chats' ||
+              expandedFilter === 'chatbot'
+            "
+            size="small"
+            variant="text"
+            @click="
+              openSortModal(
+                expandedFilter as 'in_chat' | 'queue' | 'my_chats' | 'chatbot'
+              )
+            "
+          >
+            <VIcon size="18">tabler-arrows-sort</VIcon>
+            <VTooltip activator="parent" location="top">
+              {{ $t('sort', 'Ordenar') }}
+            </VTooltip>
+          </IconBtn>
+          <IconBtn
+            v-if="expandedFilter === 'all'"
+            size="small"
+            variant="text"
+            @click="openSortModal('all')"
+          >
+            <VIcon size="18">tabler-arrows-sort</VIcon>
+            <VTooltip activator="parent" location="top">
+              {{ $t('sort', 'Ordenar') }}
+            </VTooltip>
+          </IconBtn>
+          <IconBtn
+            v-if="isBulkModeAvailable"
+            size="small"
+            variant="text"
+            @click="toggleBulkMode"
+          >
+            <VIcon size="18">
+              {{ isBulkModeEnabled ? 'tabler-square-x' : 'tabler-checkbox' }}
+            </VIcon>
+            <VTooltip activator="parent" location="top">
+              {{
+                isBulkModeEnabled
+                  ? $t('bulk_mode_exit')
+                  : $t('bulk_select_mode', 'Selecionar')
+              }}
+            </VTooltip>
+          </IconBtn>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="expand">
+      <div
+        v-if="isBulkModeEnabled && isBulkModeAvailable"
+        class="chat-bulk-toolbar"
+      >
+        <div class="d-flex align-center justify-space-between gap-2">
+          <div class="d-flex align-center gap-2">
+            <VCheckboxBtn
+              :model-value="bulkSelectAllFiltered"
+              density="compact"
+              @update:model-value="
+                handleBulkSelectAllFilteredChange(Boolean($event))
+              "
+            />
+            <span class="text-body-2">
+              {{ $t('bulk_select_all_filtered') }}
+            </span>
+          </div>
+          <VChip size="small" color="primary" variant="tonal">
+            {{ $t('bulk_selected_count', { count: bulkTargetCount }) }}
+          </VChip>
+        </div>
+
+        <div
+          v-if="bulkSelectAllFiltered"
+          class="text-caption text-medium-emphasis mt-1"
         >
-          <VIcon size="18">tabler-arrows-sort</VIcon>
-          <VTooltip activator="parent" location="top">
-            {{ $t('sort', 'Ordenar') }}
-          </VTooltip>
-        </IconBtn>
-        <IconBtn
-          v-if="expandedFilter === 'all'"
-          size="small"
-          variant="text"
-          @click="openSortModal('all')"
-        >
-          <VIcon size="18">tabler-arrows-sort</VIcon>
-          <VTooltip activator="parent" location="top">
-            {{ $t('sort', 'Ordenar') }}
-          </VTooltip>
-        </IconBtn>
+          {{ $t('bulk_selection_filtered_hint') }}
+        </div>
+
+        <div class="d-flex gap-2 mt-2">
+          <VBtn
+            size="small"
+            variant="tonal"
+            color="primary"
+            prepend-icon="tabler-arrows-right-left"
+            :disabled="!hasBulkSelection || isBulkActionRunning"
+            @click="openBulkTransferDialog"
+          >
+            {{ $t('bulk_transfer') }}
+          </VBtn>
+          <VBtn
+            size="small"
+            variant="tonal"
+            color="error"
+            prepend-icon="tabler-x"
+            :disabled="!hasBulkSelection || isBulkActionRunning"
+            @click="openBulkCloseDialog"
+          >
+            {{ $t('bulk_close') }}
+          </VBtn>
+        </div>
       </div>
     </Transition>
   </div>
@@ -3098,7 +3864,11 @@ defineExpose({
             :key="`chatbot-${chat.chat_id}`"
             :user="chat"
             show-chatbot-type-indicator
-            @click="$emit('openChat', chat.chat_id)"
+            :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chat)"
+            :checked="isChatBulkSelected(chat.chat_id)"
+            :checkbox-disabled="bulkSelectAllFiltered"
+            @checkbox-change="handleChatQueueCheckboxChange(chat, $event)"
+            @click="handleDefaultChatClick(chat)"
           />
 
           <li
@@ -3193,7 +3963,11 @@ defineExpose({
             v-for="chat in chatStore.listClosed"
             :key="`closed-${chat.chat_id}`"
             :user="chat"
-            @click="$emit('openChat', chat.chat_id)"
+            :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chat)"
+            :checked="isChatBulkSelected(chat.chat_id)"
+            :checkbox-disabled="bulkSelectAllFiltered"
+            @checkbox-change="handleChatQueueCheckboxChange(chat, $event)"
+            @click="handleDefaultChatClick(chat)"
           />
 
           <li
@@ -3293,7 +4067,11 @@ defineExpose({
             v-for="chat in chatStore.listScheduled"
             :key="`scheduled-${chat.chat_id}`"
             :user="chat"
-            @click="$emit('openChat', chat.chat_id)"
+            :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chat)"
+            :checked="isChatBulkSelected(chat.chat_id)"
+            :checkbox-disabled="bulkSelectAllFiltered"
+            @checkbox-change="handleChatQueueCheckboxChange(chat, $event)"
+            @click="handleDefaultChatClick(chat)"
           />
 
           <li
@@ -3393,7 +4171,11 @@ defineExpose({
             v-for="chat in filteredMyChats"
             :key="`my-chat-${chat.chat_id}`"
             :user="chat"
-            @click="$emit('openChat', chat.chat_id)"
+            :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chat)"
+            :checked="isChatBulkSelected(chat.chat_id)"
+            :checkbox-disabled="bulkSelectAllFiltered"
+            @checkbox-change="handleChatQueueCheckboxChange(chat, $event)"
+            @click="handleDefaultChatClick(chat)"
           />
 
           <li
@@ -3497,7 +4279,11 @@ defineExpose({
             v-for="inChat in filteredInChat"
             :key="`chat-${inChat.chat_id}`"
             :user="inChat"
-            @click="$emit('openChat', inChat.chat_id)"
+            :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(inChat)"
+            :checked="isChatBulkSelected(inChat.chat_id)"
+            :checkbox-disabled="bulkSelectAllFiltered"
+            @checkbox-change="handleChatQueueCheckboxChange(inChat, $event)"
+            @click="handleDefaultChatClick(inChat)"
           />
           <li
             v-if="!filteredInChat.length"
@@ -3595,7 +4381,11 @@ defineExpose({
             :key="`chat-${queue.chat_id}`"
             :user="queue"
             :disabled="!isQueueChatSelectable(index)"
-            @click="handleQueueClick(queue.chat_id, index)"
+            :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(queue)"
+            :checked="isChatBulkSelected(queue.chat_id)"
+            :checkbox-disabled="bulkSelectAllFiltered"
+            @checkbox-change="handleChatQueueCheckboxChange(queue, $event)"
+            @click="handleQueueCardClick(queue, index)"
           />
           <li
             v-if="!filteredQueue.length"
@@ -3685,7 +4475,11 @@ defineExpose({
           v-for="inChat in filteredInChat"
           :key="`chat-${inChat.chat_id}`"
           :user="inChat"
-          @click="$emit('openChat', inChat.chat_id)"
+          :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(inChat)"
+          :checked="isChatBulkSelected(inChat.chat_id)"
+          :checkbox-disabled="bulkSelectAllFiltered"
+          @checkbox-change="handleChatQueueCheckboxChange(inChat, $event)"
+          @click="handleDefaultChatClick(inChat)"
         />
 
         <li
@@ -3709,7 +4503,11 @@ defineExpose({
           :key="`chat-${queue.chat_id}`"
           :user="queue"
           :disabled="!isQueueChatSelectable(index)"
-          @click="handleQueueClick(queue.chat_id, index)"
+          :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(queue)"
+          :checked="isChatBulkSelected(queue.chat_id)"
+          :checkbox-disabled="bulkSelectAllFiltered"
+          @checkbox-change="handleChatQueueCheckboxChange(queue, $event)"
+          @click="handleQueueCardClick(queue, index)"
         />
 
         <li
@@ -3733,7 +4531,11 @@ defineExpose({
           v-for="chatbot in filteredChatbot"
           :key="`chatbot-all-${chatbot.chat_id}`"
           :user="chatbot"
-          @click="$emit('openChat', chatbot.chat_id)"
+          :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chatbot)"
+          :checked="isChatBulkSelected(chatbot.chat_id)"
+          :checkbox-disabled="bulkSelectAllFiltered"
+          @checkbox-change="handleChatQueueCheckboxChange(chatbot, $event)"
+          @click="handleDefaultChatClick(chatbot)"
         />
 
         <li
@@ -3759,7 +4561,11 @@ defineExpose({
           v-for="closed in filteredClosed"
           :key="`closed-all-${closed.chat_id}`"
           :user="closed"
-          @click="$emit('openChat', closed.chat_id)"
+          :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(closed)"
+          :checked="isChatBulkSelected(closed.chat_id)"
+          :checkbox-disabled="bulkSelectAllFiltered"
+          @checkbox-change="handleChatQueueCheckboxChange(closed, $event)"
+          @click="handleDefaultChatClick(closed)"
         />
 
         <li
@@ -3780,7 +4586,11 @@ defineExpose({
           v-for="scheduled in filteredScheduled"
           :key="`scheduled-all-${scheduled.chat_id}`"
           :user="scheduled"
-          @click="$emit('openChat', scheduled.chat_id)"
+          :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(scheduled)"
+          :checked="isChatBulkSelected(scheduled.chat_id)"
+          :checkbox-disabled="bulkSelectAllFiltered"
+          @checkbox-change="handleChatQueueCheckboxChange(scheduled, $event)"
+          @click="handleDefaultChatClick(scheduled)"
         />
 
         <li
@@ -4020,6 +4830,254 @@ defineExpose({
     @filters-updated="handleFiltersUpdated"
   />
 
+  <VDialog v-model="isBulkTransferDialogOpen" max-width="620">
+    <VCard :title="$t('bulk_transfer_dialog_title')">
+      <VCardText>
+        <VRow>
+          <VCol cols="12">
+            <VLabel class="text-body-2 mb-1">{{ $t('channel') }} *</VLabel>
+            <AppSelectSearch
+              v-model="bulkTransferChannel"
+              :items="bulkTransferChannels"
+              :placeholder="$t('select_channel')"
+              :loading="isLoadingBulkTransferChannels"
+              item-value="value"
+              item-title="title"
+            />
+          </VCol>
+
+          <VCol cols="12">
+            <VLabel class="text-body-2 mb-1">{{ $t('transfer_to') }}:</VLabel>
+            <AppSelectSearch
+              v-model="bulkTransferType"
+              :items="[
+                { value: 'user', title: $t('user') },
+                { value: 'sector', title: $t('sector') },
+              ]"
+              :placeholder="$t('transfer_to_placeholder')"
+              :clearable="true"
+              :disabled="!bulkTransferChannel"
+              item-value="value"
+              item-title="title"
+            />
+          </VCol>
+
+          <VCol cols="12">
+            <VCheckbox
+              v-model="bulkTransferKeepInChat"
+              density="compact"
+              hide-details
+              :label="$t('keep_in_chat')"
+            />
+            <div class="text-caption text-medium-emphasis mt-1">
+              {{ $t('keep_in_chat_description') }}
+            </div>
+          </VCol>
+
+          <VCol v-if="shouldShowBulkTransferSendMessageToggle" cols="12">
+            <div class="d-flex align-center justify-space-between gap-4">
+              <div>
+                <div class="text-body-1 font-weight-medium">
+                  {{ $t('send_message_on_transfer') }}
+                </div>
+                <div class="text-body-2 text-medium-emphasis">
+                  {{ $t('send_message_on_transfer_description') }}
+                </div>
+              </div>
+
+              <VSwitch
+                v-model="bulkTransferSendMessageOnTransfer"
+                color="primary"
+                hide-details
+                inset
+              />
+            </div>
+          </VCol>
+
+          <VCol v-if="bulkTransferType === 'user'" cols="12">
+            <VLabel class="text-body-2 mb-1">{{ $t('user') }}:</VLabel>
+            <AppSelectSearch
+              v-model="bulkTransferUser"
+              :items="bulkTransferUsers"
+              :placeholder="$t('search') + '...'"
+              :loading="isLoadingBulkTransferUsers"
+              :disabled="!bulkTransferChannel"
+              item-value="value"
+              item-title="title"
+            />
+          </VCol>
+
+          <template v-if="bulkTransferType === 'sector'">
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('sector') }}:</VLabel>
+              <AppSelectSearch
+                v-model="bulkTransferSector"
+                :items="bulkTransferSectors"
+                :placeholder="$t('search') + '...'"
+                :loading="isLoadingBulkTransferSectors"
+                :disabled="!bulkTransferChannel"
+                item-value="value"
+                item-title="title"
+              />
+            </VCol>
+
+            <VCol v-if="bulkTransferSector" cols="12">
+              <VLabel class="text-body-2 mb-1">
+                {{ $t('user') }} ({{ $t('sector') }}):
+              </VLabel>
+              <AppSelectSearch
+                v-model="bulkTransferSectorUser"
+                :items="bulkTransferSectorUsers"
+                :placeholder="$t('search') + '...'"
+                :loading="isLoadingBulkTransferSectorUsers"
+                :disabled="!bulkTransferChannel"
+                item-value="value"
+                item-title="title"
+                :clearable="true"
+              />
+            </VCol>
+          </template>
+
+          <VCol cols="12">
+            <VLabel class="text-body-2 mb-1">{{ $t('annotation') }}:</VLabel>
+            <VTextarea
+              v-model="bulkTransferAnnotation"
+              :placeholder="$t('write_your_annotation')"
+              variant="outlined"
+              :maxlength="5000"
+              :rows="4"
+              :auto-grow="true"
+              :max-rows="8"
+              counter
+            />
+          </VCol>
+        </VRow>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="isBulkTransferDialogOpen = false"
+        >
+          {{ $t('cancel') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isBulkActionRunning"
+          :disabled="
+            !bulkTransferChannel ||
+            (bulkTransferType === 'user'
+              ? !bulkTransferUser
+              : bulkTransferType === 'sector'
+                ? !bulkTransferSector
+                : false)
+          "
+          @click="runBulkTransferAction"
+        >
+          {{ $t('transfer') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="isBulkCloseDialogOpen" max-width="520">
+    <VCard :title="$t('bulk_close_dialog_title')">
+      <VCardText>
+        <div class="text-body-2 mb-3">
+          {{ $t('bulk_target_count', { count: bulkTargetCount }) }}
+        </div>
+        <div class="d-flex align-center justify-space-between gap-4">
+          <div>
+            <div class="text-body-1 font-weight-medium">
+              {{ $t('close_service_send_message_toggle_title') }}
+            </div>
+            <div class="text-body-2 text-medium-emphasis">
+              {{ $t('close_service_send_message_toggle_description') }}
+            </div>
+          </div>
+
+          <VSwitch
+            v-model="bulkCloseSendMessageOnFinishAttendance"
+            color="primary"
+            hide-details
+            inset
+          />
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="isBulkCloseDialogOpen = false"
+        >
+          {{ $t('cancel') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          :loading="isBulkActionRunning"
+          :disabled="!hasBulkSelection"
+          @click="runBulkCloseAction"
+        >
+          {{ $t('close_service', 'Encerrar atendimento') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog v-model="isBulkSummaryDialogOpen" max-width="620">
+    <VCard :title="$t('bulk_summary_title')">
+      <VCardText>
+        <div class="d-flex flex-column gap-2">
+          <div class="text-body-2">
+            {{
+              $t('bulk_target_count', {
+                count: bulkSummary?.total_targeted || 0,
+              })
+            }}
+          </div>
+          <div class="text-body-2 text-success">
+            {{
+              $t('chat_bulk_action_success', {
+                count: bulkSummary?.success_count || 0,
+              })
+            }}
+          </div>
+          <div
+            v-if="(bulkSummary?.failed_count || 0) > 0"
+            class="text-body-2 text-error"
+          >
+            {{ $t('bulk_failures_label') }}:
+            {{ bulkSummary?.failed_count || 0 }}
+          </div>
+        </div>
+
+        <VList
+          v-if="bulkSummary?.failures?.length"
+          density="compact"
+          class="mt-4 bulk-failures-list"
+        >
+          <VListItem
+            v-for="(failure, index) in bulkSummary.failures"
+            :key="`${failure.chat_id || 'unknown'}-${index}`"
+            lines="two"
+          >
+            <template #title>
+              {{ failure.chat_id || '-' }}
+            </template>
+            <template #subtitle>
+              {{ failure.message }}
+            </template>
+          </VListItem>
+        </VList>
+      </VCardText>
+      <VCardText class="d-flex justify-end">
+        <VBtn color="primary" @click="isBulkSummaryDialogOpen = false">
+          {{ $t('ok', 'OK') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
   <ChatSortModal
     v-model="isSortModalOpen"
     :filter-type="sortModalFilterType"
@@ -4124,10 +5182,6 @@ defineExpose({
 }
 
 .chat-filter-options {
-  .d-flex {
-    width: 100%;
-  }
-
   .chat-filter-item {
     display: flex;
     flex-direction: column;
@@ -4202,6 +5256,28 @@ defineExpose({
     margin-top: 8px;
     width: 100%;
   }
+
+  .chat-filter-expanded-actions {
+    margin-inline-start: auto;
+    width: auto;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+  }
+
+  .chat-bulk-toolbar {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(var(--v-theme-primary), 0.06);
+    border: 1px solid rgba(var(--v-theme-primary), 0.18);
+  }
+}
+
+.bulk-failures-list {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 8px;
 }
 
 .expand-enter-active,

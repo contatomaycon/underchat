@@ -73,6 +73,8 @@ import { ListKanbanResponse } from '@core/schema/chat/listKanban/response.schema
 import { ListKanbanQuery } from '@core/schema/chat/listKanban/request.schema';
 import { ForwardMessageResponse } from '@core/schema/chat/forwardMessage/response.schema';
 import { ViewChatAttendantsResponse } from '@core/schema/chat/viewChatAttendants/response.schema';
+import { BulkActionChatRequest } from '@core/schema/chat/bulkAction/request.schema';
+import { BulkActionChatResponse } from '@core/schema/chat/bulkAction/response.schema';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
@@ -3619,7 +3621,8 @@ export const useChatStore = defineStore('chat', {
       annotation?: string | null,
       hasAppliedAdvancedFilters = false,
       workerId?: string | null,
-      keepInChat = false
+      keepInChat = false,
+      sendMessageOnTransfer?: boolean
     ): Promise<boolean> {
       void hasAppliedAdvancedFilters;
       try {
@@ -3634,6 +3637,7 @@ export const useChatStore = defineStore('chat', {
           sector_id: sectorId ?? undefined,
           annotation: annotation?.trim() ?? undefined,
           keep_in_chat: keepInChat,
+          send_message_on_transfer: sendMessageOnTransfer,
         });
 
         this.loading = false;
@@ -3662,6 +3666,43 @@ export const useChatStore = defineStore('chat', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
+      }
+    },
+
+    async bulkActionChats(
+      input: BulkActionChatRequest
+    ): Promise<BulkActionChatResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<BulkActionChatResponse>>(
+          '/chat/bulk-action',
+          input
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const errorMessage =
+            data?.message || this.i18n.global.t('chat_bulk_action_all_failed');
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t('chat_bulk_action_all_failed');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
       }
     },
 

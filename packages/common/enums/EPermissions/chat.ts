@@ -12,6 +12,7 @@ export enum EChatPermissions {
   manage_in_chat_lifecycle = 'manage_in_chat_lifecycle',
   reopen_chat = 'reopen_chat',
   disable_send_message_on_finish_attendance = 'disable_send_message_on_finish_attendance',
+  disable_send_message_on_transfer = 'disable_send_message_on_transfer',
   attendance_history = 'attendance_history',
   forward_to_output_chatbot = 'forward_to_output_chatbot',
   generate_message_with_ai = 'generate_message_with_ai',

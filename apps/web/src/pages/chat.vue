@@ -822,6 +822,7 @@ const isLoadingTransferSectorUsers = ref(false);
 const isTransferring = ref(false);
 const transferAnnotationText = ref('');
 const transferKeepInChat = ref(false);
+const transferSendMessageOnTransfer = ref(true);
 const isTransferAnnotationEmojiOpen = ref(false);
 const activePrimaryUserIdForTransfer = computed(
   () => chatStore.activeChat?.user?.id ?? null
@@ -1080,6 +1081,7 @@ watch(isTransferModalOpen, (isOpen) => {
   if (!isOpen) {
     transferAnnotationText.value = '';
     transferKeepInChat.value = false;
+    transferSendMessageOnTransfer.value = true;
   }
 });
 
@@ -1110,6 +1112,7 @@ watch(isTransferModalOpen, async (isOpen) => {
         transferWorkerConfigForChat.value = null;
         transferAnnotationText.value = '';
         transferKeepInChat.value = false;
+        transferSendMessageOnTransfer.value = true;
         isTransferAnnotationEmojiOpen.value = false;
         loadTransferChannels();
         loadTransferSectors();
@@ -1118,6 +1121,7 @@ watch(isTransferModalOpen, async (isOpen) => {
   } else {
     transferAnnotationText.value = '';
     transferKeepInChat.value = false;
+    transferSendMessageOnTransfer.value = true;
     selectedTransferChannel.value = null;
     transferWorkerConfigForChat.value = null;
   }
@@ -1175,7 +1179,10 @@ const handleTransfer = async () => {
       annotation,
       leftSidebarRef.value?.hasAppliedAdvancedFilters ?? false,
       workerId,
-      transferKeepInChat.value
+      transferKeepInChat.value,
+      shouldShowTransferSendMessageToggle.value
+        ? transferSendMessageOnTransfer.value
+        : undefined
     );
 
     if (success) {
@@ -1378,10 +1385,25 @@ const canDisableSendMessageOnFinishAttendance = computed(() => {
   ]);
 });
 
+const canDisableSendMessageOnTransfer = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.disable_send_message_on_transfer,
+  ]);
+});
+
 const shouldShowCloseServiceSendMessageToggle = computed(() => {
   return (
     workerConfigForChat.value?.send_message_on_finish_attendance_enabled ===
       true && canDisableSendMessageOnFinishAttendance.value
+  );
+});
+
+const shouldShowTransferSendMessageToggle = computed(() => {
+  return (
+    transferWorkerConfigForChat.value?.send_message_on_transfer_enabled ===
+      true && canDisableSendMessageOnTransfer.value
   );
 });
 
@@ -7251,6 +7273,26 @@ onBeforeUnmount(() => {
             />
             <div class="text-caption text-medium-emphasis mt-1">
               {{ t('keep_in_chat_description') }}
+            </div>
+          </VCol>
+
+          <VCol v-if="shouldShowTransferSendMessageToggle" cols="12">
+            <div class="d-flex align-center justify-space-between gap-4">
+              <div>
+                <div class="text-body-1 font-weight-medium">
+                  {{ t('send_message_on_transfer') }}
+                </div>
+                <div class="text-body-2 text-medium-emphasis">
+                  {{ t('send_message_on_transfer_description') }}
+                </div>
+              </div>
+
+              <VSwitch
+                v-model="transferSendMessageOnTransfer"
+                color="primary"
+                hide-details
+                inset
+              />
             </div>
           </VCol>
 

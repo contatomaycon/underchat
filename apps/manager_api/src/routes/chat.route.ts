@@ -33,6 +33,7 @@ import { listTransferOptionsSchema } from '@core/schema/chat/listTransferOptions
 import { listTransferUsersSchema } from '@core/schema/chat/listTransferUsers';
 import { listTransferSectorsSchema } from '@core/schema/chat/listTransferSectors';
 import { listTransferSectorUsersSchema } from '@core/schema/chat/listTransferSectorUsers';
+import { bulkActionChatSchema } from '@core/schema/chat/bulkAction';
 import { listChatContactsSchema } from '@core/schema/chat/listContacts';
 import { viewChatContactSchema } from '@core/schema/chat/viewContact';
 import { viewChatContactByPhoneSchema } from '@core/schema/chat/viewContactByPhone';
@@ -319,6 +320,17 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/transfer/sectors/:sector_id/users', {
     schema: listTransferSectorUsersSchema,
     handler: chatController.listTransferSectorUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chat/bulk-action', {
+    schema: bulkActionChatSchema,
+    handler: chatController.bulkActionChat,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

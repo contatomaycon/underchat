@@ -120,6 +120,12 @@ export class WorkerConfigForChatViewerRepository {
       )
         ? true
         : false,
+      send_message_on_transfer_enabled:
+        configMap.has(EWorkerConfigType.generate_protocol_at_transfer) ||
+        configMap.has(EWorkerConfigType.generate_protocol_at_transfer_sector) ||
+        configMap.has(
+          EWorkerConfigType.generate_protocol_at_transfer_sector_and_user
+        ),
       allow_attendance_only_online: configMap.has(
         EWorkerConfigType.allow_attendance_only_online
       )

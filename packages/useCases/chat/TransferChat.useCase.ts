@@ -286,6 +286,18 @@ export class TransferChatUseCase {
     return hasRequiredPermission(actions, permissions);
   }
 
+  private canDisableSendMessageOnTransfer(
+    actions: IJwtGroupHierarchy[]
+  ): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.disable_send_message_on_transfer,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   private buildUpdatedChatForTransfer(
     chat: IChat,
     worker: IChat['worker'],
@@ -365,12 +377,17 @@ export class TransferChatUseCase {
     workerConfigFields: Awaited<
       ReturnType<WorkerService['viewWorkerConfigFieldsByWorkerId']>
     > | null,
+    shouldSendMessageOnTransfer: boolean,
     t: TFunction<'translation', undefined>,
     accountId: string,
     chatId: string,
     user: IChat['user'] | null | undefined,
     sector: IChat['sector'] | null | undefined
   ): Promise<IChat> {
+    if (!shouldSendMessageOnTransfer) {
+      return updatedChat;
+    }
+
     let protocol: string | null = null;
     let protocolText: string | null = null;
 
@@ -496,6 +513,15 @@ export class TransferChatUseCase {
       throw new Error(t('chat_cannot_transfer_to_current_primary'));
     }
 
+    const requestedDisableSendMessageOnTransfer =
+      body.send_message_on_transfer === false;
+    const canDisableSendMessageOnTransfer =
+      this.canDisableSendMessageOnTransfer(actions);
+    const shouldSendMessageOnTransfer = !(
+      requestedDisableSendMessageOnTransfer &&
+      canDisableSendMessageOnTransfer
+    );
+
     const targetWorker = await this.resolveTargetWorker(
       t,
       accountId,
@@ -584,6 +610,7 @@ export class TransferChatUseCase {
     const chatWithProtocol = await this.buildChatWithProtocol(
       updatedChat,
       workerConfigFields,
+      shouldSendMessageOnTransfer,
       t,
       accountId,
       params.chat_id,

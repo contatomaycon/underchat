@@ -46,6 +46,7 @@ import { listChatContactChannels } from './methods/listContactChannels';
 import { viewChatContactChannelsByContactId } from './methods/viewContactChannelsByContactId';
 import { generateAiReply } from './methods/generateAiReply';
 import { transcribeAudio } from './methods/transcribeAudio';
+import { bulkActionChat } from './methods/bulkAction';
 import { listOfflineChannels } from '@/controllers/dashboard/methods/listOfflineChannels';
 import { listChannelsStatus } from '@/controllers/dashboard/methods/listChannelsStatus';
 
@@ -98,6 +99,7 @@ class ChatController {
   public viewContactChannelsByContactId = viewChatContactChannelsByContactId;
   public generateAiReply = generateAiReply;
   public transcribeAudio = transcribeAudio;
+  public bulkActionChat = bulkActionChat;
   public listOfflineChannels = listOfflineChannels;
   public listChannelsStatus = listChannelsStatus;
 }

@@ -5,6 +5,7 @@ export const workerConfigForChatSchema = Type.Object({
   show_attendee_name: Type.Boolean(),
   show_protocol_in_chat: Type.Boolean(),
   send_message_on_finish_attendance_enabled: Type.Boolean(),
+  send_message_on_transfer_enabled: Type.Boolean(),
   allow_attendance_only_online: Type.Boolean(),
   simultaneous_attendance: Type.Union([Type.Number(), Type.Null()]),
   simultaneous_attendance_enabled: Type.Boolean(),

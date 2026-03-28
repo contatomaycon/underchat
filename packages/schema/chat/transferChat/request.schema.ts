@@ -10,6 +10,7 @@ export const transferChatBodySchema = Type.Object({
   sector_id: Type.Optional(Type.String({ format: 'uuid' })),
   annotation: Type.Optional(Type.String({ maxLength: 5000 })),
   keep_in_chat: Type.Optional(Type.Boolean({ default: false })),
+  send_message_on_transfer: Type.Optional(Type.Boolean()),
 });
 
 export type TransferChatParams = Static<typeof transferChatParamsSchema>;
