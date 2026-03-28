@@ -68,6 +68,9 @@ import {
 } from '@core/common/interfaces/IChatbotHumanTransfer';
 import { RandomMessageService } from './randomMessage.service';
 import { ERandomMessageStatus } from '@core/common/enums/ERandomMessageStatus';
+import { PromptDocumentExtractorService } from './promptDocumentExtractor.service';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { incrementCounter } from '@core/plugins/telemetry/observability';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -75,6 +78,8 @@ export class ChatbotFlowRunnerService {
   private readonly AI_AGENT_DEBOUNCE_SECONDS = 3;
   private readonly CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS = 259200;
   private readonly RAG_CACHE_TTL_SECONDS = 600;
+  private readonly RUNTIME_PROMPT_CACHE_TTL_SECONDS = 300;
+  private readonly RUNTIME_PROMPT_MAX_CHARS = 120000;
   private readonly CONVERSATION_SUMMARY_UPDATE_INTERVAL = 5;
   private readonly AI_AGENT_API_RETRY_ATTEMPTS = 3;
   private readonly AI_AGENT_API_RETRY_BASE_DELAY_MS = 500;
@@ -86,8 +91,6 @@ export class ChatbotFlowRunnerService {
       EChatStatus.ura_schedule,
       EChatStatus.ura_webhook,
     ]);
-  private static readonly MIN_PREFIX_MATCH_LENGTH = 8;
-
   private static readonly STOP_WORDS = new Set<string>([
     'a',
     'o',
@@ -218,7 +221,9 @@ export class ChatbotFlowRunnerService {
     @inject(VoiceIaService)
     private readonly voiceIaService: VoiceIaService,
     @inject(WorkerConfigViewerRepository)
-    private readonly workerConfigViewerRepository: WorkerConfigViewerRepository
+    private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
+    @inject(PromptDocumentExtractorService)
+    private readonly promptDocumentExtractorService: PromptDocumentExtractorService
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -1009,6 +1014,96 @@ export class ChatbotFlowRunnerService {
     }
 
     throw lastError;
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    if (error instanceof Error) {
+      return error.message ?? '';
+    }
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error ?? '');
+    }
+  }
+
+  private isAiInteractionError(error: unknown): boolean {
+    if (!error) {
+      return false;
+    }
+
+    if (error instanceof InvalidConfigurationError) {
+      return false;
+    }
+
+    const normalizedMessage = this.getErrorMessage(error).trim().toLowerCase();
+    if (!normalizedMessage) {
+      return false;
+    }
+
+    if (
+      normalizedMessage.includes('ai agent api error:') ||
+      normalizedMessage.includes('gemini api error:')
+    ) {
+      return true;
+    }
+
+    const interactionMarkers = [
+      'resource_exhausted',
+      'quota exceeded',
+      'too many requests',
+      'rate limit',
+      'timeout',
+      'timed out',
+      'etimedout',
+      'aborterror',
+      'fetch failed',
+      'network error',
+      'service unavailable',
+      'temporarily unavailable',
+      'gateway timeout',
+      'connection reset',
+      'econnreset',
+      'socket hang up',
+      'token expired',
+      'invalid api key',
+      'unauthorized',
+      'forbidden',
+    ];
+
+    return interactionMarkers.some((marker) =>
+      normalizedMessage.includes(marker)
+    );
+  }
+
+  private async tryProcessAiInteractionFallback(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: IChatbotCustomMessages
+  ): Promise<boolean> {
+    const nextFlowId = this.getNextFlowIdByFallbackHandle(
+      chatbotFlow,
+      currentFlowId
+    );
+    if (!nextFlowId) {
+      return false;
+    }
+
+    await this.updateCache(createChat, nextFlowId);
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
   }
 
   private async ensureBootstrapSummary(
@@ -2003,13 +2098,45 @@ export class ChatbotFlowRunnerService {
       );
     }
 
-    await this.chatService.updateChatStatus(
+    const statusUpdated = await this.chatService.updateChatStatus(
       activeChat.chat_id,
       EChatStatus.closed,
       null,
       null,
       closedAt
     );
+
+    if (!statusUpdated) {
+      return false;
+    }
+
+    const persistedChatSnapshot = await this.loadCurrentChatState(activeChat);
+    const closedChat: IChat = {
+      ...(persistedChatSnapshot ?? activeChat),
+      status: EChatStatus.closed,
+      closed_at: closedAt,
+    };
+
+    const channelAccountId = closedChat.account?.id ?? activeChat.account.id;
+
+    const publishResults = await Promise.allSettled([
+      this.centrifugoService.publishSubImmediate(
+        chatAccountCentrifugo(channelAccountId),
+        closedChat
+      ),
+      this.centrifugoService.publishSubImmediate(
+        chatQueueAccountCentrifugo(channelAccountId),
+        closedChat
+      ),
+    ]);
+
+    if (publishResults.some((result) => result.status === 'rejected')) {
+      console.error('[ChatbotFlow] failed to publish closed chat update', {
+        chat_id: closedChat.chat_id,
+        account_id: channelAccountId,
+      });
+    }
+
     await Promise.all([
       this.clearChatbotRuntimeStateByIds(
         activeChat.account.id,
@@ -4688,6 +4815,103 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
     recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
     humanSupportEnabled: boolean
   ): Promise<'needs_help' | 'resolved' | 'human_support'> {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return 'needs_help';
+    }
+
+    try {
+      const controlAction = await this.classifyConversationControlAction(
+        aiAgent,
+        userText,
+        recentMessages,
+        humanSupportEnabled
+      );
+
+      if (!controlAction) {
+        const resolvedByFallback = await this.confirmResolvedIntentWithAgent(
+          aiAgent,
+          userText,
+          recentMessages,
+          0
+        );
+        return resolvedByFallback ? 'resolved' : 'needs_help';
+      }
+
+      if (controlAction.action === 'human_support') {
+        return humanSupportEnabled ? 'human_support' : 'needs_help';
+      }
+
+      const resolvedConfirmed = await this.confirmResolvedIntentWithAgent(
+        aiAgent,
+        userText,
+        recentMessages,
+        controlAction.confidence
+      );
+      if (resolvedConfirmed) {
+        return 'resolved';
+      }
+
+      return 'needs_help';
+    } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        throw error;
+      }
+      console.error('[ChatbotFlow] analyzeUserIntentWithContext failed', error);
+      return 'needs_help';
+    }
+  }
+
+  private async classifyConversationControlAction(
+    aiAgent: ViewAiAgentResponse,
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    humanSupportEnabled: boolean
+  ): Promise<{
+    action: 'continue' | 'finish' | 'human_support';
+    confidence: number;
+  } | null> {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return null;
+    }
+
+    const basePrompt = this.buildConversationControlActionPrompt(
+      userText,
+      recentMessages,
+      humanSupportEnabled
+    );
+    const prompts = [
+      basePrompt,
+      `${basePrompt}\n\nATENÇÃO: Sua resposta anterior foi inválida. Retorne somente JSON válido exatamente no formato solicitado.`,
+    ];
+
+    for (const prompt of prompts) {
+      const analysis = await this.callAiAgentChatApiWithRetry(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        prompt,
+        userText,
+        recentMessages.slice(-20)
+      );
+
+      const parsed = this.parseConversationControlActionResult(analysis);
+      if (parsed) {
+        if (parsed.action === 'human_support' && !humanSupportEnabled) {
+          return { action: 'continue', confidence: 1 };
+        }
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  private buildConversationControlActionPrompt(
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    humanSupportEnabled: boolean
+  ): string {
     const conversationContext = recentMessages
       .slice(-20)
       .map(
@@ -4696,41 +4920,244 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
       )
       .join('\n');
 
-    const humanSupportSection = humanSupportEnabled
-      ? `- "human_support": O usuário quer EXPLICITAMENTE falar com um atendente humano, operador ou pessoa real. Exemplos: "quero falar com humano", "quero falar com um operador", "falar com operador", "falar com atendente", "quero falar com suporte", "me transfere para uma pessoa", "preciso falar com um atendente".\n`
-      : '';
+    const humanSupportRule = humanSupportEnabled
+      ? '- Se o usuário pedir explicitamente atendimento humano (atendente, operador, pessoa real, suporte humano), marque action = "human_support".'
+      : '- Transferência humana está desabilitada. Neste caso, NUNCA use action = "human_support". Use "continue".';
 
-    const validOptions = humanSupportEnabled
-      ? 'needs_help, resolved ou human_support'
-      : 'needs_help ou resolved';
+    return `Você é um classificador semântico de controle de atendimento.
 
-    const analysisPrompt = `Você é um classificador de intenção especializado em atendimento ao cliente. Analise a mensagem mais recente do usuário NO CONTEXTO da conversa completa para determinar a intenção.
+Objetivo:
+Classificar a ÚLTIMA mensagem do usuário para decidir a ação do fluxo.
 
-Classificações possíveis:
-- "needs_help": O usuário tem uma pergunta, precisa de assistência, quer mais informações, está continuando a conversa sobre qualquer tópico, ou enviou qualquer mensagem que não seja CLARAMENTE uma despedida ou encerramento. Use esta classificação para QUALQUER dúvida, mesmo que pareça simples.
-- "resolved": O usuário sinalizou CLARA e EXPLICITAMENTE que sua questão foi resolvida e não precisa de mais ajuda. Exemplos: "obrigado, era só isso", "não preciso de mais nada", "pode encerrar", "já resolvi minha dúvida", "tudo certo, obrigado, era isso mesmo", "é só isso mesmo", "não tenho mais dúvidas".
-${humanSupportSection}
-REGRAS IMPORTANTES:
-1. Se o usuário pedir EXPLICITAMENTE para falar com humano/operador/atendente/suporte/pessoa real, classifique como "human_support" (prioridade máxima, mesmo que exista contexto anterior).
-2. Se a transferência humana NÃO estiver habilitada, NUNCA classifique como "human_support". Nesses casos, classifique como "needs_help".
-3. Quando houver QUALQUER dúvida, classifique como "needs_help". O padrão é SEMPRE "needs_help".
-4. Um simples "obrigado", "ok", "valeu" ou "entendi" sozinho NÃO é suficiente para "resolved" - o usuário DEVE sinalizar explicitamente que não precisa de mais ajuda.
-5. Se o usuário fizer qualquer pergunta ou continuar interagindo sobre o tema, SEMPRE classifique como "needs_help".
-6. Só classifique como "resolved" quando for ABSOLUTAMENTE claro pelo contexto que o usuário não tem mais dúvidas e quer encerrar.
-7. Se o usuário disser algo como "obrigado" seguido de uma pergunta ou comentário, classifique como "needs_help".
-8. Considere o contexto COMPLETO da conversa para tomar a decisão.
-9. Mensagens curtas como "ok", "certo", "entendi" sem contexto de encerramento devem ser "needs_help".
+Ações possíveis:
+- "continue": continuar atendimento normal.
+- "finish": usuário quer encerrar/finalizar o atendimento e não deseja mais ajuda.
+- "human_support": usuário quer falar com humano.
 
-Histórico recente da conversa:
+Regras:
+1. Se a última mensagem trouxer nova pergunta, novo pedido, nova dúvida ou continuação de tema, use "continue".
+2. Se a última mensagem indicar claramente intenção de finalizar o atendimento, use "finish".
+3. ${humanSupportRule}
+4. Em ambiguidade, use "continue".
+5. Seja conservador: jamais finalize quando houver dúvida sobre a intenção.
+
+Exemplos que normalmente indicam "finish":
+- "obrigado, era isso"
+- "quero finalizar o atendimento"
+- "pode encerrar"
+- "não preciso de mais ajuda"
+
+Histórico recente:
 ${conversationContext || '(sem histórico anterior)'}
 
-Mensagem mais recente do usuário: "${userText}"
+Última mensagem do usuário:
+"${userText}"
 
-Retorne APENAS uma das palavras: ${validOptions}.`;
+Retorne APENAS JSON válido (sem markdown):
+{"action":"continue|finish|human_support","confidence":0.0}`;
+  }
 
-    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
-      return 'needs_help';
+  private parseConversationControlActionResult(analysis: string): {
+    action: 'continue' | 'finish' | 'human_support';
+    confidence: number;
+  } | null {
+    if (!analysis || typeof analysis !== 'string') {
+      return null;
     }
+
+    const jsonMatch = analysis.match(/\{[\s\S]*?\}/);
+    if (!jsonMatch) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      const rawAction = String(parsed.action ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_');
+
+      if (
+        rawAction !== 'continue' &&
+        rawAction !== 'finish' &&
+        rawAction !== 'human_support'
+      ) {
+        return null;
+      }
+
+      const rawConfidence =
+        typeof parsed.confidence === 'number'
+          ? parsed.confidence
+          : typeof parsed.score === 'number'
+            ? parsed.score
+            : 0.5;
+      const confidence =
+        typeof rawConfidence === 'number' && Number.isFinite(rawConfidence)
+          ? Math.min(1, Math.max(0, rawConfidence))
+          : 0.5;
+
+      return {
+        action: rawAction as 'continue' | 'finish' | 'human_support',
+        confidence,
+      };
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] parseConversationControlActionResult failed',
+        error
+      );
+      return null;
+    }
+  }
+
+  private async confirmResolvedIntentWithAgent(
+    aiAgent: ViewAiAgentResponse,
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    firstPassConfidence: number
+  ): Promise<boolean> {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return false;
+    }
+
+    const basePrompt = this.buildResolvedIntentReviewPrompt(
+      userText,
+      recentMessages,
+      firstPassConfidence
+    );
+    const prompts = [
+      basePrompt,
+      `${basePrompt}\n\nATENÇÃO: Sua resposta anterior foi inválida. Retorne somente JSON válido no formato solicitado.`,
+    ];
+
+    try {
+      for (const prompt of prompts) {
+        const review = await this.callAiAgentChatApiWithRetry(
+          aiAgent.base_url,
+          aiAgent.api_key,
+          aiAgent.model,
+          aiAgent.ai_agent_type_id,
+          prompt,
+          userText,
+          recentMessages.slice(-20)
+        );
+
+        const parsed = this.parseResolvedIntentReviewResult(review);
+        if (!parsed) {
+          continue;
+        }
+
+        const minimumConfidence = 0.75;
+        return parsed.shouldClose && parsed.confidence >= minimumConfidence;
+      }
+      return false;
+    } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        throw error;
+      }
+      console.error(
+        '[ChatbotFlow] confirmResolvedIntentWithAgent failed',
+        error
+      );
+      return false;
+    }
+  }
+
+  private buildResolvedIntentReviewPrompt(
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    firstPassConfidence: number
+  ): string {
+    const conversationContext = recentMessages
+      .slice(-20)
+      .map(
+        (msg) =>
+          `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${msg.content}`
+      )
+      .join('\n');
+
+    return `Você é um revisor semântico de encerramento de atendimento.
+
+Seu papel é validar se a mensagem MAIS RECENTE do usuário realmente indica, de forma explícita, que ele não precisa de mais ajuda e deseja encerrar.
+
+Contexto recente:
+${conversationContext || '(sem histórico anterior)'}
+
+Mensagem mais recente:
+"${userText}"
+
+Sinal da primeira análise (apenas referência): confidence=${firstPassConfidence.toFixed(
+      3
+    )}
+
+Regras:
+1. Se houver qualquer nova pergunta, dúvida, pedido de informação ou continuação de assunto, o atendimento NÃO deve encerrar.
+2. Só marque encerramento quando estiver claramente explícito que a pessoa quer finalizar e não deseja mais suporte.
+3. Se houver qualquer ambiguidade, retorne should_close = false.
+4. Seja conservador: falso positivo de encerramento é pior que falso negativo.
+
+Retorne APENAS JSON válido (sem markdown):
+{"should_close":true|false,"confidence":0.0}`;
+  }
+
+  private parseResolvedIntentReviewResult(review: string): {
+    shouldClose: boolean;
+    confidence: number;
+  } | null {
+    if (!review || typeof review !== 'string') {
+      return null;
+    }
+
+    const jsonMatch = review.match(/\{[\s\S]*?\}/);
+    if (!jsonMatch) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+      const rawShouldClose = parsed.should_close ?? parsed.shouldClose;
+      const shouldClose =
+        typeof rawShouldClose === 'boolean'
+          ? rawShouldClose
+          : String(rawShouldClose ?? '')
+              .trim()
+              .toLowerCase() === 'true';
+
+      const rawConfidence =
+        typeof parsed.confidence === 'number'
+          ? parsed.confidence
+          : typeof parsed.score === 'number'
+            ? parsed.score
+            : 0.5;
+      const confidence = Number.isFinite(rawConfidence)
+        ? Math.min(1, Math.max(0, rawConfidence))
+        : 0.5;
+
+      return { shouldClose, confidence };
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] parseResolvedIntentReviewResult failed',
+        error
+      );
+      return null;
+    }
+  }
+
+  private async tryBuildConversationalNoEvidenceReply(
+    createChat: IChat,
+    aiAgent: ViewAiAgentResponse,
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    options?: { throwOnAiInteractionError?: boolean }
+  ): Promise<string | null> {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return null;
+    }
+
+    const prompt = this.buildConversationalIntentPrompt(
+      userText,
+      recentMessages,
+      aiAgent.system_prompt
+    );
 
     try {
       const analysis = await this.callAiAgentChatApiWithRetry(
@@ -4738,22 +5165,152 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         aiAgent.api_key,
         aiAgent.model,
         aiAgent.ai_agent_type_id,
-        analysisPrompt,
+        prompt,
         userText,
-        recentMessages.slice(-20)
+        recentMessages.slice(-12),
+        undefined,
+        undefined,
+        {
+          accountId: createChat.account.id,
+          chatId: createChat.chat_id,
+          aiAgentId: aiAgent.ai_agent_id,
+        }
       );
 
-      const normalized = analysis.trim().toLowerCase();
-      if (normalized.includes('human_support')) {
-        return humanSupportEnabled ? 'human_support' : 'needs_help';
+      const parsed = this.parseConversationalIntentResponse(analysis);
+      if (!parsed) {
+        return null;
       }
-      if (normalized.includes('resolved')) {
-        return 'resolved';
-      }
-      return 'needs_help';
+
+      incrementCounter('ai_agent_context_conversational_reply', 1, {
+        ai_agent_type_id: aiAgent.ai_agent_type_id,
+        intent: parsed.intent,
+      });
+
+      return parsed.response;
     } catch (error) {
-      console.error('[ChatbotFlow] analyzeUserIntentWithContext failed', error);
-      return 'needs_help';
+      if (
+        options?.throwOnAiInteractionError &&
+        this.isAiInteractionError(error)
+      ) {
+        throw error;
+      }
+      console.error(
+        '[ChatbotFlow] tryBuildConversationalNoEvidenceReply failed',
+        error
+      );
+      return null;
+    }
+  }
+
+  private buildConversationalIntentPrompt(
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    systemPrompt?: string | null
+  ): string {
+    const conversationContext = recentMessages
+      .slice(-12)
+      .map(
+        (msg) =>
+          `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${msg.content}`
+      )
+      .join('\n');
+
+    const styleGuide =
+      (systemPrompt ?? '').trim().slice(0, 1400) ||
+      'Tom acolhedor, objetivo e profissional.';
+
+    return `Você é um analisador semântico de mensagens para atendimento.
+
+TAREFA:
+1) Analise semanticamente a mensagem mais recente do usuário (não use apenas comparação literal de palavras).
+2) Classifique a intenção em uma das opções:
+- "greeting": saudação/início de conversa.
+- "gratitude": agradecimento.
+- "farewell": despedida/encerramento cordial.
+- "acknowledgement": confirmação curta sem nova pergunta (ex: "ok", "entendi", "certo").
+- "smalltalk": conversa social breve que não exige dados da base.
+- "needs_context": qualquer pedido de informação factual, processo, regra, prazo, valor, documentação, inscrição, curso, produto, vaga, suporte técnico, etc.
+
+REGRAS:
+- Se for "needs_context", NÃO gere resposta conversacional. Use response vazio.
+- Se for intenção conversacional (greeting/gratitude/farewell/acknowledgement/smalltalk), gere uma resposta natural em pt-BR (1 a 2 frases), humana e útil.
+- Não invente fatos.
+- Não mencione termos técnicos como "RAG", "contexto", "prompt", "base vetorial" ou "evidência".
+- Siga este estilo do agente (tom/persona):
+${styleGuide}
+
+Histórico recente:
+${conversationContext || '(sem histórico anterior)'}
+
+Mensagem mais recente do usuário:
+"${userText}"
+
+Retorne APENAS JSON válido, sem markdown, no formato:
+{"intent":"greeting|gratitude|farewell|acknowledgement|smalltalk|needs_context","response":"texto"}
+
+Regras de saída:
+- Se intent = "needs_context", response deve ser "".
+- Se intent for conversacional, response deve estar preenchido e ser natural.`;
+  }
+
+  private parseConversationalIntentResponse(response: string): {
+    intent:
+      | 'greeting'
+      | 'gratitude'
+      | 'farewell'
+      | 'acknowledgement'
+      | 'smalltalk';
+    response: string;
+  } | null {
+    if (!response) {
+      return null;
+    }
+
+    const match = response.match(/\{[\s\S]*?\}/);
+    if (!match) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(match[0]) as Record<string, unknown>;
+      const rawIntent = String(parsed.intent ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_');
+      const rawReply =
+        typeof parsed.response === 'string' ? parsed.response : '';
+      if (
+        rawIntent !== 'greeting' &&
+        rawIntent !== 'gratitude' &&
+        rawIntent !== 'farewell' &&
+        rawIntent !== 'acknowledgement' &&
+        rawIntent !== 'smalltalk'
+      ) {
+        return null;
+      }
+
+      const normalizedReply = rawReply.replace(/\s+/g, ' ').trim();
+      if (!normalizedReply) {
+        return null;
+      }
+
+      const maxReplyChars = 420;
+      const safeReply =
+        normalizedReply.length > maxReplyChars
+          ? `${normalizedReply.slice(0, maxReplyChars - 3).trimEnd()}...`
+          : normalizedReply;
+
+      return {
+        intent: rawIntent,
+        response: safeReply,
+      };
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] parseConversationalIntentResponse failed',
+        error
+      );
+      return null;
     }
   }
 
@@ -5028,6 +5585,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         message: decision.message ?? '',
       };
     } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        throw error;
+      }
       console.error('[ChatbotFlow] resolveHumanTransferByPrompt failed', error);
       return {
         shouldTransfer: false,
@@ -6375,14 +6935,42 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     let suppressTransferMention = false;
 
     if (transferMode === 'prompt') {
-      const promptTransferDecision = await this.resolveHumanTransferByPrompt(
-        aiAgent,
-        createChat,
-        userText,
-        recentMessages
-      );
+      let promptTransferDecision: {
+        shouldTransfer: boolean;
+        sector: ITransferSectorOption | null;
+        user: IChat['user'] | null;
+        message: string;
+      } | null = null;
 
-      if (promptTransferDecision.shouldTransfer) {
+      try {
+        promptTransferDecision = await this.resolveHumanTransferByPrompt(
+          aiAgent,
+          createChat,
+          userText,
+          recentMessages
+        );
+      } catch (error) {
+        if (this.isAiInteractionError(error)) {
+          console.error(
+            '[ChatbotFlow] AI interaction failed on transfer resolution, routing fallback',
+            error
+          );
+          const fallbackHandled = await this.tryProcessAiInteractionFallback(
+            t,
+            createChat,
+            chatbotFlow,
+            currentFlowId,
+            customMessages
+          );
+          if (fallbackHandled) {
+            return true;
+          }
+        } else {
+          throw error;
+        }
+      }
+
+      if (promptTransferDecision?.shouldTransfer) {
         return this.executeHumanSupportTransfer(
           t,
           createChat,
@@ -6398,12 +6986,35 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const humanSupportEnabled = transferMode === 'standard';
 
-    const intent = await this.analyzeUserIntentWithContext(
-      aiAgent,
-      userText,
-      recentMessages,
-      humanSupportEnabled
-    );
+    let intent: 'needs_help' | 'resolved' | 'human_support' = 'needs_help';
+
+    try {
+      intent = await this.analyzeUserIntentWithContext(
+        aiAgent,
+        userText,
+        recentMessages,
+        humanSupportEnabled
+      );
+    } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        console.error(
+          '[ChatbotFlow] AI interaction failed on intent analysis, routing fallback',
+          error
+        );
+        const fallbackHandled = await this.tryProcessAiInteractionFallback(
+          t,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          customMessages
+        );
+        if (fallbackHandled) {
+          return true;
+        }
+      } else {
+        throw error;
+      }
+    }
 
     if (intent === 'resolved') {
       const resolvedNextFlowId = this.getNextFlowIdByOption(
@@ -6520,6 +7131,22 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       contextAllowed = promptData.contextAllowed;
       contextHints = promptData.contextHints;
     } catch (error) {
+      if (this.isAiInteractionError(error)) {
+        console.error(
+          '[ChatbotFlow] AI interaction failed while building enhanced prompt, routing fallback',
+          error
+        );
+        const fallbackHandled = await this.tryProcessAiInteractionFallback(
+          t,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          customMessages
+        );
+        if (fallbackHandled) {
+          return true;
+        }
+      }
       console.error(
         '[ChatbotFlow] buildEnhancedPromptForAiAgent failed, using fallback prompt',
         error
@@ -6543,7 +7170,41 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     let aiResponse: string;
     let shouldStoreLastAgentResponse = false;
     if (!contextAllowed) {
-      aiResponse = this.buildOutOfContextResponse(userText, contextHints);
+      let conversationalReply: string | null = null;
+      try {
+        conversationalReply = await this.tryBuildConversationalNoEvidenceReply(
+          createChat,
+          aiAgent,
+          userText,
+          recentMessages,
+          { throwOnAiInteractionError: true }
+        );
+      } catch (error) {
+        if (this.isAiInteractionError(error)) {
+          console.error(
+            '[ChatbotFlow] AI interaction failed on no-evidence conversational reply, routing fallback',
+            error
+          );
+          const fallbackHandled = await this.tryProcessAiInteractionFallback(
+            t,
+            createChat,
+            chatbotFlow,
+            currentFlowId,
+            customMessages
+          );
+          if (fallbackHandled) {
+            return true;
+          }
+        }
+        throw error;
+      }
+
+      if (conversationalReply) {
+        aiResponse = conversationalReply;
+        shouldStoreLastAgentResponse = true;
+      } else {
+        aiResponse = this.buildOutOfContextResponse(userText, contextHints);
+      }
     } else {
       try {
         aiResponse = await this.callAiAgentChatApiWithRetry(
@@ -6592,20 +7253,16 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
           );
         }
       } catch (error) {
-        const nextFlowId = this.getNextFlowIdByFallbackHandle(
+        const fallbackHandled = await this.tryProcessAiInteractionFallback(
+          t,
+          createChat,
           chatbotFlow,
-          currentFlowId
+          currentFlowId,
+          customMessages
         );
 
-        if (nextFlowId) {
-          await this.updateCache(createChat, nextFlowId);
-          return this.processNextNode(
-            t,
-            createChat,
-            chatbotFlow,
-            nextFlowId,
-            customMessages
-          );
+        if (fallbackHandled) {
+          return true;
         }
 
         throw error;
@@ -6744,9 +7401,10 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       createChat.account.id,
       aiAgent.ai_agent_id
     );
-
+    const textualPrompts = allPrompts.filter(
+      (prompt) => !this.looksLikeUrl(prompt.value)
+    );
     const allowExternalContext = skipFilePrompts;
-    const promptsForContext = skipFilePrompts ? [] : allPrompts;
 
     const systemPrompt = this.buildComprehensiveSystemPrompt(
       useAssistantsApi ? null : aiAgent.system_prompt,
@@ -6755,24 +7413,24 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     );
 
     let promptsText =
-      this.ragService.buildPromptsTextFromDetailed(promptsForContext);
+      this.ragService.buildPromptsTextFromDetailed(textualPrompts);
     if (aiAgent.system_prompt) {
       promptsText = aiAgent.system_prompt + '\n\n' + promptsText;
     }
-    const promptContextAllowed = this.isQueryWithinPromptText(
-      userText,
-      promptsText
-    );
     const normalizedQuestion = this.normalizeTextForComparison(userText);
-    const promptsHash = promptsText ? this.hashText(promptsText) : '';
+    const promptsSignature = this.buildPromptContextSignature(
+      allPrompts,
+      aiAgent.system_prompt,
+      skipFilePrompts
+    );
     const ragCacheKey =
-      normalizedQuestion && promptsHash
+      normalizedQuestion && promptsSignature
         ? this.getRagCacheKey(
             createChat.account.id,
             createChat.chat_id,
             aiAgent.ai_agent_id,
             normalizedQuestion,
-            promptsHash
+            promptsSignature
           )
         : null;
 
@@ -6784,6 +7442,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
             contextParts: string[];
             contextAllowed: boolean;
             contextHints: string[];
+            decisionPath?: string;
           };
 
           const { enhancedPrompt } =
@@ -6801,23 +7460,55 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
               humanTransferMode,
               options
             );
-          const combinedAllowed =
-            parsed.contextAllowed ||
-            promptContextAllowed ||
-            allowExternalContext;
+          let combinedAllowed = parsed.contextAllowed || allowExternalContext;
+          let effectivePrompt = enhancedPrompt;
+          let effectiveContextHints = parsed.contextHints ?? [];
+          let decisionPath =
+            parsed.decisionPath ??
+            (allowExternalContext
+              ? 'provider_file_search'
+              : combinedAllowed
+                ? 'hybrid_retrieval'
+                : 'out_of_context');
+
+          const cachedFallbackResult =
+            await this.applyRuntimeFallbackToCachedContext({
+              accountId: createChat.account.id,
+              allPrompts,
+              userText,
+              allowExternalContext,
+              combinedAllowed,
+              effectivePrompt,
+              effectiveContextHints,
+              decisionPath,
+              parsedContextParts: parsed.contextParts ?? [],
+              systemPrompt,
+              ragCacheKey,
+            });
+
+          combinedAllowed = cachedFallbackResult.combinedAllowed;
+          effectivePrompt = cachedFallbackResult.effectivePrompt;
+          effectiveContextHints = cachedFallbackResult.effectiveContextHints;
+          decisionPath = cachedFallbackResult.decisionPath;
+
+          this.recordContextDecisionPath(decisionPath, {
+            accountId: createChat.account.id,
+            aiAgentId: aiAgent.ai_agent_id,
+            aiAgentTypeId: aiAgent.ai_agent_type_id,
+          });
 
           if (!additionalInstructions) {
             return {
-              enhancedPrompt,
+              enhancedPrompt: effectivePrompt,
               contextAllowed: combinedAllowed,
-              contextHints: parsed.contextHints ?? [],
+              contextHints: effectiveContextHints,
             };
           }
 
           return {
-            enhancedPrompt: `${enhancedPrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
+            enhancedPrompt: `${effectivePrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
             contextAllowed: combinedAllowed,
-            contextHints: parsed.contextHints ?? [],
+            contextHints: effectiveContextHints,
           };
         } catch (error) {
           console.error('[AI Agent] RAG cache parse error:', error);
@@ -6840,38 +7531,85 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       undefined
     );
 
-    const { enhancedPrompt, contextParts, contextAllowed, contextHints } =
-      await this.ragService.enhancePromptWithRag(
+    const ragResult = await this.ragService.enhancePromptWithRag(
+      createChat.account.id,
+      aiAgent.ai_agent_id,
+      systemPrompt,
+      userText,
+      {
+        topK: 10,
+        historyTopK: 8,
+        minScore: 0.18,
+        chatId: createChat.chat_id,
+        includeChatHistory: true,
+        isBootstrap: false,
+        bootstrapSummary: bootstrapSummary,
+        includeBootstrapSummaryInPrompt: false,
+        conversationSummary: conversationSummary,
+        recentMessages: recentMessages,
+        phone: createChat.phone,
+        maxPromptChars,
+      }
+    );
+
+    let combinedAllowed = ragResult.contextAllowed || allowExternalContext;
+    let effectivePrompt = ragResult.enhancedPrompt;
+    let effectiveContextParts = ragResult.contextParts;
+    let effectiveContextHints = ragResult.contextHints;
+    let decisionPath = allowExternalContext
+      ? 'provider_file_search'
+      : ragResult.evidence.decisionPath;
+
+    if (!combinedAllowed && !allowExternalContext) {
+      const runtimeFallback = await this.tryRuntimePromptFallback(
         createChat.account.id,
-        aiAgent.ai_agent_id,
-        systemPrompt,
-        userText,
-        {
-          topK: 28,
-          historyTopK: 24,
-          minScore: 0.0,
-          chatId: createChat.chat_id,
-          includeChatHistory: true,
-          isBootstrap: false,
-          bootstrapSummary: bootstrapSummary,
-          includeBootstrapSummaryInPrompt: false,
-          conversationSummary: conversationSummary,
-          recentMessages: recentMessages,
-          phone: createChat.phone,
-          maxPromptChars,
-        }
+        allPrompts,
+        userText
       );
 
-    const combinedAllowed =
-      contextAllowed || promptContextAllowed || allowExternalContext;
+      if (runtimeFallback) {
+        const fallbackContextParts = [
+          ...effectiveContextParts,
+          `### Contexto Relevante da Base de Conhecimento (Fallback Runtime):\n${runtimeFallback.contextText}`,
+        ];
+
+        const rebuilt = this.ragService.buildEnhancedPromptFromCachedParts(
+          systemPrompt,
+          fallbackContextParts,
+          true,
+          runtimeFallback.contextHints
+        );
+
+        combinedAllowed = true;
+        effectivePrompt = rebuilt.enhancedPrompt;
+        effectiveContextParts = fallbackContextParts;
+        effectiveContextHints = runtimeFallback.contextHints;
+        decisionPath = 'runtime_fallback';
+      } else {
+        decisionPath = 'out_of_context';
+      }
+    }
+
+    this.recordContextDecisionPath(decisionPath, {
+      accountId: createChat.account.id,
+      aiAgentId: aiAgent.ai_agent_id,
+      aiAgentTypeId: aiAgent.ai_agent_type_id,
+      knowledgeScore: ragResult.evidence.knowledgeScore,
+      historyScore: ragResult.evidence.historyScore,
+      lexicalCoverage: ragResult.evidence.lexicalCoverage,
+      exactMatchScore: ragResult.evidence.exactMatchScore,
+      contextAllowed: combinedAllowed,
+    });
+
     if (ragCacheKey) {
       try {
         await this.redis.set(
           ragCacheKey,
           JSON.stringify({
-            contextParts,
+            contextParts: effectiveContextParts,
             contextAllowed: combinedAllowed,
-            contextHints,
+            contextHints: effectiveContextHints,
+            decisionPath,
           }),
           'EX',
           this.RAG_CACHE_TTL_SECONDS
@@ -6890,17 +7628,464 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     if (!additionalInstructions) {
       return {
-        enhancedPrompt,
+        enhancedPrompt: effectivePrompt,
         contextAllowed: combinedAllowed,
-        contextHints,
+        contextHints: effectiveContextHints,
       };
     }
 
     return {
-      enhancedPrompt: `${enhancedPrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
+      enhancedPrompt: `${effectivePrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
       contextAllowed: combinedAllowed,
-      contextHints,
+      contextHints: effectiveContextHints,
     };
+  }
+
+  private buildPromptContextSignature(
+    prompts: Array<{
+      ai_agent_prompt_id: string;
+      status: string;
+      updated_at: string | null;
+    }>,
+    systemPrompt: string | null | undefined,
+    skipFilePrompts: boolean
+  ): string {
+    const promptSignature = prompts
+      .map(
+        (prompt) =>
+          `${prompt.ai_agent_prompt_id}:${prompt.status}:${prompt.updated_at ?? ''}`
+      )
+      .sort();
+
+    const payload = JSON.stringify({
+      prompts: promptSignature,
+      system_prompt_hash: this.hashText((systemPrompt ?? '').trim()),
+      skip_file_prompts: skipFilePrompts,
+    });
+
+    return this.hashText(payload);
+  }
+
+  private async applyRuntimeFallbackToCachedContext(input: {
+    accountId: string;
+    allPrompts: Array<{
+      ai_agent_prompt_id: string;
+      value: string;
+      status: string;
+      updated_at: string | null;
+    }>;
+    userText: string;
+    allowExternalContext: boolean;
+    combinedAllowed: boolean;
+    effectivePrompt: string;
+    effectiveContextHints: string[];
+    decisionPath: string;
+    parsedContextParts: string[];
+    systemPrompt: string;
+    ragCacheKey: string | null;
+  }): Promise<{
+    combinedAllowed: boolean;
+    effectivePrompt: string;
+    effectiveContextHints: string[];
+    decisionPath: string;
+  }> {
+    if (input.combinedAllowed || input.allowExternalContext) {
+      return {
+        combinedAllowed: input.combinedAllowed,
+        effectivePrompt: input.effectivePrompt,
+        effectiveContextHints: input.effectiveContextHints,
+        decisionPath: input.decisionPath,
+      };
+    }
+
+    const runtimeFallback = await this.tryRuntimePromptFallback(
+      input.accountId,
+      input.allPrompts,
+      input.userText
+    );
+
+    if (!runtimeFallback) {
+      return {
+        combinedAllowed: input.combinedAllowed,
+        effectivePrompt: input.effectivePrompt,
+        effectiveContextHints: input.effectiveContextHints,
+        decisionPath: input.decisionPath,
+      };
+    }
+
+    const fallbackContextParts = [
+      ...input.parsedContextParts,
+      `### Contexto Relevante da Base de Conhecimento (Fallback Runtime):\n${runtimeFallback.contextText}`,
+    ];
+
+    const rebuilt = this.ragService.buildEnhancedPromptFromCachedParts(
+      input.systemPrompt,
+      fallbackContextParts,
+      true,
+      runtimeFallback.contextHints
+    );
+
+    if (input.ragCacheKey) {
+      await this.redis.set(
+        input.ragCacheKey,
+        JSON.stringify({
+          contextParts: fallbackContextParts,
+          contextAllowed: true,
+          contextHints: runtimeFallback.contextHints,
+          decisionPath: 'runtime_fallback',
+        }),
+        'EX',
+        this.RAG_CACHE_TTL_SECONDS
+      );
+    }
+
+    return {
+      combinedAllowed: true,
+      effectivePrompt: rebuilt.enhancedPrompt,
+      effectiveContextHints: runtimeFallback.contextHints,
+      decisionPath: 'runtime_fallback',
+    };
+  }
+
+  private looksLikeUrl(value: string): boolean {
+    if (!value) {
+      return false;
+    }
+    return /^https?:\/\//i.test(value.trim());
+  }
+
+  private recordContextDecisionPath(
+    decisionPath: string,
+    metadata: {
+      accountId: string;
+      aiAgentId: string;
+      aiAgentTypeId: string;
+      knowledgeScore?: number;
+      historyScore?: number;
+      lexicalCoverage?: number;
+      exactMatchScore?: number;
+      contextAllowed?: boolean;
+    }
+  ): void {
+    incrementCounter('ai_agent_context_decision', 1, {
+      path: decisionPath,
+      ai_agent_type_id: metadata.aiAgentTypeId,
+    });
+
+    if (decisionPath === 'runtime_fallback') {
+      incrementCounter('ai_agent_context_runtime_fallback', 1, {
+        ai_agent_type_id: metadata.aiAgentTypeId,
+      });
+    }
+
+    if (decisionPath === 'out_of_context') {
+      incrementCounter('ai_agent_context_no_evidence', 1, {
+        ai_agent_type_id: metadata.aiAgentTypeId,
+      });
+    }
+
+    console.log('[AI Agent] contexto decisão', {
+      decision_path: decisionPath,
+      account_id: metadata.accountId,
+      ai_agent_id: metadata.aiAgentId,
+      ai_agent_type_id: metadata.aiAgentTypeId,
+      knowledge_score: metadata.knowledgeScore ?? 0,
+      history_score: metadata.historyScore ?? 0,
+      lexical_coverage: metadata.lexicalCoverage ?? 0,
+      exact_match_score: metadata.exactMatchScore ?? 0,
+      context_allowed: metadata.contextAllowed ?? null,
+    });
+  }
+
+  private getRuntimePromptCacheKey(
+    accountId: string,
+    promptId: string,
+    updatedAt: string | null
+  ): string {
+    const version = updatedAt ?? 'unknown';
+    return `chatbot:ai-agent:prompt-runtime:${accountId}:${promptId}:${version}`;
+  }
+
+  private async tryRuntimePromptFallback(
+    accountId: string,
+    prompts: Array<{
+      ai_agent_prompt_id: string;
+      value: string;
+      status: string;
+      updated_at: string | null;
+    }>,
+    userText: string
+  ): Promise<{ contextText: string; contextHints: string[] } | null> {
+    const activeFilePrompts = prompts.filter(
+      (prompt) =>
+        prompt.status === EAiAgentStatus.active &&
+        this.looksLikeUrl(prompt.value)
+    );
+
+    if (activeFilePrompts.length === 0) {
+      return null;
+    }
+
+    let bestMatch: {
+      score: number;
+      contextText: string;
+      hints: string[];
+    } | null = null;
+
+    for (const prompt of activeFilePrompts) {
+      const promptText = await this.loadRuntimePromptText(accountId, prompt);
+      if (!promptText) {
+        continue;
+      }
+
+      const match = this.findBestRuntimePromptMatch(userText, promptText);
+      if (!match) {
+        continue;
+      }
+
+      if (!bestMatch || match.score > bestMatch.score) {
+        bestMatch = {
+          score: match.score,
+          contextText: match.contextText,
+          hints: match.contextHints,
+        };
+      }
+    }
+
+    if (!bestMatch) {
+      return null;
+    }
+
+    return {
+      contextText: bestMatch.contextText,
+      contextHints: bestMatch.hints,
+    };
+  }
+
+  private async loadRuntimePromptText(
+    accountId: string,
+    prompt: {
+      ai_agent_prompt_id: string;
+      value: string;
+      updated_at: string | null;
+    }
+  ): Promise<string | null> {
+    const cacheKey = this.getRuntimePromptCacheKey(
+      accountId,
+      prompt.ai_agent_prompt_id,
+      prompt.updated_at
+    );
+    const cached = await this.redis.get(cacheKey);
+    if (cached && cached.trim().length > 0) {
+      return cached;
+    }
+
+    try {
+      const extraction = await this.retryOperation(
+        () =>
+          this.promptDocumentExtractorService.extractTextFromUrl(prompt.value, {
+            allowLegacyOfficeFormats: true,
+          }),
+        2,
+        350
+      );
+      const text = extraction.text.trim();
+      if (!text) {
+        return null;
+      }
+
+      const truncated = text.slice(0, this.RUNTIME_PROMPT_MAX_CHARS);
+      await this.redis.set(
+        cacheKey,
+        truncated,
+        'EX',
+        this.RUNTIME_PROMPT_CACHE_TTL_SECONDS
+      );
+      return truncated;
+    } catch (error) {
+      console.error('[AI Agent] runtime fallback extract error', {
+        error,
+        account_id: accountId,
+        ai_agent_prompt_id: prompt.ai_agent_prompt_id,
+      });
+      return null;
+    }
+  }
+
+  private findBestRuntimePromptMatch(
+    userText: string,
+    promptText: string
+  ): { score: number; contextText: string; contextHints: string[] } | null {
+    const queryTokens = this.extractKeywordTokens(userText);
+    if (queryTokens.length === 0) {
+      return null;
+    }
+
+    const queryTokenSet = new Set(queryTokens);
+    const normalizedQuery = this.normalizeTextForComparison(userText);
+    const faqEntries = this.splitPromptTextIntoFaqEntries(promptText);
+    let best: {
+      score: number;
+      contextText: string;
+      contextHints: string[];
+    } | null = null;
+
+    for (const entry of faqEntries) {
+      const questionTokens = this.extractKeywordTokens(entry.question);
+      if (questionTokens.length === 0) {
+        continue;
+      }
+
+      const questionTokenSet = new Set(questionTokens);
+      const overlap = queryTokens.filter((token) =>
+        questionTokenSet.has(token)
+      ).length;
+      const questionCoverage = overlap / queryTokens.length;
+
+      const answerTokens = this.extractKeywordTokens(entry.answer);
+      const answerOverlap = answerTokens.filter((token) =>
+        queryTokenSet.has(token)
+      ).length;
+      const answerCoverage =
+        answerTokens.length > 0 ? answerOverlap / answerTokens.length : 0;
+      const exactBoost =
+        this.normalizeTextForComparison(entry.question).includes(
+          normalizedQuery
+        ) ||
+        normalizedQuery.includes(
+          this.normalizeTextForComparison(entry.question)
+        )
+          ? 0.25
+          : 0;
+      const score = Math.min(
+        1,
+        questionCoverage * 0.75 + answerCoverage * 0.25 + exactBoost
+      );
+
+      if (score < 0.58) {
+        continue;
+      }
+
+      const contextText = [
+        `Pergunta encontrada na base: ${entry.question}`,
+        `Resposta oficial: ${entry.answer}`,
+      ].join('\n');
+      const contextHints = this.extractKeywordTokens(
+        `${entry.question} ${entry.answer}`
+      ).slice(0, 4);
+
+      if (!best || score > best.score) {
+        best = {
+          score,
+          contextText,
+          contextHints,
+        };
+      }
+    }
+
+    if (best) {
+      return best;
+    }
+
+    const paragraphs = promptText
+      .split(/\n\s*\n/g)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    let bestParagraph: {
+      score: number;
+      paragraph: string;
+    } | null = null;
+    for (const paragraph of paragraphs) {
+      const paragraphTokens = this.extractKeywordTokens(paragraph);
+      if (paragraphTokens.length === 0) {
+        continue;
+      }
+      const overlap = queryTokens.filter((token) =>
+        paragraphTokens.includes(token)
+      ).length;
+      const score = overlap / queryTokens.length;
+      if (score < 0.6) {
+        continue;
+      }
+      if (!bestParagraph || score > bestParagraph.score) {
+        bestParagraph = {
+          score,
+          paragraph,
+        };
+      }
+    }
+
+    if (!bestParagraph) {
+      return null;
+    }
+
+    return {
+      score: bestParagraph.score,
+      contextText: `Trecho relevante da base:\n${bestParagraph.paragraph}`,
+      contextHints: this.extractKeywordTokens(bestParagraph.paragraph).slice(
+        0,
+        4
+      ),
+    };
+  }
+
+  private splitPromptTextIntoFaqEntries(
+    promptText: string
+  ): Array<{ question: string; answer: string }> {
+    const lines = promptText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const entries: Array<{ question: string; answer: string }> = [];
+    let currentQuestion = '';
+    let currentAnswer: string[] = [];
+
+    const flush = (): void => {
+      if (!currentQuestion || currentAnswer.length === 0) {
+        return;
+      }
+      entries.push({
+        question: currentQuestion,
+        answer: currentAnswer.join('\n').trim(),
+      });
+    };
+
+    for (const line of lines) {
+      if (this.isLikelyFaqQuestionLine(line)) {
+        flush();
+        currentQuestion = line;
+        currentAnswer = [];
+        continue;
+      }
+
+      if (!currentQuestion) {
+        continue;
+      }
+
+      currentAnswer.push(line);
+    }
+
+    flush();
+
+    return entries;
+  }
+
+  private isLikelyFaqQuestionLine(line: string): boolean {
+    if (!line) {
+      return false;
+    }
+
+    const trimmed = line.trim();
+    if (trimmed.length < 10 || trimmed.length > 260) {
+      return false;
+    }
+
+    if (trimmed.endsWith('?')) {
+      return true;
+    }
+
+    return /^(pergunta|q)[:\-]/i.test(trimmed);
   }
 
   private buildComprehensiveSystemPrompt(
@@ -6910,9 +8095,12 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
   ): string {
     const hasFilePrompts = filePrompts.length > 0;
     const shouldUseFileSearchInstructions = skipFilePrompts && hasFilePrompts;
-    const includedFilePrompts = shouldUseFileSearchInstructions
-      ? []
-      : filePrompts;
+    const inlineTextPrompts = (
+      shouldUseFileSearchInstructions
+        ? []
+        : filePrompts.filter((prompt) => !this.looksLikeUrl(prompt.value))
+    ).filter((prompt) => prompt.value.trim().length > 0);
+    const hasOnlyUrlPrompts = hasFilePrompts && inlineTextPrompts.length === 0;
 
     const baseInstruction = (agentSystemPrompt ?? '').trim();
     const parts: string[] = [];
@@ -6938,7 +8126,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         );
       } else {
         parts.push(
-          '- Se houver links ou URLs nos prompts, o conteúdo já foi processado e está no contexto RAG.'
+          '- Conteúdos dos arquivos do agente são recuperados via RAG/fallback em runtime. Não use URLs brutas como evidência.'
         );
         parts.push(
           '- Combine prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa.'
@@ -6949,23 +8137,27 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       );
     }
 
-    if (includedFilePrompts.length > 0) {
+    if (inlineTextPrompts.length > 0) {
       parts.push('');
-      parts.push(
-        '### BASE DE CONHECIMENTO — ARQUIVOS (Absorva TODO o conteúdo de cada arquivo):'
-      );
-      for (const prompt of includedFilePrompts) {
+      parts.push('### BASE DE CONHECIMENTO — PROMPTS DE TEXTO:');
+      for (const prompt of inlineTextPrompts) {
         parts.push('');
         parts.push(prompt.value);
       }
     }
 
-    if (shouldUseFileSearchInstructions) {
+    if (shouldUseFileSearchInstructions || hasOnlyUrlPrompts) {
       parts.push('');
       parts.push('### BASE DE CONHECIMENTO — ARQUIVOS');
-      parts.push(
-        'Os arquivos estão disponíveis via File Search. Consulte a ferramenta quando precisar de detalhes ou trechos específicos.'
-      );
+      if (shouldUseFileSearchInstructions) {
+        parts.push(
+          'Os arquivos estão disponíveis via File Search. Consulte a ferramenta quando precisar de detalhes ou trechos específicos.'
+        );
+      } else {
+        parts.push(
+          'Os conteúdos dos arquivos anexados são recuperados via RAG e fallback runtime. Responda apenas com evidências recuperadas.'
+        );
+      }
     }
 
     if (agentSystemPrompt || filePrompts.length > 0) {
@@ -7288,58 +8480,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         (token) =>
           token.length >= 3 && !ChatbotFlowRunnerService.STOP_WORDS.has(token)
       );
-  }
-
-  private isQueryWithinPromptText(
-    userText: string,
-    promptsText: string
-  ): boolean {
-    if (!userText || !promptsText) {
-      return false;
-    }
-
-    const queryTokens = this.extractKeywordTokens(userText);
-    if (queryTokens.length === 0) {
-      return false;
-    }
-
-    const promptTokens = this.extractKeywordTokens(promptsText);
-    if (promptTokens.length === 0) {
-      return false;
-    }
-
-    const minPrefixMatchLength =
-      queryTokens.length <= 2
-        ? 4
-        : ChatbotFlowRunnerService.MIN_PREFIX_MATCH_LENGTH;
-    const promptTokenSet = new Set(promptTokens);
-    const matchesToken = (token: string): boolean => {
-      if (promptTokenSet.has(token)) {
-        return true;
-      }
-      for (const promptToken of promptTokens) {
-        const prefixMatch =
-          promptToken.startsWith(token) || token.startsWith(promptToken);
-        if (prefixMatch) {
-          const minLen = Math.min(token.length, promptToken.length);
-          if (minLen >= minPrefixMatchLength) {
-            return true;
-          }
-        }
-      }
-      return false;
-    };
-
-    if (queryTokens.length === 1) {
-      return matchesToken(queryTokens[0]);
-    }
-
-    const matchCount = queryTokens.filter((token) =>
-      matchesToken(token)
-    ).length;
-    const matchRatio = matchCount / queryTokens.length;
-
-    return matchCount >= 2 || matchRatio >= 0.4;
   }
 
   private hashText(text: string): string {

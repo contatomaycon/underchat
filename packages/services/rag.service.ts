@@ -13,9 +13,15 @@ export class RagService {
   private readonly retrievalQuerySummarySnippetChars = 400;
   private readonly maxRecentMessageChars = 1500;
   private readonly maxSummaryChars = 12000;
-  private readonly minContextScore = 0.2;
+  private readonly minContextScore = 0.35;
   private readonly minKeywordLength = 3;
   private readonly minKeywordMatchRatio = 0.4;
+  private readonly hybridVectorWeight = 0.55;
+  private readonly hybridLexicalWeight = 0.45;
+  private readonly exactFaqMinScore = 0.62;
+  private readonly hybridEvidenceMinScore = 0.42;
+  private readonly hybridCandidateMultiplier = 3;
+  private readonly maxFaqAnswerChars = 1400;
   private readonly keywordStopWords = new Set([
     'a',
     'o',
@@ -207,25 +213,70 @@ export class RagService {
     aiAgentId: string,
     userQuery: string,
     topK = 100,
-    minScore = 0.0
+    minScore = 0.0,
+    options?: {
+      allowedPromptIds?: string[];
+    }
   ): Promise<
-    IRagContext & { chunksCount: number; maxScore: number; rawMaxScore: number }
+    IRagContext & {
+      chunksCount: number;
+      maxScore: number;
+      rawMaxScore: number;
+      exactMatchFound: boolean;
+      exactMatchScore: number;
+      lexicalCoverage: number;
+    }
   > {
     try {
+      const candidateTopK = Math.max(
+        topK,
+        topK * this.hybridCandidateMultiplier
+      );
       const chunks = await this.embeddingService.searchSimilarChunks(
         accountId,
         aiAgentId,
         userQuery,
-        topK
+        candidateTopK,
+        {
+          allowedPromptIds: options?.allowedPromptIds,
+        }
       );
+      const hybridChunks = this.rerankChunksWithHybridSignals(
+        userQuery,
+        chunks
+      );
+      const topHybridChunk = hybridChunks[0];
+      const exactMatch = this.findBestFaqSectionMatch(userQuery, hybridChunks);
+      const chunksWithExactMatch = exactMatch
+        ? [
+            {
+              text: exactMatch.contextText,
+              score: exactMatch.score,
+              promptId: exactMatch.promptId,
+            },
+            ...hybridChunks,
+          ]
+        : hybridChunks;
 
-      return this.processChunks(chunks, minScore);
+      const processed = this.processChunks(chunksWithExactMatch, minScore);
+
+      return {
+        ...processed,
+        exactMatchFound: !!exactMatch,
+        exactMatchScore: exactMatch?.score ?? 0,
+        lexicalCoverage: topHybridChunk?.lexicalCoverage ?? 0,
+      };
     } catch (error) {
       console.error(
         '[getRelevantContext] Erro ao buscar contexto relevante:',
         error
       );
-      return this.emptyContext();
+      return {
+        ...this.emptyContext(),
+        exactMatchFound: false,
+        exactMatchScore: 0,
+        lexicalCoverage: 0,
+      };
     }
   }
 
@@ -301,7 +352,14 @@ export class RagService {
   async getAllAgentPromptsDetailed(
     accountId: string,
     aiAgentId: string
-  ): Promise<Array<{ value: string }>> {
+  ): Promise<
+    Array<{
+      ai_agent_prompt_id: string;
+      value: string;
+      status: EAiAgentStatus;
+      updated_at: string | null;
+    }>
+  > {
     try {
       const prompts =
         await this.aiAgentPromptListerRepository.listAiAgentPrompts(
@@ -312,7 +370,10 @@ export class RagService {
       return prompts
         .filter((prompt) => prompt.status === EAiAgentStatus.active)
         .map((prompt) => ({
+          ai_agent_prompt_id: prompt.ai_agent_prompt_id,
           value: prompt.value,
+          status: prompt.status,
+          updated_at: prompt.updated_at,
         }));
     } catch (error) {
       console.error(
@@ -496,6 +557,14 @@ export class RagService {
     chunksCount: number;
     contextAllowed: boolean;
     contextHints: string[];
+    evidence: {
+      hasEvidence: boolean;
+      decisionPath: 'exact_match' | 'hybrid_retrieval' | 'out_of_context';
+      knowledgeScore: number;
+      historyScore: number;
+      lexicalCoverage: number;
+      exactMatchScore: number;
+    };
   }> {
     const isBootstrap = options?.isBootstrap ?? false;
 
@@ -509,6 +578,14 @@ export class RagService {
         contextParts: [],
         contextAllowed: true,
         contextHints: [],
+        evidence: {
+          hasEvidence: true,
+          decisionPath: 'hybrid_retrieval',
+          knowledgeScore: 1,
+          historyScore: 0,
+          lexicalCoverage: 1,
+          exactMatchScore: 0,
+        },
       };
     }
 
@@ -519,6 +596,9 @@ export class RagService {
       chunksCount,
       knowledgeMaxScore,
       knowledgeRawMaxScore,
+      knowledgeExactMatchFound,
+      knowledgeExactMatchScore,
+      knowledgeLexicalCoverage,
       historyMaxScore,
       historyRawMaxScore,
     } = await this.buildContextParts(accountId, aiAgentId, userQuery, {
@@ -608,17 +688,35 @@ export class RagService {
       this.minContextScore,
       this.normalizeMinScore(options?.minScore ?? this.minContextScore)
     );
-    const contextAllowed = this.isQueryWithinContext(userQuery, {
-      bootstrapSummary: options?.bootstrapSummary,
-      knowledgeContextText: effectiveKnowledgeContextText,
-      knowledgeMaxScore: effectiveKnowledgeMaxScore,
-      knowledgeRawMaxScore: effectiveKnowledgeRawMaxScore,
-      historyMaxScore: effectiveHistoryMaxScore,
-      historyRawMaxScore: effectiveHistoryRawMaxScore,
-      hasConversationContext: effectiveHasConversationContext,
-      conversationContextText: effectiveConversationContextText,
-      scoreThreshold: contextScoreThreshold,
-    });
+    const contextAllowedByQueryAndContext = this.isQueryWithinContext(
+      userQuery,
+      {
+        bootstrapSummary: null,
+        knowledgeContextText: effectiveKnowledgeContextText,
+        knowledgeMaxScore: effectiveKnowledgeMaxScore,
+        knowledgeRawMaxScore: effectiveKnowledgeRawMaxScore,
+        historyMaxScore: effectiveHistoryMaxScore,
+        historyRawMaxScore: effectiveHistoryRawMaxScore,
+        hasConversationContext: effectiveHasConversationContext,
+        conversationContextText: effectiveConversationContextText,
+        scoreThreshold: contextScoreThreshold,
+      }
+    );
+    const evidenceByScores =
+      knowledgeExactMatchFound ||
+      effectiveKnowledgeMaxScore >= contextScoreThreshold ||
+      effectiveHistoryMaxScore >= contextScoreThreshold ||
+      (knowledgeLexicalCoverage >= 0.5 &&
+        effectiveKnowledgeMaxScore >= this.hybridEvidenceMinScore);
+    const contextAllowed = knowledgeExactMatchFound
+      ? true
+      : contextAllowedByQueryAndContext && evidenceByScores;
+    const decisionPath: 'exact_match' | 'hybrid_retrieval' | 'out_of_context' =
+      knowledgeExactMatchFound
+        ? 'exact_match'
+        : contextAllowed
+          ? 'hybrid_retrieval'
+          : 'out_of_context';
     const contextHints = this.buildContextHints(
       options?.bootstrapSummary,
       effectiveKnowledgeContextText
@@ -631,6 +729,14 @@ export class RagService {
       chunksCount,
       contextAllowed,
       contextHints,
+      evidence: {
+        hasEvidence: contextAllowed,
+        decisionPath,
+        knowledgeScore: effectiveKnowledgeMaxScore,
+        historyScore: effectiveHistoryMaxScore,
+        lexicalCoverage: knowledgeLexicalCoverage,
+        exactMatchScore: knowledgeExactMatchScore,
+      },
     };
   }
 
@@ -657,7 +763,8 @@ export class RagService {
   private formatFilePrompts(activePrompts: Array<{ value: string }>): string {
     const values = activePrompts
       .filter((prompt) => prompt.value && prompt.value.trim().length > 0)
-      .map((prompt) => prompt.value);
+      .map((prompt) => prompt.value.trim())
+      .filter((value) => !this.looksLikeUrl(value));
 
     if (values.length === 0) {
       return '';
@@ -833,6 +940,9 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     knowledgeContextText: string;
     knowledgeMaxScore: number;
     knowledgeRawMaxScore: number;
+    knowledgeExactMatchFound: boolean;
+    knowledgeExactMatchScore: number;
+    knowledgeLexicalCoverage: number;
     historyMaxScore: number;
     historyRawMaxScore: number;
     hasConversationContext: boolean;
@@ -844,9 +954,19 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     let knowledgeContextText = '';
     let knowledgeMaxScore = 0;
     let knowledgeRawMaxScore = 0;
+    let knowledgeExactMatchFound = false;
+    let knowledgeExactMatchScore = 0;
+    let knowledgeLexicalCoverage = 0;
     let historyMaxScore = 0;
     let historyRawMaxScore = 0;
     let conversationContextText = '';
+    const activePrompts = await this.getAllAgentPromptsDetailed(
+      accountId,
+      aiAgentId
+    );
+    const activePromptIds = activePrompts.map(
+      (prompt) => prompt.ai_agent_prompt_id
+    );
     const normalizedQuery = this.normalizeText(userQuery);
     const summarySnippet =
       options?.conversationSummary &&
@@ -954,9 +1074,15 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         aiAgentId,
         queryForRetrieval,
         topK,
-        minScore
+        minScore,
+        {
+          allowedPromptIds: activePromptIds,
+        }
       );
       knowledgeRawMaxScore = relevantContext.rawMaxScore;
+      knowledgeExactMatchFound = relevantContext.exactMatchFound;
+      knowledgeExactMatchScore = relevantContext.exactMatchScore;
+      knowledgeLexicalCoverage = relevantContext.lexicalCoverage;
 
       if (
         relevantContext.combinedContext &&
@@ -1005,6 +1131,9 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       knowledgeContextText,
       knowledgeMaxScore,
       knowledgeRawMaxScore,
+      knowledgeExactMatchFound,
+      knowledgeExactMatchScore,
+      knowledgeLexicalCoverage,
       historyMaxScore,
       historyRawMaxScore,
       hasConversationContext,
@@ -1604,6 +1733,208 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     };
   }
 
+  private rerankChunksWithHybridSignals(
+    userQuery: string,
+    chunks: Array<{ text: string; score: number; promptId: string }>
+  ): Array<{
+    text: string;
+    score: number;
+    promptId: string;
+    lexicalCoverage: number;
+  }> {
+    const queryKeywords = this.extractKeywords(userQuery);
+    const normalizedQuery = this.normalizeTextForComparison(userQuery);
+    const queryKeywordCount = Math.max(queryKeywords.length, 1);
+
+    return chunks
+      .map((chunk) => {
+        const normalizedText = this.normalizeTextForComparison(chunk.text);
+        const chunkKeywords = this.extractKeywords(chunk.text);
+        const chunkKeywordSet = new Set(chunkKeywords);
+
+        const overlapCount = queryKeywords.filter(
+          (keyword) =>
+            chunkKeywordSet.has(keyword) ||
+            chunkKeywords.some(
+              (chunkKeyword) =>
+                chunkKeyword.startsWith(keyword) ||
+                keyword.startsWith(chunkKeyword)
+            )
+        ).length;
+        const lexicalCoverage = overlapCount / queryKeywordCount;
+        const phraseBoost =
+          normalizedQuery.length > 8 &&
+          (normalizedText.includes(normalizedQuery) ||
+            normalizedQuery.includes(
+              normalizedText.slice(0, normalizedQuery.length)
+            ))
+            ? 0.2
+            : 0;
+        const vectorScore = this.normalizeToUnit(chunk.score);
+        const hybridScore = Math.min(
+          1,
+          vectorScore * this.hybridVectorWeight +
+            lexicalCoverage * this.hybridLexicalWeight +
+            phraseBoost
+        );
+
+        return {
+          ...chunk,
+          score: hybridScore,
+          lexicalCoverage,
+        };
+      })
+      .filter((chunk) => {
+        if (queryKeywords.length === 0) {
+          return true;
+        }
+        if (chunk.score >= this.hybridEvidenceMinScore) {
+          return true;
+        }
+        return chunk.lexicalCoverage >= 0.25;
+      })
+      .sort((a, b) => b.score - a.score);
+  }
+
+  private findBestFaqSectionMatch(
+    userQuery: string,
+    chunks: Array<{
+      text: string;
+      score: number;
+      promptId: string;
+      lexicalCoverage: number;
+    }>
+  ): { contextText: string; promptId: string; score: number } | null {
+    const queryKeywords = this.extractKeywords(userQuery);
+    if (queryKeywords.length === 0) {
+      return null;
+    }
+
+    const normalizedQuery = this.normalizeTextForComparison(userQuery);
+    let bestMatch: {
+      contextText: string;
+      promptId: string;
+      score: number;
+    } | null = null;
+
+    for (const chunk of chunks) {
+      const faqSections = this.extractFaqSections(chunk.text);
+      if (faqSections.length === 0) {
+        continue;
+      }
+
+      for (const section of faqSections) {
+        const questionKeywords = this.extractKeywords(section.question);
+        if (questionKeywords.length === 0) {
+          continue;
+        }
+
+        const questionKeywordSet = new Set(questionKeywords);
+        const overlapCount = queryKeywords.filter((keyword) =>
+          questionKeywordSet.has(keyword)
+        ).length;
+
+        const questionCoverage = overlapCount / queryKeywords.length;
+        const recallCoverage = overlapCount / questionKeywords.length;
+        const exactBoost =
+          normalizedQuery.length > 8 &&
+          (this.normalizeTextForComparison(section.question).includes(
+            normalizedQuery
+          ) ||
+            normalizedQuery.includes(
+              this.normalizeTextForComparison(section.question)
+            ))
+            ? 0.25
+            : 0;
+        const score = Math.min(
+          1,
+          questionCoverage * 0.65 + recallCoverage * 0.35 + exactBoost
+        );
+
+        if (score < this.exactFaqMinScore) {
+          continue;
+        }
+
+        const contextText = [
+          `Pergunta encontrada na base: ${section.question}`,
+          `Resposta oficial: ${this.truncateText(section.answer, this.maxFaqAnswerChars)}`,
+        ].join('\n');
+
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = {
+            contextText,
+            promptId: chunk.promptId,
+            score,
+          };
+        }
+      }
+    }
+
+    return bestMatch;
+  }
+
+  private extractFaqSections(
+    text: string
+  ): Array<{ question: string; answer: string }> {
+    const lines = text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      return [];
+    }
+
+    const sections: Array<{ question: string; answer: string }> = [];
+    let currentQuestion = '';
+    let currentAnswerLines: string[] = [];
+
+    const flushCurrent = (): void => {
+      if (!currentQuestion || currentAnswerLines.length === 0) {
+        return;
+      }
+      sections.push({
+        question: currentQuestion,
+        answer: currentAnswerLines.join('\n').trim(),
+      });
+    };
+
+    for (const line of lines) {
+      if (this.isLikelyFaqQuestion(line)) {
+        flushCurrent();
+        currentQuestion = line;
+        currentAnswerLines = [];
+        continue;
+      }
+
+      if (!currentQuestion) {
+        continue;
+      }
+
+      currentAnswerLines.push(line);
+    }
+
+    flushCurrent();
+    return sections;
+  }
+
+  private isLikelyFaqQuestion(line: string): boolean {
+    if (!line) {
+      return false;
+    }
+
+    const normalized = line.trim();
+    if (normalized.length < 10 || normalized.length > 260) {
+      return false;
+    }
+
+    if (normalized.endsWith('?')) {
+      return true;
+    }
+
+    return /^(pergunta|q)[:\-]/i.test(normalized);
+  }
+
   private extractKeywords(text: string): string[] {
     const normalized = this.normalizeTextForComparison(text);
     if (!normalized) {
@@ -1632,6 +1963,10 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       .trim();
   }
 
+  private looksLikeUrl(value: string): boolean {
+    return /^https?:\/\//i.test(value.trim());
+  }
+
   private emptyContext(): IRagContext & {
     chunksCount: number;
     maxScore: number;
@@ -1658,6 +1993,16 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       return 0;
     }
     return score;
+  }
+
+  private normalizeToUnit(score: number): number {
+    if (!Number.isFinite(score)) {
+      return 0;
+    }
+    if (score >= 0 && score <= 1) {
+      return score;
+    }
+    return Math.max(0, Math.min(1, (score + 1) / 2));
   }
 
   private normalizeMinScore(minScore: number): number {
