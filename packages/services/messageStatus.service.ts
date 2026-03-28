@@ -58,21 +58,6 @@ export class MessageStatusService {
     patch: MessageSummaryPatch,
     key?: MessageKeyLike
   ): Promise<IChatMessage | null> {
-    console.log('[BAILEYS_EDIT_DEBUG] message_status_update_received', {
-      account_id: accountId,
-      message_id: messageId,
-      patch,
-      key: {
-        id: key?.id ?? null,
-        fromMe: key?.fromMe ?? null,
-        remoteJid: key?.remoteJid ?? null,
-        remoteJidAlt: key?.remoteJidAlt ?? null,
-        participant: key?.participant ?? null,
-        participantAlt: key?.participantAlt ?? null,
-        addressingMode: (key as any)?.addressingMode ?? null,
-      },
-    });
-
     const normalizedPatch = this.normalizePatch(patch);
     if (!messageId || !accountId || !this.hasPatch(normalizedPatch)) {
       return null;
@@ -520,21 +505,6 @@ export class MessageStatusService {
       const resolvedMessage = hit?._source ?? null;
 
       if (!resolvedMessage) {
-        console.warn('[BAILEYS_EDIT_DEBUG] message_status_ack_match_miss', {
-          account_id: accountId,
-          message_id: messageId,
-          key: {
-            id: key?.id ?? null,
-            fromMe: key?.fromMe ?? null,
-            remoteJid: key?.remoteJid ?? null,
-            remoteJidAlt: key?.remoteJidAlt ?? null,
-            participant: key?.participant ?? null,
-            participantAlt: key?.participantAlt ?? null,
-            addressingMode: (key as any)?.addressingMode ?? null,
-          },
-          candidate_count: idCandidates.length,
-          candidates: idCandidates,
-        });
         logger.warn(
           {
             type: 'ack_match_miss',

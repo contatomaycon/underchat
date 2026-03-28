@@ -449,22 +449,6 @@ export class MessageStatusUpdateConsume {
         firstUpdate.key
       );
 
-      console.log('[BAILEYS_EDIT_DEBUG] status_update_applied', {
-        account_id: firstUpdate.account_id,
-        message_id: firstUpdate.message_id,
-        patch: mergedPatch,
-        key: {
-          id: firstUpdate.key?.id ?? null,
-          fromMe: firstUpdate.key?.fromMe ?? null,
-          remoteJid: firstUpdate.key?.remoteJid ?? null,
-          remoteJidAlt: (firstUpdate.key as any)?.remoteJidAlt ?? null,
-          participant: firstUpdate.key?.participant ?? null,
-          participantAlt: (firstUpdate.key as any)?.participantAlt ?? null,
-          addressingMode: (firstUpdate.key as any)?.addressingMode ?? null,
-        },
-        batch_size: buffered.length,
-      });
-
       for (const item of buffered) {
         this.resetPartitionFailureCount(item.partition);
       }

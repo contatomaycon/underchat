@@ -42,25 +42,6 @@ export class BaileysHelpersService {
     const isEditMessage = this.isEditMessage(content);
     let jid = address;
 
-    if (isEditMessage) {
-      const editKey = (content as { edit?: Record<string, unknown> }).edit;
-      console.log('[BAILEYS_EDIT_DEBUG] baileys_helper_send_start', {
-        address,
-        has_at_sign: address.includes('@'),
-        is_edit_message: true,
-        should_simulate_typing: shouldSimulateTyping,
-        edit_key: {
-          id: editKey?.id ?? null,
-          fromMe: editKey?.fromMe ?? null,
-          remoteJid: editKey?.remoteJid ?? null,
-          remoteJidAlt: editKey?.remoteJidAlt ?? null,
-          participant: editKey?.participant ?? null,
-          participantAlt: editKey?.participantAlt ?? null,
-          addressingMode: editKey?.addressingMode ?? null,
-        },
-      });
-    }
-
     if (!address.includes('@')) {
       const resolved = await this.resolveJidFlexible(sock, address);
       if (!resolved.exists || !resolved.jid) {
@@ -80,13 +61,6 @@ export class BaileysHelpersService {
     }
 
     if (isEditMessage) {
-      console.log('[BAILEYS_EDIT_DEBUG] baileys_helper_send_edit_result', {
-        jid,
-        send_result_key_id: result.key?.id ?? null,
-        send_result_remote_jid: result.key?.remoteJid ?? null,
-        send_result_remote_jid_alt: (result.key as any)?.remoteJidAlt ?? null,
-        send_result_from_me: result.key?.fromMe ?? null,
-      });
       return result;
     }
 
@@ -119,22 +93,6 @@ export class BaileysHelpersService {
     content: AnyMessageContent,
     options?: MiscMessageGenerationOptions
   ): Promise<WAMessage> {
-    if (this.isEditMessage(content)) {
-      console.log(
-        '[BAILEYS_EDIT_DEBUG] baileys_helper_send_once_edit_payload',
-        {
-          jid,
-          text_length: (content as { text?: string }).text?.length ?? 0,
-          text_preview: ((content as { text?: string }).text ?? '').slice(
-            0,
-            120
-          ),
-          edit_key_id:
-            (content as { edit?: { id?: string } })?.edit?.id ?? null,
-        }
-      );
-    }
-
     if (this.isAudioViewOnceMessage(content)) {
       const result = await this.sendAudioViewOnceMessage(
         sock,

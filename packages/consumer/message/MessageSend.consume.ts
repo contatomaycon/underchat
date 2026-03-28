@@ -2633,43 +2633,13 @@ export class MessageSendConsume {
       data.content?.version && data.content.version.length > 0;
     const hasMessageKey = !!data.message_key?.id;
 
-    console.log('[BAILEYS_EDIT_DEBUG] worker_process_text_received', {
-      chat_id: data.chat_id,
-      message_id: data.message_id,
-      jid,
-      has_versions: hasVersions,
-      version_count: data.content?.version?.length ?? 0,
-      has_message_key: hasMessageKey,
-      message_key: {
-        id: data.message_key?.id ?? null,
-        from_me: data.message_key?.from_me ?? null,
-        remote_jid: data.message_key?.remote_jid ?? null,
-        remote_jid_alt: data.message_key?.remote_jid_alt ?? null,
-        participant: data.message_key?.participant ?? null,
-        participant_alt: data.message_key?.participant_alt ?? null,
-        addressing_mode: data.message_key?.addressing_mode ?? null,
-      },
-    });
-
     if (hasVersions && hasMessageKey && data.message_key && data.content) {
       if (data.message_key.from_me !== true) {
-        console.warn('[BAILEYS_EDIT_DEBUG] worker_edit_blocked_not_from_me', {
-          chat_id: data.chat_id,
-          message_id: data.message_id,
-          message_key_id: data.message_key.id ?? null,
-          message_key_from_me: data.message_key.from_me ?? null,
-        });
         throw new Error('Message edit is not allowed for non-own message');
       }
 
       const messageKey = this.buildBaileysMessageKey(data.message_key, jid);
       if (!messageKey) {
-        console.warn('[BAILEYS_EDIT_DEBUG] worker_edit_blocked_invalid_key', {
-          chat_id: data.chat_id,
-          message_id: data.message_id,
-          fallback_jid: jid,
-          raw_message_key_id: data.message_key?.id ?? null,
-        });
         return;
       }
 
@@ -2680,24 +2650,6 @@ export class MessageSendConsume {
         : null;
 
       const newText = latestVersion?.message ?? data.content?.message ?? '';
-
-      console.log('[BAILEYS_EDIT_DEBUG] worker_edit_attempt', {
-        chat_id: data.chat_id,
-        message_id: data.message_id,
-        send_jid: jid,
-        edit_key: {
-          id: messageKey.id,
-          fromMe: messageKey.fromMe,
-          remoteJid: messageKey.remoteJid,
-          remoteJidAlt: messageKey.remoteJidAlt ?? null,
-          participant: messageKey.participant ?? null,
-          participantAlt: messageKey.participantAlt ?? null,
-          addressingMode: messageKey.addressingMode ?? null,
-        },
-        latest_version_date: latestVersion?.date ?? null,
-        new_text_length: newText.length,
-        new_text_preview: newText.slice(0, 120),
-      });
 
       let result: WAMessage | undefined;
       try {
@@ -2719,15 +2671,7 @@ export class MessageSendConsume {
           },
           'warn'
         );
-        console.error('[BAILEYS_EDIT_DEBUG] worker_edit_failed_exception', {
-          chat_id: data.chat_id,
-          message_id: data.message_id,
-          send_jid: jid,
-          edit_key_id: messageKey.id,
-          edit_remote_jid: messageKey.remoteJid,
-          edit_addressing_mode: messageKey.addressingMode ?? null,
-          error: this.errorMessage(error),
-        });
+
         throw error;
       }
 
@@ -2744,25 +2688,9 @@ export class MessageSendConsume {
           },
           'warn'
         );
-        console.warn('[BAILEYS_EDIT_DEBUG] worker_edit_failed_empty_result', {
-          chat_id: data.chat_id,
-          message_id: data.message_id,
-          send_jid: jid,
-          edit_key_id: messageKey.id,
-          edit_remote_jid: messageKey.remoteJid,
-          edit_addressing_mode: messageKey.addressingMode ?? null,
-        });
+
         throw new Error('Failed to edit message');
       }
-
-      console.log('[BAILEYS_EDIT_DEBUG] worker_edit_result', {
-        chat_id: data.chat_id,
-        message_id: data.message_id,
-        result_key_id: result.key?.id ?? null,
-        result_remote_jid: result.key?.remoteJid ?? null,
-        result_remote_jid_alt: (result.key as any)?.remoteJidAlt ?? null,
-        result_from_me: result.key?.fromMe ?? null,
-      });
 
       const update: IUpdateMessage = { message: result, data };
       await this.pushUpdate(update);
@@ -3302,23 +3230,6 @@ export class MessageSendConsume {
   }
 
   private async pushUpdate(input: IUpdateMessage): Promise<void> {
-    const debugOutgoing = input.message as any;
-    console.log('[BAILEYS_EDIT_DEBUG] worker_push_update', {
-      data_message_id: input.data?.message_id ?? null,
-      data_chat_id: input.data?.chat_id ?? null,
-      outgoing_key: {
-        id: debugOutgoing?.key?.id ?? null,
-        fromMe: debugOutgoing?.key?.fromMe ?? null,
-        remoteJid: debugOutgoing?.key?.remoteJid ?? null,
-        remoteJidAlt: debugOutgoing?.key?.remoteJidAlt ?? null,
-        participant: debugOutgoing?.key?.participant ?? null,
-        participantAlt: debugOutgoing?.key?.participantAlt ?? null,
-        addressingMode: debugOutgoing?.key?.addressingMode ?? null,
-      },
-      outgoing_protocol_type:
-        debugOutgoing?.message?.protocolMessage?.type ?? null,
-    });
-
     const topic = this.kafkaServiceQueueService.updateMessage();
     await this.streamProducerService.send(topic, input);
 

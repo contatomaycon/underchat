@@ -1042,20 +1042,6 @@ export class BaileysIncomingMessageService {
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
     if (!events?.length) return;
 
-    console.log('[BAILEYS_EDIT_DEBUG] incoming_messages_update_batch', {
-      count: events.length,
-      events: events.map((event) => ({
-        id: event.key?.id ?? null,
-        fromMe: event.key?.fromMe ?? null,
-        remoteJid: event.key?.remoteJid ?? null,
-        remoteJidAlt: (event.key as any)?.remoteJidAlt ?? null,
-        participant: event.key?.participant ?? null,
-        participantAlt: (event.key as any)?.participantAlt ?? null,
-        addressingMode: (event.key as any)?.addressingMode ?? null,
-        status: event.update?.status ?? null,
-      })),
-    });
-
     const promises = events.map((event) => {
       this.trackDeliveryConfirmation(event.key, event.update?.status);
       const patch = this.mapStatusToPatch(event.update?.status);
@@ -1085,22 +1071,6 @@ export class BaileysIncomingMessageService {
 
   private async handleMessageReceiptUpdate(events: MessageUserReceiptUpdate[]) {
     if (!events?.length) return;
-
-    console.log('[BAILEYS_EDIT_DEBUG] incoming_message_receipt_update_batch', {
-      count: events.length,
-      events: events.map((event) => ({
-        id: event.key?.id ?? null,
-        fromMe: event.key?.fromMe ?? null,
-        remoteJid: event.key?.remoteJid ?? null,
-        remoteJidAlt: (event.key as any)?.remoteJidAlt ?? null,
-        participant: event.key?.participant ?? null,
-        participantAlt: (event.key as any)?.participantAlt ?? null,
-        addressingMode: (event.key as any)?.addressingMode ?? null,
-        receiptTimestamp: event.receipt?.receiptTimestamp ?? null,
-        readTimestamp: event.receipt?.readTimestamp ?? null,
-        playedTimestamp: event.receipt?.playedTimestamp ?? null,
-      })),
-    });
 
     const promises = events.map((event) => {
       const patch = this.mapReceiptToPatch(event.receipt);
@@ -1162,28 +1132,8 @@ export class BaileysIncomingMessageService {
     patch: MessageSummaryPatch | null
   ) {
     if (!patch || !key?.id || !key.fromMe) {
-      if (key?.id) {
-        console.log('[BAILEYS_EDIT_DEBUG] incoming_status_patch_skipped', {
-          id: key.id,
-          fromMe: key.fromMe ?? null,
-          remoteJid: key.remoteJid ?? null,
-          remoteJidAlt: (key as any)?.remoteJidAlt ?? null,
-          patch,
-        });
-      }
       return;
     }
-
-    console.log('[BAILEYS_EDIT_DEBUG] incoming_status_patch_enqueue', {
-      id: key.id,
-      fromMe: key.fromMe,
-      remoteJid: key.remoteJid ?? null,
-      remoteJidAlt: (key as any)?.remoteJidAlt ?? null,
-      participant: key.participant ?? null,
-      participantAlt: (key as any)?.participantAlt ?? null,
-      addressingMode: (key as any)?.addressingMode ?? null,
-      patch,
-    });
 
     try {
       const statusUpdate: IMessageStatusUpdate = {

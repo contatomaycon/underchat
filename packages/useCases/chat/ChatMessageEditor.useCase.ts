@@ -11,7 +11,7 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
-import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class ChatMessageEditorUseCase {
@@ -32,25 +32,12 @@ export class ChatMessageEditorUseCase {
     userId: string,
     userChannels: { id: string; name: string }[] = []
   ): Promise<boolean> {
-    console.log('[BAILEYS_EDIT_DEBUG] edit_request_received', {
-      account_id: accountId,
-      chat_id: params.chat_id,
-      message_id: params.message_id,
-      user_id: userId,
-      new_text_length: body.message?.length ?? 0,
-    });
-
     const message = await this.chatService.findMessageByMessageId(
       accountId,
       params.message_id
     );
 
     if (!message) {
-      console.warn('[BAILEYS_EDIT_DEBUG] edit_message_not_found', {
-        account_id: accountId,
-        chat_id: params.chat_id,
-        message_id: params.message_id,
-      });
       throw new Error(t('message_not_found'));
     }
 
@@ -102,45 +89,16 @@ export class ChatMessageEditorUseCase {
       version: [...versions, newVersion],
     };
 
-    console.log('[BAILEYS_EDIT_DEBUG] edit_message_versions_prepared', {
-      account_id: accountId,
-      chat_id: params.chat_id,
-      message_id: params.message_id,
-      current_versions: versions.length,
-      next_versions: updatedContent.version.length,
-      message_key: {
-        id: message.message_key?.id ?? null,
-        from_me: message.message_key?.from_me ?? null,
-        remote_jid: message.message_key?.remote_jid ?? null,
-        remote_jid_alt: message.message_key?.remote_jid_alt ?? null,
-        participant: message.message_key?.participant ?? null,
-        participant_alt: message.message_key?.participant_alt ?? null,
-        addressing_mode: message.message_key?.addressing_mode ?? null,
-      },
-    });
-
     const contentUpdated = await this.chatService.updateMessageContent(
       params.message_id,
       updatedContent
     );
 
     if (!contentUpdated) {
-      console.warn('[BAILEYS_EDIT_DEBUG] edit_content_update_failed', {
-        account_id: accountId,
-        chat_id: params.chat_id,
-        message_id: params.message_id,
-      });
       return false;
     }
 
     if (!message.message_key?.id || !message.message_key?.remote_jid) {
-      console.warn('[BAILEYS_EDIT_DEBUG] edit_skipped_missing_message_key', {
-        account_id: accountId,
-        chat_id: params.chat_id,
-        message_id: params.message_id,
-        has_message_key_id: !!message.message_key?.id,
-        has_remote_jid: !!message.message_key?.remote_jid,
-      });
       return true;
     }
 
@@ -150,30 +108,14 @@ export class ChatMessageEditorUseCase {
         ...message.content,
         ...updatedContent,
       },
+      hash: uuidv7(),
     };
-    ensureMessageSendHash(editedMessage);
-
-    console.log('[BAILEYS_EDIT_DEBUG] edit_enqueued_to_worker', {
-      account_id: accountId,
-      worker_id: message.worker?.id ?? null,
-      chat_id: editedMessage.chat_id,
-      message_id: editedMessage.message_id,
-      message_hash: editedMessage.hash,
-      message_key_id: editedMessage.message_key?.id ?? null,
-    });
 
     await this.streamProducerService.send(
       this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
       editedMessage,
       editedMessage.chat_id
     );
-
-    console.log('[BAILEYS_EDIT_DEBUG] edit_enqueued_to_worker_success', {
-      account_id: accountId,
-      worker_id: message.worker?.id ?? null,
-      chat_id: editedMessage.chat_id,
-      message_id: editedMessage.message_id,
-    });
 
     return true;
   }
