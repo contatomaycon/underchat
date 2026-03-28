@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ConfigService } from '@core/services/config.service';
 import { ChannelRecreatorUseCase } from './ChannelRecreator.useCase';
+import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 
 @injectable()
 export class ChannelsRecreatorAllUseCase {
@@ -14,19 +15,19 @@ export class ChannelsRecreatorAllUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    status?: string
+    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
   ): Promise<{ success: number; errors: number }> {
-    const channelIds = await this.getChannelIds(t, status);
+    const channelIds = await this.getChannelIds(t, filters);
     const results = await this.recreateAllChannels(t, channelIds);
     return this.countResults(results);
   }
 
   private async getChannelIds(
     t: TFunction<'translation', undefined>,
-    status?: string
+    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
   ): Promise<string[]> {
     const channelIds =
-      await this.configService.listAllNonDeletedChannelIds(status);
+      await this.configService.listAllNonDeletedChannelIds(filters);
 
     if (channelIds.length === 0) {
       throw new Error(t('no_channels_to_recreate'));

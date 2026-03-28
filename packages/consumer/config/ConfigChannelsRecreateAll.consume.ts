@@ -70,10 +70,13 @@ export class ConfigChannelsRecreateAllConsume {
       const stop = startHeartbeat(heartbeat);
       try {
         const t = await createI18nInstance('pt');
-        const result = await this.channelsRecreatorAllUseCase.execute(
-          t,
-          data.status
-        );
+        const result = await this.channelsRecreatorAllUseCase.execute(t, {
+          status: data.status,
+          type: data.type,
+          account: data.account,
+          name: data.name,
+          number: data.number,
+        });
         await this.publishCompleted(
           data.account_id,
           result.success,

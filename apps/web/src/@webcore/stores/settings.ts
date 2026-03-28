@@ -20,6 +20,7 @@ import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/resp
 import { ListChannelServersResponse } from '@core/schema/config/listChannelServers/response.schema';
 import { UpdateChannelRequest } from '@core/schema/config/updateChannel/request.schema';
 import { ChannelsStatisticsResponse } from '@core/schema/config/channelsStatistics/response.schema';
+import { RecreateChannelsAllRequest } from '@core/schema/config/recreateChannelsAll/request.schema';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 import { UpdateCreditCardFeeRequest } from '@core/schema/config/updateCreditCardFee/request.schema';
@@ -682,7 +683,7 @@ export const useSettingsStore = defineStore('settings', {
         return false;
       }
     },
-    async recreateChannelsAll(status?: string | null): Promise<{
+    async recreateChannelsAll(filters?: RecreateChannelsAllRequest): Promise<{
       enqueued: boolean;
       success?: number;
       errors?: number;
@@ -693,7 +694,11 @@ export const useSettingsStore = defineStore('settings', {
         const response = await axios.patch<
           IApiResponse<{ success?: number; errors?: number }>
         >('/config/channels/recreate-all', {
-          status: status || undefined,
+          status: filters?.status ?? undefined,
+          type: filters?.type ?? undefined,
+          account: filters?.account ?? undefined,
+          name: filters?.name ?? undefined,
+          number: filters?.number ?? undefined,
         });
 
         this.loading = false;

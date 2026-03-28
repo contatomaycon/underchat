@@ -5,6 +5,9 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { EnqueueRecreateChannelsAllUseCase } from '@core/useCases/config/EnqueueRecreateChannelsAll.useCase';
 import { RecreateChannelsAllRequest } from '@core/schema/config/recreateChannelsAll/request.schema';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 
 export const recreateChannelsAll = async (
   request: FastifyRequest<{
@@ -18,10 +21,18 @@ export const recreateChannelsAll = async (
   const { t, tokenJwtData } = request;
 
   try {
-    const status = request.body.status || undefined;
+    const payload: Omit<IConfigChannelsRecreateAllPayload, 'account_id'> = {
+      status:
+        (request.body.status as EWorkerStatus | null | undefined) ??
+        EWorkerStatus.online,
+      type: (request.body.type as EWorkerType | null | undefined) ?? undefined,
+      account: request.body.account || undefined,
+      name: request.body.name || undefined,
+      number: request.body.number || undefined,
+    };
     await enqueueRecreateChannelsAllUseCase.execute(
       tokenJwtData.account_id,
-      status
+      payload
     );
 
     return sendResponse(reply, {

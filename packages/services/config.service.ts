@@ -6,6 +6,7 @@ import { ListChannelsRequest } from '@core/schema/config/listChannels/request.sc
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 
 @injectable()
 export class ConfigService {
@@ -37,8 +38,10 @@ export class ConfigService {
     return this.channelViewerRepository.viewChannelBalancer(channelId);
   };
 
-  listAllNonDeletedChannelIds = async (status?: string): Promise<string[]> => {
-    return this.channelsListerRepository.listAllNonDeletedChannelIds(status);
+  listAllNonDeletedChannelIds = async (
+    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+  ): Promise<string[]> => {
+    return this.channelsListerRepository.listAllNonDeletedChannelIds(filters);
   };
 
   getChannelsStatistics = async (): Promise<{

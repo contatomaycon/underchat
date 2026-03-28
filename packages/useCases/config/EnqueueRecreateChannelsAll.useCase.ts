@@ -12,10 +12,13 @@ export class EnqueueRecreateChannelsAllUseCase {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
-  async execute(accountId: string, status?: string): Promise<void> {
+  async execute(
+    accountId: string,
+    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+  ): Promise<void> {
     const payload: IConfigChannelsRecreateAllPayload = {
       account_id: accountId,
-      status,
+      ...filters,
     };
 
     const topic = this.kafkaServiceQueueService.configChannelsRecreateAll();

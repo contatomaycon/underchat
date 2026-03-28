@@ -21,6 +21,7 @@ import {
 } from 'drizzle-orm';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
+import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 
 @injectable()
 export class ChannelsListerRepository {
@@ -186,14 +187,32 @@ export class ChannelsListerRepository {
     return result[0]?.count ?? 0;
   };
 
-  listAllNonDeletedChannelIds = async (status?: string): Promise<string[]> => {
+  listAllNonDeletedChannelIds = async (
+    filtersInput: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+  ): Promise<string[]> => {
     const filters: SQLWrapper[] = [
       isNull(worker.deleted_at),
       isNull(account.deleted_at),
     ];
 
-    if (status) {
-      filters.push(eq(workerStatus.worker_status_id, status));
+    if (filtersInput.status) {
+      filters.push(eq(workerStatus.worker_status_id, filtersInput.status));
+    }
+
+    if (filtersInput.type) {
+      filters.push(eq(workerType.worker_type_id, filtersInput.type));
+    }
+
+    if (filtersInput.account) {
+      filters.push(eq(account.account_id, filtersInput.account));
+    }
+
+    if (filtersInput.name) {
+      filters.push(ilike(worker.name, `%${filtersInput.name}%`));
+    }
+
+    if (filtersInput.number) {
+      filters.push(ilike(worker.number, `%${filtersInput.number}%`));
     }
 
     const result = await this.dbRo
@@ -205,6 +224,10 @@ export class ChannelsListerRepository {
       .innerJoin(
         workerStatus,
         eq(workerStatus.worker_status_id, worker.worker_status_id)
+      )
+      .innerJoin(
+        workerType,
+        eq(workerType.worker_type_id, worker.worker_type_id)
       )
       .where(and(...filters))
       .execute();

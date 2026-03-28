@@ -254,7 +254,13 @@ const handleRecreate = async () => {
 };
 
 const handleRecreateAll = async () => {
-  const result = await settingsStore.recreateChannelsAll(options.value.status);
+  const result = await settingsStore.recreateChannelsAll({
+    status: query.value.status ?? undefined,
+    type: query.value.type ?? undefined,
+    account: query.value.account ?? undefined,
+    name: query.value.name ?? undefined,
+    number: query.value.number ?? undefined,
+  });
 
   isDialogRecreateAllShow.value = false;
 
