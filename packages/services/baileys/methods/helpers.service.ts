@@ -296,21 +296,19 @@ export class BaileysHelpersService {
   }
 
   private async resolveJidFlexible(sock: WASocket, raw: string) {
-    const candidates = buildCandidates(raw);
-    const probes = await Promise.all(
-      candidates.map(async (c) => {
-        const resp = await sock.onWhatsApp(onlyDigits(c));
-        const item = resp?.[0];
-        return {
-          candidate: c,
-          exists: !!item?.exists,
-          jid: item?.jid ? normalizeJid(item.jid) : undefined,
-        };
-      })
-    );
+    const candidates = buildCandidates(raw, { order: 'input_first' });
 
-    const found = probes.find((p) => p.exists && p.jid);
-    if (found) return { exists: true as const, jid: found.jid };
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      const resp = await sock.onWhatsApp(onlyDigits(candidate));
+      const item = resp?.[0];
+      const jid = item?.jid ? normalizeJid(item.jid) : undefined;
+
+      if (item?.exists && jid) {
+        return { exists: true as const, jid };
+      }
+    }
+
     return { exists: false as const, jid: undefined };
   }
 

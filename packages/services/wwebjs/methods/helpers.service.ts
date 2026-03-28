@@ -320,7 +320,7 @@ export class WwebjsHelpersService {
 
   async resolveJid(raw: string): Promise<{ exists: boolean; jid?: string }> {
     const client = this.getClient();
-    const candidates = buildCandidates(raw);
+    const candidates = buildCandidates(raw, { order: 'input_first' });
 
     for (let i = 0; i < candidates.length; i++) {
       const candidate = candidates[i];

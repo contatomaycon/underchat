@@ -44,7 +44,7 @@ export class WwebjsPhoneValidationService {
     }
 
     const fullNumber = `${ddi}${number}`;
-    const candidates = buildCandidates(fullNumber);
+    const candidates = buildCandidates(fullNumber, { order: 'input_first' });
 
     for (let i = 0; i < candidates.length; i++) {
       const candidate = candidates[i];

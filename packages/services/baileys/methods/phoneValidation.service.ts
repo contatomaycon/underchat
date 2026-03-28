@@ -22,41 +22,23 @@ export class BaileysPhoneValidationService {
       throw new Error('Baileys socket not connected');
     }
     const fullNumber = `${ddi}${number}`;
-    const candidates = buildCandidates(fullNumber);
+    const candidates = buildCandidates(fullNumber, { order: 'input_first' });
 
-    const validationPromises = candidates.map(async (candidate) => {
+    for (let i = 0; i < candidates.length; i++) {
+      const candidate = candidates[i];
       const resp = await socket.onWhatsApp(onlyDigits(candidate));
       const item = resp?.[0];
-      return {
-        candidate,
-        exists: !!item?.exists,
-        jid: item?.jid ? normalizeJid(item.jid) : undefined,
-      };
-    });
+      const jid = item?.jid ? normalizeJid(item.jid) : undefined;
 
-    const result = await validationPromises.reduce(
-      async (previousPromise, currentPromise) => {
-        const previousResult = await previousPromise;
+      if (item?.exists && jid) {
+        return {
+          valid: true,
+          jid,
+          phone: getPhoneNumber(jid) || candidate,
+        };
+      }
+    }
 
-        if (previousResult.valid) {
-          return previousResult;
-        }
-
-        const currentResult = await currentPromise;
-
-        if (currentResult.exists && currentResult.jid) {
-          return {
-            valid: true,
-            jid: currentResult.jid,
-            phone: getPhoneNumber(currentResult.jid) || currentResult.candidate,
-          };
-        }
-
-        return { valid: false };
-      },
-      Promise.resolve({ valid: false } as IPhoneValidationResult)
-    );
-
-    return result;
+    return { valid: false };
   }
 }
