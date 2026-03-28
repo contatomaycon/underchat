@@ -175,12 +175,16 @@ onMounted(() => {
                 v-model="file"
                 :placeholder="$t('select_file')"
                 :rules="fileRules"
+                accept=".txt,.md,.markdown,.json,.csv,.tsv"
                 :disabled="isSaving || isLoading"
                 show-size
                 chips
                 clearable
                 @update:model-value="handleFileChange"
               />
+              <small class="text-caption text-medium-emphasis d-block mt-2">
+                {{ $t('ai_agent_prompt_allowed_formats_hint') }}
+              </small>
               <div
                 v-if="isEditMode && originalFileUrl && !hasNewFile"
                 class="mt-2"

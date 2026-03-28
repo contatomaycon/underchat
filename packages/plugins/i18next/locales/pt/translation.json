@@ -1034,7 +1034,7 @@
   "ai_agent_prompt_update_successfully": "Prompt atualizado com sucesso!",
   "ai_agent_prompt_update_error": "Erro ao atualizar o prompt!",
   "ai_agent_prompt_file_upload_failed": "Falha ao fazer upload do arquivo!",
-  "ai_agent_prompt_file_format_not_supported": "Formato de arquivo não suportado! Formatos aceitos: TXT, JSON, Markdown, CSV, PDF, DOCX, DOC.",
+  "ai_agent_prompt_file_format_not_supported": "Formato de arquivo não suportado! Formatos aceitos: TXT, JSON, Markdown, CSV, TSV.",
   "ai_agent_prompt_value_required": "Valor do prompt é obrigatório!",
   "ai_agent_prompt_refresh_successfully": "Prompt reenviado para reembedding com sucesso!",
   "ai_agent_prompt_refresh_error": "Erro ao reenviar o prompt para reembedding!",

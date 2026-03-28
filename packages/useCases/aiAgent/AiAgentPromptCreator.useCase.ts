@@ -67,9 +67,6 @@ export class AiAgentPromptCreatorUseCase {
       'text/markdown',
       'text/csv',
       'text/tab-separated-values',
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml',
-      'application/msword',
     ];
 
     const allowedExtensions = [
@@ -79,9 +76,6 @@ export class AiAgentPromptCreatorUseCase {
       '.markdown',
       '.csv',
       '.tsv',
-      '.pdf',
-      '.docx',
-      '.doc',
     ];
 
     const isAllowedMimetype = allowedMimetypes.some((allowed) =>

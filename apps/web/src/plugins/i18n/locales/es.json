@@ -2576,6 +2576,7 @@
   "prompt_name_placeholder": "Nombre del prompt",
   "prompt_value_placeholder": "Contenido del prompt",
   "file_required": "El archivo es obligatorio",
+  "ai_agent_prompt_allowed_formats_hint": "Formatos aceptados: TXT, JSON, Markdown, CSV, TSV.",
   "view_file": "Ver archivo",
   "delete_prompt_confirmation": "¿Está seguro de que desea eliminar este prompt?",
   "refresh_prompt_confirmation": "¿Está seguro de que desea reenviar este prompt para reembedding? Esto actualizará los embeddings usando los valores actuales de la base de datos.",
