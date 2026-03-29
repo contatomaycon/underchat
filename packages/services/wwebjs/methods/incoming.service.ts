@@ -2498,15 +2498,46 @@ export class WwebjsIncomingMessageService {
     jid: string,
     text: string
   ): Promise<Message> {
-    const sentMessage = await client.sendMessage(jid, text, {
-      waitUntilMsgSent: true,
+    const startedAt = Date.now();
+    console.info('[WwebjsSend][auto_reply] send_start', {
+      jid,
+      text_length: text.length,
+      has_link: /https?:\/\//i.test(text),
     });
+
+    let sentMessage: Message;
+    try {
+      sentMessage = await client.sendMessage(jid, text, {
+        waitUntilMsgSent: true,
+      });
+    } catch (error) {
+      console.error('[WwebjsSend][auto_reply] send_failed_before_ack', {
+        jid,
+        text_length: text.length,
+        duration_ms: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+
     const sentMessageId = getMessageIdSerialized(sentMessage);
     if (!sentMessageId) {
+      console.error('[WwebjsSend][auto_reply] send_failed_without_message_id', {
+        jid,
+        text_length: text.length,
+        duration_ms: Date.now() - startedAt,
+      });
       throw new Error(
         'Wwebjs call auto-reply send returned message without id'
       );
     }
+
+    console.info('[WwebjsSend][auto_reply] send_dispatched', {
+      jid,
+      message_id: sentMessageId,
+      text_length: text.length,
+      duration_ms: Date.now() - startedAt,
+    });
 
     const outcome = await this.deliveryConfirmation.waitForOutcome(
       sentMessageId,
@@ -2514,6 +2545,11 @@ export class WwebjsIncomingMessageService {
     );
 
     if (outcome === 'sent') {
+      console.info('[WwebjsSend][auto_reply] send_ack_sent', {
+        jid,
+        message_id: sentMessageId,
+        duration_ms: Date.now() - startedAt,
+      });
       return sentMessage;
     }
 
@@ -2526,6 +2562,14 @@ export class WwebjsIncomingMessageService {
         : new Error(
             `Message delivery confirmation timeout for ${sentMessageId}`
           );
+
+    console.warn('[WwebjsSend][auto_reply] send_ack_not_confirmed', {
+      jid,
+      message_id: sentMessageId,
+      outcome: lastOutcome,
+      duration_ms: Date.now() - startedAt,
+      error: confirmationError.message,
+    });
 
     throw new MessageDeliveryConfirmationFailedError({
       maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,

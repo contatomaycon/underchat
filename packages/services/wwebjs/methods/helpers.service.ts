@@ -47,17 +47,48 @@ export class WwebjsHelpersService {
     content: Parameters<Client['sendMessage']>[1],
     options?: Parameters<Client['sendMessage']>[2]
   ): Promise<Awaited<ReturnType<Client['sendMessage']>>> {
-    const client = this.getClient();
-    const sentMessage = await this.sendMessageRaw(
-      client,
+    const startedAt = Date.now();
+    const contentInfo = this.describeOutgoingContent(content, options);
+    const optionsInfo = this.describeSendOptions(options);
+    console.info('[WwebjsSend] send_start', {
       jid,
-      content,
-      options
-    );
+      content: contentInfo,
+      options: optionsInfo,
+    });
+
+    const client = this.getClient();
+    let sentMessage: Awaited<ReturnType<Client['sendMessage']>>;
+    try {
+      sentMessage = await this.sendMessageRaw(client, jid, content, options);
+    } catch (error) {
+      console.error('[WwebjsSend] send_failed_before_ack', {
+        jid,
+        content: contentInfo,
+        options: optionsInfo,
+        duration_ms: Date.now() - startedAt,
+        error: this.describeError(error),
+      });
+      throw error;
+    }
+
     const sentMessageId = this.extractMessageId(sentMessage);
     if (!sentMessageId) {
+      console.error('[WwebjsSend] send_failed_without_message_id', {
+        jid,
+        content: contentInfo,
+        options: optionsInfo,
+        duration_ms: Date.now() - startedAt,
+      });
       throw new Error('Wwebjs send returned message without id');
     }
+
+    console.info('[WwebjsSend] send_dispatched', {
+      jid,
+      message_id: sentMessageId,
+      content: contentInfo,
+      options: optionsInfo,
+      duration_ms: Date.now() - startedAt,
+    });
 
     const outcome = await this.deliveryConfirmation.waitForOutcome(
       sentMessageId,
@@ -65,6 +96,13 @@ export class WwebjsHelpersService {
     );
 
     if (outcome === 'sent') {
+      console.info('[WwebjsSend] send_ack_sent', {
+        jid,
+        message_id: sentMessageId,
+        content: contentInfo,
+        options: optionsInfo,
+        duration_ms: Date.now() - startedAt,
+      });
       return sentMessage;
     }
 
@@ -78,6 +116,16 @@ export class WwebjsHelpersService {
             `Message delivery confirmation timeout for ${sentMessageId}`
           );
 
+    console.warn('[WwebjsSend] send_ack_not_confirmed', {
+      jid,
+      message_id: sentMessageId,
+      outcome: lastOutcome,
+      content: contentInfo,
+      options: optionsInfo,
+      duration_ms: Date.now() - startedAt,
+      error: this.describeError(confirmationError),
+    });
+
     throw new MessageDeliveryConfirmationFailedError({
       maxAttempts: this.SEND_CONFIRMATION_MAX_ATTEMPTS,
       lastMessageId: sentMessageId,
@@ -86,17 +134,367 @@ export class WwebjsHelpersService {
     });
   }
 
-  private sendMessageRaw(
+  private async sendMessageRaw(
     client: Client,
     jid: string,
     content: Parameters<Client['sendMessage']>[1],
     options?: Parameters<Client['sendMessage']>[2]
   ): Promise<Awaited<ReturnType<Client['sendMessage']>>> {
+    const normalizedJid = this.normalizeSendJidCandidate(jid);
+    if (!normalizedJid) {
+      throw new Error('Wwebjs sendMessage received empty jid');
+    }
+
     const sendOptions = {
       ...(options ?? {}),
       waitUntilMsgSent: true,
     } as Parameters<Client['sendMessage']>[2];
-    return client.sendMessage(jid, content, sendOptions);
+    const contentInfo = this.describeOutgoingContent(content, sendOptions);
+    const optionsInfo = this.describeSendOptions(sendOptions);
+
+    const sendWithJid = (targetJid: string) =>
+      client.sendMessage(targetJid, content, sendOptions);
+
+    console.info('[WwebjsSend] send_attempt', {
+      attempt: 1,
+      original_jid: jid,
+      target_jid: normalizedJid,
+      content: contentInfo,
+      options: optionsInfo,
+    });
+
+    return sendWithJid(normalizedJid).catch(async (firstError) => {
+      console.warn('[WwebjsSend] send_attempt_failed', {
+        attempt: 1,
+        original_jid: jid,
+        target_jid: normalizedJid,
+        content: contentInfo,
+        options: optionsInfo,
+        error: this.describeError(firstError),
+      });
+
+      if (!this.shouldRetrySendWithAlternateJid(firstError)) {
+        console.error('[WwebjsSend] send_attempt_failed_terminal', {
+          attempt: 1,
+          original_jid: jid,
+          target_jid: normalizedJid,
+          content: contentInfo,
+          options: optionsInfo,
+          error: this.describeError(firstError),
+        });
+        throw firstError;
+      }
+
+      const candidates = await this.buildAlternateJidCandidates(
+        client,
+        normalizedJid
+      );
+      console.info('[WwebjsSend] send_retry_candidates', {
+        original_jid: jid,
+        failed_target_jid: normalizedJid,
+        candidates,
+      });
+
+      let lastError: unknown = firstError;
+      let attempt = 1;
+
+      for (const candidate of candidates) {
+        if (candidate === normalizedJid) {
+          continue;
+        }
+
+        attempt += 1;
+        console.info('[WwebjsSend] send_attempt', {
+          attempt,
+          original_jid: jid,
+          target_jid: candidate,
+          content: contentInfo,
+          options: optionsInfo,
+        });
+
+        try {
+          const result = await sendWithJid(candidate);
+          console.info('[WwebjsSend] send_attempt_succeeded', {
+            attempt,
+            original_jid: jid,
+            target_jid: candidate,
+          });
+          return result;
+        } catch (candidateError) {
+          lastError = candidateError;
+          console.warn('[WwebjsSend] send_attempt_failed', {
+            attempt,
+            original_jid: jid,
+            target_jid: candidate,
+            content: contentInfo,
+            options: optionsInfo,
+            error: this.describeError(candidateError),
+          });
+          if (!this.shouldRetrySendWithAlternateJid(candidateError)) {
+            console.error('[WwebjsSend] send_attempt_failed_terminal', {
+              attempt,
+              original_jid: jid,
+              target_jid: candidate,
+              content: contentInfo,
+              options: optionsInfo,
+              error: this.describeError(candidateError),
+            });
+            throw candidateError;
+          }
+        }
+      }
+
+      console.error('[WwebjsSend] send_all_attempts_failed', {
+        original_jid: jid,
+        first_target_jid: normalizedJid,
+        candidates,
+        content: contentInfo,
+        options: optionsInfo,
+        error: this.describeError(lastError),
+      });
+      throw lastError instanceof Error
+        ? lastError
+        : new Error(String(lastError));
+    });
+  }
+
+  private describeError(error: unknown): {
+    name?: string;
+    message: string;
+    stack?: string;
+  } {
+    if (error instanceof Error) {
+      return {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      };
+    }
+
+    if (typeof error === 'string') {
+      return { message: error };
+    }
+
+    return { message: String(error ?? '') };
+  }
+
+  private describeSendOptions(
+    options?: Parameters<Client['sendMessage']>[2]
+  ): Record<string, unknown> {
+    if (!options || typeof options !== 'object') {
+      return {};
+    }
+
+    const raw = options as Record<string, unknown>;
+    const result: Record<string, unknown> = {};
+    const keys: Array<keyof typeof raw> = [
+      'waitUntilMsgSent',
+      'sendAudioAsVoice',
+      'sendMediaAsSticker',
+      'sendMediaAsDocument',
+      'sendVideoAsGif',
+      'sendMediaAsHd',
+      'isViewOnce',
+      'quotedMessageId',
+      'parseVCards',
+      'caption',
+      'mentions',
+      'groupMentions',
+      'extra',
+    ];
+
+    for (const key of keys) {
+      const value = raw[key];
+      if (value === undefined) {
+        continue;
+      }
+
+      if (key === 'caption' && typeof value === 'string') {
+        result.caption_length = value.length;
+        continue;
+      }
+
+      if (key === 'extra' && typeof value === 'object' && value !== null) {
+        result.extra_keys = Object.keys(value as Record<string, unknown>);
+        continue;
+      }
+
+      if (Array.isArray(value)) {
+        result[String(key)] = { count: value.length };
+        continue;
+      }
+
+      if (typeof value === 'object' && value !== null) {
+        result[String(key)] = { type: 'object' };
+        continue;
+      }
+
+      result[String(key)] = value;
+    }
+
+    return result;
+  }
+
+  private describeOutgoingContent(
+    content: Parameters<Client['sendMessage']>[1],
+    options?: Parameters<Client['sendMessage']>[2]
+  ): Record<string, unknown> {
+    const description: Record<string, unknown> = {};
+
+    if (typeof content === 'string') {
+      description.kind = 'text';
+      description.length = content.length;
+      description.has_link = /https?:\/\//i.test(content);
+      return description;
+    }
+
+    if (!content || typeof content !== 'object') {
+      description.kind = typeof content;
+      return description;
+    }
+
+    const asAny = content as unknown as Record<string, unknown>;
+
+    if (
+      typeof asAny.latitude === 'number' &&
+      typeof asAny.longitude === 'number'
+    ) {
+      description.kind = 'location';
+      description.has_name =
+        typeof asAny.name === 'string' && asAny.name.length > 0;
+      description.has_address =
+        typeof asAny.address === 'string' && asAny.address.length > 0;
+      return description;
+    }
+
+    if (typeof asAny.pollName === 'string') {
+      description.kind = 'poll';
+      const pollOptions = asAny.pollOptions;
+      description.options_count = Array.isArray(pollOptions)
+        ? pollOptions.length
+        : 0;
+      return description;
+    }
+
+    if (typeof asAny.mimetype === 'string') {
+      description.kind = 'media';
+      description.mimetype = asAny.mimetype;
+      if (typeof asAny.filesize === 'number') {
+        description.filesize = asAny.filesize;
+      }
+      const caption = (options as { caption?: unknown } | undefined)?.caption;
+      if (typeof caption === 'string') {
+        description.caption_length = caption.length;
+      }
+      return description;
+    }
+
+    const textValue = asAny.text;
+    if (typeof textValue === 'string') {
+      description.kind = 'text_object';
+      description.length = textValue.length;
+      return description;
+    }
+
+    description.kind = 'object';
+    description.keys = Object.keys(asAny);
+    return description;
+  }
+
+  private normalizeSendJidCandidate(
+    value: string | null | undefined
+  ): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized.length ? normalized : undefined;
+  }
+
+  private addJidCandidate(candidates: Set<string>, raw: unknown): void {
+    if (typeof raw !== 'string') {
+      return;
+    }
+
+    const normalized = this.normalizeSendJidCandidate(raw);
+    if (!normalized) {
+      return;
+    }
+
+    candidates.add(normalized);
+
+    if (!normalized.includes('@')) {
+      const digits = onlyDigits(normalized);
+      if (digits) {
+        candidates.add(`${digits}@c.us`);
+        candidates.add(`${digits}@s.whatsapp.net`);
+      }
+      return;
+    }
+
+    if (normalized.endsWith('@s.whatsapp.net')) {
+      candidates.add(normalized.replace(/@s\.whatsapp\.net$/, '@c.us'));
+    } else if (normalized.endsWith('@c.us')) {
+      candidates.add(normalized.replace(/@c\.us$/, '@s.whatsapp.net'));
+    }
+  }
+
+  private isUserJid(jid: string): boolean {
+    return (
+      jid.endsWith('@s.whatsapp.net') ||
+      jid.endsWith('@c.us') ||
+      jid.endsWith('@lid')
+    );
+  }
+
+  private shouldRetrySendWithAlternateJid(error: unknown): boolean {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : String(error ?? '');
+    return /No LID for user/i.test(message) || /invalid wid/i.test(message);
+  }
+
+  private async buildAlternateJidCandidates(
+    client: Client,
+    jid: string
+  ): Promise<string[]> {
+    const candidates = new Set<string>();
+    this.addJidCandidate(candidates, jid);
+
+    if (!this.isUserJid(jid)) {
+      return Array.from(candidates);
+    }
+
+    const getContactLidAndPhone = (
+      client as unknown as {
+        getContactLidAndPhone?: (
+          userIds: string[] | string
+        ) => Promise<
+          | Array<{ lid?: string; pn?: string }>
+          | { lid?: string; pn?: string }
+          | null
+        >;
+      }
+    ).getContactLidAndPhone;
+
+    if (typeof getContactLidAndPhone !== 'function') {
+      return Array.from(candidates);
+    }
+
+    try {
+      const resolved = await getContactLidAndPhone.call(client, [jid]);
+      const first = Array.isArray(resolved) ? resolved[0] : resolved;
+      if (first && typeof first === 'object') {
+        this.addJidCandidate(candidates, (first as { lid?: unknown }).lid);
+        this.addJidCandidate(candidates, (first as { pn?: unknown }).pn);
+      }
+    } catch {}
+
+    return Array.from(candidates);
   }
 
   private extractMessageId(
