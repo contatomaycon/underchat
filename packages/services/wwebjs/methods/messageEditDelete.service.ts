@@ -25,13 +25,71 @@ export class WwebjsMessageEditDeleteService {
     private readonly helpers: WwebjsHelpersService
   ) {}
 
+  private describeKey(key: IMessageKeyInput): Record<string, unknown> {
+    return {
+      id: key.id,
+      remote_jid: key.remoteJid ?? key.remote_jid ?? null,
+      remote_jid_alt: key.remoteJidAlt ?? key.remote_jid_alt ?? null,
+      from_me: key.fromMe ?? key.from_me ?? null,
+      participant: key.participant ?? null,
+      participant_alt: key.participant_alt ?? null,
+    };
+  }
+
+  private describeError(error: unknown): {
+    name?: string;
+    message: string;
+    stack?: string;
+  } {
+    if (error instanceof Error) {
+      return {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      };
+    }
+
+    if (typeof error === 'string') {
+      return { message: error };
+    }
+
+    return { message: String(error ?? '') };
+  }
+
   async deleteMessage(
     key: IMessageKeyInput
   ): Promise<IMessageKeyResponse | undefined> {
+    const startedAt = Date.now();
+    const candidates = this.buildSerializedIdCandidates(key);
+    console.info('[WwebjsEditDelete] delete_start', {
+      key: this.describeKey(key),
+      candidate_count: candidates.length,
+      candidates,
+    });
+
     const msg = await this.resolveMessageByKey(key);
 
-    if (msg) {
+    if (!msg) {
+      console.warn('[WwebjsEditDelete] delete_not_found', {
+        key: this.describeKey(key),
+        duration_ms: Date.now() - startedAt,
+      });
+      throw new Error('Failed to delete message: message_not_found');
+    }
+
+    try {
       await msg.delete(true);
+      console.info('[WwebjsEditDelete] delete_success', {
+        key: this.describeKey(key),
+        duration_ms: Date.now() - startedAt,
+      });
+    } catch (error) {
+      console.error('[WwebjsEditDelete] delete_failed', {
+        key: this.describeKey(key),
+        duration_ms: Date.now() - startedAt,
+        error: this.describeError(error),
+      });
+      throw error;
     }
 
     return undefined;
@@ -109,8 +167,14 @@ export class WwebjsMessageEditDeleteService {
     parsed: ReturnType<typeof parseSerializedMessageId>
   ): string[] {
     const directRemote = (key.remoteJid ?? key.remote_jid ?? '').trim();
+    const directRemoteAlt = (
+      key.remoteJidAlt ??
+      key.remote_jid_alt ??
+      ''
+    ).trim();
     const rawCandidates = [
       directRemote,
+      directRemoteAlt,
       chatJid?.trim() ?? '',
       parsed?.remoteJid?.trim() ?? '',
     ].filter(Boolean);
@@ -442,18 +506,59 @@ export class WwebjsMessageEditDeleteService {
     newText: string,
     editKey: IMessageKeyInput
   ): Promise<IMessageKeyResponse | undefined> {
+    const startedAt = Date.now();
+    const candidates = this.buildSerializedIdCandidates(editKey);
+    console.info('[WwebjsEditDelete] edit_start', {
+      key: this.describeKey(editKey),
+      text_length: newText.length,
+      candidate_count: candidates.length,
+      candidates,
+    });
+
     const msg = await this.resolveMessageByKey(editKey);
 
-    if (
-      msg &&
-      typeof (msg as { edit: (t: string) => Promise<unknown> }).edit ===
-        'function'
-    ) {
-      await (msg as { edit: (t: string) => Promise<unknown> }).edit(newText);
-      return messageToWaLike(msg);
+    if (!msg) {
+      console.warn('[WwebjsEditDelete] edit_not_found', {
+        key: this.describeKey(editKey),
+        duration_ms: Date.now() - startedAt,
+      });
+      return undefined;
     }
 
-    return undefined;
+    if (typeof (msg as { edit?: unknown }).edit !== 'function') {
+      console.warn('[WwebjsEditDelete] edit_unsupported', {
+        key: this.describeKey(editKey),
+        duration_ms: Date.now() - startedAt,
+      });
+      return undefined;
+    }
+
+    try {
+      const editedMessage = (await (
+        msg as { edit: (t: string) => Promise<unknown> }
+      ).edit(newText)) as Parameters<typeof messageToWaLike>[0];
+      const normalized = messageToWaLike(editedMessage ?? undefined);
+      if (!normalized) {
+        console.warn('[WwebjsEditDelete] edit_not_allowed_or_null', {
+          key: this.describeKey(editKey),
+          duration_ms: Date.now() - startedAt,
+        });
+        return undefined;
+      }
+
+      console.info('[WwebjsEditDelete] edit_success', {
+        key: this.describeKey(editKey),
+        duration_ms: Date.now() - startedAt,
+      });
+      return normalized;
+    } catch (error) {
+      console.error('[WwebjsEditDelete] edit_failed', {
+        key: this.describeKey(editKey),
+        duration_ms: Date.now() - startedAt,
+        error: this.describeError(error),
+      });
+      throw error;
+    }
   }
 
   async forwardMessage(

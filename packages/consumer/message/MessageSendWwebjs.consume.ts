@@ -2144,9 +2144,11 @@ export class MessageSendWwebjsConsume {
         newText,
         {
           remoteJid: messageKey?.remote_jid ?? jid,
+          remoteJidAlt: messageKey?.remote_jid_alt ?? undefined,
           fromMe: messageKey?.from_me ?? false,
           id: messageKey?.id ?? '',
           participant: messageKey?.participant ?? undefined,
+          participant_alt: messageKey?.participant_alt ?? undefined,
         }
       );
 
@@ -2447,9 +2449,11 @@ export class MessageSendWwebjsConsume {
     }
     const key = {
       remoteJid: data.message_key.remote_jid ?? jid,
+      remoteJidAlt: data.message_key.remote_jid_alt ?? undefined,
       fromMe: data.message_key.from_me ?? false,
       id: data.message_key.id,
       participant: data.message_key.participant ?? undefined,
+      participant_alt: data.message_key.participant_alt ?? undefined,
     };
     await this.wwebjsMessageEditDeleteService.deleteMessage(key);
     this.lastMessageTypeByChatId.set(chatId, EMessageType.delete_message);
