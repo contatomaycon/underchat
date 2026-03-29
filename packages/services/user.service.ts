@@ -883,7 +883,8 @@ export class UserService {
   };
 
   existsUserEmailById = async (userEmail: string): Promise<boolean> => {
-    const emailC = this.encryptService.encrypt(userEmail);
+    const normalizedEmail = userEmail.trim().toLowerCase();
+    const emailC = this.encryptService.encrypt(normalizedEmail);
 
     if (!emailC) return false;
 

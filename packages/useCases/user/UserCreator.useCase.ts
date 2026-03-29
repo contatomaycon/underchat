@@ -23,6 +23,9 @@ export class UserCreatorUseCase {
     private readonly planAccountService: PlanAccountService
   ) {}
 
+  private readonly normalizeEmail = (email: string): string =>
+    email.trim().toLowerCase();
+
   async validate(
     t: TFunction<'translation', undefined>,
     input: CreateUserRequest,
@@ -135,6 +138,10 @@ export class UserCreatorUseCase {
     input: CreateUserRequest,
     accountId: string
   ): Promise<boolean> {
+    if (input.email?.value) {
+      input.email.value = this.normalizeEmail(input.email.value);
+    }
+
     this.processSectorIdsFromMultipartFormData(input);
     this.processChannelIdsFromMultipartFormData(input);
 
