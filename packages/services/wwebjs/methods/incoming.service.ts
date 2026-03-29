@@ -448,34 +448,70 @@ function getStanzaIdFromMessageId(
   return normalized;
 }
 
+function getSerializedIdLike(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return getNonEmptyString(value);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const valueObject = value as Record<string, unknown>;
+  return (
+    getNonEmptyString(valueObject._serialized) ??
+    getNonEmptyString(valueObject.id)
+  );
+}
+
+function getMessageIdField(
+  msg: Message,
+  field: 'remoteJid' | 'remote'
+): string | undefined {
+  if (!msg?.id || typeof msg.id !== 'object' || msg.id === null) {
+    return undefined;
+  }
+
+  const messageIdLike = msg.id as {
+    remoteJid?: unknown;
+    remote?: unknown;
+  };
+  const value = messageIdLike[field];
+
+  return getSerializedIdLike(value);
+}
+
+function getMessageIdRemoteJid(msg: Message): string | undefined {
+  return getMessageIdField(msg, 'remoteJid');
+}
+
+function getMessageIdRemote(msg: Message): string | undefined {
+  return getMessageIdField(msg, 'remote');
+}
+
 function getMessageRemoteFromId(msg: Message): string | undefined {
   if (!msg?.id) {
     return undefined;
   }
 
-  if (typeof msg.id === 'object' && msg.id !== null) {
-    const value = msg.id as {
-      remote?: unknown;
-      _serialized?: unknown;
-    };
+  const directRemoteJid = getMessageIdRemoteJid(msg);
+  if (directRemoteJid) {
+    return directRemoteJid;
+  }
 
-    if (typeof value.remote === 'string' && value.remote) {
-      return value.remote;
-    }
+  const directRemote = getMessageIdRemote(msg);
+  if (directRemote) {
+    return directRemote;
+  }
 
-    const remoteSerialized =
-      typeof value.remote === 'object' &&
-      value.remote !== null &&
-      '_serialized' in (value.remote as object)
-        ? (value.remote as { _serialized?: unknown })._serialized
-        : undefined;
-    if (typeof remoteSerialized === 'string' && remoteSerialized) {
-      return remoteSerialized;
-    }
-
-    if (typeof value._serialized === 'string' && value._serialized) {
-      return getRemoteFromSerializedMessageId(value._serialized);
-    }
+  if (
+    typeof msg.id === 'object' &&
+    msg.id !== null &&
+    typeof (msg.id as { _serialized?: unknown })._serialized === 'string'
+  ) {
+    return getRemoteFromSerializedMessageId(
+      (msg.id as { _serialized: string })._serialized
+    );
   }
 
   if (typeof msg.id === 'string') {
@@ -956,16 +992,12 @@ export class WwebjsIncomingMessageService {
     msg: Message,
     pinData?: IWwebjsPinEventData
   ): string | undefined {
-    const idRemote =
-      typeof msg.id === 'object' && msg.id !== null
-        ? getNonEmptyString((msg.id as { remote?: unknown }).remote)
-        : undefined;
+    const idRemote = getMessageRemoteFromId(msg);
 
     const candidates = [
       pinData?.chatId,
-      msg.fromMe ? msg.to || msg.from : msg.from || msg.to,
-      getMessageRemoteFromId(msg),
       idRemote,
+      msg.fromMe ? msg.to || msg.from : msg.from || msg.to,
       msg.from,
       msg.to,
     ];
@@ -1251,12 +1283,7 @@ export class WwebjsIncomingMessageService {
   }
 
   private getMessageJidCandidates(msg: Message): string[] {
-    const idRemote =
-      typeof msg.id === 'object' && msg.id !== null
-        ? getNonEmptyString((msg.id as { remote?: unknown }).remote)
-        : undefined;
-
-    return [msg.from, msg.to, getMessageRemoteFromId(msg), idRemote].filter(
+    return [getMessageRemoteFromId(msg), msg.from, msg.to].filter(
       (value): value is string => !!value
     );
   }
@@ -1351,6 +1378,43 @@ export class WwebjsIncomingMessageService {
     return !!jid && jid.endsWith('@lid');
   }
 
+  private normalizePhoneDigits(
+    value: string | null | undefined
+  ): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const digits = value.replaceAll(/\D/g, '');
+    return digits.length >= 8 ? digits : undefined;
+  }
+
+  private isResolvedPhoneEquivalentToLid(
+    lidJid: string,
+    resolvedPhone: string | undefined
+  ): boolean {
+    const lidDigits = this.normalizePhoneDigits(lidJid.split('@')[0]);
+    const phoneDigits = this.normalizePhoneDigits(resolvedPhone);
+
+    return !!lidDigits && !!phoneDigits && lidDigits === phoneDigits;
+  }
+
+  private sanitizeResolvedPhoneFromLid(
+    lidJid: string,
+    resolvedPhone: string | undefined
+  ): string | undefined {
+    const phoneDigits = this.normalizePhoneDigits(resolvedPhone);
+    if (!phoneDigits) {
+      return undefined;
+    }
+
+    if (this.isResolvedPhoneEquivalentToLid(lidJid, phoneDigits)) {
+      return undefined;
+    }
+
+    return phoneDigits;
+  }
+
   private async resolvePhoneFromLid(
     client: Client,
     lidJid: string
@@ -1366,14 +1430,66 @@ export class WwebjsIncomingMessageService {
     }
 
     const resolved =
-      (await this.resolvePhoneFromLidViaContact(client, lidJid)) ??
-      (await this.resolvePhoneFromLidViaPupPage(client, lidJid));
+      this.sanitizeResolvedPhoneFromLid(
+        lidJid,
+        (await this.resolvePhoneFromLidViaGetContactLidAndPhone(
+          client,
+          lidJid
+        )) ??
+          (await this.resolvePhoneFromLidViaContact(client, lidJid)) ??
+          (await this.resolvePhoneFromLidViaPupPage(client, lidJid))
+      ) ?? undefined;
 
     this.LID_PHONE_CACHE.set(lidJid, {
       phone: resolved ?? null,
       ts: Date.now(),
     });
     return resolved;
+  }
+
+  private async resolvePhoneFromLidViaGetContactLidAndPhone(
+    client: Client,
+    lidJid: string
+  ): Promise<string | undefined> {
+    const getContactLidAndPhone = (
+      client as unknown as {
+        getContactLidAndPhone?: (
+          userIds: string[] | string
+        ) => Promise<
+          Array<{ lid?: string; pn?: string }> | { lid?: string; pn?: string }
+        >;
+      }
+    ).getContactLidAndPhone;
+
+    if (typeof getContactLidAndPhone !== 'function') {
+      return undefined;
+    }
+
+    try {
+      const resolved = await getContactLidAndPhone.call(client, [lidJid]);
+      const first = Array.isArray(resolved) ? resolved[0] : resolved;
+      if (!first || typeof first !== 'object') {
+        return undefined;
+      }
+
+      const phoneFromPn = this.normalizePhoneDigits(
+        getNonEmptyString((first as { pn?: unknown }).pn)?.split('@')[0]
+      );
+      if (phoneFromPn) {
+        return phoneFromPn;
+      }
+
+      const lidOrPhoneLike = getNonEmptyString(
+        (first as { lid?: unknown }).lid
+      );
+      if (!lidOrPhoneLike || lidOrPhoneLike.endsWith('@lid')) {
+        return undefined;
+      }
+
+      return this.normalizePhoneDigits(lidOrPhoneLike.split('@')[0]);
+    } catch {
+      return undefined;
+    }
   }
 
   private async resolvePhoneFromLidViaContact(
@@ -1397,8 +1513,8 @@ export class WwebjsIncomingMessageService {
       const contact = await getContactById.call(client, lidJid);
       if (!contact) return undefined;
 
-      const phone = contact.number?.replaceAll(/\D/g, '');
-      if (phone && phone.length >= 8) {
+      const phone = this.normalizePhoneDigits(contact.number);
+      if (phone) {
         return phone;
       }
 
@@ -1408,8 +1524,10 @@ export class WwebjsIncomingMessageService {
         !contactJid.endsWith('@lid') &&
         contactJid.includes('@')
       ) {
-        const phoneFromJid = contactJid.split('@')[0].replaceAll(/\D/g, '');
-        if (phoneFromJid && phoneFromJid.length >= 8) {
+        const phoneFromJid = this.normalizePhoneDigits(
+          contactJid.split('@')[0]
+        );
+        if (phoneFromJid) {
           return phoneFromJid;
         }
       }
@@ -1463,21 +1581,36 @@ export class WwebjsIncomingMessageService {
         return undefined;
       }
 
-      const phone = result.split('@')[0].replaceAll(/\D/g, '');
-      return phone && phone.length >= 8 ? phone : undefined;
+      return this.normalizePhoneDigits(result.split('@')[0]);
     } catch {
       return undefined;
     }
+  }
+
+  private logRemoteJidResolutionFallbackFailure(
+    msg: Message,
+    lidCandidate?: string
+  ): void {
+    console.warn('[wwebjs] remote_jid_resolution_fallback_failed', {
+      message_id: getMessageIdSerialized(msg),
+      id_remote_jid: getMessageIdRemoteJid(msg),
+      id_remote: getMessageIdRemote(msg),
+      from: msg.from,
+      to: msg.to,
+      from_me: msg.fromMe,
+      lid_candidate: lidCandidate,
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      account_id: wwebjsEnvironment.wwebjsAccountId,
+    });
   }
 
   private async resolveRemoteJids(
     client: Client,
     msg: Message
   ): Promise<WwebjsResolvedJids | null> {
-    const idRemote =
-      typeof msg.id === 'object' && msg.id !== null
-        ? getNonEmptyString((msg.id as { remote?: unknown }).remote)
-        : undefined;
+    const idRemoteJid = getMessageIdRemoteJid(msg);
+    const idRemote = getMessageIdRemote(msg);
+    const serializedRemote = getMessageRemoteFromId(msg);
 
     const normalizeCandidate = (value: unknown): string | undefined => {
       const raw = getNonEmptyString(value);
@@ -1491,21 +1624,47 @@ export class WwebjsIncomingMessageService {
       return normalized;
     };
 
-    const normalizedIdRemote = normalizeCandidate(idRemote);
-    const serializedRemote = normalizeCandidate(getMessageRemoteFromId(msg));
+    const normalizedIdRemoteJid = normalizeCandidate(idRemoteJid);
+    const baseCandidates = [
+      idRemoteJid,
+      idRemote,
+      serializedRemote,
+      msg.fromMe ? msg.to : msg.from,
+      msg.fromMe ? msg.from : msg.to,
+      msg.author,
+      msg.from,
+      msg.to,
+    ]
+      .map((candidate) => normalizeCandidate(candidate))
+      .filter((candidate): candidate is string => !!candidate);
 
-    const preferredRaw = msg.fromMe
-      ? msg.to || msg.from || ''
-      : msg.from || msg.to || '';
-    const preferredJid = normalizeCandidate(preferredRaw);
+    let resolvedPhoneJidFromLid: string | undefined;
+    if (!normalizedIdRemoteJid) {
+      const lidCandidateForLookup = baseCandidates.find((candidate) =>
+        this.isLidJid(candidate)
+      );
 
-    const authorJid = normalizeCandidate(msg.author);
+      if (lidCandidateForLookup) {
+        const resolvedPhone = await this.resolvePhoneFromLid(
+          client,
+          lidCandidateForLookup
+        );
+
+        if (resolvedPhone) {
+          resolvedPhoneJidFromLid = `${resolvedPhone}@s.whatsapp.net`;
+        } else {
+          this.logRemoteJidResolutionFallbackFailure(
+            msg,
+            lidCandidateForLookup
+          );
+        }
+      }
+    }
 
     const orderedCandidates = [
-      preferredJid,
-      normalizedIdRemote,
-      authorJid,
-      serializedRemote,
+      normalizedIdRemoteJid,
+      resolvedPhoneJidFromLid,
+      ...baseCandidates,
     ].filter((candidate): candidate is string => !!candidate);
 
     if (!orderedCandidates.length) {
@@ -1522,11 +1681,12 @@ export class WwebjsIncomingMessageService {
     const nonLidCandidate = uniqueCandidates.find(
       (candidate) => !this.isLidJid(candidate)
     );
-    const primaryJid = msg.fromMe
-      ? (nonLidCandidate ?? uniqueCandidates[0])
-      : preferredJid && uniqueCandidates.includes(preferredJid)
-        ? preferredJid
-        : (nonLidCandidate ?? uniqueCandidates[0]);
+    const primaryJid =
+      (normalizedIdRemoteJid && uniqueCandidates.includes(normalizedIdRemoteJid)
+        ? normalizedIdRemoteJid
+        : undefined) ??
+      nonLidCandidate ??
+      uniqueCandidates[0];
 
     if (this.isGroupOrBroadcastJid(primaryJid)) {
       return { remoteJid: primaryJid };

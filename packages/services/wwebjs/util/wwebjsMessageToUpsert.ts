@@ -3,7 +3,6 @@ import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import type { IWwebjsPinEventData } from '@core/common/interfaces/IWwebjsPinEventData';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { wwebjsEnvironment } from '@core/config/environments';
-import { messageToWaLike } from './messageToWaLike';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 
 const E2E_ENCRYPT_NOTIFICATION_TEXT =
@@ -28,6 +27,38 @@ function getNonEmptyString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function getSerializedIdLike(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return getNonEmptyString(value);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const valueObject = value as Record<string, unknown>;
+  return (
+    getNonEmptyString(valueObject._serialized) ??
+    getNonEmptyString(valueObject.id)
+  );
+}
+
+function getMessageIdRemote(msg: Message): string | undefined {
+  if (!msg?.id || typeof msg.id !== 'object' || msg.id === null) {
+    return undefined;
+  }
+
+  const idObject = msg.id as {
+    remoteJid?: unknown;
+    remote?: unknown;
+  };
+
+  return (
+    getSerializedIdLike(idObject.remoteJid) ??
+    getSerializedIdLike(idObject.remote)
+  );
 }
 
 function isSystemMessageJid(value: string): boolean {
@@ -1233,15 +1264,14 @@ export async function wwebjsMessageToUpsert(
   pushName?: string,
   pinEventData?: IWwebjsPinEventData
 ): Promise<IUpsertMessage | null> {
-  const keyLike = messageToWaLike(msg);
-  if (!keyLike?.key) return null;
+  if (!msg?.id) return null;
 
   const id = getMessageId(msg);
   if (!id) return null;
 
-  const fallbackRemoteJidRaw = msg.fromMe
-    ? msg.to || msg.from || ''
-    : msg.from || msg.to || '';
+  const fallbackRemoteJidRaw =
+    getMessageIdRemote(msg) ??
+    (msg.fromMe ? msg.to || msg.from || '' : msg.from || msg.to || '');
   const fallbackRemoteJid =
     normalizeJid(fallbackRemoteJidRaw) ?? fallbackRemoteJidRaw;
   const remoteJid = resolvedJids?.remoteJid ?? fallbackRemoteJid;
