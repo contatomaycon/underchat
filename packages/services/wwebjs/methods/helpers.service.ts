@@ -434,23 +434,9 @@ export class WwebjsHelpersService {
     }
 
     if (normalized.endsWith('@s.whatsapp.net')) {
-      const user = normalized.split('@')[0];
       candidates.add(normalized.replace(/@s\.whatsapp\.net$/, '@c.us'));
-      if (user) {
-        candidates.add(`${user}@lid`);
-      }
     } else if (normalized.endsWith('@c.us')) {
-      const user = normalized.split('@')[0];
       candidates.add(normalized.replace(/@c\.us$/, '@s.whatsapp.net'));
-      if (user) {
-        candidates.add(`${user}@lid`);
-      }
-    } else if (normalized.endsWith('@lid')) {
-      const user = normalized.split('@')[0];
-      if (user) {
-        candidates.add(`${user}@c.us`);
-        candidates.add(`${user}@s.whatsapp.net`);
-      }
     }
   }
 
@@ -472,6 +458,30 @@ export class WwebjsHelpersService {
     return /No LID for user/i.test(message) || /invalid wid/i.test(message);
   }
 
+  private isLidJid(jid: string): boolean {
+    return jid.endsWith('@lid');
+  }
+
+  private orderAlternateCandidates(
+    candidates: string[],
+    primaryJid: string
+  ): string[] {
+    const unique = Array.from(
+      new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))
+    );
+    const withoutPrimary = unique.filter(
+      (candidate) => candidate !== primaryJid
+    );
+    const lidCandidates = withoutPrimary.filter((candidate) =>
+      this.isLidJid(candidate)
+    );
+    const otherCandidates = withoutPrimary.filter(
+      (candidate) => !this.isLidJid(candidate)
+    );
+
+    return [primaryJid, ...lidCandidates, ...otherCandidates];
+  }
+
   private async buildAlternateJidCandidates(
     client: Client,
     jid: string
@@ -483,11 +493,6 @@ export class WwebjsHelpersService {
       return Array.from(candidates);
     }
 
-    const getNumberId = (
-      client as unknown as {
-        getNumberId?: (number: string) => Promise<unknown>;
-      }
-    ).getNumberId;
     const getContactLidAndPhone = (
       client as unknown as {
         getContactLidAndPhone?: (
@@ -499,27 +504,6 @@ export class WwebjsHelpersService {
         >;
       }
     ).getContactLidAndPhone;
-
-    if (typeof getNumberId === 'function') {
-      const digitsToResolve = new Set<string>();
-      for (const candidate of Array.from(candidates)) {
-        const user = candidate.split('@')[0];
-        const digits = onlyDigits(user);
-        if (digits) {
-          digitsToResolve.add(digits);
-        }
-      }
-
-      for (const digits of digitsToResolve) {
-        try {
-          const numberId = await getNumberId.call(client, digits);
-          const resolvedJid = this.extractSerializedJid(numberId);
-          if (resolvedJid) {
-            this.addJidCandidate(candidates, resolvedJid);
-          }
-        } catch {}
-      }
-    }
 
     if (typeof getContactLidAndPhone === 'function') {
       for (const candidate of Array.from(candidates)) {
@@ -539,52 +523,7 @@ export class WwebjsHelpersService {
       }
     }
 
-    return Array.from(candidates);
-  }
-
-  private extractSerializedJid(value: unknown): string | undefined {
-    if (!value) {
-      return undefined;
-    }
-
-    if (typeof value === 'string') {
-      const normalized = value.trim();
-      return normalized.length ? normalized : undefined;
-    }
-
-    if (typeof value !== 'object') {
-      return undefined;
-    }
-
-    const objectValue = value as {
-      _serialized?: unknown;
-      user?: unknown;
-      server?: unknown;
-      id?: unknown;
-    };
-
-    if (typeof objectValue._serialized === 'string') {
-      const normalized = objectValue._serialized.trim();
-      if (normalized.length) {
-        return normalized;
-      }
-    }
-
-    if (
-      typeof objectValue.user === 'string' &&
-      typeof objectValue.server === 'string' &&
-      objectValue.user.trim() &&
-      objectValue.server.trim()
-    ) {
-      return `${objectValue.user.trim()}@${objectValue.server.trim()}`;
-    }
-
-    if (typeof objectValue.id === 'string') {
-      const normalized = objectValue.id.trim();
-      return normalized.length ? normalized : undefined;
-    }
-
-    return undefined;
+    return this.orderAlternateCandidates(Array.from(candidates), jid);
   }
 
   private extractMessageId(
