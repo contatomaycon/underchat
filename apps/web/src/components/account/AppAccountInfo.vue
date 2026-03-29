@@ -121,6 +121,7 @@ const accountInfoId = ref<string | null>(null);
 const logoFile = ref<File | null>(null);
 const logoUrl = ref<string | null>(null);
 const shouldDeleteLogo = ref<boolean>(false);
+const logoCropOutputMimeType = ref<'image/png' | 'image/jpeg'>('image/jpeg');
 
 const contentWidth = ref<string | null>(null);
 const contentLayoutNav = ref<string | null>(null);
@@ -248,6 +249,8 @@ const handleImageSelect = (file: File) => {
       cropDialog.value.imageSrc = result;
       isCropModalOpen.value = true;
       logoFile.value = file;
+      logoCropOutputMimeType.value =
+        file.type.toLowerCase() === 'image/png' ? 'image/png' : 'image/jpeg';
       nextTick(() => {
         initializeCrop();
       });
@@ -690,20 +693,24 @@ const cropImage = () => {
     cropPreviewSize
   );
 
+  const outputMimeType = logoCropOutputMimeType.value;
+  const outputExtension = outputMimeType === 'image/png' ? 'png' : 'jpg';
+  const outputQuality = outputMimeType === 'image/jpeg' ? 0.9 : undefined;
+
   canvas.toBlob(
     (blob) => {
       if (!blob) return;
 
-      const croppedFile = new File([blob], 'account-logo.jpg', {
-        type: 'image/jpeg',
+      const croppedFile = new File([blob], `account-logo.${outputExtension}`, {
+        type: outputMimeType,
       });
       logoFile.value = croppedFile;
-      cropDialog.value.croppedImage = canvas.toDataURL('image/jpeg');
+      cropDialog.value.croppedImage = canvas.toDataURL(outputMimeType);
       shouldDeleteLogo.value = false;
       isCropModalOpen.value = false;
     },
-    'image/jpeg',
-    0.9
+    outputMimeType,
+    outputQuality
   );
 };
 

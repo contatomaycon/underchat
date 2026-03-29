@@ -41,7 +41,8 @@ export class RegisterOrderPaymentCreatorUseCase {
     phoneDdd: string | undefined,
     phone: string
   ) => {
-    const emailC = this.encryptService.encrypt(email);
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailC = this.encryptService.encrypt(normalizedEmail);
     if (emailC !== registerJwtData.email_c) {
       throw new Error(t('register_token_invalid'));
     }
@@ -70,6 +71,7 @@ export class RegisterOrderPaymentCreatorUseCase {
   private readonly buildUserInput = (
     input: CreateRegisterOrderPaymentRequest
   ): CreateUserRequest => {
+    const normalizedEmail = input.user.email.trim().toLowerCase();
     const phone = this.sanitizePhone(input.user.phone_ddd, input.user.phone);
 
     const birthDate =
@@ -95,7 +97,7 @@ export class RegisterOrderPaymentCreatorUseCase {
         : null;
 
     return {
-      email: { value: input.user.email.trim() },
+      email: { value: normalizedEmail },
       password: { value: input.user.password },
       phone_ddi: { value: input.user.phone_ddi },
       phone: { value: phone },
@@ -163,6 +165,7 @@ export class RegisterOrderPaymentCreatorUseCase {
     input: CreateRegisterOrderPaymentRequest,
     remoteIp: string
   ): Promise<CreateRegisterOrderPaymentResponse> => {
+    const normalizedEmail = input.user.email.trim().toLowerCase();
     let createdAccountId: string | null = null;
 
     try {
@@ -179,7 +182,7 @@ export class RegisterOrderPaymentCreatorUseCase {
       }
 
       const emailAlreadyExists = await this.userService.existsUserEmailById(
-        input.user.email.trim()
+        normalizedEmail
       );
       if (emailAlreadyExists) {
         throw new Error(t('email_already_registered'));
@@ -209,7 +212,7 @@ export class RegisterOrderPaymentCreatorUseCase {
       const paymentInput = this.buildPaymentInput(input);
 
       const userContext = {
-        email: input.user.email.trim(),
+        email: normalizedEmail,
         document: input.user.document.trim(),
         phone: this.sanitizePhone(input.user.phone_ddd, input.user.phone),
       };

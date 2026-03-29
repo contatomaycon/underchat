@@ -83,15 +83,17 @@ export class UserTransactionCreatorRepository {
         throw new Error(t('email_required'));
       }
 
+      const normalizedEmail = input.email.value.trim().toLowerCase();
+
       const emailCEncrypted = this.passwordEncryptorService.encrypt(
-        input.email.value
+        normalizedEmail
       );
 
       const emailPartialEncrypted = this.encryptService.sanitize(
-        input.email.value,
+        normalizedEmail,
         ETypeSanetize.email
       );
-      const emailC = this.encryptService.encrypt(input.email.value);
+      const emailC = this.encryptService.encrypt(normalizedEmail);
       const passwordEncrypted = this.encryptService.encrypt(
         input.password.value
       );

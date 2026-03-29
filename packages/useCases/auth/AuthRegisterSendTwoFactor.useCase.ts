@@ -23,6 +23,7 @@ export class AuthRegisterSendTwoFactorUseCase {
     t: TFunction<'translation', undefined>,
     input: AuthRegisterSendTwoFactorRequest
   ): Promise<void> {
+    const normalizedEmail = input.email.trim().toLowerCase();
     const phoneNumber = input.phone.replaceAll(/\D/g, '');
     const phoneDDD = input.phone_ddd?.replaceAll(/\D/g, '') || '';
     const phoneDDI = input.phone_ddi.replaceAll(/\D/g, '');
@@ -35,9 +36,9 @@ export class AuthRegisterSendTwoFactorUseCase {
       throw new Error(t('register_phone_already_used_in_test'));
     }
 
-    const emailC = this.encryptService.encrypt(input.email);
+    const emailC = this.encryptService.encrypt(normalizedEmail);
     const existingTestByEmail =
-      await this.accountTestService.checkExistingTestByEmail(input.email);
+      await this.accountTestService.checkExistingTestByEmail(normalizedEmail);
 
     if (existingTestByEmail) {
       throw new Error(t('register_email_already_used_in_test'));
@@ -62,7 +63,7 @@ export class AuthRegisterSendTwoFactorUseCase {
       fullPhone,
       phoneDDI,
       input.name,
-      input.email
+      normalizedEmail
     );
   }
 }
