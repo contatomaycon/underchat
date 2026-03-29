@@ -224,11 +224,27 @@ export class MessageUpsertConsume {
       } catch (error) {
         lastError = error;
         const isLastAttempt = attempt === this.MAX_RETRIES - 1;
+        const isReadOnlyAllowDeleteError =
+          this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(error);
 
         console.error(
           `[MessageUpsert] Attempt ${attempt + 1}/${this.MAX_RETRIES} failed for message ${data.message?.key?.id}:`,
           error instanceof Error ? error.message : error
         );
+
+        if (isReadOnlyAllowDeleteError) {
+          logger.error({
+            type: 'message_upsert_elastic_read_only_allow_delete',
+            message:
+              'Elasticsearch flood-stage read-only block detected while processing upsert. Skipping retry and DLQ.',
+            account_id: data.account_id,
+            worker_id: data.worker_id,
+            message_key_id: data.message?.key?.id,
+            attempt: attempt + 1,
+          });
+          incrementCounter('message_upsert_elastic_read_only_allow_delete');
+          throw error instanceof Error ? error : new Error(String(error));
+        }
 
         if (!isLastAttempt) {
           const delayMs = this.RETRY_DELAYS[attempt] ?? 1000;
@@ -3887,6 +3903,26 @@ export class MessageUpsertConsume {
           }
 
           if (typeof result === 'object' && 'error' in result) {
+            if (
+              this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(
+                result.error
+              )
+            ) {
+              logger.error({
+                type: 'message_upsert_elastic_read_only_allow_delete',
+                message:
+                  'Elasticsearch flood-stage read-only block detected. Offset not committed; waiting before next processing attempt.',
+                partition,
+                offset,
+                account_id: data.account_id,
+                worker_id: data.worker_id,
+                message_key_id: data.message?.key?.id,
+              });
+              incrementCounter('message_upsert_elastic_read_only_allow_delete');
+              await delay(3000);
+              return;
+            }
+
             logger.error({
               type: 'message_upsert_processing_error',
               message: 'Error processing message',

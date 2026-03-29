@@ -17,7 +17,7 @@ import { WwebjsMessageMediaService } from '@core/services/wwebjs/methods/message
 import { WwebjsPhoneValidationService } from '@core/services/wwebjs/methods/phoneValidation.service';
 import { IContactValidationUpdate } from '@core/common/interfaces/IContactValidationUpdate';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { selectJidChat } from '@core/common/functions/selectJidChat';
+import { selectJidChatWwebjs } from '@core/common/functions/selectJidChatWwebjs';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
@@ -406,7 +406,7 @@ export class ScheduleMessageWwebjsConsume {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
-    const fallbackJid = selectJidChat(data.message);
+    const fallbackJid = selectJidChatWwebjs(data.message);
 
     if (!fallbackJid) {
       throw new Error('Received message without remoteJid');

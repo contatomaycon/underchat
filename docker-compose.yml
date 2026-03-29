@@ -24,12 +24,13 @@ services:
 
   under-db-elastic:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
-    container_name: under-db-elastic
+    container_name: under-db-elastic-clean
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
       - xpack.security.enabled=true
+      - cluster.routing.allocation.disk.threshold_enabled=false
       - ELASTIC_PASSWORD=admin
       - cluster.name=es-cluster
       - node.name=es-node
@@ -38,7 +39,7 @@ services:
         soft: -1
         hard: -1
     volumes:
-      - db_elastic_data:/usr/share/elasticsearch/data
+      - db_elastic_data_clean:/usr/share/elasticsearch/data
     ports:
       - '9201:9200'
     networks:
@@ -57,12 +58,13 @@ services:
 
   under-elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
-    container_name: under-elasticsearch
+    container_name: under-elasticsearch-clean
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
       - xpack.security.enabled=true
+      - cluster.routing.allocation.disk.threshold_enabled=false
       - ELASTIC_PASSWORD=admin
       - cluster.name=es-cluster
       - node.name=es-node
@@ -71,7 +73,7 @@ services:
         soft: -1
         hard: -1
     volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
+      - elasticsearch_data_clean:/usr/share/elasticsearch/data
     ports:
       - '9200:9200'
     networks:
@@ -298,9 +300,9 @@ volumes:
   postgresql:
   postgresql_data:
   db_postgresql:
-  db_elastic_data:
+  db_elastic_data_clean:
   atlas_db_postgresql:
-  elasticsearch_data:
+  elasticsearch_data_clean:
   kafka_data_1:
   kafka_data_2:
   kafka_data_3:

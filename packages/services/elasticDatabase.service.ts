@@ -18,6 +18,38 @@ export class ElasticDatabaseService {
     @inject('DatabaseElasticClient') private readonly client: Client
   ) {}
 
+  private normalizeErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message.toLowerCase();
+    }
+
+    return String(error).toLowerCase();
+  }
+
+  public isReadOnlyAllowDeleteBlockError(error: unknown): boolean {
+    const message = this.normalizeErrorMessage(error);
+    const hasClusterBlock = message.includes('cluster_block_exception');
+    const hasReadOnlyAllowDelete = message.includes('read-only-allow-delete');
+    const hasFloodStage =
+      message.includes('flood-stage watermark') ||
+      message.includes('disk usage exceeded flood-stage watermark');
+    const hasTooManyRequests = message.includes('too_many_requests/12');
+
+    return (
+      hasClusterBlock &&
+      (hasReadOnlyAllowDelete || hasFloodStage || hasTooManyRequests)
+    );
+  }
+
+  private buildReadOnlyAllowDeleteBlockError(
+    index: string,
+    error: unknown
+  ): Error {
+    return new Error(
+      `Elasticsearch index [${index}] is read-only (read_only_allow_delete) due to flood-stage disk watermark. Free disk on Elasticsearch host and clear index.blocks.read_only_allow_delete before retrying writes. Original error: ${error}`
+    );
+  }
+
   public async select<
     TDoc = unknown,
     TAggs extends Record<string, AggregationsAggregate> = Record<
@@ -61,6 +93,14 @@ export class ElasticDatabaseService {
         return false;
       }
 
+      if (this.isReadOnlyAllowDeleteBlockError(error)) {
+        incrementCounter('elastic.write.read_only_allow_delete', 1, {
+          index,
+          operation: 'create',
+        });
+        throw this.buildReadOnlyAllowDeleteBlockError(index, error);
+      }
+
       throw new Error(`Failed to create document with ID: ${error}`);
     }
   };
@@ -91,6 +131,14 @@ export class ElasticDatabaseService {
         error.statusCode === 409
       ) {
         return 'conflict';
+      }
+
+      if (this.isReadOnlyAllowDeleteBlockError(error)) {
+        incrementCounter('elastic.write.read_only_allow_delete', 1, {
+          index,
+          operation: 'create_document',
+        });
+        throw this.buildReadOnlyAllowDeleteBlockError(index, error);
       }
 
       throw new Error(`Failed to create document with ID: ${error}`);
@@ -865,6 +913,17 @@ export class ElasticDatabaseService {
 
         attempt++;
       } catch (error) {
+        if (this.isReadOnlyAllowDeleteBlockError(error)) {
+          incrementCounter(
+            'elastic.update.script.occ.read_only_allow_delete',
+            1,
+            {
+              index,
+            }
+          );
+          throw this.buildReadOnlyAllowDeleteBlockError(index, error);
+        }
+
         if (attempt >= maxRetries - 1) {
           incrementCounter(
             'elastic.update.script.occ.max_retries_exceeded',

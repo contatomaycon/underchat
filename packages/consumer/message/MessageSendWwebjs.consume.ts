@@ -25,7 +25,7 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { selectJidChat } from '@core/common/functions/selectJidChat';
+import { selectJidChatWwebjs } from '@core/common/functions/selectJidChatWwebjs';
 import { convertWaveformBase64ToUint8Array } from '@core/common/functions/convertWaveform';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
@@ -2040,7 +2040,7 @@ export class MessageSendWwebjsConsume {
   }
 
   private async processMessage(data: IChatMessage): Promise<void> {
-    const jid = selectJidChat(data);
+    const jid = selectJidChatWwebjs(data);
     if (!jid) throw new Error('Received message without remoteJid');
     const chatId = this.resolveChatId(data);
     if (!chatId) throw new Error('Received message without chatId');
