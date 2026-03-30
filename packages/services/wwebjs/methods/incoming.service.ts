@@ -420,16 +420,41 @@ function isSameJidAccount(
   );
 }
 
+function hasJidDomainToken(value: string, domainSuffix: string): boolean {
+  const normalized = getNonEmptyString(value)?.toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  if (normalized.endsWith(domainSuffix)) {
+    return true;
+  }
+
+  return normalized
+    .split('_')
+    .some((candidate) => candidate.endsWith(domainSuffix));
+}
+
 function getRemoteFromSerializedMessageId(
   serializedMessageId: string
 ): string | undefined {
-  const firstSeparator = serializedMessageId.indexOf('_');
-  const lastSeparator = serializedMessageId.lastIndexOf('_');
-  if (firstSeparator <= 0 || lastSeparator <= firstSeparator) {
+  const normalized = getNonEmptyString(serializedMessageId);
+  if (!normalized) {
     return undefined;
   }
 
-  return serializedMessageId.slice(firstSeparator + 1, lastSeparator);
+  const firstSeparator = normalized.indexOf('_');
+  if (firstSeparator <= 0 || firstSeparator === normalized.length - 1) {
+    return undefined;
+  }
+
+  const remaining = normalized.slice(firstSeparator + 1);
+  const secondSeparator = remaining.indexOf('_');
+  if (secondSeparator === -1) {
+    return remaining.trim() || undefined;
+  }
+
+  return remaining.slice(0, secondSeparator).trim() || undefined;
 }
 
 function getStanzaIdFromMessageId(
@@ -681,7 +706,7 @@ export class WwebjsIncomingMessageService {
         type: after.type,
       });
 
-      if (this.isStatusOrBroadcastMessage(after)) {
+      if (this.shouldSkipIncomingEventMessage(after)) {
         return;
       }
 
@@ -696,7 +721,7 @@ export class WwebjsIncomingMessageService {
         type: msg.type,
       });
 
-      if (this.isStatusOrBroadcastMessage(msg)) {
+      if (this.shouldSkipIncomingEventMessage(msg)) {
         return;
       }
 
@@ -715,7 +740,7 @@ export class WwebjsIncomingMessageService {
           hasPrevBody: Boolean(getNonEmptyString(prevBody)),
         });
 
-        if (this.isStatusOrBroadcastMessage(message)) {
+        if (this.shouldSkipIncomingEventMessage(message)) {
           return;
         }
 
@@ -723,27 +748,21 @@ export class WwebjsIncomingMessageService {
       }
     );
     client.on('message_reaction', (reaction: WwebjsReactionEvent) => {
+      const reactionId = getReactionIdSerialized(reaction);
+      const parentMsgId = getReactionMsgIdSerialized(reaction);
+
       this.logEvent('message_reaction', {
-        reactionId: getReactionIdSerialized(reaction),
-        parentMsgId: getReactionMsgIdSerialized(reaction),
+        reactionId,
+        parentMsgId,
         senderId: getReactionSenderId(reaction),
         emoji: getReactionEmoji(reaction),
       });
 
-      const reactionRemote = getRemoteFromSerializedMessageId(
-        getReactionIdSerialized(reaction)
-      );
-      const parentRemote = getRemoteFromSerializedMessageId(
-        getReactionMsgIdSerialized(reaction) ?? ''
-      );
-      if (
-        (reactionRemote &&
-          this.shouldSkipChat(
-            normalizeJid(reactionRemote) ?? reactionRemote
-          )) ||
-        (parentRemote &&
-          this.shouldSkipChat(normalizeJid(parentRemote) ?? parentRemote))
-      ) {
+      const reactionRemote = getRemoteFromSerializedMessageId(reactionId);
+      const parentRemote = parentMsgId
+        ? getRemoteFromSerializedMessageId(parentMsgId)
+        : undefined;
+      if (this.shouldSkipIncomingEventByJids([reactionRemote, parentRemote])) {
         return;
       }
 
@@ -780,7 +799,7 @@ export class WwebjsIncomingMessageService {
         ack,
       });
 
-      if (this.isStatusOrBroadcastMessage(msg)) {
+      if (this.shouldSkipIncomingEventMessage(msg)) {
         return;
       }
 
@@ -801,7 +820,7 @@ export class WwebjsIncomingMessageService {
           parentMessageId: pinData?.parentMessageId,
         });
 
-        if (this.isStatusOrBroadcastMessage(message)) {
+        if (this.shouldSkipIncomingEventMessage(message)) {
           return;
         }
 
@@ -820,9 +839,34 @@ export class WwebjsIncomingMessageService {
 
     if (isSystemMessageJid(normalizedJid)) return true;
     if (normalizedJid === 'status@broadcast') return true;
-    if (normalizedJid.endsWith('@broadcast')) return true;
-    if (normalizedJid.endsWith('@newsletter')) return true;
+    if (hasJidDomainToken(normalizedJid, '@broadcast')) return true;
+    if (hasJidDomainToken(normalizedJid, '@newsletter')) return true;
     return false;
+  }
+
+  private shouldSkipIncomingEventJid(rawJid: string | undefined): boolean {
+    const normalized = getNonEmptyString(rawJid);
+    if (!normalized) {
+      return false;
+    }
+
+    const normalizedJid = normalizeJid(normalized) ?? normalized;
+    return (
+      this.shouldSkipChat(normalizedJid) ||
+      this.isGroupOrBroadcastJid(normalizedJid)
+    );
+  }
+
+  private shouldSkipIncomingEventByJids(
+    rawJids: Array<string | undefined>
+  ): boolean {
+    return rawJids.some((rawJid) => this.shouldSkipIncomingEventJid(rawJid));
+  }
+
+  private shouldSkipIncomingEventMessage(msg: Message): boolean {
+    return this.shouldSkipIncomingEventByJids(
+      this.getMessageJidCandidates(msg)
+    );
   }
 
   private getMessageAuthor(msg: Message): string | undefined {
@@ -1257,16 +1301,7 @@ export class WwebjsIncomingMessageService {
   }
 
   private isStatusOrBroadcastMessage(msg: Message): boolean {
-    const rawCandidates = this.getMessageJidCandidates(msg);
-
-    for (const rawCandidate of rawCandidates) {
-      const normalized = normalizeJid(rawCandidate) ?? rawCandidate;
-      if (this.shouldSkipChat(normalized)) {
-        return true;
-      }
-    }
-
-    return false;
+    return this.shouldSkipIncomingEventMessage(msg);
   }
 
   private isGroupMessage(msg: Message): boolean {
@@ -1349,9 +1384,9 @@ export class WwebjsIncomingMessageService {
 
   private isGroupOrBroadcastJid(jid: string): boolean {
     return (
-      jid.endsWith('@g.us') ||
-      jid.endsWith('@broadcast') ||
-      jid.endsWith('@newsletter')
+      hasJidDomainToken(jid, '@g.us') ||
+      hasJidDomainToken(jid, '@broadcast') ||
+      hasJidDomainToken(jid, '@newsletter')
     );
   }
 
@@ -2381,15 +2416,36 @@ export class WwebjsIncomingMessageService {
     client: Client,
     reaction: WwebjsReactionEvent
   ): Promise<void> {
+    const reactionId = getReactionIdSerialized(reaction);
     const parentMsgId = getReactionMsgIdSerialized(reaction);
     if (!parentMsgId) return;
+
+    const reactionRemoteFromSerialized =
+      getRemoteFromSerializedMessageId(reactionId);
+    if (this.shouldSkipIncomingEventJid(reactionRemoteFromSerialized)) {
+      return;
+    }
+
+    const parentRemoteFromSerialized =
+      getRemoteFromSerializedMessageId(parentMsgId);
+    if (this.shouldSkipIncomingEventJid(parentRemoteFromSerialized)) {
+      return;
+    }
 
     let remoteJid = '';
     let remoteJidAlt: string | undefined;
     try {
       const parentMsg = await client.getMessageById(parentMsgId);
       if (parentMsg) {
+        if (this.shouldSkipIncomingEventMessage(parentMsg)) {
+          return;
+        }
+
         const resolvedJids = await this.resolveRemoteJids(client, parentMsg);
+        if (resolvedJids && this.shouldSkipResolvedJids(resolvedJids)) {
+          return;
+        }
+
         remoteJid = resolvedJids?.remoteJid ?? '';
         remoteJidAlt = resolvedJids?.remoteJidAlt;
       }
@@ -2406,14 +2462,10 @@ export class WwebjsIncomingMessageService {
     if (!remoteJid) {
       return;
     }
-    if (
-      this.shouldSkipChat(remoteJid) ||
-      this.isGroupOrBroadcastJid(remoteJid)
-    ) {
+    if (this.shouldSkipIncomingEventByJids([remoteJid, remoteJidAlt])) {
       return;
     }
 
-    const reactionId = getReactionIdSerialized(reaction);
     const emoji = getReactionEmoji(reaction);
     const senderId = getReactionSenderId(reaction);
     const normalizedSenderId = normalizeJidForComparison(senderId);
@@ -2460,7 +2512,7 @@ export class WwebjsIncomingMessageService {
     const jid = call.from;
     if (!jid) return;
     if (call.fromMe) return;
-    if (this.shouldSkipChat(jid)) return;
+    if (this.shouldSkipIncomingEventJid(jid)) return;
 
     const callKey = `${jid}:${call.id ?? ''}:offer`;
     if (this.processedCalls.has(callKey)) return;
@@ -2632,7 +2684,7 @@ export class WwebjsIncomingMessageService {
       ? (normalizeJid(remoteJidRaw) ?? remoteJidRaw)
       : undefined;
 
-    if (remoteJid && this.shouldSkipChat(remoteJid)) return;
+    if (remoteJid && this.shouldSkipIncomingEventJid(remoteJid)) return;
 
     const patch = this.mapAckToPatch(ack);
     if (!patch) return;
