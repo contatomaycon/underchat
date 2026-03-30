@@ -353,19 +353,19 @@ export class IntegrationService {
       mappedData
     );
 
-    const contactPayload = contact ?? {
-      contactId: '',
-      is_valided: false,
-    };
+    const interactionPhoneAndDdi = this.resolveInteractionPhoneAndDdi(
+      phoneAndDdi,
+      contact
+    );
 
     await this.sendToWebhookIntegrationConsumer(
       accountId,
       workerId,
-      contactPayload,
+      contact,
       mappedData,
       webhookMapping.mapping,
       body,
-      phoneAndDdi
+      interactionPhoneAndDdi
     );
 
     return true;
@@ -510,11 +510,37 @@ export class IntegrationService {
     is_valided: boolean;
     phone_validated?: string;
     phone_ddi_validated?: string | null;
-  } | null> => {
+  }> => {
+    const buildTransientValidationResult = (validation: {
+      phone: string;
+      phone_ddi: string;
+      is_valided: boolean;
+    }): {
+      contactId: string;
+      is_valided: boolean;
+      phone_validated?: string;
+      phone_ddi_validated?: string | null;
+    } => ({
+      contactId: '',
+      // Keep contact flag false when not persisted.
+      is_valided: false,
+      phone_validated: validation.phone,
+      phone_ddi_validated: validation.phone_ddi,
+    });
+
+    const validation = await this.validateWebhookPhoneForContactCreation(
+      accountId,
+      phoneAndDdi
+    );
+    const validatedPhoneAndDdi = {
+      phone: validation.phone,
+      phone_ddi: validation.phone_ddi,
+    };
+
     const existingContact = await this.contactService.getContactByPhone(
       accountId,
-      phoneAndDdi.phone,
-      phoneAndDdi.phone_ddi
+      validatedPhoneAndDdi.phone,
+      validatedPhoneAndDdi.phone_ddi
     );
 
     if (existingContact) {
@@ -523,26 +549,22 @@ export class IntegrationService {
         existingContact.contact_id,
         existingContact.is_valided === true,
         existingContact.phone_ddi ?? null,
-        phoneAndDdi,
-        mappedData
+        validatedPhoneAndDdi,
+        mappedData,
+        validation
       );
     }
 
     const canCreateContact =
       await this.planAccountService.validateCanCreateContactReceived(accountId);
     if (!canCreateContact) {
-      return null;
+      return buildTransientValidationResult(validation);
     }
 
     const shouldAutoSave = await this.shouldAutoSaveContact(workerId);
     if (!shouldAutoSave) {
-      return null;
+      return buildTransientValidationResult(validation);
     }
-
-    const validation = await this.validateWebhookPhoneForContactCreation(
-      accountId,
-      phoneAndDdi
-    );
 
     const mappedDataWithValidatedPhone: IMappedWebhookData = {
       ...mappedData,
@@ -556,11 +578,16 @@ export class IntegrationService {
       validation.is_valided
     );
     if (!contactId) {
-      return null;
+      return buildTransientValidationResult(validation);
     }
 
     if (!validation.is_valided) {
-      return { contactId, is_valided: false };
+      return {
+        contactId,
+        is_valided: false,
+        phone_validated: validation.phone,
+        phone_ddi_validated: validation.phone_ddi,
+      };
     }
 
     return {
@@ -568,6 +595,32 @@ export class IntegrationService {
       is_valided: true,
       phone_validated: validation.phone,
       phone_ddi_validated: validation.phone_ddi,
+    };
+  };
+
+  private resolveInteractionPhoneAndDdi = (
+    fallbackPhoneAndDdi: { phone: string; phone_ddi: string | null },
+    contact: {
+      contactId: string;
+      is_valided: boolean;
+      phone_validated?: string;
+      phone_ddi_validated?: string | null;
+    }
+  ): { phone: string; phone_ddi: string | null } => {
+    if (!contact.phone_validated) {
+      return fallbackPhoneAndDdi;
+    }
+
+    const fullPhoneCandidate = `${contact.phone_ddi_validated ?? ''}${contact.phone_validated}`;
+    const extracted = extractPhoneAndDdi(fullPhoneCandidate);
+
+    if (extracted) {
+      return extracted;
+    }
+
+    return {
+      phone: contact.phone_validated,
+      phone_ddi: contact.phone_ddi_validated ?? fallbackPhoneAndDdi.phone_ddi,
     };
   };
 
@@ -586,7 +639,12 @@ export class IntegrationService {
     isValided: boolean,
     contactPhoneDdi: string | null,
     phoneAndDdi: { phone: string; phone_ddi: string | null },
-    mappedData: IMappedWebhookData
+    mappedData: IMappedWebhookData,
+    currentValidation: {
+      phone: string;
+      phone_ddi: string;
+      is_valided: boolean;
+    }
   ): Promise<{
     contactId: string;
     is_valided: boolean;
@@ -595,8 +653,22 @@ export class IntegrationService {
   }> => {
     await this.addLabelsToExistingContact(accountId, contactId, mappedData);
 
+    if (currentValidation.is_valided) {
+      return {
+        contactId,
+        is_valided: isValided,
+        phone_validated: currentValidation.phone,
+        phone_ddi_validated: currentValidation.phone_ddi,
+      };
+    }
+
     if (!isValided) {
-      return { contactId, is_valided: false };
+      return {
+        contactId,
+        is_valided: false,
+        phone_validated: currentValidation.phone,
+        phone_ddi_validated: currentValidation.phone_ddi,
+      };
     }
 
     const sensitive =
