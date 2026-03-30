@@ -182,6 +182,38 @@ export class WebhookIntegrationWwebjsConsume {
     return !!jid && jid.endsWith('@lid');
   }
 
+  private normalizePhoneDigits(
+    value: string | null | undefined
+  ): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const digits = onlyDigits(value);
+    return digits || undefined;
+  }
+
+  private isResolvedPhoneEquivalentToLid(
+    lidJid: string,
+    resolvedPhone: string | undefined
+  ): boolean {
+    const lidDigits = this.normalizePhoneDigits(lidJid.split('@')[0]);
+    const resolvedDigits = this.normalizePhoneDigits(resolvedPhone);
+
+    return !!lidDigits && !!resolvedDigits && lidDigits === resolvedDigits;
+  }
+
+  private shouldFallbackFromLidResolvedPhone(result: {
+    jid?: string;
+    phone?: string;
+  }): boolean {
+    if (!this.isLidJid(result.jid) || !result.jid) {
+      return false;
+    }
+
+    return this.isResolvedPhoneEquivalentToLid(result.jid, result.phone);
+  }
+
   private buildValidationCandidates(
     request: IWebhookIntegrationRequest
   ): Array<{ phone: string; phoneDdi: string; phoneWithDdi: string }> {
@@ -229,7 +261,19 @@ export class WebhookIntegrationWwebjsConsume {
     result: { jid?: string; phone?: string },
     fallbackPhoneWithDdi: string
   ): string {
-    if (result.phone) {
+    const shouldFallbackFromLid =
+      this.shouldFallbackFromLidResolvedPhone(result);
+
+    if (shouldFallbackFromLid) {
+      console.warn('[WebhookIntegrationWwebjs] lid_phone_fallback_applied', {
+        lid_jid: result.jid ?? null,
+        resolved_phone: result.phone ?? null,
+        fallback_phone_with_ddi: fallbackPhoneWithDdi,
+        reason: 'lid_equivalent',
+      });
+    }
+
+    if (result.phone && !shouldFallbackFromLid) {
       const extracted = extractPhoneAndDdi(result.phone);
       if (extracted) {
         return `${extracted.phone_ddi}${extracted.phone}`;

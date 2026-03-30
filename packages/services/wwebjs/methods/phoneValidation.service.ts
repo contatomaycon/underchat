@@ -8,30 +8,144 @@ import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 
 @injectable()
 export class WwebjsPhoneValidationService {
+  private static readonly LID_PHONE_RESOLUTION_MAX_ATTEMPTS = 3;
+
+  private static readonly LID_PHONE_RESOLUTION_RETRY_DELAY_MS = 120;
+
   constructor(
     @inject(WwebjsConnectionService)
     private readonly connection: WwebjsConnectionService
   ) {}
 
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private normalizePhoneDigits(
+    value: string | null | undefined
+  ): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const digits = onlyDigits(value);
+    return digits || undefined;
+  }
+
+  private isResolvedPhoneEquivalentToLid(
+    lidJid: string,
+    resolvedPhone: string
+  ): boolean {
+    const lidDigits = this.normalizePhoneDigits(lidJid.split('@')[0]);
+    const resolvedDigits = this.normalizePhoneDigits(resolvedPhone);
+
+    return !!lidDigits && !!resolvedDigits && lidDigits === resolvedDigits;
+  }
+
+  private isResolvedPhoneFromLidReliable(
+    lidJid: string,
+    resolvedPhone: string,
+    candidates: string[]
+  ): boolean {
+    const resolvedDigits = this.normalizePhoneDigits(resolvedPhone);
+    if (!resolvedDigits) {
+      return false;
+    }
+
+    if (this.isResolvedPhoneEquivalentToLid(lidJid, resolvedDigits)) {
+      return false;
+    }
+
+    return candidates.includes(resolvedDigits);
+  }
+
+  private getLidDiscardReason(
+    lidJid: string,
+    resolvedPhone: string | undefined,
+    candidates: string[]
+  ): 'not_found' | 'lid_equivalent' | 'candidate_mismatch' {
+    if (!resolvedPhone) {
+      return 'not_found';
+    }
+
+    if (this.isResolvedPhoneEquivalentToLid(lidJid, resolvedPhone)) {
+      return 'lid_equivalent';
+    }
+
+    const resolvedDigits = this.normalizePhoneDigits(resolvedPhone);
+    if (!resolvedDigits || !candidates.includes(resolvedDigits)) {
+      return 'candidate_mismatch';
+    }
+
+    return 'not_found';
+  }
+
   private async resolvePhoneFromLid(
     client: ReturnType<WwebjsConnectionService['getSocket']>,
-    lidJid: string,
-    fallback: string
-  ): Promise<string> {
+    lidJid: string
+  ): Promise<string | undefined> {
     const getContactById = (
       client as unknown as {
         getContactById?: (id: string) => Promise<{ number?: string } | null>;
       }
     ).getContactById;
 
-    if (typeof getContactById !== 'function') return fallback;
+    if (typeof getContactById !== 'function') return undefined;
 
     try {
       const contact = await getContactById.call(client, lidJid);
-      return (contact?.number && onlyDigits(contact.number)) || fallback;
+      return this.normalizePhoneDigits(contact?.number);
     } catch {
-      return fallback;
+      return undefined;
     }
+  }
+
+  private async resolveReliablePhoneFromLidWithRetry(
+    client: ReturnType<WwebjsConnectionService['getSocket']>,
+    lidJid: string,
+    candidates: string[]
+  ): Promise<{ phone?: string; attempts: number; lastResolvedPhone?: string }> {
+    let lastResolvedPhone: string | undefined;
+
+    for (
+      let attempt = 1;
+      attempt <= WwebjsPhoneValidationService.LID_PHONE_RESOLUTION_MAX_ATTEMPTS;
+      attempt++
+    ) {
+      const resolvedPhoneFromLid = await this.resolvePhoneFromLid(
+        client,
+        lidJid
+      );
+      lastResolvedPhone = resolvedPhoneFromLid;
+
+      if (
+        resolvedPhoneFromLid &&
+        this.isResolvedPhoneFromLidReliable(
+          lidJid,
+          resolvedPhoneFromLid,
+          candidates
+        )
+      ) {
+        return {
+          phone: resolvedPhoneFromLid,
+          attempts: attempt,
+          lastResolvedPhone: resolvedPhoneFromLid,
+        };
+      }
+
+      if (
+        attempt < WwebjsPhoneValidationService.LID_PHONE_RESOLUTION_MAX_ATTEMPTS
+      ) {
+        await this.sleep(
+          WwebjsPhoneValidationService.LID_PHONE_RESOLUTION_RETRY_DELAY_MS
+        );
+      }
+    }
+
+    return {
+      attempts: WwebjsPhoneValidationService.LID_PHONE_RESOLUTION_MAX_ATTEMPTS,
+      lastResolvedPhone,
+    };
   }
 
   async validatePhone(
@@ -62,7 +176,30 @@ export class WwebjsPhoneValidationService {
 
       let phone: string;
       if (resolvedJid?.endsWith('@lid')) {
-        phone = await this.resolvePhoneFromLid(client, resolvedJid, candidate);
+        const lidResolution = await this.resolveReliablePhoneFromLidWithRetry(
+          client,
+          resolvedJid,
+          candidates
+        );
+        const resolvedPhoneFromLid = lidResolution.phone;
+
+        if (resolvedPhoneFromLid) {
+          phone = resolvedPhoneFromLid;
+        } else {
+          console.warn('[WwebjsPhoneValidation] lid_phone_discarded', {
+            lid_jid: resolvedJid,
+            resolved_phone: lidResolution.lastResolvedPhone ?? null,
+            fallback_candidate: candidate,
+            reason: this.getLidDiscardReason(
+              resolvedJid,
+              lidResolution.lastResolvedPhone,
+              candidates
+            ),
+            attempts: lidResolution.attempts,
+          });
+
+          phone = candidate;
+        }
       } else {
         const phoneFromJid = getPhoneNumber(resolvedJid);
         phone =
