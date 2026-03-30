@@ -400,11 +400,22 @@ export class IntegrationService {
     mappedData: IMappedWebhookData
   ): { phone: string; phone_ddi: string | null } | null => {
     if (!mappedData.phone) {
+      console.info('[WebhookIntegrationValidation] mapped_phone_missing', {
+        mapped_phone: mappedData.phone ?? null,
+        mapped_phone_ddi: mappedData.phone_ddi ?? null,
+      });
       return null;
     }
 
     const phoneDigits = onlyDigits(mappedData.phone);
     if (!phoneDigits) {
+      console.info(
+        '[WebhookIntegrationValidation] mapped_phone_without_digits',
+        {
+          mapped_phone: mappedData.phone,
+          mapped_phone_ddi: mappedData.phone_ddi ?? null,
+        }
+      );
       return null;
     }
 
@@ -417,8 +428,23 @@ export class IntegrationService {
           : phoneDigits;
 
       if (phoneWithoutDdi.length < 8) {
+        console.info('[WebhookIntegrationValidation] mapped_phone_too_short', {
+          mapped_phone: mappedData.phone,
+          mapped_phone_ddi: mappedData.phone_ddi ?? null,
+          extracted_phone_digits: phoneDigits,
+          extracted_phone_without_ddi: phoneWithoutDdi,
+          extracted_phone_ddi: phoneDdiDigits,
+        });
         return null;
       }
+
+      console.info('[WebhookIntegrationValidation] mapped_phone_extracted', {
+        mapped_phone: mappedData.phone,
+        mapped_phone_ddi: mappedData.phone_ddi ?? null,
+        extracted_phone_digits: phoneDigits,
+        extracted_phone_without_ddi: phoneWithoutDdi,
+        extracted_phone_ddi: phoneDdiDigits,
+      });
 
       return {
         phone: phoneWithoutDdi,
@@ -426,7 +452,19 @@ export class IntegrationService {
       };
     }
 
-    return extractPhoneAndDdi(phoneDigits);
+    const extracted = extractPhoneAndDdi(phoneDigits);
+    console.info(
+      '[WebhookIntegrationValidation] mapped_phone_extracted_auto_ddi',
+      {
+        mapped_phone: mappedData.phone,
+        mapped_phone_ddi: mappedData.phone_ddi ?? null,
+        extracted_phone_digits: phoneDigits,
+        extracted_phone: extracted?.phone ?? null,
+        extracted_phone_ddi: extracted?.phone_ddi ?? null,
+      }
+    );
+
+    return extracted;
   };
 
   private isTechnicalValidationError = (error: unknown): boolean => {
@@ -465,6 +503,12 @@ export class IntegrationService {
   ): Promise<{ phone: string; phone_ddi: string; is_valided: boolean }> {
     const fallbackPhone = phoneAndDdi.phone;
     const fallbackPhoneDdi = phoneAndDdi.phone_ddi ?? '55';
+    console.info('[WebhookIntegrationValidation] validation_start', {
+      account_id: accountId,
+      worker_id: workerId,
+      fallback_phone: fallbackPhone,
+      fallback_phone_ddi: fallbackPhoneDdi,
+    });
 
     try {
       const validationResult = await this.phoneValidationService.validatePhone(
@@ -474,8 +518,26 @@ export class IntegrationService {
         undefined,
         { bypassCache: true, preferredWorkerId: workerId }
       );
+      console.info('[WebhookIntegrationValidation] validation_response', {
+        account_id: accountId,
+        worker_id: workerId,
+        response_worker_id: validationResult.worker_id,
+        valid: validationResult.valid,
+        jid: validationResult.jid ?? null,
+        phone: validationResult.phone ?? null,
+        error: validationResult.error ?? null,
+      });
 
       if (!validationResult.valid) {
+        console.info(
+          '[WebhookIntegrationValidation] validation_fallback_invalid',
+          {
+            account_id: accountId,
+            worker_id: workerId,
+            fallback_phone: fallbackPhone,
+            fallback_phone_ddi: fallbackPhoneDdi,
+          }
+        );
         return {
           phone: fallbackPhone,
           phone_ddi: fallbackPhoneDdi,
@@ -486,8 +548,24 @@ export class IntegrationService {
       const validatedPhoneCandidate =
         validationResult.phone ??
         getPhoneFromJid(validationResult.jid ?? null, null);
+      console.info('[WebhookIntegrationValidation] validation_candidate', {
+        account_id: accountId,
+        worker_id: workerId,
+        candidate_phone: validatedPhoneCandidate ?? null,
+        candidate_source: validationResult.phone ? 'phone' : 'jid',
+        candidate_jid: validationResult.jid ?? null,
+      });
 
       if (!validatedPhoneCandidate) {
+        console.info(
+          '[WebhookIntegrationValidation] validation_fallback_missing_candidate',
+          {
+            account_id: accountId,
+            worker_id: workerId,
+            fallback_phone: fallbackPhone,
+            fallback_phone_ddi: fallbackPhoneDdi,
+          }
+        );
         return {
           phone: fallbackPhone,
           phone_ddi: fallbackPhoneDdi,
@@ -497,6 +575,16 @@ export class IntegrationService {
 
       const normalized = extractPhoneAndDdi(validatedPhoneCandidate);
       if (!normalized) {
+        console.info(
+          '[WebhookIntegrationValidation] validation_fallback_not_normalized',
+          {
+            account_id: accountId,
+            worker_id: workerId,
+            candidate_phone: validatedPhoneCandidate,
+            fallback_phone: fallbackPhone,
+            fallback_phone_ddi: fallbackPhoneDdi,
+          }
+        );
         return {
           phone: fallbackPhone,
           phone_ddi: fallbackPhoneDdi,
@@ -504,12 +592,26 @@ export class IntegrationService {
         };
       }
 
+      console.info('[WebhookIntegrationValidation] validation_success', {
+        account_id: accountId,
+        worker_id: workerId,
+        normalized_phone: normalized.phone,
+        normalized_phone_ddi: normalized.phone_ddi,
+      });
+
       return {
         phone: normalized.phone,
         phone_ddi: normalized.phone_ddi,
         is_valided: true,
       };
     } catch (error) {
+      console.error('[WebhookIntegrationValidation] validation_exception', {
+        account_id: accountId,
+        worker_id: workerId,
+        fallback_phone: fallbackPhone,
+        fallback_phone_ddi: fallbackPhoneDdi,
+        error: error instanceof Error ? error.message : String(error),
+      });
       if (
         this.isInvalidValidationError(error) ||
         this.isTechnicalValidationError(error)

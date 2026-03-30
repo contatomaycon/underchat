@@ -37,12 +37,31 @@ export class PhoneValidationService {
       phone,
       phone_ddi: phoneDdi,
     };
+    console.info('[PhoneValidationService] worker_validation_request', {
+      account_id: accountId,
+      worker_id: worker.worker_id,
+      server_id: worker.server_id,
+      phone,
+      phone_ddi: phoneDdi ?? null,
+      timeout,
+    });
 
-    return this.workerGrpcClientService.validatePhone(
+    const response = await this.workerGrpcClientService.validatePhone(
       worker.server_id,
       request,
       timeout
     );
+    console.info('[PhoneValidationService] worker_validation_response', {
+      account_id: accountId,
+      worker_id: worker.worker_id,
+      response_worker_id: response.worker_id,
+      valid: response.valid,
+      jid: response.jid ?? null,
+      phone: response.phone ?? null,
+      error: response.error ?? null,
+    });
+
+    return response;
   }
 
   private getCacheKey(
@@ -179,6 +198,12 @@ export class PhoneValidationService {
 
     for (const worker of workersToTry) {
       try {
+        console.info('[PhoneValidationService] worker_attempt', {
+          account_id: accountId,
+          worker_id: worker.worker_id,
+          phone,
+          phone_ddi: phoneDdi ?? null,
+        });
         const response = await this.validateWithWorker(
           worker,
           accountId,
@@ -200,6 +225,13 @@ export class PhoneValidationService {
 
         lastError = new Error(response.error || 'Unknown validation error');
       } catch (error) {
+        console.error('[PhoneValidationService] worker_attempt_error', {
+          account_id: accountId,
+          worker_id: worker.worker_id,
+          phone,
+          phone_ddi: phoneDdi ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        });
         const { shouldRetry, error: handledError } =
           await this.handleValidationError(error, accountId, phone, phoneDdi);
 
@@ -272,6 +304,14 @@ export class PhoneValidationService {
       workers,
       options?.preferredWorkerId
     );
+    console.info('[PhoneValidationService] workers_selected', {
+      account_id: accountId,
+      preferred_worker_id: options?.preferredWorkerId ?? null,
+      selected_workers: workersToValidate.map((worker) => worker.worker_id),
+      phone,
+      phone_ddi: phoneDdi ?? null,
+      bypass_cache: options?.bypassCache === true,
+    });
 
     return this.tryValidateWithWorkers(
       workersToValidate,
