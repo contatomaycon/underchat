@@ -159,6 +159,9 @@ export class WwebjsPhoneValidationService {
 
     const fullNumber = `${ddi}${number}`;
     const candidates = buildCandidates(fullNumber, { order: 'input_first' });
+    let deferredLidFallback:
+      | { jid: string | undefined; phone: string }
+      | undefined;
 
     for (let i = 0; i < candidates.length; i++) {
       const candidate = candidates[i];
@@ -174,7 +177,6 @@ export class WwebjsPhoneValidationService {
           : undefined;
       const resolvedJid = (jid ? normalizeJid(jid) : undefined) ?? jid;
 
-      let phone: string;
       if (resolvedJid?.endsWith('@lid')) {
         const lidResolution = await this.resolveReliablePhoneFromLidWithRetry(
           client,
@@ -184,31 +186,45 @@ export class WwebjsPhoneValidationService {
         const resolvedPhoneFromLid = lidResolution.phone;
 
         if (resolvedPhoneFromLid) {
-          phone = resolvedPhoneFromLid;
-        } else {
-          console.warn('[WwebjsPhoneValidation] lid_phone_discarded', {
-            lid_jid: resolvedJid,
-            resolved_phone: lidResolution.lastResolvedPhone ?? null,
-            fallback_candidate: candidate,
-            reason: this.getLidDiscardReason(
-              resolvedJid,
-              lidResolution.lastResolvedPhone,
-              candidates
-            ),
-            attempts: lidResolution.attempts,
-          });
-
-          phone = candidate;
+          return { valid: true, jid: resolvedJid, phone: resolvedPhoneFromLid };
         }
-      } else {
-        const phoneFromJid = getPhoneNumber(resolvedJid);
-        phone =
-          phoneFromJid && candidates.includes(phoneFromJid)
-            ? phoneFromJid
-            : candidate;
+
+        console.warn('[WwebjsPhoneValidation] lid_phone_discarded', {
+          lid_jid: resolvedJid,
+          resolved_phone: lidResolution.lastResolvedPhone ?? null,
+          fallback_candidate: candidate,
+          reason: this.getLidDiscardReason(
+            resolvedJid,
+            lidResolution.lastResolvedPhone,
+            candidates
+          ),
+          attempts: lidResolution.attempts,
+        });
+
+        if (!deferredLidFallback) {
+          deferredLidFallback = {
+            jid: resolvedJid,
+            phone: candidate,
+          };
+        }
+
+        continue;
       }
 
-      return { valid: true, jid: resolvedJid, phone };
+      const phoneFromJid = getPhoneNumber(resolvedJid);
+      if (phoneFromJid) {
+        return { valid: true, jid: resolvedJid, phone: phoneFromJid };
+      }
+
+      return { valid: true, jid: resolvedJid, phone: candidate };
+    }
+
+    if (deferredLidFallback) {
+      return {
+        valid: true,
+        jid: deferredLidFallback.jid,
+        phone: deferredLidFallback.phone,
+      };
     }
 
     return { valid: false };

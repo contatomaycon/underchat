@@ -38,6 +38,7 @@ import { EChatbotType } from '@core/common/enums/EChatbotType';
 import { ELabelStatus } from '@core/common/enums/ELabelStatus';
 import { TFunction } from 'i18next';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import * as schema from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -459,6 +460,7 @@ export class IntegrationService {
 
   private async validateWebhookPhoneForContactCreation(
     accountId: string,
+    workerId: string,
     phoneAndDdi: { phone: string; phone_ddi: string | null }
   ): Promise<{ phone: string; phone_ddi: string; is_valided: boolean }> {
     const fallbackPhone = phoneAndDdi.phone;
@@ -470,7 +472,7 @@ export class IntegrationService {
         fallbackPhone,
         fallbackPhoneDdi,
         undefined,
-        { bypassCache: true }
+        { bypassCache: true, preferredWorkerId: workerId }
       );
 
       if (!validationResult.valid) {
@@ -481,7 +483,11 @@ export class IntegrationService {
         };
       }
 
-      if (!validationResult.phone) {
+      const validatedPhoneCandidate =
+        validationResult.phone ??
+        getPhoneFromJid(validationResult.jid ?? null, null);
+
+      if (!validatedPhoneCandidate) {
         return {
           phone: fallbackPhone,
           phone_ddi: fallbackPhoneDdi,
@@ -489,7 +495,7 @@ export class IntegrationService {
         };
       }
 
-      const normalized = extractPhoneAndDdi(validationResult.phone);
+      const normalized = extractPhoneAndDdi(validatedPhoneCandidate);
       if (!normalized) {
         return {
           phone: fallbackPhone,
@@ -553,6 +559,7 @@ export class IntegrationService {
 
     const validation = await this.validateWebhookPhoneForContactCreation(
       accountId,
+      workerId,
       phoneAndDdi
     );
     const validatedPhoneAndDdi = {

@@ -220,12 +220,33 @@ export class PhoneValidationService {
     throw new Error('Failed to validate phone with all available workers');
   }
 
+  private prioritizeWorkersForValidation(
+    workers: IWorkerActiveByAccount[],
+    preferredWorkerId?: string
+  ): IWorkerActiveByAccount[] {
+    if (!preferredWorkerId) {
+      return workers;
+    }
+
+    const preferredWorker = workers.find(
+      (worker) => worker.worker_id === preferredWorkerId
+    );
+    if (!preferredWorker) {
+      return workers;
+    }
+
+    return [
+      preferredWorker,
+      ...workers.filter((worker) => worker.worker_id !== preferredWorkerId),
+    ];
+  }
+
   validatePhone = async (
     accountId: string,
     phone: string,
     phoneDdi?: string | null,
     timeout: number = this.defaultTimeout,
-    options?: { bypassCache?: boolean }
+    options?: { bypassCache?: boolean; preferredWorkerId?: string }
   ): Promise<IPhoneValidationResponse> => {
     if (!options?.bypassCache) {
       const cachedResult = await this.getCachedResult(
@@ -247,8 +268,13 @@ export class PhoneValidationService {
       throw new Error('No active worker found for this account');
     }
 
-    return this.tryValidateWithWorkers(
+    const workersToValidate = this.prioritizeWorkersForValidation(
       workers,
+      options?.preferredWorkerId
+    );
+
+    return this.tryValidateWithWorkers(
+      workersToValidate,
       accountId,
       phone,
       phoneDdi,
