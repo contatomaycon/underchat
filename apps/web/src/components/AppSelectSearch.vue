@@ -1,8 +1,17 @@
 <script lang="ts" setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import {
+  ref,
+  computed,
+  watch,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  useSlots,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
+const slots = useSlots();
 
 type SelectValue = string | number | boolean | null;
 
@@ -87,11 +96,13 @@ const getItemTitle = (item: SelectItem): string => {
   );
 };
 
-const selectedItem = computed(() => {
+const selectedItem = computed<SelectItem | null>(() => {
   if (props.multiple) {
-    return [];
+    return null;
   }
-  return props.items.find((item) => getItemValue(item) === props.modelValue);
+  return (
+    props.items.find((item) => getItemValue(item) === props.modelValue) ?? null
+  );
 });
 
 const selectedItems = computed(() => {
@@ -149,6 +160,11 @@ const displayValue = computed(() => {
   return selectedItem.value ? getItemTitle(selectedItem.value) : '';
 });
 
+const hasSelectionSlot = computed(() => Boolean(slots.selection));
+const shouldUseCustomSelection = computed(
+  () => !props.multiple && hasSelectionSlot.value && !!selectedItem.value
+);
+
 const hasSelectedItems = computed(() => {
   if (props.multiple) {
     return Array.isArray(props.modelValue) && props.modelValue.length > 0;
@@ -161,6 +177,9 @@ const inputValue = computed(() => {
     if (Array.isArray(props.modelValue)) {
       return String(props.modelValue.length || '');
     }
+    return '';
+  }
+  if (shouldUseCustomSelection.value) {
     return '';
   }
   return displayValue.value;
@@ -319,6 +338,7 @@ onUnmounted(() => {
             :rules="computedRules"
             :class="{
               'select-with-chips': multiple && chips && hasSelectedItems,
+              'select-with-custom-selection': shouldUseCustomSelection,
             }"
           >
             <template v-if="$slots['prepend-inner']" #prepend-inner>
@@ -348,6 +368,12 @@ onUnmounted(() => {
               </div>
             </template>
           </VTextField>
+          <div
+            v-if="shouldUseCustomSelection && selectedItem"
+            class="single-selection-container"
+          >
+            <slot name="selection" :item="selectedItem as SelectItem" />
+          </div>
           <div
             v-if="multiple && chips && selectedItems.length > 0"
             class="chips-container"
@@ -493,6 +519,28 @@ onUnmounted(() => {
   z-index: 1;
   overflow: hidden;
   max-height: 32px;
+}
+
+.single-selection-container {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  right: 56px;
+  transform: translateY(-50%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.select-with-custom-selection :deep(.v-field__input) {
+  color: transparent;
+  caret-color: transparent;
+}
+
+.select-with-custom-selection :deep(input) {
+  color: transparent;
 }
 
 .chips-container :deep(.v-chip) {

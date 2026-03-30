@@ -173,6 +173,94 @@ const extractNestedKeys = (
   return keys;
 };
 
+const getNestedValueFromPath = (obj: unknown, path: string): unknown => {
+  const keys = path.split('.');
+  let current: unknown = obj;
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (typeof current !== 'object' || current === null) {
+      return null;
+    }
+
+    const currentRecord = current as Record<string, unknown>;
+    const arrayMatch = key.match(/^(.+)\[(\d+)\]$/);
+
+    if (arrayMatch) {
+      const arrayKey = arrayMatch[1];
+      const arrayIndex = Number.parseInt(arrayMatch[2], 10);
+
+      if (!(arrayKey in currentRecord)) {
+        return null;
+      }
+
+      const arrayValue = currentRecord[arrayKey];
+      if (!Array.isArray(arrayValue)) {
+        return null;
+      }
+
+      if (arrayIndex < 0 || arrayIndex >= arrayValue.length) {
+        return null;
+      }
+
+      current = arrayValue[arrayIndex];
+      continue;
+    }
+
+    if (!(key in currentRecord)) {
+      return null;
+    }
+
+    current = currentRecord[key];
+  }
+
+  return current;
+};
+
+const serializeWebhookValue = (value: unknown): string => {
+  if (value === null) {
+    return 'null';
+  }
+
+  if (value === undefined) {
+    return 'undefined';
+  }
+
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return String(value);
+  }
+
+  if (typeof value === 'object') {
+    try {
+      const serialized = JSON.stringify(value);
+      return serialized !== undefined ? serialized : String(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  return String(value);
+};
+
+const webhookDataOptions = computed(() =>
+  webhookDataKeys.value.map((key) => {
+    const displayValue = serializeWebhookValue(
+      getNestedValueFromPath(integrationStore.webhookData, key)
+    );
+
+    return {
+      value: key,
+      path: key,
+      displayValue,
+      title: `${key}: ${displayValue}`,
+    };
+  })
+);
+
 const loadWebhookData = async () => {
   if (props.apiKeyId) {
     await integrationStore.viewWebhookData(props.apiKeyId);
@@ -670,17 +758,21 @@ watch(isOpen, async (newValue) => {
                 v-if="field.key === 'phone_ddi' && phoneDdiMode === 'depara'"
                 :model-value="webhookMapping[field.key] ?? null"
                 @update:model-value="handleFieldUpdate(field.key, $event)"
-                :items="
-                  webhookDataKeys.map((key) => ({
-                    value: key,
-                    title: key,
-                  }))
-                "
+                :items="webhookDataOptions"
                 :placeholder="$t('select_field')"
                 :clearable="!field.required"
                 item-value="value"
                 item-title="title"
-              />
+              >
+                <template #item-title="{ item }">
+                  <strong>{{ item.path }}</strong
+                  >: {{ item.displayValue }}
+                </template>
+                <template #selection="{ item }">
+                  <strong>{{ item.path }}</strong
+                  >: {{ item.displayValue }}
+                </template>
+              </AppSelectSearch>
               <AppSelectSearch
                 v-else-if="
                   field.key === 'phone_ddi' && phoneDdiMode === 'select'
@@ -697,12 +789,7 @@ watch(isOpen, async (newValue) => {
                 v-else-if="field.key === 'labels'"
                 :model-value="webhookMapping[field.key] ?? []"
                 @update:model-value="handleFieldUpdate(field.key, $event)"
-                :items="
-                  webhookDataKeys.map((key) => ({
-                    value: key,
-                    title: key,
-                  }))
-                "
+                :items="webhookDataOptions"
                 :placeholder="$t('select_field')"
                 :clearable="!field.required"
                 multiple
@@ -710,22 +797,35 @@ watch(isOpen, async (newValue) => {
                 closable-chips
                 item-value="value"
                 item-title="title"
-              />
+              >
+                <template #item-title="{ item }">
+                  <strong>{{ item.path }}</strong
+                  >: {{ item.displayValue }}
+                </template>
+                <template #chip="{ item }">
+                  <strong>{{ item.path }}</strong
+                  >: {{ item.displayValue }}
+                </template>
+              </AppSelectSearch>
               <AppSelectSearch
                 v-else-if="field.key !== 'message'"
                 :model-value="webhookMapping[field.key] ?? null"
                 @update:model-value="handleFieldUpdate(field.key, $event)"
-                :items="
-                  webhookDataKeys.map((key) => ({
-                    value: key,
-                    title: key,
-                  }))
-                "
+                :items="webhookDataOptions"
                 :placeholder="$t('select_field')"
                 :clearable="!field.required"
                 item-value="value"
                 item-title="title"
-              />
+              >
+                <template #item-title="{ item }">
+                  <strong>{{ item.path }}</strong
+                  >: {{ item.displayValue }}
+                </template>
+                <template #selection="{ item }">
+                  <strong>{{ item.path }}</strong
+                  >: {{ item.displayValue }}
+                </template>
+              </AppSelectSearch>
             </div>
 
             <VDivider class="my-6" thickness="2" color="primary" />
@@ -911,17 +1011,21 @@ watch(isOpen, async (newValue) => {
                       v-else
                       :model-value="webhookMapping.message ?? null"
                       @update:model-value="handleFieldUpdate('message', $event)"
-                      :items="
-                        webhookDataKeys.map((key) => ({
-                          value: key,
-                          title: key,
-                        }))
-                      "
+                      :items="webhookDataOptions"
                       :placeholder="$t('select_field')"
                       :clearable="true"
                       item-value="value"
                       item-title="title"
-                    />
+                    >
+                      <template #item-title="{ item }">
+                        <strong>{{ item.path }}</strong
+                        >: {{ item.displayValue }}
+                      </template>
+                      <template #selection="{ item }">
+                        <strong>{{ item.path }}</strong
+                        >: {{ item.displayValue }}
+                      </template>
+                    </AppSelectSearch>
                   </div>
                 </div>
 
@@ -1000,17 +1104,21 @@ watch(isOpen, async (newValue) => {
                       v-else
                       :model-value="webhookMapping.message ?? null"
                       @update:model-value="handleFieldUpdate('message', $event)"
-                      :items="
-                        webhookDataKeys.map((key) => ({
-                          value: key,
-                          title: key,
-                        }))
-                      "
+                      :items="webhookDataOptions"
                       :placeholder="$t('select_field')"
                       :clearable="true"
                       item-value="value"
                       item-title="title"
-                    />
+                    >
+                      <template #item-title="{ item }">
+                        <strong>{{ item.path }}</strong
+                        >: {{ item.displayValue }}
+                      </template>
+                      <template #selection="{ item }">
+                        <strong>{{ item.path }}</strong
+                        >: {{ item.displayValue }}
+                      </template>
+                    </AppSelectSearch>
                   </div>
                 </div>
               </VCardText>
