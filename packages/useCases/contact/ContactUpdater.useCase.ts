@@ -166,6 +166,10 @@ export class ContactUpdaterUseCase {
       return;
     }
 
+    if (!normalizedPhone && ddiChanged) {
+      return;
+    }
+
     let phoneToValidate = normalizedPhone;
 
     if (!phoneToValidate) {

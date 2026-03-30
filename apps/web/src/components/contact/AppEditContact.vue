@@ -74,7 +74,6 @@ const phoneFormatted = computed({
     }
     const numbers = value.replaceAll(/\D/g, '');
     phone.value = numbers;
-    phonePartialOriginal.value = value;
   },
 });
 
@@ -444,6 +443,18 @@ const determinePhoneToSave = (): string | null | undefined => {
     : '';
 
   if (isPhoneDecrypted.value && phoneValue) {
+    return phoneValue;
+  }
+
+  if (
+    !isPhoneDecrypted.value &&
+    phoneValue &&
+    phonePartialOriginal.value?.includes('*')
+  ) {
+    return phoneValue;
+  }
+
+  if (!isPhoneDecrypted.value && phoneValue && !phonePartialOriginal.value) {
     return phoneValue;
   }
 
