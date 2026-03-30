@@ -1471,7 +1471,7 @@ export class WwebjsIncomingMessageService {
           client,
           lidJid
         )) ??
-          (await this.resolvePhoneFromLidViaContact(client, lidJid)) ??
+          (await this.resolvePhoneFromLidViaOnWhatsApp(client, lidJid)) ??
           (await this.resolvePhoneFromLidViaPupPage(client, lidJid))
       ) ?? undefined;
 
@@ -1527,47 +1527,20 @@ export class WwebjsIncomingMessageService {
     }
   }
 
-  private async resolvePhoneFromLidViaContact(
+  private async resolvePhoneFromLidViaOnWhatsApp(
     client: Client,
     lidJid: string
   ): Promise<string | undefined> {
-    const getContactById = (
-      client as unknown as {
-        getContactById?: (id: string) => Promise<{
-          number?: string;
-          id?: { _serialized?: string };
-        } | null>;
-      }
-    ).getContactById;
-
-    if (typeof getContactById !== 'function') {
-      return undefined;
-    }
-
     try {
-      const contact = await getContactById.call(client, lidJid);
-      if (!contact) return undefined;
-
-      const phone = this.normalizePhoneDigits(contact.number);
-      if (phone) {
-        return phone;
+      const [result] = await client.onWhatsApp([lidJid]);
+      const resolvedJid = result?.jid
+        ? (normalizeJid(result.jid) ?? result.jid)
+        : undefined;
+      if (!result?.exists || !resolvedJid || resolvedJid.endsWith('@lid')) {
+        return undefined;
       }
 
-      const contactJid = contact.id?._serialized;
-      if (
-        contactJid &&
-        !contactJid.endsWith('@lid') &&
-        contactJid.includes('@')
-      ) {
-        const phoneFromJid = this.normalizePhoneDigits(
-          contactJid.split('@')[0]
-        );
-        if (phoneFromJid) {
-          return phoneFromJid;
-        }
-      }
-
-      return undefined;
+      return this.normalizePhoneDigits(resolvedJid.split('@')[0]);
     } catch {
       return undefined;
     }

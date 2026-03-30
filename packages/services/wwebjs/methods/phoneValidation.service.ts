@@ -84,17 +84,27 @@ export class WwebjsPhoneValidationService {
     client: ReturnType<WwebjsConnectionService['getSocket']>,
     lidJid: string
   ): Promise<string | undefined> {
-    const getContactById = (
+    const onWhatsApp = (
       client as unknown as {
-        getContactById?: (id: string) => Promise<{ number?: string } | null>;
+        onWhatsApp?: (
+          input: string[]
+        ) => Promise<Array<{ jid: string | null; exists: boolean }>>;
       }
-    ).getContactById;
+    ).onWhatsApp;
 
-    if (typeof getContactById !== 'function') return undefined;
+    if (typeof onWhatsApp !== 'function') return undefined;
 
     try {
-      const contact = await getContactById.call(client, lidJid);
-      return this.normalizePhoneDigits(contact?.number);
+      const [result] = await onWhatsApp.call(client, [lidJid]);
+      const resolvedJid = result?.jid
+        ? (normalizeJid(result.jid) ?? result.jid)
+        : undefined;
+
+      if (!result?.exists || !resolvedJid || resolvedJid.endsWith('@lid')) {
+        return undefined;
+      }
+
+      return this.normalizePhoneDigits(resolvedJid.split('@')[0]);
     } catch {
       return undefined;
     }
@@ -177,9 +187,14 @@ export class WwebjsPhoneValidationService {
         candidate,
       });
 
-      const numberId = await client.getNumberId(onlyDigits(candidate));
+      const [onWhatsAppResult] = await client.onWhatsApp([
+        onlyDigits(candidate),
+      ]);
+      const resolvedJid = onWhatsAppResult?.jid
+        ? (normalizeJid(onWhatsAppResult.jid) ?? onWhatsAppResult.jid)
+        : undefined;
 
-      if (!numberId) {
+      if (!onWhatsAppResult?.exists || !resolvedJid) {
         console.info('[WwebjsPhoneValidation] candidate_not_found', {
           candidate_index: i,
           candidate,
@@ -187,13 +202,6 @@ export class WwebjsPhoneValidationService {
         continue;
       }
 
-      const jid =
-        typeof numberId === 'object' &&
-        numberId !== null &&
-        '_serialized' in numberId
-          ? (numberId as { _serialized: string })._serialized
-          : undefined;
-      const resolvedJid = (jid ? normalizeJid(jid) : undefined) ?? jid;
       console.info('[WwebjsPhoneValidation] candidate_found', {
         candidate_index: i,
         candidate,

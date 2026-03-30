@@ -747,16 +747,53 @@ export class WwebjsHelpersService {
 
   async resolveJid(raw: string): Promise<{ exists: boolean; jid?: string }> {
     const client = this.getClient();
-    const candidates = buildCandidates(raw, { order: 'input_first' });
+    const normalizedRaw = this.normalizeSendJidCandidate(raw);
+    if (!normalizedRaw) {
+      return { exists: false };
+    }
+
+    const candidates: string[] = [];
+    const seen = new Set<string>();
+    const addCandidate = (candidate?: string) => {
+      if (!candidate) {
+        return;
+      }
+
+      const normalizedCandidate = candidate.trim();
+      if (!normalizedCandidate || seen.has(normalizedCandidate)) {
+        return;
+      }
+
+      seen.add(normalizedCandidate);
+      candidates.push(normalizedCandidate);
+    };
+
+    addCandidate(normalizedRaw);
+    addCandidate(normalizeJid(normalizedRaw));
+
+    const digits = onlyDigits(normalizedRaw);
+    if (digits) {
+      const numericCandidates = buildCandidates(digits, {
+        order: 'input_first',
+      });
+
+      for (const numericCandidate of numericCandidates) {
+        addCandidate(onlyDigits(numericCandidate));
+      }
+    }
+
+    if (!candidates.length) {
+      return { exists: false };
+    }
+
+    const onWhatsAppResults = await client.onWhatsApp(candidates);
 
     for (let i = 0; i < candidates.length; i++) {
-      const candidate = candidates[i];
-      const numberId = await client.getNumberId(onlyDigits(candidate));
+      const item = onWhatsAppResults?.[i];
+      const jid = item?.jid ? (normalizeJid(item.jid) ?? item.jid) : undefined;
 
-      if (numberId) {
-        const jid =
-          numberId._serialized ?? normalizeJid(numberId as unknown as string);
-        return { exists: true, jid: jid ?? undefined };
+      if (item?.exists && jid) {
+        return { exists: true, jid };
       }
     }
 
