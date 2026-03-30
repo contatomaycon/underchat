@@ -38,6 +38,7 @@ import { EChatbotType } from '@core/common/enums/EChatbotType';
 import { ELabelStatus } from '@core/common/enums/ELabelStatus';
 import { TFunction } from 'i18next';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
 import * as schema from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { ContactCreatorRepository } from '@core/repositories/contact/ContactCreator.repository';
@@ -401,8 +402,30 @@ export class IntegrationService {
       return null;
     }
 
-    const fullPhone = `${mappedData.phone_ddi ?? ''}${mappedData.phone}`;
-    return extractPhoneAndDdi(fullPhone);
+    const phoneDigits = onlyDigits(mappedData.phone);
+    if (!phoneDigits) {
+      return null;
+    }
+
+    const phoneDdiDigits = onlyDigits(mappedData.phone_ddi ?? '');
+    if (phoneDdiDigits) {
+      const phoneWithoutDdi =
+        phoneDigits.startsWith(phoneDdiDigits) &&
+        phoneDigits.length > phoneDdiDigits.length
+          ? phoneDigits.slice(phoneDdiDigits.length)
+          : phoneDigits;
+
+      if (phoneWithoutDdi.length < 8) {
+        return null;
+      }
+
+      return {
+        phone: phoneWithoutDdi,
+        phone_ddi: phoneDdiDigits,
+      };
+    }
+
+    return extractPhoneAndDdi(phoneDigits);
   };
 
   private isTechnicalValidationError = (error: unknown): boolean => {
