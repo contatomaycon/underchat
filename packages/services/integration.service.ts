@@ -25,6 +25,7 @@ import { ListAvailableChannelsResponse } from '@core/schema/integration/listAvai
 import { UserService } from './user.service';
 import { SectorService } from './sector.service';
 import { ChatbotService } from './chatbot.service';
+import { WorkerService } from './worker.service';
 import { ContactService } from './contact.service';
 import { PhoneValidationService } from './phoneValidation.service';
 import { PlanAccountService } from './planAccount.service';
@@ -87,6 +88,8 @@ export class IntegrationService {
     private readonly sectorService: SectorService,
     @inject(ChatbotService)
     private readonly chatbotService: ChatbotService,
+    @inject(WorkerService)
+    private readonly workerService: WorkerService,
     @inject(ContactService)
     private readonly contactService: ContactService,
     @inject(PhoneValidationService)
@@ -345,6 +348,7 @@ export class IntegrationService {
 
     const contact = await this.getOrCreateContact(
       accountId,
+      workerId,
       phoneAndDdi,
       mappedData
     );
@@ -498,6 +502,7 @@ export class IntegrationService {
 
   private getOrCreateContact = async (
     accountId: string,
+    workerId: string,
     phoneAndDdi: { phone: string; phone_ddi: string | null },
     mappedData: IMappedWebhookData
   ): Promise<{
@@ -526,6 +531,11 @@ export class IntegrationService {
     const canCreateContact =
       await this.planAccountService.validateCanCreateContactReceived(accountId);
     if (!canCreateContact) {
+      return null;
+    }
+
+    const shouldAutoSave = await this.shouldAutoSaveContact(workerId);
+    if (!shouldAutoSave) {
       return null;
     }
 
@@ -559,6 +569,15 @@ export class IntegrationService {
       phone_validated: validation.phone,
       phone_ddi_validated: validation.phone_ddi,
     };
+  };
+
+  private shouldAutoSaveContact = async (
+    workerId: string
+  ): Promise<boolean> => {
+    const workerConfig =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(workerId);
+
+    return Boolean(workerConfig?.auto_save_contacts);
   };
 
   private buildExistingContactResult = async (

@@ -317,6 +317,10 @@ export class WebhookIntegrationWwebjsConsume {
     phoneWithDdi: string,
     isValidated: boolean
   ): Promise<void> {
+    if (!contactId?.trim()) {
+      return;
+    }
+
     const payload: IContactValidationUpdate = {
       contact_id: contactId,
       phone: phoneWithDdi,
