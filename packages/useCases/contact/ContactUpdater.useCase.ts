@@ -19,6 +19,7 @@ import { normalizeContactRequest } from '@core/common/functions/normalizeContact
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
 
 @injectable()
 export class ContactUpdaterUseCase {
@@ -57,6 +58,26 @@ export class ContactUpdaterUseCase {
     }
 
     throw error;
+  }
+
+  private normalizePhoneDigits(
+    value: string | null | undefined
+  ): string | null {
+    if (!value) {
+      return null;
+    }
+
+    const digits = onlyDigits(value);
+    return digits || null;
+  }
+
+  private normalizePhoneDdi(value: string | null | undefined): string | null {
+    if (!value) {
+      return null;
+    }
+
+    const digits = onlyDigits(value);
+    return digits || null;
   }
 
   private async validateAndNormalizePhone(
@@ -111,9 +132,12 @@ export class ContactUpdaterUseCase {
   ): Promise<
     { phone: string; phoneDdi: string | null; isValidated: boolean } | undefined
   > {
-    if (!phone && !phoneDdi) return;
+    const normalizedPhone = this.normalizePhoneDigits(phone);
+    const normalizedPhoneDdi = this.normalizePhoneDdi(phoneDdi);
 
-    if (!phoneDdi) {
+    if (!normalizedPhone && !normalizedPhoneDdi) return;
+
+    if (!normalizedPhoneDdi) {
       throw new Error(t('phone_ddi_required'));
     }
 
@@ -122,36 +146,27 @@ export class ContactUpdaterUseCase {
       accountId
     );
 
-    const currentDdi = currentContact?.phone_ddi ?? null;
-    const newDdi = phoneDdi ?? null;
-    const ddiChanged = String(currentDdi) !== String(newDdi);
+    const currentDdi = this.normalizePhoneDdi(currentContact?.phone_ddi);
+    const ddiChanged = normalizedPhoneDdi !== currentDdi;
 
     let currentPhoneDecrypted: string | null = null;
 
     if (currentContact?.phone) {
-      currentPhoneDecrypted = this.contactService.getContactPhoneDecrypted(
-        currentContact.phone
+      currentPhoneDecrypted = this.normalizePhoneDigits(
+        this.contactService.getContactPhoneDecrypted(currentContact.phone)
       );
     }
 
     const phoneChanged =
-      phone && currentPhoneDecrypted && phone !== currentPhoneDecrypted;
+      normalizedPhone !== null && normalizedPhone !== currentPhoneDecrypted;
 
     const hasPhoneChange = phoneChanged || ddiChanged;
 
     if (!hasPhoneChange) {
-      if (!currentPhoneDecrypted) {
-        return;
-      }
-
-      return {
-        phone: currentPhoneDecrypted,
-        phoneDdi: phoneDdi,
-        isValidated: currentContact?.is_valided ?? false,
-      };
+      return;
     }
 
-    let phoneToValidate = phone;
+    let phoneToValidate = normalizedPhone;
 
     if (!phoneToValidate) {
       if (!currentPhoneDecrypted) {
@@ -161,7 +176,7 @@ export class ContactUpdaterUseCase {
       phoneToValidate = currentPhoneDecrypted;
     }
 
-    const phones = buildCandidatesWithDdi(phoneToValidate, phoneDdi);
+    const phones = buildCandidatesWithDdi(phoneToValidate, normalizedPhoneDdi);
     const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 
     await this.validatePhoneDuplicateContact(t, phonesC, accountId, contactId);
@@ -171,7 +186,7 @@ export class ContactUpdaterUseCase {
         t,
         accountId,
         phoneToValidate,
-        phoneDdi
+        normalizedPhoneDdi
       );
 
       return {
@@ -183,7 +198,7 @@ export class ContactUpdaterUseCase {
       if (validationResult.shouldSkipValidation) {
         return {
           phone: phoneToValidate,
-          phoneDdi: phoneDdi,
+          phoneDdi: normalizedPhoneDdi,
           isValidated: false,
         };
       }
@@ -342,8 +357,12 @@ export class ContactUpdaterUseCase {
     const name = extractFieldValue(normalizedBody.name as FieldValue);
     const lastName = extractFieldValue(normalizedBody.last_name as FieldValue);
     const email = extractFieldValue(normalizedBody.email as FieldValue);
-    const phoneDdi = extractFieldValue(normalizedBody.phone_ddi as FieldValue);
-    const phone = extractFieldValue(normalizedBody.phone as FieldValue);
+    const phoneDdi = this.normalizePhoneDdi(
+      extractFieldValue(normalizedBody.phone_ddi as FieldValue)
+    );
+    const phone = this.normalizePhoneDigits(
+      extractFieldValue(normalizedBody.phone as FieldValue)
+    );
     const nickname = extractFieldValue(normalizedBody.nickname as FieldValue);
     const birthday = extractFieldValue(normalizedBody.birthday as FieldValue);
     const notes = extractFieldValue(normalizedBody.notes as FieldValue);

@@ -37,6 +37,7 @@ import { ContactGroupAssignmentCreatorRepository } from '@core/repositories/cont
 import { ContactGroupAssignmentViewerExistsRepository } from '@core/repositories/contactGroup/ContactGroupAssignmentViewerExists.repository';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 import { repairMojibakeIfSafe } from '@core/common/functions/repairMojibake';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
 
 @injectable()
 export class ContactService {
@@ -559,18 +560,56 @@ export class ContactService {
     newPhoneDdi: string | null | undefined,
     newPhone: string | null | undefined
   ): boolean {
-    if (!currentContact) return !!(newPhone && newPhoneDdi);
-    if (!newPhoneDdi) return currentContact.is_valided ?? false;
+    const normalizePhoneDdi = (
+      value: string | null | undefined
+    ): string | null => {
+      if (!value) {
+        return null;
+      }
+      const digits = onlyDigits(value);
+      return digits || null;
+    };
 
-    const phoneChanged =
-      newPhoneEncrypted !== currentContact.phone ||
-      newPhoneDdi !== currentContact.phone_ddi;
+    const hasValue = (value: string | null | undefined): boolean =>
+      typeof value === 'string' && value.trim() !== '';
 
-    if (!phoneChanged) {
-      return currentContact.is_valided ?? false;
+    if (!currentContact) return hasValue(newPhone) && hasValue(newPhoneDdi);
+
+    const currentIsValided = currentContact.is_valided ?? false;
+    const hasIncomingPhone = hasValue(newPhone);
+    const hasIncomingPhoneDdi = hasValue(newPhoneDdi);
+
+    if (!hasIncomingPhone && !hasIncomingPhoneDdi) {
+      return currentIsValided;
     }
 
-    return !!(newPhone && newPhoneDdi);
+    const currentPhoneDdiNormalized = normalizePhoneDdi(
+      currentContact.phone_ddi
+    );
+    const incomingPhoneDdiNormalized = normalizePhoneDdi(newPhoneDdi);
+
+    const ddiChanged =
+      hasIncomingPhoneDdi &&
+      incomingPhoneDdiNormalized !== currentPhoneDdiNormalized;
+    const phoneChanged =
+      hasIncomingPhone && newPhoneEncrypted !== currentContact.phone;
+
+    if (!phoneChanged && !ddiChanged) {
+      return currentIsValided;
+    }
+
+    // Keep current validation state when only DDI was sent without phone update.
+    if (!hasIncomingPhone && ddiChanged) {
+      return currentIsValided;
+    }
+
+    const effectivePhoneEncrypted =
+      newPhoneEncrypted ?? currentContact.phone ?? null;
+    const effectivePhoneDdi = hasIncomingPhoneDdi
+      ? incomingPhoneDdiNormalized
+      : currentPhoneDdiNormalized;
+
+    return !!(effectivePhoneEncrypted && effectivePhoneDdi);
   }
 
   updateContactById = async (
@@ -593,7 +632,18 @@ export class ContactService {
 
     const emailC = emailField ? this.encryptService.encrypt(emailField) : null;
 
-    const phoneField = extractFieldValue(input.phone as FieldValue);
+    const normalizePhoneDdi = (
+      value: string | null | undefined
+    ): string | null => {
+      if (!value) {
+        return null;
+      }
+      const digits = onlyDigits(value);
+      return digits || null;
+    };
+
+    const rawPhoneField = extractFieldValue(input.phone as FieldValue);
+    const phoneField = rawPhoneField ? onlyDigits(rawPhoneField) || null : null;
     const phoneCEncrypted = phoneField
       ? this.passwordEncryptorService.encrypt(phoneField)
       : null;
@@ -625,7 +675,9 @@ export class ContactService {
       ? this.encryptService.encrypt(normalizedDocumentField)
       : null;
 
-    const phoneDdiField = extractFieldValue(input.phone_ddi as FieldValue);
+    const phoneDdiField = normalizePhoneDdi(
+      extractFieldValue(input.phone_ddi as FieldValue)
+    );
     const isValided = this.determineIsValided(
       currentContact,
       phoneCEncrypted,
