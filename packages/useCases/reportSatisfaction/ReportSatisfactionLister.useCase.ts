@@ -134,6 +134,83 @@ export class ReportSatisfactionListerUseCase {
     };
   }
 
+  private buildAnalystFilter(analystId: string): IElasticsearchBoolClause {
+    return {
+      bool: {
+        should: [
+          {
+            term: {
+              'satisfaction_response.analyst.id': analystId,
+            },
+          } as unknown as IElasticsearchBoolClause,
+          this.buildNestedFilter('user', 'user.id', analystId),
+          this.buildNestedFilter('secondary_users', 'secondary_users.id', analystId),
+          {
+            nested: {
+              path: 'contact',
+              query: {
+                nested: {
+                  path: 'contact.responsible_attendant',
+                  query: {
+                    term: {
+                      'contact.responsible_attendant.id': analystId,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+        minimum_should_match: 1,
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
+  private resolveAnalyst(
+    chat: NonNullable<IReportSatisfactionChatHit['_source']>
+  ): { id: string; name: string | null } {
+    const satisfactionAnalystId = chat.satisfaction_response?.analyst?.id?.trim();
+    if (satisfactionAnalystId) {
+      return {
+        id: satisfactionAnalystId,
+        name: chat.satisfaction_response?.analyst?.name?.trim() || null,
+      };
+    }
+
+    const userId = chat.user?.id?.trim();
+    if (userId) {
+      return {
+        id: userId,
+        name: chat.user?.name?.trim() || null,
+      };
+    }
+
+    const responsibleAttendantId =
+      chat.contact?.responsible_attendant?.id?.trim();
+    if (responsibleAttendantId) {
+      return {
+        id: responsibleAttendantId,
+        name: chat.contact?.responsible_attendant?.name?.trim() || null,
+      };
+    }
+
+    const latestSecondaryUser = (chat.secondary_users ?? [])
+      .filter((secondaryUser) => !!secondaryUser?.id)
+      .sort((a, b) => {
+        const aTs = a.entered_at ? new Date(a.entered_at).getTime() : 0;
+        const bTs = b.entered_at ? new Date(b.entered_at).getTime() : 0;
+        return bTs - aTs;
+      })[0];
+    if (latestSecondaryUser?.id) {
+      return {
+        id: latestSecondaryUser.id,
+        name: latestSecondaryUser.name?.trim() || null,
+      };
+    }
+
+    return { id: SEM_ANALYST_ID, name: null };
+  }
+
   private buildQuery(
     accountId: string,
     query: ListReportSatisfactionRequest
@@ -162,9 +239,7 @@ export class ReportSatisfactionListerUseCase {
       );
     }
     if (query.analyst_id) {
-      filterClauses.push(
-        this.buildNestedFilter('user', 'user.id', query.analyst_id)
-      );
+      filterClauses.push(this.buildAnalystFilter(query.analyst_id));
     }
 
     return {
@@ -274,10 +349,17 @@ export class ReportSatisfactionListerUseCase {
       size: 10000,
       _source: [
         'satisfaction_response',
+        'satisfaction_response.analyst.id',
+        'satisfaction_response.analyst.name',
         'sector.id',
         'sector.name',
         'user.id',
         'user.name',
+        'secondary_users.id',
+        'secondary_users.name',
+        'secondary_users.entered_at',
+        'contact.responsible_attendant.id',
+        'contact.responsible_attendant.name',
         'date',
         'started_at',
       ],
@@ -324,7 +406,8 @@ export class ReportSatisfactionListerUseCase {
 
       const period = this.formatPeriod(dateToUse, query.period);
       const sectorId = chat.sector?.id ?? SEM_SETOR_ID;
-      const analystId = chat.user?.id ?? SEM_ANALYST_ID;
+      const analyst = this.resolveAnalyst(chat);
+      const analystId = analyst.id;
       if (query.report_type === 'sector') {
         if (sectorId === SEM_SETOR_ID)
           sectorIdToName.set(SEM_SETOR_ID, 'Sem Setor');
@@ -334,8 +417,8 @@ export class ReportSatisfactionListerUseCase {
       if (query.report_type === 'analyst') {
         if (analystId === SEM_ANALYST_ID)
           analystIdToName.set(SEM_ANALYST_ID, 'Sem Atendente');
-        else if (chat.user?.name)
-          analystIdToName.set(analystId, chat.user.name);
+        else if (!analystIdToName.has(analystId) && analyst.name)
+          analystIdToName.set(analystId, analyst.name);
       }
 
       const groupKey: GroupKey = this.buildGroupKey(
