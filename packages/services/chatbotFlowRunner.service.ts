@@ -3358,10 +3358,12 @@ export class ChatbotFlowRunnerService {
         createChat.user,
         createChat.sector
       );
+      const analyst = this.resolveSatisfactionAnalyst(createChat);
       const satisfactionData = {
         question,
         options: menuOptions.map((o) => ({ id: o.id, text: o.text })),
         response: { id: selectedOption.id, text: selectedOption.text },
+        analyst,
       };
       await this.chatService.updateChatSatisfactionResponse(
         createChat.chat_id,
@@ -3378,6 +3380,44 @@ export class ChatbotFlowRunnerService {
       nextFlowId,
       options?.customMessages
     );
+  }
+
+  private resolveSatisfactionAnalyst(
+    chat: IChat
+  ): { id: string; name: string | null } | null {
+    const directUserId = chat.user?.id?.trim();
+    if (directUserId) {
+      return {
+        id: directUserId,
+        name: chat.user?.name?.trim() || null,
+      };
+    }
+
+    const responsibleAttendantId =
+      chat.contact?.responsible_attendant?.id?.trim();
+    if (responsibleAttendantId) {
+      return {
+        id: responsibleAttendantId,
+        name: chat.contact?.responsible_attendant?.name?.trim() || null,
+      };
+    }
+
+    const latestSecondaryUser = (chat.secondary_users ?? [])
+      .filter((secondaryUser) => !!secondaryUser?.id)
+      .sort((a, b) => {
+        const aTs = a.entered_at ? new Date(a.entered_at).getTime() : 0;
+        const bTs = b.entered_at ? new Date(b.entered_at).getTime() : 0;
+        return bTs - aTs;
+      })[0];
+
+    if (!latestSecondaryUser?.id) {
+      return null;
+    }
+
+    return {
+      id: latestSecondaryUser.id,
+      name: latestSecondaryUser.name?.trim() || null,
+    };
   }
 
   private async processContactNode(

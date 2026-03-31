@@ -230,6 +230,17 @@ export const chatMappings = () => {
                 },
               },
             },
+            analyst: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: 'keyword',
+                },
+                name: {
+                  type: 'text',
+                },
+              },
+            },
           },
         },
       },

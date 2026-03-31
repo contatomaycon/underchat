@@ -1064,6 +1064,7 @@ export class ChatService {
       question: string;
       options: { id: string; text: string }[];
       response: { id: string; text: string };
+      analyst?: { id: string; name: string | null } | null;
     }
   ): Promise<boolean> => {
     const mappings = chatMappings();
