@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import {
   accountPayment,
   planAccount,
@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { currentTime } from '@core/common/functions/currentTime';
+import { EAccountPaymentReleaseStatus } from '@core/common/enums/EAccountPaymentReleaseStatus';
 
 @injectable()
 export class PlanReleaseRepository {
@@ -35,8 +36,9 @@ export class PlanReleaseRepository {
     value: string;
     payment_date: string | null;
     payment_status_id: string;
+    release_status: string | null;
   } | null> => {
-    const payment = await this.dbRo.query.accountPayment.findFirst({
+    const payment = await this.dbRw.query.accountPayment.findFirst({
       where: eq(accountPayment.billing, billing),
       columns: {
         account_payment_id: true,
@@ -48,6 +50,7 @@ export class PlanReleaseRepository {
         value: true,
         payment_date: true,
         payment_status_id: true,
+        release_status: true,
       },
     });
 
@@ -67,8 +70,9 @@ export class PlanReleaseRepository {
     payment_date: string | null;
     payment_status_id: string;
     billing: string;
+    release_status: string | null;
   } | null> => {
-    const payment = await this.dbRo.query.accountPayment.findFirst({
+    const payment = await this.dbRw.query.accountPayment.findFirst({
       where: eq(accountPayment.account_payment_id, accountPaymentId),
       columns: {
         account_payment_id: true,
@@ -81,6 +85,7 @@ export class PlanReleaseRepository {
         payment_date: true,
         payment_status_id: true,
         billing: true,
+        release_status: true,
       },
     });
 
@@ -94,12 +99,20 @@ export class PlanReleaseRepository {
     accountPaymentId: string,
     paymentStatusId: string,
     paymentDate: string | null,
-    pixTransaction: string | null | undefined
+    pixTransaction: string | null | undefined,
+    releaseUpdate?: {
+      releaseStatus?: string | null;
+      releaseProcessedAt?: string | null;
+      releaseLastError?: string | null;
+    }
   ): Promise<void> => {
     const updateData: {
       payment_status_id: string;
       payment_date: string | null;
       pix_transaction?: string | null;
+      release_status?: string | null;
+      release_processed_at?: string | null;
+      release_last_error?: string | null;
       updated_at: string;
     } = {
       payment_status_id: paymentStatusId,
@@ -109,6 +122,18 @@ export class PlanReleaseRepository {
 
     if (pixTransaction !== undefined) {
       updateData.pix_transaction = pixTransaction;
+    }
+
+    if (releaseUpdate?.releaseStatus !== undefined) {
+      updateData.release_status = releaseUpdate.releaseStatus;
+    }
+
+    if (releaseUpdate?.releaseProcessedAt !== undefined) {
+      updateData.release_processed_at = releaseUpdate.releaseProcessedAt;
+    }
+
+    if (releaseUpdate?.releaseLastError !== undefined) {
+      updateData.release_last_error = releaseUpdate.releaseLastError;
     }
 
     await tx
@@ -129,7 +154,7 @@ export class PlanReleaseRepository {
     last_payment_date: string | null;
     cancellation_date: string | null;
   } | null> => {
-    const planAcc = await this.dbRo.query.planAccount.findFirst({
+    const planAcc = await this.dbRw.query.planAccount.findFirst({
       where: eq(planAccount.account_id, accountId),
       columns: {
         plan_account_id: true,
@@ -154,7 +179,7 @@ export class PlanReleaseRepository {
     plan_id: string;
     next_payment_date: string | null;
   } | null> => {
-    const planAcc = await this.dbRo.query.planAccount.findFirst({
+    const planAcc = await this.dbRw.query.planAccount.findFirst({
       where: eq(planAccount.account_payment_id, accountPaymentId),
       columns: {
         plan_account_id: true,
@@ -339,17 +364,36 @@ export class PlanReleaseRepository {
     value: string;
     shouldReleasePlan: boolean;
     isAddonOnly?: boolean;
+    releaseStatus?: string | null;
+    releaseProcessedAt?: string | null;
+    releaseLastError?: string | null;
   }): Promise<void> => {
     await this.dbRw.transaction(async (tx) => {
+      const currentPayment = await tx.query.accountPayment.findFirst({
+        where: eq(accountPayment.account_payment_id, data.accountPaymentId),
+        columns: {
+          release_status: true,
+        },
+      });
+
+      const isReleaseAlreadyProcessed =
+        currentPayment?.release_status ===
+        EAccountPaymentReleaseStatus.processed;
+
       await this.updateAccountPaymentStatus(
         tx,
         data.accountPaymentId,
         data.paymentStatusId,
         data.paymentDate,
-        data.pixTransaction
+        data.pixTransaction,
+        {
+          releaseStatus: data.releaseStatus,
+          releaseProcessedAt: data.releaseProcessedAt,
+          releaseLastError: data.releaseLastError,
+        }
       );
 
-      if (data.shouldReleasePlan) {
+      if (data.shouldReleasePlan && !isReleaseAlreadyProcessed) {
         await this.upsertPlanAccount(tx, {
           accountId: data.accountId,
           planId: data.planId,
@@ -371,13 +415,54 @@ export class PlanReleaseRepository {
         return;
       }
 
-      if (data.isAddonOnly) {
+      if (data.isAddonOnly && !isReleaseAlreadyProcessed) {
         await this.appendPlanCrossSellAccount(tx, {
           accountId: data.accountId,
           accountPaymentId: data.accountPaymentId,
         });
       }
     });
+  };
+
+  markAccountPaymentReleaseFailed = async (
+    accountPaymentId: string,
+    errorMessage: string
+  ): Promise<void> => {
+    await this.dbRw
+      .update(accountPayment)
+      .set({
+        release_status: EAccountPaymentReleaseStatus.failed,
+        release_processed_at: null,
+        release_last_error: errorMessage,
+        updated_at: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(accountPayment.account_payment_id, accountPaymentId),
+          or(
+            isNull(accountPayment.release_status),
+            ne(
+              accountPayment.release_status,
+              EAccountPaymentReleaseStatus.processed
+            )
+          )
+        )
+      );
+  };
+
+  markAccountPaymentReleaseProcessed = async (
+    accountPaymentId: string,
+    processedAt?: string | null
+  ): Promise<void> => {
+    await this.dbRw
+      .update(accountPayment)
+      .set({
+        release_status: EAccountPaymentReleaseStatus.processed,
+        release_processed_at: processedAt || new Date().toISOString(),
+        release_last_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(accountPayment.account_payment_id, accountPaymentId));
   };
 
   private readonly findAccountPaymentCrossSells = async (

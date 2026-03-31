@@ -16,6 +16,7 @@ import { withLock } from '@core/common/functions/withLock';
 import { UserService } from '@core/services/user.service';
 import { NfseCentiEmissionService } from '@core/services/nfseCentiEmission.service';
 import { NfseCentiDocumentService } from '@core/services/nfseCentiDocument.service';
+import { EAccountPaymentReleaseStatus } from '@core/common/enums/EAccountPaymentReleaseStatus';
 import type {
   IPlanReleaseAccountPaymentData,
   IPlanReleaseAddonOnlyPaymentInput,
@@ -129,6 +130,34 @@ export class PlanReleaseService {
       isCurrentSuccessful &&
       !isIncomingSuccessful &&
       this.isPrePaymentStatus(incomingPaymentStatusId)
+    );
+  };
+
+  private readonly isReleaseProcessed = (
+    releaseStatus: string | null
+  ): boolean => {
+    return releaseStatus === EAccountPaymentReleaseStatus.processed;
+  };
+
+  private readonly isLegacyReleaseStatus = (
+    releaseStatus: string | null
+  ): boolean => {
+    return releaseStatus === null;
+  };
+
+  private readonly sanitizeReleaseError = (value: string): string => {
+    return value.replace(/\s+/g, ' ').trim().slice(0, 1000);
+  };
+
+  private readonly markReleaseFailed = async (
+    accountPaymentId: string,
+    error: unknown
+  ): Promise<void> => {
+    const message =
+      error instanceof Error ? error.message : 'Falha ao processar liberação';
+    await this.planReleaseRepository.markAccountPaymentReleaseFailed(
+      accountPaymentId,
+      this.sanitizeReleaseError(message)
     );
   };
 
@@ -257,6 +286,9 @@ export class PlanReleaseService {
           nextPaymentDate: data.nextPaymentDate,
           value: data.value,
           shouldReleasePlan: false,
+          releaseStatus: data.releaseStatus,
+          releaseProcessedAt: data.releaseProcessedAt,
+          releaseLastError: data.releaseLastError,
         }),
       { ttlMs: 20000 }
     );
@@ -284,6 +316,9 @@ export class PlanReleaseService {
           value: '0',
           shouldReleasePlan: false,
           isAddonOnly: true,
+          releaseStatus: EAccountPaymentReleaseStatus.processed,
+          releaseProcessedAt: data.paymentDate,
+          releaseLastError: null,
         }),
       { ttlMs: 20000 }
     );
@@ -338,6 +373,9 @@ export class PlanReleaseService {
           nextPaymentDate,
           value: finalValue,
           shouldReleasePlan: true,
+          releaseStatus: EAccountPaymentReleaseStatus.processed,
+          releaseProcessedAt: data.paymentDate,
+          releaseLastError: null,
         }),
       { ttlMs: 20000 }
     );
@@ -405,6 +443,9 @@ export class PlanReleaseService {
         value: accountPaymentData.value,
         nextPaymentDate:
           releasedPlanAccount.next_payment_date || new Date().toISOString(),
+        releaseStatus: EAccountPaymentReleaseStatus.processed,
+        releaseProcessedAt: paymentDate,
+        releaseLastError: null,
       });
 
       await this.createInvoiceForPayment(
@@ -454,6 +495,9 @@ export class PlanReleaseService {
       value: accountPaymentData.value,
       nextPaymentDate:
         releasedPlanAccount?.next_payment_date || new Date().toISOString(),
+      releaseStatus: EAccountPaymentReleaseStatus.processed,
+      releaseProcessedAt: paymentDate,
+      releaseLastError: null,
     });
 
     await this.createInvoiceForPayment(
@@ -526,6 +570,13 @@ export class PlanReleaseService {
     const wasAlreadySuccessful = this.isPaymentStatusSuccessful(
       accountPaymentData.payment_status_id
     );
+    const releaseAlreadyProcessed = this.isReleaseProcessed(
+      accountPaymentData.release_status
+    );
+    const isLegacyReleaseStatus = this.isLegacyReleaseStatus(
+      accountPaymentData.release_status
+    );
+    const pixTransaction = data.payment.pixTransaction || null;
     const paymentDate = isSuccessful
       ? data.payment.paymentDate ||
         data.payment.confirmedDate ||
@@ -533,14 +584,111 @@ export class PlanReleaseService {
         new Date().toISOString()
       : accountPaymentData.payment_date;
 
-    if (isSuccessful && wasAlreadySuccessful && paymentDate) {
-      await this.processAlreadySuccessfulPayment(
-        accountPaymentData,
-        paymentStatusId,
-        paymentDate,
-        data.payment.pixTransaction || null,
-        data.payment.id
+    if (isSuccessful && paymentDate) {
+      if (releaseAlreadyProcessed) {
+        await this.processAlreadySuccessfulPayment(
+          accountPaymentData,
+          paymentStatusId,
+          paymentDate,
+          pixTransaction,
+          data.payment.id
+        );
+
+        await this.notifyPaymentStatusUpdate(
+          accountPaymentData.account_id,
+          data.payment.id,
+          data.payment.status,
+          paymentDate
+        );
+
+        return;
+      }
+
+      if (accountPaymentData.is_addon_only) {
+        if (isLegacyReleaseStatus && wasAlreadySuccessful) {
+          await this.processAlreadySuccessfulPayment(
+            accountPaymentData,
+            paymentStatusId,
+            paymentDate,
+            pixTransaction,
+            data.payment.id
+          );
+
+          await this.notifyPaymentStatusUpdate(
+            accountPaymentData.account_id,
+            data.payment.id,
+            data.payment.status,
+            paymentDate
+          );
+
+          return;
+        }
+
+        try {
+          await this.processSuccessfulPayment(
+            accountPaymentData,
+            paymentStatusId,
+            paymentDate,
+            pixTransaction,
+            data.payment.id
+          );
+        } catch (error) {
+          await this.markReleaseFailed(
+            accountPaymentData.account_payment_id,
+            error
+          );
+          throw error;
+        }
+
+        await this.notifyPaymentStatusUpdate(
+          accountPaymentData.account_id,
+          data.payment.id,
+          data.payment.status,
+          paymentDate
+        );
+
+        return;
+      }
+
+      const releasedPlanAccount = await this.findReleasedPlanAccountByPayment(
+        accountPaymentData.account_payment_id,
+        accountPaymentData.plan_id
       );
+
+      if (releasedPlanAccount) {
+        await this.processAlreadySuccessfulPayment(
+          accountPaymentData,
+          paymentStatusId,
+          paymentDate,
+          pixTransaction,
+          data.payment.id
+        );
+
+        await this.notifyPaymentStatusUpdate(
+          accountPaymentData.account_id,
+          data.payment.id,
+          data.payment.status,
+          paymentDate
+        );
+
+        return;
+      }
+
+      try {
+        await this.processSuccessfulPayment(
+          accountPaymentData,
+          paymentStatusId,
+          paymentDate,
+          pixTransaction,
+          data.payment.id
+        );
+      } catch (error) {
+        await this.markReleaseFailed(
+          accountPaymentData.account_payment_id,
+          error
+        );
+        throw error;
+      }
 
       await this.notifyPaymentStatusUpdate(
         accountPaymentData.account_id,
@@ -552,22 +700,12 @@ export class PlanReleaseService {
       return;
     }
 
-    if (isSuccessful && paymentDate) {
-      await this.processSuccessfulPayment(
-        accountPaymentData,
-        paymentStatusId,
-        paymentDate,
-        data.payment.pixTransaction || null,
-        data.payment.id
-      );
-    }
-
     if (!isSuccessful) {
       await this.processUnsuccessfulPayment(
         accountPaymentData,
         paymentStatusId,
         paymentDate || null,
-        data.payment.pixTransaction || null
+        pixTransaction
       );
     }
 
@@ -599,12 +737,28 @@ export class PlanReleaseService {
       throw new Error(`Pagamento não encontrado: ${data.accountPaymentId}`);
     }
 
+    const releaseAlreadyProcessed = this.isReleaseProcessed(
+      accountPaymentData.release_status
+    );
+    const isLegacyReleaseStatus = this.isLegacyReleaseStatus(
+      accountPaymentData.release_status
+    );
+
     if (accountPaymentData.is_addon_only) {
       const alreadyProcessed =
-        accountPaymentData.payment_date !== null &&
-        this.isPaymentStatusSuccessful(accountPaymentData.payment_status_id);
+        releaseAlreadyProcessed ||
+        (isLegacyReleaseStatus &&
+          accountPaymentData.payment_date !== null &&
+          this.isPaymentStatusSuccessful(accountPaymentData.payment_status_id));
 
       if (alreadyProcessed) {
+        if (!releaseAlreadyProcessed) {
+          await this.planReleaseRepository.markAccountPaymentReleaseProcessed(
+            data.accountPaymentId,
+            accountPaymentData.payment_date || data.paymentDate
+          );
+        }
+
         await this.createInvoiceForPayment(
           data.accountPaymentId,
           accountPaymentData.billing || ''
@@ -613,15 +767,29 @@ export class PlanReleaseService {
         return;
       }
 
-      await this.releaseAddonOnlyForPayment({
-        accountPaymentId: data.accountPaymentId,
-        paymentStatusId: data.paymentStatusId,
-        paymentDate: data.paymentDate,
-        pixTransaction: null,
-        accountId: data.accountId,
-        planId: data.planId,
-        paymentAsaasId: accountPaymentData.billing || '',
-      });
+      try {
+        await this.releaseAddonOnlyForPayment({
+          accountPaymentId: data.accountPaymentId,
+          paymentStatusId: data.paymentStatusId,
+          paymentDate: data.paymentDate,
+          pixTransaction: null,
+          accountId: data.accountId,
+          planId: data.planId,
+          paymentAsaasId: accountPaymentData.billing || '',
+        });
+      } catch (error) {
+        await this.markReleaseFailed(data.accountPaymentId, error);
+        throw error;
+      }
+
+      return;
+    }
+
+    if (releaseAlreadyProcessed) {
+      await this.createInvoiceForPayment(
+        data.accountPaymentId,
+        accountPaymentData.billing || ''
+      );
 
       return;
     }
@@ -632,6 +800,23 @@ export class PlanReleaseService {
     );
 
     if (releasedPlanAccount) {
+      await this.updatePaymentStatusOnly({
+        accountPaymentId: data.accountPaymentId,
+        paymentStatusId: data.paymentStatusId,
+        paymentDate: data.paymentDate,
+        pixTransaction: null,
+        accountId: data.accountId,
+        planId: data.planId,
+        recurringPayment: data.recurringPayment,
+        billingPeriodId: data.billingPeriodId,
+        value: data.value,
+        nextPaymentDate:
+          releasedPlanAccount.next_payment_date || new Date().toISOString(),
+        releaseStatus: EAccountPaymentReleaseStatus.processed,
+        releaseProcessedAt: data.paymentDate,
+        releaseLastError: null,
+      });
+
       await this.createInvoiceForPayment(
         data.accountPaymentId,
         accountPaymentData.billing || ''
@@ -640,19 +825,24 @@ export class PlanReleaseService {
       return;
     }
 
-    await this.releasePlanForPayment({
-      accountPaymentId: data.accountPaymentId,
-      paymentStatusId: data.paymentStatusId,
-      paymentDate: data.paymentDate,
-      pixTransaction: null,
-      accountId: data.accountId,
-      planId: data.planId,
-      recurringPayment: data.recurringPayment,
-      billingPeriodId: data.billingPeriodId,
-      value: data.value,
-      paymentAsaasId: accountPaymentData.billing || '',
-      shouldSendNotification: true,
-    });
+    try {
+      await this.releasePlanForPayment({
+        accountPaymentId: data.accountPaymentId,
+        paymentStatusId: data.paymentStatusId,
+        paymentDate: data.paymentDate,
+        pixTransaction: null,
+        accountId: data.accountId,
+        planId: data.planId,
+        recurringPayment: data.recurringPayment,
+        billingPeriodId: data.billingPeriodId,
+        value: data.value,
+        paymentAsaasId: accountPaymentData.billing || '',
+        shouldSendNotification: true,
+      });
+    } catch (error) {
+      await this.markReleaseFailed(data.accountPaymentId, error);
+      throw error;
+    }
   };
 
   private readonly sanitizeTextForInvoice = (text: string): string => {

@@ -6,6 +6,7 @@ import {
   numeric,
   boolean,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import {
@@ -56,6 +57,12 @@ export const accountPayment = pgTable(
     invoice_url: varchar({ length: 1000 }),
     recurring_payment: boolean().notNull().default(false),
     is_addon_only: boolean().notNull().default(false),
+    release_status: varchar({ length: 20 }).default('pending'),
+    release_processed_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }),
+    release_last_error: varchar({ length: 1000 }),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,
@@ -75,6 +82,11 @@ export const accountPayment = pgTable(
     index('account_payment_payment_status_id_idx').on(table.payment_status_id),
     index('account_payment_payment_date_idx').on(table.payment_date),
     index('account_payment_is_addon_only_idx').on(table.is_addon_only),
+    index('account_payment_release_status_created_at_idx').on(
+      table.release_status,
+      table.created_at
+    ),
+    uniqueIndex('account_payment_billing_unique_idx').on(table.billing),
     index('account_payment_payment_status_id_created_at_idx').on(
       table.payment_status_id,
       table.created_at

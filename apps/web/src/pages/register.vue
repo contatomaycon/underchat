@@ -259,7 +259,7 @@ const testPlanModalOpen = ref(false);
 const testPlanSuccess = ref(false);
 const isSubmitting = ref(false);
 const installments = ref<number>(1);
-const recurringPayment = ref(false);
+const recurringPayment = ref(true);
 const nextButtonLabel = computed(() => {
   if (
     selectedPlanForCheckout.value &&

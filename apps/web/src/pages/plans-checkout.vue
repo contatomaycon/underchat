@@ -103,7 +103,7 @@ const selectedPaymentMethod = ref<'boleto' | 'credit_card' | 'pix' | null>(
 const selectedCardId = ref<string | null>(null);
 const showAddCardModal = ref(false);
 const installments = ref<number>(1);
-const recurringPayment = ref<boolean>(false);
+const recurringPayment = ref<boolean>(true);
 const newCard = ref({
   number: '',
   holderName: '',
@@ -252,6 +252,11 @@ const processCurrentPlan = (
 const processCurrentPlanInvoice = (
   currentPlanInvoice: ViewCurrentPlanInvoiceResponse | null
 ) => {
+  recurringPayment.value =
+    typeof currentPlanInvoice?.recurring_payment === 'boolean'
+      ? currentPlanInvoice.recurring_payment
+      : true;
+
   if (!currentPlanInvoice) {
     currentPlanInvoiceData.value = null;
     currentPlanBillingPeriod.value = null;

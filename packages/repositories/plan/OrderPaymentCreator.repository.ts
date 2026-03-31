@@ -16,6 +16,7 @@ import { UpgradeDiscountCalculatorRepository } from './UpgradeDiscountCalculator
 import { randomUUID } from 'node:crypto';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 import { EPlanStatus } from '@core/common/enums/EPlanStatus';
+import { EAccountPaymentReleaseStatus } from '@core/common/enums/EAccountPaymentReleaseStatus';
 
 @injectable()
 export class OrderPaymentCreatorRepository {
@@ -131,6 +132,7 @@ export class OrderPaymentCreatorRepository {
       invoice_url: data.invoiceUrl,
       recurring_payment: data.recurringPayment,
       is_addon_only: data.isAddonOnly,
+      release_status: EAccountPaymentReleaseStatus.pending,
       user_card_id: data.userCardId || null,
       installment: data.installment || null,
       boleto: data.boleto || null,
@@ -295,6 +297,7 @@ export class OrderPaymentCreatorRepository {
         plan_id: planAccount.plan_id,
         billing_period_id: planAccount.billing_period_id,
         billing_period_name: billingPeriod.name,
+        recurring_payment: planAccount.recurring_payment,
         last_payment_date: planAccount.last_payment_date,
         next_payment_date: planAccount.next_payment_date,
       })
@@ -334,6 +337,7 @@ export class OrderPaymentCreatorRepository {
       plan_id: row.plan_id,
       billing_period_id: row.billing_period_id,
       billing_period: billingPeriodName,
+      recurring_payment: row.recurring_payment,
       last_payment_date: row.last_payment_date,
       next_payment_date: row.next_payment_date,
     };

@@ -202,6 +202,27 @@ export class OrderPaymentCreatorUseCase {
     }
   };
 
+  private readonly resolveRecurringPayment = (
+    input: CreateOrderPaymentRequest,
+    data: {
+      currentPlanRecurringPayment: boolean | null;
+    }
+  ): boolean => {
+    if (input.payment_method !== 'credit_card') {
+      return false;
+    }
+
+    if (typeof input.recurring_payment === 'boolean') {
+      return input.recurring_payment;
+    }
+
+    if (data.currentPlanRecurringPayment !== null) {
+      return data.currentPlanRecurringPayment;
+    }
+
+    return true;
+  };
+
   private readonly buildPlanOrderContext = async (
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -213,10 +234,17 @@ export class OrderPaymentCreatorUseCase {
 
     await this.validatePlanSingleUseAddons(t, accountId, input.plan_id, addons);
 
-    const orderCalculation = await this.planService.calculateOrderPayment(
-      accountId,
-      input
-    );
+    const [orderCalculation, currentPlanAccount] = await Promise.all([
+      this.planService.calculateOrderPayment(accountId, input),
+      this.planService.getCurrentActivePlanAccount(accountId),
+    ]);
+
+    const recurringPayment = this.resolveRecurringPayment(input, {
+      currentPlanRecurringPayment:
+        typeof currentPlanAccount?.recurring_payment === 'boolean'
+          ? currentPlanAccount.recurring_payment
+          : null,
+    });
 
     return {
       orderType: 'plan',
@@ -227,7 +255,7 @@ export class OrderPaymentCreatorUseCase {
       addonsTotal: orderCalculation.addonsTotal,
       discountAmount: orderCalculation.discountAmount,
       totalAmount: orderCalculation.totalAmount,
-      recurringPayment: input.recurring_payment || false,
+      recurringPayment,
     };
   };
 

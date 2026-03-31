@@ -15,6 +15,9 @@ export interface IPlanReleaseUpdatePaymentStatusInput {
   billingPeriodId: string | null;
   value: string;
   nextPaymentDate: string;
+  releaseStatus?: string | null;
+  releaseProcessedAt?: string | null;
+  releaseLastError?: string | null;
 }
 
 export interface IPlanReleaseAddonOnlyPaymentInput {
@@ -67,4 +70,5 @@ export interface IPlanReleaseAccountPaymentData {
   value: string;
   payment_date: string | null;
   payment_status_id: string;
+  release_status: string | null;
 }
