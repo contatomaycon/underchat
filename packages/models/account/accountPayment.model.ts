@@ -7,8 +7,9 @@ import {
   boolean,
   index,
   uniqueIndex,
+  check,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   account,
   userCustomer,
@@ -85,6 +86,10 @@ export const accountPayment = pgTable(
     index('account_payment_release_status_created_at_idx').on(
       table.release_status,
       table.created_at
+    ),
+    check(
+      'account_payment_release_status_check',
+      sql`${table.release_status} IS NULL OR ${table.release_status} IN ('pending', 'processed', 'failed')`
     ),
     uniqueIndex('account_payment_billing_unique_idx').on(table.billing),
     index('account_payment_payment_status_id_created_at_idx').on(
