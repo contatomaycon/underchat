@@ -292,7 +292,7 @@ export class OrderPaymentCreatorRepository {
   };
 
   getCurrentActivePlanAccount = async (accountId: string) => {
-    const result = await this.dbRo
+    const result = await this.dbRw
       .select({
         plan_id: planAccount.plan_id,
         billing_period_id: planAccount.billing_period_id,

@@ -8,14 +8,13 @@ import { randomUUID } from 'node:crypto';
 @injectable()
 export class UserCustomerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   getUserCustomerByUserId = async (
     userId: string
   ): Promise<{ user_customer_id: string; user_customer: string } | null> => {
-    const result = await this.dbRo.query.userCustomer.findFirst({
+    const result = await this.dbRw.query.userCustomer.findFirst({
       where: eq(userCustomer.user_id, userId),
       columns: {
         user_customer_id: true,

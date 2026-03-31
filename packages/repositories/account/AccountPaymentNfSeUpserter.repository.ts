@@ -24,7 +24,7 @@ export class AccountPaymentNfSeUpserterRepository {
   findAccountPaymentByBilling = async (
     billing: string
   ): Promise<{ account_payment_id: string } | null> => {
-    const payment = await this.dbRo.query.accountPayment.findFirst({
+    const payment = await this.dbRw.query.accountPayment.findFirst({
       where: eq(schema.accountPayment.billing, billing),
       columns: {
         account_payment_id: true,

@@ -739,7 +739,7 @@ export class PlanReleaseRepository {
   findUserCustomerByAccountPaymentId = async (
     accountPaymentId: string
   ): Promise<{ user_customer: string; user_id: string } | null> => {
-    const payment = await this.dbRo.query.accountPayment.findFirst({
+    const payment = await this.dbRw.query.accountPayment.findFirst({
       where: eq(accountPayment.account_payment_id, accountPaymentId),
       columns: {
         user_customer_id: true,
@@ -767,7 +767,7 @@ export class PlanReleaseRepository {
   findNfSeByAccountPaymentId = async (
     accountPaymentId: string
   ): Promise<{ account_payment_nfse_id: string } | null> => {
-    const nfseRecord = await this.dbRo.query.accountPaymentNfSe.findFirst({
+    const nfseRecord = await this.dbRw.query.accountPaymentNfSe.findFirst({
       where: eq(schema.accountPaymentNfSe.account_payment_id, accountPaymentId),
       columns: {
         account_payment_nfse_id: true,
@@ -845,7 +845,7 @@ export class PlanReleaseRepository {
   findAccountGenerateInvoiceById = async (
     accountId: string
   ): Promise<boolean | null> => {
-    const accountData = await this.dbRo.query.account.findFirst({
+    const accountData = await this.dbRw.query.account.findFirst({
       where: eq(account.account_id, accountId),
       columns: {
         generate_invoice: true,
