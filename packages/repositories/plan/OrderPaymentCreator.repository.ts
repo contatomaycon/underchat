@@ -117,30 +117,51 @@ export class OrderPaymentCreatorRepository {
   }): Promise<string> => {
     const accountPaymentId = randomUUID();
 
-    await this.dbRw.insert(accountPayment).values({
-      account_payment_id: accountPaymentId,
-      account_id: data.accountId,
-      user_customer_id: data.userCustomerId,
-      plan_id: data.planId,
-      billing: data.billing,
-      payment_billing_type_id: data.paymentBillingTypeId,
-      value: data.value,
-      net_value: data.netValue,
-      pix_transaction: data.pixTransaction,
-      payment_status_id: data.paymentStatusId,
-      billing_period_id: data.billingPeriodId,
-      invoice_url: data.invoiceUrl,
-      recurring_payment: data.recurringPayment,
-      is_addon_only: data.isAddonOnly,
-      release_status: EAccountPaymentReleaseStatus.pending,
-      user_card_id: data.userCardId || null,
-      installment: data.installment || null,
-      boleto: data.boleto || null,
-      boleto_number: data.boletoNumber || null,
-      boleto_pdf: data.boletoPdf || null,
+    const inserted = await this.dbRw
+      .insert(accountPayment)
+      .values({
+        account_payment_id: accountPaymentId,
+        account_id: data.accountId,
+        user_customer_id: data.userCustomerId,
+        plan_id: data.planId,
+        billing: data.billing,
+        payment_billing_type_id: data.paymentBillingTypeId,
+        value: data.value,
+        net_value: data.netValue,
+        pix_transaction: data.pixTransaction,
+        payment_status_id: data.paymentStatusId,
+        billing_period_id: data.billingPeriodId,
+        invoice_url: data.invoiceUrl,
+        recurring_payment: data.recurringPayment,
+        is_addon_only: data.isAddonOnly,
+        release_status: EAccountPaymentReleaseStatus.pending,
+        user_card_id: data.userCardId || null,
+        installment: data.installment || null,
+        boleto: data.boleto || null,
+        boleto_number: data.boletoNumber || null,
+        boleto_pdf: data.boletoPdf || null,
+      })
+      .onConflictDoNothing({ target: accountPayment.billing })
+      .returning({
+        account_payment_id: accountPayment.account_payment_id,
+      });
+
+    if (inserted[0]) {
+      return inserted[0].account_payment_id;
+    }
+
+    const existing = await this.dbRw.query.accountPayment.findFirst({
+      where: eq(accountPayment.billing, data.billing),
+      columns: {
+        account_payment_id: true,
+      },
     });
 
-    return accountPaymentId;
+    if (!existing) {
+      throw new Error('Account payment not found after billing conflict');
+    }
+
+    return existing.account_payment_id;
   };
 
   createAccountPaymentCrossSells = async (data: {
@@ -149,6 +170,21 @@ export class OrderPaymentCreatorRepository {
     billingPeriod: 'monthly' | 'annual';
   }): Promise<void> => {
     if (!data.addons || data.addons.length === 0) {
+      return;
+    }
+
+    const hasExistingCrossSells =
+      await this.dbRw.query.accountPaymentCrossSell.findFirst({
+        where: eq(
+          accountPaymentCrossSell.account_payment_id,
+          data.accountPaymentId
+        ),
+        columns: {
+          account_payment_cross_sell_id: true,
+        },
+      });
+
+    if (hasExistingCrossSells) {
       return;
     }
 

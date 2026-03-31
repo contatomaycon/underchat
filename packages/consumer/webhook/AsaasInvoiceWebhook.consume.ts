@@ -4,7 +4,6 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { AsaasInvoiceWebhookRequest } from '@core/schema/payment/Webhook/request.schema';
 import { createConsumer } from '@core/common/functions/createConsumer';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { FastifyInstance } from 'fastify';
@@ -58,23 +57,22 @@ export class AsaasInvoiceWebhookConsume {
         return;
       }
 
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
       try {
         await this.handleWebhookEvent(data);
+        await this.commitNext(topic, message.partition, message.offset);
       } catch (error) {
         server.log.error(
           error,
           `Error processing webhook event: ${data.event}`
         );
-      } finally {
-        stop();
-      }
 
-      await this.commitNext(topic, message.partition, message.offset);
+        if (this.shouldCommitOnError(error)) {
+          server.log.warn(
+            `Skipping non-retryable invoice webhook event: ${data.event}`
+          );
+          await this.commitNext(topic, message.partition, message.offset);
+        }
+      }
     });
 
     this.consumer.on('event.error', (err) => {
@@ -140,6 +138,17 @@ export class AsaasInvoiceWebhookConsume {
       default:
         throw new Error(`Unhandled event type: ${data.event}`);
     }
+  }
+
+  private shouldCommitOnError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    return (
+      error.message.startsWith('Unhandled event type:') ||
+      error.message.startsWith('Status desconhecido:')
+    );
   }
 
   private async handlePaymentCreated(

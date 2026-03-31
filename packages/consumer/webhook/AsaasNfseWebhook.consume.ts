@@ -4,7 +4,6 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';
 import { createConsumer } from '@core/common/functions/createConsumer';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { FastifyInstance } from 'fastify';
@@ -58,23 +57,22 @@ export class AsaasNfseWebhookConsume {
         return;
       }
 
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
       try {
         await this.handleWebhookEvent(data);
+        await this.commitNext(topic, message.partition, message.offset);
       } catch (error) {
         server.log.error(
           error,
           `Error processing nfse webhook event: ${data.event}`
         );
-      } finally {
-        stop();
-      }
 
-      await this.commitNext(topic, message.partition, message.offset);
+        if (this.shouldCommitOnError(error)) {
+          server.log.warn(
+            `Skipping non-retryable nfse webhook event: ${data.event}`
+          );
+          await this.commitNext(topic, message.partition, message.offset);
+        }
+      }
     });
 
     this.consumer.on('event.error', (err) => {
@@ -122,6 +120,14 @@ export class AsaasNfseWebhookConsume {
     data: AsaasNfseWebhookRequest
   ): Promise<void> {
     await this.nfseProcessorService.processWebhookEvent(data);
+  }
+
+  private shouldCommitOnError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    return error.message.includes('Payment ID não encontrado no webhook');
   }
 
   private parseMessage(value: Buffer | null): AsaasNfseWebhookRequest | null {

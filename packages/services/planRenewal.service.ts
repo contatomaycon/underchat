@@ -153,10 +153,59 @@ export class PlanRenewalService {
     return !this.isAsaasPaymentSuccessful(status);
   };
 
+  private readonly recoverPendingSuccessfulRenewalPayment = async (
+    planAccount: IPlanAccountRenewal
+  ): Promise<boolean> => {
+    const pendingPayment =
+      await this.planAccountRenewalListerRepository.findPendingSuccessfulRenewalPayment(
+        {
+          accountId: planAccount.account_id,
+          planId: planAccount.plan_id,
+          lastPaymentDate: planAccount.last_payment_date,
+        }
+      );
+
+    if (!pendingPayment) {
+      return false;
+    }
+
+    const paymentDate =
+      pendingPayment.payment_date ||
+      pendingPayment.created_at ||
+      new Date().toISOString();
+
+    try {
+      await this.planReleaseService.releasePlanForCreditCard({
+        accountPaymentId: pendingPayment.account_payment_id,
+        accountId: planAccount.account_id,
+        planId: planAccount.plan_id,
+        billingPeriodId:
+          pendingPayment.billing_period_id || planAccount.billing_period_id,
+        recurringPayment: pendingPayment.recurring_payment,
+        value: pendingPayment.value,
+        paymentDate,
+        paymentStatusId: pendingPayment.payment_status_id,
+      });
+    } catch (error) {
+      console.warn(
+        `Falha ao reprocessar liberação pendente para account_id: ${planAccount.account_id} e account_payment_id: ${pendingPayment.account_payment_id}`,
+        error
+      );
+    }
+
+    return true;
+  };
+
   private readonly processRenewal = async (
     planAccount: IPlanAccountRenewal
   ): Promise<void> => {
     const t = await createI18nInstance('pt');
+
+    const hasRecoveredPendingPayment =
+      await this.recoverPendingSuccessfulRenewalPayment(planAccount);
+    if (hasRecoveredPendingPayment) {
+      return;
+    }
 
     const masterUser =
       await this.userMasterViewerRepository.findMasterUserByAccountId(

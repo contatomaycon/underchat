@@ -8,7 +8,7 @@ import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 @injectable()
 export class UserMasterViewerRepository {
   constructor(
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   findMasterUserByAccountId = async (
@@ -19,7 +19,7 @@ export class UserMasterViewerRepository {
     account_id: string;
     account_name: string | null;
   } | null> => {
-    const result = await this.dbRo
+    const result = await this.dbRw
       .select({
         user_id: user.user_id,
         email: user.email,

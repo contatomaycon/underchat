@@ -1,4 +1,10 @@
-import { pgTable, uuid, timestamp, varchar, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  timestamp,
+  varchar,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { user } from '@core/models';
 
@@ -19,7 +25,7 @@ export const userCustomer = pgTable(
       withTimezone: true,
     }).defaultNow(),
   },
-  (table) => [index('user_customer_user_id_idx').on(table.user_id)]
+  (table) => [uniqueIndex('user_customer_user_id_unique_idx').on(table.user_id)]
 );
 
 export const userCustomerRelations = relations(userCustomer, ({ one }) => ({

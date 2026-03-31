@@ -4,6 +4,7 @@ export interface IPlanAccountRenewal {
   plan_id: string;
   billing_period_id: string | null;
   value: string;
+  last_payment_date: string | null;
   next_payment_date: string;
   plan: {
     plan_id: string;

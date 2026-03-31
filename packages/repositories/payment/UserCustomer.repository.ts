@@ -38,15 +38,38 @@ export class UserCustomerRepository {
   ): Promise<{ user_customer_id: string; user_customer: string }> => {
     const userCustomerId = randomUUID();
 
-    await this.dbRw.insert(userCustomer).values({
-      user_customer_id: userCustomerId,
-      user_id: userId,
-      user_customer: customerId,
+    const inserted = await this.dbRw
+      .insert(userCustomer)
+      .values({
+        user_customer_id: userCustomerId,
+        user_id: userId,
+        user_customer: customerId,
+      })
+      .onConflictDoNothing({ target: userCustomer.user_id })
+      .returning({
+        user_customer_id: userCustomer.user_customer_id,
+        user_customer: userCustomer.user_customer,
+      });
+
+    if (inserted[0]) {
+      return inserted[0];
+    }
+
+    const existing = await this.dbRw.query.userCustomer.findFirst({
+      where: eq(userCustomer.user_id, userId),
+      columns: {
+        user_customer_id: true,
+        user_customer: true,
+      },
     });
 
+    if (!existing) {
+      throw new Error('User customer not found after insert conflict');
+    }
+
     return {
-      user_customer_id: userCustomerId,
-      user_customer: customerId,
+      user_customer_id: existing.user_customer_id,
+      user_customer: existing.user_customer,
     };
   };
 

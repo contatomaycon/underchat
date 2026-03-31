@@ -14,7 +14,7 @@ import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.sc
 @injectable()
 export class UserInfoViewerRepository {
   constructor(
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   viewUserInfo = async (
@@ -33,7 +33,7 @@ export class UserInfoViewerRepository {
   };
 
   private readonly fetchUser = async (userId: string) => {
-    return this.dbRo.query.user.findFirst({
+    return this.dbRw.query.user.findFirst({
       where: and(isNull(user.deleted_at), eq(user.user_id, userId)),
       with: {
         uui: {
@@ -70,7 +70,7 @@ export class UserInfoViewerRepository {
   };
 
   private readonly fetchUserAddress = async (userId: string) => {
-    const result = await this.dbRo
+    const result = await this.dbRw
       .select({
         user_address_id: userAddress.user_address_id,
         zip_code: userAddress.zip_code,
