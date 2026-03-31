@@ -169,12 +169,6 @@ export class WwebjsPhoneValidationService {
 
     const fullNumber = `${ddi}${number}`;
     const candidates = buildCandidates(fullNumber, { order: 'input_first' });
-    console.info('[WwebjsPhoneValidation] validation_start', {
-      ddi,
-      number,
-      full_number: fullNumber,
-      candidates,
-    });
 
     let deferredLidFallback:
       | { jid: string | undefined; phone: string }
@@ -182,11 +176,6 @@ export class WwebjsPhoneValidationService {
 
     for (let i = 0; i < candidates.length; i++) {
       const candidate = candidates[i];
-      console.info('[WwebjsPhoneValidation] candidate_try', {
-        candidate_index: i,
-        candidate,
-      });
-
       const [onWhatsAppResult] = await client.onWhatsApp([
         onlyDigits(candidate),
       ]);
@@ -195,18 +184,8 @@ export class WwebjsPhoneValidationService {
         : undefined;
 
       if (!onWhatsAppResult?.exists || !resolvedJid) {
-        console.info('[WwebjsPhoneValidation] candidate_not_found', {
-          candidate_index: i,
-          candidate,
-        });
         continue;
       }
-
-      console.info('[WwebjsPhoneValidation] candidate_found', {
-        candidate_index: i,
-        candidate,
-        jid: resolvedJid ?? null,
-      });
 
       if (resolvedJid?.endsWith('@lid')) {
         const lidResolution = await this.resolveReliablePhoneFromLidWithRetry(
@@ -217,27 +196,8 @@ export class WwebjsPhoneValidationService {
         const resolvedPhoneFromLid = lidResolution.phone;
 
         if (resolvedPhoneFromLid) {
-          console.info('[WwebjsPhoneValidation] lid_phone_resolved', {
-            candidate_index: i,
-            candidate,
-            jid: resolvedJid,
-            resolved_phone: resolvedPhoneFromLid,
-            attempts: lidResolution.attempts,
-          });
           return { valid: true, jid: resolvedJid, phone: resolvedPhoneFromLid };
         }
-
-        console.warn('[WwebjsPhoneValidation] lid_phone_discarded', {
-          lid_jid: resolvedJid,
-          resolved_phone: lidResolution.lastResolvedPhone ?? null,
-          fallback_candidate: candidate,
-          reason: this.getLidDiscardReason(
-            resolvedJid,
-            lidResolution.lastResolvedPhone,
-            candidates
-          ),
-          attempts: lidResolution.attempts,
-        });
 
         if (!deferredLidFallback) {
           deferredLidFallback = {
@@ -251,28 +211,13 @@ export class WwebjsPhoneValidationService {
 
       const phoneFromJid = getPhoneNumber(resolvedJid);
       if (phoneFromJid) {
-        console.info('[WwebjsPhoneValidation] candidate_success_by_jid', {
-          candidate_index: i,
-          candidate,
-          jid: resolvedJid ?? null,
-          phone_from_jid: phoneFromJid,
-        });
         return { valid: true, jid: resolvedJid, phone: phoneFromJid };
       }
 
-      console.info('[WwebjsPhoneValidation] candidate_success_by_input', {
-        candidate_index: i,
-        candidate,
-        jid: resolvedJid ?? null,
-      });
       return { valid: true, jid: resolvedJid, phone: candidate };
     }
 
     if (deferredLidFallback) {
-      console.info('[WwebjsPhoneValidation] deferred_lid_fallback_applied', {
-        jid: deferredLidFallback.jid ?? null,
-        phone: deferredLidFallback.phone,
-      });
       return {
         valid: true,
         jid: deferredLidFallback.jid,
@@ -280,12 +225,6 @@ export class WwebjsPhoneValidationService {
       };
     }
 
-    console.info('[WwebjsPhoneValidation] validation_invalid', {
-      ddi,
-      number,
-      full_number: fullNumber,
-      candidates,
-    });
     return { valid: false };
   }
 }
