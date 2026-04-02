@@ -127,6 +127,23 @@ const resolvePlanVariant = (planName?: string | null) => {
   }
 };
 
+const getAccountStatusColor = (statusId: string) => {
+  if (statusId === EAccountStatus.active) return 'success';
+  if (statusId === EAccountStatus.blocked) return 'error';
+  if (statusId === EAccountStatus.inactive) return 'warning';
+  return 'secondary';
+};
+
+const getAccountStatusLabel = (status: {
+  account_status_id: string;
+  name: string;
+}) => {
+  if (status.account_status_id === EAccountStatus.active) return t('active');
+  if (status.account_status_id === EAccountStatus.blocked) return t('blocked');
+  if (status.account_status_id === EAccountStatus.inactive) return t('inactive');
+  return status.name;
+};
+
 const isDialogDeleterShow = ref(false);
 const accountToDelete = ref<string | null>(null);
 
@@ -339,6 +356,7 @@ watch(
             v-model:items-per-page="options.itemsPerPage"
             :headers="headers"
             :items="accountStore.list"
+            item-value="account_id"
             :items-length="accountStore.pagings.total"
             :loading="accountStore.loading"
             :sort-by="options.sortBy"
@@ -356,30 +374,20 @@ watch(
             </template>
 
             <template #item.account_status="{ item }">
-              <VChip
-                v-if="item.account_status"
-                :color="
-                  item.account_status.account_status_id ===
-                  EAccountStatus.active
-                    ? 'success'
-                    : item.account_status.account_status_id ===
-                        EAccountStatus.blocked
-                      ? 'error'
-                      : 'warning'
-                "
-                size="small"
-                variant="tonal"
+              <div
+                v-if="(item.account_statuses?.length ?? 0) > 0"
+                class="d-flex flex-wrap gap-1"
               >
-                {{
-                  item.account_status.account_status_id ===
-                  EAccountStatus.active
-                    ? $t('active')
-                    : item.account_status.account_status_id ===
-                        EAccountStatus.blocked
-                      ? $t('blocked')
-                      : $t('inactive')
-                }}
-              </VChip>
+                <VChip
+                  v-for="status in item.account_statuses"
+                  :key="`${item.account_id}-${status.account_status_id}`"
+                  :color="getAccountStatusColor(status.account_status_id)"
+                  size="small"
+                  variant="tonal"
+                >
+                  {{ getAccountStatusLabel(status) }}
+                </VChip>
+              </div>
               <span v-else class="text-medium-emphasis">-</span>
             </template>
 

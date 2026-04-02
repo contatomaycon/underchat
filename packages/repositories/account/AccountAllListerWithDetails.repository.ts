@@ -20,6 +20,7 @@ import {
   sql,
   desc,
   isNotNull,
+  inArray,
 } from 'drizzle-orm';
 import { ListAccountRequest } from '@core/schema/account/listAccount/request.schema';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
@@ -251,6 +252,54 @@ export class AccountAllListerWithDetailsRepository {
       return [];
     }
 
+    const accountStatusesByName = new Map<
+      string,
+      Array<{ account_status_id: string; name: string }>
+    >();
+
+    if (query.filter_status === EAccountFilterStatus.all) {
+      const accountNames = [...new Set(result.map((item) => item.name))];
+
+      if (accountNames.length > 0) {
+        const sameNameAccounts = await this.dbRo.query.account.findMany({
+          where: and(
+            isNull(account.deleted_at),
+            inArray(account.name, accountNames)
+          ),
+          columns: {
+            name: true,
+          },
+          with: {
+            aac: {
+              columns: {
+                account_status_id: true,
+                name: true,
+              },
+            },
+          },
+        });
+
+        for (const accountItem of sameNameAccounts) {
+          if (!accountItem.aac) continue;
+
+          const currentStatuses = accountStatusesByName.get(accountItem.name) ?? [];
+          const statusAlreadyExists = currentStatuses.some(
+            (status) =>
+              status.account_status_id === accountItem.aac?.account_status_id
+          );
+
+          if (!statusAlreadyExists) {
+            currentStatuses.push({
+              account_status_id: accountItem.aac.account_status_id,
+              name: accountItem.aac.name,
+            });
+          }
+
+          accountStatusesByName.set(accountItem.name, currentStatuses);
+        }
+      }
+    }
+
     const now = new Date();
     return result.map((item) => {
       const activePlanAccount = item.apc?.find((pa) => {
@@ -259,15 +308,21 @@ export class AccountAllListerWithDetailsRepository {
         return nextPaymentDate > now;
       });
 
+      const defaultStatus = item.aac
+        ? {
+            account_status_id: item.aac.account_status_id,
+            name: item.aac.name,
+          }
+        : null;
+      const accountStatuses =
+        accountStatusesByName.get(item.name) ??
+        (defaultStatus ? [defaultStatus] : []);
+
       return {
         account_id: item.account_id,
         name: item.name,
-        account_status: item.aac
-          ? {
-              account_status_id: item.aac.account_status_id,
-              name: item.aac.name,
-            }
-          : null,
+        account_status: defaultStatus,
+        account_statuses: accountStatuses,
         plan: activePlanAccount?.ppl
           ? {
               plan_id: activePlanAccount.ppl.plan_id,

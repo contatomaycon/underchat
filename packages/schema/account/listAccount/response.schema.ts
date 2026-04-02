@@ -21,6 +21,7 @@ export const listAccountResponseSchema = Type.Object({
   account_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
   account_status: Type.Union([accountStatusSchema, Type.Null()]),
+  account_statuses: Type.Optional(Type.Array(accountStatusSchema)),
   plan: Type.Union([planSchema, Type.Null()]),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
