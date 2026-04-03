@@ -153,15 +153,6 @@ export class ElasticDatabaseService {
 
   view = async (index: string, id: string): Promise<object | null> => {
     try {
-      if (ROLLOVER_INDICES.has(index)) {
-        const result = await this.client.search({
-          index: toReadAlias(index),
-          query: { ids: { values: [id] } },
-          size: 1,
-        });
-        return (result.hits.hits[0]?._source as object) ?? null;
-      }
-
       const result = await this.client.get({
         index: toReadAlias(index),
         id,
@@ -190,31 +181,6 @@ export class ElasticDatabaseService {
     actualIndex: string;
   } | null> => {
     try {
-      if (ROLLOVER_INDICES.has(index)) {
-        const result = await this.client.search({
-          index: toReadAlias(index),
-          seq_no_primary_term: true,
-          query: { ids: { values: [id] } },
-          size: 1,
-          _source: false,
-        });
-
-        const hit = result.hits.hits[0];
-        if (
-          !hit ||
-          typeof hit._seq_no !== 'number' ||
-          typeof hit._primary_term !== 'number'
-        ) {
-          return null;
-        }
-
-        return {
-          seqNo: hit._seq_no,
-          primaryTerm: hit._primary_term,
-          actualIndex: hit._index,
-        };
-      }
-
       const result = await this.client.get({
         index: toReadAlias(index),
         id,
@@ -257,37 +223,6 @@ export class ElasticDatabaseService {
     }
 
     try {
-      if (ROLLOVER_INDICES.has(index)) {
-        const result = await this.client.search({
-          index: toReadAlias(index),
-          seq_no_primary_term: true,
-          query: { ids: { values: ids } },
-          size: ids.length,
-          _source: false,
-        });
-
-        const metaMap = new Map<
-          string,
-          { seqNo: number; primaryTerm: number; actualIndex: string }
-        >();
-
-        for (const hit of result.hits.hits) {
-          if (
-            hit._id &&
-            typeof hit._seq_no === 'number' &&
-            typeof hit._primary_term === 'number'
-          ) {
-            metaMap.set(hit._id, {
-              seqNo: hit._seq_no,
-              primaryTerm: hit._primary_term,
-              actualIndex: hit._index,
-            });
-          }
-        }
-
-        return metaMap;
-      }
-
       const docs = ids.map((id) => ({ _index: toReadAlias(index), _id: id }));
       const result = await this.client.mget({ docs });
 

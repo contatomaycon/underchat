@@ -137,25 +137,9 @@ services:
           echo "Bootstrap $$base OK"
         }
 
-        # ── Bare index pré-rollover → read alias (dados históricos) ────────────
-        ensure_bare_in_read_alias() {
-          base="$$1"
-          bare_code=$$(curl -s -o /dev/null -w "%{http_code}" "$$ES/$$base")
-          [ "$$bare_code" != "200" ] && return 0
-          already=$$(curl -s -o /dev/null -w "%{http_code}" "$$ES/$$base/_alias/$${base}-read")
-          [ "$$already" = "200" ] && { echo "Bare $$base already in $${base}-read, skipping."; return 0; }
-          echo "Adding bare index $$base to $${base}-read alias."
-          curl -sf -X POST "$$ES/_aliases" -H 'Content-Type: application/json' \
-            -d "{\"actions\":[{\"add\":{\"index\":\"$$base\",\"alias\":\"$${base}-read\"}}]}"
-        }
-
         ensure_rollover_bootstrap chat
         ensure_rollover_bootstrap message
         ensure_rollover_bootstrap wpp-connection
-
-        ensure_bare_in_read_alias chat
-        ensure_bare_in_read_alias message
-        ensure_bare_in_read_alias wpp-connection
 
         echo "Elasticsearch setup complete."
 
