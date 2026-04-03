@@ -1006,7 +1006,7 @@ export class ElasticDatabaseService {
               scroll: '1m',
             })
           : await this.client.search({
-              index,
+              index: toReadAlias(index),
               body: { query } as any,
               scroll: '1m',
               size: batchSize,
