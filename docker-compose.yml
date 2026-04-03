@@ -62,12 +62,14 @@ services:
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
+      - 'ES_JAVA_OPTS=-Xms1g -Xmx1g'
       - xpack.security.enabled=true
       - cluster.routing.allocation.disk.threshold_enabled=false
       - ELASTIC_PASSWORD=admin
       - cluster.name=es-cluster
       - node.name=es-node
+      # Roles explícitos de tier — necessário para ILM com hot/warm/cold em single-node
+      - node.roles=master,data,data_content,data_hot,data_warm,data_cold,ingest,remote_cluster_client
     ulimits:
       memlock:
         soft: -1
@@ -79,6 +81,126 @@ services:
     networks:
       - underchat
     restart: always
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'curl -sf -u elastic:admin http://localhost:9200/_cluster/health | grep -qE "\"status\":\"(green|yellow)\""'
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  under-elasticsearch-setup:
+    image: curlimages/curl:8.12.1
+    container_name: under-elasticsearch-setup
+    networks:
+      - underchat
+    depends_on:
+      under-elasticsearch:
+        condition: service_healthy
+    restart: on-failure
+    command:
+      - sh
+      - -ec
+      - |
+        ES="http://elastic:admin@under-elasticsearch-clean:9200"
+
+        # ── ILM policy ──────────────────────────────────────────────────────────
+        # Rollover em 1 GB (dev) ou 1 dia — mesma estrutura hot→warm→cold→delete
+        # do cluster de prod; apenas max_primary_shard_size reduzido para 1 GB.
+        curl -sf -X PUT "$ES/_ilm/policy/underchat-hot-warm-cold-180d" \
+          -H 'Content-Type: application/json' -d '{
+            "policy": {
+              "phases": {
+                "hot":  { "min_age": "0ms",  "actions": { "set_priority": {"priority": 100}, "rollover": {"max_primary_shard_size": "1gb", "max_age": "1d"} } },
+                "warm": { "min_age": "30d",  "actions": { "set_priority": {"priority": 50},  "forcemerge": {"max_num_segments": 1} } },
+                "cold": { "min_age": "75d",  "actions": { "set_priority": {"priority": 25} } },
+                "delete": { "min_age": "180d", "actions": { "delete": {} } }
+              }
+            }
+          }'
+
+        # ── Index templates com rollover ────────────────────────────────────────
+        for tmpl_data in \
+          'underchat-chat-rollover-template|["chat-*"]|chat-write' \
+          'underchat-message-rollover-template|["message-*"]|message-write' \
+          'underchat-wpp-connection-rollover-template|["wpp-connection-*"]|wpp-connection-write'; do
+          name=$(echo "$tmpl_data" | cut -d'|' -f1)
+          patterns=$(echo "$tmpl_data" | cut -d'|' -f2)
+          alias=$(echo "$tmpl_data" | cut -d'|' -f3)
+          curl -sf -X PUT "$ES/_index_template/$name" \
+            -H 'Content-Type: application/json' -d "{
+              \"index_patterns\": $patterns,
+              \"priority\": 300,
+              \"template\": {
+                \"settings\": {
+                  \"index.lifecycle.name\": \"underchat-hot-warm-cold-180d\",
+                  \"index.lifecycle.rollover_alias\": \"$alias\",
+                  \"number_of_replicas\": 0,
+                  \"routing.allocation.include._tier_preference\": \"data_hot,data_warm,data_cold\"
+                }
+              }
+            }"
+          echo "Template $name OK"
+        done
+
+        # ── Template hot-only (sem ILM) ─────────────────────────────────────────
+        curl -sf -X PUT "$ES/_index_template/underchat-hot-only-template" \
+          -H 'Content-Type: application/json' -d '{
+            "index_patterns": ["ai-agent-prompt-embedding","chat-history-embedding","chatbot-flow","chatbot-flow-configurations","webhook","webhook-mapping"],
+            "priority": 250,
+            "template": {
+              "settings": {
+                "number_of_replicas": 0,
+                "routing.allocation.include._tier_preference": "data_hot,data_content"
+              }
+            }
+          }'
+
+        # ── Rollover bootstrap ──────────────────────────────────────────────────
+        ensure_rollover_bootstrap() {
+          base="$1"
+          alias_code=$(curl -sf -o /dev/null -w "%{http_code}" "$ES/_alias/${base}-write")
+          if [ "$alias_code" = "200" ]; then
+            echo "Alias ${base}-write already exists, skipping."
+            return 0
+          fi
+          idx_code=$(curl -sf -o /dev/null -w "%{http_code}" "$ES/${base}-000001")
+          if [ "$idx_code" = "200" ]; then
+            echo "Index ${base}-000001 exists, adding aliases."
+            curl -sf -X POST "$ES/_aliases" -H 'Content-Type: application/json' \
+              -d "{\"actions\":[
+                {\"add\":{\"index\":\"${base}-000001\",\"alias\":\"${base}-write\",\"is_write_index\":true}},
+                {\"add\":{\"index\":\"${base}-000001\",\"alias\":\"${base}-read\"}}
+              ]}"
+            return 0
+          fi
+          echo "Creating bootstrap index ${base}-000001."
+          curl -sf -X PUT "$ES/${base}-000001" -H 'Content-Type: application/json' \
+            -d "{\"aliases\":{\"${base}-write\":{\"is_write_index\":true},\"${base}-read\":{}}}"
+        }
+
+        # ── Bare index pré-rollover → read alias (dados históricos) ────────────
+        ensure_bare_in_read_alias() {
+          base="$1"
+          bare_code=$(curl -sf -o /dev/null -w "%{http_code}" "$ES/${base}")
+          [ "$bare_code" != "200" ] && return 0
+          already=$(curl -sf -o /dev/null -w "%{http_code}" "$ES/${base}/_alias/${base}-read")
+          [ "$already" = "200" ] && { echo "Bare ${base} already in ${base}-read, skipping."; return 0; }
+          echo "Adding bare index ${base} to ${base}-read alias."
+          curl -sf -X POST "$ES/_aliases" -H 'Content-Type: application/json' \
+            -d "{\"actions\":[{\"add\":{\"index\":\"${base}\",\"alias\":\"${base}-read\"}}]}"
+        }
+
+        ensure_rollover_bootstrap chat
+        ensure_rollover_bootstrap message
+        ensure_rollover_bootstrap wpp-connection
+
+        ensure_bare_in_read_alias chat
+        ensure_bare_in_read_alias message
+        ensure_bare_in_read_alias wpp-connection
+
+        echo "Elasticsearch setup complete."
 
   under-atlas-db:
     image: postgres:latest
