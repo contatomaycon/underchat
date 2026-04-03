@@ -75,7 +75,28 @@ export class ScheduleService {
       this.scheduleListerRepository.listScheduleTotal(query, accountId),
     ]);
 
-    return [result, total];
+    if (!result.length) {
+      return [result, total];
+    }
+
+    const scheduleIds = result.map((item) => item.schedule_id);
+    const failedBySchedule =
+      await this.scheduleMessagesListerRepository.countFailedMessagesByScheduleIds(
+        scheduleIds,
+        accountId
+      );
+
+    const enrichedResult = result.map((item) => {
+      const failedMessagesCount = failedBySchedule[item.schedule_id] ?? 0;
+
+      return {
+        ...item,
+        failed_messages_count: failedMessagesCount,
+        has_failed_messages: failedMessagesCount > 0,
+      };
+    });
+
+    return [enrichedResult, total];
   };
 
   createSchedule = async (input: {

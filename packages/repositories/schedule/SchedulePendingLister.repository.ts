@@ -121,4 +121,42 @@ export class SchedulePendingListerRepository {
 
     return this.mapResultToPending(result[0]);
   };
+
+  viewScheduleById = async (
+    scheduleId: string
+  ): Promise<ISchedulePendingData | null> => {
+    const result = await this.dbRw
+      .select({
+        schedule_id: schedule.schedule_id,
+        account_id: schedule.account_id,
+        account_name: account.name,
+        worker_id: schedule.worker_id,
+        worker_name: worker.name,
+        type: schedule.type,
+        send_to: schedule.send_to,
+        send_speed: schedule.send_speed,
+        chatbot_id: schedule.chatbot_id,
+        chatbot_name: chatbot.name,
+        message: schedule.message,
+        url: schedule.url,
+        mimetype: schedule.mimetype,
+        duration: schedule.duration,
+        width: schedule.width,
+        height: schedule.height,
+        send_date: schedule.send_date,
+      })
+      .from(schedule)
+      .leftJoin(account, eq(schedule.account_id, account.account_id))
+      .leftJoin(worker, eq(schedule.worker_id, worker.worker_id))
+      .leftJoin(chatbot, eq(schedule.chatbot_id, chatbot.chatbot_id))
+      .where(eq(schedule.schedule_id, scheduleId))
+      .limit(1)
+      .execute();
+
+    if (!result.length) {
+      return null;
+    }
+
+    return this.mapResultToPending(result[0]);
+  };
 }

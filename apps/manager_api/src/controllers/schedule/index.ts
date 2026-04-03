@@ -10,6 +10,8 @@ import { listScheduleContactGroups } from './methods/listScheduleContactGroups';
 import { listScheduleMessages } from './methods/listScheduleMessages';
 import { listScheduleChatbots } from './methods/listScheduleChatbots';
 import { updateScheduleAction } from './methods/updateScheduleAction';
+import { reprocessScheduleFailedMessages } from './methods/reprocessScheduleFailedMessages';
+import { reprocessScheduleMessage } from './methods/reprocessScheduleMessage';
 
 @injectable()
 class ScheduleController {
@@ -24,6 +26,8 @@ class ScheduleController {
   public listScheduleContactGroups = listScheduleContactGroups;
   public listScheduleMessages = listScheduleMessages;
   public updateScheduleAction = updateScheduleAction;
+  public reprocessScheduleFailedMessages = reprocessScheduleFailedMessages;
+  public reprocessScheduleMessage = reprocessScheduleMessage;
 }
 
 export default ScheduleController;

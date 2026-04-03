@@ -28,6 +28,8 @@ export const listScheduleResponseSchema = Type.Object({
   height: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   send_date: Type.String(),
   status: Type.String(),
+  has_failed_messages: Type.Optional(Type.Boolean()),
+  failed_messages_count: Type.Optional(Type.Number()),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

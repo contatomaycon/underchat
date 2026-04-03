@@ -18,6 +18,8 @@ import { listScheduleContactsSchema } from '@core/schema/schedule/listScheduleCo
 import { listScheduleContactGroupsSchema } from '@core/schema/schedule/listScheduleContactGroups';
 import { listScheduleMessagesSchema } from '@core/schema/schedule/listScheduleMessages';
 import { updateScheduleActionSchema } from '@core/schema/schedule/updateScheduleAction';
+import { reprocessScheduleFailedSchema } from '@core/schema/schedule/reprocessScheduleFailed';
+import { reprocessScheduleMessageSchema } from '@core/schema/schedule/reprocessScheduleMessage';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -82,6 +84,28 @@ export default function scheduleRoutes(server: FastifyInstance) {
   server.post('/schedule/:schedule_id/action/:action', {
     schema: updateScheduleActionSchema,
     handler: scheduleController.updateScheduleAction,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, scheduleUpdatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/schedule/:schedule_id/reprocess-failed', {
+    schema: reprocessScheduleFailedSchema,
+    handler: scheduleController.reprocessScheduleFailedMessages,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, scheduleUpdatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/schedule/:schedule_id/messages/:message_id/reprocess', {
+    schema: reprocessScheduleMessageSchema,
+    handler: scheduleController.reprocessScheduleMessage,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, scheduleUpdatePermissions),

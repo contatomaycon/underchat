@@ -334,6 +334,101 @@ export const useScheduleStore = defineStore('schedule', {
       return this.updateScheduleAction(scheduleId, EScheduleAction.cancel);
     },
 
+    async reprocessFailedScheduleMessages(
+      scheduleId: string
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/schedule/${scheduleId}/reprocess-failed`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('schedule_reprocess_failed_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data?.message ??
+            this.i18n.global.t('schedule_reprocess_failed_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'schedule_reprocess_failed_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async reprocessScheduleMessage(
+      scheduleId: string,
+      messageId: string
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/schedule/${scheduleId}/messages/${messageId}/reprocess`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('schedule_reprocess_message_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          data?.message ??
+            this.i18n.global.t('schedule_reprocess_message_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'schedule_reprocess_message_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
     async listScheduleWorkers(): Promise<ListScheduleWorkersFinalResponse | null> {
       try {
         this.loading = true;

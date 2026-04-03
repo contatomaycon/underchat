@@ -652,6 +652,7 @@ export class ScheduleMessageWwebjsConsume {
       schedule_id: scheduleId,
       contact_id: contactId,
       message_id: messageId,
+      processed_at: new Date().toISOString(),
       status,
     };
 

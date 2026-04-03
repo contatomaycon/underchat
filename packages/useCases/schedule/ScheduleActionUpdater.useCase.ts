@@ -9,6 +9,7 @@ const START_ALLOWED_STATUSES: EScheduleStatus[] = [
   EScheduleStatus.pending,
   EScheduleStatus.paused,
   EScheduleStatus.processing,
+  EScheduleStatus.canceled,
 ];
 
 const PAUSE_ALLOWED_STATUSES: EScheduleStatus[] = [

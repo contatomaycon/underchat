@@ -267,6 +267,97 @@ export class ScheduleSendService {
     return total.value > 0;
   }
 
+  private async listFailedMessageReferences(
+    scheduleId: string,
+    accountId: string,
+    messageId?: string
+  ): Promise<Array<{ message_id: string; contact_id: string }>> {
+    await this.elasticDatabaseService.indices(
+      EElasticIndex.schedule,
+      scheduleMappings()
+    );
+
+    const mustConditions: Record<string, unknown>[] = [
+      {
+        nested: {
+          path: 'account',
+          query: {
+            term: {
+              'account.id': accountId,
+            },
+          },
+        },
+      },
+      {
+        term: {
+          schedule_id: scheduleId,
+        },
+      },
+      {
+        term: {
+          status: EScheduleStatus.failed,
+        },
+      },
+    ];
+
+    if (messageId) {
+      mustConditions.push({
+        term: {
+          id: messageId,
+        },
+      });
+    }
+
+    const query = {
+      size: messageId ? 1 : 10000,
+      query: {
+        bool: {
+          must: mustConditions,
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<{
+      id?: string;
+      contact?: {
+        id?: string;
+      } | null;
+    }>(EElasticIndex.schedule, query);
+
+    if (!result) {
+      return [];
+    }
+
+    return result.hits.hits
+      .map((hit) => {
+        const source = hit._source;
+        if (!source?.id || !source.contact?.id) {
+          return null;
+        }
+
+        return {
+          message_id: source.id,
+          contact_id: source.contact.id,
+        };
+      })
+      .filter(
+        (
+          item
+        ): item is {
+          message_id: string;
+          contact_id: string;
+        } => item !== null
+      );
+  }
+
+  private async clearDuplicateLock(
+    scheduleId: string,
+    contactId: string
+  ): Promise<void> {
+    const lockKey = this.getDuplicateLockKey(scheduleId, contactId);
+    await this.redis.del(lockKey);
+  }
+
   private async createTextMessage(
     schedule: ISchedulePendingData,
     baseMessage: IChatMessage,
@@ -376,14 +467,15 @@ export class ScheduleSendService {
   private createBaseMessage(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
-    jid: string
+    jid: string,
+    messageId?: string
   ): IChatMessage {
     const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
     const phoneDdi = this.normalizePhoneDdi(contact.phone_ddi);
     const now = new Date().toISOString();
 
     const message: IChatMessage = {
-      message_id: uuidv7(),
+      message_id: messageId ?? uuidv7(),
       chat_id: `${schedule.account_id}:${jid}`,
       message_key: {
         remote_jid: jid,
@@ -422,9 +514,15 @@ export class ScheduleSendService {
   private async createChatMessage(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
-    jid: string
+    jid: string,
+    messageId?: string
   ): Promise<IChatMessage> {
-    const baseMessage = this.createBaseMessage(schedule, contact, jid);
+    const baseMessage = this.createBaseMessage(
+      schedule,
+      contact,
+      jid,
+      messageId
+    );
 
     if (schedule.type === EScheduleType.chatbot) {
       return baseMessage;
@@ -449,9 +547,12 @@ export class ScheduleSendService {
     return baseMessage;
   }
 
-  private createFailedMessage(schedule: ISchedulePendingData): IChatMessage {
+  private createFailedMessage(
+    schedule: ISchedulePendingData,
+    messageId?: string
+  ): IChatMessage {
     return {
-      message_id: uuidv7(),
+      message_id: messageId ?? uuidv7(),
       chat_id: '',
       message_key: null,
       type_user: ETypeUserChat.system,
@@ -702,7 +803,10 @@ export class ScheduleSendService {
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
     message: IChatMessage,
-    status: EScheduleStatus | string
+    status: EScheduleStatus | string,
+    options?: {
+      overrideOnConflict?: boolean;
+    }
   ): Promise<boolean> {
     if (!message.message_id) {
       return false;
@@ -745,7 +849,7 @@ export class ScheduleSendService {
         url: schedule.url,
         chatbot_name: schedule.chatbot_name ?? null,
         status,
-        send_date: new Date(schedule.send_date).toISOString(),
+        send_date: now,
         send_log: null,
         created_at: now,
         updated_at: now,
@@ -758,6 +862,24 @@ export class ScheduleSendService {
 
       if (createResult.created) {
         return true;
+      }
+
+      if (options?.overrideOnConflict) {
+        const updateResult = await this.elasticDatabaseService.updateWithOCC(
+          EElasticIndex.schedule,
+          message.message_id,
+          document as unknown as Record<string, unknown>,
+          {
+            upsert: true,
+            maxRetries: 5,
+          }
+        );
+
+        return (
+          updateResult === 'updated' ||
+          updateResult === 'created' ||
+          updateResult === 'noop'
+        );
       }
 
       const patchParams = this.buildPatchScheduleMissingFieldsParams(document);
@@ -1237,6 +1359,9 @@ export class ScheduleSendService {
     contact: IScheduleContactValidated,
     options?: {
       skipAlreadySentCheck?: boolean;
+      skipDuplicateCheck?: boolean;
+      forcedMessageId?: string;
+      overrideDocumentOnConflict?: boolean;
     }
   ): Promise<IScheduleMessageResult> {
     if (!options?.skipAlreadySentCheck) {
@@ -1253,16 +1378,18 @@ export class ScheduleSendService {
       }
     }
 
-    const canSend = await this.checkAndSetDuplicate(
-      schedule.schedule_id,
-      contact.contact_id
-    );
+    if (!options?.skipDuplicateCheck) {
+      const canSend = await this.checkAndSetDuplicate(
+        schedule.schedule_id,
+        contact.contact_id
+      );
 
-    if (!canSend) {
-      return {
-        success: false,
-        contactId: contact.contact_id,
-      };
+      if (!canSend) {
+        return {
+          success: false,
+          contactId: contact.contact_id,
+        };
+      }
     }
 
     const jid = await this.validateContactPhone(contact);
@@ -1282,12 +1409,18 @@ export class ScheduleSendService {
     }
 
     if (!jid) {
-      const failedMessage = this.createFailedMessage(schedule);
+      const failedMessage = this.createFailedMessage(
+        schedule,
+        options?.forcedMessageId
+      );
       const saved = await this.saveToElasticsearch(
         schedule,
         contact,
         failedMessage,
-        EScheduleStatus.failed
+        EScheduleStatus.failed,
+        {
+          overrideOnConflict: options?.overrideDocumentOnConflict,
+        }
       );
 
       if (!saved) {
@@ -1302,7 +1435,12 @@ export class ScheduleSendService {
       };
     }
 
-    const message = await this.createChatMessage(schedule, contact, jid);
+    const message = await this.createChatMessage(
+      schedule,
+      contact,
+      jid,
+      options?.forcedMessageId
+    );
 
     try {
       const hasLimit = await this.checkMassSendingLimit(schedule.account_id, 1);
@@ -1319,7 +1457,10 @@ export class ScheduleSendService {
           schedule,
           contact,
           message,
-          EScheduleStatus.limit_exhausted
+          EScheduleStatus.limit_exhausted,
+          {
+            overrideOnConflict: options?.overrideDocumentOnConflict,
+          }
         );
 
         if (!saved) {
@@ -1338,7 +1479,10 @@ export class ScheduleSendService {
         schedule,
         contact,
         message,
-        EScheduleStatus.processing
+        EScheduleStatus.processing,
+        {
+          overrideOnConflict: options?.overrideDocumentOnConflict,
+        }
       );
 
       if (!saved) {
@@ -1367,7 +1511,10 @@ export class ScheduleSendService {
         schedule,
         contact,
         message,
-        EScheduleStatus.failed
+        EScheduleStatus.failed,
+        {
+          overrideOnConflict: options?.overrideDocumentOnConflict,
+        }
       );
 
       return {
@@ -1613,6 +1760,127 @@ export class ScheduleSendService {
 
       throw error;
     }
+  }
+
+  async reprocessFailedMessages(
+    scheduleId: string,
+    accountId: string
+  ): Promise<{
+    total: number;
+    reprocessed: number;
+  }> {
+    const schedule =
+      await this.schedulePendingListerRepository.viewScheduleById(scheduleId);
+
+    if (!schedule || schedule.account_id !== accountId) {
+      return {
+        total: 0,
+        reprocessed: 0,
+      };
+    }
+
+    const failedMessages = await this.listFailedMessageReferences(
+      scheduleId,
+      accountId
+    );
+
+    if (!failedMessages.length) {
+      return {
+        total: 0,
+        reprocessed: 0,
+      };
+    }
+
+    const targetContactIds = new Set(
+      failedMessages.map((item) => item.contact_id)
+    );
+
+    const contacts =
+      await this.scheduleContactsValidatedListerRepository.listValidatedContactsBySchedule(
+        scheduleId,
+        schedule.send_to,
+        accountId
+      );
+
+    const contactsById = new Map(
+      contacts
+        .filter((contact) => targetContactIds.has(contact.contact_id))
+        .map((contact) => [contact.contact_id, contact])
+    );
+
+    let reprocessed = 0;
+
+    for (const failedMessage of failedMessages) {
+      const contact = contactsById.get(failedMessage.contact_id);
+      if (!contact) {
+        continue;
+      }
+
+      await this.clearDuplicateLock(scheduleId, failedMessage.contact_id);
+
+      const result = await this.sendScheduleMessage(schedule, contact, {
+        skipAlreadySentCheck: true,
+        forcedMessageId: failedMessage.message_id,
+        overrideDocumentOnConflict: true,
+      });
+
+      if (result.success) {
+        reprocessed++;
+      }
+    }
+
+    return {
+      total: failedMessages.length,
+      reprocessed,
+    };
+  }
+
+  async reprocessScheduleMessage(
+    scheduleId: string,
+    messageId: string,
+    accountId: string
+  ): Promise<boolean> {
+    const schedule =
+      await this.schedulePendingListerRepository.viewScheduleById(scheduleId);
+
+    if (!schedule || schedule.account_id !== accountId) {
+      return false;
+    }
+
+    const [failedMessage] = await this.listFailedMessageReferences(
+      scheduleId,
+      accountId,
+      messageId
+    );
+
+    if (!failedMessage) {
+      return false;
+    }
+
+    const contacts =
+      await this.scheduleContactsValidatedListerRepository.listValidatedContactsBySchedule(
+        scheduleId,
+        schedule.send_to,
+        accountId
+      );
+
+    const contact = contacts.find(
+      (item) => item.contact_id === failedMessage.contact_id
+    );
+
+    if (!contact) {
+      return false;
+    }
+
+    await this.clearDuplicateLock(scheduleId, failedMessage.contact_id);
+
+    const result = await this.sendScheduleMessage(schedule, contact, {
+      skipAlreadySentCheck: true,
+      forcedMessageId: failedMessage.message_id,
+      overrideDocumentOnConflict: true,
+    });
+
+    return result.success;
   }
 
   async processScheduleById(scheduleId: string): Promise<void> {

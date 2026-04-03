@@ -280,7 +280,9 @@ const getStatusColor = (status: string): string => {
 
 const canStartSchedule = (status: string): boolean => {
   return (
-    status === EScheduleStatus.pending || status === EScheduleStatus.paused
+    status === EScheduleStatus.pending ||
+    status === EScheduleStatus.paused ||
+    status === EScheduleStatus.canceled
   );
 };
 
@@ -379,6 +381,22 @@ const cancelScheduleAction = async (item: ListScheduleResponse) => {
   if (result) {
     await scheduleStore.listSchedule(query.value);
   }
+};
+
+const reprocessFailedMessagesAction = async (item: ListScheduleResponse) => {
+  if (!item.schedule_id) return;
+
+  const result = await scheduleStore.reprocessFailedScheduleMessages(
+    item.schedule_id
+  );
+
+  if (result) {
+    await scheduleStore.listSchedule(query.value);
+  }
+};
+
+const refreshScheduleList = async () => {
+  await scheduleStore.listSchedule(query.value);
 };
 
 watch(
@@ -571,7 +589,9 @@ watch(
                     <span>{{
                       canPauseSchedule(item.status)
                         ? $t('pause_schedule')
-                        : $t('start_schedule')
+                        : item.status === EScheduleStatus.canceled
+                          ? $t('reactivate_schedule')
+                          : $t('start_schedule')
                     }}</span>
                   </VTooltip>
                   <VIcon
@@ -601,6 +621,27 @@ watch(
                   <VIcon
                     icon="tabler-ban"
                     @click="cancelScheduleAction(item)"
+                  />
+                </IconBtn>
+
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) &&
+                    item.schedule_id &&
+                    item.status !== EScheduleStatus.processing &&
+                    (item.failed_messages_count ?? 0) > 0
+                  "
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('reprocess_failed_messages') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-refresh"
+                    @click="reprocessFailedMessagesAction(item)"
                   />
                 </IconBtn>
 
@@ -750,6 +791,7 @@ watch(
         v-if="isViewMessagesDialogShow"
         v-model="isViewMessagesDialogShow"
         :schedule-id="scheduleToView"
+        @schedule-reprocessed="refreshScheduleList"
       />
     </VCard>
 

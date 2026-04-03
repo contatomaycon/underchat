@@ -372,6 +372,10 @@ export class ScheduleStatusUpdateConsume {
       return message.timestamp;
     }
 
+    if (data.processed_at) {
+      return new Date(data.processed_at).getTime();
+    }
+
     if (data.created_at) {
       return new Date(data.created_at).getTime();
     }
@@ -419,6 +423,7 @@ export class ScheduleStatusUpdateConsume {
 
     const baseline: ScheduleDocumentBaseline = {
       status: data.status,
+      send_date: eventTimeIso,
       updated_at: eventTimeIso,
       updated_at_epoch_millis: eventTimeEpochMillis,
       last_event_sort_key: lastEventSortKey,
@@ -441,6 +446,7 @@ export class ScheduleStatusUpdateConsume {
       }
       
       ctx._source.status = params.status;
+      ctx._source.send_date = params.event_time_iso;
       ctx._source.updated_at = params.event_time_iso;
       ctx._source.updated_at_epoch_millis = params.event_time_epoch_millis;
       ctx._source.last_event_sort_key = params.last_event_sort_key;

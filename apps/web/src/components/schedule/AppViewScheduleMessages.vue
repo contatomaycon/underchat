@@ -2,7 +2,7 @@
 import { ref, watch, computed } from 'vue';
 import { useScheduleStore } from '@/@webcore/stores/schedule';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
-import { formatDateTime } from '@core/common/functions/formatDateTime';
+import { formatDateTimeSeconds } from '@core/common/functions/formatDateTimeSeconds';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ScheduleMessageResult } from '@core/schema/schedule/listScheduleMessages/response.schema';
 import { DataTableHeader } from 'vuetify';
@@ -15,7 +15,10 @@ const props = defineProps<{
   scheduleId: string | null;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<{
+  (e: 'update:modelValue', visible: boolean): void;
+  (e: 'schedule-reprocessed'): void;
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -43,7 +46,10 @@ const headers: DataTableHeader<ScheduleMessageResult>[] = [
   { title: t('message'), key: 'message' },
   { title: t('status'), key: 'status' },
   { title: t('send_date'), key: 'send_date' },
+  { title: t('actions'), key: 'actions', sortable: false },
 ];
+
+const retryingMessageIds = ref(new Set<string>());
 
 const getContactName = (item: ScheduleMessageResult): string => {
   if (item.contact?.name) {
@@ -189,6 +195,14 @@ const getStatusColor = (status: string): string => {
   return 'default';
 };
 
+const canReprocessMessage = (status: string): boolean => {
+  return status === 'failed';
+};
+
+const isRetryingMessage = (messageId: string): boolean => {
+  return retryingMessageIds.value.has(messageId);
+};
+
 const previewDialog = ref<{
   open: boolean;
   src: string | null;
@@ -286,6 +300,30 @@ const loadMessages = async () => {
   }
 };
 
+const reprocessMessage = async (item: ScheduleMessageResult) => {
+  if (!props.scheduleId || !item.id) {
+    return;
+  }
+
+  if (!canReprocessMessage(item.status)) {
+    return;
+  }
+
+  retryingMessageIds.value.add(item.id);
+
+  const result = await scheduleStore.reprocessScheduleMessage(
+    props.scheduleId,
+    item.id
+  );
+
+  retryingMessageIds.value.delete(item.id);
+
+  if (result) {
+    await loadMessages();
+    emit('schedule-reprocessed');
+  }
+};
+
 const handleTableChange = (o: { page: number; itemsPerPage: number }) => {
   options.value.page = o.page;
   options.value.itemsPerPage = o.itemsPerPage;
@@ -299,6 +337,7 @@ watch(
     } else if (!visible) {
       messages.value = [];
       options.value.page = 1;
+      retryingMessageIds.value.clear();
     }
   },
   { immediate: true }
@@ -360,7 +399,11 @@ watch(
           <template #item.message="{ item }">
             <div class="d-flex align-center gap-2">
               <span class="text-medium-emphasis">
-                {{ item.url || item.message ? getMessageTypeLabel(item.type) : '-' }}
+                {{
+                  item.url || item.message
+                    ? getMessageTypeLabel(item.type)
+                    : '-'
+                }}
               </span>
               <VBtn
                 v-if="item.url || item.message"
@@ -407,7 +450,34 @@ watch(
           </template>
 
           <template #item.send_date="{ item }">
-            <span>{{ formatDateTime(item.send_date ?? null) }}</span>
+            <span>{{ formatDateTimeSeconds(item.send_date ?? null) }}</span>
+          </template>
+
+          <template #item.actions="{ item }">
+            <IconBtn
+              v-if="canReprocessMessage(item.status)"
+              :disabled="isRetryingMessage(item.id)"
+            >
+              <VTooltip
+                location="top"
+                transition="scale-transition"
+                activator="parent"
+              >
+                <span>{{ $t('reprocess_message') }}</span>
+              </VTooltip>
+              <VIcon
+                :icon="
+                  isRetryingMessage(item.id)
+                    ? 'tabler-loader-2'
+                    : 'tabler-refresh'
+                "
+                :class="{
+                  'icon-spin': isRetryingMessage(item.id),
+                }"
+                @click="reprocessMessage(item)"
+              />
+            </IconBtn>
+            <span v-else class="text-medium-emphasis">-</span>
           </template>
 
           <template #no-data>
@@ -531,6 +601,20 @@ watch(
 </template>
 
 <style lang="scss" scoped>
+.icon-spin {
+  animation: icon-spin 1s linear infinite;
+}
+
+@keyframes icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .data-table {
   :deep(.v-table__wrapper > table > thead) {
     background-color: rgba(var(--v-theme-on-surface), 0.04);

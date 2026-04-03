@@ -19,6 +19,7 @@ export interface ScheduleDocumentBaseline extends Record<string, unknown> {
     | EScheduleStatus.sent
     | EScheduleStatus.failed
     | EScheduleStatus.ignored;
+  send_date: string;
   updated_at: string;
   updated_at_epoch_millis: number;
   last_event_sort_key: string;
