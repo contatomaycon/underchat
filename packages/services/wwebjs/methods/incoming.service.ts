@@ -1633,6 +1633,9 @@ export class WwebjsIncomingMessageService {
     };
 
     const normalizedIdRemoteJid = normalizeCandidate(idRemoteJid);
+    const normalizedOutgoingTo = msg.fromMe
+      ? normalizeCandidate(msg.to)
+      : undefined;
     const baseCandidates = [
       idRemoteJid,
       idRemote,
@@ -1670,6 +1673,7 @@ export class WwebjsIncomingMessageService {
     }
 
     const orderedCandidates = [
+      normalizedOutgoingTo,
       normalizedIdRemoteJid,
       resolvedPhoneJidFromLid,
       ...baseCandidates,
@@ -1689,9 +1693,10 @@ export class WwebjsIncomingMessageService {
     const nonLidCandidate = uniqueCandidates.find(
       (candidate) => !this.isLidJid(candidate)
     );
+    const preferredPrimaryJid = normalizedOutgoingTo ?? normalizedIdRemoteJid;
     const primaryJid =
-      (normalizedIdRemoteJid && uniqueCandidates.includes(normalizedIdRemoteJid)
-        ? normalizedIdRemoteJid
+      (preferredPrimaryJid && uniqueCandidates.includes(preferredPrimaryJid)
+        ? preferredPrimaryJid
         : undefined) ??
       nonLidCandidate ??
       uniqueCandidates[0];
