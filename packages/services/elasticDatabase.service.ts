@@ -16,7 +16,7 @@ const ROLLOVER_INDICES = new Set(['chat', 'message', 'wpp-connection']);
 const toWriteAlias = (index: string): string =>
   ROLLOVER_INDICES.has(index) ? `${index}-write` : index;
 const toReadAlias = (index: string): string =>
-  ROLLOVER_INDICES.has(index) ? `${index}-read` : index;
+  ROLLOVER_INDICES.has(index) ? `${index}-*` : index;
 
 @injectable()
 export class ElasticDatabaseService {
