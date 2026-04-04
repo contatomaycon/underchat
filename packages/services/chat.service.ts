@@ -31,6 +31,7 @@ import Redis from 'ioredis';
 import { safeRedisGet } from '@core/plugins/redis';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import { normalizeExternalAdReplyMediaType } from '@core/common/functions/normalizeExternalAdReplyMediaType';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -136,7 +137,52 @@ export class ChatService {
     };
   }
 
+  private normalizeMessageForElastic(messageChat: IChatMessage): IChatMessage {
+    const content = messageChat.content;
+    const contextInfo = content?.context_info;
+    const externalAdReply = contextInfo?.external_ad_reply as
+      | Record<string, unknown>
+      | null
+      | undefined;
+
+    if (!content || !contextInfo || !externalAdReply) {
+      return messageChat;
+    }
+
+    const rawMediaType =
+      externalAdReply.media_type ?? externalAdReply.mediaType;
+
+    if (rawMediaType === undefined) {
+      return messageChat;
+    }
+
+    const normalizedMediaType = normalizeExternalAdReplyMediaType(rawMediaType);
+    const normalizedExternalAdReply: Record<string, unknown> = {
+      ...externalAdReply,
+    };
+
+    delete normalizedExternalAdReply.mediaType;
+
+    if (normalizedMediaType === null) {
+      delete normalizedExternalAdReply.media_type;
+    } else {
+      normalizedExternalAdReply.media_type = normalizedMediaType;
+    }
+
+    return {
+      ...messageChat,
+      content: {
+        ...content,
+        context_info: {
+          ...contextInfo,
+          external_ad_reply: normalizedExternalAdReply,
+        },
+      },
+    };
+  }
+
   saveMessageChat = async (messageChat: IChatMessage): Promise<boolean> => {
+    const normalizedMessage = this.normalizeMessageForElastic(messageChat);
     const mappings = mensageMappings();
 
     const result = await this.elasticDatabaseService.indices(
@@ -150,8 +196,8 @@ export class ChatService {
 
     const updateResult = await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.message,
-      messageChat.message_id,
-      messageChat as unknown as Record<string, unknown>,
+      normalizedMessage.message_id,
+      normalizedMessage as unknown as Record<string, unknown>,
       {
         upsert: true,
         maxRetries: 5,
@@ -166,6 +212,7 @@ export class ChatService {
   };
 
   updateMessageChat = async (messageChat: IChatMessage): Promise<boolean> => {
+    const normalizedMessage = this.normalizeMessageForElastic(messageChat);
     const mappings = mensageMappings();
 
     const result = await this.elasticDatabaseService.indices(
@@ -173,14 +220,14 @@ export class ChatService {
       mappings
     );
 
-    if (!result || !messageChat || !messageChat.message_id) {
+    if (!result || !normalizedMessage || !normalizedMessage.message_id) {
       return false;
     }
 
     const updateResult = await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.message,
-      messageChat.message_id,
-      messageChat as unknown as Record<string, unknown>,
+      normalizedMessage.message_id,
+      normalizedMessage as unknown as Record<string, unknown>,
       {
         upsert: false,
         maxRetries: 5,
@@ -193,6 +240,7 @@ export class ChatService {
   createMessageIdempotent = async (
     messageChat: IChatMessage
   ): Promise<{ created: boolean; conflict: boolean; id: string }> => {
+    const normalizedMessage = this.normalizeMessageForElastic(messageChat);
     const mappings = mensageMappings();
 
     const indicesResult = await this.elasticDatabaseService.indices(
@@ -200,15 +248,15 @@ export class ChatService {
       mappings
     );
 
-    if (!indicesResult || !messageChat || !messageChat.message_id) {
+    if (!indicesResult || !normalizedMessage || !normalizedMessage.message_id) {
       return { created: false, conflict: false, id: '' };
     }
 
-    const documentId = messageChat.message_id;
+    const documentId = normalizedMessage.message_id;
     const createResult = await this.elasticDatabaseService.createDocument(
       EElasticIndex.message,
       documentId,
-      messageChat
+      normalizedMessage
     );
 
     return {

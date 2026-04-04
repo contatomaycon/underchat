@@ -1,4 +1,5 @@
 import { WAMessage, proto } from '@whiskeysockets/baileys';
+import { normalizeExternalAdReplyMediaType } from './normalizeExternalAdReplyMediaType';
 
 export interface IMessageContextInfo {
   mentioned_jid?: string[] | null;
@@ -72,7 +73,7 @@ function buildExternalAdReply(
 
   return {
     title: externalAdReply.title ?? null,
-    media_type: externalAdReply.mediaType ?? null,
+    media_type: normalizeExternalAdReplyMediaType(externalAdReply.mediaType),
     thumbnail_url: externalAdReply.thumbnailUrl ?? null,
     source_type: externalAdReply.sourceType ?? null,
     source_id: externalAdReply.sourceId ?? null,
