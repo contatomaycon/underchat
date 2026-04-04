@@ -153,17 +153,18 @@ export class ElasticDatabaseService {
 
   view = async (index: string, id: string): Promise<object | null> => {
     try {
-      const result = await this.client.get({
+      const result = await this.client.search({
         index: toReadAlias(index),
-        id,
+        size: 1,
+        query: { ids: { values: [id] } },
       });
-      return result._source ?? null;
+      return (result.hits.hits[0]?._source as object) ?? null;
     } catch (error: unknown) {
       if (
         typeof error === 'object' &&
         error !== null &&
         'statusCode' in error &&
-        error.statusCode === 404
+        (error as { statusCode: number }).statusCode === 404
       ) {
         return null;
       }
@@ -181,19 +182,24 @@ export class ElasticDatabaseService {
     actualIndex: string;
   } | null> => {
     try {
-      const result = await this.client.get({
+      const result = await this.client.search({
         index: toReadAlias(index),
-        id,
+        size: 1,
+        seq_no_primary_term: true,
+        query: { ids: { values: [id] } },
       });
 
+      const hit = result.hits.hits[0];
+
       if (
-        typeof result._seq_no === 'number' &&
-        typeof result._primary_term === 'number'
+        hit &&
+        typeof hit._seq_no === 'number' &&
+        typeof hit._primary_term === 'number'
       ) {
         return {
-          seqNo: result._seq_no,
-          primaryTerm: result._primary_term,
-          actualIndex: result._index,
+          seqNo: hit._seq_no,
+          primaryTerm: hit._primary_term,
+          actualIndex: hit._index,
         };
       }
 
@@ -203,7 +209,7 @@ export class ElasticDatabaseService {
         typeof error === 'object' &&
         error !== null &&
         'statusCode' in error &&
-        error.statusCode === 404
+        (error as { statusCode: number }).statusCode === 404
       ) {
         return null;
       }
@@ -223,28 +229,28 @@ export class ElasticDatabaseService {
     }
 
     try {
-      const docs = ids.map((id) => ({ _index: toReadAlias(index), _id: id }));
-      const result = await this.client.mget({ docs });
+      const result = await this.client.search({
+        index: toReadAlias(index),
+        size: ids.length,
+        seq_no_primary_term: true,
+        query: { ids: { values: ids } },
+      });
 
       const metaMap = new Map<
         string,
         { seqNo: number; primaryTerm: number; actualIndex: string }
       >();
 
-      for (const doc of result.docs) {
-        if ('error' in doc) {
-          continue;
-        }
-
+      for (const hit of result.hits.hits) {
         if (
-          doc.found &&
-          typeof doc._seq_no === 'number' &&
-          typeof doc._primary_term === 'number'
+          hit._id &&
+          typeof hit._seq_no === 'number' &&
+          typeof hit._primary_term === 'number'
         ) {
-          metaMap.set(doc._id, {
-            seqNo: doc._seq_no,
-            primaryTerm: doc._primary_term,
-            actualIndex: doc._index,
+          metaMap.set(hit._id, {
+            seqNo: hit._seq_no,
+            primaryTerm: hit._primary_term,
+            actualIndex: hit._index,
           });
         }
       }
