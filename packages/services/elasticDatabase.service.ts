@@ -12,12 +12,6 @@ import type {
 } from '@core/common/interfaces/IElasticBulk';
 import { incrementCounter } from '@core/plugins/telemetry/observability';
 
-const ROLLOVER_INDICES = new Set(['chat', 'message', 'wpp-connection']);
-const toWriteAlias = (index: string): string =>
-  ROLLOVER_INDICES.has(index) ? `${index}-write` : index;
-const toReadAlias = (index: string): string =>
-  ROLLOVER_INDICES.has(index) ? `${index}-*` : index;
-
 @injectable()
 export class ElasticDatabaseService {
   constructor(
@@ -65,7 +59,7 @@ export class ElasticDatabaseService {
   >(index: string, query: object): Promise<SearchResponse<TDoc, TAggs> | null> {
     try {
       const response = await this.client.search<TDoc, TAggs>({
-        index: toReadAlias(index),
+        index,
         body: query,
       });
 
@@ -82,7 +76,7 @@ export class ElasticDatabaseService {
   ): Promise<boolean> => {
     try {
       const result = await this.client.index({
-        index: toWriteAlias(index),
+        index,
         id,
         document,
         op_type: 'create',
@@ -118,7 +112,7 @@ export class ElasticDatabaseService {
   ): Promise<'created' | 'conflict'> => {
     try {
       const result = await this.client.index({
-        index: toWriteAlias(index),
+        index,
         id,
         document,
         op_type: 'create',
@@ -153,18 +147,17 @@ export class ElasticDatabaseService {
 
   view = async (index: string, id: string): Promise<object | null> => {
     try {
-      const result = await this.client.search({
-        index: toReadAlias(index),
-        size: 1,
-        query: { ids: { values: [id] } },
+      const result = await this.client.get({
+        index,
+        id,
       });
-      return (result.hits.hits[0]?._source as object) ?? null;
+      return result._source ?? null;
     } catch (error: unknown) {
       if (
         typeof error === 'object' &&
         error !== null &&
         'statusCode' in error &&
-        (error as { statusCode: number }).statusCode === 404
+        error.statusCode === 404
       ) {
         return null;
       }
@@ -176,30 +169,20 @@ export class ElasticDatabaseService {
   getDocumentMeta = async (
     index: string,
     id: string
-  ): Promise<{
-    seqNo: number;
-    primaryTerm: number;
-    actualIndex: string;
-  } | null> => {
+  ): Promise<{ seqNo: number; primaryTerm: number } | null> => {
     try {
-      const result = await this.client.search({
-        index: toReadAlias(index),
-        size: 1,
-        seq_no_primary_term: true,
-        query: { ids: { values: [id] } },
+      const result = await this.client.get({
+        index,
+        id,
       });
 
-      const hit = result.hits.hits[0];
-
       if (
-        hit &&
-        typeof hit._seq_no === 'number' &&
-        typeof hit._primary_term === 'number'
+        typeof result._seq_no === 'number' &&
+        typeof result._primary_term === 'number'
       ) {
         return {
-          seqNo: hit._seq_no,
-          primaryTerm: hit._primary_term,
-          actualIndex: hit._index,
+          seqNo: result._seq_no,
+          primaryTerm: result._primary_term,
         };
       }
 
@@ -209,7 +192,7 @@ export class ElasticDatabaseService {
         typeof error === 'object' &&
         error !== null &&
         'statusCode' in error &&
-        (error as { statusCode: number }).statusCode === 404
+        error.statusCode === 404
       ) {
         return null;
       }
@@ -221,36 +204,30 @@ export class ElasticDatabaseService {
   private async getBulkDocumentMeta(
     index: string,
     ids: string[]
-  ): Promise<
-    Map<string, { seqNo: number; primaryTerm: number; actualIndex: string }>
-  > {
+  ): Promise<Map<string, { seqNo: number; primaryTerm: number }>> {
     if (ids.length === 0) {
       return new Map();
     }
 
     try {
-      const result = await this.client.search({
-        index: toReadAlias(index),
-        size: ids.length,
-        seq_no_primary_term: true,
-        query: { ids: { values: ids } },
-      });
+      const docs = ids.map((id) => ({ _index: index, _id: id }));
+      const result = await this.client.mget({ docs });
 
-      const metaMap = new Map<
-        string,
-        { seqNo: number; primaryTerm: number; actualIndex: string }
-      >();
+      const metaMap = new Map<string, { seqNo: number; primaryTerm: number }>();
 
-      for (const hit of result.hits.hits) {
+      for (const doc of result.docs) {
+        if ('error' in doc) {
+          continue;
+        }
+
         if (
-          hit._id &&
-          typeof hit._seq_no === 'number' &&
-          typeof hit._primary_term === 'number'
+          doc.found &&
+          typeof doc._seq_no === 'number' &&
+          typeof doc._primary_term === 'number'
         ) {
-          metaMap.set(hit._id, {
-            seqNo: hit._seq_no,
-            primaryTerm: hit._primary_term,
-            actualIndex: hit._index,
+          metaMap.set(doc._id, {
+            seqNo: doc._seq_no,
+            primaryTerm: doc._primary_term,
           });
         }
       }
@@ -326,7 +303,7 @@ export class ElasticDatabaseService {
   ): Promise<'created' | 'conflict'> {
     try {
       const createResult = await this.client.index({
-        index: toWriteAlias(index),
+        index,
         id,
         document: doc,
         op_type: 'create',
@@ -355,7 +332,7 @@ export class ElasticDatabaseService {
     index: string,
     id: string,
     doc: T,
-    meta: { seqNo: number; primaryTerm: number; actualIndex: string },
+    meta: { seqNo: number; primaryTerm: number },
     upsert?: T
   ): Promise<'updated' | 'created' | 'noop' | 'conflict'> {
     try {
@@ -367,7 +344,7 @@ export class ElasticDatabaseService {
         if_primary_term: number;
         upsert?: T;
       } = {
-        index: meta.actualIndex,
+        index,
         id,
         doc,
         if_seq_no: meta.seqNo,
@@ -454,11 +431,11 @@ export class ElasticDatabaseService {
     index: string,
     id: string,
     doc: T,
-    meta: { seqNo: number; primaryTerm: number; actualIndex: string }
+    meta: { seqNo: number; primaryTerm: number }
   ): Promise<'updated' | 'created' | 'conflict'> {
     try {
       const result = await this.client.index({
-        index: meta.actualIndex,
+        index,
         id,
         document: doc,
         if_seq_no: meta.seqNo,
@@ -554,7 +531,7 @@ export class ElasticDatabaseService {
 
       try {
         const result = await this.client.update({
-          index: meta.actualIndex,
+          index,
           id,
           if_seq_no: meta.seqNo,
           if_primary_term: meta.primaryTerm,
@@ -616,7 +593,7 @@ export class ElasticDatabaseService {
 
       try {
         const result = await this.client.update({
-          index: meta.actualIndex,
+          index,
           id,
           if_seq_no: meta.seqNo,
           if_primary_term: meta.primaryTerm,
@@ -758,7 +735,7 @@ export class ElasticDatabaseService {
       upsert?: Record<string, unknown>;
       scriptedUpsert?: boolean;
     },
-    meta: { seqNo: number; primaryTerm: number; actualIndex: string },
+    meta: { seqNo: number; primaryTerm: number },
     refresh?: boolean
   ): Promise<'updated' | 'created' | 'noop' | 'conflict'> {
     try {
@@ -775,7 +752,7 @@ export class ElasticDatabaseService {
         scripted_upsert?: boolean;
         refresh?: boolean | 'wait_for';
       } = {
-        index: meta.actualIndex,
+        index,
         id,
         script: {
           source: input.source,
@@ -843,7 +820,7 @@ export class ElasticDatabaseService {
         scripted_upsert: boolean;
         refresh?: boolean | 'wait_for';
       } = {
-        index: toWriteAlias(index),
+        index,
         id,
         script: {
           source: input.source,
@@ -1012,7 +989,7 @@ export class ElasticDatabaseService {
               scroll: '1m',
             })
           : await this.client.search({
-              index: toReadAlias(index),
+              index,
               body: { query } as any,
               scroll: '1m',
               size: batchSize,
@@ -1130,7 +1107,7 @@ export class ElasticDatabaseService {
       const id = getId(doc);
       if (!id) return [];
 
-      return [{ create: { _index: toWriteAlias(index), _id: id } }, doc];
+      return [{ create: { _index: index, _id: id } }, doc];
     });
 
     if (body.length === 0) {
@@ -1226,7 +1203,7 @@ export class ElasticDatabaseService {
         return [
           {
             update: {
-              _index: meta.actualIndex,
+              _index: index,
               _id: op.id,
               if_seq_no: meta.seqNo,
               if_primary_term: meta.primaryTerm,
@@ -1252,7 +1229,7 @@ export class ElasticDatabaseService {
       return [
         {
           update: {
-            _index: toWriteAlias(index),
+            _index: index,
             _id: op.id,
           },
         },
@@ -1385,7 +1362,7 @@ export class ElasticDatabaseService {
           return [
             {
               update: {
-                _index: meta.actualIndex,
+                _index: index,
                 _id: update.id,
                 if_seq_no: meta.seqNo,
                 if_primary_term: meta.primaryTerm,
@@ -1395,10 +1372,7 @@ export class ElasticDatabaseService {
           ];
         }
 
-        return [
-          { create: { _index: toWriteAlias(index), _id: update.id } },
-          update.document,
-        ];
+        return [{ create: { _index: index, _id: update.id } }, update.document];
       });
 
       try {
@@ -1461,7 +1435,7 @@ export class ElasticDatabaseService {
   ): Promise<boolean> => {
     try {
       const { deleted = 0 } = await this.client.deleteByQuery({
-        index: toReadAlias(index),
+        index,
         query,
       });
 
@@ -1473,12 +1447,8 @@ export class ElasticDatabaseService {
 
   delete = async (index: string, id: string): Promise<boolean> => {
     try {
-      const targetIndex = ROLLOVER_INDICES.has(index)
-        ? ((await this.getDocumentMeta(index, id))?.actualIndex ?? index)
-        : index;
-
       const result = await this.client.delete({
-        index: targetIndex,
+        index,
         id,
       });
 
@@ -1696,10 +1666,7 @@ export class ElasticDatabaseService {
   }
 
   indices = async (index: string, mappings: object): Promise<boolean> => {
-    const writeTarget = toWriteAlias(index);
-    const writeTargetExists = await this.client.indices.exists({
-      index: writeTarget,
-    });
+    const exists = await this.client.indices.exists({ index });
     const mappingBody = (
       mappings as {
         mappings?: Record<string, unknown>;
@@ -1707,50 +1674,7 @@ export class ElasticDatabaseService {
     )?.mappings;
     const desiredProperties = this.getProperties(mappingBody);
 
-    if (writeTargetExists) {
-      // Write alias (prod) or bare index (non-rollover) already exists:
-      // only apply additive putMapping if needed.
-      if (Object.keys(desiredProperties).length > 0) {
-        const currentProperties =
-          await this.getCurrentIndexProperties(writeTarget);
-        const additiveProperties = this.buildAdditiveProperties(
-          desiredProperties,
-          currentProperties
-        );
-
-        if (Object.keys(additiveProperties).length === 0) {
-          return true;
-        }
-
-        try {
-          await this.client.indices.putMapping({
-            index: writeTarget,
-            properties: additiveProperties as any,
-          });
-        } catch (error) {
-          if (this.isMappingConflictError(error)) {
-            incrementCounter('elastic.indices.put_mapping.conflict', 1, {
-              index,
-            });
-            return true;
-          }
-
-          throw new Error(`Failed to update index mapping: ${error}`);
-        }
-      }
-
-      return true;
-    }
-
-    // writeTarget does not exist.
-    // For rollover indices: check if bare index exists as dev fallback.
-    // For non-rollover indices: writeTarget === index, so also not found → create.
-    const bareExists = ROLLOVER_INDICES.has(index)
-      ? await this.client.indices.exists({ index })
-      : false;
-
-    if (!bareExists) {
-      // Create bare index (non-rollover always; rollover only in dev without bootstrap).
+    if (!exists) {
       try {
         const result = await this.client.indices.create(
           {
@@ -1766,13 +1690,9 @@ export class ElasticDatabaseService {
       } catch (error) {
         throw new Error(`Failed to create index: ${error}`);
       }
-
-      // Mappings were included in create body — no putMapping needed.
-      return true;
     }
 
-    // Bare rollover index exists (dev fallback): apply additive putMapping to it.
-    if (Object.keys(desiredProperties).length > 0) {
+    if (exists && Object.keys(desiredProperties).length > 0) {
       const currentProperties = await this.getCurrentIndexProperties(index);
       const additiveProperties = this.buildAdditiveProperties(
         desiredProperties,
