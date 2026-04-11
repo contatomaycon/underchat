@@ -665,6 +665,10 @@ export class WwebjsIncomingMessageService {
       void this.handleIncomingMessage(msg);
     });
     client.on('message_ciphertext_failed', (msg: Message) => {
+      if (this.shouldSkipCiphertextFailedMessage(msg)) {
+        return;
+      }
+
       this.logEvent('message_ciphertext_failed', {
         id: getMessageIdSerialized(msg),
         fromMe: msg.fromMe,
@@ -867,6 +871,14 @@ export class WwebjsIncomingMessageService {
     return this.shouldSkipIncomingEventByJids(
       this.getMessageJidCandidates(msg)
     );
+  }
+
+  private shouldSkipCiphertextFailedMessage(msg: Message): boolean {
+    if (this.isUnsupportedSystemNotification(msg)) {
+      return true;
+    }
+
+    return this.shouldSkipIncomingEventMessage(msg);
   }
 
   private getMessageAuthor(msg: Message): string | undefined {
