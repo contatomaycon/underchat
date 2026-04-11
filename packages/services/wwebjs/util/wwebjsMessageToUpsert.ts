@@ -537,11 +537,16 @@ function getDocumentCaption(msg: Message): string | undefined {
 
 function getNotifyNameFromMessage(msg: Message): string | undefined {
   const raw = msg as unknown as {
+    id?: {
+      name?: unknown;
+    };
     _data?: {
       notifyName?: unknown;
     };
   };
-  return getNonEmptyString(raw._data?.notifyName);
+  return (
+    getNonEmptyString(raw.id?.name) ?? getNonEmptyString(raw._data?.notifyName)
+  );
 }
 
 function resolveGroupParticipant(

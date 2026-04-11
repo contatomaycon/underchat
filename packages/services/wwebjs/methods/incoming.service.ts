@@ -1970,6 +1970,15 @@ export class WwebjsIncomingMessageService {
     }
   }
 
+  private getNameFromMessageId(msg: Message): string | undefined {
+    if (!msg?.id || typeof msg.id !== 'object' || msg.id === null) {
+      return undefined;
+    }
+
+    const name = (msg.id as { name?: unknown }).name;
+    return normalizeNameCandidate(name);
+  }
+
   private async resolvePushName(
     client: Client,
     msg: Message,
@@ -1982,6 +1991,11 @@ export class WwebjsIncomingMessageService {
     };
 
     const rawNotifyName = normalizeNameCandidate(raw._data?.notifyName);
+    const messageIdName = this.getNameFromMessageId(msg);
+
+    if (messageIdName) {
+      return messageIdName;
+    }
 
     if (msg.fromMe) {
       let contactCandidates = this.removeSelfPhotoCandidates(
