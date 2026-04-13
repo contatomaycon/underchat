@@ -32,6 +32,7 @@ import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import AiReplyModal from '@/components/chat/AiReplyModal.vue';
 import TranscribeModal from '@/components/chat/TranscribeModal.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
@@ -1373,6 +1374,15 @@ const canToggleForwardToOutputChatbot = computed(() => {
     EGeneralPermissions.full_access_group,
     EChatPermissions.chat_group,
     EChatPermissions.forward_to_output_chatbot,
+  ]);
+});
+
+const canViewContactPhone = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EContactPermissions.contact_group,
+    EContactPermissions.contact_view_phone,
   ]);
 });
 
@@ -5876,7 +5886,9 @@ onBeforeUnmount(() => {
                   {{ activeChatHeaderPhone }}
                 </p>
                 <VIcon
-                  v-if="chatStore.activeChat.contact?.id"
+                  v-if="
+                    chatStore.activeChat.contact?.id && canViewContactPhone
+                  "
                   :icon="
                     isHeaderPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'
                   "

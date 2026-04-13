@@ -9,6 +9,7 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { EColor } from '@core/common/enums/EColor';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { can } from '@layouts/plugins/casl';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
@@ -309,6 +310,16 @@ const canAccessLabelTemplate = computed(() => {
     EGeneralPermissions.full_access_group,
     ELabelTemplatePermissions.label_template_group,
     ELabelTemplatePermissions.label_view,
+  ];
+  return can(permissions);
+});
+
+const canViewContactPhone = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EContactPermissions.contact_group,
+    EContactPermissions.contact_view_phone,
   ];
   return can(permissions);
 });
@@ -1614,7 +1625,7 @@ watch(
                   :placeholder="$t('phone')"
                   maxlength="15"
                 >
-                  <template #append-inner>
+                  <template v-if="canViewContactPhone" #append-inner>
                     <VIcon
                       :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
                       class="cursor-pointer"

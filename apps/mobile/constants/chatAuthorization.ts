@@ -29,6 +29,13 @@ export const CHAT_MODULE_ACCESS_PERMISSIONS = [
 
 export const CONTACTS_MODULE_PERMISSIONS = CHAT_ACCESS_PERMISSIONS;
 
+export const CONTACT_VIEW_PHONE_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'contact_group',
+  'contact_view_phone',
+] as const;
+
 export const VIEW_OTHERS_CHAT_PERMISSIONS = [
   'full_access',
   'full_access_group',
@@ -274,6 +281,10 @@ export function hasChatModuleAccessPermission(permissions: string[]): boolean {
 
 export function hasContactsModuleAccess(permissions: string[]): boolean {
   return hasAnyPermission(permissions, CONTACTS_MODULE_PERMISSIONS);
+}
+
+export function hasContactViewPhonePermission(permissions: string[]): boolean {
+  return hasAnyPermission(permissions, CONTACT_VIEW_PHONE_PERMISSIONS);
 }
 
 export function canUseUserAndSectorFilters(permissions: string[]): boolean {

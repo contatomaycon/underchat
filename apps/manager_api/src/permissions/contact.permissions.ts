@@ -1,6 +1,13 @@
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 
+export const contactViewPhonePermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EContactPermissions.contact_group,
+  EContactPermissions.contact_view_phone,
+];
+
 export const contactViewPermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,

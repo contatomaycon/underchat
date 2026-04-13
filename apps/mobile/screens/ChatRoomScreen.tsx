@@ -150,6 +150,7 @@ import {
   canReopenChat,
   canDisableSendMessageOnFinishAttendance,
   canToggleForwardToOutputChatbot,
+  hasContactViewPhonePermission,
   isChatParticipant,
   isChatPrimary,
   isChatSecondary,
@@ -7781,6 +7782,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     (isInChatStatus || isQueueOrUraStatus) &&
     workerConfigForChat?.has_ura_output === true &&
     canToggleForwardToOutputChatbot(permissionList);
+  const canViewContactPhone = hasContactViewPhonePermission(permissionList);
   const isForwardToOutputActive = chatInfo.forward_to_output_chatbot !== false;
   const attendantsPrimaryUser = attendantsInfo?.primary_user ?? null;
   const attendantsSecondaryUsers = Array.isArray(
@@ -13206,7 +13208,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   <Text style={styles.chatHeaderPhone} numberOfLines={1}>
                     {headerPhoneValue}
                   </Text>
-                  {chatInfo.contact?.id ? (
+                  {chatInfo.contact?.id && canViewContactPhone ? (
                     <Pressable
                       onPress={(event) => {
                         event.stopPropagation();

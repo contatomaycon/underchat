@@ -72,6 +72,8 @@ import {
   formatPhoneForDisplay,
   normalizePhoneDigits,
 } from '../utils/phoneFormat';
+import { getPermissions } from '../storage/authStorage';
+import { hasContactViewPhonePermission } from '../constants/chatAuthorization';
 
 type ContactFormMode = 'create' | 'edit';
 type PickerKind =
@@ -182,6 +184,7 @@ export function ContactFormModal({
     null
   );
   const [documentVisible, setDocumentVisible] = useState(true);
+  const [permissionList, setPermissionList] = useState<string[]>([]);
 
   const isEditMode = mode === 'edit';
   const canLoadContact = isEditMode && !!contactId;
@@ -247,13 +250,16 @@ export function ContactFormModal({
     const loadInitialData = async () => {
       setLoadingInitial(true);
       try {
-        const [labels, users, channels] = await Promise.all([
+        const [perms, labels, users, channels] = await Promise.all([
+          getPermissions(),
           listLabelTemplates(),
           listChatUsers(),
           listContactChannels(),
         ]);
 
         if (cancelled) return;
+
+        setPermissionList(perms);
 
         setLabelOptions(
           (labels ?? []).map((item) => ({
@@ -388,8 +394,10 @@ export function ContactFormModal({
   );
   const canToggleEmailVisibility =
     isEditMode && (isMaskedValue(email) || !!emailMaskedValue);
-  const canTogglePhoneVisibility =
+  const hasMaskedPhoneForEdit =
     isEditMode && (isProbablyMaskedPhone(phone) || !!phoneMaskedValue);
+  const canShowPhoneDecryptEye =
+    hasMaskedPhoneForEdit && hasContactViewPhonePermission(permissionList);
   const canToggleDocumentVisibility =
     isEditMode && (isMaskedValue(document) || !!documentMaskedValue);
   const documentPlaceholder = useMemo(() => {
@@ -829,7 +837,7 @@ export function ContactFormModal({
       if (isEditMode && contactId) {
         const emailValue = skipEmailUpdate ? undefined : email.trim() || null;
         const skipPhoneUpdate =
-          (canTogglePhoneVisibility && !phoneVisible) ||
+          (canShowPhoneDecryptEye && !phoneVisible) ||
           (isMaskedValue(phone) && !phoneDecrypted);
         const phoneValue = skipPhoneUpdate ? undefined : normalizedPhone;
         const documentValue = skipDocumentUpdate
@@ -1122,13 +1130,17 @@ export function ContactFormModal({
                             onChangeText={(value) =>
                               setPhone(formatLocalPhone(value))
                             }
-                            editable={!canTogglePhoneVisibility || phoneVisible}
+                            editable={
+                              !hasMaskedPhoneForEdit ||
+                              (canShowPhoneDecryptEye && phoneVisible) ||
+                              phoneDecrypted
+                            }
                             keyboardType="phone-pad"
                             maxLength={15}
                             placeholder="(00) 00000-0000"
                             placeholderTextColor={colors.grey500}
                           />
-                          {canTogglePhoneVisibility ? (
+                          {canShowPhoneDecryptEye ? (
                             <Pressable
                               style={styles.actionBtn}
                               onPress={togglePhoneVisibility}

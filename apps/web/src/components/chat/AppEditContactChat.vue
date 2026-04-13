@@ -7,6 +7,9 @@ import {
 } from '@core/schema/contact/editContact/request.schema';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { EColor } from '@core/common/enums/EColor';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { can } from '@layouts/plugins/casl';
 import { useChatStore } from '@/@webcore/stores/chat';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { requiredValidator } from '@/@webcore/utils/validators';
@@ -292,6 +295,15 @@ const documentValidator = (v: string | null | undefined) => {
   }
   return true;
 };
+
+const canViewContactPhone = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EContactPermissions.contact_group,
+    EContactPermissions.contact_view_phone,
+  ]);
+});
 
 interface SelectItem {
   value: string;
@@ -1592,7 +1604,7 @@ onMounted(async () => {
                   :placeholder="$t('phone')"
                   maxlength="15"
                 >
-                  <template #append-inner>
+                  <template v-if="canViewContactPhone" #append-inner>
                     <VIcon
                       :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
                       class="cursor-pointer"

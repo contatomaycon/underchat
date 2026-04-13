@@ -5,6 +5,9 @@ import { useReportConversationHistoryStore } from '@/@webcore/stores/reportConve
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { ViewReportConversationHistoryContactResponse } from '@core/schema/reportConversationHistory/viewReportConversationHistoryContact/response.schema';
 import { useI18n } from 'vue-i18n';
+import { can } from '@layouts/plugins/casl';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
@@ -49,6 +52,15 @@ const contactChannelIds = ref<string[]>([]);
 const channelsOptions = ref<
   { channel_id: string; name: string; number: string | null }[]
 >([]);
+const canViewContactPhone = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EContactPermissions.contact_group,
+    EContactPermissions.contact_view_phone,
+  ]);
+});
+
 const contactChannelsDisplay = computed(() => {
   if (contactChannelIds.value.length === 0) return [];
   return contactChannelIds.value
@@ -344,7 +356,7 @@ watch(
               type="tel"
               readonly
             >
-              <template #append-inner>
+              <template v-if="canViewContactPhone" #append-inner>
                 <VIcon
                   :icon="isViewPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
                   class="cursor-pointer"

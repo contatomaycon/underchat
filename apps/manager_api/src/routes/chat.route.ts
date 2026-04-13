@@ -8,6 +8,7 @@ import { planStatus } from '@/plugins/planStatus';
 import {
   chatPermissions,
   chatReadPermissions,
+  contactViewPhonePermissions,
   forwardToOutputChatbotPermissions,
   kanbanPermissions,
   viewChatAttendantsPermissions,
@@ -422,6 +423,8 @@ export default function chatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPhonePermissions),
       planGuard,
       planStatus,
     ],

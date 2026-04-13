@@ -17,6 +17,9 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
 import { validateCnpj } from '@core/common/functions/validateCnpj';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
+import { can } from '@layouts/plugins/casl';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 
 const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
@@ -42,6 +45,15 @@ const emit = defineEmits<{
 
 const isContact = computed(() => !!chatStore.activeChat?.contact?.id);
 const contactId = computed(() => chatStore.activeChat?.contact?.id ?? null);
+
+const canViewContactPhone = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EContactPermissions.contact_group,
+    EContactPermissions.contact_view_phone,
+  ]);
+});
 
 const phone_ddi = ref<string | null>('55');
 const phone = ref<string | null>(null);
@@ -1633,7 +1645,7 @@ onMounted(async () => {
                 :readonly="isContact"
               />
               <VIcon
-                v-if="isContact"
+                v-if="isContact && canViewContactPhone"
                 size="17"
                 :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
                 class="cursor-pointer phone-eye-icon"

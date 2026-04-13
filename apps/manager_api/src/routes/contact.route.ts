@@ -5,6 +5,7 @@ import {
   contactDeletePermissions,
   contactUpdatePermissions,
   contactViewPermissions,
+  contactViewPhonePermissions,
 } from '@/permissions';
 import ContactController from '@/controllers/contact';
 import { listContactSchema } from '@core/schema/contact/listContact';
@@ -113,6 +114,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPhonePermissions),
       planGuard,
       planStatus,
     ],

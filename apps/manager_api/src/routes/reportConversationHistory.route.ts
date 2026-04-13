@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { reportConversationHistoryViewPermissions } from '@/permissions/reportConversationHistory.permissions';
+import { contactViewPhonePermissions } from '@/permissions/contact.permissions';
 import ReportConversationHistoryController from '@/controllers/reportConversationHistory';
 import { listReportConversationHistorySchema } from '@core/schema/reportConversationHistory/listReportConversationHistory';
 import { listReportConversationHistoryMessagesSchema } from '@core/schema/reportConversationHistory/listReportConversationHistoryMessages';
@@ -126,6 +127,8 @@ export default function reportConversationHistoryRoutes(
           reply,
           reportConversationHistoryViewPermissions
         ),
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPhonePermissions),
       planGuard,
       planStatus,
     ],
