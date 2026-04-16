@@ -31,6 +31,10 @@ export class ChatUserCreatorRepository {
         chat_user_id: chatUserId,
         user_id: userId,
         notifications: true,
+        notifications_sound: true,
+        notifications_toast: true,
+        notifications_browser: true,
+        notifications_push: true,
       })
       .execute();
 

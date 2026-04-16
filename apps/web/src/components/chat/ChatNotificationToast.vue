@@ -1,14 +1,16 @@
 <script lang="ts" setup>
 import { ref, computed, watch, onUnmounted } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
+import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import type { ChatNotificationToastPayload } from '@/composables/useChatNotificationToast';
 
 interface Props {
-  message: IChatMessage;
+  notification: ChatNotificationToastPayload;
   visible: boolean;
 }
 
@@ -19,31 +21,47 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
-const route = useRoute();
 const chatStore = useChatStore();
 const { t } = useI18n();
 const timer = ref<ReturnType<typeof setTimeout> | null>(null);
 
-const isChatRoute = computed(() => route.name === 'chat');
+const shouldShow = computed(() => props.visible);
 
-const shouldShow = computed(() => props.visible && !isChatRoute.value);
+const notificationChatId = computed(() => {
+  if (props.notification.type === 'message') {
+    return props.notification.message.chat_id;
+  }
+
+  return props.notification.chat.chat_id;
+});
+
+const notificationChat = computed(() => {
+  if (props.notification.type === 'status') {
+    return props.notification.chat;
+  }
+
+  const chatId = props.notification.message.chat_id;
+
+  return (
+    chatStore.listQueue.find((chat) => chat.chat_id === chatId) ||
+    chatStore.listInChat.find((chat) => chat.chat_id === chatId) ||
+    chatStore.listChatbot.find((chat) => chat.chat_id === chatId) ||
+    null
+  );
+});
 
 const senderName = computed(() => {
-  const chat =
-    chatStore.listQueue.find((c) => c.chat_id === props.message.chat_id) ||
-    chatStore.listInChat.find((c) => c.chat_id === props.message.chat_id) ||
-    chatStore.listChatbot.find((c) => c.chat_id === props.message.chat_id);
-
-  return chat?.name || '';
+  return (
+    notificationChat.value?.name || notificationChat.value?.contact?.name || ''
+  );
 });
 
 const senderIcon = computed(() => {
-  const chat =
-    chatStore.listQueue.find((c) => c.chat_id === props.message.chat_id) ||
-    chatStore.listInChat.find((c) => c.chat_id === props.message.chat_id) ||
-    chatStore.listChatbot.find((c) => c.chat_id === props.message.chat_id);
-
-  return chat?.photo || '/images/svg/avatar-default.svg';
+  return (
+    notificationChat.value?.photo ||
+    notificationChat.value?.contact?.photo ||
+    '/images/svg/avatar-default.svg'
+  );
 });
 
 function getMessagePreview(message: IChatMessage): string {
@@ -78,7 +96,19 @@ function getMessagePreview(message: IChatMessage): string {
 }
 
 const messagePreview = computed(() => {
-  return getMessagePreview(props.message);
+  if (props.notification.type === 'status') {
+    if (props.notification.chat.status === EChatStatus.in_chat) {
+      return t('chat_notification_status_in_chat');
+    }
+
+    if (props.notification.chat.status === EChatStatus.queue) {
+      return t('chat_notification_status_queue');
+    }
+
+    return t('chat_notification_status_update');
+  }
+
+  return getMessagePreview(props.notification.message);
 });
 
 function handleClick() {
@@ -86,7 +116,7 @@ function handleClick() {
   emit('close');
 
   if (chatStore.setActiveChat) {
-    chatStore.setActiveChat(props.message.chat_id);
+    chatStore.setActiveChat(notificationChatId.value);
   }
 
   router.push({
@@ -118,14 +148,6 @@ watch(
   },
   { immediate: true }
 );
-
-watch(isChatRoute, () => {
-  if (isChatRoute.value && props.visible) {
-    handleClose();
-    return;
-  }
-  startTimer();
-});
 
 onUnmounted(() => {
   if (timer.value) {

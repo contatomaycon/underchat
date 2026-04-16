@@ -70,7 +70,7 @@ onUnmounted(async () => {
 
       <ChatNotificationToast
         v-if="activeNotification"
-        :message="activeNotification.message"
+        :notification="activeNotification"
         :visible="!!activeNotification"
         @close="hideToast"
         @click="hideToast"

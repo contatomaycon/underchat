@@ -36,6 +36,13 @@ export const initUserPresenceSubscription = async (
           status,
         }
       : {
+          chat_user_id: '',
+          about: '',
+          notifications: true,
+          notifications_sound: true,
+          notifications_toast: true,
+          notifications_browser: true,
+          notifications_push: true,
           status,
         };
 

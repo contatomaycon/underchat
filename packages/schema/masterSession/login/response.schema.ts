@@ -12,6 +12,10 @@ export const chatsUserResponseSchema = Type.Object({
   about: Type.Union([Type.String(), Type.Null()]),
   status: Type.String({ enum: Object.values(EChatUserStatus) }),
   notifications: Type.Boolean(),
+  notifications_sound: Type.Boolean(),
+  notifications_toast: Type.Boolean(),
+  notifications_browser: Type.Boolean(),
+  notifications_push: Type.Boolean(),
 });
 
 export const userResponseSchema = Type.Object({

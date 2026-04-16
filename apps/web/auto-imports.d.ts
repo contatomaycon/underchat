@@ -418,6 +418,9 @@ declare global {
   // @ts-ignore
   export type { CookieOptions, CookieRef } from './src/@webcore/composable/useCookie'
   import('./src/@webcore/composable/useCookie')
+  // @ts-ignore
+  export type { ChatNotificationToastPayload } from './src/composables/useChatNotificationToast'
+  import('./src/composables/useChatNotificationToast')
 }
 
 // for vue template auto import

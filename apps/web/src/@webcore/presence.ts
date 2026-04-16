@@ -67,6 +67,10 @@ const updateLocalPresenceStatus = (status: EChatUserStatus): void => {
     : ({
         status,
         notifications: true,
+        notifications_sound: true,
+        notifications_toast: true,
+        notifications_browser: true,
+        notifications_push: true,
         about: '',
         chat_user_id: '',
       } as AuthUserResponse['chat_user']);

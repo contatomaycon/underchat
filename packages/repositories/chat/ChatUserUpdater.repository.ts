@@ -29,6 +29,22 @@ export class ChatUserUpdaterRepository {
       inputUpdate.notifications = input.notifications;
     }
 
+    if (input.notifications_sound !== undefined) {
+      inputUpdate.notifications_sound = input.notifications_sound;
+    }
+
+    if (input.notifications_toast !== undefined) {
+      inputUpdate.notifications_toast = input.notifications_toast;
+    }
+
+    if (input.notifications_browser !== undefined) {
+      inputUpdate.notifications_browser = input.notifications_browser;
+    }
+
+    if (input.notifications_push !== undefined) {
+      inputUpdate.notifications_push = input.notifications_push;
+    }
+
     if (input.sort_by_chat_order !== undefined) {
       inputUpdate.sort_by_chat_order = input.sort_by_chat_order;
     }

@@ -21,6 +21,7 @@ export class UsersWithNotificationsListerRepository {
         and(
           eq(user.account_id, accountId),
           eq(chatUser.notifications, true),
+          eq(chatUser.notifications_push, true),
           isNull(user.deleted_at)
         )
       )

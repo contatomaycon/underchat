@@ -50,6 +50,67 @@ const userStatusRadioOptions = [
 
 const updateChatUser = useDebounceFn(chatStore.updateChatUserDebounce, 1000);
 
+const chatNotificationPreferences = computed(() => chatStore.user?.chat_user);
+
+const notificationsMasterModel = computed({
+  get: () => chatNotificationPreferences.value?.notifications ?? false,
+  set: (value: boolean) => {
+    if (!chatNotificationPreferences.value) {
+      return;
+    }
+
+    chatNotificationPreferences.value.notifications = value;
+  },
+});
+
+const soundNotificationsModel = computed({
+  get: () => chatNotificationPreferences.value?.notifications_sound ?? true,
+  set: (value: boolean) => {
+    if (!chatNotificationPreferences.value) {
+      return;
+    }
+
+    chatNotificationPreferences.value.notifications_sound = value;
+  },
+});
+
+const toastNotificationsModel = computed({
+  get: () => chatNotificationPreferences.value?.notifications_toast ?? true,
+  set: (value: boolean) => {
+    if (!chatNotificationPreferences.value) {
+      return;
+    }
+
+    chatNotificationPreferences.value.notifications_toast = value;
+  },
+});
+
+const browserNotificationsModel = computed({
+  get: () => chatNotificationPreferences.value?.notifications_browser ?? true,
+  set: (value: boolean) => {
+    if (!chatNotificationPreferences.value) {
+      return;
+    }
+
+    chatNotificationPreferences.value.notifications_browser = value;
+  },
+});
+
+const pushNotificationsModel = computed({
+  get: () => chatNotificationPreferences.value?.notifications_push ?? true,
+  set: (value: boolean) => {
+    if (!chatNotificationPreferences.value) {
+      return;
+    }
+
+    chatNotificationPreferences.value.notifications_push = value;
+  },
+});
+
+const isChildNotificationDisabled = computed(
+  () => !notificationsMasterModel.value
+);
+
 const updateProfileSidebarContent = async () => {
   const validateForm = await refFormProfileSidebarContent?.value?.validate();
   if (!validateForm?.valid) return;
@@ -60,6 +121,21 @@ const updateProfileSidebarContent = async () => {
   refreshUpdateProfileSidebarContent(
     chatStore.user?.chat_user?.status as EChatUserStatus
   );
+};
+
+const updateNotificationSettings = async () => {
+  await updateProfileSidebarContent();
+};
+
+const updateMasterNotificationSettings = async () => {
+  if (!notificationsMasterModel.value) {
+    soundNotificationsModel.value = false;
+    toastNotificationsModel.value = false;
+    browserNotificationsModel.value = false;
+    pushNotificationsModel.value = false;
+  }
+
+  await updateProfileSidebarContent();
 };
 
 const updateStatus = async () => {
@@ -801,9 +877,97 @@ const removePhoto = async () => {
               </div>
               <VSwitch
                 id="chat-notification"
-                v-model="chatStore.user.chat_user.notifications"
+                v-model="notificationsMasterModel"
                 density="compact"
-                @update:model-value="updateProfileSidebarContent"
+                @update:model-value="updateMasterNotificationSettings"
+              />
+            </div>
+          </div>
+
+          <div class="d-flex align-center pa-2 ms-8">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-volume"
+              size="20"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-2 text-high-emphasis">
+                {{ $t('chat_notification_sound') }}
+              </div>
+              <VSwitch
+                id="chat-notification-sound"
+                v-model="soundNotificationsModel"
+                density="compact"
+                :disabled="isChildNotificationDisabled"
+                @update:model-value="updateNotificationSettings"
+              />
+            </div>
+          </div>
+
+          <div class="d-flex align-center pa-2 ms-8">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-alert-circle"
+              size="20"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-2 text-high-emphasis">
+                {{ $t('chat_notification_toast') }}
+              </div>
+              <VSwitch
+                id="chat-notification-toast"
+                v-model="toastNotificationsModel"
+                density="compact"
+                :disabled="isChildNotificationDisabled"
+                @update:model-value="updateNotificationSettings"
+              />
+            </div>
+          </div>
+
+          <div class="d-flex align-center pa-2 ms-8">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-device-desktop"
+              size="20"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-2 text-high-emphasis">
+                {{ $t('chat_notification_browser') }}
+              </div>
+              <VSwitch
+                id="chat-notification-browser"
+                v-model="browserNotificationsModel"
+                density="compact"
+                :disabled="isChildNotificationDisabled"
+                @update:model-value="updateNotificationSettings"
+              />
+            </div>
+          </div>
+
+          <div class="d-flex align-center pa-2 ms-8">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-brand-pushbullet"
+              size="20"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-2 text-high-emphasis">
+                {{ $t('chat_notification_push') }}
+              </div>
+              <VSwitch
+                id="chat-notification-push"
+                v-model="pushNotificationsModel"
+                density="compact"
+                :disabled="isChildNotificationDisabled"
+                @update:model-value="updateNotificationSettings"
               />
             </div>
           </div>

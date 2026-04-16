@@ -2325,6 +2325,10 @@ export const useChatStore = defineStore('chat', {
         status: existingChatUser?.status as EChatUserStatus,
         about: existingChatUser?.about ?? '',
         notifications: existingChatUser?.notifications ?? false,
+        notifications_sound: existingChatUser?.notifications_sound ?? true,
+        notifications_toast: existingChatUser?.notifications_toast ?? true,
+        notifications_browser: existingChatUser?.notifications_browser ?? true,
+        notifications_push: existingChatUser?.notifications_push ?? true,
       };
 
       setUser({ ...this.user, chat_user: chatUserUpdate });
@@ -2341,12 +2345,21 @@ export const useChatStore = defineStore('chat', {
         status: this.user?.chat_user?.status as EChatUserStatus,
         about: this.user?.chat_user?.about ?? '',
         notifications: this.user?.chat_user?.notifications ?? false,
+        notifications_sound: this.user?.chat_user?.notifications_sound ?? true,
+        notifications_toast: this.user?.chat_user?.notifications_toast ?? true,
+        notifications_browser:
+          this.user?.chat_user?.notifications_browser ?? true,
+        notifications_push: this.user?.chat_user?.notifications_push ?? true,
       };
 
       await this.updateChatsUser({
         about: chatUserUpdate.about,
         status: chatUserUpdate.status,
         notifications: chatUserUpdate.notifications,
+        notifications_sound: chatUserUpdate.notifications_sound,
+        notifications_toast: chatUserUpdate.notifications_toast,
+        notifications_browser: chatUserUpdate.notifications_browser,
+        notifications_push: chatUserUpdate.notifications_push,
       });
     },
 
@@ -3293,6 +3306,24 @@ export const useChatStore = defineStore('chat', {
         if (this.user?.chat_user) {
           const updatedChatUser = {
             ...this.user.chat_user,
+            notifications:
+              input.notifications ?? this.user.chat_user.notifications,
+            notifications_sound:
+              input.notifications_sound ??
+              this.user.chat_user.notifications_sound ??
+              true,
+            notifications_toast:
+              input.notifications_toast ??
+              this.user.chat_user.notifications_toast ??
+              true,
+            notifications_browser:
+              input.notifications_browser ??
+              this.user.chat_user.notifications_browser ??
+              true,
+            notifications_push:
+              input.notifications_push ??
+              this.user.chat_user.notifications_push ??
+              true,
             sort_by_chat_order:
               input.sort_by_chat_order ??
               this.user.chat_user.sort_by_chat_order,

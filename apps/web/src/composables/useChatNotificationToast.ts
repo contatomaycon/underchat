@@ -1,16 +1,35 @@
 import { ref } from 'vue';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import type { IChat } from '@core/common/interfaces/IChat';
 
-const activeNotification = ref<{
-  message: IChatMessage;
-  id: string;
-} | null>(null);
+export type ChatNotificationToastPayload =
+  | {
+      id: string;
+      type: 'message';
+      message: IChatMessage;
+    }
+  | {
+      id: string;
+      type: 'status';
+      chat: IChat;
+    };
+
+const activeNotification = ref<ChatNotificationToastPayload | null>(null);
 
 export function useChatNotificationToast() {
-  function showToast(message: IChatMessage) {
+  function showMessageToast(message: IChatMessage) {
     activeNotification.value = {
-      message,
       id: message.message_id,
+      type: 'message',
+      message,
+    };
+  }
+
+  function showStatusToast(chat: IChat) {
+    activeNotification.value = {
+      id: `${chat.chat_id}-${chat.status}`,
+      type: 'status',
+      chat,
     };
   }
 
@@ -20,7 +39,8 @@ export function useChatNotificationToast() {
 
   return {
     activeNotification,
-    showToast,
+    showMessageToast,
+    showStatusToast,
     hideToast,
   };
 }

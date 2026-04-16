@@ -1,14 +1,17 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { getSectors, getChannels } from '@/@webcore/localStorage/user';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { EMessageType } from '@core/common/enums/EMessageType';
 import { useChatNotificationToast } from './useChatNotificationToast';
 import axiosAuth from '@/@webcore/axios';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 
 const MAX_LINE_LENGTH = 70;
 
@@ -63,6 +66,48 @@ function getChatFromStore(
     chatStore.listChatbot.find((c) => c.chat_id === message.chat_id) ||
     null
   );
+}
+
+function getMessagePreview(message: IChatMessage, t: (key: string) => string) {
+  if (!message.content) {
+    return t('chat_notification_new_message');
+  }
+
+  const text = extractMessageTextFromContent(message.content);
+  if (text) {
+    return text;
+  }
+
+  switch (message.content.type) {
+    case EMessageType.image:
+      return `[${t('image')}]`;
+    case EMessageType.video:
+      return `[${t('video')}]`;
+    case EMessageType.audio:
+      return `[${t('audio')}]`;
+    case EMessageType.document:
+      return `[${t('document')}]`;
+    case EMessageType.sticker:
+      return `[${t('sticker')}]`;
+    case EMessageType.location:
+      return `[${t('location')}]`;
+    case EMessageType.contact_card:
+    case EMessageType.contacts:
+      return `[${t('contact')}]`;
+    default:
+      return `[${t('message')}]`;
+  }
+}
+
+type ChatTitleSource = {
+  name: string | null;
+  contact?: {
+    name: string;
+  } | null;
+};
+
+function getChatTitle(chat: ChatTitleSource, fallback: string): string {
+  return chat.name || chat.contact?.name || fallback;
 }
 
 function isChatbotStatus(status: string): boolean {
@@ -126,13 +171,106 @@ function canReceiveMessageNotification(
 export const useChatNotifications = () => {
   const route = useRoute();
   const router = useRouter();
+  const { t } = useI18n();
   const chatStore = useChatStore();
-  const { showToast } = useChatNotificationToast();
+  const { showMessageToast, showStatusToast } = useChatNotificationToast();
   const isPageVisible = ref(true);
   const processingMessages = ref(new Set<string>());
   const notifiedQueueChats = ref(new Set<string>());
   const serviceWorkerRegistration = ref<ServiceWorkerRegistration | null>(null);
   const isSubscribing = ref(false);
+
+  const isMasterNotificationsEnabled = () => {
+    return chatStore.user?.chat_user?.notifications === true;
+  };
+
+  const isSoundNotificationsEnabled = () => {
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_sound !== false;
+  };
+
+  const isToastNotificationsEnabled = () => {
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_toast !== false;
+  };
+
+  const isBrowserNotificationsEnabled = () => {
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_browser !== false;
+  };
+
+  const isPushNotificationsEnabled = () => {
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_push !== false;
+  };
+
+  const isViewingChatConversation = (chatId: string): boolean => {
+    const routeName = route.name;
+    const isChatScreen = routeName === 'chat' || routeName === 'kanban';
+
+    if (!isChatScreen) {
+      return false;
+    }
+
+    return chatStore.activeChat?.chat_id === chatId;
+  };
+
+  const showBrowserNotification = (
+    title: string,
+    body: string,
+    chatId: string,
+    tag: string
+  ): void => {
+    if (!('Notification' in globalThis)) {
+      return;
+    }
+
+    if (Notification.permission !== 'granted') {
+      return;
+    }
+
+    try {
+      const notification = new Notification(title, {
+        body,
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        tag,
+        data: {
+          chatId,
+        },
+      });
+
+      notification.onclick = () => {
+        notification.close();
+
+        if (chatStore.setActiveChat) {
+          chatStore.setActiveChat(chatId);
+        }
+
+        router.push({
+          name: 'chat',
+        });
+
+        if (typeof globalThis.focus === 'function') {
+          globalThis.focus();
+        }
+      };
+    } catch {
+      return;
+    }
+  };
 
   async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
     if (!('serviceWorker' in navigator)) {
@@ -328,11 +466,7 @@ export const useChatNotifications = () => {
   }
 
   async function handleNewMessage(message: IChatMessage): Promise<void> {
-    if (!chatStore.user?.chat_user?.notifications) {
-      return;
-    }
-
-    if (route.name === 'chat') {
+    if (!isMasterNotificationsEnabled()) {
       return;
     }
 
@@ -364,6 +498,10 @@ export const useChatNotifications = () => {
       return;
     }
 
+    if (isViewingChatConversation(message.chat_id)) {
+      return;
+    }
+
     if (chat.status === EChatStatus.in_chat) {
       notifiedQueueChats.value.delete(message.chat_id);
     }
@@ -382,10 +520,24 @@ export const useChatNotifications = () => {
 
     processingMessages.value.add(messageKey);
 
-    playAlertSound();
+    const title = getChatTitle(chat, t('chat_notification_new_message'));
+    const body = formatNotificationBody(getMessagePreview(message, t));
 
-    if (isPageVisible.value) {
-      showToast(message);
+    if (isSoundNotificationsEnabled()) {
+      playAlertSound();
+    }
+
+    if (isToastNotificationsEnabled() && isPageVisible.value) {
+      showMessageToast(message);
+    }
+
+    if (isBrowserNotificationsEnabled() && !isPageVisible.value) {
+      showBrowserNotification(
+        title,
+        body,
+        message.chat_id,
+        `chat-browser-${message.chat_id}`
+      );
     }
 
     setTimeout(() => {
@@ -394,11 +546,7 @@ export const useChatNotifications = () => {
   }
 
   function handleChatStatusChange(chat: IChat): void {
-    if (!chatStore.user?.chat_user?.notifications) {
-      return;
-    }
-
-    if (route.name === 'chat') {
+    if (!isMasterNotificationsEnabled()) {
       return;
     }
 
@@ -413,11 +561,67 @@ export const useChatNotifications = () => {
       return;
     }
 
-    playAlertSound();
+    if (isViewingChatConversation(chat.chat_id)) {
+      return;
+    }
+
+    const statusBody =
+      chat.status === EChatStatus.in_chat
+        ? t('chat_notification_status_in_chat')
+        : t('chat_notification_status_queue');
+
+    if (isSoundNotificationsEnabled()) {
+      playAlertSound();
+    }
+
+    if (isToastNotificationsEnabled() && isPageVisible.value) {
+      showStatusToast(chat);
+    }
+
+    if (isBrowserNotificationsEnabled() && !isPageVisible.value) {
+      showBrowserNotification(
+        getChatTitle(chat, t('chat_notification_status_update')),
+        statusBody,
+        chat.chat_id,
+        `chat-status-browser-${chat.chat_id}`
+      );
+    }
   }
 
   function handleVisibilityChange() {
     isPageVisible.value = !document.hidden;
+  }
+
+  async function syncNotificationSettings(): Promise<void> {
+    const shouldUseBrowserNotifications = isBrowserNotificationsEnabled();
+    const shouldUsePushNotifications = isPushNotificationsEnabled();
+
+    if (!('Notification' in globalThis)) {
+      await unsubscribeFromPushNotificationsInternal();
+      return;
+    }
+
+    if (shouldUseBrowserNotifications || shouldUsePushNotifications) {
+      if (Notification.permission === 'default') {
+        await requestNotificationPermission();
+      }
+    }
+
+    if (!shouldUsePushNotifications) {
+      await unsubscribeFromPushNotificationsInternal();
+      return;
+    }
+
+    if ('serviceWorker' in navigator && !serviceWorkerRegistration.value) {
+      await registerServiceWorker();
+    }
+
+    if (Notification.permission === 'granted') {
+      await subscribeToPushNotifications();
+      return;
+    }
+
+    await unsubscribeFromPushNotificationsInternal();
   }
 
   onMounted(async () => {
@@ -461,21 +665,13 @@ export const useChatNotifications = () => {
   });
 
   watch(
-    () => chatStore.user?.chat_user?.notifications,
-    async (notifications) => {
-      if (notifications === true) {
-        if (Notification.permission === 'default') {
-          await requestNotificationPermission();
-        }
-
-        if ('serviceWorker' in navigator && !serviceWorkerRegistration.value) {
-          await registerServiceWorker();
-        }
-
-        if (Notification.permission === 'granted') {
-          await subscribeToPushNotifications();
-        }
-      }
+    () => [
+      chatStore.user?.chat_user?.notifications,
+      chatStore.user?.chat_user?.notifications_push,
+      chatStore.user?.chat_user?.notifications_browser,
+    ],
+    async () => {
+      await syncNotificationSettings();
     },
     { immediate: true }
   );

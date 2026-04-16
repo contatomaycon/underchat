@@ -67,6 +67,10 @@ export type UpdateChatUserPayload = {
   about?: string | null;
   status?: ChatUserStatus;
   notifications: boolean;
+  notifications_sound?: boolean;
+  notifications_toast?: boolean;
+  notifications_browser?: boolean;
+  notifications_push?: boolean;
   sort_by_chat_order?: string | null;
   sort_in_chat_order?: string | null;
   sort_by_my_chats_order?: string | null;
