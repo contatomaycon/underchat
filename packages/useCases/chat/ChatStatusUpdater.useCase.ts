@@ -778,9 +778,12 @@ export class ChatStatusUpdaterUseCase {
 
     await this.publishChatUpdate(chatWithProtocol, accountId);
 
+    const hasStatusTransition = chat.status !== chatWithProtocol.status;
+
     if (
-      chatWithProtocol.status === EChatStatus.queue ||
-      chatWithProtocol.status === EChatStatus.in_chat
+      hasStatusTransition &&
+      (chatWithProtocol.status === EChatStatus.queue ||
+        chatWithProtocol.status === EChatStatus.in_chat)
     ) {
       await this.pushNotificationService
         .sendNotificationForChatStatusChange(chatWithProtocol)

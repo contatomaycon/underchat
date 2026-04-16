@@ -3,7 +3,7 @@ import { user, chatUser } from '@core/models';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 @injectable()
 export class UsersWithNotificationsListerRepository {
@@ -13,7 +13,8 @@ export class UsersWithNotificationsListerRepository {
 
   listUsersWithNotifications = async (
     accountId: string,
-    status?: EChatStatus
+    status?: EChatStatus,
+    requireStatusUpdateToggle = false
   ): Promise<string[]> => {
     let whereClause = and(
       eq(user.account_id, accountId),
@@ -23,23 +24,23 @@ export class UsersWithNotificationsListerRepository {
     );
 
     if (status === EChatStatus.queue) {
-      whereClause = and(
-        whereClause,
-        or(
-          eq(chatUser.notifications_status_update, true),
-          eq(chatUser.notifications_status_queue, true)
-        )
-      );
+      whereClause = requireStatusUpdateToggle
+        ? and(
+            whereClause,
+            eq(chatUser.notifications_status_update, true),
+            eq(chatUser.notifications_status_queue, true)
+          )
+        : and(whereClause, eq(chatUser.notifications_status_queue, true));
     }
 
     if (status === EChatStatus.in_chat) {
-      whereClause = and(
-        whereClause,
-        or(
-          eq(chatUser.notifications_status_update, true),
-          eq(chatUser.notifications_status_in_chat, true)
-        )
-      );
+      whereClause = requireStatusUpdateToggle
+        ? and(
+            whereClause,
+            eq(chatUser.notifications_status_update, true),
+            eq(chatUser.notifications_status_in_chat, true)
+          )
+        : and(whereClause, eq(chatUser.notifications_status_in_chat, true));
     }
 
     const result = await this.dbRo

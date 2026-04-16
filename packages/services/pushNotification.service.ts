@@ -159,9 +159,16 @@ export class PushNotificationService {
     }
 
     const accountId = chat.account.id;
+    const statusFilter =
+      chat.status === EChatStatus.queue || chat.status === EChatStatus.in_chat
+        ? chat.status
+        : undefined;
+
     const userIds =
       await this.usersWithNotificationsListerRepository.listUsersWithNotifications(
-        accountId
+        accountId,
+        statusFilter,
+        false
       );
 
     if (userIds.length === 0) {
@@ -225,7 +232,8 @@ export class PushNotificationService {
     const userIds =
       await this.usersWithNotificationsListerRepository.listUsersWithNotifications(
         accountId,
-        chat.status
+        chat.status,
+        true
       );
 
     if (userIds.length === 0) {

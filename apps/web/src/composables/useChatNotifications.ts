@@ -244,6 +244,14 @@ export const useChatNotifications = () => {
     return chatStore.user?.chat_user?.notifications_status_in_chat !== false;
   };
 
+  const isQueueNotificationsEnabled = () => {
+    return isQueueStatusNotificationsEnabled();
+  };
+
+  const isInChatNotificationsEnabled = () => {
+    return isInChatStatusNotificationsEnabled();
+  };
+
   const isViewingChatConversation = (chatId: string): boolean => {
     const routeName = route.name;
     const isChatScreen = routeName === 'chat' || routeName === 'kanban';
@@ -522,6 +530,17 @@ export const useChatNotifications = () => {
       return;
     }
 
+    if (chat.status === EChatStatus.queue && !isQueueNotificationsEnabled()) {
+      return;
+    }
+
+    if (
+      chat.status === EChatStatus.in_chat &&
+      !isInChatNotificationsEnabled()
+    ) {
+      return;
+    }
+
     if (!canReceiveMessageNotification(chat as IChat, chatStore)) {
       return;
     }
@@ -573,7 +592,10 @@ export const useChatNotifications = () => {
     }, 5000);
   }
 
-  function handleChatStatusChange(chat: IChat): void {
+  function handleChatStatusChange(
+    chat: IChat,
+    previousStatus: string | null = null
+  ): void {
     if (
       chat.status !== EChatStatus.in_chat &&
       chat.status !== EChatStatus.queue
@@ -581,10 +603,14 @@ export const useChatNotifications = () => {
       return;
     }
 
+    if (previousStatus === chat.status) {
+      return;
+    }
+
     const shouldNotifyQueueStatus =
-      isStatusNotificationsEnabled() || isQueueStatusNotificationsEnabled();
+      isStatusNotificationsEnabled() && isQueueStatusNotificationsEnabled();
     const shouldNotifyInChatStatus =
-      isStatusNotificationsEnabled() || isInChatStatusNotificationsEnabled();
+      isStatusNotificationsEnabled() && isInChatStatusNotificationsEnabled();
 
     if (chat.status === EChatStatus.queue && !shouldNotifyQueueStatus) {
       return;

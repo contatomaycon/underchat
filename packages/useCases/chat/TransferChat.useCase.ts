@@ -518,8 +518,7 @@ export class TransferChatUseCase {
     const canDisableSendMessageOnTransfer =
       this.canDisableSendMessageOnTransfer(actions);
     const shouldSendMessageOnTransfer = !(
-      requestedDisableSendMessageOnTransfer &&
-      canDisableSendMessageOnTransfer
+      requestedDisableSendMessageOnTransfer && canDisableSendMessageOnTransfer
     );
 
     const targetWorker = await this.resolveTargetWorker(
@@ -620,9 +619,17 @@ export class TransferChatUseCase {
 
     await this.publishChatUpdate(chatWithProtocol, accountId);
 
-    await this.pushNotificationService
-      .sendNotificationForChatStatusChange(chatWithProtocol)
-      .catch(() => {});
+    const hasStatusTransition = chat.status !== chatWithProtocol.status;
+
+    if (
+      hasStatusTransition &&
+      (chatWithProtocol.status === EChatStatus.queue ||
+        chatWithProtocol.status === EChatStatus.in_chat)
+    ) {
+      await this.pushNotificationService
+        .sendNotificationForChatStatusChange(chatWithProtocol)
+        .catch(() => {});
+    }
 
     if (body.annotation?.trim()) {
       await this.sendAnnotationMessage(

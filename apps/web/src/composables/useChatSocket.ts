@@ -263,6 +263,9 @@ const createChatSocket = () => {
     }
 
     for (const chatData of latestByChatId.values()) {
+      const previousStatus =
+        chatStore.findChatInLists(chatData.chat_id)?.status ?? null;
+
       const isActiveChat =
         isChatOrKanbanRoute() &&
         chatStore.activeChat?.chat_id === chatData.chat_id;
@@ -270,7 +273,7 @@ const createChatSocket = () => {
       chatStore.addChat(chatData);
 
       if (!isActiveChat) {
-        handleChatStatusChange(chatData);
+        handleChatStatusChange(chatData, previousStatus);
       }
 
       if (
