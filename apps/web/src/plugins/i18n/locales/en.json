@@ -2706,6 +2706,7 @@
   "chunk_overlap_info": "Chunk Overlap: Defines how many characters/tokens overlap between consecutive chunks. This helps maintain context between document parts, avoiding information loss at chunk boundaries.",
   "no_payment_methods_available": "No payment methods available",
   "no_payment_methods_available_message": "There are no payment methods enabled at the moment. Please contact support.",
+  "no_enabled_payment_methods": "No payment methods enabled",
   "add_release": "Add",
   "edit_release": "Edit release",
   "search_releases": "Search releases",

@@ -995,7 +995,10 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         let errorMessage = this.i18n.global.t('no_enabled_payment_methods');
 
         if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
+          const backendMessage = error?.response?.data?.message;
+          if (typeof backendMessage === 'string' && backendMessage.length > 0) {
+            errorMessage = this.i18n.global.t(backendMessage);
+          }
         }
 
         this.showSnackbar(errorMessage, EColor.error);

@@ -2706,6 +2706,7 @@
   "chunk_overlap_info": "Superposición del Chunk: Define cuántos caracteres/tokens se superponen entre chunks consecutivos. Esto ayuda a mantener el contexto entre partes del documento, evitando la pérdida de información en los límites entre chunks.",
   "no_payment_methods_available": "No hay métodos de pago disponibles",
   "no_payment_methods_available_message": "No hay métodos de pago habilitados en este momento. Por favor, contacte al soporte.",
+  "no_enabled_payment_methods": "No hay métodos de pago habilitados",
   "add_release": "Agregar",
   "edit_release": "Editar informativo",
   "search_releases": "Buscar informativos",

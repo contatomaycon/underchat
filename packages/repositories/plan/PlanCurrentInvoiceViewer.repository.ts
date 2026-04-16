@@ -1,5 +1,10 @@
 import * as schema from '@core/models';
-import { account, accountPayment } from '@core/models';
+import {
+  account,
+  accountPayment,
+  planCrossSell,
+  planCrossSellAccount,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
@@ -20,6 +25,10 @@ export class PlanCurrentInvoiceViewerRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
+  private readonly roundTo2 = (value: number): number => {
+    return Math.round(value * 100) / 100;
+  };
+
   viewCurrentPlanInvoice = async (
     accountId: string
   ): Promise<ViewCurrentPlanInvoiceResponse> => {
@@ -37,7 +46,16 @@ export class PlanCurrentInvoiceViewerRepository {
       planAccount.last_payment_date,
       planAccount.next_payment_date
     );
-    const lastPaidInvoiceValue = await this.findLastPaidInvoiceValue(accountId);
+    const [lastPaidInvoiceValue, currentTotalCycleValue] = await Promise.all([
+      this.findLastPaidInvoiceValue(accountId),
+      this.findCurrentTotalCycleValue({
+        accountId,
+        planPrice: planAccount.ppl.price,
+        annualDiscount: planAccount.ppl.annual_discount,
+        isTestPlan: planAccount.ppl.is_test,
+        billingPeriodValue,
+      }),
+    ]);
 
     return this.buildPlanInvoiceResponse({
       planData: planAccount.ppl,
@@ -48,8 +66,105 @@ export class PlanCurrentInvoiceViewerRepository {
       billingPeriodValue,
       planAccountValue: planAccount.value,
       lastPaidInvoiceValue,
+      currentTotalCycleValue,
       accountStatusId: accountResult?.account_status_id || null,
     });
+  };
+
+  private readonly getBillingPeriodMultiplier = (
+    billingPeriodValue: string | null
+  ): number => {
+    return billingPeriodValue === 'annual' ? 12 : 1;
+  };
+
+  private readonly calculateBasePlanCycleValue = (input: {
+    planPrice: string;
+    annualDiscount: string | null;
+    isTestPlan: boolean | null;
+    billingPeriodValue: string | null;
+  }): number => {
+    if (input.isTestPlan) {
+      return 0;
+    }
+
+    const monthlyPrice = Number(input.planPrice);
+    if (!Number.isFinite(monthlyPrice)) {
+      return 0;
+    }
+
+    if (input.billingPeriodValue !== 'annual') {
+      return this.roundTo2(monthlyPrice);
+    }
+
+    const annualPrice = monthlyPrice * 12;
+    if (!input.annualDiscount) {
+      return this.roundTo2(annualPrice);
+    }
+
+    const discount = Number.parseFloat(input.annualDiscount);
+    if (!Number.isFinite(discount)) {
+      return this.roundTo2(annualPrice);
+    }
+
+    return this.roundTo2(annualPrice * (1 - discount / 100));
+  };
+
+  private readonly findActiveAddonCycleTotal = async (input: {
+    accountId: string;
+    billingPeriodValue: string | null;
+  }): Promise<number> => {
+    const rows = await this.dbRo
+      .select({
+        price: planCrossSell.price,
+      })
+      .from(planCrossSellAccount)
+      .innerJoin(
+        planCrossSell,
+        eq(
+          planCrossSell.plan_cross_sell_id,
+          planCrossSellAccount.plan_cross_sell_id
+        )
+      )
+      .where(
+        and(
+          eq(planCrossSellAccount.account_id, input.accountId),
+          isNull(planCrossSellAccount.deleted_at),
+          isNull(planCrossSellAccount.cancellation_date),
+          isNull(planCrossSell.deleted_at)
+        )
+      )
+      .execute();
+
+    const multiplier = this.getBillingPeriodMultiplier(
+      input.billingPeriodValue
+    );
+    const total = rows.reduce((sum, item) => {
+      return sum + Number(item.price || 0) * multiplier;
+    }, 0);
+
+    return this.roundTo2(total);
+  };
+
+  private readonly findCurrentTotalCycleValue = async (input: {
+    accountId: string;
+    planPrice: string;
+    annualDiscount: string | null;
+    isTestPlan: boolean | null;
+    billingPeriodValue: string | null;
+  }): Promise<number> => {
+    const basePlanCycleValue = this.calculateBasePlanCycleValue({
+      planPrice: input.planPrice,
+      annualDiscount: input.annualDiscount,
+      isTestPlan: input.isTestPlan,
+      billingPeriodValue: input.billingPeriodValue,
+    });
+
+    const addonCycleTotal = await this.findActiveAddonCycleTotal({
+      accountId: input.accountId,
+      billingPeriodValue: input.billingPeriodValue,
+    });
+
+    return this.roundTo2(basePlanCycleValue + addonCycleTotal);
   };
 
   private readonly findAccountWithPlanAccounts = async (accountId: string) => {
@@ -189,6 +304,7 @@ export class PlanCurrentInvoiceViewerRepository {
     billingPeriodValue: string | null;
     planAccountValue: string | null;
     lastPaidInvoiceValue: string | null;
+    currentTotalCycleValue: number;
     accountStatusId: string | null;
   }): ViewCurrentPlanInvoiceResponse => {
     return {
@@ -213,6 +329,7 @@ export class PlanCurrentInvoiceViewerRepository {
       last_paid_invoice_value: input.lastPaidInvoiceValue
         ? Number(input.lastPaidInvoiceValue)
         : null,
+      current_total_cycle_value: input.currentTotalCycleValue,
       account_status_id: input.accountStatusId,
     };
   };
@@ -234,6 +351,7 @@ export class PlanCurrentInvoiceViewerRepository {
       billing_period: null,
       plan_account_value: null,
       last_paid_invoice_value: null,
+      current_total_cycle_value: null,
       account_status_id: null,
     };
   };

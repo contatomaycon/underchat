@@ -312,9 +312,10 @@ export class NotificationMessageService {
       : null;
 
     const planValue =
-      planInvoice.last_paid_invoice_value ??
+      planInvoice.current_total_cycle_value ??
       planInvoice.plan_account_value ??
       planInvoice.plan_price ??
+      planInvoice.last_paid_invoice_value ??
       null;
 
     const value =

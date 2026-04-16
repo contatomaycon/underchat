@@ -97,13 +97,63 @@ const formatDate = (dateString: string | null | undefined): string => {
   }).format(date);
 };
 
+const roundTo2 = (value: number): number => {
+  return Math.round(value * 100) / 100;
+};
+
+const getBillingPeriodMultiplier = computed(() => {
+  return planInvoice.value?.billing_period === 'annual' ? 12 : 1;
+});
+
+const getAnnualDiscountRate = computed(() => {
+  if (!planInvoice.value?.annual_discount) {
+    return 0;
+  }
+
+  const discountRate = Number.parseFloat(planInvoice.value.annual_discount);
+  return Number.isFinite(discountRate) ? discountRate : 0;
+});
+
+const getBasePlanCyclePrice = computed(() => {
+  if (!planInvoice.value?.plan_price) {
+    return 0;
+  }
+
+  const monthlyPrice = planInvoice.value.plan_price;
+  if (planInvoice.value.billing_period !== 'annual') {
+    return roundTo2(monthlyPrice);
+  }
+
+  const annualPrice = monthlyPrice * 12;
+  return roundTo2(annualPrice * (1 - getAnnualDiscountRate.value / 100));
+});
+
+const getActiveAddonsCycleTotal = computed(() => {
+  const multiplier = getBillingPeriodMultiplier.value;
+  const total = accountAddons.value
+    .filter((addon) => !addon.cancellation_date)
+    .reduce((sum, addon) => {
+      return sum + (addon.price_per_cycle || 0) * multiplier;
+    }, 0);
+
+  return roundTo2(total);
+});
+
+const getFallbackCurrentTotalCycleValue = computed(() => {
+  return roundTo2(
+    getBasePlanCyclePrice.value + getActiveAddonsCycleTotal.value
+  );
+});
+
 const getPrice = computed(() => {
   if (!planInvoice.value) return 0;
 
   return (
-    planInvoice.value.last_paid_invoice_value ??
+    planInvoice.value.current_total_cycle_value ??
+    getFallbackCurrentTotalCycleValue.value ??
     planInvoice.value.plan_account_value ??
     planInvoice.value.plan_price ??
+    planInvoice.value.last_paid_invoice_value ??
     0
   );
 });

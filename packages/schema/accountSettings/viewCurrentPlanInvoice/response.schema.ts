@@ -16,6 +16,7 @@ export const viewCurrentPlanInvoiceResponseSchema = Type.Object({
   billing_period: Type.Union([Type.String(), Type.Null()]),
   plan_account_value: Type.Union([Type.Number(), Type.Null()]),
   last_paid_invoice_value: Type.Union([Type.Number(), Type.Null()]),
+  current_total_cycle_value: Type.Union([Type.Number(), Type.Null()]),
   account_status_id: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
 });
 
