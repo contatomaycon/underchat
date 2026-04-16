@@ -34,6 +34,10 @@ const isRegisterPage = computed(() => route.path.startsWith('/register'));
 const hasChatRealtimeAccess = (): boolean => {
   const permissions = getPermissions();
 
+  if (permissions.length === 0) {
+    return true;
+  }
+
   return permissions.some(
     (permission) =>
       permission === EGeneralPermissions.full_access ||

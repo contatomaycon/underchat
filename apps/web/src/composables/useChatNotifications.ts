@@ -2,7 +2,6 @@ import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { getSectors, getChannels } from '@/@webcore/localStorage/user';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
@@ -10,7 +9,6 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { useChatNotificationToast } from './useChatNotificationToast';
 import axiosAuth from '@/@webcore/axios';
-import { isChatParticipant } from '@core/common/functions/chatParticipants';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 
 const MAX_LINE_LENGTH = 70;
@@ -127,49 +125,12 @@ function canReceiveMessageNotification(
     return false;
   }
 
-  if (!chatStore.canViewChat(chat)) {
-    return false;
+  if (chatStore.canViewChat(chat)) {
+    return true;
   }
 
-  const userChannels = getChannels();
-  if (userChannels.length > 0) {
-    const channelIds = userChannels.map((c) => c.id);
-    if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
-      return false;
-    }
-  }
-
-  const userId = chatStore.user?.user_id;
-  if (chat.status === EChatStatus.in_chat || isChatbotStatus(chat.status)) {
-    return isChatParticipant(chat, userId);
-  }
-
-  if (chat.status === EChatStatus.queue) {
-    if (isChatParticipant(chat, userId)) {
-      return true;
-    }
-
-    const hasParticipants =
-      !!chat.user?.id ||
-      (Array.isArray(chat.secondary_users) && chat.secondary_users.length > 0);
-
-    if (hasParticipants) {
-      return false;
-    }
-
-    const userSectors = getSectors();
-
-    if (userSectors.length > 0) {
-      if (!chat.sector?.id) {
-        return true;
-      }
-      return userSectors.includes(chat.sector.id);
-    }
-
-    return !chat.sector?.id;
-  }
-
-  return false;
+  // Fallback: if the chat is already visible in lists, allow notification.
+  return chatStore.isChatInAnyList(chat.chat_id);
 }
 
 export const useChatNotifications = () => {
@@ -180,7 +141,6 @@ export const useChatNotifications = () => {
   const { showMessageToast, showStatusToast } = useChatNotificationToast();
   const isPageVisible = ref(true);
   const processingMessages = ref(new Set<string>());
-  const notifiedQueueChats = ref(new Set<string>());
   const serviceWorkerRegistration = ref<ServiceWorkerRegistration | null>(null);
   const isSubscribing = ref(false);
 
@@ -547,17 +507,6 @@ export const useChatNotifications = () => {
 
     if (isViewingChatConversation(message.chat_id)) {
       return;
-    }
-
-    if (chat.status === EChatStatus.in_chat) {
-      notifiedQueueChats.value.delete(message.chat_id);
-    }
-
-    if (chat.status === EChatStatus.queue) {
-      if (notifiedQueueChats.value.has(message.chat_id)) {
-        return;
-      }
-      notifiedQueueChats.value.add(message.chat_id);
     }
 
     const messageKey = `${message.chat_id}-${message.message_id}`;
