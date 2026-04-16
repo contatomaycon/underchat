@@ -363,6 +363,7 @@ export class PlanReleaseRepository {
     nextPaymentDate: string;
     value: string;
     shouldReleasePlan: boolean;
+    replaceExistingAddons?: boolean;
     isAddonOnly?: boolean;
     releaseStatus?: string | null;
     releaseProcessedAt?: string | null;
@@ -407,10 +408,17 @@ export class PlanReleaseRepository {
 
         await this.updateAccountStatusToActive(tx, data.accountId);
 
-        await this.replacePlanCrossSellAccount(tx, {
-          accountId: data.accountId,
-          accountPaymentId: data.accountPaymentId,
-        });
+        if (data.replaceExistingAddons === false) {
+          await this.appendPlanCrossSellAccount(tx, {
+            accountId: data.accountId,
+            accountPaymentId: data.accountPaymentId,
+          });
+        } else {
+          await this.replacePlanCrossSellAccount(tx, {
+            accountId: data.accountId,
+            accountPaymentId: data.accountPaymentId,
+          });
+        }
 
         return;
       }

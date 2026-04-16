@@ -1247,6 +1247,7 @@ const buildPaymentData = (): CreateOrderPaymentRequest => {
   const isCreditCard = selectedPaymentMethod.value === 'credit_card';
 
   return {
+    order_type: 'plan',
     plan_id: selectedPlanForCheckout.value!.plan_id,
     billing_period: billingPeriod.value,
     addons: addons,

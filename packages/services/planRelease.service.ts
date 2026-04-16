@@ -346,6 +346,10 @@ export class PlanReleaseService {
     );
 
     const isSamePlan = currentPlanAccount?.plan_id === data.planId;
+    const hasActiveCycle = currentPlanAccount?.next_payment_date
+      ? new Date(currentPlanAccount.next_payment_date) > new Date()
+      : false;
+    const shouldPreserveExistingAddons = !isSamePlan && hasActiveCycle;
     const finalValue = isSamePlan
       ? this.calculateProportionalValue(
           currentPlanAccount?.value || null,
@@ -373,6 +377,7 @@ export class PlanReleaseService {
           nextPaymentDate,
           value: finalValue,
           shouldReleasePlan: true,
+          replaceExistingAddons: !shouldPreserveExistingAddons,
           releaseStatus: EAccountPaymentReleaseStatus.processed,
           releaseProcessedAt: data.paymentDate,
           releaseLastError: null,
