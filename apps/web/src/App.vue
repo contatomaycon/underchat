@@ -12,6 +12,10 @@ import { useChatNotificationToast } from '@/composables/useChatNotificationToast
 import { useAttendanceGuardStore } from '@/@webcore/stores/attendanceGuard';
 import AppAttendanceGuardLock from '@/components/AppAttendanceGuardLock.vue';
 import { presenceOnline } from '@/@webcore/presence';
+import { getPermissions } from '@/@webcore/localStorage/user';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 
 const { global } = useTheme();
 
@@ -27,10 +31,33 @@ const attendanceGuardStore = useAttendanceGuardStore();
 
 const isRegisterPage = computed(() => route.path.startsWith('/register'));
 
+const hasChatRealtimeAccess = (): boolean => {
+  const permissions = getPermissions();
+
+  return permissions.some(
+    (permission) =>
+      permission === EGeneralPermissions.full_access ||
+      permission === EGeneralPermissions.full_access_group ||
+      permission === EChatPermissions.chat_group ||
+      permission === EChatPermissions.chat_access ||
+      permission === EChatPermissions.chat_kanban ||
+      permission === EChatPermissions.view_chatbot_messages ||
+      permission === EChatPermissions.list_all_chats_in_sector ||
+      permission === EChatPermissions.list_all_chats_without_sector_limit ||
+      permission === EChatbotPermissions.chatbot_group ||
+      permission === EChatbotPermissions.chatbot_access
+  );
+};
+
 watch(
   () => chatStore.user?.account_id,
   async (accountId) => {
     if (!accountId) {
+      await chatSocket.cleanup();
+      return;
+    }
+
+    if (!hasChatRealtimeAccess()) {
       await chatSocket.cleanup();
       return;
     }
@@ -47,8 +74,10 @@ watch(
 onMounted(async () => {
   await attendanceGuardStore.bootstrap();
 
-  if (chatStore.user?.account_id) {
+  if (chatStore.user?.account_id && hasChatRealtimeAccess()) {
     await chatSocket.initializeSocket();
+  } else {
+    await chatSocket.cleanup();
   }
 });
 

@@ -3,7 +3,7 @@ import { user, chatUser } from '@core/models';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 
 @injectable()
 export class UsersWithNotificationsListerRepository {
@@ -25,16 +25,20 @@ export class UsersWithNotificationsListerRepository {
     if (status === EChatStatus.queue) {
       whereClause = and(
         whereClause,
-        eq(chatUser.notifications_status_update, true),
-        eq(chatUser.notifications_status_queue, true)
+        or(
+          eq(chatUser.notifications_status_update, true),
+          eq(chatUser.notifications_status_queue, true)
+        )
       );
     }
 
     if (status === EChatStatus.in_chat) {
       whereClause = and(
         whereClause,
-        eq(chatUser.notifications_status_update, true),
-        eq(chatUser.notifications_status_in_chat, true)
+        or(
+          eq(chatUser.notifications_status_update, true),
+          eq(chatUser.notifications_status_in_chat, true)
+        )
       );
     }
 

@@ -147,10 +147,6 @@ const isChildNotificationDisabled = computed(
   () => !notificationsMasterModel.value
 );
 
-const isStatusNotificationChildDisabled = computed(
-  () => isChildNotificationDisabled.value || !statusNotificationsModel.value
-);
-
 const updateProfileSidebarContent = async () => {
   const validateForm = await refFormProfileSidebarContent?.value?.validate();
   if (!validateForm?.valid) return;
@@ -174,15 +170,6 @@ const updateMasterNotificationSettings = async () => {
     browserNotificationsModel.value = false;
     pushNotificationsModel.value = false;
     statusNotificationsModel.value = false;
-    queueStatusNotificationsModel.value = false;
-    inChatStatusNotificationsModel.value = false;
-  }
-
-  await updateProfileSidebarContent();
-};
-
-const updateStatusNotificationSettings = async () => {
-  if (!statusNotificationsModel.value) {
     queueStatusNotificationsModel.value = false;
     inChatStatusNotificationsModel.value = false;
   }
@@ -1041,12 +1028,12 @@ const removePhoto = async () => {
                 v-model="statusNotificationsModel"
                 density="compact"
                 :disabled="isChildNotificationDisabled"
-                @update:model-value="updateStatusNotificationSettings"
+                @update:model-value="updateNotificationSettings"
               />
             </div>
           </div>
 
-          <div class="d-flex align-center pa-2 ms-12">
+          <div class="d-flex align-center pa-2 ms-8">
             <VIcon
               class="me-2 text-high-emphasis"
               icon="tabler-clock"
@@ -1062,13 +1049,13 @@ const removePhoto = async () => {
                 id="chat-notification-status-queue"
                 v-model="queueStatusNotificationsModel"
                 density="compact"
-                :disabled="isStatusNotificationChildDisabled"
+                :disabled="isChildNotificationDisabled"
                 @update:model-value="updateNotificationSettings"
               />
             </div>
           </div>
 
-          <div class="d-flex align-center pa-2 ms-12">
+          <div class="d-flex align-center pa-2 ms-8">
             <VIcon
               class="me-2 text-high-emphasis"
               icon="tabler-user-check"
@@ -1084,7 +1071,7 @@ const removePhoto = async () => {
                 id="chat-notification-status-in-chat"
                 v-model="inChatStatusNotificationsModel"
                 density="compact"
-                :disabled="isStatusNotificationChildDisabled"
+                :disabled="isChildNotificationDisabled"
                 @update:model-value="updateNotificationSettings"
               />
             </div>

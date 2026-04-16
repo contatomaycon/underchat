@@ -239,7 +239,9 @@ onMounted(async () => {
   detectBrowserFullscreen();
   syncApiFullscreenState();
   syncOnlyKanbanBodyClass();
-  chatSocket.initializeSocket();
+  if (!chatSocket.isInitialized()) {
+    await chatSocket.initializeSocket();
+  }
   try {
     await chatStore.loadKanbanInitial();
   } finally {

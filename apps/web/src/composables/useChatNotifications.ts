@@ -127,6 +127,10 @@ function canReceiveMessageNotification(
     return false;
   }
 
+  if (!chatStore.canViewChat(chat)) {
+    return false;
+  }
+
   const userChannels = getChannels();
   if (userChannels.length > 0) {
     const channelIds = userChannels.map((c) => c.id);
@@ -225,7 +229,7 @@ export const useChatNotifications = () => {
   };
 
   const isQueueStatusNotificationsEnabled = () => {
-    if (!isStatusNotificationsEnabled()) {
+    if (!isMasterNotificationsEnabled()) {
       return false;
     }
 
@@ -233,7 +237,7 @@ export const useChatNotifications = () => {
   };
 
   const isInChatStatusNotificationsEnabled = () => {
-    if (!isStatusNotificationsEnabled()) {
+    if (!isMasterNotificationsEnabled()) {
       return false;
     }
 
@@ -570,10 +574,6 @@ export const useChatNotifications = () => {
   }
 
   function handleChatStatusChange(chat: IChat): void {
-    if (!isStatusNotificationsEnabled()) {
-      return;
-    }
-
     if (
       chat.status !== EChatStatus.in_chat &&
       chat.status !== EChatStatus.queue
@@ -581,17 +581,16 @@ export const useChatNotifications = () => {
       return;
     }
 
-    if (
-      chat.status === EChatStatus.queue &&
-      !isQueueStatusNotificationsEnabled()
-    ) {
+    const shouldNotifyQueueStatus =
+      isStatusNotificationsEnabled() || isQueueStatusNotificationsEnabled();
+    const shouldNotifyInChatStatus =
+      isStatusNotificationsEnabled() || isInChatStatusNotificationsEnabled();
+
+    if (chat.status === EChatStatus.queue && !shouldNotifyQueueStatus) {
       return;
     }
 
-    if (
-      chat.status === EChatStatus.in_chat &&
-      !isInChatStatusNotificationsEnabled()
-    ) {
+    if (chat.status === EChatStatus.in_chat && !shouldNotifyInChatStatus) {
       return;
     }
 

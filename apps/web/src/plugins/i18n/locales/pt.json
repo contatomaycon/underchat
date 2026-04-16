@@ -693,7 +693,7 @@
   "chat_notification_browser": "Notificação do navegador",
   "chat_notification_push": "Push em segundo plano",
   "chat_notification_status_parent": "Notificar alteração de status",
-  "chat_notification_status_queue_toggle": "Notificar em fila de aguardando atendimento",
+  "chat_notification_status_queue_toggle": "Notificar em fila de espera",
   "chat_notification_status_in_chat_toggle": "Notificar em atendimento",
   "chat_notification_status_update": "Status atualizado",
   "chat_notification_status_in_chat": "Status alterado: em atendimento",
