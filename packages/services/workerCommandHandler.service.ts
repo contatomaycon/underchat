@@ -29,6 +29,7 @@ import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
 import { ServerSshViewerRepository } from '@core/repositories/server/ServerSshViewer.repository';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
@@ -40,6 +41,7 @@ import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
+import { S3BackupUploadService } from '@core/services/s3BackupUpload.service';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -78,7 +80,9 @@ export class WorkerCommandHandlerService {
     @inject(WorkerConfigViewerRepository)
     private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
     @inject(PasswordEncryptorService)
-    private readonly passwordEncryptorService: PasswordEncryptorService
+    private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(S3BackupUploadService)
+    private readonly s3BackupUploadService: S3BackupUploadService
   ) {}
 
   private isTopicOrPartitionMissing(err: unknown): boolean {
@@ -286,6 +290,52 @@ export class WorkerCommandHandlerService {
       show_message_on_call: showMessageText.trim().length > 0,
       show_message_text: showMessageText,
     };
+  }
+
+  async registerS3BackupFallbackUpload(
+    input: IRegisterS3BackupFallbackUploadRequestProto
+  ): Promise<void> {
+    const accountId = input.account_id?.trim();
+    const bucket = input.bucket?.trim();
+    const objectKey = input.object_key?.trim();
+
+    if (!accountId || !bucket || !objectKey) {
+      throw new Error(
+        'Missing required fields: account_id, bucket, object_key'
+      );
+    }
+
+    const parsedSize =
+      typeof input.size_bytes === 'number'
+        ? input.size_bytes
+        : Number.parseInt(input.size_bytes ?? '0', 10);
+
+    if (!Number.isFinite(parsedSize) || parsedSize < 0) {
+      throw new Error('Invalid field: size_bytes');
+    }
+
+    const primaryAttempts =
+      typeof input.primary_attempts === 'number' && input.primary_attempts > 0
+        ? Math.trunc(input.primary_attempts)
+        : 0;
+
+    const backupAttempts =
+      typeof input.backup_attempts === 'number' && input.backup_attempts > 0
+        ? Math.trunc(input.backup_attempts)
+        : 0;
+
+    await this.s3BackupUploadService.registerFallbackUpload({
+      account_id: accountId,
+      bucket,
+      object_key: objectKey,
+      file_name: input.file_name?.trim() || null,
+      content_type: input.content_type?.trim() || null,
+      size_bytes: Math.trunc(parsedSize),
+      primary_attempts: primaryAttempts,
+      backup_attempts: backupAttempts,
+      primary_error: input.primary_error?.trim() || null,
+      backup_error: input.backup_error?.trim() || null,
+    });
   }
 
   private buildFallbackChatForIncomingCall(

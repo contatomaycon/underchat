@@ -8,3 +8,5 @@ export * from './listChannelServers';
 export * from './listCreditCardFee';
 export * from './updateCreditCardFee';
 export * from './updateChannel';
+export * from './listS3BackupUploads';
+export * from './reprocessS3BackupUpload';

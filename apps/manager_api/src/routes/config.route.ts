@@ -22,6 +22,8 @@ import { checkChannelOpenConversationsSchema } from '@core/schema/config/checkCh
 import { listMethodPaymentsSchema } from '@core/schema/config/listMethodPayments';
 import { updateMethodPaymentSchema } from '@core/schema/config/updateMethodPayment';
 import { updateChannelSchema } from '@core/schema/config/updateChannel';
+import { listS3BackupUploadsSchema } from '@core/schema/config/listS3BackupUploads';
+import { reprocessS3BackupUploadSchema } from '@core/schema/config/reprocessS3BackupUpload';
 import { configPermissions } from '@/permissions';
 
 export default async function configRoutes(server: FastifyInstance) {
@@ -210,6 +212,24 @@ export default async function configRoutes(server: FastifyInstance) {
   server.get('/config/channels/statistics', {
     schema: channelsStatisticsSchema,
     handler: configController.channelsStatistics,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.get('/config/s3-backups', {
+    schema: listS3BackupUploadsSchema,
+    handler: configController.listS3BackupUploads,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.patch('/config/s3-backups/:s3_backup_upload_id/reprocess', {
+    schema: reprocessS3BackupUploadSchema,
+    handler: configController.reprocessS3BackupUpload,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),

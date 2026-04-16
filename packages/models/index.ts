@@ -25,3 +25,4 @@ export * from './aiAgent';
 export * from './voiceIa';
 export * from './push';
 export * from './release';
+export * from './s3BackupUpload';

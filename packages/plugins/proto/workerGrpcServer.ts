@@ -25,6 +25,7 @@ import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -174,6 +175,31 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleRegisterS3BackupFallbackUpload = (
+    call: ServerUnaryCall<IRegisterS3BackupFallbackUploadRequestProto, unknown>,
+    callback: sendUnaryData<unknown>
+  ) => {
+    const req = call.request;
+
+    handler
+      .registerS3BackupFallbackUpload(req)
+      .then(() => {
+        callback(null, {});
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          {
+            err,
+            accountId: req.account_id,
+            objectKey: req.object_key,
+          },
+          'RegisterS3BackupFallbackUpload gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   const handleValidatePhone = (
     call: ServerUnaryCall<IPhoneValidationRequest, IPhoneValidationResponse>,
     callback: sendUnaryData<IPhoneValidationResponse>
@@ -225,6 +251,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     ChangeConnectionStatus: handleChangeConnectionStatus,
     NotifyWorkerStatus: handleNotifyWorkerStatus,
     ResolveIncomingCallAction: handleResolveIncomingCallAction,
+    RegisterS3BackupFallbackUpload: handleRegisterS3BackupFallbackUpload,
     ValidatePhone: handleValidatePhone,
   });
 

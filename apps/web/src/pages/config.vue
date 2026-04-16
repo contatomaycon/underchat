@@ -6,6 +6,7 @@ import NotificationsTab from './config/notifications-tab.vue';
 import NfseTab from './config/nfse-tab.vue';
 import ChannelsTab from './config/channels-tab.vue';
 import CreditCardTab from './config/creditcard-tab.vue';
+import S3BackupTab from './config/s3-backup-tab.vue';
 
 definePage({
   meta: {
@@ -38,6 +39,9 @@ watch(tab, (v) => {
         <VTab value="creditcard" prepend-icon="tabler-credit-card">{{
           $t('payments')
         }}</VTab>
+        <VTab value="s3-backup" prepend-icon="tabler-cloud-up">{{
+          $t('s3_backup_tab')
+        }}</VTab>
         <VTab value="channels" prepend-icon="tabler-message">{{
           $t('channels')
         }}</VTab>
@@ -54,6 +58,9 @@ watch(tab, (v) => {
         </VWindowItem>
         <VWindowItem value="creditcard">
           <CreditCardTab />
+        </VWindowItem>
+        <VWindowItem value="s3-backup">
+          <S3BackupTab />
         </VWindowItem>
         <VWindowItem value="channels">
           <ChannelsTab />

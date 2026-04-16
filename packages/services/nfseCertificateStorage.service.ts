@@ -3,12 +3,12 @@ import {
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
-  PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 import { s3Environment } from '@core/config/environments';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
+import { S3Uploader } from './storage/S3Uploader';
 
 const MAX_CERTIFICATE_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ALLOWED_CERTIFICATE_EXTENSIONS = ['pfx', 'p12'];
@@ -32,7 +32,9 @@ export class NfseCertificateStorageService {
     @inject('S3Client')
     private readonly client: S3Client,
     @inject('S3ClientBackup')
-    private readonly backupClient: S3Client
+    private readonly backupClient: S3Client,
+    @inject(S3Uploader)
+    private readonly s3Uploader: S3Uploader
   ) {}
 
   private getBucketName(): string {
@@ -108,34 +110,6 @@ export class NfseCertificateStorageService {
     return extension;
   }
 
-  private async uploadWithFallback(
-    bucket: string,
-    key: string,
-    body: Buffer,
-    contentType: string
-  ): Promise<void> {
-    try {
-      await this.client.send(
-        new PutObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          Body: body,
-          ContentType: contentType,
-        })
-      );
-      return;
-    } catch {
-      await this.backupClient.send(
-        new PutObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          Body: body,
-          ContentType: contentType,
-        })
-      );
-    }
-  }
-
   async uploadCertificate(
     file: UploadFileRequest,
     accountId: string
@@ -152,7 +126,13 @@ export class NfseCertificateStorageService {
     const contentType = file.mimetype ?? 'application/x-pkcs12';
 
     await this.ensureBucketExists(bucket);
-    await this.uploadWithFallback(bucket, key, buffer, contentType);
+    await this.s3Uploader.uploadWithRetry({
+      bucket,
+      key,
+      body: buffer,
+      contentType,
+      accountId,
+    });
 
     return {
       bucket,

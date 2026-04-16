@@ -142,6 +142,7 @@ declare module 'vue-router/auto-routes' {
       | 'config-method-payments-tab'
       | 'config-nfse-tab'
       | 'config-notifications-tab'
+      | 'config-s3-backup-tab'
     >,
     'config-channels-tab': RouteRecordInfo<
       'config-channels-tab',
@@ -174,6 +175,13 @@ declare module 'vue-router/auto-routes' {
     'config-notifications-tab': RouteRecordInfo<
       'config-notifications-tab',
       '/config/notifications-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'config-s3-backup-tab': RouteRecordInfo<
+      'config-s3-backup-tab',
+      '/config/s3-backup-tab',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -540,6 +548,7 @@ declare module 'vue-router/auto-routes' {
         | 'config-method-payments-tab'
         | 'config-nfse-tab'
         | 'config-notifications-tab'
+        | 'config-s3-backup-tab'
       views:
         | 'default'
     }
@@ -570,6 +579,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/config/notifications-tab.vue': {
       routes:
         | 'config-notifications-tab'
+      views:
+        | never
+    }
+    'src/pages/config/s3-backup-tab.vue': {
+      routes:
+        | 'config-s3-backup-tab'
       views:
         | never
     }

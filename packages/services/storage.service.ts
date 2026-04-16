@@ -96,6 +96,7 @@ export class StorageService {
       key: path,
       body: buffer,
       contentType: mimetype ?? 'image/jpeg',
+      accountId: bucketId,
     });
 
     return {
@@ -134,6 +135,7 @@ export class StorageService {
       key,
       body: buffer,
       contentType: mimetype,
+      accountId: bucketId,
     });
 
     return {
@@ -174,6 +176,7 @@ export class StorageService {
       key,
       body: buffer,
       contentType: mimetype,
+      accountId: bucketId,
     });
 
     return {
@@ -214,6 +217,7 @@ export class StorageService {
       key,
       body: buffer,
       contentType: mimetype,
+      accountId: bucketId,
     });
 
     return {
@@ -252,6 +256,7 @@ export class StorageService {
       key,
       body: buffer,
       contentType: mimetype,
+      accountId: bucketId,
     });
 
     return {
@@ -290,6 +295,7 @@ export class StorageService {
       key,
       body: buffer,
       contentType: mimetype,
+      accountId: bucketId,
     });
 
     return {
@@ -375,6 +381,7 @@ export class StorageService {
       key,
       body: buffer,
       contentType: mimeToStore,
+      accountId: bucketId,
     });
 
     return {
@@ -421,6 +428,7 @@ export class StorageService {
       key,
       body: buffer,
       contentType: mime,
+      accountId: bucketId,
     });
 
     return {
@@ -448,6 +456,7 @@ export class StorageService {
       key,
       body: pdfBuffer,
       contentType: 'application/pdf',
+      accountId: bucketId,
     });
 
     return this.createUrl(key, bucketId, usedBackup);

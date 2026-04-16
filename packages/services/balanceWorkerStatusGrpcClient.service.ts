@@ -11,6 +11,7 @@ import { balanceEnvironment } from '@core/config/environments';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
+import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -64,6 +65,66 @@ export class BalanceWorkerStatusGrpcClientService {
 
     await new Promise<void>((resolve, reject) => {
       (client as any).NotifyWorkerStatus(
+        protoPayload,
+        { deadline },
+        (err: ServiceError | null) => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        }
+      );
+    });
+  }
+
+  async registerS3BackupFallbackUpload(
+    payload: IRegisterS3BackupFallbackUploadRequestProto
+  ): Promise<void> {
+    const client = this.createClient();
+
+    const accountId = payload.account_id?.trim();
+    const bucket = payload.bucket?.trim();
+    const objectKey = payload.object_key?.trim();
+
+    if (!accountId || !bucket || !objectKey) {
+      client.close();
+      throw new Error(
+        'RegisterS3BackupFallbackUpload requires account_id, bucket and object_key'
+      );
+    }
+
+    const sizeBytesRaw = payload.size_bytes;
+    const sizeBytesNumber =
+      typeof sizeBytesRaw === 'number'
+        ? sizeBytesRaw
+        : Number.parseInt(sizeBytesRaw ?? '0', 10);
+
+    if (!Number.isFinite(sizeBytesNumber) || sizeBytesNumber < 0) {
+      client.close();
+      throw new Error(
+        'RegisterS3BackupFallbackUpload requires valid size_bytes'
+      );
+    }
+
+    const protoPayload = {
+      account_id: accountId,
+      bucket,
+      object_key: objectKey,
+      file_name: payload.file_name?.trim() ?? '',
+      content_type: payload.content_type?.trim() ?? '',
+      size_bytes: Math.trunc(sizeBytesNumber),
+      primary_attempts: payload.primary_attempts ?? 0,
+      backup_attempts: payload.backup_attempts ?? 0,
+      primary_error: payload.primary_error ?? '',
+      backup_error: payload.backup_error ?? '',
+    };
+
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+
+    await new Promise<void>((resolve, reject) => {
+      (client as any).RegisterS3BackupFallbackUpload(
         protoPayload,
         { deadline },
         (err: ServiceError | null) => {

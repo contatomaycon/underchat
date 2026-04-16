@@ -17,6 +17,8 @@ import { UpdateNfseIntegrationResponse } from '@core/schema/config/updateNfseInt
 import { UploadNfseCertificateResponse } from '@core/schema/config/uploadNfseCertificate/response.schema';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/response.schema';
+import { ListS3BackupUploadsRequest } from '@core/schema/config/listS3BackupUploads/request.schema';
+import { ListS3BackupUploadsFinalResponse } from '@core/schema/config/listS3BackupUploads/response.schema';
 import { ListChannelServersResponse } from '@core/schema/config/listChannelServers/response.schema';
 import { UpdateChannelRequest } from '@core/schema/config/updateChannel/request.schema';
 import { ChannelsStatisticsResponse } from '@core/schema/config/channelsStatistics/response.schema';
@@ -41,6 +43,7 @@ export const useSettingsStore = defineStore('settings', {
     notifications: null as ListNotificationsResponse | null,
     nfse: null as ListNfseResponse | null,
     channels: null as ListChannelsFinalResponse | null,
+    s3BackupUploads: null as ListS3BackupUploadsFinalResponse | null,
     creditCardFee: null as ListCreditCardFeeResponse | null,
     methodPayments: null as ListMethodPaymentsResponse | null,
   }),
@@ -494,6 +497,84 @@ export const useSettingsStore = defineStore('settings', {
       } catch {
         this.loading = false;
         return null;
+      }
+    },
+    async getS3BackupUploads(
+      query: ListS3BackupUploadsRequest
+    ): Promise<ListS3BackupUploadsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListS3BackupUploadsFinalResponse>
+        >('/config/s3-backups', {
+          params: query,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.s3BackupUploads = null;
+          return null;
+        }
+
+        this.s3BackupUploads = data.data;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        this.s3BackupUploads = null;
+        return null;
+      }
+    },
+    async reprocessS3BackupUpload(s3BackupUploadId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<null>>(
+          `/config/s3-backups/${s3BackupUploadId}/reprocess`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+        const isAccepted = response?.status === 202;
+
+        if (isAccepted && data?.status && data?.message) {
+          this.showSnackbar(data.message, EColor.info);
+          return true;
+        }
+
+        if (!data?.status) {
+          this.showSnackbar(
+            data?.message ??
+              this.i18n.global.t('s3_backup_upload_reprocess_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t('s3_backup_upload_reprocess_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t(
+          's3_backup_upload_reprocess_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
       }
     },
     async getAccounts(): Promise<IAccountBasic[] | null> {

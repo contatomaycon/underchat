@@ -20,6 +20,8 @@ import { checkChannelOpenConversations } from './methods/checkChannelOpenConvers
 import { listMethodPayments } from './methods/listMethodPayments';
 import { updateMethodPayment } from './methods/updateMethodPayment';
 import { updateChannel } from './methods/updateChannel';
+import { listS3BackupUploads } from './methods/listS3BackupUploads';
+import { reprocessS3BackupUpload } from './methods/reprocessS3BackupUpload';
 
 @injectable()
 class ConfigController {
@@ -44,6 +46,8 @@ class ConfigController {
   public checkChannelOpenConversations = checkChannelOpenConversations;
   public listMethodPayments = listMethodPayments;
   public updateMethodPayment = updateMethodPayment;
+  public listS3BackupUploads = listS3BackupUploads;
+  public reprocessS3BackupUpload = reprocessS3BackupUpload;
 }
 
 export default ConfigController;

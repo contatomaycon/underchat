@@ -11,6 +11,7 @@ import { PlanExpirationReminderActivity } from '@core/jobs/activities/planExpira
 import { WorkerMonitorActivity } from '@core/jobs/activities/workerMonitor.activities';
 import { ScheduleSendActivity } from '@core/jobs/activities/scheduleSend.activities';
 import { AccountBucketCleanupActivity } from '@core/jobs/activities/accountBucketCleanup.activities';
+import { S3BackupMigrationActivity } from '@core/jobs/activities/s3BackupMigration.activities';
 import {
   LockAcquisitionTimeoutError,
   withLock,
@@ -103,6 +104,9 @@ export function cronJobs(server: FastifyInstance): CronJob[] {
   const accountBucketCleanupActivity = container.resolve(
     AccountBucketCleanupActivity
   );
+  const s3BackupMigrationActivity = container.resolve(
+    S3BackupMigrationActivity
+  );
   const redis = container.resolve<Redis>('Redis');
 
   return [
@@ -176,6 +180,11 @@ export function cronJobs(server: FastifyInstance): CronJob[] {
       jobId: 'account-bucket-cleanup-schedule',
       cronExpression: '0 0 0 * * *',
       handler: accountBucketCleanupActivity.processExpiredAccountBuckets,
+    }),
+    createCronJob(server, redis, {
+      jobId: 's3-backup-migration-schedule',
+      cronExpression: '0 0 3 * * *',
+      handler: s3BackupMigrationActivity.processPendingS3BackupUploads,
     }),
   ];
 }
