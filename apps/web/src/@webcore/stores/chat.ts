@@ -2329,6 +2329,12 @@ export const useChatStore = defineStore('chat', {
         notifications_toast: existingChatUser?.notifications_toast ?? true,
         notifications_browser: existingChatUser?.notifications_browser ?? true,
         notifications_push: existingChatUser?.notifications_push ?? true,
+        notifications_status_update:
+          existingChatUser?.notifications_status_update ?? true,
+        notifications_status_queue:
+          existingChatUser?.notifications_status_queue ?? false,
+        notifications_status_in_chat:
+          existingChatUser?.notifications_status_in_chat ?? true,
       };
 
       setUser({ ...this.user, chat_user: chatUserUpdate });
@@ -2350,6 +2356,12 @@ export const useChatStore = defineStore('chat', {
         notifications_browser:
           this.user?.chat_user?.notifications_browser ?? true,
         notifications_push: this.user?.chat_user?.notifications_push ?? true,
+        notifications_status_update:
+          this.user?.chat_user?.notifications_status_update ?? true,
+        notifications_status_queue:
+          this.user?.chat_user?.notifications_status_queue ?? false,
+        notifications_status_in_chat:
+          this.user?.chat_user?.notifications_status_in_chat ?? true,
       };
 
       await this.updateChatsUser({
@@ -2360,6 +2372,10 @@ export const useChatStore = defineStore('chat', {
         notifications_toast: chatUserUpdate.notifications_toast,
         notifications_browser: chatUserUpdate.notifications_browser,
         notifications_push: chatUserUpdate.notifications_push,
+        notifications_status_update: chatUserUpdate.notifications_status_update,
+        notifications_status_queue: chatUserUpdate.notifications_status_queue,
+        notifications_status_in_chat:
+          chatUserUpdate.notifications_status_in_chat,
       });
     },
 
@@ -3323,6 +3339,18 @@ export const useChatStore = defineStore('chat', {
             notifications_push:
               input.notifications_push ??
               this.user.chat_user.notifications_push ??
+              true,
+            notifications_status_update:
+              input.notifications_status_update ??
+              this.user.chat_user.notifications_status_update ??
+              true,
+            notifications_status_queue:
+              input.notifications_status_queue ??
+              this.user.chat_user.notifications_status_queue ??
+              false,
+            notifications_status_in_chat:
+              input.notifications_status_in_chat ??
+              this.user.chat_user.notifications_status_in_chat ??
               true,
             sort_by_chat_order:
               input.sort_by_chat_order ??

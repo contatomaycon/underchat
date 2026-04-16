@@ -45,6 +45,20 @@ export class ChatUserUpdaterRepository {
       inputUpdate.notifications_push = input.notifications_push;
     }
 
+    if (input.notifications_status_update !== undefined) {
+      inputUpdate.notifications_status_update =
+        input.notifications_status_update;
+    }
+
+    if (input.notifications_status_queue !== undefined) {
+      inputUpdate.notifications_status_queue = input.notifications_status_queue;
+    }
+
+    if (input.notifications_status_in_chat !== undefined) {
+      inputUpdate.notifications_status_in_chat =
+        input.notifications_status_in_chat;
+    }
+
     if (input.sort_by_chat_order !== undefined) {
       inputUpdate.sort_by_chat_order = input.sort_by_chat_order;
     }

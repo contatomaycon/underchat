@@ -136,7 +136,8 @@ export class PushNotificationService {
     const accountId = chat.account.id;
     const userIds =
       await this.usersWithNotificationsListerRepository.listUsersWithNotifications(
-        accountId
+        accountId,
+        chat.status
       );
 
     if (userIds.length === 0) {
@@ -209,7 +210,7 @@ export class PushNotificationService {
     const senderName = chat.name || chat.contact?.name || 'Desconhecido';
     const statusLabel =
       chat.status === EChatStatus.queue
-        ? 'Aguardando na fila'
+        ? 'Aguardando atendimento'
         : 'Em atendimento';
 
     const payload: IPushNotificationPayload = {

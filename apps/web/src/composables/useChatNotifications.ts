@@ -216,6 +216,30 @@ export const useChatNotifications = () => {
     return chatStore.user?.chat_user?.notifications_push !== false;
   };
 
+  const isStatusNotificationsEnabled = () => {
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_status_update !== false;
+  };
+
+  const isQueueStatusNotificationsEnabled = () => {
+    if (!isStatusNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_status_queue === true;
+  };
+
+  const isInChatStatusNotificationsEnabled = () => {
+    if (!isStatusNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_status_in_chat !== false;
+  };
+
   const isViewingChatConversation = (chatId: string): boolean => {
     const routeName = route.name;
     const isChatScreen = routeName === 'chat' || routeName === 'kanban';
@@ -546,13 +570,27 @@ export const useChatNotifications = () => {
   }
 
   function handleChatStatusChange(chat: IChat): void {
-    if (!isMasterNotificationsEnabled()) {
+    if (!isStatusNotificationsEnabled()) {
       return;
     }
 
     if (
       chat.status !== EChatStatus.in_chat &&
       chat.status !== EChatStatus.queue
+    ) {
+      return;
+    }
+
+    if (
+      chat.status === EChatStatus.queue &&
+      !isQueueStatusNotificationsEnabled()
+    ) {
+      return;
+    }
+
+    if (
+      chat.status === EChatStatus.in_chat &&
+      !isInChatStatusNotificationsEnabled()
     ) {
       return;
     }

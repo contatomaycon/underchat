@@ -107,8 +107,48 @@ const pushNotificationsModel = computed({
   },
 });
 
+const statusNotificationsModel = computed({
+  get: () =>
+    chatNotificationPreferences.value?.notifications_status_update ?? true,
+  set: (value: boolean) => {
+    if (!chatNotificationPreferences.value) {
+      return;
+    }
+
+    chatNotificationPreferences.value.notifications_status_update = value;
+  },
+});
+
+const queueStatusNotificationsModel = computed({
+  get: () =>
+    chatNotificationPreferences.value?.notifications_status_queue ?? false,
+  set: (value: boolean) => {
+    if (!chatNotificationPreferences.value) {
+      return;
+    }
+
+    chatNotificationPreferences.value.notifications_status_queue = value;
+  },
+});
+
+const inChatStatusNotificationsModel = computed({
+  get: () =>
+    chatNotificationPreferences.value?.notifications_status_in_chat ?? true,
+  set: (value: boolean) => {
+    if (!chatNotificationPreferences.value) {
+      return;
+    }
+
+    chatNotificationPreferences.value.notifications_status_in_chat = value;
+  },
+});
+
 const isChildNotificationDisabled = computed(
   () => !notificationsMasterModel.value
+);
+
+const isStatusNotificationChildDisabled = computed(
+  () => isChildNotificationDisabled.value || !statusNotificationsModel.value
 );
 
 const updateProfileSidebarContent = async () => {
@@ -133,6 +173,18 @@ const updateMasterNotificationSettings = async () => {
     toastNotificationsModel.value = false;
     browserNotificationsModel.value = false;
     pushNotificationsModel.value = false;
+    statusNotificationsModel.value = false;
+    queueStatusNotificationsModel.value = false;
+    inChatStatusNotificationsModel.value = false;
+  }
+
+  await updateProfileSidebarContent();
+};
+
+const updateStatusNotificationSettings = async () => {
+  if (!statusNotificationsModel.value) {
+    queueStatusNotificationsModel.value = false;
+    inChatStatusNotificationsModel.value = false;
   }
 
   await updateProfileSidebarContent();
@@ -967,6 +1019,72 @@ const removePhoto = async () => {
                 v-model="pushNotificationsModel"
                 density="compact"
                 :disabled="isChildNotificationDisabled"
+                @update:model-value="updateNotificationSettings"
+              />
+            </div>
+          </div>
+
+          <div class="d-flex align-center pa-2 ms-8">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-refresh"
+              size="20"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-2 text-high-emphasis">
+                {{ $t('chat_notification_status_parent') }}
+              </div>
+              <VSwitch
+                id="chat-notification-status-parent"
+                v-model="statusNotificationsModel"
+                density="compact"
+                :disabled="isChildNotificationDisabled"
+                @update:model-value="updateStatusNotificationSettings"
+              />
+            </div>
+          </div>
+
+          <div class="d-flex align-center pa-2 ms-12">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-clock"
+              size="20"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-2 text-high-emphasis">
+                {{ $t('chat_notification_status_queue_toggle') }}
+              </div>
+              <VSwitch
+                id="chat-notification-status-queue"
+                v-model="queueStatusNotificationsModel"
+                density="compact"
+                :disabled="isStatusNotificationChildDisabled"
+                @update:model-value="updateNotificationSettings"
+              />
+            </div>
+          </div>
+
+          <div class="d-flex align-center pa-2 ms-12">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-user-check"
+              size="20"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-2 text-high-emphasis">
+                {{ $t('chat_notification_status_in_chat_toggle') }}
+              </div>
+              <VSwitch
+                id="chat-notification-status-in-chat"
+                v-model="inChatStatusNotificationsModel"
+                density="compact"
+                :disabled="isStatusNotificationChildDisabled"
                 @update:model-value="updateNotificationSettings"
               />
             </div>
