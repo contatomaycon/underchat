@@ -34,20 +34,25 @@ const canViewReleases = computed(
     )
 );
 
-const notifications = ref<ListReleaseResponse[]>([]);
-const unreadCount = ref(0);
 const loading = ref(false);
 const menuOpen = ref(false);
+
+const notifications = computed(
+  () => releaseStore.releaseNotificationResults
+);
+const unreadCount = computed(
+  () => releaseStore.releaseNotificationUnreadCount
+);
+
+const unreadNotificationsOnly = computed(() =>
+  notifications.value.filter((r) => !r.viewed)
+);
 
 const fetchNotifications = async () => {
   if (!canViewReleases.value) return;
   loading.value = true;
-  const data = await releaseStore.listReleaseNotifications();
+  await releaseStore.listReleaseNotifications();
   loading.value = false;
-  if (data) {
-    notifications.value = data.results;
-    unreadCount.value = data.unread_count;
-  }
 };
 
 const getTypeColor = (type: EReleaseType): string => {
@@ -58,6 +63,7 @@ const getTypeColor = (type: EReleaseType): string => {
     [EReleaseType.update]: 'info',
     [EReleaseType.fix]: 'secondary',
     [EReleaseType.warning]: 'error',
+    [EReleaseType.reminder]: 'error',
   };
   return colors[type] || 'primary';
 };
@@ -94,42 +100,75 @@ const openNotification = async (release: ListReleaseResponse) => {
   menuOpen.value = false;
 };
 
+const onBellClickCapture = async (event: MouseEvent) => {
+  if (unreadCount.value <= 0 || loading.value) return;
+  // Com mais de uma não lida: abre o menu para escolher. Só navega direto com exatamente uma.
+  if (unreadCount.value > 1) return;
+  const firstUnread = notifications.value.find((r) => !r.viewed);
+  if (!firstUnread) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof event.stopImmediatePropagation === 'function') {
+    event.stopImmediatePropagation();
+  }
+  await openNotification(firstUnread);
+};
+
 const viewAll = () => {
   menuOpen.value = false;
   router.push('/release');
 };
 
 onMounted(() => {
-  if (canViewReleases.value) fetchNotifications();
+  if (canViewReleases.value) void fetchNotifications();
 });
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (canViewReleases.value) void fetchNotifications();
+  }
+);
+
+watch(
+  canViewReleases,
+  (allowed) => {
+    if (allowed) void fetchNotifications();
+  }
+);
 </script>
 
 <template>
   <template v-if="canViewReleases">
-    <IconBtn
-      id="release-notification-btn"
-      class="nav-bar-release-notifications"
+    <VMenu
+      v-model="menuOpen"
+      location="bottom end"
+      width="380"
+      offset="12"
+      :close-on-content-click="false"
+      @update:model-value="onMenuUpdate"
     >
-      <VBadge
-        :model-value="unreadCount > 0"
-        color="error"
-        dot
-        offset-x="2"
-        offset-y="3"
-      >
-        <VIcon icon="tabler-bell" />
-      </VBadge>
+      <template #activator="{ props: menuActivatorProps }">
+        <IconBtn
+          id="release-notification-btn"
+          v-bind="menuActivatorProps"
+          class="nav-bar-release-notifications"
+          :class="{ 'release-bell-attention': unreadCount > 0 }"
+          @click.capture="onBellClickCapture"
+        >
+          <VBadge
+            :model-value="unreadCount > 0"
+            color="error"
+            dot
+            offset-x="2"
+            offset-y="3"
+          >
+            <VIcon icon="tabler-bell" />
+          </VBadge>
+        </IconBtn>
+      </template>
 
-      <VMenu
-        v-model="menuOpen"
-        activator="parent"
-        location="bottom end"
-        width="380"
-        offset="12"
-        :close-on-content-click="false"
-        @update:model-value="onMenuUpdate"
-      >
-        <VCard class="d-flex flex-column">
+      <VCard class="d-flex flex-column">
           <VCardItem class="notification-section">
             <VCardTitle class="text-h6">
               {{ t('notifications') }}
@@ -177,7 +216,7 @@ onMounted(() => {
               </template>
               <template v-else>
                 <template
-                  v-for="(item, index) in notifications"
+                  v-for="(item, index) in unreadNotificationsOnly"
                   :key="item.release_id"
                 >
                   <VDivider v-if="index > 0" />
@@ -214,7 +253,6 @@ onMounted(() => {
                         </p>
                       </div>
                       <span
-                        v-if="!item.viewed"
                         class="text-caption flex-shrink-0 mt-1 text-nowrap text-primary"
                       >
                         {{ t('unread') }}
@@ -224,7 +262,7 @@ onMounted(() => {
                 </template>
 
                 <VListItem
-                  v-show="!notifications.length && !loading"
+                  v-show="!unreadNotificationsOnly.length && !loading"
                   class="text-center text-medium-emphasis"
                   style="block-size: 56px"
                 >
@@ -236,14 +274,13 @@ onMounted(() => {
 
           <VDivider />
 
-          <VCardText v-show="notifications.length && !loading" class="pa-4">
+          <VCardText v-show="!loading" class="pa-4">
             <VBtn block size="small" @click="viewAll">
               {{ t('view_all_notifications') }}
             </VBtn>
           </VCardText>
         </VCard>
-      </VMenu>
-    </IconBtn>
+    </VMenu>
   </template>
 </template>
 
@@ -261,5 +298,37 @@ onMounted(() => {
 
 .list-item-hover-class {
   cursor: pointer;
+}
+
+.release-bell-attention :deep(.v-icon) {
+  animation: release-bell-wiggle 2.4s ease-in-out infinite;
+  transform-origin: 50% 0%;
+}
+
+@keyframes release-bell-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  10% {
+    transform: rotate(-14deg);
+  }
+
+  20% {
+    transform: rotate(14deg);
+  }
+
+  30% {
+    transform: rotate(-10deg);
+  }
+
+  40% {
+    transform: rotate(10deg);
+  }
+
+  50% {
+    transform: rotate(0deg);
+  }
 }
 </style>

@@ -5,4 +5,5 @@ export enum EReleaseType {
   update = 'update',
   fix = 'fix',
   warning = 'warning',
+  reminder = 'reminder',
 }

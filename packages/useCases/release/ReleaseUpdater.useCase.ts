@@ -13,7 +13,7 @@ export class ReleaseUpdaterUseCase {
     releaseId: string,
     userId: string,
     input: EditReleaseBodyRequest
-  ): Promise<true | 'not_found' | 'forbidden'> {
+  ): Promise<true | 'not_found' | 'forbidden' | 'invalid_reminder'> {
     return this.releaseService.updateRelease(releaseId, userId, input);
   }
 }

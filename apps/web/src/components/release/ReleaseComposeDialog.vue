@@ -39,6 +39,7 @@ const isEditMode = computed(() => !!props.release);
 const type = ref<EReleaseType>(EReleaseType.informative);
 const title = ref('');
 const message = ref('');
+const reminderAtLocal = ref('');
 const recipientType = ref<'all' | 'account' | 'permission_role' | 'user'>(
   'all'
 );
@@ -118,12 +119,21 @@ const typeOptions = computed(() => [
   { value: EReleaseType.update, title: t('release_type_update') },
   { value: EReleaseType.fix, title: t('release_type_fix') },
   { value: EReleaseType.warning, title: t('release_type_warning') },
+  { value: EReleaseType.reminder, title: t('release_type_reminder') },
 ]);
+
+const isoToDatetimeLocalValue = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 const resetValues = () => {
   type.value = EReleaseType.informative;
   title.value = '';
   message.value = '';
+  reminderAtLocal.value = '';
   recipientType.value = 'all';
   selectedAccountId.value = null;
   selectedPermissionRoleId.value = null;
@@ -136,6 +146,12 @@ watch(recipientType, () => {
   selectedUserId.value = null;
 });
 
+watch(type, (next) => {
+  if (next !== EReleaseType.reminder) {
+    reminderAtLocal.value = '';
+  }
+});
+
 watch(
   () => [props.modelValue, props.release] as const,
   ([visible, r]) => {
@@ -143,6 +159,10 @@ watch(
       type.value = r.type;
       title.value = r.title ?? '';
       message.value = r.message ?? '';
+      reminderAtLocal.value =
+        r.type === EReleaseType.reminder && r.reminder_at
+          ? isoToDatetimeLocalValue(r.reminder_at)
+          : '';
     }
     if (visible && !r) {
       resetValues();
@@ -153,6 +173,7 @@ watch(
 
 const submit = async () => {
   if (!title.value || !message.value) return;
+  if (type.value === EReleaseType.reminder && !reminderAtLocal.value) return;
 
   loading.value = true;
 
@@ -162,6 +183,11 @@ const submit = async () => {
         type: type.value,
         title: title.value,
         message: message.value,
+        ...(type.value === EReleaseType.reminder
+          ? {
+              reminder_at: new Date(reminderAtLocal.value).toISOString(),
+            }
+          : {}),
       });
       if (ok) {
         resetValues();
@@ -176,6 +202,10 @@ const submit = async () => {
       title: title.value,
       message: message.value,
     };
+
+    if (type.value === EReleaseType.reminder) {
+      request.reminder_at = new Date(reminderAtLocal.value).toISOString();
+    }
 
     if (recipientType.value === 'all') {
       request.account_id = null;
@@ -227,91 +257,108 @@ onMounted(async () => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600" scrollable>
+  <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VCard class="release-compose-dialog">
-      <VCardItem class="py-3 px-6">
+    <VCard class="release-compose-dialog compose-dialog-card d-flex flex-column">
+      <VCardItem class="py-3 px-6 flex-shrink-0">
         <h5 class="text-h5">
           {{ isEditMode ? $t('edit_release') : $t('add_release') }}
         </h5>
       </VCardItem>
 
-      <VDivider />
+      <VDivider class="flex-shrink-0" />
 
-      <div class="px-6 py-4">
-        <AppSelectSearch
-          v-model="type"
-          :items="typeOptions"
-          :label="$t('type')"
-          item-value="value"
-          item-title="title"
-        />
-      </div>
-
-      <template v-if="!isEditMode">
-        <VDivider />
-
+      <VCardText class="compose-dialog-scroll flex-grow-1 overflow-y-auto pa-0">
         <div class="px-6 py-4">
           <AppSelectSearch
-            v-model="recipientType"
-            :items="recipientTypeOptions"
-            :label="$t('recipient')"
+            v-model="type"
+            :items="typeOptions"
+            :label="$t('type')"
             item-value="value"
             item-title="title"
           />
         </div>
 
-        <VDivider v-if="recipientType === 'account'" />
+        <template v-if="type === EReleaseType.reminder">
+          <VDivider />
 
-        <div v-if="recipientType === 'account'" class="px-6 py-4">
-          <AppSelectSearch
-            v-model="selectedAccountId"
-            :items="accountOptions"
-            :label="$t('account')"
-            item-value="id"
-            item-title="name"
-          />
+          <div class="px-6 py-4">
+            <VTextField
+              v-model="reminderAtLocal"
+              type="datetime-local"
+              :label="$t('release_reminder_datetime')"
+              density="compact"
+            />
+          </div>
+        </template>
+
+        <template v-if="!isEditMode">
+          <VDivider />
+
+          <div class="px-6 py-4">
+            <AppSelectSearch
+              v-model="recipientType"
+              :items="recipientTypeOptions"
+              :label="$t('recipient')"
+              item-value="value"
+              item-title="title"
+            />
+          </div>
+
+          <VDivider v-if="recipientType === 'account'" />
+
+          <div v-if="recipientType === 'account'" class="px-6 py-4">
+            <AppSelectSearch
+              v-model="selectedAccountId"
+              :items="accountOptions"
+              :label="$t('account')"
+              item-value="id"
+              item-title="name"
+            />
+          </div>
+
+          <VDivider v-if="recipientType === 'permission_role'" />
+
+          <div v-if="recipientType === 'permission_role'" class="px-6 py-4">
+            <AppSelectSearch
+              v-model="selectedPermissionRoleId"
+              :items="permissionRoleOptions"
+              :label="$t('permission_groups')"
+              item-value="id"
+              item-title="name"
+            />
+          </div>
+
+          <VDivider v-if="recipientType === 'user'" />
+
+          <div v-if="recipientType === 'user'" class="px-6 py-4">
+            <AppSelectSearch
+              v-model="selectedUserId"
+              :items="userOptions"
+              :label="$t('user')"
+              item-value="id"
+              item-title="name"
+            />
+          </div>
+        </template>
+
+        <VDivider />
+
+        <div class="px-6 py-4">
+          <VTextField v-model="title" :label="$t('title')" density="compact" />
         </div>
 
-        <VDivider v-if="recipientType === 'permission_role'" />
+        <VDivider />
 
-        <div v-if="recipientType === 'permission_role'" class="px-6 py-4">
-          <AppSelectSearch
-            v-model="selectedPermissionRoleId"
-            :items="permissionRoleOptions"
-            :label="$t('permission_groups')"
-            item-value="id"
-            item-title="name"
-          />
+        <div class="px-6 py-4">
+          <ReleaseHtmlEditor v-model="message" :placeholder="$t('message')" />
         </div>
+      </VCardText>
 
-        <VDivider v-if="recipientType === 'user'" />
+      <VDivider class="flex-shrink-0" />
 
-        <div v-if="recipientType === 'user'" class="px-6 py-4">
-          <AppSelectSearch
-            v-model="selectedUserId"
-            :items="userOptions"
-            :label="$t('user')"
-            item-value="id"
-            item-title="name"
-          />
-        </div>
-      </template>
-
-      <VDivider />
-
-      <div class="px-6 py-4">
-        <VTextField v-model="title" :label="$t('title')" density="compact" />
-      </div>
-
-      <VDivider />
-
-      <div class="px-6 py-4">
-        <ReleaseHtmlEditor v-model="message" :placeholder="$t('message')" />
-      </div>
-
-      <VCardText class="d-flex justify-end flex-wrap gap-3">
+      <VCardActions class="compose-dialog-actions flex-shrink-0 flex-wrap justify-end gap-3 pa-4">
         <VBtn
           variant="tonal"
           color="secondary"
@@ -325,11 +372,12 @@ onMounted(async () => {
         </VBtn>
         <VBtn
           color="primary"
-          append-icon="tabler-send"
+          variant="elevated"
           :disabled="
             title === '' ||
             message === '' ||
             loading ||
+            (type === EReleaseType.reminder && reminderAtLocal === '') ||
             (!isEditMode &&
               ((recipientType === 'account' && !selectedAccountId) ||
                 (recipientType === 'permission_role' &&
@@ -341,13 +389,21 @@ onMounted(async () => {
         >
           {{ $t('save') }}
         </VBtn>
-      </VCardText>
+      </VCardActions>
     </VCard>
   </VDialog>
 </template>
 
 <style lang="scss">
 @use '@webcore/scss/base/mixins';
+
+.compose-dialog-card {
+  max-block-size: min(90vh, 52rem);
+}
+
+.compose-dialog-scroll {
+  min-block-size: 0;
+}
 
 .release-compose-dialog {
   .v-card-item {

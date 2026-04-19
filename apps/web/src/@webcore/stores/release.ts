@@ -39,6 +39,8 @@ export const useReleaseStore = defineStore('release', {
       count: 0 as number,
       total: 0 as number,
     } as PagingResponseSchema,
+    releaseNotificationUnreadCount: 0,
+    releaseNotificationResults: [] as ListReleaseResponse[],
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -358,6 +360,9 @@ export const useReleaseStore = defineStore('release', {
         if (!data?.status || !data?.data) {
           return null;
         }
+
+        this.releaseNotificationUnreadCount = data.data.unread_count;
+        this.releaseNotificationResults = data.data.results;
 
         return data.data;
       } catch {

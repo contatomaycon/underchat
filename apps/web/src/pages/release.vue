@@ -58,6 +58,7 @@ const getTypeColor = (type: EReleaseType): string => {
     [EReleaseType.update]: 'info',
     [EReleaseType.fix]: 'secondary',
     [EReleaseType.warning]: 'error',
+    [EReleaseType.reminder]: 'error',
   };
   return colors[type] || 'primary';
 };
@@ -70,9 +71,16 @@ const getTypeLabel = (type: EReleaseType): string => {
     [EReleaseType.update]: t('release_type_update'),
     [EReleaseType.fix]: t('release_type_fix'),
     [EReleaseType.warning]: t('release_type_warning'),
+    [EReleaseType.reminder]: t('release_type_reminder'),
   };
   return labels[type] || type;
 };
+
+const formatReminderDateTime = (iso: string) =>
+  new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(iso));
 
 const scopeCssToContainer = (css: string, scopeClass: string): string => {
   if (!css) return '';
@@ -261,6 +269,7 @@ const handleRefresh = async () => {
   }
 
   await releaseStore.refreshReleases(query);
+  await releaseStore.listReleaseNotifications();
 };
 
 const handleScroll = async (e: Event) => {
@@ -324,6 +333,9 @@ const openEditDialog = async (
     type: source.type,
     title: source.title,
     message: source.message,
+    ...('reminder_at' in source
+      ? { reminder_at: source.reminder_at ?? null }
+      : {}),
   } as ViewReleaseResponse;
   await nextTick();
   isComposeDialogVisible.value = true;
@@ -417,6 +429,7 @@ watch(
 );
 
 fetchReleases();
+void releaseStore.listReleaseNotifications();
 </script>
 
 <template>
@@ -469,6 +482,16 @@ fetchReleases();
             >
               {{ getTypeLabel(openedRelease.type) }}
             </VChip>
+
+            <span
+              v-if="
+                openedRelease.type === EReleaseType.reminder &&
+                openedRelease.reminder_at
+              "
+              class="text-caption text-error text-no-wrap flex-shrink-0"
+            >
+              {{ formatReminderDateTime(openedRelease.reminder_at) }}
+            </span>
 
             <VSpacer />
 
@@ -628,6 +651,15 @@ fetchReleases();
                 >
                   {{ release.title }}
                 </h6>
+                <p
+                  v-if="
+                    release.type === EReleaseType.reminder && release.reminder_at
+                  "
+                  class="text-caption text-error mb-1"
+                >
+                  {{ t('release_reminder_datetime') }}:
+                  {{ formatReminderDateTime(release.reminder_at) }}
+                </p>
                 <span class="text-body-2 text-truncate d-block">
                   {{ getMessagePreview(release.message) }}
                 </span>

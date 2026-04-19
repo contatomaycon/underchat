@@ -15,7 +15,7 @@ import { useReleaseStore } from '@/@webcore/stores/release';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EReleasePermissions } from '@core/common/enums/EPermissions/release';
-import type { ListReleaseResponse } from '@core/schema/release/listRelease/response.schema';
+import { EReleaseType } from '@core/common/enums/EReleaseType';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -46,15 +46,31 @@ const canViewReleases = computed(
     )
 );
 
-const releaseNotifications = ref<ListReleaseResponse[]>([]);
-const releaseUnreadCount = ref(0);
 const loadingReleaseNotifications = ref(false);
+
+const releaseUnreadCount = computed(
+  () => releaseStore.releaseNotificationUnreadCount
+);
+const releaseNotifications = computed(
+  () => releaseStore.releaseNotificationResults
+);
 
 const latestUnreadRelease = computed(() => {
   if (releaseUnreadCount.value === 0) return null;
   const unread = releaseNotifications.value.find((r) => !r.viewed);
   return unread ?? null;
 });
+
+const dashboardReleaseBannerColor = computed(() => {
+  const r = latestUnreadRelease.value;
+  if (!r) return 'primary';
+  if (r.type === EReleaseType.reminder) return 'error';
+  return 'primary';
+});
+
+const dashboardUnreadBannerAttention = computed(
+  () => !!latestUnreadRelease.value
+);
 
 const releaseUnreadLabel = computed(() => {
   const n = releaseUnreadCount.value;
@@ -596,12 +612,8 @@ onMounted(async () => {
 
   if (canViewReleases.value) {
     loadingReleaseNotifications.value = true;
-    const data = await releaseStore.listReleaseNotifications();
+    await releaseStore.listReleaseNotifications();
     loadingReleaseNotifications.value = false;
-    if (data) {
-      releaseNotifications.value = data.results;
-      releaseUnreadCount.value = data.unread_count;
-    }
   }
 });
 </script>
@@ -626,12 +638,21 @@ onMounted(async () => {
     <VCard
       v-else-if="canViewReleases && latestUnreadRelease"
       variant="tonal"
-      color="primary"
+      :color="dashboardReleaseBannerColor"
       class="mb-4 dashboard-unread-release-banner cursor-pointer"
+      :class="{
+        'dashboard-unread-release-banner--attention':
+          dashboardUnreadBannerAttention,
+      }"
       @click="openLatestUnreadRelease"
     >
       <VCardText class="d-flex align-center gap-3 py-3">
-        <VAvatar color="primary" size="40" variant="tonal">
+        <VAvatar
+          :color="dashboardReleaseBannerColor"
+          size="40"
+          variant="tonal"
+          class="dashboard-unread-release-banner__avatar"
+        >
           <VIcon icon="tabler-bell" size="22" />
         </VAvatar>
         <div class="flex-grow-1 min-w-0">
@@ -1275,6 +1296,53 @@ onMounted(async () => {
   &:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     transform: translateY(-1px);
+  }
+}
+
+.dashboard-unread-release-banner--attention {
+  animation: dashboard-release-banner-pulse 2.2s ease-in-out infinite;
+}
+
+.dashboard-unread-release-banner__avatar :deep(.v-icon) {
+  animation: dashboard-release-banner-bell 2.4s ease-in-out infinite;
+  transform-origin: 50% 0%;
+}
+
+@keyframes dashboard-release-banner-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--v-theme-on-surface), 0.08);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgba(var(--v-theme-on-surface), 0.04);
+  }
+}
+
+@keyframes dashboard-release-banner-bell {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  12% {
+    transform: rotate(-12deg);
+  }
+
+  24% {
+    transform: rotate(12deg);
+  }
+
+  36% {
+    transform: rotate(-8deg);
+  }
+
+  48% {
+    transform: rotate(8deg);
+  }
+
+  60% {
+    transform: rotate(0deg);
   }
 }
 

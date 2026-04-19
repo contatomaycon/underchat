@@ -40,6 +40,13 @@ export const editRelease = async (
       });
     }
 
+    if (result === 'invalid_reminder') {
+      return sendResponse(reply, {
+        message: t('release_reminder_datetime_required'),
+        httpStatusCode: EHTTPStatusCode.bad_request,
+      });
+    }
+
     return sendResponse(reply, {
       message: t('release_updated_successfully'),
       httpStatusCode: EHTTPStatusCode.ok,

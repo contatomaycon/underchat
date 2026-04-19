@@ -135,7 +135,7 @@ export class ReleaseService {
     releaseId: string,
     userId: string,
     input: EditReleaseBodyRequest
-  ): Promise<true | 'not_found' | 'forbidden'> => {
+  ): Promise<true | 'not_found' | 'forbidden' | 'invalid_reminder'> => {
     return this.releaseUpdaterRepository.updateById(releaseId, userId, input);
   };
 
@@ -182,12 +182,15 @@ export class ReleaseService {
       await this.userViewerRepository.getCreatedAtByUserId(userId);
     const query = { current_page: 1, per_page: 4 };
 
+    const reminderNotificationFeed = true;
+
     const [unreadCount, results] = await Promise.all([
       this.releaseListerRepository.countUnreadReleases(
         accountId,
         userId,
         permissionRoleId,
-        userCreatedAt
+        userCreatedAt,
+        reminderNotificationFeed
       ),
       this.releaseListerRepository.listReleases(
         4,
@@ -196,7 +199,8 @@ export class ReleaseService {
         accountId,
         userId,
         permissionRoleId,
-        userCreatedAt
+        userCreatedAt,
+        reminderNotificationFeed
       ),
     ]);
 

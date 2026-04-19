@@ -8,6 +8,7 @@ import {
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { EReleaseStatus } from '@core/common/enums/EReleaseStatus';
+import { EReleaseType } from '@core/common/enums/EReleaseType';
 import { ExtractTablesWithRelations } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 
@@ -64,6 +65,8 @@ export class ReleaseCreatorRepository {
       status: EReleaseStatus.active,
       title: input.title,
       message: input.message,
+      reminder_at:
+        input.type === EReleaseType.reminder ? (input.reminder_at ?? null) : null,
     });
 
     return releaseId;

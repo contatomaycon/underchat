@@ -28,6 +28,10 @@ export const release = pgTable(
       .default(EReleaseStatus.active),
     title: varchar({ length: 200 }).notNull(),
     message: text().notNull(),
+    reminder_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,

@@ -17,6 +17,7 @@ export const viewReleaseResponseSchema = Type.Object({
   viewed: Type.Boolean(),
   created_at: Type.String(),
   updated_at: Type.String(),
+  reminder_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type ViewReleaseResponse = Static<typeof viewReleaseResponseSchema>;

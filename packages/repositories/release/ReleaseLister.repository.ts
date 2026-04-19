@@ -12,7 +12,11 @@ import {
   or,
   ilike,
   sql,
+  ne,
+  isNotNull,
+  lte,
 } from 'drizzle-orm';
+import { EReleaseType } from '@core/common/enums/EReleaseType';
 import { ListReleaseRequest } from '@core/schema/release/listRelease/request.schema';
 import { ListReleaseResponse } from '@core/schema/release/listRelease/response.schema';
 import { EReleaseStatus } from '@core/common/enums/EReleaseStatus';
@@ -26,12 +30,17 @@ export class ReleaseListerRepository {
     private readonly releaseViewViewerRepository: ReleaseViewViewerRepository
   ) {}
 
+  /**
+   * @param reminderNotificationFeed — true: banner/sino (lembrete só após reminder_at para todos).
+   *   false: lista /release (autor ainda vê o próprio lembrete agendado para editar).
+   */
   private readonly setFilters = (
     query: ListReleaseRequest,
     accountId: string,
     userId: string,
     permissionRoleId: string,
-    userCreatedAt: string | null
+    userCreatedAt: string | null,
+    reminderNotificationFeed: boolean
   ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
@@ -98,6 +107,30 @@ export class ReleaseListerRepository {
 
     filters.push(accessConditions);
 
+    if (reminderNotificationFeed) {
+      filters.push(
+        or(
+          ne(release.type, EReleaseType.reminder),
+          and(
+            isNotNull(release.reminder_at),
+            lte(release.reminder_at, sql`now()`)
+          )
+        ) as SQLWrapper
+      );
+    } else {
+      // Lista: lembrete futuro só para o autor (edição); demais só após reminder_at.
+      filters.push(
+        or(
+          ne(release.type, EReleaseType.reminder),
+          and(
+            isNotNull(release.reminder_at),
+            lte(release.reminder_at, sql`now()`)
+          ),
+          eq(release.created_by_user_id, userId)
+        ) as SQLWrapper
+      );
+    }
+
     return filters;
   };
 
@@ -108,14 +141,16 @@ export class ReleaseListerRepository {
     accountId: string,
     userId: string,
     permissionRoleId: string,
-    userCreatedAt: string | null
+    userCreatedAt: string | null,
+    reminderNotificationFeed = false
   ): Promise<ListReleaseResponse[]> => {
     const filters = this.setFilters(
       query,
       accountId,
       userId,
       permissionRoleId,
-      userCreatedAt
+      userCreatedAt,
+      reminderNotificationFeed
     );
 
     const result = await this.dbRo
@@ -126,6 +161,7 @@ export class ReleaseListerRepository {
         status: release.status,
         title: release.title,
         message: release.message,
+        reminder_at: release.reminder_at,
         created_at: release.created_at,
         updated_at: release.updated_at,
       })
@@ -161,6 +197,7 @@ export class ReleaseListerRepository {
         viewed: viewedReleaseIds.has(item.release_id),
         created_at: createdAt,
         updated_at: updatedAt,
+        reminder_at: item.reminder_at ?? null,
       };
     });
   };
@@ -170,14 +207,16 @@ export class ReleaseListerRepository {
     accountId: string,
     userId: string,
     permissionRoleId: string,
-    userCreatedAt: string | null
+    userCreatedAt: string | null,
+    reminderNotificationFeed = false
   ): Promise<number> => {
     const filters = this.setFilters(
       query,
       accountId,
       userId,
       permissionRoleId,
-      userCreatedAt
+      userCreatedAt,
+      reminderNotificationFeed
     );
 
     const result = await this.dbRo
@@ -204,7 +243,8 @@ export class ReleaseListerRepository {
     accountId: string,
     userId: string,
     permissionRoleId: string,
-    userCreatedAt: string | null
+    userCreatedAt: string | null,
+    reminderNotificationFeed: boolean
   ): Promise<number> => {
     const query = {};
     const filters = this.setFilters(
@@ -212,7 +252,8 @@ export class ReleaseListerRepository {
       accountId,
       userId,
       permissionRoleId,
-      userCreatedAt
+      userCreatedAt,
+      reminderNotificationFeed
     );
     const unreadFilter = this.buildUnreadFilter(userId);
     const allFilters = and(...filters, unreadFilter);
@@ -234,7 +275,14 @@ export class ReleaseListerRepository {
     accountId: string,
     userId: string,
     permissionRoleId: string,
-    userCreatedAt: string | null
+    userCreatedAt: string | null,
+    reminderNotificationFeed = false
   ): Promise<number> =>
-    this.executeUnreadCount(accountId, userId, permissionRoleId, userCreatedAt);
+    this.executeUnreadCount(
+      accountId,
+      userId,
+      permissionRoleId,
+      userCreatedAt,
+      reminderNotificationFeed
+    );
 }

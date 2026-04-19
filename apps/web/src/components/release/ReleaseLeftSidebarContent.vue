@@ -28,6 +28,7 @@ const getTypeColor = (type: EReleaseType): string => {
     [EReleaseType.update]: 'info',
     [EReleaseType.fix]: 'secondary',
     [EReleaseType.warning]: 'error',
+    [EReleaseType.reminder]: 'error',
   };
   return colors[type] || 'primary';
 };
@@ -40,6 +41,7 @@ const getTypeLabel = (type: EReleaseType): string => {
     [EReleaseType.update]: t('release_type_update'),
     [EReleaseType.fix]: t('release_type_fix'),
     [EReleaseType.warning]: t('release_type_warning'),
+    [EReleaseType.reminder]: t('release_type_reminder'),
   };
   return labels[type] || type;
 };
@@ -51,6 +53,7 @@ const types: EReleaseType[] = [
   EReleaseType.update,
   EReleaseType.fix,
   EReleaseType.warning,
+  EReleaseType.reminder,
 ];
 </script>
 

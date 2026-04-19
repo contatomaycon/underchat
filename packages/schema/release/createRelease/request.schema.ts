@@ -14,6 +14,9 @@ export const createReleaseRequestSchema = Type.Object({
   permission_role_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),
+  reminder_at: Type.Optional(
+    Type.Union([Type.String({ format: 'date-time' }), Type.Null()])
+  ),
 });
 
 export type CreateReleaseRequest = Static<typeof createReleaseRequestSchema>;

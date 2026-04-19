@@ -2,7 +2,17 @@ import * as schema from '@core/models';
 import { release, releaseAccess, releaseView } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, gte, or, sql, SQLWrapper } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  gte,
+  or,
+  sql,
+  SQLWrapper,
+  ne,
+  isNotNull,
+  lte,
+} from 'drizzle-orm';
 import { ViewReleaseResponse } from '@core/schema/release/viewRelease/response.schema';
 import { EReleaseType } from '@core/common/enums/EReleaseType';
 import { EReleaseStatus } from '@core/common/enums/EReleaseStatus';
@@ -71,6 +81,7 @@ export class ReleaseViewerRepository {
     status: EReleaseStatus;
     title: string;
     message: string;
+    reminder_at: string | null;
     created_at: string | null;
     updated_at: string | null;
     viewed: boolean;
@@ -86,6 +97,7 @@ export class ReleaseViewerRepository {
       status: item.status as EReleaseStatus,
       title: item.title,
       message: item.message,
+      reminder_at: item.reminder_at ?? null,
       viewed: item.viewed,
       created_at: createdAt,
       updated_at: updatedAt,
@@ -105,7 +117,20 @@ export class ReleaseViewerRepository {
       permissionRoleId
     );
 
-    const conditions = [eq(release.release_id, releaseId), accessConditions];
+    const reminderVisibleForViewer = or(
+      ne(release.type, EReleaseType.reminder),
+      and(
+        isNotNull(release.reminder_at),
+        lte(release.reminder_at, sql`now()`)
+      ),
+      eq(release.created_by_user_id, userId)
+    ) as SQLWrapper;
+
+    const conditions = [
+      eq(release.release_id, releaseId),
+      accessConditions,
+      reminderVisibleForViewer,
+    ];
     if (userCreatedAt) {
       conditions.push(gte(release.created_at, userCreatedAt));
     }
@@ -119,6 +144,7 @@ export class ReleaseViewerRepository {
         status: release.status,
         title: release.title,
         message: release.message,
+        reminder_at: release.reminder_at,
         created_at: release.created_at,
         updated_at: release.updated_at,
         viewed: this.buildViewedField(userId),
