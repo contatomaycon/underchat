@@ -3,12 +3,16 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
 import { ListReportConversationHistoryMessagesResponse } from '@core/schema/reportConversationHistory/listReportConversationHistoryMessages/response.schema';
+import { ChatClosureCommentListerRepository } from '@core/repositories/chat/ChatClosureCommentLister.repository';
+import { enrichMessagesWithClosureAnnotationSubtype } from '@core/common/functions/enrichMessagesWithClosureAnnotationSubtype';
 
 @injectable()
 export class ReportConversationHistoryMessagesListerUseCase {
   constructor(
     @inject(ElasticDatabaseService)
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(ChatClosureCommentListerRepository)
+    private readonly chatClosureCommentListerRepository: ChatClosureCommentListerRepository
   ) {}
 
   async execute(
@@ -108,8 +112,18 @@ export class ReportConversationHistoryMessagesListerUseCase {
       return dateA - dateB;
     });
 
+    const closureRows =
+      await this.chatClosureCommentListerRepository.listByChatId(
+        accountId,
+        chatId
+      );
+    const messages = enrichMessagesWithClosureAnnotationSubtype(
+      allMessages,
+      closureRows
+    );
+
     return {
-      messages: allMessages,
+      messages,
     };
   }
 }

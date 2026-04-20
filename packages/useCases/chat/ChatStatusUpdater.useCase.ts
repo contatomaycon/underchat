@@ -34,6 +34,7 @@ import {
 } from '@core/common/functions/chatParticipants';
 import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 import { PushNotificationService } from '@core/services/pushNotification.service';
+import { ChatClosureCommentCreatorRepository } from '@core/repositories/chat/ChatClosureCommentCreator.repository';
 
 interface IClosedStatusProtocolResult {
   protocol: string | null;
@@ -60,7 +61,9 @@ export class ChatStatusUpdaterUseCase {
     @inject(ChatbotFlowRunnerService)
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
     @inject(PushNotificationService)
-    private readonly pushNotificationService: PushNotificationService
+    private readonly pushNotificationService: PushNotificationService,
+    @inject(ChatClosureCommentCreatorRepository)
+    private readonly chatClosureCommentCreatorRepository: ChatClosureCommentCreatorRepository
   ) {}
 
   private async sendProtocolMessage(
@@ -218,6 +221,53 @@ export class ChatStatusUpdaterUseCase {
       protocol: generatedProtocol,
       persisted: protocolPersisted,
     };
+  }
+
+  private normalizeClosureComment(comment?: string): string | null {
+    if (typeof comment !== 'string') {
+      return null;
+    }
+
+    const normalized = comment.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    return normalized;
+  }
+
+  private async persistClosureComment(data: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    chatId: string;
+    userId: string;
+    comment: string;
+    closedAt: string;
+  }): Promise<void> {
+    const chatData = await this.chatService.findChatByChatId(
+      data.accountId,
+      data.chatId
+    );
+    if (!chatData) {
+      throw new Error(data.t('chat_not_found'));
+    }
+
+    await this.chatClosureCommentCreatorRepository.create({
+      accountId: data.accountId,
+      chatId: data.chatId,
+      userId: data.userId,
+      comment: data.comment,
+      closedAt: data.closedAt,
+    });
+
+    await this.chatMessageService.sendMessage(data.t, {
+      chat: chatData,
+      accountId: data.accountId,
+      type: EMessageType.annotation,
+      message: data.comment,
+      typeUser: ETypeUserChat.system,
+      annotationSubtype: 'closure',
+    });
   }
 
   private async handleUraOutputStatus(
@@ -543,6 +593,7 @@ export class ChatStatusUpdaterUseCase {
     }
 
     const requestedStatus = body.status as EChatStatus;
+    const closureComment = this.normalizeClosureComment(body.closure_comment);
     const canManageInChatLifecycleByPermission =
       this.canManageInChatLifecycle(actions);
 
@@ -690,6 +741,17 @@ export class ChatStatusUpdaterUseCase {
     }
 
     await this.chatService.clearChatSummary(params.chat_id, accountId);
+
+    if (requestedStatus === EChatStatus.closed && closureComment) {
+      await this.persistClosureComment({
+        t,
+        accountId,
+        chatId: params.chat_id,
+        userId,
+        comment: closureComment,
+        closedAt: closedAt || currentDate,
+      });
+    }
 
     if (
       finalStatus === EChatStatus.in_chat ||

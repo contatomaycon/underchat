@@ -605,6 +605,9 @@ const handleJoinConversation = async () => {
 
 const isCloseServiceDialogOpen = ref(false);
 const closeServiceSendMessageOnFinishAttendance = ref(true);
+const closeServiceInformClosureReason = ref(false);
+const closeServiceComment = ref('');
+const closeServiceCommentMaxLength = 1000;
 const isLeaveConversationDialogOpen = ref(false);
 const isLeaveConversationLoading = ref(false);
 const isAttendantsInfoDialogOpen = ref(false);
@@ -618,7 +621,15 @@ const handleCloseService = () => {
   }
 
   closeServiceSendMessageOnFinishAttendance.value = true;
+  closeServiceInformClosureReason.value = false;
+  closeServiceComment.value = '';
   isCloseServiceDialogOpen.value = true;
+};
+
+const onCloseServiceInformClosureReasonChange = (value: boolean | null) => {
+  if (!value) {
+    closeServiceComment.value = '';
+  }
 };
 
 const canShowLeaveConversationAction = computed(() => {
@@ -667,15 +678,27 @@ const confirmCloseService = async () => {
   if (!chatStore.activeChat?.chat_id) return;
   isCloseServiceDialogOpen.value = false;
 
+  const normalizedComment = closeServiceInformClosureReason.value
+    ? closeServiceComment.value.trim()
+    : '';
+  const options: {
+    send_message_on_finish_attendance?: boolean;
+    closure_comment?: string;
+  } = {};
+
+  if (shouldShowCloseServiceSendMessageToggle.value) {
+    options.send_message_on_finish_attendance =
+      closeServiceSendMessageOnFinishAttendance.value;
+  }
+
+  if (normalizedComment) {
+    options.closure_comment = normalizedComment;
+  }
+
   await chatStore.updateChatStatus(
     chatStore.activeChat.chat_id,
     EChatStatus.closed,
-    shouldShowCloseServiceSendMessageToggle.value
-      ? {
-          send_message_on_finish_attendance:
-            closeServiceSendMessageOnFinishAttendance.value,
-        }
-      : undefined
+    Object.keys(options).length > 0 ? options : undefined
   );
 };
 
@@ -7152,6 +7175,30 @@ onBeforeUnmount(() => {
             inset
           />
         </div>
+      </VCardText>
+
+      <VCardText>
+        <VCheckbox
+          v-model="closeServiceInformClosureReason"
+          density="compact"
+          hide-details
+          :label="t('close_service_inform_closure_reason')"
+          @update:model-value="onCloseServiceInformClosureReasonChange"
+        />
+
+        <VTextarea
+          v-if="closeServiceInformClosureReason"
+          v-model="closeServiceComment"
+          class="mt-3"
+          :label="t('annotation')"
+          :placeholder="t('write_your_annotation')"
+          :maxlength="closeServiceCommentMaxLength"
+          rows="3"
+          counter
+          auto-grow
+          variant="outlined"
+          color="primary"
+        />
       </VCardText>
 
       <VCardText class="d-flex justify-end gap-3 flex-wrap">

@@ -3569,6 +3569,7 @@ export const useChatStore = defineStore('chat', {
       status: string,
       options?: {
         send_message_on_finish_attendance?: boolean;
+        closure_comment?: string;
       }
     ): Promise<boolean> {
       try {
@@ -3587,6 +3588,7 @@ export const useChatStore = defineStore('chat', {
             status,
             send_message_on_finish_attendance:
               options?.send_message_on_finish_attendance,
+            closure_comment: options?.closure_comment,
           }
         );
 

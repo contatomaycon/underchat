@@ -494,6 +494,7 @@ export class ChatMessageService {
       hash,
       typeUser,
       authorUser,
+      annotationSubtype,
     } = params;
     return {
       message_id: uuidv7(),
@@ -522,6 +523,9 @@ export class ChatMessageService {
         link_preview: linkPreview,
         message_quoted_id: messageQuotedId,
         quoted: quotedMessage,
+        ...(annotationSubtype
+          ? { annotation_subtype: annotationSubtype }
+          : {}),
       },
       date: new Date().toISOString(),
       hash: hash,
@@ -1064,6 +1068,13 @@ export class ChatMessageService {
       chatData.account.id
     );
 
+    const annotationSubtype =
+      type === EMessageType.annotation &&
+      'annotationSubtype' in options &&
+      options.annotationSubtype === 'closure'
+        ? 'closure'
+        : undefined;
+
     const textMessage = this.createTextMessage({
       chat: chatData,
       chatId,
@@ -1075,6 +1086,7 @@ export class ChatMessageService {
       hash: messageContext.normalizedHash,
       typeUser: messageContext.typeUser,
       authorUser: messageContext.authorUser,
+      annotationSubtype,
     });
 
     return this.publishMessage(textMessage);

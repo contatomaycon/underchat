@@ -14,6 +14,8 @@ import { ChatService } from '@core/services/chat.service';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { TFunction } from 'i18next';
 import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
+import { ChatClosureCommentListerRepository } from '@core/repositories/chat/ChatClosureCommentLister.repository';
+import { enrichMessagesWithClosureAnnotationSubtype } from '@core/common/functions/enrichMessagesWithClosureAnnotationSubtype';
 
 @injectable()
 export class ChatMessageListerUseCase {
@@ -21,7 +23,9 @@ export class ChatMessageListerUseCase {
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(ChatService)
-    private readonly chatService: ChatService
+    private readonly chatService: ChatService,
+    @inject(ChatClosureCommentListerRepository)
+    private readonly chatClosureCommentListerRepository: ChatClosureCommentListerRepository
   ) {}
 
   private async getChatMessage(
@@ -127,8 +131,18 @@ export class ChatMessageListerUseCase {
       };
     }
 
+    const closureRows =
+      await this.chatClosureCommentListerRepository.listByChatId(
+        accountId,
+        params.chat_id
+      );
+    const enrichedMessages = enrichMessagesWithClosureAnnotationSubtype(
+      chatMessages,
+      closureRows
+    );
+
     const pagings = setPaginationData(
-      chatMessages.length,
+      enrichedMessages.length,
       total,
       perPage,
       currentPage
@@ -136,7 +150,7 @@ export class ChatMessageListerUseCase {
 
     return {
       pagings,
-      results: chatMessages,
+      results: enrichedMessages,
     };
   }
 }

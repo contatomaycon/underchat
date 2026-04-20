@@ -141,6 +141,7 @@ export interface IContent {
   ephemeral?: IEphemeralMessage | null;
   album?: IAlbumMessage | null;
   forward?: IForwardMessageContent | null;
+  annotation_subtype?: 'closure' | null;
 }
 
 export interface IMessageKey {

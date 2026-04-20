@@ -1364,9 +1364,17 @@ export class ReportConversationHistoryPdfService {
     `;
   }
 
-  private formatAnnotationMessage(content: ContentMessageChat): string {
+  private formatAnnotationMessage(
+    content: ContentMessageChat,
+    t: TFunction<'translation', undefined>
+  ): string {
     if (content.type === EMessageType.annotation && content.message) {
-      return content.message.replaceAll('\n', '<br>');
+      const body = content.message.replaceAll('\n', '<br>');
+      if (content.annotation_subtype === 'closure') {
+        const label = this.escapeHtml(t('closure_reason_message_label'));
+        return `<div class="pdf-closure-reason-label" style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px;">${label}</div>${body}`;
+      }
+      return body;
     }
     return '';
   }
@@ -1420,7 +1428,7 @@ export class ReportConversationHistoryPdfService {
       return this.formatContacts(contacts, msg, content.message);
     }
 
-    const annotationMessage = this.formatAnnotationMessage(content);
+    const annotationMessage = this.formatAnnotationMessage(content, t);
     if (annotationMessage) return annotationMessage;
 
     return `[${t('unsupported_message')}]`;

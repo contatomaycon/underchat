@@ -655,6 +655,13 @@ const shouldFormatMessage = (message: ListMessageResult): boolean => {
   );
 };
 
+const isClosureReasonAnnotation = (message: ListMessageResult): boolean => {
+  return (
+    message.content?.type === EMessageType.annotation &&
+    message.content?.annotation_subtype === 'closure'
+  );
+};
+
 const DEFAULT_AVATAR = '/images/svg/avatar-default.svg';
 
 const resolveNonEmptyPhoto = (photo?: string | null): string | null => {
@@ -1753,6 +1760,8 @@ const handleContactClick = (message: ListMessageResult) => {
                       item.message.content?.type !== EMessageType.annotation,
                     'has-edit-history':
                       hasMessageVersions(item.message) && !item.message.deleted,
+                    'is-closure-reason-annotation':
+                      isClosureReasonAnnotation(item.message),
                   },
                 ]"
                 @click.stop="
@@ -2750,11 +2759,18 @@ const handleContactClick = (message: ListMessageResult) => {
                       !item.message.message_key?.is_view_once
                     "
                     :class="
-                      item.message.content?.ephemeral
+                      item.message.content?.ephemeral ||
+                      isClosureReasonAnnotation(item.message)
                         ? 'd-flex flex-column'
                         : 'd-flex align-center'
                     "
                   >
+                    <div
+                      v-if="isClosureReasonAnnotation(item.message)"
+                      class="closure-reason-label"
+                    >
+                      {{ t('closure_reason_message_label') }}
+                    </div>
                     <div class="d-flex align-center">
                       <VIcon
                         v-if="item.message.content?.ephemeral"
@@ -3520,6 +3536,23 @@ const handleContactClick = (message: ListMessageResult) => {
         }
       }
     }
+
+    &.is-closure-reason-annotation {
+      box-shadow:
+        inset 0 0 0 2px rgba(217, 119, 6, 0.45),
+        0 1px 3px rgba(0, 0, 0, 0.12) !important;
+    }
+  }
+
+  .closure-reason-label {
+    width: 100%;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(180, 83, 9, 0.35);
+    color: rgba(120, 53, 15, 0.95);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
   }
 
   .message-block {
