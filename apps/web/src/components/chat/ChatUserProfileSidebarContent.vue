@@ -143,6 +143,18 @@ const inChatStatusNotificationsModel = computed({
   },
 });
 
+const chatbotStatusNotificationsModel = computed({
+  get: () =>
+    chatNotificationPreferences.value?.notifications_status_chatbot ?? true,
+  set: (value: boolean) => {
+    if (!chatNotificationPreferences.value) {
+      return;
+    }
+
+    chatNotificationPreferences.value.notifications_status_chatbot = value;
+  },
+});
+
 const isChildNotificationDisabled = computed(
   () => !notificationsMasterModel.value
 );
@@ -172,6 +184,7 @@ const updateMasterNotificationSettings = async () => {
     statusNotificationsModel.value = false;
     queueStatusNotificationsModel.value = false;
     inChatStatusNotificationsModel.value = false;
+    chatbotStatusNotificationsModel.value = false;
   }
 
   await updateProfileSidebarContent();
@@ -1070,6 +1083,28 @@ const removePhoto = async () => {
               <VSwitch
                 id="chat-notification-status-in-chat"
                 v-model="inChatStatusNotificationsModel"
+                density="compact"
+                :disabled="isChildNotificationDisabled"
+                @update:model-value="updateNotificationSettings"
+              />
+            </div>
+          </div>
+
+          <div class="d-flex align-center pa-2 ms-8">
+            <VIcon
+              class="me-2 text-high-emphasis"
+              icon="tabler-message-chatbot"
+              size="20"
+            />
+            <div
+              class="text-high-emphasis d-flex align-center justify-space-between flex-grow-1"
+            >
+              <div class="text-body-2 text-high-emphasis">
+                {{ $t('chat_notification_status_chatbot_toggle') }}
+              </div>
+              <VSwitch
+                id="chat-notification-status-chatbot"
+                v-model="chatbotStatusNotificationsModel"
                 density="compact"
                 :disabled="isChildNotificationDisabled"
                 @update:model-value="updateNotificationSettings"

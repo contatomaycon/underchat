@@ -44,6 +44,15 @@ function isChatInUserSectors(chat: IChat, userSectors: string[]): boolean {
   return userSectors.includes(chat.sector.id);
 }
 
+function isChatbotStatus(status: EChatStatus): boolean {
+  return (
+    status === EChatStatus.ura ||
+    status === EChatStatus.ura_output ||
+    status === EChatStatus.ura_schedule ||
+    status === EChatStatus.ura_webhook
+  );
+}
+
 export function canReadChatByPolicy({
   chat,
   userId,
@@ -81,7 +90,7 @@ export function canReadChatByPolicy({
     EChatbotPermissions.chatbot_access,
     EChatPermissions.view_chatbot_messages,
   ]);
-  if (chat.status === EChatStatus.ura && hasChatbotInputReadPermission) {
+  if (isChatbotStatus(chat.status) && hasChatbotInputReadPermission) {
     return true;
   }
 

@@ -419,23 +419,16 @@ export function canViewChat(
     return canViewBySector && isChatInUserSectors;
   }
 
-  if (chat.status === 'ura') {
-    if (canViewChatbotInputMessages) {
-      return true;
-    }
-
-    if (hasPermissionToViewAll || isOwnChat) {
-      return true;
-    }
-
-    return canViewBySector && isChatInUserSectors;
-  }
-
   if (
+    chat.status === 'ura' ||
     chat.status === 'ura_output' ||
     chat.status === 'ura_webhook' ||
     chat.status === 'ura_schedule'
   ) {
+    if (canViewChatbotInputMessages) {
+      return true;
+    }
+
     if (hasPermissionToViewAll || isOwnChat) {
       return true;
     }

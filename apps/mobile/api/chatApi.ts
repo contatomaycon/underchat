@@ -74,6 +74,7 @@ export type UpdateChatUserPayload = {
   notifications_status_update?: boolean;
   notifications_status_queue?: boolean;
   notifications_status_in_chat?: boolean;
+  notifications_status_chatbot?: boolean;
   sort_by_chat_order?: string | null;
   sort_in_chat_order?: string | null;
   sort_by_my_chats_order?: string | null;

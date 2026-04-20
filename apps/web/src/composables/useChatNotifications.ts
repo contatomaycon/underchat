@@ -125,12 +125,7 @@ function canReceiveMessageNotification(
     return false;
   }
 
-  if (chatStore.canViewChat(chat)) {
-    return true;
-  }
-
-  // Fallback: if the chat is already visible in lists, allow notification.
-  return chatStore.isChatInAnyList(chat.chat_id);
+  return chatStore.canViewChat(chat);
 }
 
 export const useChatNotifications = () => {
@@ -204,12 +199,24 @@ export const useChatNotifications = () => {
     return chatStore.user?.chat_user?.notifications_status_in_chat !== false;
   };
 
+  const isChatbotStatusNotificationsEnabled = () => {
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_status_chatbot !== false;
+  };
+
   const isQueueNotificationsEnabled = () => {
     return isQueueStatusNotificationsEnabled();
   };
 
   const isInChatNotificationsEnabled = () => {
     return isInChatStatusNotificationsEnabled();
+  };
+
+  const isChatbotNotificationsEnabled = () => {
+    return isChatbotStatusNotificationsEnabled();
   };
 
   const isViewingChatConversation = (chatId: string): boolean => {
@@ -229,6 +236,10 @@ export const useChatNotifications = () => {
     chatId: string,
     tag: string
   ): void => {
+    if (!isBrowserNotificationsEnabled()) {
+      return;
+    }
+
     if (!('Notification' in globalThis)) {
       return;
     }
@@ -347,9 +358,7 @@ export const useChatNotifications = () => {
         await axiosAuth.delete('/push/unsubscribe', {
           data: { endpoint },
         });
-      } catch {
-        return;
-      }
+      } catch {}
 
       try {
         await subscription.unsubscribe();
@@ -363,6 +372,10 @@ export const useChatNotifications = () => {
 
   async function subscribeToPushNotifications(): Promise<void> {
     if (isSubscribing.value) {
+      return;
+    }
+
+    if (!isPushNotificationsEnabled()) {
       return;
     }
 
@@ -388,6 +401,11 @@ export const useChatNotifications = () => {
           registration = existingRegistration;
           serviceWorkerRegistration.value = existingRegistration;
         } else {
+          if (!isPushNotificationsEnabled()) {
+            isSubscribing.value = false;
+            return;
+          }
+
           const newRegistration = await registerServiceWorker();
           if (newRegistration) {
             registration = newRegistration;
@@ -403,7 +421,19 @@ export const useChatNotifications = () => {
         return;
       }
 
+      if (!isPushNotificationsEnabled()) {
+        isSubscribing.value = false;
+        await unsubscribeFromPushNotificationsInternal();
+        return;
+      }
+
       const response = await axiosAuth.get('/push/public-key');
+
+      if (!isPushNotificationsEnabled()) {
+        isSubscribing.value = false;
+        await unsubscribeFromPushNotificationsInternal();
+        return;
+      }
 
       const { public_key } = response.data.data;
 
@@ -411,16 +441,31 @@ export const useChatNotifications = () => {
         await registration.pushManager.getSubscription();
 
       if (existingSubscription) {
+        if (!isPushNotificationsEnabled()) {
+          await unsubscribeFromPushNotificationsInternal();
+        }
         isSubscribing.value = false;
         return;
       }
 
       const convertedVapidKey = urlBase64ToUint8Array(public_key);
 
+      if (!isPushNotificationsEnabled()) {
+        isSubscribing.value = false;
+        await unsubscribeFromPushNotificationsInternal();
+        return;
+      }
+
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: convertedVapidKey,
       });
+
+      if (!isPushNotificationsEnabled()) {
+        await subscription.unsubscribe().catch(() => {});
+        isSubscribing.value = false;
+        return;
+      }
 
       const subscriptionData = {
         endpoint: subscription.endpoint,
@@ -430,6 +475,12 @@ export const useChatNotifications = () => {
         },
         user_agent: navigator.userAgent,
       };
+
+      if (!isPushNotificationsEnabled()) {
+        await subscription.unsubscribe().catch(() => {});
+        isSubscribing.value = false;
+        return;
+      }
 
       await axiosAuth.post('/push/subscribe', subscriptionData);
 
@@ -498,6 +549,10 @@ export const useChatNotifications = () => {
       chat.status === EChatStatus.in_chat &&
       !isInChatNotificationsEnabled()
     ) {
+      return;
+    }
+
+    if (isChatbotStatus(chat.status) && !isChatbotNotificationsEnabled()) {
       return;
     }
 
@@ -624,7 +679,11 @@ export const useChatNotifications = () => {
       return;
     }
 
-    if ('serviceWorker' in navigator && !serviceWorkerRegistration.value) {
+    if (
+      shouldUsePushNotifications &&
+      'serviceWorker' in navigator &&
+      !serviceWorkerRegistration.value
+    ) {
       await registerServiceWorker();
     }
 
@@ -641,7 +700,9 @@ export const useChatNotifications = () => {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     if ('serviceWorker' in navigator) {
-      await registerServiceWorker();
+      if (isPushNotificationsEnabled()) {
+        await registerServiceWorker();
+      }
 
       const handleServiceWorkerMessage = (event: Event) => {
         const messageEvent = event as MessageEvent;
@@ -681,6 +742,7 @@ export const useChatNotifications = () => {
       chatStore.user?.chat_user?.notifications,
       chatStore.user?.chat_user?.notifications_push,
       chatStore.user?.chat_user?.notifications_browser,
+      chatStore.user?.chat_user?.notifications_status_chatbot,
     ],
     async () => {
       await syncNotificationSettings();
@@ -721,9 +783,7 @@ export async function unsubscribeFromPushNotifications(): Promise<void> {
       await axiosAuth.delete('/push/unsubscribe', {
         data: { endpoint },
       });
-    } catch {
-      return;
-    }
+    } catch {}
 
     try {
       await subscription.unsubscribe();

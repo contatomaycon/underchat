@@ -691,6 +691,7 @@
   "chat_notification_status_parent": "Notificar cambios de estado",
   "chat_notification_status_queue_toggle": "Notificar en cola de espera de servicio",
   "chat_notification_status_in_chat_toggle": "Notificar en servicio",
+  "chat_notification_status_chatbot_toggle": "Notificar en chatbot",
   "chat_notification_status_update": "Estado actualizado",
   "chat_notification_status_in_chat": "Estado cambiado: en servicio",
   "chat_notification_status_queue": "Esperando servicio",

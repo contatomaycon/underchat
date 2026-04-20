@@ -5,6 +5,59 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
 
+export type ChatNotificationPreferences = {
+  notifications?: boolean | null;
+  notifications_push?: boolean | null;
+  notifications_status_update?: boolean | null;
+  notifications_status_queue?: boolean | null;
+  notifications_status_in_chat?: boolean | null;
+  notifications_status_chatbot?: boolean | null;
+};
+
+export function isChatbotNotificationStatus(status?: EChatStatus): boolean {
+  return (
+    status === EChatStatus.ura ||
+    status === EChatStatus.ura_output ||
+    status === EChatStatus.ura_schedule ||
+    status === EChatStatus.ura_webhook
+  );
+}
+
+export function canReceivePushForChatStatus(
+  preferences: ChatNotificationPreferences,
+  status?: EChatStatus,
+  requireStatusUpdateToggle = false
+): boolean {
+  if (preferences.notifications !== true) {
+    return false;
+  }
+
+  if (preferences.notifications_push !== true) {
+    return false;
+  }
+
+  if (
+    requireStatusUpdateToggle &&
+    preferences.notifications_status_update !== true
+  ) {
+    return false;
+  }
+
+  if (status === EChatStatus.queue) {
+    return preferences.notifications_status_queue === true;
+  }
+
+  if (status === EChatStatus.in_chat) {
+    return preferences.notifications_status_in_chat === true;
+  }
+
+  if (isChatbotNotificationStatus(status)) {
+    return preferences.notifications_status_chatbot === true;
+  }
+
+  return true;
+}
+
 @injectable()
 export class UsersWithNotificationsListerRepository {
   constructor(
@@ -41,6 +94,16 @@ export class UsersWithNotificationsListerRepository {
             eq(chatUser.notifications_status_in_chat, true)
           )
         : and(whereClause, eq(chatUser.notifications_status_in_chat, true));
+    }
+
+    if (isChatbotNotificationStatus(status)) {
+      whereClause = requireStatusUpdateToggle
+        ? and(
+            whereClause,
+            eq(chatUser.notifications_status_update, true),
+            eq(chatUser.notifications_status_chatbot, true)
+          )
+        : and(whereClause, eq(chatUser.notifications_status_chatbot, true));
     }
 
     const result = await this.dbRo

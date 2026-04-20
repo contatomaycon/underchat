@@ -20,6 +20,7 @@ export const chatsUserResponseSchema = Type.Object({
   notifications_status_update: Type.Boolean(),
   notifications_status_queue: Type.Boolean(),
   notifications_status_in_chat: Type.Boolean(),
+  notifications_status_chatbot: Type.Boolean(),
   sort_by_chat_order: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   sort_in_chat_order: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   sort_by_my_chats_order: Type.Optional(

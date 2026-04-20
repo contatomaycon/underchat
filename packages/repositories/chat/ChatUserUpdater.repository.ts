@@ -59,6 +59,11 @@ export class ChatUserUpdaterRepository {
         input.notifications_status_in_chat;
     }
 
+    if (input.notifications_status_chatbot !== undefined) {
+      inputUpdate.notifications_status_chatbot =
+        input.notifications_status_chatbot;
+    }
+
     if (input.sort_by_chat_order !== undefined) {
       inputUpdate.sort_by_chat_order = input.sort_by_chat_order;
     }

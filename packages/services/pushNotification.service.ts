@@ -10,34 +10,14 @@ import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificat
 import { IChat } from '@core/common/interfaces/IChat';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
 import { vapidEnvironment } from '@core/config/environments';
-import { isChatParticipant } from '@core/common/functions/chatParticipants';
 
 const EXPO_PUSH_API_URL = 'https://exp.host/--/api/v2/push/send';
 const CHAT_NOTIFICATION_ANDROID_CHANNEL = 'underchat-messages';
-
-const CHAT_VIEW_OTHERS_PERMISSIONS = new Set<string>([
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EChatPermissions.chat_group,
-]);
-
-const CHAT_LIST_ALL_IN_SECTOR_PERMISSIONS = new Set<string>([
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EChatPermissions.chat_group,
-  EChatPermissions.list_all_chats_in_sector,
-]);
-
-const CHAT_LIST_ALL_WITHOUT_SECTOR_PERMISSIONS = new Set<string>([
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EChatPermissions.chat_group,
-  EChatPermissions.list_all_chats_without_sector_limit,
-]);
 
 @injectable()
 export class PushNotificationService {
@@ -159,15 +139,11 @@ export class PushNotificationService {
     }
 
     const accountId = chat.account.id;
-    const statusFilter =
-      chat.status === EChatStatus.queue || chat.status === EChatStatus.in_chat
-        ? chat.status
-        : undefined;
 
     const userIds =
       await this.usersWithNotificationsListerRepository.listUsersWithNotifications(
         accountId,
-        statusFilter,
+        chat.status,
         false
       );
 
@@ -296,78 +272,34 @@ export class PushNotificationService {
     const permissions =
       await this.permissionService.viewPermissionByUserId(userId);
 
-    const isOwnChat = isChatParticipant(chat, userId);
-
-    const canViewOthersChats = permissions.some((permission) =>
-      CHAT_VIEW_OTHERS_PERMISSIONS.has(permission)
-    );
-
-    const canListAllChatsInSector = permissions.some((permission) =>
-      CHAT_LIST_ALL_IN_SECTOR_PERMISSIONS.has(permission)
-    );
-
-    const canListAllChatsWithoutSectorLimit = permissions.some((permission) =>
-      CHAT_LIST_ALL_WITHOUT_SECTOR_PERMISSIONS.has(permission)
-    );
-
-    const hasPermissionToViewAll =
-      canViewOthersChats || canListAllChatsWithoutSectorLimit;
-
-    if (!isOwnChat && !canViewOthersChats && !canListAllChatsInSector) {
-      return false;
-    }
-
     const userChannels =
       await this.userChannelChannelsListerRepository.listChannelsWithNamesByUserAndAccount(
         userId,
         accountId
       );
 
-    if (userChannels.length > 0) {
-      const channelIds = userChannels.map((c) => c.id);
-      if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
-        return false;
-      }
-    }
-
-    let isChatInUserSectors = false;
-
-    if (canListAllChatsInSector) {
-      const userSectors =
-        await this.userSectorsListerRepository.listUserSectors(
-          accountId,
-          userId
-        );
-
-      isChatInUserSectors =
-        (userSectors.length > 0 &&
-          !!chat.sector?.id &&
-          userSectors.includes(chat.sector.id)) ||
-        (userSectors.length === 0 && !chat.sector?.id) ||
-        !chat.sector?.id;
-    }
-
-    if (chat.status === EChatStatus.in_chat) {
-      if (hasPermissionToViewAll || isOwnChat) {
-        return true;
-      }
-
-      return canListAllChatsInSector && isChatInUserSectors;
-    }
-
-    if (this.isChatbotStatus(chat.status)) {
-      if (hasPermissionToViewAll || isOwnChat) {
-        return true;
-      }
-
-      return canListAllChatsInSector && isChatInUserSectors;
-    }
-
-    return (
-      canViewOthersChats ||
-      isOwnChat ||
-      (canListAllChatsInSector && isChatInUserSectors)
+    const userSectors = await this.userSectorsListerRepository.listUserSectors(
+      accountId,
+      userId
     );
+
+    return canReadChatByPolicy({
+      chat,
+      userId,
+      actions: this.buildPermissionActions(permissions),
+      userSectors,
+      userChannels,
+    });
+  }
+
+  private buildPermissionActions(permissions: string[]): IJwtGroupHierarchy[] {
+    return permissions.map((permission) => ({
+      account_id: '',
+      permission_role_id: '',
+      role_name: '',
+      module_name: '',
+      action_name: permission as EPermissionsRoles,
+    }));
   }
 
   private isChatStatusEligible(status: EChatStatus): boolean {

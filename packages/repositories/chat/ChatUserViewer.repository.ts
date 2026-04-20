@@ -34,6 +34,7 @@ export class ChatUserViewerRepository {
         notifications_status_update: chatUser.notifications_status_update,
         notifications_status_queue: chatUser.notifications_status_queue,
         notifications_status_in_chat: chatUser.notifications_status_in_chat,
+        notifications_status_chatbot: chatUser.notifications_status_chatbot,
         sort_by_chat_order: chatUser.sort_by_chat_order,
         sort_in_chat_order: chatUser.sort_in_chat_order,
         sort_by_my_chats_order: chatUser.sort_by_my_chats_order,

@@ -19,6 +19,7 @@ export const chatsUserResponseSchema = Type.Object({
   notifications_status_update: Type.Boolean(),
   notifications_status_queue: Type.Boolean(),
   notifications_status_in_chat: Type.Boolean(),
+  notifications_status_chatbot: Type.Boolean(),
 });
 
 export const userResponseSchema = Type.Object({

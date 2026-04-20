@@ -9,12 +9,15 @@ import {
   getToken,
   getPermissions,
   getUser,
+  getSectors,
+  getChannels,
   clearAuth,
   setChannels,
   patchUser,
 } from './storage/authStorage';
 import {
   canViewChatbotTab as checkCanViewChatbotTab,
+  canViewChat,
   hasChatModuleAccessPermission,
   canUpdateOwnChatStatusPermission,
 } from './constants/chatAuthorization';
@@ -636,10 +639,43 @@ export default function App() {
       return;
     }
 
-    const navigated = navigateToChatRoom(pendingNotificationChat);
-    if (navigated) {
-      setPendingNotificationChat(null);
-    }
+    let cancelled = false;
+
+    const openPendingNotificationChat = async () => {
+      const [permissions, user, userSectors, userChannels] = await Promise.all([
+        getPermissions(),
+        getUser(),
+        getSectors(),
+        getChannels(),
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (
+        !canViewChat(pendingNotificationChat, {
+          permissions,
+          userId: getUserId(user),
+          userSectors,
+          userChannels,
+        })
+      ) {
+        setPendingNotificationChat(null);
+        return;
+      }
+
+      const navigated = navigateToChatRoom(pendingNotificationChat);
+      if (navigated) {
+        setPendingNotificationChat(null);
+      }
+    };
+
+    void openPendingNotificationChat();
+
+    return () => {
+      cancelled = true;
+    };
   }, [authenticated, navigationReady, pendingNotificationChat]);
 
   useEffect(() => {

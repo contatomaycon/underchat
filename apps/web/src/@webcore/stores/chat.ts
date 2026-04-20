@@ -78,6 +78,8 @@ import { BulkActionChatResponse } from '@core/schema/chat/bulkAction/response.sc
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
+import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
+import type { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -142,6 +144,17 @@ const FILTER_KEYS = [
   'filter_date_start',
   'filter_date_end',
 ] as const;
+
+const buildJwtActions = (
+  permissions: EPermissionsRoles[]
+): IJwtGroupHierarchy[] =>
+  permissions.map((permission) => ({
+    account_id: '',
+    permission_role_id: '',
+    role_name: '',
+    module_name: '',
+    action_name: permission,
+  }));
 
 const LIST_FILTER_KEYS = FILTER_KEYS.filter((k) => k !== 'filter_user_id');
 
@@ -995,6 +1008,11 @@ export const useChatStore = defineStore('chat', {
       }
 
       const resolvedChat = this.resolveChatSnapshot(chat, existingSnapshot);
+      if (!this.canViewChat(resolvedChat)) {
+        this.removeChatIfNotAuthorized(resolvedChat);
+        return;
+      }
+
       const canViewOthersChats = permissions.some(
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
@@ -1655,73 +1673,13 @@ export const useChatStore = defineStore('chat', {
       const userSectors = getSectors();
       const userChannels = getChannels();
 
-      if (userChannels.length > 0) {
-        const channelIds = userChannels.map((c) => c.id);
-        if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
-          return false;
-        }
-      }
-
-      const canViewOthersChats = permissions.some(
-        (perm: EPermissionsRoles) =>
-          perm === EGeneralPermissions.full_access ||
-          perm === EGeneralPermissions.full_access_group ||
-          perm === EChatPermissions.chat_group
-      );
-      const canListAllChatsInSector = permissions.some(
-        (perm: EPermissionsRoles) =>
-          perm === EGeneralPermissions.full_access ||
-          perm === EGeneralPermissions.full_access_group ||
-          perm === EChatPermissions.chat_group ||
-          perm === EChatPermissions.list_all_chats_in_sector
-      );
-      const canListAllChatsWithoutSectorLimit = permissions.some(
-        (perm: EPermissionsRoles) =>
-          perm === EGeneralPermissions.full_access ||
-          perm === EGeneralPermissions.full_access_group ||
-          perm === EChatPermissions.chat_group ||
-          perm === EChatPermissions.list_all_chats_without_sector_limit
-      );
-
-      const hasPermissionToViewAll =
-        canViewOthersChats || canListAllChatsWithoutSectorLimit;
-      const isAlreadyVisible =
-        this.activeChat?.chat_id === chat.chat_id ||
-        this.isChatInAnyList(chat.chat_id);
-      const isChatInUserSectors =
-        (userSectors.length > 0 &&
-          chat.sector?.id &&
-          userSectors.includes(chat.sector.id)) ||
-        (userSectors.length === 0 && !chat.sector?.id) ||
-        (canListAllChatsInSector && !chat.sector?.id);
-
-      if (chat.status === EChatStatus.in_chat) {
-        if (hasPermissionToViewAll) {
-          return true;
-        }
-        if (this.isCurrentUserParticipant(chat)) {
-          return true;
-        }
-        return (
-          canListAllChatsInSector && (isChatInUserSectors || isAlreadyVisible)
-        );
-      }
-
-      const isOwnChat = this.isCurrentUserParticipant(chat);
-
-      if (this.isChatbotStatus(chat.status)) {
-        if (hasPermissionToViewAll || isOwnChat) {
-          return true;
-        }
-
-        return canListAllChatsInSector && isChatInUserSectors;
-      }
-
-      return (
-        canViewOthersChats ||
-        isOwnChat ||
-        (canListAllChatsInSector && isChatInUserSectors)
-      );
+      return canReadChatByPolicy({
+        chat,
+        userId: this.user?.user_id ?? '',
+        actions: buildJwtActions(permissions),
+        userSectors,
+        userChannels,
+      });
     },
 
     revalidateChannelAccess(): void {
@@ -2335,6 +2293,8 @@ export const useChatStore = defineStore('chat', {
           existingChatUser?.notifications_status_queue ?? false,
         notifications_status_in_chat:
           existingChatUser?.notifications_status_in_chat ?? true,
+        notifications_status_chatbot:
+          existingChatUser?.notifications_status_chatbot ?? true,
       };
 
       setUser({ ...this.user, chat_user: chatUserUpdate });
@@ -2362,6 +2322,8 @@ export const useChatStore = defineStore('chat', {
           this.user?.chat_user?.notifications_status_queue ?? false,
         notifications_status_in_chat:
           this.user?.chat_user?.notifications_status_in_chat ?? true,
+        notifications_status_chatbot:
+          this.user?.chat_user?.notifications_status_chatbot ?? true,
       };
 
       await this.updateChatsUser({
@@ -2376,6 +2338,8 @@ export const useChatStore = defineStore('chat', {
         notifications_status_queue: chatUserUpdate.notifications_status_queue,
         notifications_status_in_chat:
           chatUserUpdate.notifications_status_in_chat,
+        notifications_status_chatbot:
+          chatUserUpdate.notifications_status_chatbot,
       });
     },
 
@@ -3352,6 +3316,10 @@ export const useChatStore = defineStore('chat', {
               input.notifications_status_in_chat ??
               this.user.chat_user.notifications_status_in_chat ??
               true,
+            notifications_status_chatbot:
+              input.notifications_status_chatbot ??
+              this.user.chat_user.notifications_status_chatbot ??
+              true,
             sort_by_chat_order:
               input.sort_by_chat_order ??
               this.user.chat_user.sort_by_chat_order,
@@ -4260,6 +4228,12 @@ export const useChatStore = defineStore('chat', {
 
       if (!chat?.chat_id) {
         this.activeChat = null;
+        return;
+      }
+
+      if (!this.canViewChat(chat as IChat)) {
+        this.activeChat = null;
+        this.removeChatIfNotAuthorized(chat as IChat);
         return;
       }
 
