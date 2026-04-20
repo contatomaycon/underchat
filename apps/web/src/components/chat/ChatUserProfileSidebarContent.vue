@@ -145,7 +145,7 @@ const inChatStatusNotificationsModel = computed({
 
 const chatbotStatusNotificationsModel = computed({
   get: () =>
-    chatNotificationPreferences.value?.notifications_status_chatbot ?? true,
+    chatNotificationPreferences.value?.notifications_status_chatbot ?? false,
   set: (value: boolean) => {
     if (!chatNotificationPreferences.value) {
       return;

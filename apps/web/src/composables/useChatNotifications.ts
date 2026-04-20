@@ -204,7 +204,7 @@ export const useChatNotifications = () => {
       return false;
     }
 
-    return chatStore.user?.chat_user?.notifications_status_chatbot !== false;
+    return chatStore.user?.chat_user?.notifications_status_chatbot === true;
   };
 
   const isQueueNotificationsEnabled = () => {

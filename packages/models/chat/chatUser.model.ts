@@ -25,7 +25,7 @@ export const chatUser = pgTable(
     notifications_status_update: boolean().default(true),
     notifications_status_queue: boolean().default(false),
     notifications_status_in_chat: boolean().default(true),
-    notifications_status_chatbot: boolean().default(true),
+    notifications_status_chatbot: boolean().default(false),
     sort_by_chat_order: varchar({ length: 50 }),
     sort_in_chat_order: varchar({ length: 10 }),
     sort_by_my_chats_order: varchar({ length: 50 }),

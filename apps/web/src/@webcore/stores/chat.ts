@@ -2294,7 +2294,7 @@ export const useChatStore = defineStore('chat', {
         notifications_status_in_chat:
           existingChatUser?.notifications_status_in_chat ?? true,
         notifications_status_chatbot:
-          existingChatUser?.notifications_status_chatbot ?? true,
+          existingChatUser?.notifications_status_chatbot ?? false,
       };
 
       setUser({ ...this.user, chat_user: chatUserUpdate });
@@ -2323,7 +2323,7 @@ export const useChatStore = defineStore('chat', {
         notifications_status_in_chat:
           this.user?.chat_user?.notifications_status_in_chat ?? true,
         notifications_status_chatbot:
-          this.user?.chat_user?.notifications_status_chatbot ?? true,
+          this.user?.chat_user?.notifications_status_chatbot ?? false,
       };
 
       await this.updateChatsUser({
@@ -3319,7 +3319,7 @@ export const useChatStore = defineStore('chat', {
             notifications_status_chatbot:
               input.notifications_status_chatbot ??
               this.user.chat_user.notifications_status_chatbot ??
-              true,
+              false,
             sort_by_chat_order:
               input.sort_by_chat_order ??
               this.user.chat_user.sort_by_chat_order,

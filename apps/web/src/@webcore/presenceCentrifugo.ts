@@ -46,7 +46,7 @@ export const initUserPresenceSubscription = async (
           notifications_status_update: true,
           notifications_status_queue: false,
           notifications_status_in_chat: true,
-          notifications_status_chatbot: true,
+          notifications_status_chatbot: false,
           status,
         };
 
