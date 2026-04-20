@@ -34,6 +34,7 @@ import {
 } from '@core/common/functions/chatParticipants';
 import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 import { PushNotificationService } from '@core/services/pushNotification.service';
+import { ChatClosureCommentCreatorRepository } from '@core/repositories/chat/ChatClosureCommentCreator.repository';
 
 interface IClosedStatusProtocolResult {
   protocol: string | null;
@@ -60,7 +61,9 @@ export class ChatStatusUpdaterUseCase {
     @inject(ChatbotFlowRunnerService)
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
     @inject(PushNotificationService)
-    private readonly pushNotificationService: PushNotificationService
+    private readonly pushNotificationService: PushNotificationService,
+    @inject(ChatClosureCommentCreatorRepository)
+    private readonly chatClosureCommentCreatorRepository: ChatClosureCommentCreatorRepository
   ) {}
 
   private async sendProtocolMessage(
@@ -220,6 +223,53 @@ export class ChatStatusUpdaterUseCase {
     };
   }
 
+  private normalizeClosureComment(comment?: string): string | null {
+    if (typeof comment !== 'string') {
+      return null;
+    }
+
+    const normalized = comment.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    return normalized;
+  }
+
+  private async persistClosureComment(data: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    chatId: string;
+    userId: string;
+    comment: string;
+    closedAt: string;
+  }): Promise<void> {
+    const chatData = await this.chatService.findChatByChatId(
+      data.accountId,
+      data.chatId
+    );
+    if (!chatData) {
+      throw new Error(data.t('chat_not_found'));
+    }
+
+    await this.chatClosureCommentCreatorRepository.create({
+      accountId: data.accountId,
+      chatId: data.chatId,
+      userId: data.userId,
+      comment: data.comment,
+      closedAt: data.closedAt,
+    });
+
+    await this.chatMessageService.sendMessage(data.t, {
+      chat: chatData,
+      accountId: data.accountId,
+      type: EMessageType.annotation,
+      message: data.comment,
+      typeUser: ETypeUserChat.system,
+      annotationSubtype: 'closure',
+    });
+  }
+
   private async handleUraOutputStatus(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -370,6 +420,21 @@ export class ChatStatusUpdaterUseCase {
       EGeneralPermissions.full_access_group,
       EChatPermissions.chat_group,
       EChatPermissions.disable_send_message_on_finish_attendance,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
+  /**
+   * Com a permissão `require_chat_closure_comment`: o atendente pode optar por informar ou não (toggle na UI).
+   * Sem a permissão: o motivo é sempre obrigatório ao encerrar.
+   */
+  private canToggleOptionalClosureReason(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.require_chat_closure_comment,
     ];
 
     return hasRequiredPermission(actions, permissions);
@@ -531,7 +596,8 @@ export class ChatStatusUpdaterUseCase {
     params: UpdateChatStatusParams,
     body: UpdateChatStatusBody,
     actions: IJwtGroupHierarchy[],
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    executionOptions?: { skipClosureCommentValidation?: boolean }
   ): Promise<IChat | null> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -543,6 +609,7 @@ export class ChatStatusUpdaterUseCase {
     }
 
     const requestedStatus = body.status as EChatStatus;
+    const closureComment = this.normalizeClosureComment(body.closure_comment);
     const canManageInChatLifecycleByPermission =
       this.canManageInChatLifecycle(actions);
 
@@ -556,6 +623,15 @@ export class ChatStatusUpdaterUseCase {
       userSectors,
       userChannels
     );
+
+    if (
+      !executionOptions?.skipClosureCommentValidation &&
+      requestedStatus === EChatStatus.closed &&
+      !this.canToggleOptionalClosureReason(actions) &&
+      !closureComment
+    ) {
+      throw new Error(t('closure_comment_required'));
+    }
 
     const status = requestedStatus;
     const currentDate = new Date().toISOString();
@@ -690,6 +766,17 @@ export class ChatStatusUpdaterUseCase {
     }
 
     await this.chatService.clearChatSummary(params.chat_id, accountId);
+
+    if (requestedStatus === EChatStatus.closed && closureComment) {
+      await this.persistClosureComment({
+        t,
+        accountId,
+        chatId: params.chat_id,
+        userId,
+        comment: closureComment,
+        closedAt: closedAt || currentDate,
+      });
+    }
 
     if (
       finalStatus === EChatStatus.in_chat ||

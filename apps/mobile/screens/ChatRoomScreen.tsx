@@ -149,6 +149,7 @@ import {
   canPickQueueChat,
   canReopenChat,
   canDisableSendMessageOnFinishAttendance,
+  canToggleOptionalClosureReason,
   canToggleForwardToOutputChatbot,
   hasContactViewPhonePermission,
   isChatParticipant,
@@ -5795,6 +5796,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     closeServiceSendMessageOnFinishAttendance,
     setCloseServiceSendMessageOnFinishAttendance,
   ] = useState(true);
+  const [closeServiceClosureComment, setCloseServiceClosureComment] =
+    useState('');
+  const [closeServiceInformClosureReason, setCloseServiceInformClosureReason] =
+    useState(true);
   const [protocolModalVisible, setProtocolModalVisible] = useState(false);
   const [labelModalVisible, setLabelModalVisible] = useState(false);
   const [isLoadingLabelModal, setIsLoadingLabelModal] = useState(false);
@@ -7763,6 +7768,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       (isQueueOrUraStatus && canCloseChatWithoutAttending(permissionList)));
   const canDisableSendMessageOnFinishAttendanceAction =
     canDisableSendMessageOnFinishAttendance(permissionList);
+  const canToggleOptionalClosureReasonAction =
+    canToggleOptionalClosureReason(permissionList);
   const canViewChatAttendantsInfoAction =
     canViewChatAttendantsInfoPermission(permissionList);
   const shouldShowCloseServiceSendMessageToggle =
@@ -7819,15 +7826,39 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       return;
     }
 
+    const trimmedClosure = closeServiceClosureComment.trim();
+    if (canToggleOptionalClosureReasonAction) {
+      if (closeServiceInformClosureReason && !trimmedClosure) {
+        Alert.alert(pt.warning_title, pt.closure_comment_required);
+        return;
+      }
+    } else if (!trimmedClosure) {
+      Alert.alert(pt.warning_title, pt.closure_comment_required);
+      return;
+    }
+
+    const patchOptions: {
+      send_message_on_finish_attendance?: boolean;
+      closure_comment?: string;
+    } = {};
+
+    if (shouldShowCloseServiceSendMessageToggle) {
+      patchOptions.send_message_on_finish_attendance =
+        closeServiceSendMessageOnFinishAttendance;
+    }
+
+    if (canToggleOptionalClosureReasonAction) {
+      if (closeServiceInformClosureReason && trimmedClosure) {
+        patchOptions.closure_comment = trimmedClosure;
+      }
+    } else {
+      patchOptions.closure_comment = trimmedClosure;
+    }
+
     const result = await updateChatStatusDetailed(
       chatId,
       'closed',
-      shouldShowCloseServiceSendMessageToggle
-        ? {
-            send_message_on_finish_attendance:
-              closeServiceSendMessageOnFinishAttendance,
-          }
-        : undefined
+      Object.keys(patchOptions).length > 0 ? patchOptions : undefined
     );
     if (!result.ok) {
       Alert.alert(
@@ -7838,10 +7869,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
 
     setCloseServiceModalVisible(false);
+    setCloseServiceClosureComment('');
+    setCloseServiceInformClosureReason(true);
     Alert.alert(pt.success_title, pt.close_service_success);
     navigation.goBack();
   }, [
+    canToggleOptionalClosureReasonAction,
     chatInfo.chat_id,
+    closeServiceClosureComment,
+    closeServiceInformClosureReason,
     closeServiceSendMessageOnFinishAttendance,
     canManageInChatLifecycle,
     isInChatStatus,
@@ -7851,6 +7887,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleCloseService = useCallback(() => {
     setCloseServiceSendMessageOnFinishAttendance(true);
+    setCloseServiceClosureComment('');
+    setCloseServiceInformClosureReason(true);
     setCloseServiceModalVisible(true);
   }, []);
 
@@ -14756,6 +14794,53 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             />
           </View>
         ) : null}
+
+        {canToggleOptionalClosureReasonAction ? (
+          <>
+            <View style={styles.closeServiceToggleRow}>
+              <View style={styles.closeServiceToggleTextWrap}>
+                <Text style={styles.closeServiceToggleLabel}>
+                  {pt.close_service_inform_closure_toggle_label}
+                </Text>
+                <Text style={styles.closeServiceToggleDescription}>
+                  {pt.close_service_inform_closure_toggle_description}
+                </Text>
+              </View>
+              <Switch
+                value={closeServiceInformClosureReason}
+                onValueChange={setCloseServiceInformClosureReason}
+                trackColor={{
+                  false: colors.grey400,
+                  true: colors.primary,
+                }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            {closeServiceInformClosureReason ? (
+              <TextInput
+                style={styles.closeServiceClosureInput}
+                value={closeServiceClosureComment}
+                onChangeText={setCloseServiceClosureComment}
+                placeholder={pt.closure_reason_label}
+                placeholderTextColor={colors.grey500}
+                multiline
+                maxLength={1000}
+                textAlignVertical="top"
+              />
+            ) : null}
+          </>
+        ) : (
+          <TextInput
+            style={styles.closeServiceClosureInput}
+            value={closeServiceClosureComment}
+            onChangeText={setCloseServiceClosureComment}
+            placeholder={pt.closure_reason_label}
+            placeholderTextColor={colors.grey500}
+            multiline
+            maxLength={1000}
+            textAlignVertical="top"
+          />
+        )}
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -18856,6 +18941,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.grey700,
     lineHeight: 16,
+  },
+  closeServiceClosureInput: {
+    marginTop: 8,
+    minHeight: 88,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.onSurface,
+    backgroundColor: colors.surface,
   },
   modalLoadingWrap: {
     alignItems: 'center',

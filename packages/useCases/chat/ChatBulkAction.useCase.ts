@@ -314,7 +314,8 @@ export class ChatBulkActionUseCase {
               input.close_payload?.send_message_on_finish_attendance ?? true,
           },
           actions,
-          userChannels
+          userChannels,
+          { skipClosureCommentValidation: true }
         );
 
         if (!closeResult) {

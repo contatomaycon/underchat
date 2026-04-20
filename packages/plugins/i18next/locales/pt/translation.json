@@ -976,6 +976,8 @@
   "attendance_time": "Tempo de Atendimento",
   "average_response_time": "Tempo Médio de Resposta",
   "unsupported_message": "Mensagem não suportada",
+  "closure_comment_required": "Informe o motivo do encerramento.",
+  "closure_reason_message_label": "Motivo do encerramento",
   "image": "Imagem",
   "at": "às",
   "day_abbrev": "d",

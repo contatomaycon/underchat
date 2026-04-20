@@ -570,17 +570,23 @@ export async function updateChatStatus(
   status: string,
   options?: {
     send_message_on_finish_attendance?: boolean;
+    closure_comment?: string;
   }
 ): Promise<boolean> {
   if (!chatId || chatId.trim().length === 0) return false;
   const body: {
     status: string;
     send_message_on_finish_attendance?: boolean;
+    closure_comment?: string;
   } = { status };
 
   if (options?.send_message_on_finish_attendance !== undefined) {
     body.send_message_on_finish_attendance =
       options.send_message_on_finish_attendance;
+  }
+
+  if (options?.closure_comment !== undefined) {
+    body.closure_comment = options.closure_comment;
   }
 
   const res = await apiPatch<ListChatsResult>(`/chat/${chatId}/status`, {
@@ -600,6 +606,7 @@ export async function updateChatStatusDetailed(
   status: string,
   options?: {
     send_message_on_finish_attendance?: boolean;
+    closure_comment?: string;
   }
 ): Promise<UpdateChatStatusDetailedResult> {
   if (!chatId || chatId.trim().length === 0) {
@@ -612,11 +619,16 @@ export async function updateChatStatusDetailed(
   const body: {
     status: string;
     send_message_on_finish_attendance?: boolean;
+    closure_comment?: string;
   } = { status };
 
   if (options?.send_message_on_finish_attendance !== undefined) {
     body.send_message_on_finish_attendance =
       options.send_message_on_finish_attendance;
+  }
+
+  if (options?.closure_comment !== undefined) {
+    body.closure_comment = options.closure_comment;
   }
 
   const res = await apiPatchWithMessage<ListChatsResult>(

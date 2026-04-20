@@ -46,6 +46,12 @@ export const updateChatStatus = async (
     });
   } catch (error) {
     if (error instanceof Error) {
+      if (error.message === t('closure_comment_required')) {
+        return sendResponse(reply, {
+          message: error.message,
+          httpStatusCode: EHTTPStatusCode.bad_request,
+        });
+      }
       if (
         error.message === t('chat_only_primary_can_close') ||
         error.message === t('chat_access_denied') ||
