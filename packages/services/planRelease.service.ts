@@ -173,12 +173,6 @@ export class PlanReleaseService {
     return result;
   };
 
-  private readonly addOneDay = (date: Date): Date => {
-    const result = new Date(date);
-    result.setDate(result.getDate() + 1);
-    return result;
-  };
-
   private readonly calculateNextPaymentDate = (
     paymentDate: string,
     billingPeriodId: string | null,
@@ -187,9 +181,6 @@ export class PlanReleaseService {
     currentNextPaymentDate: string | null
   ): string => {
     const paymentDateObj = new Date(paymentDate);
-    const withCourtesyDay = (date: Date): string => {
-      return this.addOneDay(date).toISOString();
-    };
 
     if (currentPlanId === newPlanId && currentNextPaymentDate) {
       const currentNextDate = new Date(currentNextPaymentDate);
@@ -197,24 +188,24 @@ export class PlanReleaseService {
 
       if (currentNextDate > now) {
         if (billingPeriodId === EBillingPeriod.monthly) {
-          return withCourtesyDay(this.addOneMonth(currentNextDate));
+          return this.addOneMonth(currentNextDate).toISOString();
         }
 
         if (billingPeriodId === EBillingPeriod.annual) {
-          return withCourtesyDay(this.addOneYear(currentNextDate));
+          return this.addOneYear(currentNextDate).toISOString();
         }
       }
     }
 
     if (billingPeriodId === EBillingPeriod.monthly) {
-      return withCourtesyDay(this.addOneMonth(paymentDateObj));
+      return this.addOneMonth(paymentDateObj).toISOString();
     }
 
     if (billingPeriodId === EBillingPeriod.annual) {
-      return withCourtesyDay(this.addOneYear(paymentDateObj));
+      return this.addOneYear(paymentDateObj).toISOString();
     }
 
-    return withCourtesyDay(paymentDateObj);
+    return paymentDateObj.toISOString();
   };
 
   private readonly calculateProportionalValue = (

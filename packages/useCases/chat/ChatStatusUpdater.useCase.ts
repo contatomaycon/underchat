@@ -425,6 +425,21 @@ export class ChatStatusUpdaterUseCase {
     return hasRequiredPermission(actions, permissions);
   }
 
+  /**
+   * Com a permissão `require_chat_closure_comment`: o atendente pode optar por informar ou não (toggle na UI).
+   * Sem a permissão: o motivo é sempre obrigatório ao encerrar.
+   */
+  private canToggleOptionalClosureReason(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.require_chat_closure_comment,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   private canManageInChatLifecycle(actions: IJwtGroupHierarchy[]): boolean {
     if (!actions?.length) {
       return false;
@@ -581,7 +596,8 @@ export class ChatStatusUpdaterUseCase {
     params: UpdateChatStatusParams,
     body: UpdateChatStatusBody,
     actions: IJwtGroupHierarchy[],
-    userChannels: { id: string; name: string }[] = []
+    userChannels: { id: string; name: string }[] = [],
+    executionOptions?: { skipClosureCommentValidation?: boolean }
   ): Promise<IChat | null> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -607,6 +623,15 @@ export class ChatStatusUpdaterUseCase {
       userSectors,
       userChannels
     );
+
+    if (
+      !executionOptions?.skipClosureCommentValidation &&
+      requestedStatus === EChatStatus.closed &&
+      !this.canToggleOptionalClosureReason(actions) &&
+      !closureComment
+    ) {
+      throw new Error(t('closure_comment_required'));
+    }
 
     const status = requestedStatus;
     const currentDate = new Date().toISOString();

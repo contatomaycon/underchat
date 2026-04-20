@@ -114,6 +114,13 @@ export const DISABLE_SEND_MESSAGE_ON_FINISH_ATTENDANCE_PERMISSIONS = [
   'disable_send_message_on_finish_attendance',
 ] as const;
 
+export const REQUIRE_CHAT_CLOSURE_COMMENT_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'require_chat_closure_comment',
+] as const;
+
 export const MANAGE_IN_CHAT_LIFECYCLE_PERMISSIONS = [
   'full_access',
   'full_access_group',
@@ -337,6 +344,13 @@ export function canDisableSendMessageOnFinishAttendance(
     permissions,
     DISABLE_SEND_MESSAGE_ON_FINISH_ATTENDANCE_PERMISSIONS
   );
+}
+
+/** Com permissão: pode ligar/desligar o motivo no modal. Sem: motivo obrigatório. */
+export function canToggleOptionalClosureReason(
+  permissions: string[]
+): boolean {
+  return hasAnyPermission(permissions, REQUIRE_CHAT_CLOSURE_COMMENT_PERMISSIONS);
 }
 
 export function canManageInChatLifecyclePermission(

@@ -1,0 +1,2 @@
+-- Permissão: obrigar motivo do encerramento ao fechar atendimento
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES ('b2e8f4ac-1d39-4f6c-a7b1-9e8d7c6b5a40', '019a930d-c6f6-766d-9c83-914b7faa4337', '019a930d-c6f6-766d-9c83-b9db2f0d1aae', 'require_chat_closure_comment', 'Motivo do encerramento', 'Permite ativar ou desativar o preenchimento do motivo ao encerrar o atendimento na própria tela.');
