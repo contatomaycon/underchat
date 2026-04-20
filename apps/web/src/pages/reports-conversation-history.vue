@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
@@ -26,6 +27,7 @@ import { reportConversationHistoryPdfAccountCentrifugo } from '@core/common/func
 import { IReportConversationHistoryPdfNotification } from '@core/common/interfaces/IReportConversationHistoryPdfNotification';
 import { getUser } from '@/@webcore/localStorage/user';
 import { Subscription } from 'centrifuge';
+import { can } from '@layouts/plugins/casl';
 
 type ProtocolWithType = {
   protocol: string;
@@ -173,15 +175,31 @@ const itemsPerPage = ref([
   { value: -1, title: 'All' },
 ]);
 
-const searchByOptions = ref([
-  { value: 'date', title: t('date') },
-  { value: 'operator', title: t('operator') },
-  { value: 'queue', title: t('sector') },
-  { value: 'protocol', title: t('protocol') },
-  { value: 'client', title: t('client') },
-  { value: 'phone', title: t('phone') },
-  { value: 'label', title: t('label') },
-]);
+const canViewLabelTemplates = computed(() =>
+  can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    ELabelTemplatePermissions.label_template_group,
+    ELabelTemplatePermissions.label_view,
+  ])
+);
+
+const searchByOptions = computed(() => {
+  const options = [
+    { value: 'date', title: t('date') },
+    { value: 'operator', title: t('operator') },
+    { value: 'queue', title: t('sector') },
+    { value: 'protocol', title: t('protocol') },
+    { value: 'client', title: t('client') },
+    { value: 'phone', title: t('phone') },
+  ];
+
+  if (canViewLabelTemplates.value) {
+    options.push({ value: 'label', title: t('label') });
+  }
+
+  return options;
+});
 
 const headers: DataTableHeader<ReportConversationHistoryResult>[] = [
   { title: t('date'), key: 'date', sortable: true },
@@ -262,6 +280,11 @@ const labelTemplates = ref<
 >([]);
 
 const loadLabelTemplates = async () => {
+  if (!canViewLabelTemplates.value) {
+    labelTemplates.value = [];
+    return;
+  }
+
   const labels = await labelTemplateStore.listLabelTemplateAll();
   if (!labels) return;
   const items: Array<{ id: string | null; text: string; color: string }> = [];
@@ -279,8 +302,9 @@ onMounted(async () => {
   const [sectorsData, usersData] = await Promise.all([
     reportConversationHistoryStore.listReportConversationHistorySectors(),
     reportConversationHistoryStore.listReportConversationHistoryUsers(),
-    loadLabelTemplates(),
   ]);
+
+  await loadLabelTemplates();
 
   if (sectorsData) {
     sectors.value = [
@@ -558,6 +582,11 @@ watch(clientNameDebounced, async () => {
 });
 
 watch(searchBy, () => {
+  if (searchBy.value === 'label' && !canViewLabelTemplates.value) {
+    searchBy.value = 'date';
+    return;
+  }
+
   startDate.value = null;
   endDate.value = null;
   operatorId.value = null;
