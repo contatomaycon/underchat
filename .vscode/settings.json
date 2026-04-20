@@ -21,5 +21,10 @@
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "chat.promptFilesRecommendations": {},
-  "chat.mcp.serverSampling": {}
+  "chat.mcp.serverSampling": {},
+  "python.terminal.activateEnvironment": false,
+  "python.terminal.activateEnvInCurrentTerminal": false,
+  "python.terminal.shellIntegration.enabled": false,
+  "python-envs.terminal.autoActivationType": "off",
+  "python-envs.terminal.showActivateButton": false
 }
