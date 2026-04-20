@@ -5,6 +5,7 @@ import { AccountTestService } from '@core/services/accountTest.service';
 import { UserService } from '@core/services/user.service';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { EncryptService } from '@core/services/encrypt.service';
+import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
 
 @injectable()
 export class AuthRegisterSendTwoFactorUseCase {
@@ -19,6 +20,33 @@ export class AuthRegisterSendTwoFactorUseCase {
     private readonly encryptService: EncryptService
   ) {}
 
+  private buildPhoneCandidates(
+    phone: string,
+    phoneDdi: string
+  ): string[] {
+    return buildCandidatesWithDdi(phone, phoneDdi, { order: 'input_first' });
+  }
+
+  private async hasExistingTestByAnyPhone(phoneCandidates: string[]) {
+    const checks = await Promise.all(
+      phoneCandidates.map((phone) =>
+        this.accountTestService.checkExistingTestByPhone(phone)
+      )
+    );
+
+    return checks.some(Boolean);
+  }
+
+  private async hasExistingUserByAnyPhone(phoneCandidates: string[]) {
+    const checks = await Promise.all(
+      phoneCandidates.map((phone) =>
+        this.userService.existsUserByPhone(this.encryptService.encrypt(phone))
+      )
+    );
+
+    return checks.some(Boolean);
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     input: AuthRegisterSendTwoFactorRequest
@@ -28,9 +56,10 @@ export class AuthRegisterSendTwoFactorUseCase {
     const phoneDDD = input.phone_ddd?.replaceAll(/\D/g, '') || '';
     const phoneDDI = input.phone_ddi.replaceAll(/\D/g, '');
     const fullPhone = phoneDDD ? `${phoneDDD}${phoneNumber}` : phoneNumber;
+    const phoneCandidates = this.buildPhoneCandidates(fullPhone, phoneDDI);
 
     const existingTestByPhone =
-      await this.accountTestService.checkExistingTestByPhone(fullPhone);
+      await this.hasExistingTestByAnyPhone(phoneCandidates);
 
     if (existingTestByPhone) {
       throw new Error(t('register_phone_already_used_in_test'));
@@ -51,9 +80,8 @@ export class AuthRegisterSendTwoFactorUseCase {
       throw new Error(t('register_email_already_used'));
     }
 
-    const phoneC = this.encryptService.encrypt(fullPhone);
     const existingUserByPhone =
-      await this.userService.existsUserByPhone(phoneC);
+      await this.hasExistingUserByAnyPhone(phoneCandidates);
 
     if (existingUserByPhone) {
       throw new Error(t('register_phone_already_used'));
