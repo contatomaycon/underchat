@@ -118,7 +118,12 @@ export class ContactViewerRepository {
           contactLabelTemplate.label_template_id
         )
       )
-      .where(eq(contactLabelTemplate.contact_id, contactId))
+      .where(
+        and(
+          eq(contactLabelTemplate.contact_id, contactId),
+          isNull(labelTemplate.deleted_at)
+        )
+      )
       .execute();
 
     return result;

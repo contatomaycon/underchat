@@ -44,7 +44,12 @@ export class ContactExporterRepository {
           contactLabelTemplate.label_template_id
         )
       )
-      .where(inArray(contactLabelTemplate.contact_id, contactIds))
+      .where(
+        and(
+          inArray(contactLabelTemplate.contact_id, contactIds),
+          isNull(labelTemplate.deleted_at)
+        )
+      )
       .execute();
 
     const labelsByContactId = new Map<

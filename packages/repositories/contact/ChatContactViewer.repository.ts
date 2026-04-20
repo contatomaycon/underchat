@@ -120,7 +120,12 @@ export class ChatContactViewerRepository {
           contactLabelTemplate.label_template_id
         )
       )
-      .where(eq(contactLabelTemplate.contact_id, contactId))
+      .where(
+        and(
+          eq(contactLabelTemplate.contact_id, contactId),
+          isNull(labelTemplate.deleted_at)
+        )
+      )
       .execute();
 
     return result;
@@ -424,7 +429,12 @@ export class ChatContactViewerRepository {
           contactLabelTemplate.label_template_id
         )
       )
-      .where(inArray(contactLabelTemplate.contact_id, contactIds))
+      .where(
+        and(
+          inArray(contactLabelTemplate.contact_id, contactIds),
+          isNull(labelTemplate.deleted_at)
+        )
+      )
       .execute();
 
     return this.buildLabelsMap(labelsResult);

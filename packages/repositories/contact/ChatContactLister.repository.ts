@@ -78,7 +78,12 @@ export class ChatContactListerRepository {
                   contactLabelTemplate.label_template_id
                 )
               )
-              .where(ilike(labelTemplate.label, `%${searchTerm}%`))
+              .where(
+                and(
+                  ilike(labelTemplate.label, `%${searchTerm}%`),
+                  isNull(labelTemplate.deleted_at)
+                )
+              )
           )
         : undefined,
     ];
@@ -103,10 +108,20 @@ export class ChatContactListerRepository {
           this.dbRo
             .select({ contact_id: contactLabelTemplate.contact_id })
             .from(contactLabelTemplate)
-            .where(
+            .innerJoin(
+              labelTemplate,
               eq(
-                contactLabelTemplate.label_template_id,
-                filters.filter_label_template_id
+                labelTemplate.label_template_id,
+                contactLabelTemplate.label_template_id
+              )
+            )
+            .where(
+              and(
+                eq(
+                  contactLabelTemplate.label_template_id,
+                  filters.filter_label_template_id
+                ),
+                isNull(labelTemplate.deleted_at)
               )
             )
         )
@@ -419,7 +434,12 @@ export class ChatContactListerRepository {
           contactLabelTemplate.label_template_id
         )
       )
-      .where(inArray(contactLabelTemplate.contact_id, contactIds))
+      .where(
+        and(
+          inArray(contactLabelTemplate.contact_id, contactIds),
+          isNull(labelTemplate.deleted_at)
+        )
+      )
       .execute();
 
     return this.buildLabelsMap(labelsResult);
