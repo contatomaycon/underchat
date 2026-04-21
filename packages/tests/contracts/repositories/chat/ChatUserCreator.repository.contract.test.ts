@@ -1,0 +1,49 @@
+import 'reflect-metadata';
+import { v7 as uuidv7 } from 'uuid';
+import { ChatUserCreatorRepository } from '@core/repositories/chat/ChatUserCreator.repository';
+
+jest.mock('uuid', () => ({
+  v7: jest.fn(),
+}));
+
+describe('ChatUserCreatorRepository', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (uuidv7 as unknown as jest.Mock).mockReturnValue('chat-user-id-1');
+  });
+
+  it('returns true when insert affects one row', async () => {
+    const execute = jest.fn(async () => ({ rowCount: 1 }));
+    const values = jest.fn(() => ({ execute }));
+    const tx = {
+      insert: jest.fn(() => ({ values })),
+    };
+    const repository = new ChatUserCreatorRepository({} as never);
+
+    await expect(
+      repository.createChatUser(tx as never, 'user-1')
+    ).resolves.toBe(true);
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chat_user_id: 'chat-user-id-1',
+        user_id: 'user-1',
+        notifications: true,
+        notifications_status_queue: false,
+        notifications_status_chatbot: false,
+      })
+    );
+  });
+
+  it('returns false when insert affects zero rows', async () => {
+    const execute = jest.fn(async () => ({ rowCount: 0 }));
+    const values = jest.fn(() => ({ execute }));
+    const tx = {
+      insert: jest.fn(() => ({ values })),
+    };
+    const repository = new ChatUserCreatorRepository({} as never);
+
+    await expect(
+      repository.createChatUser(tx as never, 'user-1')
+    ).resolves.toBe(false);
+  });
+});
