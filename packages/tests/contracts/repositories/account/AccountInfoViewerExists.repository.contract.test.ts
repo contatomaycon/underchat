@@ -25,9 +25,7 @@ describe('AccountInfoViewerExistsRepository', () => {
     const { db } = createSelectDbMock([{ total: 1 }]);
     const repository = new AccountInfoViewerExistsRepository(db as never);
 
-    await expect(repository.existsAccountInfoById('acc-1')).resolves.toBe(
-      true
-    );
+    await expect(repository.existsAccountInfoById('acc-1')).resolves.toBe(true);
   });
 
   it('totalAccountInfoByAccountId returns total value when present', async () => {

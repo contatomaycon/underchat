@@ -13,20 +13,22 @@ describe('AccountInfoViewerRepository', () => {
     ]);
     const repository = new AccountInfoViewerRepository(db as never);
 
-    await expect(repository.viewAccountInfoByAccountId('acc-1')).resolves.toEqual(
-      {
-        account_info_id: 'info-1',
-        name: 'Account 1',
-        logo: 'logo.png',
-      }
-    );
+    await expect(
+      repository.viewAccountInfoByAccountId('acc-1')
+    ).resolves.toEqual({
+      account_info_id: 'info-1',
+      name: 'Account 1',
+      logo: 'logo.png',
+    });
   });
 
   it('viewAccountInfoByAccountId returns null when no result exists', async () => {
     const { db } = createSelectDbMock([]);
     const repository = new AccountInfoViewerRepository(db as never);
 
-    await expect(repository.viewAccountInfoByAccountId('acc-1')).resolves.toBeNull();
+    await expect(
+      repository.viewAccountInfoByAccountId('acc-1')
+    ).resolves.toBeNull();
   });
 
   it('viewLogoByAccountInfoId returns logo when found', async () => {
@@ -42,6 +44,8 @@ describe('AccountInfoViewerRepository', () => {
     const { db } = createSelectDbMock([]);
     const repository = new AccountInfoViewerRepository(db as never);
 
-    await expect(repository.viewLogoByAccountInfoId('info-1')).resolves.toBeNull();
+    await expect(
+      repository.viewLogoByAccountInfoId('info-1')
+    ).resolves.toBeNull();
   });
 });
