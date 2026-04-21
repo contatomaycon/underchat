@@ -2,6 +2,7 @@ export interface IViewWorkerServer {
   server_id: string;
   account_id: string;
   key: string;
+  server_status_id: string;
   web_domain: string;
   web_port: number;
   web_protocol: string;

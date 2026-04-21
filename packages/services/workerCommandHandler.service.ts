@@ -126,6 +126,11 @@ export class WorkerCommandHandlerService {
       return;
     }
 
+    if (data.action === EWorkerAction.cleanup) {
+      await this.cleanupWorker(data);
+      return;
+    }
+
     if (data.action === EWorkerAction.recreate) {
       try {
         await this.kafkaBaileysQueueService.delete(data.worker_id);
@@ -1012,6 +1017,49 @@ export class WorkerCommandHandlerService {
       ),
     ]);
     return result;
+  }
+
+  private async cleanupWorker(data: IWorkerPayload): Promise<void> {
+    this.stopConnectionRequestRetry(data.worker_id);
+
+    if (data.remove_session === true) {
+      const disconnectPayload: StatusConnectionWorkerRequest = {
+        worker_id: data.worker_id,
+        status: EWorkerStatus.disponible,
+        type: EBaileysConnectionType.qrcode,
+        remove_session: true,
+      };
+
+      try {
+        const workerType = await this.resolveWorkerTypeForConnection(
+          data.worker_id,
+          data.account_id
+        );
+        await this.workerBaileysGrpcClientService.requestConnection(
+          data.worker_id,
+          disconnectPayload,
+          workerType
+        );
+      } catch (err) {
+        if (!this.isTopicOrPartitionMissing(err)) {
+          console.error('Failed to request worker disconnect before cleanup', {
+            workerId: data.worker_id,
+            accountId: data.account_id,
+            error: getErrorMessage(err),
+          });
+        }
+      }
+    }
+
+    const cleaned = await this.retryOperation(
+      async () =>
+        this.workerService.cleanupContainerWorker(data.worker_id, true),
+      (r) => !r
+    );
+
+    if (!cleaned) {
+      throw new Error('Worker cleanup failed');
+    }
   }
 
   private async deleteWorker(data: IWorkerPayload): Promise<PublishResult> {

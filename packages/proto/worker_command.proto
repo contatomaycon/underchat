@@ -6,6 +6,7 @@ service WorkerCommand {
   rpc CreateWorker(WorkerPayload) returns (WorkerCommandResponse);
   rpc DeleteWorker(WorkerPayload) returns (WorkerCommandResponse);
   rpc RecreateWorker(WorkerPayload) returns (WorkerCommandResponse);
+  rpc CleanupWorker(WorkerPayload) returns (WorkerCommandResponse);
   rpc ChangeConnectionStatus(ChangeConnectionStatusRequest) returns (WorkerCommandResponse);
   rpc NotifyWorkerStatus(NotifyWorkerStatusRequest) returns (WorkerCommandResponse);
   rpc ResolveIncomingCallAction(ResolveIncomingCallActionRequest) returns (ResolveIncomingCallActionResponse);

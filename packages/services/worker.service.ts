@@ -334,6 +334,37 @@ export class WorkerService {
     return true;
   }
 
+  public async cleanupContainerWorker(
+    workerId: string,
+    isRemoveVolume: boolean = true
+  ): Promise<boolean> {
+    const existsContainerById = await this.existsContainerWorkerById(workerId);
+
+    if (existsContainerById) {
+      const removeContainerWorkerById =
+        await this.removeContainerWorkerById(workerId);
+
+      if (!removeContainerWorkerById) {
+        throw new Error('The worker removal failed');
+      }
+    }
+
+    if (isRemoveVolume) {
+      const existsVolumeById = await this.existsVolumeWorkerById(workerId);
+
+      if (existsVolumeById) {
+        const removeVolumeWorkerById =
+          await this.removeVolumeWorkerById(workerId);
+
+        if (!removeVolumeWorkerById) {
+          throw new Error('The worker volume removal failed');
+        }
+      }
+    }
+
+    return true;
+  }
+
   public async createWorker(input: ICreateWorker): Promise<boolean> {
     return this.workerCreatorRepository.createWorker(input);
   }

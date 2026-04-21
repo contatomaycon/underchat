@@ -19,6 +19,7 @@ export class WorkerServerViewerRepository {
     const result = await this.dbRo
       .select({
         server_id: server.server_id,
+        server_status_id: server.server_status_id,
         key: apiKey.key,
         web_domain: serverWeb.web_domain,
         web_port: serverWeb.web_port,
@@ -48,6 +49,7 @@ export class WorkerServerViewerRepository {
       .groupBy(
         server.server_id,
         server.quantity_workers,
+        server.server_status_id,
         apiKey.key,
         serverWeb.web_domain,
         serverWeb.web_port,

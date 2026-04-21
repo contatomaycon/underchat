@@ -57,6 +57,10 @@ export class WorkerGrpcClientService {
     await this.call('RecreateWorker', payload);
   }
 
+  async cleanupWorker(payload: IWorkerPayload): Promise<void> {
+    await this.call('CleanupWorker', payload, GRPC_DEADLINE_MS);
+  }
+
   async changeConnectionStatus(
     serverId: string,
     payload: StatusConnectionWorkerRequest,
@@ -88,8 +92,13 @@ export class WorkerGrpcClientService {
   }
 
   private async call(
-    method: 'CreateWorker' | 'DeleteWorker' | 'RecreateWorker',
-    payload: IWorkerPayload
+    method:
+      | 'CreateWorker'
+      | 'DeleteWorker'
+      | 'RecreateWorker'
+      | 'CleanupWorker',
+    payload: IWorkerPayload,
+    timeoutMs?: number
   ): Promise<void> {
     const { host, port } = await this.workerGrpcRegistryService.getAddress(
       payload.server_id
@@ -101,16 +110,24 @@ export class WorkerGrpcClientService {
     );
 
     const protoPayload: IWorkerPayloadProto = workerPayloadToProto(payload);
+    const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
 
     await new Promise<void>((resolve, reject) => {
-      (client as any)[method](protoPayload, (err: ServiceError | null) => {
+      const callback = (err: ServiceError | null) => {
         client.close();
         if (err) {
           reject(err);
           return;
         }
         resolve();
-      });
+      };
+
+      if (deadline) {
+        (client as any)[method](protoPayload, { deadline }, callback);
+        return;
+      }
+
+      (client as any)[method](protoPayload, callback);
     });
   }
 

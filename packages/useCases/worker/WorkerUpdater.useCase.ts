@@ -10,6 +10,10 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { WorkerRecreatorUseCase } from '@core/useCases/worker/WorkerRecreator.useCase';
+import { EServerStatus } from '@core/common/enums/EServerStatus';
+import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { status as GrpcStatus } from '@grpc/grpc-js';
 
 @injectable()
 export class WorkerUpdaterUseCase {
@@ -99,6 +103,50 @@ export class WorkerUpdaterUseCase {
     return true;
   }
 
+  private isGrpcUnavailableError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const grpcError = error as { code?: number };
+
+    return (
+      grpcError.code === GrpcStatus.UNAVAILABLE ||
+      grpcError.code === GrpcStatus.DEADLINE_EXCEEDED
+    );
+  }
+
+  private async cleanupPreviousWorkerServer(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    workerId: string,
+    currentServerId: string,
+    currentServerStatusId?: string
+  ): Promise<void> {
+    if (currentServerStatusId === EServerStatus.offline) {
+      return;
+    }
+
+    const payload: IWorkerPayload = {
+      action: EWorkerAction.cleanup,
+      worker_id: workerId,
+      server_id: currentServerId,
+      account_id: accountId,
+      remove_session: true,
+      remove_volume: true,
+    };
+
+    try {
+      await this.workerGrpcClientService.cleanupWorker(payload);
+    } catch (err) {
+      if (this.isGrpcUnavailableError(err)) {
+        return;
+      }
+
+      throw new Error(t('worker_removal_failed'), { cause: err });
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -121,6 +169,7 @@ export class WorkerUpdaterUseCase {
     );
 
     let currentServerId: string | undefined;
+    let currentServerStatusId: string | undefined;
     let shouldRecreateOnServerChange = false;
 
     if (shouldRecreateOnTypeChange || input.server_id) {
@@ -134,6 +183,7 @@ export class WorkerUpdaterUseCase {
       }
 
       currentServerId = viewWorkerBalancer.server_id;
+      currentServerStatusId = viewWorkerBalancer.server_status_id;
 
       if (input.server_id) {
         shouldRecreateOnServerChange = await this.validateServerEligibility(
@@ -144,7 +194,21 @@ export class WorkerUpdaterUseCase {
       }
     }
 
-    if (shouldRecreateOnTypeChange && currentServerId) {
+    if (shouldRecreateOnServerChange && currentServerId) {
+      await this.cleanupPreviousWorkerServer(
+        t,
+        accountId,
+        input.worker_id,
+        currentServerId,
+        currentServerStatusId
+      );
+    }
+
+    if (
+      shouldRecreateOnTypeChange &&
+      currentServerId &&
+      !shouldRecreateOnServerChange
+    ) {
       await this.disconnectCurrentWorker(
         t,
         accountId,
@@ -179,7 +243,14 @@ export class WorkerUpdaterUseCase {
       shouldRecreateOnTypeChange || shouldRecreateOnServerChange;
 
     if (shouldRecreateWorker) {
-      await this.workerRecreatorUseCase.execute(t, accountId, input.worker_id);
+      await this.workerRecreatorUseCase.execute(
+        t,
+        accountId,
+        input.worker_id,
+        shouldRecreateOnServerChange
+          ? { remove_session: true, remove_volume: true }
+          : undefined
+      );
     }
 
     return updateWorkerById;

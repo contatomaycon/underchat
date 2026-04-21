@@ -62,7 +62,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
   const handleUnary = (
     call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
     callback: sendUnaryData<unknown>,
-    action: 'create' | 'delete' | 'recreate'
+    action: 'create' | 'delete' | 'recreate' | 'cleanup'
   ) => {
     const req = call.request;
     const raw = { ...req, action };
@@ -248,6 +248,10 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
       cb: sendUnaryData<unknown>
     ) => handleUnary(call, cb, 'recreate'),
+    CleanupWorker: (
+      call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
+      cb: sendUnaryData<unknown>
+    ) => handleUnary(call, cb, 'cleanup'),
     ChangeConnectionStatus: handleChangeConnectionStatus,
     NotifyWorkerStatus: handleNotifyWorkerStatus,
     ResolveIncomingCallAction: handleResolveIncomingCallAction,
