@@ -11,6 +11,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
+    "types": ["node", "jest"],
     "paths": {
       "@core/*": ["./packages/*"],
       "@elastic/elasticsearch/lib/api/types": [

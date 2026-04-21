@@ -3,8 +3,8 @@ import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionTyp
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { WorkerCommandHandlerService } from './workerCommandHandler.service';
-import type { WorkerService } from './worker.service';
+import { WorkerCommandHandlerService } from '@core/services/workerCommandHandler.service';
+import type { WorkerService } from '@core/services/worker.service';
 
 jest.mock('@core/services/worker.service', () => ({
   WorkerService: class WorkerService {},
@@ -181,8 +181,9 @@ describe('WorkerCommandHandlerService cleanup', () => {
 
 describe('WorkerService cleanupContainerWorker', () => {
   it('treats missing container and volume as a successful cleanup', async () => {
-    const { WorkerService: ActualWorkerService } =
-      jest.requireActual<typeof import('./worker.service')>('./worker.service');
+    const { WorkerService: ActualWorkerService } = jest.requireActual<
+      typeof import('@core/services/worker.service')
+    >('@core/services/worker.service');
     const workerService = Object.create(
       ActualWorkerService.prototype
     ) as WorkerService;
