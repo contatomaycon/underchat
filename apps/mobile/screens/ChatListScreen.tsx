@@ -68,6 +68,7 @@ import {
   canCloseChatWithoutAttending,
   canDisableSendMessageOnFinishAttendance,
   canManageInChatLifecyclePermission,
+  canToggleOptionalClosureReason,
 } from '../constants/chatAuthorization';
 import {
   AdvancedFilterModal,
@@ -702,6 +703,10 @@ export function ChatListScreen({ route, navigation }: Props) {
     closeServiceSendMessageOnFinishAttendance,
     setCloseServiceSendMessageOnFinishAttendance,
   ] = useState(true);
+  const [closeServiceClosureComment, setCloseServiceClosureComment] =
+    useState('');
+  const [closeServiceInformClosureReason, setCloseServiceInformClosureReason] =
+    useState(true);
   const locallyClearedSummaryChatIdsRef = useRef<Set<string>>(new Set());
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -1842,6 +1847,8 @@ export function ChatListScreen({ route, navigation }: Props) {
 
   const canDisableSendMessageOnFinishAttendanceAction =
     canDisableSendMessageOnFinishAttendance(socketPermissions);
+  const canToggleOptionalClosureReasonAction =
+    canToggleOptionalClosureReason(socketPermissions);
   const shouldShowCloseServiceSendMessageToggle =
     closeServiceWorkerConfig?.send_message_on_finish_attendance_enabled ===
       true && canDisableSendMessageOnFinishAttendanceAction;
@@ -1853,22 +1860,48 @@ export function ChatListScreen({ route, navigation }: Props) {
     setCloseServiceWorkerConfig(null);
     setIsLoadingCloseServiceWorkerConfig(false);
     setCloseServiceSendMessageOnFinishAttendance(true);
+    setCloseServiceClosureComment('');
+    setCloseServiceInformClosureReason(true);
   }, []);
 
   const confirmCloseChat = useCallback(async () => {
     const chatId = closeServiceTargetChat?.chat_id;
     if (!chatId) return;
 
+    const trimmedClosure = closeServiceClosureComment.trim();
+    if (canToggleOptionalClosureReasonAction) {
+      if (closeServiceInformClosureReason && !trimmedClosure) {
+        Alert.alert(pt.warning_title, pt.closure_comment_required);
+        return;
+      }
+    } else if (!trimmedClosure) {
+      Alert.alert(pt.warning_title, pt.closure_comment_required);
+      return;
+    }
+
     try {
+      const patchOptions: {
+        send_message_on_finish_attendance?: boolean;
+        closure_comment?: string;
+      } = {};
+
+      if (shouldShowCloseServiceSendMessageToggle) {
+        patchOptions.send_message_on_finish_attendance =
+          closeServiceSendMessageOnFinishAttendance;
+      }
+
+      if (canToggleOptionalClosureReasonAction) {
+        if (closeServiceInformClosureReason && trimmedClosure) {
+          patchOptions.closure_comment = trimmedClosure;
+        }
+      } else {
+        patchOptions.closure_comment = trimmedClosure;
+      }
+
       const ok = await updateChatStatus(
         chatId,
         'closed',
-        shouldShowCloseServiceSendMessageToggle
-          ? {
-              send_message_on_finish_attendance:
-                closeServiceSendMessageOnFinishAttendance,
-            }
-          : undefined
+        Object.keys(patchOptions).length > 0 ? patchOptions : undefined
       );
       if (!ok) {
         Alert.alert(pt.error_title, pt.chat_status_update_error);
@@ -1882,7 +1915,10 @@ export function ChatListScreen({ route, navigation }: Props) {
       Alert.alert(pt.error_title, pt.chat_status_update_error);
     }
   }, [
+    canToggleOptionalClosureReasonAction,
     closeCloseServiceModal,
+    closeServiceClosureComment,
+    closeServiceInformClosureReason,
     closeServiceSendMessageOnFinishAttendance,
     closeServiceTargetChat?.chat_id,
     load,
@@ -1903,6 +1939,8 @@ export function ChatListScreen({ route, navigation }: Props) {
 
       openedSwipeableRef.current?.close();
       setCloseServiceSendMessageOnFinishAttendance(true);
+      setCloseServiceClosureComment('');
+      setCloseServiceInformClosureReason(true);
       setCloseServiceTargetChat(chat);
       setCloseServiceWorkerConfig(null);
       setCloseServiceModalVisible(true);
@@ -2298,6 +2336,53 @@ export function ChatListScreen({ route, navigation }: Props) {
             <Text style={styles.closeServiceMessage}>
               {pt.close_service_confirmation}
             </Text>
+
+            {canToggleOptionalClosureReasonAction ? (
+              <>
+                <View style={styles.closeServiceToggleRow}>
+                  <View style={styles.closeServiceToggleTextWrap}>
+                    <Text style={styles.closeServiceToggleLabel}>
+                      {pt.close_service_inform_closure_toggle_label}
+                    </Text>
+                    <Text style={styles.closeServiceToggleDescription}>
+                      {pt.close_service_inform_closure_toggle_description}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={closeServiceInformClosureReason}
+                    onValueChange={setCloseServiceInformClosureReason}
+                    trackColor={{
+                      false: colors.grey400,
+                      true: colors.primary,
+                    }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+                {closeServiceInformClosureReason ? (
+                  <TextInput
+                    style={styles.closeServiceClosureInput}
+                    value={closeServiceClosureComment}
+                    onChangeText={setCloseServiceClosureComment}
+                    placeholder={pt.closure_reason_label}
+                    placeholderTextColor={colors.grey500}
+                    multiline
+                    maxLength={1000}
+                    textAlignVertical="top"
+                  />
+                ) : null}
+              </>
+            ) : (
+              <TextInput
+                style={styles.closeServiceClosureInput}
+                value={closeServiceClosureComment}
+                onChangeText={setCloseServiceClosureComment}
+                placeholder={pt.closure_reason_label}
+                placeholderTextColor={colors.grey500}
+                multiline
+                maxLength={1000}
+                textAlignVertical="top"
+              />
+            )}
 
             {isLoadingCloseServiceWorkerConfig ? (
               <View style={styles.transferLoadingWrap}>
@@ -3187,6 +3272,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.onSurface,
     lineHeight: 20,
+    marginBottom: 10,
+  },
+  closeServiceClosureInput: {
+    minHeight: 88,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: colors.onSurface,
+    backgroundColor: colors.surface,
     marginBottom: 10,
   },
   closeServiceToggleRow: {

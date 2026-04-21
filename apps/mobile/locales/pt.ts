@@ -358,6 +358,11 @@ export const pt = {
   close_service_send_message_toggle_description:
     'Desative para encerrar sem enviar a mensagem automática de finalização.',
   close_service_success: 'Atendimento encerrado com sucesso.',
+  closure_comment_required: 'Informe o motivo do encerramento.',
+  closure_reason_label: 'Motivo do encerramento',
+  close_service_inform_closure_toggle_label: 'Informar motivo do encerramento',
+  close_service_inform_closure_toggle_description:
+    'Desative para encerrar sem informar o motivo.',
   reply: 'Responder',
   retry: 'Tentar novamente',
   replying_to: 'Respondendo mensagem',

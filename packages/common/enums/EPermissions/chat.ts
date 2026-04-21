@@ -13,6 +13,7 @@ export enum EChatPermissions {
   reopen_chat = 'reopen_chat',
   disable_send_message_on_finish_attendance = 'disable_send_message_on_finish_attendance',
   disable_send_message_on_transfer = 'disable_send_message_on_transfer',
+  require_chat_closure_comment = 'require_chat_closure_comment',
   attendance_history = 'attendance_history',
   forward_to_output_chatbot = 'forward_to_output_chatbot',
   generate_message_with_ai = 'generate_message_with_ai',

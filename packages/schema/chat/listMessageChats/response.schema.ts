@@ -286,6 +286,9 @@ export const contentSchema = Type.Object(
     ephemeral: Type.Optional(Type.Union([ephemeralMessageSchema, Type.Null()])),
     album: Type.Optional(Type.Union([albumMessageSchema, Type.Null()])),
     forward: Type.Optional(Type.Union([forwardMessageSchema, Type.Null()])),
+    annotation_subtype: Type.Optional(
+      Type.Union([Type.Literal('closure'), Type.Null()])
+    ),
   },
   { additionalProperties: true }
 );

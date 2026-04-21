@@ -605,6 +605,9 @@ const handleJoinConversation = async () => {
 
 const isCloseServiceDialogOpen = ref(false);
 const closeServiceSendMessageOnFinishAttendance = ref(true);
+const closeServiceInformClosureReason = ref(true);
+const closeServiceComment = ref('');
+const closeServiceCommentMaxLength = 1000;
 const isLeaveConversationDialogOpen = ref(false);
 const isLeaveConversationLoading = ref(false);
 const isAttendantsInfoDialogOpen = ref(false);
@@ -618,6 +621,8 @@ const handleCloseService = () => {
   }
 
   closeServiceSendMessageOnFinishAttendance.value = true;
+  closeServiceInformClosureReason.value = true;
+  closeServiceComment.value = '';
   isCloseServiceDialogOpen.value = true;
 };
 
@@ -665,17 +670,43 @@ const confirmLeaveConversation = async () => {
 
 const confirmCloseService = async () => {
   if (!chatStore.activeChat?.chat_id) return;
+
+  const trimmedComment = closeServiceComment.value.trim();
+
+  if (canToggleOptionalClosureReason.value) {
+    if (closeServiceInformClosureReason.value && !trimmedComment) {
+      chatStore.showSnackbar(t('closure_comment_required'), EColor.warning);
+      return;
+    }
+  } else if (!trimmedComment) {
+    chatStore.showSnackbar(t('closure_comment_required'), EColor.warning);
+    return;
+  }
+
   isCloseServiceDialogOpen.value = false;
+
+  const options: {
+    send_message_on_finish_attendance?: boolean;
+    closure_comment?: string;
+  } = {};
+
+  if (shouldShowCloseServiceSendMessageToggle.value) {
+    options.send_message_on_finish_attendance =
+      closeServiceSendMessageOnFinishAttendance.value;
+  }
+
+  if (canToggleOptionalClosureReason.value) {
+    if (closeServiceInformClosureReason.value && trimmedComment) {
+      options.closure_comment = trimmedComment;
+    }
+  } else {
+    options.closure_comment = trimmedComment;
+  }
 
   await chatStore.updateChatStatus(
     chatStore.activeChat.chat_id,
     EChatStatus.closed,
-    shouldShowCloseServiceSendMessageToggle.value
-      ? {
-          send_message_on_finish_attendance:
-            closeServiceSendMessageOnFinishAttendance.value,
-        }
-      : undefined
+    Object.keys(options).length > 0 ? options : undefined
   );
 };
 
@@ -1401,6 +1432,28 @@ const canDisableSendMessageOnTransfer = computed(() => {
     EGeneralPermissions.full_access_group,
     EChatPermissions.disable_send_message_on_transfer,
   ]);
+});
+
+/** Com permissão: exibe toggle (como enviar mensagem ao finalizar). Sem: motivo sempre obrigatório. */
+const canToggleOptionalClosureReason = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.require_chat_closure_comment,
+  ]);
+});
+
+const closureCommentRules = computed(() => {
+  if (canToggleOptionalClosureReason.value) {
+    if (!closeServiceInformClosureReason.value) {
+      return [];
+    }
+  }
+  return [
+    (v: string) =>
+      (v && String(v).trim().length > 0) || t('closure_comment_required'),
+  ];
 });
 
 const shouldShowCloseServiceSendMessageToggle = computed(() => {
@@ -7152,6 +7205,57 @@ onBeforeUnmount(() => {
             inset
           />
         </div>
+      </VCardText>
+
+      <VCardText v-if="canToggleOptionalClosureReason">
+        <div class="d-flex align-center justify-space-between gap-4">
+          <div>
+            <div class="text-body-1 font-weight-medium">
+              {{ t('close_service_inform_closure_toggle_title') }}
+            </div>
+            <div class="text-body-2 text-medium-emphasis">
+              {{ t('close_service_inform_closure_toggle_description') }}
+            </div>
+          </div>
+
+          <VSwitch
+            v-model="closeServiceInformClosureReason"
+            color="primary"
+            hide-details
+            inset
+          />
+        </div>
+
+        <VTextarea
+          v-if="closeServiceInformClosureReason"
+          v-model="closeServiceComment"
+          class="mt-3"
+          :label="t('closure_reason_message_label')"
+          :placeholder="t('write_your_annotation')"
+          :maxlength="closeServiceCommentMaxLength"
+          :rules="closureCommentRules"
+          rows="3"
+          counter
+          auto-grow
+          variant="outlined"
+          color="primary"
+        />
+      </VCardText>
+
+      <VCardText v-else>
+        <VTextarea
+          v-model="closeServiceComment"
+          :label="t('closure_reason_message_label')"
+          :placeholder="t('write_your_annotation')"
+          :maxlength="closeServiceCommentMaxLength"
+          :rules="closureCommentRules"
+          rows="3"
+          counter
+          auto-grow
+          variant="outlined"
+          color="primary"
+          required
+        />
       </VCardText>
 
       <VCardText class="d-flex justify-end gap-3 flex-wrap">
