@@ -59,6 +59,9 @@ describe('EmailService', () => {
       .fn<Promise<boolean>, []>()
       .mockResolvedValueOnce(true)
       .mockRejectedValueOnce(new Error('smtp down'));
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
 
     (nodemailer.createTransport as jest.Mock).mockReturnValue({
       sendMail: jest.fn(),
@@ -67,7 +70,15 @@ describe('EmailService', () => {
 
     const service = new EmailService();
 
-    await expect(service.verifyConnection()).resolves.toBe(true);
-    await expect(service.verifyConnection()).resolves.toBe(false);
+    try {
+      await expect(service.verifyConnection()).resolves.toBe(true);
+      await expect(service.verifyConnection()).resolves.toBe(false);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Erro ao verificar conexão SMTP:',
+        expect.any(Error)
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });

@@ -94,6 +94,9 @@ describe('PlanExpirationReminderService', () => {
   });
 
   it('swallows notification sending errors and continues processing', async () => {
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     const service = new PlanExpirationReminderService(
       {
         findPlansExpiringInDays: jest.fn(async () => [
@@ -109,10 +112,23 @@ describe('PlanExpirationReminderService', () => {
       { get: jest.fn(async () => null), setex: jest.fn() } as never
     );
 
-    await expect(service.processExpirationReminders()).resolves.toBeUndefined();
+    try {
+      await expect(
+        service.processExpirationReminders()
+      ).resolves.toBeUndefined();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Erro ao enviar notificação de vencimento para account a1:',
+        expect.any(Error)
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it('rethrows when outer processing fails', async () => {
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     const service = new PlanExpirationReminderService(
       {
         findPlansExpiringInDays: jest.fn(async () => {
@@ -124,8 +140,16 @@ describe('PlanExpirationReminderService', () => {
       { get: jest.fn(), setex: jest.fn() } as never
     );
 
-    await expect(service.processExpirationReminders()).rejects.toThrow(
-      'repo fail'
-    );
+    try {
+      await expect(service.processExpirationReminders()).rejects.toThrow(
+        'repo fail'
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Erro ao processar lembretes de vencimento:',
+        expect.any(Error)
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });

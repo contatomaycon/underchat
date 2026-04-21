@@ -70,16 +70,28 @@ describe('AudioWaveformGenerator', () => {
   });
 
   it('returns undefined for zero waveform or conversion failure', async () => {
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     readFileMock.mockResolvedValue(Buffer.alloc(64 * 2));
     const service = new AudioWaveformGenerator();
 
-    await expect(
-      service.generate(Buffer.from('audio'))
-    ).resolves.toBeUndefined();
+    try {
+      await expect(
+        service.generate(Buffer.from('audio'))
+      ).resolves.toBeUndefined();
 
-    ffmpegState.shouldError = true;
-    await expect(
-      service.generate(Buffer.from('audio'))
-    ).resolves.toBeUndefined();
+      ffmpegState.shouldError = true;
+      await expect(
+        service.generate(Buffer.from('audio'))
+      ).resolves.toBeUndefined();
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Failed to generate waveform with ffmpeg:',
+        expect.any(Error)
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
