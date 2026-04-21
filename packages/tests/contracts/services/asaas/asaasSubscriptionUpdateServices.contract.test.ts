@@ -3,7 +3,9 @@ import { AsaasSubscriptionUpdateServices } from '@core/services/asaas/asaasSubsc
 
 describe('AsaasSubscriptionUpdateServices', () => {
   it('stores injected subscription update services', () => {
-    const updateCreditCard = { updateSubscriptionCreditCard: jest.fn() } as never;
+    const updateCreditCard = {
+      updateSubscriptionCreditCard: jest.fn(),
+    } as never;
 
     const service = new AsaasSubscriptionUpdateServices(updateCreditCard);
 

@@ -71,6 +71,15 @@ export default [
       'no-use-before-define': 'error',
     },
   },
+  {
+    files: ['packages/tests/**/*.ts', 'packages/tests/**/*.tsx'],
+    rules: {
+      'max-nested-callbacks': 'off',
+      'no-throw-literal': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+      'no-unused-vars': 'off',
+    },
+  },
   eslintConfigPrettier,
   eslintPluginPrettierRecommended,
 ];

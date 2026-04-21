@@ -127,7 +127,6 @@ describe('AccountAllListerWithDetailsRepository', () => {
 
     for (const filterStatus of statuses) {
       // Exercita todos os ramos de filtro por status.
-      // eslint-disable-next-line no-await-in-loop
       await expect(
         repositoryWithCount.listAccountsTotal({
           filter_status: filterStatus,
