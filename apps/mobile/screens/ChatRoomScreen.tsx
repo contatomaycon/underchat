@@ -5799,7 +5799,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [closeServiceClosureComment, setCloseServiceClosureComment] =
     useState('');
   const [closeServiceInformClosureReason, setCloseServiceInformClosureReason] =
-    useState(true);
+    useState(false);
   const [protocolModalVisible, setProtocolModalVisible] = useState(false);
   const [labelModalVisible, setLabelModalVisible] = useState(false);
   const [isLoadingLabelModal, setIsLoadingLabelModal] = useState(false);
@@ -7870,7 +7870,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     setCloseServiceModalVisible(false);
     setCloseServiceClosureComment('');
-    setCloseServiceInformClosureReason(true);
+    setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
     Alert.alert(pt.success_title, pt.close_service_success);
     navigation.goBack();
   }, [
@@ -7888,9 +7888,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const handleCloseService = useCallback(() => {
     setCloseServiceSendMessageOnFinishAttendance(true);
     setCloseServiceClosureComment('');
-    setCloseServiceInformClosureReason(true);
+    setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
     setCloseServiceModalVisible(true);
-  }, []);
+  }, [canToggleOptionalClosureReasonAction]);
 
   const confirmLeaveConversation = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);

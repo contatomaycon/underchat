@@ -739,7 +739,7 @@
   "close_service_send_message_toggle_description": "Desative para encerrar sem enviar a mensagem automática de finalização.",
   "close_service_inform_closure_reason": "Desejo informar o motivo do encerramento",
   "close_service_inform_closure_toggle_title": "Informar motivo do encerramento",
-  "close_service_inform_closure_toggle_description": "Desative para encerrar sem informar o motivo.",
+  "close_service_inform_closure_toggle_description": "Ative para informar um motivo.",
   "closure_comment_required": "Informe o motivo do encerramento.",
   "chat_closed_successfully": "Atendimento encerrado com sucesso",
   "bulk_select_mode": "Selecionar",

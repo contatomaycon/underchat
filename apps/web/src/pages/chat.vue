@@ -605,7 +605,7 @@ const handleJoinConversation = async () => {
 
 const isCloseServiceDialogOpen = ref(false);
 const closeServiceSendMessageOnFinishAttendance = ref(true);
-const closeServiceInformClosureReason = ref(true);
+const closeServiceInformClosureReason = ref(false);
 const closeServiceComment = ref('');
 const closeServiceCommentMaxLength = 1000;
 const isLeaveConversationDialogOpen = ref(false);
@@ -621,7 +621,8 @@ const handleCloseService = () => {
   }
 
   closeServiceSendMessageOnFinishAttendance.value = true;
-  closeServiceInformClosureReason.value = true;
+  closeServiceInformClosureReason.value =
+    !canToggleOptionalClosureReason.value;
   closeServiceComment.value = '';
   isCloseServiceDialogOpen.value = true;
 };
