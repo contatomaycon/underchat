@@ -144,7 +144,11 @@ export class ReportSatisfactionListerUseCase {
             },
           } as unknown as IElasticsearchBoolClause,
           this.buildNestedFilter('user', 'user.id', analystId),
-          this.buildNestedFilter('secondary_users', 'secondary_users.id', analystId),
+          this.buildNestedFilter(
+            'secondary_users',
+            'secondary_users.id',
+            analystId
+          ),
           {
             nested: {
               path: 'contact',
@@ -169,7 +173,8 @@ export class ReportSatisfactionListerUseCase {
   private resolveAnalyst(
     chat: NonNullable<IReportSatisfactionChatHit['_source']>
   ): { id: string; name: string | null } {
-    const satisfactionAnalystId = chat.satisfaction_response?.analyst?.id?.trim();
+    const satisfactionAnalystId =
+      chat.satisfaction_response?.analyst?.id?.trim();
     if (satisfactionAnalystId) {
       return {
         id: satisfactionAnalystId,

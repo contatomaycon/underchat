@@ -523,9 +523,7 @@ export class ChatMessageService {
         link_preview: linkPreview,
         message_quoted_id: messageQuotedId,
         quoted: quotedMessage,
-        ...(annotationSubtype
-          ? { annotation_subtype: annotationSubtype }
-          : {}),
+        ...(annotationSubtype ? { annotation_subtype: annotationSubtype } : {}),
       },
       date: new Date().toISOString(),
       hash: hash,

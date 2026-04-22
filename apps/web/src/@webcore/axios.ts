@@ -119,9 +119,7 @@ const getLoginHref = (): string => {
 
 const getNotAuthorizedHref = (): string => {
   try {
-    return (
-      router.resolve({ name: 'not-authorized' }).href || '/not-authorized'
-    );
+    return router.resolve({ name: 'not-authorized' }).href || '/not-authorized';
   } catch {
     return '/not-authorized';
   }

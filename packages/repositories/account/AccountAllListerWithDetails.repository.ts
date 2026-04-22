@@ -282,7 +282,8 @@ export class AccountAllListerWithDetailsRepository {
         for (const accountItem of sameNameAccounts) {
           if (!accountItem.aac) continue;
 
-          const currentStatuses = accountStatusesByName.get(accountItem.name) ?? [];
+          const currentStatuses =
+            accountStatusesByName.get(accountItem.name) ?? [];
           const statusAlreadyExists = currentStatuses.some(
             (status) =>
               status.account_status_id === accountItem.aac?.account_status_id

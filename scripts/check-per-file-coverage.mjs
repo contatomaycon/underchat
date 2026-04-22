@@ -4,12 +4,34 @@ import path from 'node:path';
 const THRESHOLD = 90;
 const rootDir = process.cwd();
 const coverageFile = path.join(rootDir, 'coverage', 'coverage-final.json');
-const targetDirs = [
-  path.join(rootDir, 'packages', 'repositories'),
-  path.join(rootDir, 'packages', 'services'),
+const targetGroups = [
+  {
+    dir: path.join(rootDir, 'packages', 'repositories'),
+    include: (entryName) =>
+      entryName.endsWith('.ts') &&
+      !entryName.endsWith('.test.ts') &&
+      !entryName.endsWith('.spec.ts') &&
+      !entryName.endsWith('.d.ts'),
+  },
+  {
+    dir: path.join(rootDir, 'packages', 'services'),
+    include: (entryName) =>
+      entryName.endsWith('.ts') &&
+      !entryName.endsWith('.test.ts') &&
+      !entryName.endsWith('.spec.ts') &&
+      !entryName.endsWith('.d.ts'),
+  },
+  {
+    dir: path.join(rootDir, 'packages', 'useCases'),
+    include: (entryName) => entryName.endsWith('.useCase.ts'),
+  },
 ];
 
-function walkTsFiles(dir) {
+function walkFiles(dir, include) {
+  if (!fs.existsSync(dir)) {
+    return [];
+  }
+
   const output = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
 
@@ -17,17 +39,11 @@ function walkTsFiles(dir) {
     const absPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      output.push(...walkTsFiles(absPath));
+      output.push(...walkFiles(absPath, include));
       continue;
     }
 
-    if (
-      entry.isFile() &&
-      entry.name.endsWith('.ts') &&
-      !entry.name.endsWith('.test.ts') &&
-      !entry.name.endsWith('.spec.ts') &&
-      !entry.name.endsWith('.d.ts')
-    ) {
+    if (entry.isFile() && include(entry.name, absPath)) {
       output.push(absPath);
     }
   }
@@ -92,7 +108,9 @@ const coverageMap = new Map(
   Object.entries(rawCoverage).map(([key, value]) => [normalizeKey(key), value])
 );
 
-const targetFiles = targetDirs.flatMap((dir) => walkTsFiles(dir));
+const targetFiles = targetGroups.flatMap((group) =>
+  walkFiles(group.dir, group.include)
+);
 const failures = [];
 
 for (const filePath of targetFiles) {

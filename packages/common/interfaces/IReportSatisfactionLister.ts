@@ -13,7 +13,9 @@ export interface IReportSatisfactionChatHit {
     contact?: {
       responsible_attendant?: { id?: string; name?: string } | null;
     } | null;
-    secondary_users?: { id?: string; name?: string; entered_at?: string | null }[] | null;
+    secondary_users?:
+      | { id?: string; name?: string; entered_at?: string | null }[]
+      | null;
     date?: string;
     started_at?: string;
   };

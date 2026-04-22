@@ -65,7 +65,11 @@ export class ChatBulkActionUseCase {
       case 'my_chats':
         return MY_CHATS_STATUS;
       case 'chatbot':
-        return [EChatStatus.ura, EChatStatus.ura_output, EChatStatus.ura_webhook];
+        return [
+          EChatStatus.ura,
+          EChatStatus.ura_output,
+          EChatStatus.ura_webhook,
+        ];
       case 'scheduled':
         return EChatStatus.ura_schedule;
       default:
@@ -99,9 +103,7 @@ export class ChatBulkActionUseCase {
     }
   }
 
-  private buildSharedFilters(
-    input: BulkActionChatRequest
-  ): BulkListFilters {
+  private buildSharedFilters(input: BulkActionChatRequest): BulkListFilters {
     return {
       filter_label_template_id: input.filter_label_template_id ?? undefined,
       filter_worker_id: input.filter_worker_id ?? undefined,
@@ -174,7 +176,10 @@ export class ChatBulkActionUseCase {
         for (const chat of searchResult.results) {
           if (
             chat.chat_id &&
-            this.isStatusEligibleForCategory(chat.status as EChatStatus, category)
+            this.isStatusEligibleForCategory(
+              chat.status as EChatStatus,
+              category
+            )
           ) {
             chatIds.add(chat.chat_id);
           }
@@ -194,7 +199,10 @@ export class ChatBulkActionUseCase {
         for (const chat of listResult.results) {
           if (
             chat.chat_id &&
-            this.isStatusEligibleForCategory(chat.status as EChatStatus, category)
+            this.isStatusEligibleForCategory(
+              chat.status as EChatStatus,
+              category
+            )
           ) {
             chatIds.add(chat.chat_id);
           }

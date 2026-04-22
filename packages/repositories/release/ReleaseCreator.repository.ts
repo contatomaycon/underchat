@@ -66,7 +66,9 @@ export class ReleaseCreatorRepository {
       title: input.title,
       message: input.message,
       reminder_at:
-        input.type === EReleaseType.reminder ? (input.reminder_at ?? null) : null,
+        input.type === EReleaseType.reminder
+          ? (input.reminder_at ?? null)
+          : null,
     });
 
     return releaseId;

@@ -113,7 +113,10 @@ export const useAttendanceGuardStore = defineStore('attendanceGuard', {
       }
 
       if (this.visibilityHandler) {
-        document.removeEventListener('visibilitychange', this.visibilityHandler);
+        document.removeEventListener(
+          'visibilitychange',
+          this.visibilityHandler
+        );
       }
 
       if (this.focusHandler) {
@@ -138,9 +141,9 @@ export const useAttendanceGuardStore = defineStore('attendanceGuard', {
       this.syncing = true;
 
       try {
-        const response = await axios.get<IApiResponse<UserAttendanceGuardStatus>>(
-          '/user/me/attendance-hours/status'
-        );
+        const response = await axios.get<
+          IApiResponse<UserAttendanceGuardStatus>
+        >('/user/me/attendance-hours/status');
 
         if (!response.data?.status || !response.data?.data) {
           return this.status;

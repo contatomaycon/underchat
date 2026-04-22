@@ -41,7 +41,9 @@ export const isUserAttendanceHoursWeekday = (
 };
 
 export const isUserAttendanceHoursTimeValid = (value: unknown): boolean => {
-  return typeof value === 'string' && USER_ATTENDANCE_HOURS_TIME_REGEX.test(value);
+  return (
+    typeof value === 'string' && USER_ATTENDANCE_HOURS_TIME_REGEX.test(value)
+  );
 };
 
 export const toUserAttendanceHoursMinutes = (
@@ -51,7 +53,9 @@ export const toUserAttendanceHoursMinutes = (
     return null;
   }
 
-  const [hours, minutes] = time.split(':').map((entry) => Number.parseInt(entry, 10));
+  const [hours, minutes] = time
+    .split(':')
+    .map((entry) => Number.parseInt(entry, 10));
 
   if (Number.isNaN(hours) || Number.isNaN(minutes)) {
     return null;
@@ -73,7 +77,9 @@ export const isUserAttendanceHoursRuleWindowValid = (
   return startMinutes < endMinutes;
 };
 
-const sortRules = (rules: IUserAttendanceHoursRule[]): IUserAttendanceHoursRule[] => {
+const sortRules = (
+  rules: IUserAttendanceHoursRule[]
+): IUserAttendanceHoursRule[] => {
   return [...rules].sort((first, second) => {
     const firstWeekdayIndex = WEEKDAY_ORDER.indexOf(first.weekday);
     const secondWeekdayIndex = WEEKDAY_ORDER.indexOf(second.weekday);
@@ -95,7 +101,9 @@ export const normalizeUserAttendanceHoursRules = (
 ): IUserAttendanceHoursRule[] => {
   return sortRules(
     rules.map((rule) => ({
-      weekday: String(rule.weekday ?? '').trim().toLowerCase() as UserAttendanceHoursWeekday,
+      weekday: String(rule.weekday ?? '')
+        .trim()
+        .toLowerCase() as UserAttendanceHoursWeekday,
       start_time: String(rule.start_time ?? '').trim(),
       end_time: String(rule.end_time ?? '').trim(),
     }))
@@ -104,12 +112,10 @@ export const normalizeUserAttendanceHoursRules = (
 
 export const findConflictingUserAttendanceHoursRules = (
   rules: IUserAttendanceHoursRule[]
-):
-  | {
-      first: IUserAttendanceHoursRule;
-      second: IUserAttendanceHoursRule;
-    }
-  | null => {
+): {
+  first: IUserAttendanceHoursRule;
+  second: IUserAttendanceHoursRule;
+} | null => {
   const sortedRules = sortRules(rules);
 
   for (let i = 0; i < sortedRules.length; i++) {
@@ -165,7 +171,11 @@ const isBlockedAtMoment = (
     const startMinutes = toUserAttendanceHoursMinutes(rule.start_time);
     const endMinutes = toUserAttendanceHoursMinutes(rule.end_time);
 
-    if (startMinutes === null || endMinutes === null || startMinutes >= endMinutes) {
+    if (
+      startMinutes === null ||
+      endMinutes === null ||
+      startMinutes >= endMinutes
+    ) {
       return false;
     }
 

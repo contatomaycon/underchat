@@ -85,9 +85,8 @@ export class UserTransactionCreatorRepository {
 
       const normalizedEmail = input.email.value.trim().toLowerCase();
 
-      const emailCEncrypted = this.passwordEncryptorService.encrypt(
-        normalizedEmail
-      );
+      const emailCEncrypted =
+        this.passwordEncryptorService.encrypt(normalizedEmail);
 
       const emailPartialEncrypted = this.encryptService.sanitize(
         normalizedEmail,

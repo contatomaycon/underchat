@@ -75,7 +75,9 @@ export default function userRoutes(server: FastifyInstance) {
   server.get('/user/me/attendance-hours/status', {
     schema: viewAttendanceHoursStatusSchema,
     handler: userController.viewAttendanceHoursStatus,
-    preHandler: [(request, reply) => server.authenticateJwt(request, reply, [])],
+    preHandler: [
+      (request, reply) => server.authenticateJwt(request, reply, []),
+    ],
   });
 
   server.get('/user/:user_id/attendance-hours', {

@@ -429,7 +429,9 @@ export class ChatStatusUpdaterUseCase {
    * Com a permissão `require_chat_closure_comment`: o atendente pode optar por informar ou não (toggle na UI).
    * Sem a permissão: o motivo é sempre obrigatório ao encerrar.
    */
-  private canToggleOptionalClosureReason(actions: IJwtGroupHierarchy[]): boolean {
+  private canToggleOptionalClosureReason(
+    actions: IJwtGroupHierarchy[]
+  ): boolean {
     const permissions = [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,

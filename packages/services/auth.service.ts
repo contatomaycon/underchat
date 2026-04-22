@@ -13,7 +13,10 @@ export class AuthService {
     private readonly encryptService: EncryptService
   ) {}
 
-  private buildAuthenticateInput(login: string, password: string): IAuthenticate {
+  private buildAuthenticateInput(
+    login: string,
+    password: string
+  ): IAuthenticate {
     const passwordEncrypted = this.encryptService.encrypt(password);
     const loginEncrypted = this.encryptService.encrypt(login);
 

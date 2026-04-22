@@ -4,7 +4,8 @@ import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { viewAttendanceHoursStatusResponseSchema } from './response.schema';
 
 export const viewAttendanceHoursStatusSchema = {
-  description: 'Visualiza o status atual de horário de atendimento do usuário autenticado',
+  description:
+    'Visualiza o status atual de horário de atendimento do usuário autenticado',
   tags: [ETagSwagger.user],
   produces: ['application/json'],
   security: [

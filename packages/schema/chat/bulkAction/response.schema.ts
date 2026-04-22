@@ -12,4 +12,6 @@ export const bulkActionChatResponseSchema = Type.Object({
   failures: Type.Array(bulkActionChatFailureSchema),
 });
 
-export type BulkActionChatResponse = Static<typeof bulkActionChatResponseSchema>;
+export type BulkActionChatResponse = Static<
+  typeof bulkActionChatResponseSchema
+>;

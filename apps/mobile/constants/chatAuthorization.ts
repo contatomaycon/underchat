@@ -347,10 +347,11 @@ export function canDisableSendMessageOnFinishAttendance(
 }
 
 /** Com permissão: pode ligar/desligar o motivo no modal. Sem: motivo obrigatório. */
-export function canToggleOptionalClosureReason(
-  permissions: string[]
-): boolean {
-  return hasAnyPermission(permissions, REQUIRE_CHAT_CLOSURE_COMMENT_PERMISSIONS);
+export function canToggleOptionalClosureReason(permissions: string[]): boolean {
+  return hasAnyPermission(
+    permissions,
+    REQUIRE_CHAT_CLOSURE_COMMENT_PERMISSIONS
+  );
 }
 
 export function canManageInChatLifecyclePermission(

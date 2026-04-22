@@ -262,7 +262,9 @@ function resolveCountryName(code: string, locale: string): string {
   }
 
   try {
-    const names = new IntlApi.DisplayNames([locale, 'en-US'], { type: 'region' });
+    const names = new IntlApi.DisplayNames([locale, 'en-US'], {
+      type: 'region',
+    });
     return names.of(code) ?? code;
   } catch {
     return code;

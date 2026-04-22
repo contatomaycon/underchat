@@ -33,7 +33,9 @@ export const userAttendanceHoursBlockedDataSchema = Type.Object({
   attendance_guard: userAttendanceGuardStatusSchema,
 });
 
-export type UserAttendanceHoursRule = Static<typeof userAttendanceHoursRuleSchema>;
+export type UserAttendanceHoursRule = Static<
+  typeof userAttendanceHoursRuleSchema
+>;
 export type UserAttendanceGuardStatus = Static<
   typeof userAttendanceGuardStatusSchema
 >;

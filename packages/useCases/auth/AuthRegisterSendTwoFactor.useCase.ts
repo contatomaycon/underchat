@@ -20,10 +20,7 @@ export class AuthRegisterSendTwoFactorUseCase {
     private readonly encryptService: EncryptService
   ) {}
 
-  private buildPhoneCandidates(
-    phone: string,
-    phoneDdi: string
-  ): string[] {
+  private buildPhoneCandidates(phone: string, phoneDdi: string): string[] {
     return buildCandidatesWithDdi(phone, phoneDdi, { order: 'input_first' });
   }
 

@@ -119,10 +119,7 @@ export class ReleaseViewerRepository {
 
     const reminderVisibleForViewer = or(
       ne(release.type, EReleaseType.reminder),
-      and(
-        isNotNull(release.reminder_at),
-        lte(release.reminder_at, sql`now()`)
-      ),
+      and(isNotNull(release.reminder_at), lte(release.reminder_at, sql`now()`)),
       eq(release.created_by_user_id, userId)
     ) as SQLWrapper;
 
