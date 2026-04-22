@@ -29,6 +29,12 @@ export async function getPublicKey(
       public_key: publicKey,
     };
 
+    reply.header(
+      'Cache-Control',
+      'private, max-age=3600, stale-while-revalidate=300'
+    );
+    reply.header('Vary', 'Authorization, Accept-Language');
+
     return sendResponse(reply, {
       message: t('push_public_key_retrieved_successfully'),
       httpStatusCode: EHTTPStatusCode.ok,

@@ -12,6 +12,51 @@ import axiosAuth from '@/@webcore/axios';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 
 const MAX_LINE_LENGTH = 70;
+const VAPID_PUBLIC_KEY_CACHE_TTL_MS = 30 * 60 * 1000;
+
+let cachedVapidPublicKey: string | null = null;
+let cachedVapidPublicKeyExpiresAt = 0;
+let pendingVapidPublicKeyRequest: Promise<string> | null = null;
+
+function clearCachedVapidPublicKey(): void {
+  cachedVapidPublicKey = null;
+  cachedVapidPublicKeyExpiresAt = 0;
+}
+
+async function getCachedVapidPublicKey(): Promise<string> {
+  const now = Date.now();
+
+  if (cachedVapidPublicKey && now < cachedVapidPublicKeyExpiresAt) {
+    return cachedVapidPublicKey;
+  }
+
+  if (pendingVapidPublicKeyRequest) {
+    return pendingVapidPublicKeyRequest;
+  }
+
+  pendingVapidPublicKeyRequest = (async () => {
+    const response = await axiosAuth.get('/push/public-key');
+    const publicKey = response?.data?.data?.public_key;
+
+    if (typeof publicKey !== 'string' || publicKey.length === 0) {
+      throw new Error('Invalid push public key response');
+    }
+
+    cachedVapidPublicKey = publicKey;
+    cachedVapidPublicKeyExpiresAt = Date.now() + VAPID_PUBLIC_KEY_CACHE_TTL_MS;
+
+    return publicKey;
+  })();
+
+  try {
+    return await pendingVapidPublicKeyRequest;
+  } catch (error) {
+    clearCachedVapidPublicKey();
+    throw error;
+  } finally {
+    pendingVapidPublicKeyRequest = null;
+  }
+}
 
 export function formatNotificationBody(preview: string): string {
   const normalized = preview.trim().replace(/\s+/g, ' ').replace(/\n+/g, ' ');
@@ -138,6 +183,8 @@ export const useChatNotifications = () => {
   const processingMessages = ref(new Set<string>());
   const serviceWorkerRegistration = ref<ServiceWorkerRegistration | null>(null);
   const isSubscribing = ref(false);
+  const isSyncingNotificationSettings = ref(false);
+  const hasPendingNotificationSync = ref(false);
 
   const isMasterNotificationsEnabled = () => {
     return chatStore.user?.chat_user?.notifications === true;
@@ -427,16 +474,6 @@ export const useChatNotifications = () => {
         return;
       }
 
-      const response = await axiosAuth.get('/push/public-key');
-
-      if (!isPushNotificationsEnabled()) {
-        isSubscribing.value = false;
-        await unsubscribeFromPushNotificationsInternal();
-        return;
-      }
-
-      const { public_key } = response.data.data;
-
       const existingSubscription =
         await registration.pushManager.getSubscription();
 
@@ -448,7 +485,23 @@ export const useChatNotifications = () => {
         return;
       }
 
-      const convertedVapidKey = urlBase64ToUint8Array(public_key);
+      const publicKey = await getCachedVapidPublicKey();
+
+      if (!isPushNotificationsEnabled()) {
+        isSubscribing.value = false;
+        await unsubscribeFromPushNotificationsInternal();
+        return;
+      }
+
+      let convertedVapidKey: ArrayBuffer;
+
+      try {
+        convertedVapidKey = urlBase64ToUint8Array(publicKey);
+      } catch {
+        clearCachedVapidPublicKey();
+        const refreshedPublicKey = await getCachedVapidPublicKey();
+        convertedVapidKey = urlBase64ToUint8Array(refreshedPublicKey);
+      }
 
       if (!isPushNotificationsEnabled()) {
         isSubscribing.value = false;
@@ -486,6 +539,7 @@ export const useChatNotifications = () => {
 
       isSubscribing.value = false;
     } catch {
+      clearCachedVapidPublicKey();
       isSubscribing.value = false;
       return;
     }
@@ -695,6 +749,24 @@ export const useChatNotifications = () => {
     await unsubscribeFromPushNotificationsInternal();
   }
 
+  async function runNotificationSettingsSync(): Promise<void> {
+    if (isSyncingNotificationSettings.value) {
+      hasPendingNotificationSync.value = true;
+      return;
+    }
+
+    isSyncingNotificationSettings.value = true;
+
+    try {
+      do {
+        hasPendingNotificationSync.value = false;
+        await syncNotificationSettings();
+      } while (hasPendingNotificationSync.value);
+    } finally {
+      isSyncingNotificationSettings.value = false;
+    }
+  }
+
   onMounted(async () => {
     isPageVisible.value = !document.hidden;
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -745,7 +817,7 @@ export const useChatNotifications = () => {
       chatStore.user?.chat_user?.notifications_status_chatbot,
     ],
     async () => {
-      await syncNotificationSettings();
+      await runNotificationSettingsSync();
     },
     { immediate: true }
   );

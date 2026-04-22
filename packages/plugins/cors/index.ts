@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import fp from 'fastify-plugin';
 
+const CORS_PREFLIGHT_CACHE_SECONDS = 600;
+
 export default fp(
   async function corsPlugin(fastify: FastifyInstance) {
     fastify.register(cors, {
@@ -26,6 +28,8 @@ export default fp(
       exposedHeaders: ['x-plan-active'],
       credentials: true,
       preflight: true,
+      maxAge: CORS_PREFLIGHT_CACHE_SECONDS,
+      cacheControl: CORS_PREFLIGHT_CACHE_SECONDS,
     });
   },
   {
