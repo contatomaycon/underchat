@@ -115,6 +115,22 @@ class AppConfig:
     @staticmethod
     def get_dashboard_file() -> str:
         return os.getenv("DASHBOARD_FILE", "static/index.html")
+
+    @staticmethod
+    def is_dashboard_auth_enabled() -> bool:
+        return os.getenv("DASHBOARD_AUTH_ENABLED", "false").lower() in ("true", "1", "yes")
+
+    @staticmethod
+    def get_dashboard_auth_username() -> str:
+        return os.getenv("DASHBOARD_AUTH_USERNAME", "").strip()
+
+    @staticmethod
+    def get_dashboard_auth_password() -> str:
+        return os.getenv("DASHBOARD_AUTH_PASSWORD", "")
+
+    @staticmethod
+    def get_dashboard_auth_realm() -> str:
+        return os.getenv("DASHBOARD_AUTH_REALM", "Universal Web-to-API Dashboard").strip() or "Universal Web-to-API Dashboard"
     
     # ===== AI 分析配置 =====
     @staticmethod

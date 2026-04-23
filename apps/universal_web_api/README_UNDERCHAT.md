@@ -29,6 +29,7 @@ Backend strategy (configurable):
 - `AUDIO_TRANSCRIPTION_MODE=auto|api|local` (`local` uses `faster-whisper`)
 - `AUDIO_SPEECH_MODE=auto|api|local` (`local` uses `espeak-ng` + `ffmpeg`)
 - `AUDIO_SPEECH_LOCAL_VOICE=pt-br` for Brazilian Portuguese local TTS
+- Dashboard HTTP Basic auth: `DASHBOARD_AUTH_ENABLED=true`, `DASHBOARD_AUTH_USERNAME`, `DASHBOARD_AUTH_PASSWORD`
 
 Persistent volumes:
 

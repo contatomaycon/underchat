@@ -2,6 +2,9 @@
 main.py - FastAPI 应用入口
 """
 import asyncio
+import base64
+import binascii
+import hmac
 import logging
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 import os
@@ -372,6 +375,59 @@ app = FastAPI(
     redoc_url="/redoc" if AppConfig.DEBUG else None,
     lifespan=lifespan
 )
+
+
+def _is_dashboard_protected_path(path: str) -> bool:
+    return path in ("/", "/dashboard", "/marketplace") or path.startswith("/static/") or path.startswith("/download_images/")
+
+
+def _dashboard_auth_challenge_response() -> JSONResponse:
+    realm = AppConfig.get_dashboard_auth_realm().replace('"', "")
+    return JSONResponse(
+        status_code=401,
+        content={"error": {"message": "Autenticação necessária para acessar o painel."}},
+        headers={"WWW-Authenticate": f'Basic realm="{realm}", charset="UTF-8"'},
+    )
+
+
+@app.middleware("http")
+async def dashboard_basic_auth_middleware(request, call_next):
+    if not AppConfig.is_dashboard_auth_enabled():
+        return await call_next(request)
+
+    path = request.url.path or ""
+    if not _is_dashboard_protected_path(path):
+        return await call_next(request)
+
+    expected_user = AppConfig.get_dashboard_auth_username()
+    expected_password = AppConfig.get_dashboard_auth_password()
+    if not expected_user or not expected_password:
+        logger.error("[dashboard-auth] DASHBOARD_AUTH_ENABLED=true, mas usuário/senha não foram configurados.")
+        return JSONResponse(
+            status_code=500,
+            content={"error": {"message": "Dashboard auth habilitado sem credenciais configuradas."}},
+        )
+
+    authorization = request.headers.get("authorization", "")
+    if not authorization.startswith("Basic "):
+        return _dashboard_auth_challenge_response()
+
+    encoded_credentials = authorization[6:].strip()
+    try:
+        decoded = base64.b64decode(encoded_credentials, validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError):
+        return _dashboard_auth_challenge_response()
+
+    provided_user, separator, provided_password = decoded.partition(":")
+    if separator != ":":
+        return _dashboard_auth_challenge_response()
+
+    user_ok = hmac.compare_digest(provided_user, expected_user)
+    pass_ok = hmac.compare_digest(provided_password, expected_password)
+    if not (user_ok and pass_ok):
+        return _dashboard_auth_challenge_response()
+
+    return await call_next(request)
 
 # CORS 配置
 if AppConfig.is_cors_enabled():
