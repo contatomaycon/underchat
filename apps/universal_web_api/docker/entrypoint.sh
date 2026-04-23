@@ -5,10 +5,36 @@ APP_ROOT="/app"
 PERSIST_ROOT="${PERSIST_ROOT:-/data}"
 DEFAULT_CONFIG_DIR="${APP_ROOT}/config.dist"
 
-CONFIG_DIR="${PERSIST_ROOT}/config"
-CHROME_PROFILE_DIR="${PERSIST_ROOT}/chrome_profile"
-IMAGE_DIR="${PERSIST_ROOT}/image"
-DOWNLOAD_IMAGES_DIR="${PERSIST_ROOT}/download_images"
+is_writable_dir() {
+  local dir="$1"
+  mkdir -p "${dir}" >/dev/null 2>&1 || return 1
+
+  local probe_file="${dir}/.underchat-write-test-$$"
+  if ! (umask 077 && : > "${probe_file}") >/dev/null 2>&1; then
+    return 1
+  fi
+  rm -f "${probe_file}" >/dev/null 2>&1 || true
+  return 0
+}
+
+resolve_persist_root() {
+  local primary_root="$1"
+  local fallback_root="${TMP_PERSIST_ROOT:-/tmp/data}"
+
+  if is_writable_dir "${primary_root}"; then
+    printf '%s' "${primary_root}"
+    return 0
+  fi
+
+  echo "[entrypoint] WARN: persist root '${primary_root}' is not writable; falling back to '${fallback_root}'." >&2
+  if is_writable_dir "${fallback_root}"; then
+    printf '%s' "${fallback_root}"
+    return 0
+  fi
+
+  echo "[entrypoint] ERROR: neither '${primary_root}' nor fallback '${fallback_root}' are writable." >&2
+  return 1
+}
 
 export APP_HOST="${APP_HOST:-0.0.0.0}"
 export APP_PORT="${APP_PORT:-8199}"
@@ -26,12 +52,20 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/xdg-runtime}"
 mkdir -p "${HOME}" "${XDG_RUNTIME_DIR}"
 chmod 700 "${XDG_RUNTIME_DIR}" || true
 
+PERSIST_ROOT="$(resolve_persist_root "${PERSIST_ROOT}")"
+CONFIG_DIR="${PERSIST_ROOT}/config"
+CHROME_PROFILE_DIR="${PERSIST_ROOT}/chrome_profile"
+IMAGE_DIR="${PERSIST_ROOT}/image"
+DOWNLOAD_IMAGES_DIR="${PERSIST_ROOT}/download_images"
+
 mkdir -p "${CONFIG_DIR}" "${CHROME_PROFILE_DIR}" "${IMAGE_DIR}" "${DOWNLOAD_IMAGES_DIR}"
 
 seed_config_file() {
   local name="$1"
   if [ ! -f "${CONFIG_DIR}/${name}" ] && [ -f "${DEFAULT_CONFIG_DIR}/${name}" ]; then
-    cp -a "${DEFAULT_CONFIG_DIR}/${name}" "${CONFIG_DIR}/${name}"
+    if ! cp -a "${DEFAULT_CONFIG_DIR}/${name}" "${CONFIG_DIR}/${name}"; then
+      echo "[entrypoint] WARN: failed to seed config '${name}' into '${CONFIG_DIR}'." >&2
+    fi
   fi
 }
 

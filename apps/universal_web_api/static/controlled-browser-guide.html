@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-guide-lang="zh">
+<html lang="pt-BR" data-guide-lang="zh">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>受控浏览器引导</title>
+    <title>Inicialização controlada do navegador</title>
     <style>
         :root {
             --bg-top: #09111d;
@@ -299,61 +299,61 @@
     <main class="guide-shell">
         <section class="card hero">
             <div class="hero-top">
-                <div id="heroBadge" class="badge">受控浏览器</div>
-                <div id="languageSwitch" class="lang-switch" role="group" aria-label="切换语言">
-                    <button type="button" class="lang-btn" data-lang-option="zh">中文</button>
-                    <button type="button" class="lang-btn" data-lang-option="en">English</button>
+                <div id="heroBadge" class="badge">navegador controlado</div>
+                <div id="languageSwitch" class="lang-switch" role="group" aria-label="mudar de idioma">
+                    <button type="button" class="lang-btn" data-lang-option="zh">Português (BR)</button>
+                    <button type="button" class="lang-btn" data-lang-option="en">Português</button>
                 </div>
             </div>
-            <h1 id="heroTitle" class="hero-title">此浏览器为受控浏览器</h1>
-            <p id="heroCopy" class="hero-copy">请把这个窗口留给你要接入的 AI 网站。<strong>教程页、搜索页、邮箱、资讯页都不要在这里打开。</strong></p>
+            <h1 id="heroTitle" class="hero-title">Este navegador é um navegador controlado</h1>
+            <p id="heroCopy" class="hero-copy">Por favor, deixe esta janela para o site de IA que você deseja acessar.<strong>Não abra a página do tutorial, a página de pesquisa, a caixa de correio ou a página de informações aqui.</strong></p>
             <div class="action-row">
-                <button id="confirmControlledBtn" type="button" class="action-btn primary">我知道了</button>
+                <button id="confirmControlledBtn" type="button" class="action-btn primary">Eu vejo</button>
             </div>
-            <p id="stepOneStatus" class="status" hidden>已确认：这是受控浏览器。</p>
+            <p id="stepOneStatus" class="status" hidden>Confirmado: Este é um navegador controlado.</p>
         </section>
 
         <div class="stack">
             <section id="stepTwo" class="card reveal">
-                <p id="stepTwoKicker" class="kicker">第二步</p>
-                <h2 id="stepTwoTitle" class="section-title">不要在这里打开除目标 AI 站点之外的任何网站</h2>
-                <p id="stepTwoSubtitle" class="section-subtitle">只把这个浏览器留给你真正要访问的 AI 站点。</p>
-                <p id="stepTwoCopy" class="section-copy">这个浏览器主要是给脚本调度和识别页面用的。你之后想访问哪个 AI，就在这里打开哪个 AI；其它无关网站请继续放在普通浏览器里。</p>
+                <p id="stepTwoKicker" class="kicker">Etapa 2</p>
+                <h2 id="stepTwoTitle" class="section-title">Não abra nenhum site aqui, exceto o site de IA de destino</h2>
+                <p id="stepTwoSubtitle" class="section-subtitle">Use este navegador apenas para sites de IA que você realmente deseja visitar.</p>
+                <p id="stepTwoCopy" class="section-copy">Este navegador é usado principalmente para agendamento de scripts e identificação de páginas. Qualquer IA que você queira acessar mais tarde, basta abri-la aqui; para outros sites não relacionados, continue a colocá-los em um navegador normal.</p>
                 <div class="action-row">
-                    <button id="confirmDisciplineBtn" type="button" class="action-btn primary">只在这里打开 AI 站点</button>
+                    <button id="confirmDisciplineBtn" type="button" class="action-btn primary">Abra o site de IA somente aqui</button>
                 </div>
-                <p id="stepTwoStatus" class="status" hidden>已确认：受控浏览器只用于目标 AI 站点。</p>
+                <p id="stepTwoStatus" class="status" hidden>Confirmado: navegadores controlados são usados ​​apenas em sites de IA direcionados.</p>
             </section>
 
             <section id="finalStage" class="card reveal">
-                <p id="finalKicker" class="kicker">开始使用</p>
-                <h2 id="finalTitle" class="section-title">现在就从下方站点里选一个打开</h2>
-                <p id="finalSubtitle" class="section-subtitle">下方按钮会直接在这个受控浏览器里打开目标站点。</p>
+                <p id="finalKicker" class="kicker">Comece</p>
+                <h2 id="finalTitle" class="section-title">Agora escolha um dos sites abaixo para abri-lo</h2>
+                <p id="finalSubtitle" class="section-subtitle">O botão abaixo abrirá o site de destino diretamente neste navegador controlado.</p>
 
                 <div class="note">
-                    <h3 id="noteTitle" class="note-title">这是引导页，之后可以直接关闭，没有任何影响</h3>
-                    <p id="noteCopy" class="note-copy">这个标签页只是启动时的说明页。看完后你可以直接关闭，不会影响服务、标签页池、登录态和后续 API 调用。</p>
+                    <h3 id="noteTitle" class="note-title">Esta é a página de inicialização. Você pode fechá-lo diretamente sem qualquer impacto.</h3>
+                    <p id="noteCopy" class="note-copy">Esta guia é apenas uma página de instruções de inicialização. Após a leitura, você pode fechá-lo diretamente sem afetar o serviço, o conjunto de guias, o estado de login e as chamadas de API subsequentes.</p>
                 </div>
 
-                <p id="siteSummary" class="summary">正在加载当前已适配站点...</p>
+                <p id="siteSummary" class="summary">Carregando site atualmente adaptado...</p>
                 <div id="siteGrid" class="site-grid" aria-live="polite"></div>
 
                 <div class="utility-grid">
                     <article class="utility">
-                        <span id="dashboardKicker" class="utility-kicker">控制面板</span>
-                        <h3 id="dashboardTitle" class="utility-title">控制面板建议在普通浏览器打开</h3>
-                        <p id="dashboardBody" class="utility-copy">如果你要复制 Base URL、改设置、看日志，请在普通浏览器使用控制面板，别把这个受控浏览器拿去做普通浏览。</p>
-                        <div id="dashboardUrl" class="url-pill">正在加载控制面板地址...</div>
+                        <span id="dashboardKicker" class="utility-kicker">painel de controle</span>
+                        <h3 id="dashboardTitle" class="utility-title">Recomenda-se que o painel de controle seja aberto em um navegador normal</h3>
+                        <p id="dashboardBody" class="utility-copy">Se você deseja copiar o URL base, alterar configurações ou visualizar registros, use o painel de controle em um navegador normal. Não use este navegador controlado para navegação normal.</p>
+                        <div id="dashboardUrl" class="url-pill">Carregando endereço do painel de controle...</div>
                         <div class="action-row">
-                            <button id="copyDashboardBtn" type="button" class="action-btn secondary">复制控制面板地址</button>
+                            <button id="copyDashboardBtn" type="button" class="action-btn secondary">Copiar endereço do painel de controle</button>
                         </div>
                         <p id="dashboardCopyFeedback" class="feedback" aria-live="polite"></p>
                     </article>
 
                     <article class="utility">
-                        <span id="closingKicker" class="utility-kicker">关闭提示</span>
-                        <h3 id="closingTitle" class="utility-title">看完这页就可以关掉</h3>
-                        <p id="closingBody" class="utility-copy">关闭这个引导页不会影响登录态、站点访问、标签页池或后续 API 调用。你真正要操作的是后面打开的 AI 网站标签页。</p>
+                        <span id="closingKicker" class="utility-kicker">Fechar prompt</span>
+                        <h3 id="closingTitle" class="utility-title">Você pode fechá-lo depois de ler esta página</h3>
+                        <p id="closingBody" class="utility-copy">Fechar esta página de inicialização não afetará o status de login, o acesso ao site, o conjunto de guias ou chamadas de API subsequentes. O que você realmente deseja operar é a guia do site da IA ​​que abre mais tarde.</p>
                     </article>
                 </div>
             </section>
@@ -379,44 +379,44 @@
 
         const translations = {
             zh: {
-                lang: 'zh-CN',
-                title: '受控浏览器引导',
-                languageLabel: '切换语言',
-                heroBadge: '受控浏览器',
-                heroTitle: '此浏览器为受控浏览器',
-                heroCopy: '请把这个窗口留给你要接入的 AI 网站。<strong>教程页、搜索页、邮箱、资讯页都不要在这里打开。</strong>',
-                confirmControlled: '我知道了',
-                stepOneStatus: '已确认：这是受控浏览器。',
-                stepTwoKicker: '第二步',
-                stepTwoTitle: '不要在这里打开除目标 AI 站点之外的任何网站',
-                stepTwoSubtitle: '只把这个浏览器留给你真正要访问的 AI 站点。',
-                stepTwoCopy: '这个浏览器主要是给脚本调度和识别页面用的。你之后想访问哪个 AI，就在这里打开哪个 AI；其它无关网站请继续放在普通浏览器里。',
-                confirmDiscipline: '只在这里打开 AI 站点',
-                stepTwoStatus: '已确认：受控浏览器只用于目标 AI 站点。',
-                finalKicker: '开始使用',
-                finalTitle: '现在就从下方站点里选一个打开',
-                finalSubtitle: '下方按钮会直接在这个受控浏览器里打开目标站点。',
-                noteTitle: '这是引导页，之后可以直接关闭，没有任何影响',
-                noteCopy: '这个标签页只是启动时的说明页。看完后你可以直接关闭，不会影响服务、标签页池、登录态和后续 API 调用。',
-                dashboardKicker: '控制面板',
-                dashboardTitle: '控制面板建议在普通浏览器打开',
-                dashboardBody: '如果你要复制 Base URL、改设置、看日志，请在普通浏览器使用控制面板，别把这个受控浏览器拿去做普通浏览。',
-                copyDashboard: '复制控制面板地址',
-                dashboardLoading: '正在加载控制面板地址...',
-                dashboardCopied: '已复制控制面板地址，请到普通浏览器打开。',
-                dashboardCopyFailed: '复制失败，请手动复制上面的地址。',
-                closingKicker: '关闭提示',
-                closingTitle: '看完这页就可以关掉',
-                closingBody: '关闭这个引导页不会影响登录态、站点访问、标签页池或后续 API 调用。你真正要操作的是后面打开的 AI 网站标签页。',
-                siteOpen: '在此浏览器打开',
-                siteSummaryLoaded: count => `当前已适配 ${count} 个站点。你可以直接点下方按钮在此受控浏览器打开。`,
-                siteSummaryEmpty: '暂时没有读到已适配站点，你仍然可以手动在这个受控浏览器里打开目标 AI 网站。',
-                emptySites: '当前没有读取到站点列表。你仍然可以手动在这个受控浏览器里打开目标 AI 网站。'
+                lang: 'pt-BR',
+                title: 'Inicialização controlada do navegador',
+                languageLabel: 'mudar de idioma',
+                heroBadge: 'navegador controlado',
+                heroTitle: 'Este navegador é um navegador controlado',
+                heroCopy: 'Por favor, deixe esta janela para o site de IA que você deseja acessar.<strong>Não abra a página do tutorial, a página de pesquisa, a caixa de correio ou a página de informações aqui.</strong>',
+                confirmControlled: 'Eu vejo',
+                stepOneStatus: 'Confirmado: Este é um navegador controlado.',
+                stepTwoKicker: 'Etapa 2',
+                stepTwoTitle: 'Não abra nenhum site aqui, exceto o site de IA de destino',
+                stepTwoSubtitle: 'Use este navegador apenas para sites de IA que você realmente deseja visitar.',
+                stepTwoCopy: 'Este navegador é usado principalmente para agendamento de scripts e identificação de páginas. Qualquer IA que você queira acessar mais tarde, basta abri-la aqui; para outros sites não relacionados, continue a colocá-los em um navegador normal.',
+                confirmDiscipline: 'Abra o site de IA somente aqui',
+                stepTwoStatus: 'Confirmado: navegadores controlados são usados ​​apenas em sites de IA direcionados.',
+                finalKicker: 'Comece',
+                finalTitle: 'Agora escolha um dos sites abaixo para abri-lo',
+                finalSubtitle: 'O botão abaixo abrirá o site de destino diretamente neste navegador controlado.',
+                noteTitle: 'Esta é a página de inicialização. Você pode fechá-lo diretamente sem qualquer impacto.',
+                noteCopy: 'Esta guia é apenas uma página de instruções de inicialização. Após a leitura, você pode fechá-lo diretamente sem afetar o serviço, o conjunto de guias, o estado de login e as chamadas de API subsequentes.',
+                dashboardKicker: 'painel de controle',
+                dashboardTitle: 'Recomenda-se que o painel de controle seja aberto em um navegador normal',
+                dashboardBody: 'Se você deseja copiar o URL base, alterar configurações ou visualizar registros, use o painel de controle em um navegador normal. Não use este navegador controlado para navegação normal.',
+                copyDashboard: 'Copiar endereço do painel de controle',
+                dashboardLoading: 'Carregando endereço do painel de controle...',
+                dashboardCopied: 'O endereço do painel de controle foi copiado, abra-o em um navegador normal.',
+                dashboardCopyFailed: 'Falha na cópia, copie o endereço acima manualmente.',
+                closingKicker: 'Fechar prompt',
+                closingTitle: 'Você pode fechá-lo depois de ler esta página',
+                closingBody: 'Fechar esta página de inicialização não afetará o status de login, o acesso ao site, o conjunto de guias ou chamadas de API subsequentes. O que você realmente deseja operar é a guia do site da IA ​​que abre mais tarde.',
+                siteOpen: 'Abrir neste navegador',
+                siteSummaryLoaded: count => `Atualmente adaptado${count} sites. Você pode clicar diretamente no botão abaixo para abri-lo neste navegador controlado.`,
+                siteSummaryEmpty: 'Se você ainda não leu o site adaptado, ainda pode abrir manualmente o site de IA alvo neste navegador controlado.',
+                emptySites: 'Nenhuma lista de sites foi lida no momento. Você ainda pode abrir manualmente o site de IA de destino neste navegador controlado.'
             },
             en: {
                 lang: 'en',
                 title: 'Controlled Browser Guide',
-                languageLabel: 'Switch language',
+                languageLabel: 'Trocar idioma',
                 heroBadge: 'Controlled Browser',
                 heroTitle: 'This browser is controlled by the script.',
                 heroCopy: 'Keep this window dedicated to the AI site you want to automate. <strong>Do not use it for tutorial pages, search, mail, news, or general browsing.</strong>',
@@ -504,7 +504,7 @@
         };
 
         function normalizeLanguage(language) {
-            return String(language || '').toLowerCase().startsWith('en') ? 'en' : 'zh';
+            return 'zh';
         }
 
         function bundle() {

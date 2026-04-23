@@ -9,7 +9,7 @@ window.MarketplaceTab = {
                 total_downloads: 0,
                 default_sort: 'downloads',
                 source_mode: 'local',
-                source_name: '配置市场',
+                source_name: 'mercado de alocação',
                 source_url: '',
                 warning: ''
             })
@@ -33,9 +33,9 @@ window.MarketplaceTab = {
         },
         typeOptions() {
             return [
-                { value: 'all', label: '全部类型' },
-                { value: 'site_config', label: '站点配置' },
-                { value: 'command_bundle', label: '命令系统' }
+                { value: 'all', label: 'Todos os tipos' },
+                { value: 'site_config', label: 'Configuração do site' },
+                { value: 'command_bundle', label: 'sistema de comando' }
             ];
         },
         siteOptions() {
@@ -49,9 +49,9 @@ window.MarketplaceTab = {
             return Array.from(sites);
         },
         sourceBadge() {
-            if (this.catalog.source_mode === 'hybrid') return 'GitHub + 本地投稿';
-            if (this.catalog.source_mode === 'remote') return 'GitHub 实时索引';
-            return '本地市场';
+            if (this.catalog.source_mode === 'hybrid') return 'GitHub + Postagem principal';
+            if (this.catalog.source_mode === 'remote') return 'GitHub indexação em tempo real';
+            return 'mercado local';
         },
         filteredItems() {
             const query = this.searchQuery.trim().toLowerCase();
@@ -116,7 +116,7 @@ window.MarketplaceTab = {
             return (Number(value) || 0).toLocaleString('zh-CN');
         },
         formatDate(value) {
-            if (!value) return '未知';
+            if (!value) return 'desconhecido';
             const date = new Date(value);
             if (Number.isNaN(date.getTime())) {
                 return String(value);
@@ -128,7 +128,7 @@ window.MarketplaceTab = {
             });
         },
         typeLabel(itemType) {
-            return itemType === 'command_bundle' ? '命令系统' : '站点配置';
+            return itemType === 'command_bundle' ? 'sistema de comando' : 'Configuração do site';
         },
         isImporting(itemId) {
             return this.importingId === itemId;
@@ -142,37 +142,34 @@ window.MarketplaceTab = {
                     <div class="marketplace-hero__copy">
                         <div class="marketplace-eyebrow">
                             <span v-html="iconSet.shoppingBag"></span>
-                            插件市场
-                        </div>
-                        <h2 class="marketplace-title">站点配置与命令系统都能在这里浏览、预览、投稿和导入</h2>
+                            mercado de plug-ins                         </div>
+                        <h2 class="marketplace-title">A configuração do site e o sistema de comando podem ser navegados, visualizados, enviados e importados aqui.</h2>
                         <p class="marketplace-subtitle">
-                            站点配置默认按下载量排序，并支持按站点分类。命令系统也可以作为命令包投稿和分发。
-                        </p>
+                            A configuração do site é classificada por volume de download por padrão e oferece suporte à classificação por site. Os sistemas de comando também podem ser contribuídos e distribuídos como pacotes de comando.                         </p>
                         <div class="marketplace-source-row">
                             <span class="marketplace-source-badge">{{ sourceBadge }}</span>
-                            <span class="marketplace-source-text">{{ catalog.source_name || '配置市场' }}</span>
+                            <span class="marketplace-source-text">{{ catalog.source_name || 'mercado de alocação' }}</span>
                             <button v-if="catalog.source_url"
                                     type="button"
                                     class="marketplace-inline-link"
                                     @click="$emit('open-link', catalog.source_url)">
-                                查看源
-                            </button>
+                                Ver fonte                             </button>
                         </div>
                         <div v-if="catalog.warning" class="marketplace-warning">{{ catalog.warning }}</div>
                     </div>
 
                     <div class="marketplace-stats">
                         <div class="marketplace-stat-card">
-                            <span class="marketplace-stat-label">市场项目</span>
+                            <span class="marketplace-stat-label">Itens de mercado</span>
                             <strong class="marketplace-stat-value">{{ formatNumber(catalog.count || 0) }}</strong>
                         </div>
                         <div class="marketplace-stat-card">
-                            <span class="marketplace-stat-label">累计下载</span>
+                            <span class="marketplace-stat-label">Downloads cumulativos</span>
                             <strong class="marketplace-stat-value">{{ formatNumber(catalog.total_downloads || 0) }}</strong>
                         </div>
                         <div class="marketplace-stat-card">
-                            <span class="marketplace-stat-label">默认排序</span>
-                            <strong class="marketplace-stat-value">按下载量</strong>
+                            <span class="marketplace-stat-label">Classificação padrão</span>
+                            <strong class="marketplace-stat-value">por downloads</strong>
                         </div>
                     </div>
                 </div>
@@ -182,28 +179,26 @@ window.MarketplaceTab = {
                         <input v-model.trim="searchQuery"
                                type="search"
                                class="marketplace-input"
-                               placeholder="搜索标题、站点、标签、作者或简介">
+                               placeholder="Pesquise título, site, tag, autor ou introdução">
                     </div>
                     <div class="marketplace-toolbar__actions">
                         <select v-model="sortBy" class="marketplace-select">
-                            <option value="downloads">按下载量</option>
-                            <option value="updated">按最近更新</option>
-                            <option value="stars">按 Star</option>
-                            <option value="name">按名称</option>
+                            <option value="downloads">por downloads</option>
+                            <option value="updated">pressione a última atualização</option>
+                            <option value="stars">de acordo com Star</option>
+                            <option value="name">por nome</option>
                         </select>
                         <button type="button" class="marketplace-btn marketplace-btn--secondary" @click="$emit('refresh')">
                             <span v-html="iconSet.arrowPath"></span>
-                            刷新市场
-                        </button>
+                            Atualize o mercado                         </button>
                         <button type="button" class="marketplace-btn marketplace-btn--primary" @click="$emit('open-submit')">
                             <span v-html="iconSet.arrowUpTray"></span>
-                            投稿上传
-                        </button>
+                            Envio e upload                         </button>
                     </div>
                 </div>
 
                 <div class="marketplace-filter-group">
-                    <div class="marketplace-filter-title">类型</div>
+                    <div class="marketplace-filter-title">tipo</div>
                     <div class="marketplace-categories">
                         <button v-for="option in typeOptions"
                                 :key="option.value"
@@ -216,23 +211,23 @@ window.MarketplaceTab = {
                 </div>
 
                 <div class="marketplace-filter-group" v-if="siteOptions.length > 1">
-                    <div class="marketplace-filter-title">站点分类</div>
+                    <div class="marketplace-filter-title">Classificação do local</div>
                     <div class="marketplace-categories">
                         <button v-for="site in siteOptions"
                                 :key="site"
                                 type="button"
                                 @click="selectedSite = site"
                                 :class="['marketplace-category-chip', { 'is-active': selectedSite === site }]">
-                            {{ site === 'all' ? '全部站点' : site }}
+                            {{ site === 'all' ? 'Todos os sites' : site }}
                         </button>
                     </div>
                 </div>
             </div>
 
             <div v-if="error && !loading" class="marketplace-empty">
-                <h3>市场加载失败</h3>
+                <h3>Falha no carregamento do mercado</h3>
                 <p>{{ error }}</p>
-                <button type="button" class="marketplace-btn marketplace-btn--primary" @click="$emit('refresh')">重新加载</button>
+                <button type="button" class="marketplace-btn marketplace-btn--primary" @click="$emit('refresh')">recarregar</button>
             </div>
 
             <div v-else-if="loading" class="marketplace-grid">
@@ -247,8 +242,8 @@ window.MarketplaceTab = {
             </div>
 
             <div v-else-if="filteredItems.length === 0" class="marketplace-empty">
-                <h3>没有找到匹配项目</h3>
-                <p>可以试试切换类型、站点分类，或者换个关键词搜索。</p>
+                <h3>Nenhum item correspondente encontrado</h3>
+                <p>Você pode tentar mudar de tipo, categoria de site ou alterar pesquisas por palavra-chave.</p>
             </div>
 
             <div v-else class="marketplace-grid">
@@ -260,24 +255,24 @@ window.MarketplaceTab = {
 
                     <div class="marketplace-card__body">
                         <h3 class="marketplace-card__title">{{ item.name }}</h3>
-                        <p class="marketplace-card__summary">{{ item.summary || '暂无简介。' }}</p>
+                        <p class="marketplace-card__summary">{{ item.summary || 'Nenhuma introdução ainda.' }}</p>
 
                         <dl class="marketplace-meta-grid">
                             <div>
-                                <dt>作者</dt>
-                                <dd>{{ item.author || '社区贡献' }}</dd>
+                                <dt>autor</dt>
+                                <dd>{{ item.author || 'contribuição da comunidade' }}</dd>
                             </div>
                             <div>
-                                <dt>版本</dt>
-                                <dd>{{ item.version || '未标记' }}</dd>
+                                <dt>Versão</dt>
+                                <dd>{{ item.version || 'Não marcado' }}</dd>
                             </div>
                             <div>
-                                <dt>分类</dt>
-                                <dd>{{ item.category || '未分类' }}</dd>
+                                <dt>Classificação</dt>
+                                <dd>{{ item.category || 'Sem categoria' }}</dd>
                             </div>
                             <div>
-                                <dt>兼容</dt>
-                                <dd>{{ item.compatibility || '通用' }}</dd>
+                                <dt>compatível</dt>
+                                <dd>{{ item.compatibility || 'Universal' }}</dd>
                             </div>
                         </dl>
 
@@ -288,23 +283,22 @@ window.MarketplaceTab = {
 
                     <div class="marketplace-card__footer">
                         <div class="marketplace-stat-row">
-                            <span>下载 {{ formatNumber(item.downloads) }}</span>
+                            <span>download {{ formatNumber(item.downloads) }}</span>
                             <span v-if="item.stars">Star {{ formatNumber(item.stars) }}</span>
-                            <span>更新 {{ formatDate(item.updated_at) }}</span>
+                            <span>renovar {{ formatDate(item.updated_at) }}</span>
                         </div>
                         <div class="marketplace-actions">
                             <button type="button"
                                     class="marketplace-btn marketplace-btn--ghost"
                                     @click="$emit('preview-item', item)">
                                 <span v-html="iconSet.folderOpen"></span>
-                                预览
-                            </button>
+                                Visualização                             </button>
                             <button type="button"
                                     class="marketplace-btn marketplace-btn--primary"
                                     :disabled="isImporting(item.id)"
                                     @click="$emit('import-item', item)">
                                 <span v-if="!isImporting(item.id)" v-html="iconSet.arrowDownTray"></span>
-                                {{ isImporting(item.id) ? '处理中...' : '导入' }}
+                                {{ isImporting(item.id) ? 'Processamento...' : 'importar' }}
                             </button>
                         </div>
                     </div>

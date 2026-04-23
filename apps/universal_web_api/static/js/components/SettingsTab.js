@@ -1,4 +1,4 @@
-// ==================== 设置 Tab 组件 (修复版) ====================
+// ==================== configurar Tab componentes (Versão reparada) ====================
 window.SettingsTab = {
     name: 'SettingsTab',
     props: {
@@ -41,7 +41,7 @@ window.SettingsTab = {
         updatePreserveGroups() {
             const groups = {}
             for (const item of this.updatePreserveOptions || []) {
-                const key = item.category || '其他'
+                const key = item.category || 'outro'
                 if (!groups[key]) groups[key] = []
                 groups[key].push(item)
             }
@@ -54,8 +54,8 @@ window.SettingsTab = {
         },
         getEnvApplyLabel(field, group) {
             const scope = this.getEnvApplyScope(field, group)
-            if (scope === 'launcher') return '需重启 start.bat'
-            return '保存后服务重启生效'
+            if (scope === 'launcher') return 'Precisa reiniciar start.bat'
+            return 'Após salvar, o serviço entrará em vigor após a reinicialização.'
         },
         getEnvApplyClass(field, group) {
             const scope = this.getEnvApplyScope(field, group)
@@ -69,20 +69,19 @@ window.SettingsTab = {
         <div class="h-full overflow-auto p-4 md:p-6 bg-gray-50 dark:bg-gray-900">
             <div class="max-w-7xl mx-auto space-y-6">
                 
-                <!-- ========== AI 元素识别 - 放在最上面 ========== -->
+                <!-- ========== AI identificação do elemento - colocar em cima ========== -->
                 <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
                     <div class="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center cursor-pointer"
                          @click="selectorDefsCollapsed = !selectorDefsCollapsed">
                         <div>
                             <h3 class="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <span class="text-xl">🎯</span> AI 元素识别
-                            </h3>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">配置 AI 分析页面时需要查找的目标元素</p>
+                                <span class="text-xl">🎯</span> AI identificação do elemento                             </h3>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Configuração AI Elementos-alvo a serem procurados ao analisar uma página</p>
                         </div>
                         <div class="flex gap-2 items-center">
-                            <span class="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-600 dark:text-gray-300">{{ selectorDefinitions.length }} 个定义</span>
+                            <span class="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-600 dark:text-gray-300">{{ selectorDefinitions.length }} definição</span>
                             <div class="h-6 w-px bg-gray-200 dark:bg-gray-600 mx-2"></div>
-                            <button @click.stop="$emit('reset-definitions')" title="重置"
+                            <button @click.stop="$emit('reset-definitions')" title="reiniciar"
                                     class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                                 <span v-html="$icons.arrowPath"></span>
                             </button>
@@ -93,7 +92,7 @@ window.SettingsTab = {
                                              ? 'bg-blue-400 cursor-not-allowed opacity-60'
                                              : 'bg-blue-600 hover:bg-blue-700']">
                                 <span v-if="!savingDefinitions" v-html="$icons.arrowDownTray" class="w-4 h-4"></span>
-                                {{ savingDefinitions ? '...' : '保存' }}
+                                {{ savingDefinitions ? '...' : 'manter' }}
                             </button>
                             <button class="p-1.5 ml-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                                     v-html="selectorDefsCollapsed ? $icons.chevronDown : $icons.chevronUp">
@@ -102,21 +101,21 @@ window.SettingsTab = {
                     </div>
 
                     <div v-show="!selectorDefsCollapsed" class="p-0">
-                        <!-- 表头 -->
+                        <!-- Cabeçalho -->
                         <div class="grid grid-cols-12 gap-4 px-6 py-3 bg-gray-50 dark:bg-gray-900/50 text-xs font-semibold text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
-                            <div class="col-span-1 text-center">排序</div>
-                            <div class="col-span-3 md:col-span-2">关键词 (Key)</div>
-                            <div class="col-span-6 md:col-span-7">描述 (Description)</div>
-                            <div class="col-span-1 text-center">启用</div>
-                            <div class="col-span-1 text-center">操作</div>
+                            <div class="col-span-1 text-center">organizar</div>
+                            <div class="col-span-3 md:col-span-2">palavras-chave (Key)</div>
+                            <div class="col-span-6 md:col-span-7">descrever (Description)</div>
+                            <div class="col-span-1 text-center">habilitar</div>
+                            <div class="col-span-1 text-center">operar</div>
                         </div>
 
-                        <!-- 列表 -->
+                        <!-- lista -->
                         <div class="divide-y divide-gray-100 dark:divide-gray-700">
                             <div v-for="(def, index) in selectorDefinitions" :key="def.key" 
                                  class="grid grid-cols-12 gap-4 px-6 py-3 items-center hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                                 
-                                <!-- 排序按钮 - 优化日夜模式显示 -->
+                                <!-- botão classificar - Otimize a exibição do modo diurno e noturno -->
                                 <div class="col-span-1 flex flex-col items-center gap-0.5">
                                     <button @click.stop="$emit('move-definition', index, -1)" 
                                             :disabled="index === 0" 
@@ -124,7 +123,7 @@ window.SettingsTab = {
                                                      index === 0 
                                                      ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' 
                                                      : 'text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 active:scale-95']"
-                                            title="上移">
+                                            title="subir">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"/>
                                         </svg>
@@ -135,7 +134,7 @@ window.SettingsTab = {
                                                      index === selectorDefinitions.length - 1 
                                                      ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' 
                                                      : 'text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 active:scale-95']"
-                                            title="下移">
+                                            title="descer">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
                                         </svg>
@@ -147,7 +146,7 @@ window.SettingsTab = {
                                     <code class="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded text-xs font-mono text-blue-700 dark:text-blue-300">
                                         {{ def.key }}
                                     </code>
-                                    <span v-if="def.required" class="text-[10px] text-red-600 dark:text-red-400 border border-red-300 dark:border-red-700 px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-900/30 font-medium">必需</span>
+                                    <span v-if="def.required" class="text-[10px] text-red-600 dark:text-red-400 border border-red-300 dark:border-red-700 px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-900/30 font-medium">obrigatório</span>
                                 </div>
 
                                 <!-- Description -->
@@ -155,7 +154,7 @@ window.SettingsTab = {
                                     {{ def.description }}
                                 </div>
 
-                                <!-- 启用开关 -->
+                                <!-- ativar interruptor -->
                                 <div class="col-span-1 flex justify-center">
                                     <label class="toggle-label scale-90">
                                         <input type="checkbox" :checked="def.enabled" 
@@ -165,11 +164,11 @@ window.SettingsTab = {
                                     </label>
                                 </div>
 
-                                <!-- 操作按钮 - 优化删除按钮日夜模式显示 -->
+                                <!-- Botão de ação - Otimize a exibição do modo diurno e noturno do botão Excluir -->
                                 <div class="col-span-1 flex justify-center gap-1">
                                     <button @click.stop="$emit('edit-definition', index)" 
                                             class="p-1.5 rounded-md transition-all duration-150 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 active:scale-95" 
-                                            title="编辑">
+                                            title="editar">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
                                         </svg>
@@ -180,7 +179,7 @@ window.SettingsTab = {
                                                      def.required 
                                                      ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' 
                                                      : 'text-gray-600 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 active:scale-95']" 
-                                            title="删除">
+                                            title="excluir">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
                                         </svg>
@@ -189,33 +188,31 @@ window.SettingsTab = {
                             </div>
                         </div>
 
-                        <!-- 添加按钮 -->
+                        <!-- Botão Adicionar -->
                         <div class="p-4 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-700 text-center">
                             <button @click="$emit('add-definition')"
                                     class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium py-2 px-5 border-2 border-dashed border-blue-300 dark:border-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all duration-150 inline-flex items-center gap-2 active:scale-95">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
                                 </svg>
-                                添加新定义
-                            </button>
+                                Adicionar nova definição                             </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- ========== 环境配置 和 浏览器常量 ========== -->
+                <!-- ========== Configuração do ambiente e constantes do navegador ========== -->
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     
-                    <!-- 环境配置 -->
+                    <!-- Configuração do ambiente -->
                     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col">
                         <div class="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-start">
                             <div>
                                 <h3 class="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                    <span class="text-xl" v-html="$icons.folderOpen"></span> 环境配置
-                                </h3>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">每个字段都会标明是服务重启生效，还是需要重新运行 start.bat</p>
+                                    <span class="text-xl" v-html="$icons.folderOpen"></span> Configuração do ambiente                                 </h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Cada campo indicará se a reinicialização do serviço entra em vigor ou precisa ser executada novamente. start.bat</p>
                             </div>
                             <div class="flex gap-2">
-                                <button @click="$emit('reset-env')" title="重置"
+                                <button @click="$emit('reset-env')" title="reiniciar"
                                         class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                                     <span v-html="$icons.arrowPath"></span>
                                 </button>
@@ -226,7 +223,7 @@ window.SettingsTab = {
                                                  ? 'bg-blue-400 cursor-not-allowed opacity-60'
                                                  : 'bg-blue-600 hover:bg-blue-700']">
                                     <span v-if="!savingEnv" v-html="$icons.arrowDownTray" class="w-4 h-4"></span>
-                                    {{ savingEnv ? '...' : '保存' }}
+                                    {{ savingEnv ? '...' : 'manter' }}
                                 </button>
                             </div>
                         </div>
@@ -289,17 +286,16 @@ window.SettingsTab = {
                         </div>
                     </div>
 
-                    <!-- 浏览器常量 -->
+                    <!-- Constantes do navegador -->
                     <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col">
                         <div class="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-start">
                             <div>
                                 <h3 class="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                    <span class="text-xl">🌐</span> 浏览器常量
-                                </h3>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">即时生效</p>
+                                    <span class="text-xl">🌐</span> Constantes do navegador                                 </h3>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Em vigor imediatamente</p>
                             </div>
                             <div class="flex gap-2">
-                                <button @click="$emit('reset-browser')" title="重置"
+                                <button @click="$emit('reset-browser')" title="reiniciar"
                                         class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                                     <span v-html="$icons.arrowPath"></span>
                                 </button>
@@ -310,7 +306,7 @@ window.SettingsTab = {
                                                  ? 'bg-blue-400 cursor-not-allowed opacity-60'
                                                  : 'bg-blue-600 hover:bg-blue-700']">
                                     <span v-if="!savingBrowser" v-html="$icons.arrowDownTray" class="w-4 h-4"></span>
-                                    {{ savingBrowser ? '...' : '保存' }}
+                                    {{ savingBrowser ? '...' : 'manter' }}
                                 </button>
                             </div>
                         </div>
@@ -374,12 +370,11 @@ window.SettingsTab = {
                          @click="updatePreserveCollapsed = !updatePreserveCollapsed">
                         <div>
                             <h3 class="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <span class="text-xl">🛠️</span> 更新白名单
-                            </h3>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">勾选后，下次自动更新会原样保留对应文件或目录</p>
+                                <span class="text-xl">🛠️</span> Atualizar lista de permissões                             </h3>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Após a verificação, a próxima atualização automática manterá o arquivo ou diretório correspondente como está.</p>
                         </div>
                         <div class="flex gap-2 items-center">
-                            <button @click.stop="$emit('reset-update-preserve')" title="重置"
+                            <button @click.stop="$emit('reset-update-preserve')" title="reiniciar"
                                     class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                                 <span v-html="$icons.arrowPath"></span>
                             </button>
@@ -390,7 +385,7 @@ window.SettingsTab = {
                                              ? 'bg-blue-400 cursor-not-allowed opacity-60'
                                              : 'bg-blue-600 hover:bg-blue-700']">
                                 <span v-if="!savingUpdatePreserve" v-html="$icons.arrowDownTray" class="w-4 h-4"></span>
-                                {{ savingUpdatePreserve ? '...' : '保存' }}
+                                {{ savingUpdatePreserve ? '...' : 'manter' }}
                             </button>
                             <button class="p-1.5 ml-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                                     v-html="updatePreserveCollapsed ? $icons.chevronDown : $icons.chevronUp">
@@ -400,8 +395,7 @@ window.SettingsTab = {
 
                     <div v-show="!updatePreserveCollapsed" class="p-4 space-y-4">
                         <div class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-                            这里控制的是“更新时是否保留不变”，不是运行时是否启用。目录项会保留整个目录；未勾选的项目会在更新时按新版本内容覆盖或合并。
-                        </div>
+                            O que é controlado aqui é“Se deve mantê-lo inalterado durante a atualização”，Não se está habilitado em tempo de execução. Os itens do diretório reterão todo o diretório; itens desmarcados serão substituídos ou mesclados de acordo com o conteúdo da nova versão durante as atualizações.                         </div>
 
                         <div class="space-y-4">
                             <div v-for="(items, category) in updatePreserveGroups" :key="category" class="space-y-2">

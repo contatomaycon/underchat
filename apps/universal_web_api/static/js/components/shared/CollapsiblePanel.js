@@ -1,4 +1,4 @@
-// ==================== 通用折叠面板组件 ====================
+// ==================== Montagem de painel dobrável universal ====================
 
 window.CollapsiblePanel = {
     name: 'CollapsiblePanel',
@@ -21,7 +21,7 @@ window.CollapsiblePanel = {
     },
     template: `
         <div class="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-sm">
-            <!-- 标题栏 -->
+            <!-- barra de título -->
             <div :class="[
                 'px-4 py-3 border-b dark:border-gray-700 flex justify-between items-center cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors',
                 headerClass
@@ -35,17 +35,17 @@ window.CollapsiblePanel = {
                     <span v-if="badge !== null" class="text-sm text-gray-500 dark:text-gray-400">
                         ({{ badge }})
                     </span>
-                    <!-- 额外徽章插槽 -->
+                    <!-- Espaço extra para crachá -->
                     <slot name="badges"></slot>
                 </div>
                 
-                <!-- 右侧操作区 -->
+                <!-- Área operacional direita -->
                 <div @click.stop="stopPropagation">
                     <slot name="actions"></slot>
                 </div>
             </div>
 
-            <!-- 内容区 -->
+            <!-- área de conteúdo -->
             <div v-show="!collapsed">
                 <slot></slot>
             </div>

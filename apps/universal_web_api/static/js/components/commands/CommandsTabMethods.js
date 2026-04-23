@@ -39,7 +39,7 @@ window.CommandsTabMethods = {
                 this.clearGroupDragState();
                 this.ensureValidPage();
             } catch (e) {
-                this.$emit('notify', { type: 'error', message: '加载命令失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: 'Falha no comando de carregamento: ' + e.message });
             } finally {
                 this.loading = false;
             }
@@ -78,7 +78,7 @@ window.CommandsTabMethods = {
         },
 
         getFollowDefaultPresetLabel() {
-            return '跟随站点默认预设';
+            return 'Siga os padrões do site';
         },
 
         normalizeCommand(command) {
@@ -175,7 +175,7 @@ window.CommandsTabMethods = {
             try {
                 this.meta = await this.apiRequest('/api/commands/meta');
             } catch (e) {
-                console.error('加载元信息失败:', e);
+                console.error('Falha ao carregar metainformações:', e);
             }
         },
 
@@ -191,7 +191,7 @@ window.CommandsTabMethods = {
                 const data = await this.apiRequest('/api/config');
                 this.availableDomains = Object.keys(data || {}).sort();
             } catch (e) {
-                console.error('加载域名列表失败:', e);
+                console.error('Falha ao carregar a lista de nomes de domínio:', e);
                 this.availableDomains = [];
             }
         },
@@ -201,7 +201,7 @@ window.CommandsTabMethods = {
                 const data = await this.apiRequest('/api/tab-pool/tabs');
                 this.availableTabs = data.tabs || [];
             } catch (e) {
-                console.error('加载标签页列表失败:', e);
+                console.error('Falha ao carregar a lista de guias:', e);
                 this.availableTabs = [];
             }
         },
@@ -220,61 +220,61 @@ window.CommandsTabMethods = {
 
         getTabLabel(tab) {
             if (!tab) return '';
-            const domain = tab.current_domain || '未识别域名';
+            const domain = tab.current_domain || 'Nome de domínio não reconhecido';
             return '#' + tab.persistent_index + ' · ' + domain;
         },
 
         getPresetHint() {
-            if (!this.editingCommand) return '先选择绑定域名或标签页，再选择要执行的预设。';
+            if (!this.editingCommand) return 'Primeiro selecione o nome de domínio ou guia vinculado e, em seguida, selecione a predefinição a ser executada.';
             const scope = this.editingCommand.trigger?.scope;
             if (scope === 'all') {
-                return '切换预设/执行工作流仅建议用于“指定域名”或“指定标签页”，也可以直接保持“跟随站点默认预设”。';
+                return 'Alternar predefinição/Os fluxos de trabalho de execução são recomendados apenas para“Especifique o nome de domínio”ou“Especifique a página da guia”，Você também pode manter diretamente“Siga os padrões do site”。';
             }
             if (this.presetLoading) {
-                return '正在加载预设列表...';
+                return 'Carregando lista predefinida...';
             }
             if (this.resolvedPresetDomain) {
-                return '当前目标域名: ' + this.resolvedPresetDomain + '，也可保持“跟随站点默认预设”。';
+                return 'Nome de domínio de destino atual: ' + this.resolvedPresetDomain + '，também pode ser mantido“Siga os padrões do site”。';
             }
             if (scope === 'tab') {
-                return '所选标签页当前没有可识别域名，暂时无法列出预设，但仍可保持“跟随站点默认预设”。';
+                return 'A guia selecionada atualmente não possui um nome de domínio reconhecido. As predefinições não podem ser listadas no momento, mas ainda podem ser mantidas.“Siga os padrões do site”。';
             }
-            return '请输入已配置的域名后再选择预设，或保持“跟随站点默认预设”。';
+            return 'Insira o nome de domínio configurado e selecione Padrão ou mantenha“Siga os padrões do site”。';
         },
 
         getPresetSelectPlaceholder() {
-            if (!this.editingCommand) return '请先配置触发范围';
-            if (this.presetLoading) return '正在加载预设列表...';
+            if (!this.editingCommand) return 'Configure primeiro o intervalo de disparo';
+            if (this.presetLoading) return 'Carregando lista predefinida...';
             if (!this.resolvedPresetDomain) {
                 return this.editingCommand.trigger?.scope === 'all'
-                    ? '请先切换到指定域名或指定标签页'
-                    : '请先选择有效域名';
+                    ? 'Mude primeiro para o nome de domínio ou página de guia especificado'
+                    : 'Selecione primeiro um nome de domínio válido';
             }
             if (this.availablePresets.length === 0) {
-                return '当前域名没有可用预设';
+                return 'Não há predefinição disponível para o nome de domínio atual';
             }
-            return '请选择预设';
+            return 'Selecione um padrão';
         },
 
         getCommandTriggerPlaceholder() {
             if (this.sourceCommandOptions.length === 0) {
-                return '没有可选命令';
+                return 'Sem comandos opcionais';
             }
             if (this.editingCommand?.trigger?.type === 'command_result_event') {
-                return '请选择要监听的命令';
+                return 'Selecione o comando para monitorar';
             }
-            return '请选择来源命令';
+            return 'Selecione o comando de origem';
         },
 
         getSourceCommandButtonLabel() {
             if (this.editingCommand?.trigger?.type === 'command_result_event') {
                 const trigger = this.editingCommand.trigger || {};
                 if (trigger.listen_all_commands) {
-                    return '监听全部命令';
+                    return 'Ouça todos os comandos';
                 }
                 const selected = this.selectedSourceCommandOptions || [];
                 if (selected.length === 1) return selected[0].label;
-                if (selected.length > 1) return '已选择 ' + selected.length + ' 条命令';
+                if (selected.length > 1) return 'Selecionado ' + selected.length + ' comando';
             }
             const selected = this.selectedSourceCommandOption;
             if (selected) {
@@ -369,14 +369,14 @@ window.CommandsTabMethods = {
 
         getTriggerTargetLabel(trigger) {
             const type = trigger?.type;
-            if (type === 'page_check') return '检查文本';
-            if (type === 'command_result_match') return '监听命令';
-            if (type === 'command_result_event') return '监听命令';
+            if (type === 'page_check') return 'verifique o texto';
+            if (type === 'command_result_match') return 'Ouça os comandos';
+            if (type === 'command_result_event') return 'Ouça os comandos';
             if (type === 'network_request_error') {
-                return trigger?.match_mode === 'regex' ? '正则表达式' : '监听 URL 规则';
+                return trigger?.match_mode === 'regex' ? 'expressão regular' : 'monitor URL regra';
             }
-            if (type === 'command_triggered') return '来源命令';
-            return '阈值';
+            if (type === 'command_triggered') return 'comando de origem';
+            return 'limite';
         },
 
         getCommandName(commandId) {
@@ -399,13 +399,13 @@ window.CommandsTabMethods = {
         },
 
         getActionRefLabel(commandId, actionRef) {
-            if (!actionRef) return '命令最终返回值';
+            if (!actionRef) return 'O valor de retorno final do comando';
             const match = this.getCommandActionOptions(commandId).find(opt => opt.value === actionRef);
             return match?.label || actionRef;
         },
 
         getMatchRuleLabel(rule) {
-            const map = { equals: '等于', contains: '包含', not_equals: '不等于' };
+            const map = { equals: 'igual', contains: 'Incluir', not_equals: 'não é igual a' };
             return map[rule] || rule;
         },
 
@@ -422,10 +422,10 @@ window.CommandsTabMethods = {
                 return sourceName + ' / ' + actionLabel + ' ' + ruleLabel + ' ' + expected;
             }
             if (trigger.type === 'command_result_event') {
-                if (trigger.listen_all_commands) return '全部命令';
+                if (trigger.listen_all_commands) return 'Todos os comandos';
                 const ids = Array.isArray(trigger.command_ids) ? trigger.command_ids : [];
                 const labels = ids.map(id => this.getCommandName(id)).filter(Boolean);
-                return labels.length > 0 ? labels.join('、') : '未选择命令';
+                return labels.length > 0 ? labels.join('、') : 'Nenhum comando selecionado';
             }
             if (trigger.type === 'network_request_error') {
                 const pattern = trigger.url_pattern || trigger.value || '';
@@ -458,7 +458,7 @@ window.CommandsTabMethods = {
                     }
                 }
             } catch (e) {
-                console.error('加载预设列表失败:', e);
+                console.error('Falha ao carregar a lista predefinida:', e);
                 this.availablePresets = [];
                 for (const action of this.editingCommand.actions || []) {
                     if (['execute_preset', 'execute_workflow'].includes(action.type)) {
@@ -583,7 +583,7 @@ window.CommandsTabMethods = {
 
         openNewCommand() {
             this.editingCommand = this.normalizeCommand({
-                name: '新命令',
+                name: 'novo comando',
                 enabled: true,
                 mode: 'simple',
                 trigger: {
@@ -771,7 +771,7 @@ window.CommandsTabMethods = {
             if (['request_count', 'error_count', 'idle_timeout'].includes(trigger.type)) {
                 const numericValue = Number(trigger.value);
                 if (!Number.isFinite(numericValue) || numericValue <= 0) {
-                    this.$emit('notify', { type: 'error', message: '计数/超时阈值必须是大于 0 的数字。' });
+                    this.$emit('notify', { type: 'error', message: 'contar/O limite de tempo limite deve ser maior que 0 número.' });
                     return;
                 }
                 trigger.value = numericValue;
@@ -779,27 +779,27 @@ window.CommandsTabMethods = {
             if (trigger.type === 'command_triggered') {
                 const sourceId = String(trigger.command_id || '').trim();
                 if (!sourceId) {
-                    this.$emit('notify', { type: 'error', message: '请先在“命令触发后执行”里选择来源命令。' });
+                    this.$emit('notify', { type: 'error', message: 'por favor primeiro“Executar após o comando ser acionado”Selecione o comando de origem.' });
                     return;
                 }
                 if (this.editingCommand.id && sourceId === this.editingCommand.id) {
-                    this.$emit('notify', { type: 'error', message: '来源命令不能选择当前命令自己。' });
+                    this.$emit('notify', { type: 'error', message: 'O comando de origem não pode selecionar o comando atual sozinho.' });
                     return;
                 }
             }
             if (trigger.type === 'command_result_match') {
                 const sourceId = String(trigger.command_id || '').trim();
                 if (!sourceId) {
-                    this.$emit('notify', { type: 'error', message: '请先选择“监听命令”。' });
+                    this.$emit('notify', { type: 'error', message: 'Selecione primeiro“Ouça os comandos”。' });
                     return;
                 }
                 if (this.editingCommand.id && sourceId === this.editingCommand.id) {
-                    this.$emit('notify', { type: 'error', message: '监听命令不能是当前命令自己。' });
+                    this.$emit('notify', { type: 'error', message: 'O comando de escuta não pode ser o próprio comando atual.' });
                     return;
                 }
                 const expected = String(trigger.expected_value || '').trim();
                 if (!expected) {
-                    this.$emit('notify', { type: 'error', message: '请填写“期望值”。' });
+                    this.$emit('notify', { type: 'error', message: 'Por favor preencha“valor esperado”。' });
                     return;
                 }
             }
@@ -809,44 +809,44 @@ window.CommandsTabMethods = {
                     : [];
                 trigger.command_ids = ids;
                 if (!trigger.listen_all_commands && ids.length === 0) {
-                    this.$emit('notify', { type: 'error', message: '请至少选择一个监听命令，或切换为“全部命令”。' });
+                    this.$emit('notify', { type: 'error', message: 'Selecione pelo menos um comando de escuta ou mude para“Todos os comandos”。' });
                     return;
                 }
                 if (this.editingCommand.id && ids.includes(this.editingCommand.id)) {
-                    this.$emit('notify', { type: 'error', message: '监听命令不能包含当前命令自己。' });
+                    this.$emit('notify', { type: 'error', message: 'O comando de escuta não pode incluir o próprio comando atual.' });
                     return;
                 }
             }
             if (trigger.type === 'network_request_error') {
                 const urlPattern = String(trigger.url_pattern || trigger.value || '').trim();
                 if (!urlPattern) {
-                    this.$emit('notify', { type: 'error', message: '网络异常拦截需要填写 URL 监听规则。' });
+                    this.$emit('notify', { type: 'error', message: 'A interceptação de anomalias de rede precisa ser preenchida URL Regras de escuta.' });
                     return;
                 }
                 const statusCodes = String(trigger.status_codes || '').trim();
                 if (!statusCodes) {
-                    this.$emit('notify', { type: 'error', message: '请填写要拦截的状态码（如 403,429,500）。' });
+                    this.$emit('notify', { type: 'error', message: 'Preencha o código de status a ser interceptado (como 403,429,500）。' });
                     return;
                 }
             }
             const periodicInterval = Number(trigger.periodic_interval_sec);
             if (!Number.isFinite(periodicInterval) || periodicInterval < 1) {
-                this.$emit('notify', { type: 'error', message: '周期检测间隔必须是大于等于 1 秒的数字。' });
+                this.$emit('notify', { type: 'error', message: 'O intervalo de detecção do período deve ser maior ou igual a 1 Número de segundos.' });
                 return;
             }
             const periodicJitter = Number(trigger.periodic_jitter_sec);
             if (!Number.isFinite(periodicJitter) || periodicJitter < 0) {
-                this.$emit('notify', { type: 'error', message: '周期检测抖动必须是大于等于 0 的数字。' });
+                this.$emit('notify', { type: 'error', message: 'O jitter de detecção de período deve ser maior ou igual a 0 número.' });
                 return;
             }
             const stableFor = Number(trigger.stable_for_sec);
             if (!Number.isFinite(stableFor) || stableFor < 0) {
-                this.$emit('notify', { type: 'error', message: '页面稳定命中时长必须是大于等于 0 的数字。' });
+                this.$emit('notify', { type: 'error', message: 'A duração do hit estável da página precisa ser maior ou igual a 0 número.' });
                 return;
             }
             const priority = Number(trigger.priority);
             if (!Number.isInteger(priority)) {
-                this.$emit('notify', { type: 'error', message: '命令优先级必须是整数。' });
+                this.$emit('notify', { type: 'error', message: 'A prioridade do comando deve ser um número inteiro.' });
                 return;
             }
             trigger.periodic_interval_sec = periodicInterval;
@@ -861,13 +861,13 @@ window.CommandsTabMethods = {
             }
             const missingPreset = presetActions.some(action => !String(action.preset_name || '').trim());
             if (missingPreset) {
-                this.$emit('notify', { type: 'error', message: '“切换预设/执行工作流”动作必须从预设列表中选择一个预设。' });
+                this.$emit('notify', { type: 'error', message: '“Alternar predefinição/Executar fluxo de trabalho”A ação deve selecionar uma predefinição da lista de predefinições.' });
                 return;
             }
             const webhookActions = (this.editingCommand.actions || []).filter(action => action.type === 'send_webhook');
             const invalidWebhook = webhookActions.find(action => !String(action.url || '').trim());
             if (invalidWebhook) {
-                this.$emit('notify', { type: 'error', message: 'Webhook 动作必须填写请求 URL。' });
+                this.$emit('notify', { type: 'error', message: 'Webhook A ação deve preencher a solicitação URL。' });
                 return;
             }
             const napcatActions = (this.editingCommand.actions || []).filter(action => action.type === 'send_napcat');
@@ -877,20 +877,20 @@ window.CommandsTabMethods = {
                 return !String(action.base_url || '').trim() || !targetId || !String(action.message || '').trim();
             });
             if (invalidNapcat) {
-                this.$emit('notify', { type: 'error', message: 'NapCat 动作必须填写接口地址、目标 QQ/群号和消息内容。' });
+                this.$emit('notify', { type: 'error', message: 'NapCat A ação deve preencher o endereço da interface e o destino QQ/Número do grupo e conteúdo da mensagem.' });
                 return;
             }
             const groupActions = (this.editingCommand.actions || []).filter(action => action.type === 'execute_command_group');
             const invalidGroupAction = groupActions.find(action => !String(action.group_name || '').trim());
             if (invalidGroupAction) {
-                this.$emit('notify', { type: 'error', message: '“执行命令组”动作必须选择命令组。' });
+                this.$emit('notify', { type: 'error', message: '“Executar grupo de comando”A ação deve selecionar um grupo de comandos.' });
                 return;
             }
             const clickElementAction = (this.editingCommand.actions || []).find(action =>
                 action.type === 'click_element' && !String(action.selector || '').trim()
             );
             if (clickElementAction) {
-                this.$emit('notify', { type: 'error', message: '“点击元素”动作必须填写元素选择器。' });
+                this.$emit('notify', { type: 'error', message: '“elemento de clique”A ação deve preencher o seletor de elementos.' });
                 return;
             }
             const clickCoordinateAction = (this.editingCommand.actions || []).find(action => {
@@ -898,7 +898,7 @@ window.CommandsTabMethods = {
                 return !Number.isFinite(Number(action.x)) || !Number.isFinite(Number(action.y));
             });
             if (clickCoordinateAction) {
-                this.$emit('notify', { type: 'error', message: '“点击坐标”动作必须填写有效的 X / Y 坐标。' });
+                this.$emit('notify', { type: 'error', message: '“Clique nas coordenadas”A ação deve ser preenchida com um documento válido X / Y coordenada.' });
                 return;
             }
             if (trigger.type === 'network_request_error') {
@@ -917,29 +917,29 @@ window.CommandsTabMethods = {
                         method: 'POST',
                         body: JSON.stringify(this.editingCommand)
                     });
-                    this.$emit('notify', { type: 'success', message: '命令已创建' });
+                    this.$emit('notify', { type: 'success', message: 'Comando criado' });
                 } else {
                     await this.apiRequest('/api/commands/' + this.editingCommand.id, {
                         method: 'PUT',
                         body: JSON.stringify(this.editingCommand)
                     });
-                    this.$emit('notify', { type: 'success', message: '命令已更新' });
+                    this.$emit('notify', { type: 'success', message: 'O comando foi atualizado' });
                 }
                 this.showEditor = false;
                 await this.fetchCommands();
             } catch (e) {
-                this.$emit('notify', { type: 'error', message: '保存失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: 'Falha ao salvar: ' + e.message });
             }
         },
 
         async deleteCommand(cmd) {
-            if (!confirm('确定删除命令「' + cmd.name + '」吗？')) return;
+            if (!confirm('Confirme o comando de exclusão "' + cmd.name + '」?')) return;
             try {
                 await this.apiRequest('/api/commands/' + cmd.id, { method: 'DELETE' });
-                this.$emit('notify', { type: 'success', message: '命令已删除' });
+                this.$emit('notify', { type: 'success', message: 'comando excluído' });
                 await this.fetchCommands();
             } catch (e) {
-                this.$emit('notify', { type: 'error', message: '删除失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: 'Falha na exclusão: ' + e.message });
             }
         },
 
@@ -951,16 +951,16 @@ window.CommandsTabMethods = {
                 });
                 await this.fetchCommands();
             } catch (e) {
-                this.$emit('notify', { type: 'error', message: '切换失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: 'Falha na troca: ' + e.message });
             }
         },
 
         async testCommand(cmd) {
             try {
                 const result = await this.apiRequest('/api/commands/' + cmd.id + '/test', { method: 'POST' });
-                this.$emit('notify', { type: 'success', message: result.message || '命令已执行' });
+                this.$emit('notify', { type: 'success', message: result.message || 'comando executado' });
             } catch (e) {
-                this.$emit('notify', { type: 'error', message: '执行失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: 'Falha na execução: ' + e.message });
             }
         },
 
@@ -1050,7 +1050,7 @@ window.CommandsTabMethods = {
         },
 
         getGroupSelectionActionLabel(commands) {
-            return this.isGroupFullySelected(commands) ? '取消整组选中' : '整组选中';
+            return this.isGroupFullySelected(commands) ? 'Desmarque todo o grupo' : 'Selecione todo o grupo';
         },
 
         toggleGroupSelection(commands) {
@@ -1102,10 +1102,10 @@ window.CommandsTabMethods = {
         getNextDefaultGroupName() {
             const existing = new Set(this.commandGroups.map(group => group.name));
             let idx = 1;
-            while (existing.has('命令组' + idx)) {
+            while (existing.has('grupo de comando' + idx)) {
                 idx += 1;
             }
-            return '命令组' + idx;
+            return 'grupo de comando' + idx;
         },
 
         clearGroupDragState() {
@@ -1150,13 +1150,13 @@ window.CommandsTabMethods = {
             }
         },
 
-        async assignCommandsToGroup(commandIds, groupName, successPrefix = '命令分组已更新') {
+        async assignCommandsToGroup(commandIds, groupName, successPrefix = 'Agrupamento de comandos atualizado') {
             const ids = Array.isArray(commandIds)
                 ? commandIds.map(id => String(id || '').trim()).filter(Boolean)
                 : [];
             const normalizedGroup = String(groupName || '').trim();
             if (ids.length === 0) {
-                this.$emit('notify', { type: 'error', message: '没有可更新的命令。' });
+                this.$emit('notify', { type: 'error', message: 'Não há comandos para atualizar.' });
                 return 0;
             }
 
@@ -1172,7 +1172,7 @@ window.CommandsTabMethods = {
                 const updated = Number(result.updated || 0);
                 this.$emit('notify', {
                     type: updated > 0 ? 'success' : 'error',
-                    message: successPrefix + '（' + updated + ' 条）'
+                    message: successPrefix + '（' + updated + ' tira)'
                 });
                 if (normalizedGroup) {
                     this.pendingGroupName = normalizedGroup;
@@ -1181,7 +1181,7 @@ window.CommandsTabMethods = {
                 await this.fetchCommands();
                 return updated;
             } catch (e) {
-                this.$emit('notify', { type: 'error', message: '分组更新失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: 'Falha na atualização do grupo: ' + e.message });
                 return 0;
             } finally {
                 this.groupWorking = false;
@@ -1199,44 +1199,44 @@ window.CommandsTabMethods = {
 
             const currentGroup = String(command.group_name || '').trim();
             if (currentGroup === targetGroup) {
-                this.$emit('notify', { type: 'success', message: '该命令已经在命令组：' + targetGroup });
+                this.$emit('notify', { type: 'success', message: 'O comando já está no grupo de comandos:' + targetGroup });
                 return;
             }
 
             await this.assignCommandsToGroup(
                 [commandId],
                 targetGroup,
-                '已拖动加入命令组：' + targetGroup
+                'Arrastado para ingressar no grupo de comandos:' + targetGroup
             );
         },
 
         async assignSelectedToGroup() {
             if (!this.hasSelection) {
-                this.$emit('notify', { type: 'error', message: '请先勾选命令。' });
+                this.$emit('notify', { type: 'error', message: 'Por favor, verifique o comando primeiro.' });
                 return;
             }
             const groupName = String(this.pendingGroupName || '').trim() || this.getNextDefaultGroupName();
             await this.assignCommandsToGroup(
                 this.selectedCommandIds,
                 groupName,
-                '已收纳到命令组：' + groupName
+                'Já incluído no grupo de comando:' + groupName
             );
         },
 
         async assignSelectedToExistingGroup() {
             if (!this.hasSelection) {
-                this.$emit('notify', { type: 'error', message: '请先勾选命令。' });
+                this.$emit('notify', { type: 'error', message: 'Por favor, verifique o comando primeiro.' });
                 return;
             }
             const groupName = String(this.selectedExistingGroupName || '').trim();
             if (!groupName) {
-                this.$emit('notify', { type: 'error', message: '请先选择已有命令组。' });
+                this.$emit('notify', { type: 'error', message: 'Selecione primeiro um grupo de comandos existente.' });
                 return;
             }
             await this.assignCommandsToGroup(
                 this.selectedCommandIds,
                 groupName,
-                '已加入已有命令组：' + groupName
+                'Já ingressou no grupo de comando existente:' + groupName
             );
         },
 
@@ -1244,33 +1244,33 @@ window.CommandsTabMethods = {
             const sourceName = String(this.selectedExistingGroupName || '').trim();
             const targetName = String(this.pendingGroupName || '').trim();
             if (!sourceName) {
-                this.$emit('notify', { type: 'error', message: '请先选择要重命名的命令组。' });
+                this.$emit('notify', { type: 'error', message: 'Selecione o grupo de comandos para renomear primeiro.' });
                 return;
             }
             if (!targetName) {
-                this.$emit('notify', { type: 'error', message: '请输入新的命令组名称。' });
+                this.$emit('notify', { type: 'error', message: 'Insira um novo nome de grupo de comandos.' });
                 return;
             }
             if (sourceName === targetName) {
-                this.$emit('notify', { type: 'warning', message: '新旧命令组名称相同，无需重命名。' });
+                this.$emit('notify', { type: 'warning', message: 'Os grupos de comandos antigos e novos têm o mesmo nome e não precisam ser renomeados.' });
                 return;
             }
             if ((this.commandGroups || []).some(group => group.name === targetName)) {
-                this.$emit('notify', { type: 'error', message: '目标命令组名称已存在。' });
+                this.$emit('notify', { type: 'error', message: 'O nome do grupo de comandos de destino já existe.' });
                 return;
             }
 
             const sourceGroup = (this.commandGroups || []).find(group => group.name === sourceName);
             const commandIds = Array.isArray(sourceGroup?.commandIds) ? sourceGroup.commandIds : [];
             if (commandIds.length === 0) {
-                this.$emit('notify', { type: 'error', message: '未找到要重命名的命令组内容。' });
+                this.$emit('notify', { type: 'error', message: 'O conteúdo do grupo de comandos a ser renomeado não foi encontrado.' });
                 return;
             }
 
             const updated = await this.assignCommandsToGroup(
                 commandIds,
                 targetName,
-                '命令组已重命名：' + sourceName + ' -> ' + targetName
+                'O grupo de comando foi renomeado:' + sourceName + ' -> ' + targetName
             );
             if (updated > 0) {
                 this.selectedExistingGroupName = targetName;
@@ -1280,22 +1280,22 @@ window.CommandsTabMethods = {
 
         async ungroupSelectedCommands() {
             if (!this.hasSelection) {
-                this.$emit('notify', { type: 'error', message: '请先勾选命令。' });
+                this.$emit('notify', { type: 'error', message: 'Por favor, verifique o comando primeiro.' });
                 return;
             }
             await this.assignCommandsToGroup(
                 this.selectedCommandIds,
                 '',
-                '已解散选中命令的分组'
+                'O grupo de comandos selecionados foi descartado'
             );
         },
 
-        async setCommandsEnabled(commandIds, enabled, successPrefix, errorPrefix = '批量更新命令状态失败') {
+        async setCommandsEnabled(commandIds, enabled, successPrefix, errorPrefix = 'Falha no status do comando de atualização em lote') {
             const ids = Array.isArray(commandIds)
                 ? commandIds.map(id => String(id || '').trim()).filter(Boolean)
                 : [];
             if (ids.length === 0) {
-                this.$emit('notify', { type: 'error', message: '没有可更新的命令。' });
+                this.$emit('notify', { type: 'error', message: 'Não há comandos para atualizar.' });
                 return 0;
             }
 
@@ -1311,7 +1311,7 @@ window.CommandsTabMethods = {
                 const updated = Number(result.updated || 0);
                 this.$emit('notify', {
                     type: updated > 0 ? 'success' : 'warning',
-                    message: successPrefix + '（' + updated + ' 条）'
+                    message: successPrefix + '（' + updated + ' tira)'
                 });
                 await this.fetchCommands();
                 return updated;
@@ -1328,16 +1328,16 @@ window.CommandsTabMethods = {
                 .map(cmd => cmd?.id)
                 .filter(Boolean);
             if (commandIds.length === 0) {
-                this.$emit('notify', { type: 'warning', message: '当前没有可禁用命令。' });
+                this.$emit('notify', { type: 'warning', message: 'Atualmente não há comandos para desativar.' });
                 return;
             }
-            if (!confirm('确定全部禁用当前所有命令吗？')) return;
+            if (!confirm('Tem certeza de que deseja desativar todos os comandos atuais?')) return;
             this.closeBulkActionMenu();
             await this.setCommandsEnabled(
                 commandIds,
                 false,
-                '已全部禁用命令',
-                '全部禁用失败'
+                'Todos os comandos desativados',
+                'Falha ao desativar todos'
             );
         },
 
@@ -1347,24 +1347,24 @@ window.CommandsTabMethods = {
                 .map(cmd => cmd.id)
                 .filter(Boolean);
             if (disabledIds.length === 0) {
-                this.$emit('notify', { type: 'warning', message: '当前没有禁用命令。' });
+                this.$emit('notify', { type: 'warning', message: 'Atualmente não há comandos desabilitados.' });
                 return;
             }
-            if (!confirm('确定全部解禁当前所有禁用命令吗？')) return;
+            if (!confirm('Tem certeza de que deseja desbloquear todos os comandos atualmente desativados?')) return;
             this.closeBulkActionMenu();
             await this.setCommandsEnabled(
                 disabledIds,
                 true,
-                '已全部解禁命令',
-                '全部解禁失败'
+                'Todas as ordens de proibição foram suspensas',
+                'Todos os desbloqueios falharam'
             );
         },
 
         async setGroupEnabled(groupName, enabled) {
             const name = String(groupName || '').trim();
             if (!name) return 0;
-            const actionText = enabled ? '启用' : '禁用';
-            if (!confirm('确定' + actionText + '命令组「' + name + '」吗？')) return 0;
+            const actionText = enabled ? 'habilitar' : 'Desativar';
+            if (!confirm('Claro' + actionText + 'Grupo de comando "' + name + '」?')) return 0;
 
             this.groupWorking = true;
             try {
@@ -1377,12 +1377,12 @@ window.CommandsTabMethods = {
                 const updated = Number(result.updated || 0);
                 this.$emit('notify', {
                     type: updated > 0 ? 'success' : 'warning',
-                    message: '命令组已' + actionText + '：' + name + '（' + updated + ' 条）'
+                    message: 'O grupo de comando tem' + actionText + '：' + name + '（' + updated + ' tira)'
                 });
                 await this.fetchCommands();
                 return updated;
             } catch (e) {
-                this.$emit('notify', { type: 'error', message: actionText + '命令组失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: actionText + 'Grupo de comando falhou: ' + e.message });
                 return 0;
             } finally {
                 this.groupWorking = false;
@@ -1403,7 +1403,7 @@ window.CommandsTabMethods = {
             const name = String(groupName || '').trim();
             if (!name) return;
             this.closeGroupActionMenu();
-            if (!confirm('确定解散命令组「' + name + '」吗？')) return;
+            if (!confirm('Determinado a dissolver o grupo de comando"' + name + '」?')) return;
             this.groupWorking = true;
             try {
                 const result = await this.apiRequest('/api/command-groups/' + encodeURIComponent(name), {
@@ -1411,11 +1411,11 @@ window.CommandsTabMethods = {
                 });
                 this.$emit('notify', {
                     type: 'success',
-                    message: '命令组已解散：' + name + '（' + (result.updated || 0) + ' 条）'
+                    message: 'O grupo de comando foi dissolvido:' + name + '（' + (result.updated || 0) + ' tira)'
                 });
                 await this.fetchCommands();
             } catch (e) {
-                this.$emit('notify', { type: 'error', message: '解散命令组失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: 'Falha ao dissolver o grupo de comando: ' + e.message });
             } finally {
                 this.groupWorking = false;
             }
@@ -1440,13 +1440,13 @@ window.CommandsTabMethods = {
                 this.$emit('notify', {
                     type: result.ok ? 'success' : (result.partial_ok ? 'warning' : 'error'),
                     message: result.ok
-                        ? ('命令组已执行：' + name + '（成功 ' + executed + ' / ' + total + '）')
+                        ? ('O grupo de comandos foi executado:' + name + '（sucesso ' + executed + ' / ' + total + '）')
                         : (result.partial_ok
-                            ? ('命令组部分成功：' + name + '（成功 ' + executed + ' / ' + total + '，失败 ' + failures + '）')
-                            : ('命令组执行失败：' + name + '（成功 ' + executed + ' / ' + total + '，失败 ' + failures + '）'))
+                            ? ('O grupo de comandos foi parcialmente bem-sucedido:' + name + '（sucesso ' + executed + ' / ' + total + '，falhar ' + failures + '）')
+                            : ('Falha na execução do grupo de comandos:' + name + '（sucesso ' + executed + ' / ' + total + '，falhar ' + failures + '）'))
                 });
             } catch (e) {
-                this.$emit('notify', { type: 'error', message: '执行命令组失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: 'Falha ao executar o grupo de comandos: ' + e.message });
             } finally {
                 this.groupWorking = false;
             }
@@ -1507,7 +1507,7 @@ window.CommandsTabMethods = {
                 this.ensureValidPage();
             } catch (e) {
                 this.commands = previous;
-                this.$emit('notify', { type: 'error', message: '排序更新失败: ' + e.message });
+                this.$emit('notify', { type: 'error', message: 'Falha na atualização de classificação: ' + e.message });
             } finally {
                 this.reordering = false;
             }
@@ -1522,12 +1522,12 @@ window.CommandsTabMethods = {
         },
 
         getScopeLabel(scope) {
-            const map = { all: '所有标签页', domain: '指定域名', tab: '指定标签页' };
+            const map = { all: 'Todas as guias', domain: 'Especifique o nome de domínio', tab: 'Especifique a página da guia' };
             return map[scope] || scope;
         },
 
         formatTime(ts) {
-            if (!ts) return '从未';
+            if (!ts) return 'nunca';
             return new Date(ts * 1000).toLocaleString();
         }
 };

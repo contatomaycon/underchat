@@ -9,6 +9,7 @@ app/api/routes.py - API 路由聚合入口
 from fastapi import APIRouter
 
 # 导入子路由
+from app.api.audio import router as audio_router
 from app.api.chat import router as chat_router
 from app.api.config_routes import router as config_router
 from app.api.marketplace_routes import router as marketplace_router
@@ -20,6 +21,7 @@ from app.api.cmd_routes import router as cmd_router  # 🆕 命令系统
 router = APIRouter()
 
 # 聚合所有子路由
+router.include_router(audio_router)
 router.include_router(chat_router)
 router.include_router(config_router)
 router.include_router(marketplace_router)

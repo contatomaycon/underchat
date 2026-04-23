@@ -1,27 +1,25 @@
 /**
- * 可视化工作流编辑器 v2.0 - 简洁版
- * 特性：自动加载配置 + 元素定位 + 极简 UI
+ * Editor visual de fluxo de trabalho v2.0 - Versão simples  * Recurso: Carregar automaticamente a configuração + posicionamento do elemento + minimalista UI
  */
 (function() {
   'use strict';
   
   if (window.__WORKFLOW_EDITOR_INJECTED__) {
-    console.log('[WorkflowEditor] 已存在，重新显示');
+    console.log('[WorkflowEditor] Existe, reexibir');
     window.WorkflowEditor?.show?.();
     return;
   }
   window.__WORKFLOW_EDITOR_INJECTED__ = true;
   
-    // ========== 配置 ==========
+    // ========== Configuração ==========
     const TYPES = {
         COORD_CLICK: { color: 'rgba(249, 115, 22, 0.18)', border: '#F97316', name: 'Coord Click' },
-        CLICK: { color: 'rgba(59, 130, 246, 0.15)', border: '#3B82F6', name: '点击' },
-        INPUT: { color: 'rgba(16, 185, 129, 0.15)', border: '#10B981', name: '输入' },
-        READ: { color: 'rgba(139, 92, 246, 0.15)', border: '#8B5CF6', name: '读取' }
+        CLICK: { color: 'rgba(59, 130, 246, 0.15)', border: '#3B82F6', name: 'Clique' },
+        INPUT: { color: 'rgba(16, 185, 129, 0.15)', border: '#10B981', name: 'digitar' },
+        READ: { color: 'rgba(139, 92, 246, 0.15)', border: '#8B5CF6', name: 'ler' }
     };
 
-    // 🔧 后端 API 地址（从注入时传入，或使用默认值）
-    const BALL_SIZE = 32;
+    // 🔧 extremidade traseira API Endereço (transmitido desde o momento da injeção ou use o valor padrão)     const BALL_SIZE = 32;
     const BALL_RADIUS = BALL_SIZE / 2;
     const API_BASE = window.__WORKFLOW_EDITOR_API_BASE__ || 'http://127.0.0.1:9099';
 
@@ -34,7 +32,7 @@
         isVisible: true
     };
   
-  // ========== 样式 ==========
+  // ========== estilo ==========
   function injectStyles() {
     if (document.getElementById('wfe-styles')) return;
     const style = document.createElement('style');
@@ -199,7 +197,7 @@
     document.head.appendChild(style);
   }
   
-  // ========== DOM 工具 ==========
+  // ========== DOM ferramenta ==========
   function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
     Object.entries(props).forEach(([k, v]) => {
@@ -313,7 +311,7 @@
     return resolvedKey;
   }
   
-  // ========== 小球类 ==========
+  // ========== Bolas pequenas ==========
     class Ball {
         constructor(opts) {
             this.id = 'b' + Date.now() + Math.random().toString(36).slice(2, 7);
@@ -334,14 +332,10 @@
             this.element = null;
             this.isDragging = false;
             this.offset = { x: 0, y: 0 };
-            this.isWarning = false;       // 警告状态
-            this.warningMessage = '';     // 警告信息
-
-            this.render();
+            this.isWarning = false;       // estado de aviso             this.warningMessage = '';     // mensagem de aviso              this.render();
             this.bind();
 
-            // 不在构造函数中自动定位，由 addBall 统一处理
-        }
+            // Não posicionado automaticamente no construtor, por addBall Processamento unificado         }
     
       render() {
           const tc = TYPES[this.type];
@@ -412,8 +406,7 @@
             this.isWarning = true;
             this.warningMessage = message;
             this.element?.classList.add('warning');
-            // 更新 title 显示警告信息
-            const tc = TYPES[this.type];
+            // renovar title Mostrar mensagem de aviso             const tc = TYPES[this.type];
             this.element.title = `⚠️ #${this.seq} ${tc.name} - ${message}`;
         }
 
@@ -421,7 +414,7 @@
             this.isWarning = false;
             this.warningMessage = '';
             this.element?.classList.remove('warning');
-            this.updateSeq(this.seq); // 恢复正常 title
+            this.updateSeq(this.seq); // voltar ao normal title
         }
 
     destroy() {
@@ -451,7 +444,7 @@
     }
   }
   
-  // ========== 全局拖拽 ==========
+  // ========== arrasto global ==========
   document.addEventListener('mousemove', (e) => {
     const ball = state.steps.find(b => b.isDragging);
     if (ball) ball.move(e.clientX - ball.offset.x, e.clientY - ball.offset.y);
@@ -466,7 +459,7 @@
     });
   }, true);
   
-  // ========== 右键菜单 ==========
+  // ========== menu do botão direito ==========
   let currentMenu = null;
   
   function showMenu(ball, x, y) {
@@ -476,20 +469,19 @@
     const menu = el('div', { className: 'wfe-menu' });
     
     menu.appendChild(el('div', { className: 'wfe-menu-header' }, [
-      el('div', { className: 'wfe-menu-title' }, [`步骤 #${ball.seq}：${tc.name}`]),
+      el('div', { className: 'wfe-menu-title' }, [`etapa #${ball.seq}：${tc.name}`]),
       el('div', { className: 'wfe-menu-subtitle' }, [
-        ball.type === 'CLICK' ? '在此坐标模拟鼠标点击' :
-        ball.type === 'INPUT' ? '在此位置输入文本内容' :
-        '提取特定元素的文本'
+        ball.type === 'CLICK' ? 'Simule o clique do mouse nesta coordenada' :
+        ball.type === 'INPUT' ? 'Digite o texto neste local' :
+        'Extraia o texto de um elemento específico'
       ])
     ]));
     
     const body = el('div', { className: 'wfe-menu-body' });
     
-    // 延迟
-    if (ball.seq === 1) {
+    // Atraso     if (ball.seq === 1) {
       body.appendChild(el('div', { className: 'wfe-menu-item disabled' }, [
-        el('span', { className: 'wfe-menu-label' }, ['⚡ 起始步骤 (无延迟)'])
+        el('span', { className: 'wfe-menu-label' }, ['⚡ Etapas iniciais (Sem atraso)'])
       ]));
     } else {
       const delayInput = el('input', {
@@ -503,15 +495,14 @@
       delayInput.addEventListener('click', e => e.stopPropagation());
       
       body.appendChild(el('div', { className: 'wfe-menu-item' }, [
-        el('span', { className: 'wfe-menu-label' }, ['⏱️ 距上一步间隔 (ms)']),
+        el('span', { className: 'wfe-menu-label' }, ['⏱️ distância da etapa anterior (ms)']),
         delayInput
       ]));
     }
     
     body.appendChild(el('div', { className: 'wfe-divider' }));
     
-    // 类型特定
-    if (ball.type !== 'COORD_CLICK') {
+    // tipo específico     if (ball.type !== 'COORD_CLICK') {
       const keyInput = el('input', {
         type: 'text',
         className: 'wfe-menu-input wide',
@@ -533,12 +524,12 @@
     const optionalInput = el('input', {
       type: 'checkbox',
       checked: !ball.config.optional,
-      title: '勾选后找不到元素会报错；不勾选则跳过该步骤'
+      title: 'Se marcada, um erro será relatado se o elemento não puder ser encontrado; se desmarcado, esta etapa será ignorada.'
     });
     optionalInput.addEventListener('change', () => ball.config.optional = !optionalInput.checked);
     optionalInput.addEventListener('click', e => e.stopPropagation());
     body.appendChild(el('div', { className: 'wfe-menu-item' }, [
-      el('span', { className: 'wfe-menu-label' }, ['必需步骤']),
+      el('span', { className: 'wfe-menu-label' }, ['Etapas necessárias']),
       optionalInput
     ]));
 
@@ -556,11 +547,11 @@
       radiusInput.addEventListener('click', e => e.stopPropagation());
       
       body.appendChild(el('div', { className: 'wfe-menu-item' }, [
-        el('span', { className: 'wfe-menu-label' }, ['🎯 随机范围 (px)']),
+        el('span', { className: 'wfe-menu-label' }, ['🎯 intervalo aleatório (px)']),
         radiusInput
       ]));
       body.appendChild(el('div', { className: 'wfe-menu-item disabled' }, [
-        el('span', { className: 'wfe-menu-label' }, [`📍 坐标: (${Math.round(ball.x + BALL_RADIUS)}, ${Math.round(ball.y + BALL_RADIUS)})`])
+        el('span', { className: 'wfe-menu-label' }, [`📍 coordenada: (${Math.round(ball.x + BALL_RADIUS)}, ${Math.round(ball.y + BALL_RADIUS)})`])
       ]));
       if (ball.type === 'CLICK') {
         body.appendChild(el('div', { className: 'wfe-menu-item disabled' }, [
@@ -580,17 +571,17 @@
         type: 'text',
         className: 'wfe-menu-input wide',
         value: ball.config.text,
-        placeholder: '输入内容...'
+        placeholder: 'Insira o conteúdo...'
       });
       textInput.addEventListener('input', () => ball.config.text = textInput.value);
       textInput.addEventListener('click', e => e.stopPropagation());
       
       body.appendChild(el('div', { className: 'wfe-menu-item' }, [
-        el('span', { className: 'wfe-menu-label' }, ['✏️ 输入文本']),
+        el('span', { className: 'wfe-menu-label' }, ['✏️ Insira o texto']),
         textInput
       ]));
       body.appendChild(el('div', { className: 'wfe-menu-item disabled' }, [
-        el('span', { className: 'wfe-menu-label' }, [`📍 坐标: (${Math.round(ball.x + BALL_RADIUS)}, ${Math.round(ball.y + BALL_RADIUS)})`])
+        el('span', { className: 'wfe-menu-label' }, [`📍 coordenada: (${Math.round(ball.x + BALL_RADIUS)}, ${Math.round(ball.y + BALL_RADIUS)})`])
       ]));
       body.appendChild(el('div', { className: 'wfe-menu-item disabled' }, [
         el('span', { className: 'wfe-menu-label' }, [`Selector: ${ball.config.selector || '(unset)'}`])
@@ -605,11 +596,11 @@
       body.appendChild(inputPickBtn);
     } else if (ball.type === 'READ') {
       body.appendChild(el('div', { className: 'wfe-menu-item disabled' }, [
-        el('span', { className: 'wfe-menu-label' }, [`🔍 ${ball.config.selector || '(未设置)'}`])
+        el('span', { className: 'wfe-menu-label' }, [`🔍 ${ball.config.selector || '(não definido)'}`])
       ]));
       
       const pickBtn = el('div', { className: 'wfe-menu-item clickable' }, [
-        el('span', { className: 'wfe-menu-label', style: { color: '#8b5cf6' } }, ['🖱️ 重新拾取元素'])
+        el('span', { className: 'wfe-menu-label', style: { color: '#8b5cf6' } }, ['🖱️ Elemento de seleção'])
       ]);
       pickBtn.addEventListener('click', () => {
         hideMenu();
@@ -621,7 +612,7 @@
     body.appendChild(el('div', { className: 'wfe-divider' }));
     
     const delBtn = el('div', { className: 'wfe-menu-item clickable danger' }, [
-      el('span', { className: 'wfe-menu-label' }, ['❌ 删除此步骤'])
+      el('span', { className: 'wfe-menu-label' }, ['❌ Excluir esta etapa'])
     ]);
     delBtn.addEventListener('click', () => {
       removeBall(ball);
@@ -650,7 +641,7 @@
     }
   }, true);
   
-  // ========== 元素拾取 ==========
+  // ========== Seleção de elementos ==========
   let pickOverlay, pickTip, highlighted;
   
   function startPicker(ball) {
@@ -666,7 +657,7 @@
     };
     
     pickOverlay = el('div', { className: 'wfe-pick-overlay' });
-    pickTip = el('div', { className: 'wfe-pick-tip' }, ['🎯 点击元素选择 | ESC 取消']);
+    pickTip = el('div', { className: 'wfe-pick-tip' }, ['🎯 Clique na seleção do elemento | ESC Cancelar']);
     
     document.body.append(pickOverlay, pickTip);
     
@@ -713,12 +704,11 @@
     document.removeEventListener('keydown', onPickKey);
   }
   
-    // ========== 小球管理 ==========
+    // ========== gerenciamento de bola pequena ==========
     function addBall(type, config = {}) {
         const seq = state.steps.length + 1;
 
-        // 默认位置：错开排列
-        let x = Number.isFinite(config.x) ? config.x - BALL_RADIUS : 100 + (seq - 1) * 40;
+        // Posição padrão: escalonado         let x = Number.isFinite(config.x) ? config.x - BALL_RADIUS : 100 + (seq - 1) * 40;
         let y = Number.isFinite(config.y) ? config.y - BALL_RADIUS : window.innerHeight / 2;
         let elementNotFound = false;
 
@@ -731,9 +721,8 @@
                     y = pos.y - BALL_RADIUS;
                 }
             } else {
-                // 元素未找到，标记警告状态
-                elementNotFound = true;
-                console.warn(`[WorkflowEditor] ⚠️ 未找到元素: ${config.selector}`);
+                // Elemento não encontrado, marca com status de aviso                 elementNotFound = true;
+                console.warn(`[WorkflowEditor] ⚠️ elemento não encontrado: ${config.selector}`);
             }
         }
 
@@ -747,13 +736,11 @@
 
         state.steps.push(ball);
 
-        // 如果元素未找到，设置警告状态
-        if (elementNotFound) {
-            ball.setWarning(`元素不存在: ${config.selector}`);
+        // Defina o status de aviso se o elemento não for encontrado         if (elementNotFound) {
+            ball.setWarning(`elemento não existe: ${config.selector}`);
         }
 
-        // 仅在新建步骤时自动拾取；坐标点击直接使用保存的坐标
-        if (!config.selector && !Number.isFinite(config.x) && ['CLICK', 'INPUT', 'READ'].includes(type)) {
+        // Selecionado automaticamente apenas ao criar uma nova etapa; clique nas coordenadas para usar diretamente as coordenadas salvas         if (!config.selector && !Number.isFinite(config.x) && ['CLICK', 'INPUT', 'READ'].includes(type)) {
             setTimeout(() => startPicker(ball), 100);
         }
 
@@ -777,7 +764,7 @@
     return state.steps.map(b => b.toJSON());
   }
   
-    // ========== 🔧 加载现有配置（读取实际延迟）==========
+    // ========== 🔧 Carregar a configuração existente (ler a latência real)==========
     function loadFromConfig(config) {
         clearAll();
         state.siteConfig = {
@@ -787,21 +774,16 @@
         };
 
         const workflow = state.siteConfig.workflow;
-        let pendingDelay = 0; // 累积前面 WAIT 步骤的延迟
-
-        workflow.forEach((step, idx) => {
+        let pendingDelay = 0; // Acumular frente WAIT atraso de passo          workflow.forEach((step, idx) => {
             const action = step.action;
 
-            // 处理 WAIT 步骤：累积延迟给下一个动作
-            if (action === 'WAIT') {
+            // tratar WAIT Etapa: acumular atraso para a próxima ação             if (action === 'WAIT') {
                 const waitValue = parseFloat(step.value) || 0;
-                pendingDelay += waitValue * 1000; // 转为毫秒
-                return;
+                pendingDelay += waitValue * 1000; // Converter para milissegundos                 return;
             }
 
-            // 跳过 KEY_PRESS 等其他步骤
-            if (!['CLICK', 'COORD_CLICK', 'FILL_INPUT', 'STREAM_WAIT'].includes(action)) {
-                console.log(`[WorkflowEditor] 跳过步骤类型: ${action}`);
+            // pular sobre KEY_PRESS Aguarde outras etapas             if (!['CLICK', 'COORD_CLICK', 'FILL_INPUT', 'STREAM_WAIT'].includes(action)) {
+                console.log(`[WorkflowEditor] pular tipo de etapa: ${action}`);
                 return;
             }
 
@@ -849,33 +831,31 @@
             }
 
             addBall(type, stepConfig);
-            pendingDelay = 0; // 重置延迟
-        });
+            pendingDelay = 0; // atraso de redefinição         });
 
-        console.log(`[WorkflowEditor] ✅ 已加载 ${state.steps.length} 个步骤`);
+        console.log(`[WorkflowEditor] ✅ Carregado ${state.steps.length} passos`);
 
-        // 汇总显示未找到的元素
-        const warningBalls = state.steps.filter(b => b.isWarning);
+        // Resuma os elementos não encontrados         const warningBalls = state.steps.filter(b => b.isWarning);
         if (warningBalls.length > 0) {
             const missingSelectors = warningBalls
-                .map(b => `• ${b.config.targetKey || '未知'}: ${b.config.selector}`)
+                .map(b => `• ${b.config.targetKey || 'desconhecido'}: ${b.config.selector}`)
                 .join('\n');
 
             setTimeout(() => {
                 alert(
-                    `⚠️ 以下 ${warningBalls.length} 个选择器对应的元素当前不存在：\n\n` +
+                    `⚠️ abaixo ${warningBalls.length} O elemento correspondente ao seletor não existe atualmente:\n\n` +
                     `${missingSelectors}\n\n` +
-                    `可能原因：\n` +
-                    `1. 元素需要特定操作后才会出现（如输入框有内容时）\n` +
-                    `2. 页面尚未完全加载\n` +
-                    `3. 选择器已失效需要更新\n\n` +
-                    `标记为红色的小球表示元素未找到。`
+                    `Possíveis razões:\n` +
+                    `1. Os elementos requerem operações específicas antes de aparecerem (como quando a caixa de entrada tem conteúdo)\n` +
+                    `2. A página não foi totalmente carregada\n` +
+                    `3. O seletor é inválido e precisa ser atualizado\n\n` +
+                    `Uma bola marcada em vermelho indica que o elemento não foi encontrado.`
                 );
             }, 300);
         }
     }
     
-  // ========== 工具栏 ==========
+  // ========== Barra de ferramentas ==========
   let toolbar;
   
   function createToolbar() {
@@ -883,11 +863,11 @@
     
       toolbar = el('div', { className: 'wfe-toolbar', id: 'wfe-toolbar' }, [
           el('button', { className: 'wfe-btn', 'data-action': 'add-coord-click' }, ['+ Coord']),
-          el('button', { className: 'wfe-btn', 'data-action': 'add-click' }, ['+ 点击']),
-          el('button', { className: 'wfe-btn', 'data-action': 'add-input' }, ['+ 输入']),
-          el('button', { className: 'wfe-btn', 'data-action': 'add-read' }, ['+ 读取']),
-          el('button', { className: 'wfe-btn primary', 'data-action': 'save' }, ['💾 保存']),
-          el('button', { className: 'wfe-btn danger', 'data-action': 'clear' }, ['清空']),
+          el('button', { className: 'wfe-btn', 'data-action': 'add-click' }, ['+ Clique']),
+          el('button', { className: 'wfe-btn', 'data-action': 'add-input' }, ['+ digitar']),
+          el('button', { className: 'wfe-btn', 'data-action': 'add-read' }, ['+ ler']),
+          el('button', { className: 'wfe-btn primary', 'data-action': 'save' }, ['💾 manter']),
+          el('button', { className: 'wfe-btn danger', 'data-action': 'clear' }, ['Claro']),
           el('button', { className: 'wfe-btn', 'data-action': 'close' }, ['✖'])
       ]);
     
@@ -903,7 +883,7 @@
             case 'add-input': addBall('INPUT'); break;
             case 'add-read': addBall('READ'); break;
             case 'save': doSave(); break;
-            case 'clear': if (confirm('确定清空所有步骤？')) clearAll(); break;
+            case 'clear': if (confirm('Tem certeza de que deseja limpar todas as etapas?')) clearAll(); break;
             case 'close': hideEditor(); break;
         }
     });
@@ -917,8 +897,7 @@
         const steps = state.steps;
         const selectors = { ...(state.siteConfig.selectors || {}) };
 
-        // 构建新的 workflow 数组
-        const newWorkflow = [];
+        // construir novo workflow variedade         const newWorkflow = [];
 
         steps.forEach((ball, idx) => {
             const delayMs = ball.config.delay_ms || 0;
@@ -928,18 +907,15 @@
                     ? ensureBallTargetKey(ball, selectors)
                     : '';
 
-            // 如果有延迟，插入 WAIT 步骤
-            if (delayMs > 0) {
+            // Se houver um atraso, insira WAIT etapa             if (delayMs > 0) {
                 newWorkflow.push({
                     action: 'WAIT',
                     target: '',
                     optional: false,
-                    value: delayMs / 1000 // 转为秒
-                });
+                    value: delayMs / 1000 // Converter para segundos                 });
             }
 
-            // 插入实际动作步骤
-            if (ball.type === 'CLICK') {
+            // Insira etapas de ação reais             if (ball.type === 'CLICK') {
                 if (ball.config.selector && targetKey) {
                     selectors[targetKey] = ball.config.selector;
                 }
@@ -977,11 +953,10 @@
             }
         });
 
-        // 获取当前域名
-        const domain = window.location.hostname;
-        const presetName = window.__WORKFLOW_EDITOR_PRESET_NAME__ || state.presetName || '主预设';
+        // Obtenha o nome de domínio atual         const domain = window.location.hostname;
+        const presetName = window.__WORKFLOW_EDITOR_PRESET_NAME__ || state.presetName || 'predefinição mestre';
 
-        console.log('[WorkflowEditor] 保存配置:', { domain, presetName, workflow: newWorkflow, selectors });
+        console.log('[WorkflowEditor] Salvar configuração:', { domain, presetName, workflow: newWorkflow, selectors });
 
         try {
             const response = await fetch(`${API_BASE}/api/sites/${domain}/workflow`, {
@@ -1001,17 +976,16 @@
                     selectors,
                     workflow: newWorkflow
                 };
-                alert(`✅ 保存成功！\n\n已更新 ${steps.length} 个步骤到 ${domain} / ${presetName}`);
-                console.log('[WorkflowEditor] 保存结果:', result);
+                alert(`✅ Salvo com sucesso!\n\natualizado ${steps.length} passos para ${domain} / ${presetName}`);
+                console.log('[WorkflowEditor] Salvar resultados:', result);
             } else {
                 const error = await response.json();
-                alert(`❌ 保存失败: ${error.message || error.detail || '未知错误'}`);
+                alert(`❌ Falha ao salvar: ${error.message || error.detail || 'erro desconhecido'}`);
             }
         } catch (e) {
-            console.error('[WorkflowEditor] 保存异常:', e);
+            console.error('[WorkflowEditor] Salvar exceção:', e);
 
-            // 检测 CSP 或网络错误，提供降级方案
-            if (e.message?.includes('Failed to fetch') || e.message?.includes('Content Security Policy')) {
+            // Detecção CSP Ou erro de rede, forneça solução de downgrade             if (e.message?.includes('Failed to fetch') || e.message?.includes('Content Security Policy')) {
                 const exportData = {
                     ...(state.siteConfig || {}),
                     selectors,
@@ -1019,25 +993,23 @@
                 };
                 const jsonStr = JSON.stringify(exportData, null, 2);
 
-                // 尝试复制到剪贴板
-                try {
+                // Tente copiar para a área de transferência                 try {
                     await navigator.clipboard.writeText(jsonStr);
                     alert(
-                        `⚠️ 由于该网站安全策略限制，无法直接保存。\n\n` +
-                        `当前预设配置已复制到剪贴板。\n\n` +
-                        `请返回控制面板的「查看 JSON」，直接粘贴并保存当前预设。`
+                        `⚠️ Devido às restrições da política de segurança deste site, ele não pode ser salvo diretamente.\n\n` +
+                        `A configuração predefinida atual foi copiada para a área de transferência.\n\n` +
+                        `Por favor, retorne ao painel de controle "Visualizar JSON」，Cole e salve a predefinição atual diretamente.`
                     );
-                    console.log('[WorkflowEditor] 配置已复制到剪贴板:', exportData);
+                    console.log('[WorkflowEditor] Configuração copiada para a área de transferência:', exportData);
                 } catch (clipboardError) {
-                    // 剪贴板也失败，显示 JSON 让用户手动复制
-                    console.error('[WorkflowEditor] 剪贴板写入失败:', clipboardError);
+                    // A área de transferência também falha, mostrando JSON Permitir que os usuários copiem manualmente                     console.error('[WorkflowEditor] Falha na gravação da área de transferência:', clipboardError);
                     prompt(
-                        '⚠️ 无法自动保存或复制。请手动复制以下配置：',
+                        '⚠️ Não é possível salvar ou copiar automaticamente. Copie a seguinte configuração manualmente:',
                         jsonStr
                     );
                 }
             } else {
-                alert(`❌ 保存失败: ${e.message}`);
+                alert(`❌ Falha ao salvar: ${e.message}`);
             }
         }
     }
@@ -1056,9 +1028,9 @@
     endPicker();
   }
   
-  // ========== 初始化 ==========
+  // ========== inicialização ==========
     function init() {
-        console.log('[WorkflowEditor] 🚀 初始化中...');
+        console.log('[WorkflowEditor] 🚀 Inicializando...');
         injectStyles();
         createToolbar();
 
@@ -1067,32 +1039,30 @@
         state.presetName = window.__WORKFLOW_EDITOR_PRESET_NAME__ || null;
         const currentDomain = window.location.hostname;
 
-        // 域名校验
-        if (targetDomain && targetDomain !== currentDomain) {
+        // Verificação de nome de domínio         if (targetDomain && targetDomain !== currentDomain) {
             alert(
-                `❌ 域名不匹配！\n\n` +
-                `配置目标: ${targetDomain}\n` +
-                `当前页面: ${currentDomain}\n\n` +
-                `请导航到正确的网站后重试。`
+                `❌ O nome de domínio não corresponde!\n\n` +
+                `Configurar destino: ${targetDomain}\n` +
+                `página atual: ${currentDomain}\n\n` +
+                `Navegue até o site correto e tente novamente.`
             );
-            console.error(`[WorkflowEditor] 域名不匹配: 期望 ${targetDomain}, 实际 ${currentDomain}`);
+            console.error(`[WorkflowEditor] O nome de domínio não corresponde: esperar ${targetDomain}, real ${currentDomain}`);
             hideEditor();
             return;
         }
 
-        // 自动加载配置
-        if (config) {
+        // Carregar configuração automaticamente         if (config) {
             state.siteConfig = config;
             loadFromConfig(state.siteConfig);
         } else {
-            console.log('[WorkflowEditor] 未提供配置，进入空白编辑模式');
+            console.log('[WorkflowEditor] Nenhuma configuração fornecida, entre no modo de edição em branco');
             alert(
-                `⚠️ 未找到当前站点 (${currentDomain}) 的配置。\n\n` +
-                `你可以手动添加步骤，但保存功能可能不可用。`
+                `⚠️ Site atual não encontrado (${currentDomain}) configuração.\n\n` +
+                `Você pode adicionar etapas manualmente, mas o recurso de salvar pode não estar disponível.`
             );
         }
 
-        console.log('[WorkflowEditor] ✅ 编辑器已就绪');
+        console.log('[WorkflowEditor] ✅ Editor está pronto');
     }
   
   init();

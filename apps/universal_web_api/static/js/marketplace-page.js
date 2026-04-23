@@ -1,5 +1,5 @@
 (function () {
-    const MAIN_PRESET_NAME = '主预设';
+    const MAIN_PRESET_NAME = 'predefinição mestre';
     const REVIEW_TOKEN_STORAGE_KEY = 'marketplace_github_review_token';
 
     function deepClone(value) {
@@ -38,13 +38,13 @@
                 selectedSite: 'all',
                 sortBy: 'downloads_desc',
                 catalog: {
-                    source_name: '本地插件市场',
+                    source_name: 'Mercado local de plugins',
                     source_url: '',
                     repo_url: '',
                     upload_url: '',
                     warning: '',
                     submit_mode: 'local',
-                    submit_label: '投稿上传',
+                    submit_label: 'Envio e upload',
                     submit_help: '',
                     submit_target: '',
                     count: 0,
@@ -71,7 +71,7 @@
                     item_type: 'site_config',
                     title: '',
                     summary: '',
-                    author: '本地投稿',
+                    author: 'Postagem principal',
                     site_domain: '',
                     preset_name: '',
                     category: '',
@@ -87,9 +87,9 @@
         computed: {
             typeOptions() {
                 return [
-                    { value: 'all', label: '全部' },
-                    { value: 'site_config', label: '站点配置' },
-                    { value: 'command_bundle', label: '命令系统' }
+                    { value: 'all', label: 'todos' },
+                    { value: 'site_config', label: 'Configuração do site' },
+                    { value: 'command_bundle', label: 'sistema de comando' }
                 ];
             },
 
@@ -156,7 +156,7 @@
                 try {
                     return JSON.stringify(this.buildSubmissionPayload(), null, 2);
                 } catch (error) {
-                    return '// 预览暂不可用: ' + error.message;
+                    return '// A visualização ainda não está disponível: ' + error.message;
                 }
             },
 
@@ -165,42 +165,42 @@
             },
 
             submitEntryLabel() {
-                return safeString(this.catalog.submit_label) || (this.submitIsExternal ? '投稿到公共市场' : '投稿上传');
+                return safeString(this.catalog.submit_label) || (this.submitIsExternal ? 'Enviar para o mercado público' : 'Envio e upload');
             },
 
             reviewEntryLabel() {
                 if (this.reviewSession.can_review) {
                     return this.reviewSession.login
-                        ? ('审核权限 · ' + this.reviewSession.login)
-                        : '审核权限已连接';
+                        ? ('Permissões de auditoria · ' + this.reviewSession.login)
+                        : 'As permissões de auditoria estão conectadas';
                 }
                 if (this.reviewSession.connected) {
-                    return 'GitHub 审核';
+                    return 'GitHub Análise';
                 }
-                return 'GitHub 审核';
+                return 'GitHub Análise';
             },
 
             submitHelpText() {
                 return safeString(this.catalog.submit_help)
                     || (this.submitIsExternal
-                        ? '投稿会打开 GitHub 公共页面，完整预览 JSON 会先复制到剪贴板。'
-                        : '投稿会直接写入当前实例的本地市场。');
+                        ? 'As inscrições serão abertas GitHub Página pública, visualização completa JSON Ele será copiado primeiro para a área de transferência.'
+                        : 'As contribuições são enviadas diretamente para o mercado local da instância atual.');
             },
 
             sourceBadgeLabel() {
                 if (this.catalog.source_mode === 'hybrid') {
-                    return '公共索引 + 本地回退';
+                    return 'índice público + substituto local';
                 }
                 if (this.catalog.source_mode === 'remote') {
-                    return 'GitHub 公共索引';
+                    return 'GitHub índice público';
                 }
-                return '本地市场';
+                return 'mercado local';
             },
 
             emptyStateDescription() {
                 return this.submitIsExternal
-                    ? '可以先提交一个站点配置或命令系统到公共市场，审核收录后会显示在这里。'
-                    : '可以先上传一个站点配置或命令系统，列表会自动出现在这里。';
+                    ? 'Você pode primeiro enviar uma configuração de site ou sistema de comando ao mercado público, e ele será exibido aqui após revisão e inclusão.'
+                    : 'Você pode fazer upload de uma configuração de site ou sistema de comando primeiro, e a lista aparecerá automaticamente aqui.';
             }
         },
 
@@ -247,7 +247,7 @@
                 }
 
                 if (!response.ok) {
-                    let message = '请求失败';
+                    let message = 'Falha na solicitação';
                     if (payload && typeof payload === 'object') {
                         if (typeof payload.detail === 'string') {
                             message = payload.detail;
@@ -311,7 +311,7 @@
             async saveReviewToken() {
                 const token = safeString(this.reviewToken);
                 if (!token) {
-                    this.notify('请先粘贴 GitHub Token', 'warning');
+                    this.notify('Por favor cole primeiro GitHub Token', 'warning');
                     return;
                 }
 
@@ -339,15 +339,15 @@
                     this.reviewToken = token;
                     if (!silent) {
                         if (this.reviewSession.can_review) {
-                            this.notify('GitHub 审核权限已连接', 'success');
+                            this.notify('GitHub As permissões de auditoria estão conectadas', 'success');
                         } else {
-                            this.notify('GitHub 已连接，但当前账号没有仓库维护权限', 'warning');
+                            this.notify('GitHub Conectado, mas a conta corrente não tem permissões de manutenção de armazém', 'warning');
                         }
                     }
                 } catch (error) {
                     this.reviewSession = createEmptyReviewSession();
                     if (!silent) {
-                        this.notify('GitHub 审核连接失败: ' + error.message, 'error');
+                        this.notify('GitHub Falha na conexão de auditoria: ' + error.message, 'error');
                     }
                 } finally {
                     this.reviewChecking = false;
@@ -358,7 +358,7 @@
                 localStorage.removeItem(REVIEW_TOKEN_STORAGE_KEY);
                 this.reviewToken = '';
                 this.reviewSession = createEmptyReviewSession();
-                this.notify('已清除本地保存的 GitHub Token', 'success');
+                this.notify('Limpo salvo localmente GitHub Token', 'success');
             },
 
             formatNumber(value) {
@@ -367,14 +367,14 @@
             },
 
             typeLabel(type) {
-                return type === 'command_bundle' ? '命令系统' : '站点配置';
+                return type === 'command_bundle' ? 'sistema de comando' : 'Configuração do site';
             },
 
             reviewLabel(item) {
                 if (safeString(item && item.review_label)) {
                     return safeString(item.review_label);
                 }
-                return safeString(item && item.review_status) === 'pending' ? '待审核' : '';
+                return safeString(item && item.review_status) === 'pending' ? 'Revisão pendente' : '';
             },
 
             isPending(item) {
@@ -415,13 +415,13 @@
                     const suffix = force ? '?refresh=true' : '';
                     const data = await this.apiRequest('/api/marketplace' + suffix);
                     this.catalog = {
-                        source_name: '本地插件市场',
+                        source_name: 'Mercado local de plugins',
                         source_url: '',
                         repo_url: '',
                         upload_url: '',
                         warning: '',
                         submit_mode: 'local',
-                        submit_label: '投稿上传',
+                        submit_label: 'Envio e upload',
                         submit_help: '',
                         submit_target: '',
                         count: 0,
@@ -433,7 +433,7 @@
                     };
                 } catch (error) {
                     this.error = error.status === 401
-                        ? '请先在控制台里配置 API Token，再打开插件市场。'
+                        ? 'Por favor, configure-o no console primeiro API Token，Abra o mercado de plug-ins novamente.'
                         : error.message;
                 } finally {
                     this.loading = false;
@@ -442,16 +442,16 @@
 
             async reviewItem(item, action) {
                 if (!this.canReviewItem(item)) {
-                    this.notify('当前没有可用的审核权限', 'warning');
+                    this.notify('Atualmente não há permissão de moderação disponível', 'warning');
                     return;
                 }
                 if (action === 'approve' && !this.canImport(item)) {
-                    this.notify('这个投稿缺少 JSON，暂时不能直接通过', 'warning');
+                    this.notify('Este envio está faltando JSON，Não é possível passar diretamente no momento', 'warning');
                     return;
                 }
 
-                const actionLabel = action === 'approve' ? '通过' : '拒绝';
-                const confirmed = window.confirm(`确认要${actionLabel}这个投稿吗？`);
+                const actionLabel = action === 'approve' ? 'passar' : 'rejeitar';
+                const confirmed = window.confirm(`Confirme para${actionLabel}Enviar isso?`);
                 if (!confirmed) {
                     return;
                 }
@@ -466,10 +466,10 @@
                             body: JSON.stringify({ note: '' })
                         }
                     );
-                    this.notify((result && result.message) || ('已' + actionLabel + '投稿'), 'success');
+                    this.notify((result && result.message) || ('já' + actionLabel + 'Publicar'), 'success');
                     await this.loadCatalog({ force: true });
                 } catch (error) {
-                    this.notify(actionLabel + '投稿失败: ' + error.message, 'error');
+                    this.notify(actionLabel + 'Falha no envio: ' + error.message, 'error');
                 } finally {
                     this.reviewBusyId = '';
                 }
@@ -484,7 +484,7 @@
                     this.previewDetail = await this.apiRequest('/api/marketplace/items/' + encodeURIComponent(item.id));
                     this.showPreviewDialog = true;
                 } catch (error) {
-                    this.notify('加载预览失败: ' + error.message, 'error');
+                    this.notify('Falha ao carregar visualização: ' + error.message, 'error');
                 }
             },
 
@@ -493,7 +493,7 @@
             },
 
             async copyPreviewJson() {
-                await this.copyText(this.previewJsonText, '预览 JSON 已复制');
+                await this.copyText(this.previewJsonText, 'Visualização JSON Copiado');
             },
 
             async startImportFromPreview() {
@@ -520,10 +520,10 @@
 
                     this.pendingImport = detail;
                     this.importStrategy = 'overwrite';
-                    this.importPresetName = safeString(detail.name || detail.preset_name || '市场预设');
+                    this.importPresetName = safeString(detail.name || detail.preset_name || 'inadimplência de mercado');
                     this.showImportDialog = true;
                 } catch (error) {
-                    this.notify('加载导入内容失败: ' + error.message, 'error');
+                    this.notify('Falha ao carregar conteúdo importado: ' + error.message, 'error');
                 } finally {
                     this.busyId = '';
                 }
@@ -551,7 +551,7 @@
                     }
                     this.closeImportDialog();
                 } catch (error) {
-                    this.notify('导入失败: ' + error.message, 'error');
+                    this.notify('Falha na importação: ' + error.message, 'error');
                 } finally {
                     this.importSaving = false;
                 }
@@ -685,19 +685,19 @@
             getSingleImportedSite(detail) {
                 const siteConfig = detail && detail.site_config;
                 if (!this.validateImportedConfig(siteConfig)) {
-                    throw new Error('市场配置格式无效');
+                    throw new Error('O formato de configuração do mercado é inválido');
                 }
 
                 const domains = Object.keys(siteConfig || {});
                 if (domains.length !== 1) {
-                    throw new Error('当前只支持单站点配置导入');
+                    throw new Error('Atualmente, apenas há suporte para importação de configuração de site único.');
                 }
 
                 const domain = domains[0];
                 const normalized = this.normalizeConfig(siteConfig);
                 const site = normalized[domain];
                 if (!site) {
-                    throw new Error('站点配置解析失败');
+                    throw new Error('Falha na análise da configuração do site');
                 }
 
                 return { domain, site };
@@ -708,14 +708,14 @@
                 const nextConfig = deepClone(this.siteConfigs);
                 nextConfig[imported.domain] = imported.site;
                 await this.saveSiteConfigs(nextConfig);
-                this.notify('站点配置已覆盖导入: ' + imported.domain, 'success');
+                this.notify('A configuração do site foi substituída e importada: ' + imported.domain, 'success');
             },
 
             async applySiteSaveAsPreset() {
                 const imported = this.getSingleImportedSite(this.pendingImport);
                 const newPresetName = safeString(this.importPresetName);
                 if (!newPresetName) {
-                    throw new Error('请填写另存为的预设名称');
+                    throw new Error('Preencha o nome padrão de Salvar como');
                 }
 
                 const nextConfig = deepClone(this.siteConfigs);
@@ -724,7 +724,7 @@
                     : { default_preset: newPresetName, presets: {} };
 
                 if (targetSite.presets && targetSite.presets[newPresetName]) {
-                    throw new Error('该预设名称已存在，请换一个名称');
+                    throw new Error('O nome padrão já existe, altere o nome');
                 }
 
                 const importedPresets = imported.site.presets || {};
@@ -733,7 +733,7 @@
                     : Object.keys(importedPresets)[0];
 
                 if (!sourcePresetName) {
-                    throw new Error('导入内容缺少预设');
+                    throw new Error('O conteúdo importado não contém predefinições');
                 }
 
                 targetSite.presets = targetSite.presets || {};
@@ -744,7 +744,7 @@
 
                 nextConfig[imported.domain] = targetSite;
                 await this.saveSiteConfigs(nextConfig);
-                this.notify('站点配置已另存为预设: ' + newPresetName, 'success');
+                this.notify('Configuração do site salva como predefinida: ' + newPresetName, 'success');
             },
 
             async loadCommands() {
@@ -756,7 +756,7 @@
                     this.commandOptions = commands;
                     return commands;
                 } catch (error) {
-                    this.notify('加载命令列表失败: ' + error.message, 'error');
+                    this.notify('Falha ao carregar a lista de comandos: ' + error.message, 'error');
                     return [];
                 } finally {
                     this.commandLoading = false;
@@ -775,7 +775,7 @@
                 const bundle = detail && detail.command_bundle;
                 const commands = Array.isArray(bundle && bundle.commands) ? bundle.commands : [];
                 if (!commands.length) {
-                    throw new Error('命令包内容为空');
+                    throw new Error('O conteúdo do pacote de comandos está vazio');
                 }
 
                 const idMap = {};
@@ -816,7 +816,7 @@
                     });
                 }
 
-                this.notify('命令系统已导入，共 ' + importedCommands.length + ' 条命令', 'success');
+                this.notify('O sistema de comando foi importado, um total de ' + importedCommands.length + ' comando', 'success');
             },
 
             resetSubmitForm() {
@@ -824,7 +824,7 @@
                     item_type: 'site_config',
                     title: '',
                     summary: '',
-                    author: '本地投稿',
+                    author: 'Postagem principal',
                     site_domain: '',
                     preset_name: '',
                     category: '',
@@ -845,7 +845,7 @@
                         this.syncPresetSelection();
                     }
                 } catch (error) {
-                    this.notify('加载站点配置失败: ' + error.message, 'error');
+                    this.notify('Falha ao carregar a configuração do site: ' + error.message, 'error');
                 }
             },
 
@@ -856,7 +856,7 @@
             async setSubmitType(type) {
                 this.submitForm.item_type = type;
                 if (type === 'command_bundle') {
-                    this.submitForm.category = '命令系统';
+                    this.submitForm.category = 'sistema de comando';
                     if (!this.commandOptions.length) {
                         await this.loadCommands();
                     }
@@ -875,7 +875,7 @@
                 }
 
                 if (!this.submitForm.category
-                    || this.submitForm.category === '命令系统'
+                    || this.submitForm.category === 'sistema de comando'
                     || this.availableSites.includes(this.submitForm.category)) {
                     this.submitForm.category = this.submitForm.site_domain || '';
                 }
@@ -910,23 +910,23 @@
             buildSubmissionPayload() {
                 const title = safeString(this.submitForm.title);
                 const summary = safeString(this.submitForm.summary);
-                const author = safeString(this.submitForm.author || '本地投稿') || '本地投稿';
+                const author = safeString(this.submitForm.author || 'Postagem principal') || 'Postagem principal';
                 const category = safeString(this.submitForm.category);
                 const compatibility = safeString(this.submitForm.compatibility);
                 const version = safeString(this.submitForm.version || '1.0.0') || '1.0.0';
                 const tags = this.parseTags(this.submitForm.tagsText);
 
                 if (!title) {
-                    throw new Error('请填写标题');
+                    throw new Error('Por favor preencha o título');
                 }
                 if (!summary) {
-                    throw new Error('请填写简介');
+                    throw new Error('Por favor preencha a introdução');
                 }
 
                 if (this.submitForm.item_type === 'command_bundle') {
                     const commands = this.getSelectedCommands();
                     if (!commands.length) {
-                        throw new Error('请至少选择一个命令');
+                        throw new Error('Selecione pelo menos um comando');
                     }
 
                     return {
@@ -934,7 +934,7 @@
                         title,
                         summary,
                         author,
-                        category: category || '命令系统',
+                        category: category || 'sistema de comando',
                         compatibility,
                         version,
                         tags,
@@ -947,18 +947,18 @@
 
                 const siteDomain = safeString(this.submitForm.site_domain);
                 if (!siteDomain) {
-                    throw new Error('请选择站点');
+                    throw new Error('Selecione um site');
                 }
 
                 const siteConfig = this.siteConfigs[siteDomain];
                 if (!siteConfig || !siteConfig.presets) {
-                    throw new Error('当前站点没有可投稿的配置');
+                    throw new Error('O site atual não tem nenhuma configuração com a qual contribuir.');
                 }
 
                 const presetName = safeString(this.submitForm.preset_name || siteConfig.default_preset || MAIN_PRESET_NAME);
                 const presetConfig = siteConfig.presets[presetName];
                 if (!presetConfig) {
-                    throw new Error('请选择可用预设');
+                    throw new Error('Selecione uma predefinição disponível');
                 }
 
                 return {
@@ -984,7 +984,7 @@
             },
 
             async copySubmissionPreview() {
-                await this.copyText(this.submissionPreviewText, '投稿预览已复制');
+                await this.copyText(this.submissionPreviewText, 'Visualização do envio copiada');
             },
 
             buildSubmissionJsonBlock(payload) {
@@ -1016,19 +1016,19 @@
                         this.openLink(result.submission_url);
                         this.notify(
                             copied
-                                ? (result.message || '已打开 GitHub 公共投稿页，请把已复制的 JSON 代码块粘贴到“预览 JSON”下面')
-                                : '已打开 GitHub 公共投稿页，但剪贴板复制失败，请手动复制 JSON 预览',
+                                ? (result.message || 'Aberto GitHub Página de submissão pública, por favor coloque a cópia JSON Cole o bloco de código em“Visualização JSON”sob')
+                                : 'Aberto GitHub Página de envio público, mas a cópia da área de transferência falhou, copie manualmente JSON Visualização',
                             copied ? 'success' : 'warning'
                         );
                         this.closeSubmitDialog();
                         return;
                     }
 
-                    this.notify((result && result.message) || '投稿已加入本地市场', 'success');
+                    this.notify((result && result.message) || 'O envio foi adicionado ao mercado local', 'success');
                     this.closeSubmitDialog();
                     await this.loadCatalog({ force: true });
                 } catch (error) {
-                    this.notify('投稿失败: ' + error.message, 'error');
+                    this.notify('Falha no envio: ' + error.message, 'error');
                 } finally {
                     this.submitSaving = false;
                 }
@@ -1048,7 +1048,7 @@
                 if (copied) {
                     this.notify(successMessage, 'success');
                 } else {
-                    this.notify('复制失败，请检查浏览器权限', 'error');
+                    this.notify('Falha na cópia, verifique as permissões do navegador', 'error');
                 }
             },
 

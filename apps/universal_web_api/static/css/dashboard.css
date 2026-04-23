@@ -1,4 +1,4 @@
-/* ==================== 基础样式 ==================== */
+/* ==================== Estilo básico ==================== */
 [v-cloak] {
     display: none;
 }
@@ -60,7 +60,7 @@ body.app-mounted #app-shell {
     filter: brightness(1.06);
 }
 
-/* ==================== 滚动条 ==================== */
+/* ==================== barra de rolagem ==================== */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -83,7 +83,7 @@ body.app-mounted #app-shell {
     background: #718096;
 }
 
-/* ==================== 设置页容器 ==================== */
+/* ==================== Definir contêiner de página ==================== */
 .settings-container {
     max-width: 56rem;
     margin: 0 auto;
@@ -91,7 +91,7 @@ body.app-mounted #app-shell {
     padding-top: 0.5rem;
 }
 
-/* ==================== 设置分组卡片 ==================== */
+/* ==================== Configurar cartões de grupo ==================== */
 .settings-group {
     background-color: #ffffff;
     border-radius: 0.5rem;
@@ -107,7 +107,7 @@ body.app-mounted #app-shell {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
-/* ==================== 设置分组头部 ==================== */
+/* ==================== Definir cabeçalho do grupo ==================== */
 .settings-group-header {
     padding: 1rem 1.5rem;
     background-color: #f9fafb;
@@ -132,7 +132,7 @@ body.app-mounted #app-shell {
     background-color: #111827;
 }
 
-/* ==================== 设置分组标题 ==================== */
+/* ==================== Definir título do grupo ==================== */
 .settings-group-title {
     display: flex;
     align-items: center;
@@ -146,12 +146,12 @@ body.app-mounted #app-shell {
     color: #f9fafb;
 }
 
-/* ==================== 设置分组内容 ==================== */
+/* ==================== Definir conteúdo do grupo ==================== */
 .settings-group-content {
     padding: 0 1.5rem;
 }
 
-/* ==================== 设置行 ==================== */
+/* ==================== definir linha ==================== */
 .settings-row {
     display: flex;
     flex-direction: column;
@@ -176,7 +176,7 @@ body.app-mounted #app-shell {
     border-color: #374151;
 }
 
-/* ==================== 设置行左右布局 ==================== */
+/* ==================== Definir o layout da linha esquerda e direita ==================== */
 .settings-left {
     flex: 1 1 auto;
     padding-right: 1rem;
@@ -190,7 +190,7 @@ body.app-mounted #app-shell {
     justify-content: flex-end;
 }
 
-/* ==================== 设置标签和描述 ==================== */
+/* ==================== Definir tags e descrições ==================== */
 .settings-label {
     font-size: 0.875rem;
     font-weight: 500;
@@ -212,7 +212,7 @@ body.app-mounted #app-shell {
     color: #9ca3af;
 }
 
-/* ==================== 设置输入框 ==================== */
+/* ==================== Definir caixa de entrada ==================== */
 .settings-input {
     width: 100%;
     padding: 0.5rem 0.75rem;
@@ -249,7 +249,7 @@ body.app-mounted #app-shell {
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.45);
 }
 
-/* ==================== 开关组件 ==================== */
+/* ==================== conjunto de interruptor ==================== */
 .toggle-label {
     position: relative;
     display: inline-flex;

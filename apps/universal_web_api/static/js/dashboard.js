@@ -1,66 +1,66 @@
 const { createApp } = Vue
 
-// ========== 元素定义 Schema ==========
+// ========== Definição de elemento Schema ==========
 
 const DEFAULT_SELECTOR_DEFINITIONS = [
     {
         key: "input_box",
-        description: "用户输入文本的输入框（textarea 或 contenteditable 元素）",
+        description: "A caixa de entrada onde o usuário insere o texto (textarea ou contenteditable elemento)",
         enabled: true,
         required: true
     },
     {
         key: "send_btn",
-        description: "发送消息的按钮（通常是 type=submit 或带有发送图标的按钮）",
+        description: "botão para enviar uma mensagem (geralmente type=submit ou um botão com um ícone de envio)",
         enabled: true,
         required: true
     },
     {
         key: "result_container",
-        description: "AI 回复内容的容器（仅包含 AI 的输出文本，不含用户消息）",
+        description: "AI Um contêiner para conteúdo de resposta (contendo apenas AI texto de saída, excluindo mensagens do usuário)",
         enabled: true,
         required: true
     },
     {
         key: "new_chat_btn",
-        description: "新建对话的按钮（点击后开始新的对话）",
+        description: "Botão para criar uma nova conversa (clique para iniciar uma nova conversa)",
         enabled: true,
         required: false
     },
     {
         key: "message_wrapper",
-        description: "消息完整容器（包裹单条消息的外层元素，用于多节点拼接）",
+        description: "Contêiner completo de mensagem (elemento externo que envolve uma única mensagem, usado para emenda de vários nós)",
         enabled: false,
         required: false
     },
     {
         key: "generating_indicator",
-        description: "生成中指示器（如停止按钮、加载动画，用于检测是否还在输出）",
+        description: "Gerando indicador (como botão de parada, animação de carregamento, usado para detectar se a saída ainda está sendo produzida)",
         enabled: false,
         required: false
     }
 ];
 
-// ========== 配置 Schema 定义 ==========
+// ========== Configuração Schema definição ==========
 
-// 浏览器常量 Schema（纯中文显示）
+// Constantes do navegador Schema(Exibição chinesa pura)
 const BROWSER_CONSTANTS_SCHEMA = {
     connection: {
-        label: '连接配置',
+        label: 'Configuração de conexão',
         icon: '🔌',
         items: {
             DEFAULT_PORT: {
-                label: '调试端口',
-                desc: 'Chrome DevTools 远程调试端口',
+                label: 'Porta de depuração',
+                desc: 'Chrome DevTools Porta de depuração remota',
                 type: 'number',
                 min: 1024,
                 max: 65535,
                 default: 9222
             },
             CONNECTION_TIMEOUT: {
-                label: '连接超时',
-                unit: '秒',
-                desc: '浏览器连接超时时间',
+                label: 'Tempo limite de conexão',
+                unit: 'Segundo',
+                desc: 'Tempo limite de conexão do navegador',
                 type: 'number',
                 min: 1,
                 max: 60,
@@ -69,37 +69,37 @@ const BROWSER_CONSTANTS_SCHEMA = {
         }
     },
     delay: {
-        label: '操作延迟',
+        label: 'Atraso na operação',
         icon: '⏱️',
-        desc: '模拟人类操作的随机延迟范围',
+        desc: 'Faixas de latência aleatórias que simulam a operação humana',
         items: {
             STEALTH_DELAY_MIN: {
-                label: '隐身延迟下限',
-                unit: '秒',
+                label: 'Limite inferior de atraso furtivo',
+                unit: 'Segundo',
                 type: 'number',
                 step: 0.05,
                 min: 0,
                 default: 0.1
             },
             STEALTH_DELAY_MAX: {
-                label: '隐身延迟上限',
-                unit: '秒',
+                label: 'Limite de atraso furtivo',
+                unit: 'Segundo',
                 type: 'number',
                 step: 0.05,
                 min: 0,
                 default: 0.3
             },
             ACTION_DELAY_MIN: {
-                label: '动作延迟下限',
-                unit: '秒',
+                label: 'Limite inferior de atraso de ação',
+                unit: 'Segundo',
                 type: 'number',
                 step: 0.05,
                 min: 0,
                 default: 0.15
             },
             ACTION_DELAY_MAX: {
-                label: '动作延迟上限',
-                unit: '秒',
+                label: 'Limite superior de atraso de ação',
+                unit: 'Segundo',
                 type: 'number',
                 step: 0.05,
                 min: 0,
@@ -108,29 +108,29 @@ const BROWSER_CONSTANTS_SCHEMA = {
         }
     },
     element: {
-        label: '元素查找',
+        label: 'Pesquisa de elemento',
         icon: '🔍',
         items: {
             DEFAULT_ELEMENT_TIMEOUT: {
-                label: '默认等待时间',
-                unit: '秒',
-                desc: '查找元素的默认超时',
+                label: 'Tempo de espera padrão',
+                unit: 'Segundo',
+                desc: 'Tempo limite padrão para encontrar elementos',
                 type: 'number',
                 min: 1,
                 default: 3
             },
             FALLBACK_ELEMENT_TIMEOUT: {
-                label: '备用等待时间',
-                unit: '秒',
-                desc: '首次失败后的重试超时',
+                label: 'Tempo de espera de backup',
+                unit: 'Segundo',
+                desc: 'Tempo limite de nova tentativa após a primeira falha',
                 type: 'number',
                 min: 0.5,
                 default: 1
             },
             ELEMENT_CACHE_MAX_AGE: {
-                label: '缓存有效期',
-                unit: '秒',
-                desc: '元素位置缓存时间',
+                label: 'Período de validade do cache',
+                unit: 'Segundo',
+                desc: 'Tempo de cache da posição do elemento',
                 type: 'number',
                 min: 1,
                 default: 5.0
@@ -138,87 +138,87 @@ const BROWSER_CONSTANTS_SCHEMA = {
         }
     },
     logging: {
-        label: '日志',
+        label: 'registro',
         icon: '🪄',
         items: {
             LOG_INFO_CUTE_MODE: {
-                label: 'INFO 日志可爱化',
-                desc: '开启后，日志列表会优先显示润色后的 INFO 文案；原始日志不会丢失，鼠标悬停日志正文仍可查看原文。',
+                label: 'INFO Deixe seu diário fofo',
+                desc: 'Após ligá-lo, a lista de logs dará prioridade à exibição do arquivo polido INFO Redação; o log original não será perdido e o texto original ainda poderá ser visualizado passando o mouse sobre o texto do log.',
                 type: 'switch',
                 default: false
             },
             LOG_DEBUG_CUTE_MODE: {
-                label: 'DEBUG 日志可爱化',
-                desc: '开启后，日志列表会优先显示润色后的主要 DEBUG 文案；原始日志不会丢失，鼠标悬停日志正文仍可查看原文。',
+                label: 'DEBUG Deixe seu diário fofo',
+                desc: 'Após ativá-lo, a lista de logs dará prioridade à exibição dos principais arquivos modificados. DEBUG Redação; o log original não será perdido e o texto original ainda poderá ser visualizado passando o mouse sobre o texto do log.',
                 type: 'switch',
                 default: false
             }
         }
     },
     stream: {
-        label: '流式监控',
+        label: 'Monitoramento de streaming',
         icon: '📡',
-        desc: '控制 AI 响应的检测频率和超时判定',
+        desc: 'controlar AI Frequência de detecção de resposta e determinação de tempo limite',
         items: {
             STREAM_CHECK_INTERVAL_MIN: {
-                label: '检查间隔下限',
-                unit: '秒',
+                label: 'Verifique o limite inferior do intervalo',
+                unit: 'Segundo',
                 type: 'number',
                 step: 0.05,
                 min: 0.05,
                 default: 0.1
             },
             STREAM_CHECK_INTERVAL_MAX: {
-                label: '检查间隔上限',
-                unit: '秒',
+                label: 'Verifique o limite superior do intervalo',
+                unit: 'Segundo',
                 type: 'number',
                 step: 0.1,
                 min: 0.1,
                 default: 1.0
             },
             STREAM_CHECK_INTERVAL_DEFAULT: {
-                label: '默认检查间隔',
-                unit: '秒',
+                label: 'Intervalo de verificação padrão',
+                unit: 'Segundo',
                 type: 'number',
                 step: 0.05,
                 min: 0.05,
                 default: 0.3
             },
             STREAM_SILENCE_THRESHOLD: {
-                label: '静默超时阈值',
-                unit: '秒',
-                desc: '无新内容多久后判定完成',
+                label: 'Limite de tempo limite silencioso',
+                unit: 'Segundo',
+                desc: 'Quanto tempo leva para determinar se não há conteúdo novo?',
                 type: 'number',
                 min: 1,
                 default: 8.0
             },
             STREAM_SILENCE_THRESHOLD_FALLBACK: {
-                label: '静默超时备用',
-                unit: '秒',
-                desc: '慢速模型的备用阈值',
+                label: 'Backup de tempo limite silencioso',
+                unit: 'Segundo',
+                desc: 'Limite alternativo para modelos lentos',
                 type: 'number',
                 min: 1,
                 default: 12
             },
             STREAM_MAX_TIMEOUT: {
-                label: '最大超时',
-                unit: '秒',
-                desc: '单次响应的绝对超时上限',
+                label: 'tempo limite máximo',
+                unit: 'Segundo',
+                desc: 'Limite de tempo limite absoluto para uma única resposta',
                 type: 'number',
                 min: 60,
                 default: 600
             },
             STREAM_INITIAL_WAIT: {
-                label: '初始等待',
-                unit: '秒',
-                desc: '等待首次响应的最长时间',
+                label: 'espera inicial',
+                unit: 'Segundo',
+                desc: 'Tempo máximo de espera pela primeira resposta',
                 type: 'number',
                 min: 10,
                 default: 180
             },
             STREAM_STABLE_COUNT_THRESHOLD: {
-                label: '稳定判定次数',
-                desc: '连续多少次检查不变才判定完成',
+                label: 'Número de julgamentos estáveis',
+                desc: 'Quantas verificações consecutivas devem ser feitas antes que seja determinado que está completo?',
                 type: 'number',
                 min: 1,
                 default: 8
@@ -226,56 +226,56 @@ const BROWSER_CONSTANTS_SCHEMA = {
         }
     },
     streamAdvanced: {
-        label: '流式监控（高级）',
+        label: 'Monitoramento de streaming (avançado)',
         icon: '⚙️',
         collapsed: true,
         items: {
             STREAM_RERENDER_WAIT: {
-                label: '重渲染等待',
-                unit: '秒',
-                desc: '等待页面重新渲染',
+                label: 'Renderizar espera',
+                unit: 'Segundo',
+                desc: 'Aguarde a página ser renderizada novamente',
                 type: 'number',
                 step: 0.1,
                 default: 0.5
             },
             STREAM_CONTENT_SHRINK_TOLERANCE: {
-                label: '内容收缩容忍次数',
-                desc: '允许内容变短的次数',
+                label: 'Tempos de tolerância à redução de conteúdo',
+                desc: 'O número de vezes que o conteúdo pode ser encurtado',
                 type: 'number',
                 min: 0,
                 default: 3
             },
             STREAM_MIN_VALID_LENGTH: {
-                label: '最小有效长度',
-                unit: '字符',
-                desc: '响应被视为有效的最小长度',
+                label: 'Comprimento mínimo válido',
+                unit: 'personagem',
+                desc: 'Comprimento mínimo para que uma resposta seja considerada válida',
                 type: 'number',
                 min: 1,
                 default: 10
             },
             STREAM_INITIAL_ELEMENT_WAIT: {
-                label: '初始元素等待',
-                unit: '秒',
+                label: 'elemento inicial espera',
+                unit: 'Segundo',
                 type: 'number',
                 min: 1,
                 default: 10
             },
             STREAM_MAX_ABNORMAL_COUNT: {
-                label: '最大异常次数',
-                desc: '连续异常多少次后中止',
+                label: 'Número máximo de exceções',
+                desc: 'Quantas exceções consecutivas serão feitas antes de abortar?',
                 type: 'number',
                 min: 1,
                 default: 5
             },
             STREAM_MAX_ELEMENT_MISSING: {
-                label: '最大元素丢失次数',
+                label: 'Número máximo de elementos ausentes',
                 type: 'number',
                 min: 1,
                 default: 10
             },
             STREAM_CONTENT_SHRINK_THRESHOLD: {
-                label: '内容收缩阈值',
-                desc: '内容缩减超过此比例视为异常',
+                label: 'Limite de redução de conteúdo',
+                desc: 'A redução de conteúdo que exceda esta proporção é considerada anormal',
                 type: 'number',
                 step: 0.05,
                 min: 0,
@@ -285,19 +285,19 @@ const BROWSER_CONSTANTS_SCHEMA = {
         }
     },
     validation: {
-        label: '输入验证',
+        label: 'Validação de entrada',
         icon: '✅',
         items: {
             MAX_MESSAGE_LENGTH: {
-                label: '消息最大长度',
-                unit: '字符',
+                label: 'Comprimento máximo da mensagem',
+                unit: 'personagem',
                 type: 'number',
                 min: 1000,
                 default: 100000
             },
             MAX_MESSAGES_COUNT: {
-                label: '消息最大数量',
-                unit: '条',
+                label: 'Número máximo de mensagens',
+                unit: 'tira',
                 type: 'number',
                 min: 1,
                 default: 100
@@ -305,49 +305,49 @@ const BROWSER_CONSTANTS_SCHEMA = {
         }
     },
 
-    // 🆕 图片发送相关
+    // 🆕 Envio de imagem relacionado
     image: {
-        label: '图片发送',
+        label: 'Envio de imagem',
         icon: '🖼️',
         items: {
             UPLOAD_HISTORY_IMAGES: {
-                label: '上传历史对话中的图片',
-                desc: '开启：会把历史消息里出现的图片也一起上传；关闭：只上传本次用户消息里的图片',
+                label: 'Faça upload de fotos de conversas históricas',
+                desc: 'Ativado: também serão carregadas imagens que aparecem em mensagens históricas; desligado: apenas as imagens nas mensagens deste usuário serão carregadas.',
                 type: 'switch',
                 default: true
             }
         }
     },
     globalIntercept: {
-        label: '全局网络拦截',
+        label: 'Interceptação de rede global',
         icon: '🛡️',
         collapsed: true,
         items: {
             GLOBAL_NETWORK_INTERCEPTION_ENABLED: {
-                label: '启用常驻监听',
-                desc: '空闲标签页持续监听网络事件；任务执行时会自动让位给工作流监听',
+                label: 'Habilitar escuta residente',
+                desc: 'As guias inativas continuam monitorando eventos de rede; quando as tarefas são executadas, elas darão lugar automaticamente ao monitoramento do fluxo de trabalho.',
                 type: 'switch',
                 default: false
             },
             GLOBAL_NETWORK_INTERCEPTION_LISTEN_PATTERN: {
-                label: '监听模式',
-                desc: 'DrissionPage listen.start() 的 pattern，通常用 http',
+                label: 'Modo de escuta',
+                desc: 'DrissionPage listen.start() de pattern, geralmente usado http',
                 type: 'text',
                 default: 'http'
             },
             GLOBAL_NETWORK_INTERCEPTION_WAIT_TIMEOUT: {
-                label: '轮询超时',
-                unit: '秒',
-                desc: 'wait() 单次等待超时，越小响应越快但开销更高',
+                label: 'Tempo limite da pesquisa',
+                unit: 'Segundo',
+                desc: 'wait() Tempo limite de espera único: quanto menor o tempo limite, mais rápida será a resposta, mas maior será a sobrecarga.',
                 type: 'number',
                 step: 0.1,
                 min: 0.1,
                 default: 0.5
             },
             GLOBAL_NETWORK_INTERCEPTION_RETRY_DELAY: {
-                label: '异常重试间隔',
-                unit: '秒',
-                desc: '监听器异常后重启间隔',
+                label: 'Intervalo de novas tentativas de exceção',
+                unit: 'Segundo',
+                desc: 'Intervalo de reinicialização após exceção do ouvinte',
                 type: 'number',
                 step: 0.1,
                 min: 0.2,
@@ -356,29 +356,29 @@ const BROWSER_CONSTANTS_SCHEMA = {
         }
     },
     commandPeriodic: {
-        label: '命令调度',
+        label: 'agendamento de comando',
         icon: '⚡',
         collapsed: true,
         items: {
             COMMAND_PERIODIC_CHECK_ENABLED: {
-                label: '启用全局周期检测',
-                desc: '控制命令系统的空闲标签页周期扫描开关',
+                label: 'Habilitar detecção de ciclo global',
+                desc: 'Controla a chave de verificação periódica da página da guia inativa do sistema de comando',
                 type: 'switch',
                 default: true
             },
             COMMAND_PERIODIC_CHECK_INTERVAL_SEC: {
-                label: '全局检测间隔',
-                unit: '秒',
-                desc: '命令系统的默认周期检测间隔',
+                label: 'Intervalo de detecção global',
+                unit: 'Segundo',
+                desc: 'O intervalo de detecção periódica padrão do sistema de comando',
                 type: 'number',
                 step: 0.5,
                 min: 1,
                 default: 8.0
             },
             COMMAND_PERIODIC_CHECK_JITTER_SEC: {
-                label: '全局检测抖动',
-                unit: '秒',
-                desc: '为周期检测增加少量随机抖动，避免固定节奏碰撞',
+                label: 'Detecção global de jitter',
+                unit: 'Segundo',
+                desc: 'Adicione uma pequena quantidade de instabilidade aleatória à detecção de período para evitar colisões de ritmo fixo',
                 type: 'number',
                 step: 0.2,
                 min: 0,
@@ -387,44 +387,44 @@ const BROWSER_CONSTANTS_SCHEMA = {
         }
     },
     tabPool: {
-        label: '标签页池',
+        label: 'conjunto de guias',
         icon: '🗂️',
         collapsed: true,
         items: {
             TAB_POOL_MAX_TABS: {
-                label: '最大标签页数',
-                desc: '超过后不再自动纳入新的标签页',
+                label: 'Número máximo de páginas de guia',
+                desc: 'Ele não será mais incluído automaticamente na página nova guia após a data de expiração.',
                 type: 'number',
                 min: 1,
                 default: 5
             },
             TAB_POOL_MIN_TABS: {
-                label: '最小保留标签页数',
-                desc: '标签页池尽量维持的最小可用数量',
+                label: 'Número mínimo de páginas de guia a serem mantidas',
+                desc: 'O número mínimo de guias disponíveis que o pool tenta manter',
                 type: 'number',
                 min: 1,
                 default: 1
             },
             TAB_POOL_IDLE_TIMEOUT: {
-                label: '空闲超时',
-                unit: '秒',
-                desc: '标签页空闲多久后允许被回收或重置',
+                label: 'tempo limite de inatividade',
+                unit: 'Segundo',
+                desc: 'Quanto tempo depois de uma guia ficar inativa antes que ela possa ser reciclada ou redefinida',
                 type: 'number',
                 min: 10,
                 default: 300
             },
             TAB_POOL_ACQUIRE_TIMEOUT: {
-                label: '占用等待超时',
-                unit: '秒',
-                desc: '获取标签页会话的最大等待时间',
+                label: 'Ocupar tempo limite de espera',
+                unit: 'Segundo',
+                desc: 'Obtenha o tempo máximo de espera de uma sessão de guia',
                 type: 'number',
                 min: 1,
                 default: 60
             },
             TAB_POOL_STUCK_TIMEOUT: {
-                label: '卡死强制释放超时',
-                unit: '秒',
-                desc: '标签页忙碌超过该时长后，系统会尝试取消任务并强制释放',
+                label: 'Tempo limite de liberação forçada travado',
+                unit: 'Segundo',
+                desc: 'Depois que a guia estiver ocupada por mais tempo, o sistema tentará cancelar a tarefa e forçar a liberação',
                 type: 'number',
                 min: 10,
                 default: 180
@@ -433,40 +433,40 @@ const BROWSER_CONSTANTS_SCHEMA = {
     }
 };
 
-// 环境变量 Schema
+// variáveis ​​de ambiente Schema
 const ENV_CONFIG_SCHEMA = {
     service: {
         apply: 'service',
-        label: '服务配置',
+        label: 'Configuração de serviço',
         icon: '🖥️',
         items: {
             APP_HOST: {
-                label: '监听地址',
-                desc: '0.0.0.0 允许外部访问，127.0.0.1 仅本地',
+                label: 'endereço de escuta',
+                desc: '0.0.0.0 Permitir acesso externo,127.0.0.1 apenas locais',
                 type: 'text',
                 default: '127.0.0.1'
             },
             APP_PORT: {
-                label: '监听端口',
+                label: 'porta de escuta',
                 type: 'number',
                 min: 1,
                 max: 65535,
                 default: 8199
             },
             PUBLIC_BASE_URL: {
-                label: '公开访问地址',
-                desc: '用于生成返回给客户端的可访问链接，例如图片下载地址',
+                label: 'Endereço publicamente acessível',
+                desc: 'Usado para gerar links acessíveis retornados ao cliente, como endereços de download de imagens',
                 type: 'text',
                 default: 'http://127.0.0.1:8199'
             },
             APP_DEBUG: {
-                label: '调试模式',
-                desc: '开启 API 文档和详细错误',
+                label: 'modo de depuração',
+                desc: 'ligar API Documentação e erros detalhados',
                 type: 'switch',
                 default: true
             },
             LOG_LEVEL: {
-                label: '日志级别',
+                label: 'Nível de registro',
                 type: 'select',
                 options: ['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                 default: 'INFO'
@@ -475,35 +475,35 @@ const ENV_CONFIG_SCHEMA = {
     },
     auth: {
         apply: 'service',
-        label: '认证配置',
+        label: 'Configuração de autenticação',
         icon: '🔐',
         items: {
             AUTH_ENABLED: {
-                label: '启用认证',
+                label: 'ativar autenticação',
                 type: 'switch',
                 default: false
             },
             AUTH_TOKEN: {
                 label: 'Bearer Token',
                 type: 'password',
-                desc: 'AUTH_ENABLED=true 时必须设置',
+                desc: 'AUTH_ENABLED=true Deve ser definido quando',
                 default: ''
             }
         }
     },
     cors: {
         apply: 'service',
-        label: 'CORS 配置',
+        label: 'CORS Configuração',
         icon: '🌐',
         items: {
             CORS_ENABLED: {
-                label: '启用 CORS',
+                label: 'habilitar CORS',
                 type: 'switch',
                 default: true
             },
             CORS_ORIGINS: {
-                label: '允许的跨域源',
-                desc: '多个用逗号分隔，* 表示全部允许',
+                label: 'Fontes de origem cruzada permitidas',
+                desc: 'Separe múltiplos com vírgulas,* Indica que todos são permitidos',
                 type: 'text',
                 default: '*'
             }
@@ -511,31 +511,31 @@ const ENV_CONFIG_SCHEMA = {
     },
     browser: {
         apply: 'launcher',
-        label: '浏览器配置',
+        label: 'Configuração do navegador',
         icon: '🌍',
         items: {
             BROWSER_PORT: {
-                label: 'Chrome 调试端口',
+                label: 'Chrome Porta de depuração',
                 type: 'number',
                 min: 1024,
                 max: 65535,
                 default: 9222
             },
             BROWSER_PATH: {
-                label: '自定义浏览器路径',
-                desc: '可选，留空时自动检测 Chrome、Edge、Brave 等浏览器',
+                label: 'Caminho do navegador personalizado',
+                desc: 'Opcional, detectado automaticamente quando deixado em branco Chrome、Edge、Brave Aguarde o navegador',
                 type: 'text',
                 default: ''
             },
             BROWSER_PROFILE_DIR: {
-                label: '浏览器配置目录',
-                desc: '留空时使用项目内的 chrome_profile 目录',
+                label: 'Diretório de configuração do navegador',
+                desc: 'Se deixado em branco, use o chrome_profile Índice',
                 type: 'text',
                 default: ''
             },
             BROWSER_PROFILE_NAME: {
-                label: '浏览器配置名称',
-                desc: '例如 Default、Profile 1',
+                label: 'Nome de configuração do navegador',
+                desc: 'Por exemplo Default、Profile 1',
                 type: 'text',
                 default: ''
             }
@@ -543,24 +543,24 @@ const ENV_CONFIG_SCHEMA = {
     },
     proxy: {
         apply: 'launcher',
-        label: '代理配置',
+        label: 'Configuração do agente',
         icon: '🔀',
         items: {
             PROXY_ENABLED: {
-                label: '启用代理',
-                desc: '开启后浏览器将通过代理服务器访问网络',
+                label: 'Habilitar proxy',
+                desc: 'Quando ativado, o navegador acessará a Internet através de um servidor proxy',
                 type: 'switch',
                 default: false
             },
             PROXY_ADDRESS: {
-                label: '代理地址',
-                desc: '支持 socks5:// 或 http:// 协议',
+                label: 'endereço proxy',
+                desc: 'apoiar socks5:// ou http:// protocolo',
                 type: 'text',
                 default: 'socks5://127.0.0.1:1080'
             },
             PROXY_BYPASS: {
-                label: '绕过代理',
-                desc: '不走代理的地址，多个用逗号分隔',
+                label: 'ignorar proxy',
+                desc: 'Não use endereços proxy. Separe vários endereços com vírgulas.',
                 type: 'text',
                 default: 'localhost,127.0.0.1'
             }
@@ -568,16 +568,16 @@ const ENV_CONFIG_SCHEMA = {
     },
     dashboard: {
         apply: 'service',
-        label: 'Dashboard 配置',
+        label: 'Dashboard Configuração',
         icon: '📊',
         items: {
             DASHBOARD_ENABLED: {
-                label: '启用 Dashboard',
+                label: 'habilitar Dashboard',
                 type: 'switch',
                 default: true
             },
             DASHBOARD_FILE: {
-                label: 'Dashboard 文件路径',
+                label: 'Dashboard caminho do arquivo',
                 type: 'text',
                 default: 'static/index.html'
             }
@@ -585,18 +585,18 @@ const ENV_CONFIG_SCHEMA = {
     },
     update: {
         apply: 'launcher',
-        label: '更新配置',
+        label: 'Atualizar configuração',
         icon: '🔄',
         items: {
             AUTO_UPDATE_ENABLED: {
-                label: '启用自动更新',
-                desc: '启动脚本会在启动前检查并应用更新',
+                label: 'Habilite atualizações automáticas',
+                desc: 'O script de inicialização verifica e aplica atualizações antes da inicialização',
                 type: 'switch',
                 default: true
             },
             GITHUB_REPO: {
-                label: 'GitHub 仓库',
-                desc: '自动更新检查使用的仓库，格式为 owner/repo',
+                label: 'GitHub armazém',
+                desc: 'O armazém utilizado pela verificação automática de atualização, o formato é owner/repo',
                 type: 'text',
                 default: 'lumingya/universal-web-api'
             }
@@ -604,9 +604,9 @@ const ENV_CONFIG_SCHEMA = {
     },
     ai: {
         apply: 'service',
-        label: 'AI 分析配置',
+        label: 'AI Configuração de análise',
         icon: '🤖',
-        desc: '辅助 AI 用于自动分析页面结构',
+        desc: 'Auxiliar AI Usado para analisar automaticamente a estrutura da página',
         items: {
             HELPER_API_KEY: {
                 label: 'API Key',
@@ -614,25 +614,25 @@ const ENV_CONFIG_SCHEMA = {
                 default: ''
             },
             HELPER_BASE_URL: {
-                label: 'API 地址',
+                label: 'API endereço',
                 type: 'text',
                 default: 'http://127.0.0.1:5104/v1'
             },
             HELPER_API_PROVIDER: {
-                label: 'API 提供商',
-                desc: '支持 auto、openai、gemini、claude',
+                label: 'API provedor',
+                desc: 'apoiar auto、openai、gemini、claude',
                 type: 'select',
                 options: ['auto', 'openai', 'gemini', 'claude'],
                 default: 'auto'
             },
             HELPER_MODEL: {
-                label: '模型名称',
+                label: 'Nome do modelo',
                 type: 'text',
                 default: 'gemini-3.0-pro'
             },
             MAX_HTML_CHARS: {
-                label: 'HTML 最大字符数',
-                desc: '超过会截断以节省 Token',
+                label: 'HTML Número máximo de caracteres',
+                desc: 'Truncado se excedido para salvar Token',
                 type: 'number',
                 min: 10000,
                 default: 120000
@@ -641,11 +641,11 @@ const ENV_CONFIG_SCHEMA = {
     },
     files: {
         apply: 'service',
-        label: '配置文件',
+        label: 'Arquivo de configuração',
         icon: '📁',
         items: {
             SITES_CONFIG_FILE: {
-                label: '站点配置文件路径',
+                label: 'Caminho do arquivo de configuração do site',
                 type: 'text',
                 default: 'config/sites.json'
             }
@@ -653,17 +653,17 @@ const ENV_CONFIG_SCHEMA = {
     }
 };
 
-// ========== Vue 应用 ==========
+// ========== Vue aplicativo ==========
 
 const app = createApp({
     data() {
         return {
-            // 数据
+            // dados
             sites: {},
             currentDomain: null,
             searchQuery: '',
 
-            // UI 状态
+            // UI estado
             toasts: [],
             toastCounter: 0,
             hasLoadedSettings: false,
@@ -678,32 +678,32 @@ const app = createApp({
             showSelectorMenu: false,
             darkMode: false,
 
-            // Tab 切换（新增 settings）
+            // Tab Alternar (novo settings）
             activeTab: 'config',  // 'config' | 'logs' | 'settings'
 
-            // 折叠面板状态
+            // Recolher status do painel
             selectorCollapsed: true,
             workflowCollapsed: true,
 
-            // 浏览器状态
+            // Status do navegador
             browserStatus: {
                 connected: false,
                 tab_url: null,
                 tab_title: null
             },
 
-            // 认证
+            // Certificação
             authEnabled: false,
             tempToken: '',
 
-            // 选择器测试
+            // Teste seletor
             testSelectorInput: '',
             testTimeout: 2,
             testResult: null,
             isTesting: false,
             testHighlight: false,
 
-            // 日志相关
+            // Relacionado ao registro
             logs: [],
             logLevelFilter: 'ALL',
             pauseLogs: false,
@@ -711,23 +711,23 @@ const app = createApp({
             lastLogSeq: 0,
             logPollingTimer: null,
 
-            // ========== 导入功能 ==========
+            // ========== Função de importação ==========
             showImportDialog: false,
             importMode: 'merge',  // 'merge' | 'replace'
-            importType: 'full',   // 'full' | 'single' (新增：导入类型)
+            importType: 'full',   // 'full' | 'single' (Novo: tipos de importação)
             importedConfig: null,
             importFileName: '',
-            singleSiteImportDomain: '',  // 新增：单站点导入时的域名
+            singleSiteImportDomain: '',  // Novo: Nome de domínio ao importar um único site
 
-            // ========== 系统设置 ==========
-            // 环境配置
+            // ========== Configurações do sistema ==========
+            // Configuração do ambiente
             envConfig: {},
             envConfigOriginal: {},
             envCollapsed: {},
             isSavingEnv: false,
             isLoadingEnv: false,
 
-            // 浏览器常量
+            // Constantes do navegador
             browserConstants: {},
             browserConstantsOriginal: {},
             browserConstantsRaw: {},
@@ -735,18 +735,18 @@ const app = createApp({
             isSavingConstants: false,
             isLoadingConstants: false,
 
-            // 更新白名单
+            // Atualizar lista de permissões
             updatePreserveOptions: [],
             updatePreserveSelected: [],
             updatePreserveSelectedOriginal: [],
             isSavingUpdatePreserve: false,
             isLoadingUpdatePreserve: false,
 
-            // Schema 引用
+            // Schema Citar
             envSchema: ENV_CONFIG_SCHEMA,
             browserConstantsSchema: BROWSER_CONSTANTS_SCHEMA,
 
-            // ========== 元素定义管理 ==========
+            // ========== Gerenciamento de definição de elemento ==========
             selectorDefinitions: [],
             selectorDefinitionsOriginal: [],
             isLoadingDefinitions: false,
@@ -760,14 +760,14 @@ const app = createApp({
             },
             editingDefinitionIndex: null,
 
-            // ========== 插件市场 ==========
+            // ========== mercado de plug-ins ==========
             marketplaceCatalog: {
                 items: [],
                 count: 0,
                 total_downloads: 0,
                 default_sort: 'downloads',
                 source_mode: 'local',
-                source_name: '配置市场',
+                source_name: 'mercado de alocação',
                 source_url: '',
                 upload_url: '',
                 warning: ''
@@ -790,7 +790,7 @@ const app = createApp({
                 item_type: 'site_config',
                 title: '',
                 summary: '',
-                author: '本地投稿',
+                author: 'Postagem principal',
                 site_domain: '',
                 category: '',
                 preset_name: '',
@@ -819,7 +819,7 @@ const app = createApp({
             return !!localStorage.getItem('api_token')
         },
 
-        // 过滤后的日志
+        // Registros filtrados
         filteredLogs() {
             if (this.logLevelFilter === 'ALL') {
                 return this.logs;
@@ -827,22 +827,22 @@ const app = createApp({
             return this.logs.filter(log => log.level === this.logLevelFilter);
         },
 
-        // 检测环境配置是否有变更
+        // Verifique se a configuração do ambiente mudou
         envConfigChanged() {
             return JSON.stringify(this.envConfig) !== JSON.stringify(this.envConfigOriginal);
         },
 
-        // 检测浏览器常量是否有变更
+        // Detectar se as constantes do navegador foram alteradas
         browserConstantsChanged() {
             return JSON.stringify(this.browserConstants) !== JSON.stringify(this.browserConstantsOriginal);
         },
 
-        // 检测元素定义是否有变更
+        // Detectar se a definição do elemento foi alterada
         selectorDefinitionsChanged() {
             return JSON.stringify(this.selectorDefinitions) !== JSON.stringify(this.selectorDefinitionsOriginal);
         },
 
-        // 检测更新白名单是否有变更
+        // Detectar se há alterações na lista de permissões atualizada
         updatePreserveChanged() {
             return JSON.stringify(this.updatePreserveSelected) !== JSON.stringify(this.updatePreserveSelectedOriginal);
         }
@@ -858,7 +858,7 @@ const app = createApp({
     },
 
     mounted() {
-        // 读取夜间模式设置
+        // Leia as configurações do modo noturno
         let savedDarkMode = null
         try {
             savedDarkMode = localStorage.getItem('darkMode')
@@ -872,18 +872,18 @@ const app = createApp({
         }
         this.applyDarkMode()
 
-        // 初始化折叠状态
+        // Inicializar estado dobrado
         this.initCollapsedStates()
 
         this.initializeDashboard()
 
-        // 启动日志轮询（每 1 秒）
+        // Iniciar pesquisa de log (a cada 1 Segundo)
 
-        // 加载系统设置
+        // Carregar configurações do sistema
 
-        // 加载元素定义
+        // Carregar definição de elemento
 
-        // 加载提取器列表
+        // Carregar lista de extratores
     },
 
     beforeUnmount() {
@@ -920,20 +920,20 @@ const app = createApp({
             clearInterval(this.logPollingTimer)
             this.logPollingTimer = null
         },
-        // ========== 初始化 ==========
+        // ========== inicialização ==========
 
         initCollapsedStates() {
-            // 环境配置分组默认折叠
+            // O agrupamento de configuração de ambiente é recolhido por padrão
             for (const key of Object.keys(ENV_CONFIG_SCHEMA)) {
                 this.envCollapsed[key] = true;
             }
-            // 浏览器常量分组默认折叠
+            // O agrupamento de constantes do navegador é recolhido por padrão
             for (const [key] of Object.entries(BROWSER_CONSTANTS_SCHEMA)) {
                 this.browserConstantsCollapsed[key] = true;
             }
         },
 
-        // ========== 夜间模式 ==========
+        // ========== Modo noturno ==========
 
         applyDarkMode() {
             const isDark = !!this.darkMode
@@ -958,10 +958,10 @@ const app = createApp({
             } catch (e) {
                 // ignore storage failures and keep runtime theme switch available
             }
-            this.notify('已切换到' + (this.darkMode ? '夜间' : '日间') + '模式', 'success')
+            this.notify('Mudou para' + (this.darkMode ? 'à noite' : 'dia') + 'modelo', 'success')
         },
 
-        // ========== 选择器菜单 ==========
+        // ========== Menu seletor ==========
 
         toggleSelectorMenu() {
             this.showSelectorMenu = !this.showSelectorMenu
@@ -971,7 +971,7 @@ const app = createApp({
             this.showSelectorMenu = false
         },
 
-        // ========== API 调用 ==========
+        // ========== API chamar ==========
 
         async apiRequest(url, options = {}) {
             const token = localStorage.getItem('api_token')
@@ -992,26 +992,26 @@ const app = createApp({
 
                 if (!response.ok) {
                     if (response.status === 401) {
-                        this.notify('认证失败，请检查 Token', 'error')
+                        this.notify('Falha na autenticação, verifique Token', 'error')
                         this.showTokenDialog = true
                         throw new Error('UNAUTHORIZED')
                     }
 
                     const errorData = await response.json().catch(() => ({}))
-                    throw new Error(errorData.detail || '请求失败 (' + response.status + ')')
+                    throw new Error(errorData.detail || 'Falha na solicitação (' + response.status + ')')
                 }
 
                 return await response.json()
             } catch (error) {
                 if (error.message !== 'UNAUTHORIZED') {
-                    console.error('API 请求错误:', error)
+                    console.error('API Erro de solicitação:', error)
                 }
                 throw error
             }
         },
 
         async loadConfig(silent) {
-            // 防御：@click="loadConfig" 会传入 Event 对象，需要过滤
+            // defesa:@click="loadConfig" será passado em Event O objeto precisa ser filtrado
             if (typeof silent !== 'boolean') {
                 silent = false
             }
@@ -1026,11 +1026,11 @@ const app = createApp({
                 }
 
                 if (!silent) {
-                    this.notify('配置已刷新 (' + Object.keys(this.sites).length + ' 个站点)', 'success')
+                    this.notify('A configuração foi atualizada (' + Object.keys(this.sites).length + ' sites)', 'success')
                 }
                 return true
             } catch (error) {
-                this.notify('加载配置失败: ' + error.message, 'error')
+                this.notify('Falha ao carregar a configuração: ' + error.message, 'error')
                 this.sites = {}
                 return false
             } finally {
@@ -1049,9 +1049,9 @@ const app = createApp({
                     method: 'POST',
                     body: JSON.stringify({ config: this.sites })
                 })
-                this.notify('配置已保存', 'success')
+                this.notify('Configuração salva', 'success')
             } catch (error) {
-                this.notify('保存失败: ' + error.message, 'error')
+                this.notify('Falha ao salvar: ' + error.message, 'error')
             } finally {
                 this.isSaving = false
             }
@@ -1064,9 +1064,9 @@ const app = createApp({
             ])
 
             if (configOk || healthOk) {
-                this.notify('状态已刷新', 'success')
+                this.notify('O status foi atualizado', 'success')
             } else {
-                this.notify('刷新失败', 'error')
+                this.notify('Falha na atualização', 'error')
             }
         },
 
@@ -1082,9 +1082,9 @@ const app = createApp({
                     return true
                 }
 
-                console.error('状态检查失败:', error)
+                console.error('Falha na verificação de status:', error)
                 if (!silent) {
-                    this.notify('状态检查失败: ' + error.message, 'error')
+                    this.notify('Falha na verificação de status: ' + error.message, 'error')
                 }
                 return false
             }
@@ -1096,7 +1096,7 @@ const app = createApp({
 
         async testSelector(key, selector) {
             if (!selector) {
-                this.notify('选择器为空', 'warning')
+                this.notify('O seletor está vazio', 'warning')
                 return
             }
 
@@ -1127,19 +1127,19 @@ const app = createApp({
 
                 if (result.success) {
                     if (result.count > 1) {
-                        this.notify('✅ 找到 ' + result.count + ' 个元素' + (this.testHighlight ? '，已全部高亮' : ''), 'success')
+                        this.notify('✅ virar para cima ' + result.count + ' elementos' + (this.testHighlight ? ', todos destacados' : ''), 'success')
                     } else {
-                        this.notify('✅ 选择器有效' + (this.testHighlight ? '，已高亮显示' : ''), 'success')
+                        this.notify('✅ O seletor é válido' + (this.testHighlight ? ', destacado' : ''), 'success')
                     }
                 } else {
-                    this.notify('❌ 选择器无效', 'error')
+                    this.notify('❌ Seletor inválido', 'error')
                 }
             } catch (error) {
                 this.testResult = {
                     success: false,
                     message: error.message
                 }
-                this.notify('测试失败: ' + error.message, 'error')
+                this.notify('teste falhou: ' + error.message, 'error')
             } finally {
                 this.isTesting = false
             }
@@ -1147,11 +1147,11 @@ const app = createApp({
 
         async testCurrentSite() {
             if (!this.currentConfig || Object.keys(this.currentConfig.selectors).length === 0) {
-                this.notify('当前站点没有选择器', 'warning')
+                this.notify('Não há seletor para o site atual', 'warning')
                 return
             }
 
-            this.notify('开始批量测试...', 'info')
+            this.notify('Iniciar testes em lote...', 'info')
 
             let successCount = 0
             let failCount = 0
@@ -1181,14 +1181,14 @@ const app = createApp({
                 }
             }
 
-            this.notify('测试完成: ' + successCount + ' 成功, ' + failCount + ' 失败',
+            this.notify('Teste concluído: ' + successCount + ' sucesso, ' + failCount + ' falhar',
                 failCount > 0 ? 'warning' : 'success')
         },
 
         async reanalyzeCurrentSite() {
             if (!this.currentDomain) return
 
-            if (!confirm('确定要删除 ' + this.currentDomain + ' 的配置并重新分析吗？\n\n重新分析需要浏览器当前正在访问该站点。')) {
+            if (!confirm('Confirme para excluir ' + this.currentDomain + ' configurar e reanalisar?\n\nA reanálise requer que o navegador esteja visitando o site no momento.')) {
                 return
             }
 
@@ -1197,17 +1197,17 @@ const app = createApp({
                     method: 'DELETE'
                 })
 
-                this.notify('配置已删除，请刷新页面让 AI 重新分析', 'info')
+                this.notify('A configuração foi excluída. Atualize a página. AI Reanalisar', 'info')
 
                 delete this.sites[this.currentDomain]
                 this.currentDomain = null
             } catch (error) {
-                this.notify('删除失败: ' + error.message, 'error')
+                this.notify('Falha na exclusão: ' + error.message, 'error')
             }
         },
-        // ========== 图片配置 (新增) ==========
+        // ========== Configuração de imagem (Novo) ==========
 
-        // 🆕 更新图片配置
+        // 🆕 Atualizar configuração de imagem
         async updateImageConfig(newConfig) {
             if (!this.currentDomain || !this.currentConfig) return;
 
@@ -1221,44 +1221,44 @@ const app = createApp({
                     method: 'PUT',
                     body: JSON.stringify(payload)
                 });
-                this.notify('图片配置已保存', 'success');
+                this.notify('Configuração de imagem salva', 'success');
             } catch (error) {
-                console.error('保存图片配置失败:', error);
-                this.notify('保存图片配置失败: ' + error.message, 'error');
+                console.error('Falha ao salvar a configuração da imagem:', error);
+                this.notify('Falha ao salvar a configuração da imagem: ' + error.message, 'error');
             }
         },
 
-        // 🆕 测试图片提取
+        // 🆕 Extração de imagem de teste
         async testImageExtraction() {
             if (!this.currentDomain) {
-                this.notify('请先选择站点', 'warning'); // 适配当前的 notify 方法
+                this.notify('Selecione um site primeiro', 'warning'); // Adapte-se ao atual notify método
                 return;
             }
 
-            this.notify('图片提取测试功能开发中...', 'info');
-            // TODO: 实现测试逻辑
-            // 可以发送一个测试请求，然后显示返回的图片
+            this.notify('A função de teste de extração de imagem está em desenvolvimento...', 'info');
+            // TODO: Implementar lógica de teste
+            // Você pode enviar uma solicitação de teste e exibir a imagem retornada
         },
 
-        // 🆕 重新加载当前站点配置（应用预设后调用）
+        // 🆕 Recarregue a configuração atual do site (chamada após aplicar a predefinição)
         async reloadConfig() {
             if (!this.currentDomain) return;
 
             try {
                 const data = await this.apiRequest('/api/config/' + encodeURIComponent(this.currentDomain));
-                // 返回的数据已经是预设格式 { presets: { ... } }
-                // 对其进行规范化确保结构完整
+                // Os dados retornados já estão no formato predefinido { presets: { ... } }
+                // Padronize-o para garantir a integridade estrutural
                 const normalized = this.normalizeConfig({ [this.currentDomain]: data })
                 if (normalized[this.currentDomain]) {
                     this.sites[this.currentDomain] = normalized[this.currentDomain]
                 }
-                this.notify('配置已重新加载', 'success');
+                this.notify('A configuração foi recarregada', 'success');
             } catch (error) {
-                console.error('重新加载配置失败:', error);
-                this.notify('加载失败: ' + error.message, 'error');
+                console.error('Falha ao recarregar a configuração:', error);
+                this.notify('Falha no carregamento: ' + error.message, 'error');
             }
         },
-        // ========== 日志相关 ==========
+        // ========== Relacionado ao registro ==========
 
         async pollLogs() {
             if (this.pauseLogs) return;
@@ -1300,7 +1300,7 @@ const app = createApp({
                 this.lastLogSeq = Number(result.next_seq || this.lastLogSeq || 0);
                 this.lastLogTimestamp = Number(result.timestamp || this.lastLogTimestamp || 0);
             } catch (error) {
-                console.debug('日志轮询失败:', error.message);
+                console.debug('Falha na pesquisa de registro:', error.message);
             }
         },
 
@@ -1351,17 +1351,17 @@ const app = createApp({
         },
 
         clearLogs() {
-            if (confirm('确定清除所有日志吗？')) {
+            if (confirm('Tem certeza de que deseja limpar todos os registros?')) {
                 this.logs = [];
 
                 this.apiRequest('/api/logs', { method: 'DELETE' })
                     .catch(() => { });
 
-                this.notify('日志已清除', 'success');
+                this.notify('Registro limpo', 'success');
             }
         },
 
-        // ========== 导入功能（支持全量和单站点） ==========
+        // ========== Função de importação (suporta volume total e site único) ==========
 
         triggerImport() {
             this.$refs.importFileInput.click();
@@ -1378,11 +1378,11 @@ const app = createApp({
                 try {
                     const config = JSON.parse(e.target.result);
 
-                    // 检测是单站点还是全量配置
+                    // Verifique se é um site único ou uma configuração completa
                     const detectResult = this.detectConfigType(config);
 
                     if (!detectResult.valid) {
-                        this.notify('导入文件格式无效', 'error');
+                        this.notify('Formato de arquivo de importação inválido', 'error');
                         return;
                     }
 
@@ -1391,7 +1391,7 @@ const app = createApp({
                     this.singleSiteImportDomain = detectResult.suggestedDomain || '';
                     this.showImportDialog = true;
                 } catch (error) {
-                    this.notify('JSON 解析失败: ' + error.message, 'error');
+                    this.notify('JSON Falha na análise: ' + error.message, 'error');
                 }
             };
             reader.readAsText(file);
@@ -1399,24 +1399,24 @@ const app = createApp({
             event.target.value = '';
         },
 
-        // 检测配置类型：全量配置 or 单站点配置
+        // Tipo de configuração de detecção: configuração completa or Configuração de site único
         detectConfigType(config) {
             if (typeof config !== 'object' || config === null || Array.isArray(config)) {
                 return { valid: false };
             }
 
-            // 检查是否是单站点格式（旧格式 selectors/workflow，或新格式 presets/default_preset）
+            // Verifique se é formato de site único (formato antigo selectors/workflowou novo formato presets/default_preset）
             if (
                 config.selectors !== undefined
                 || config.workflow !== undefined
                 || (config.presets && typeof config.presets === 'object' && !Array.isArray(config.presets))
             ) {
-                // 单站点格式
+                // formato de site único
                 if (!this.validateSingleSiteConfig(config)) {
                     return { valid: false };
                 }
 
-                // 尝试从文件名提取域名
+                // Tente extrair o nome de domínio do nome do arquivo
                 let suggestedDomain = '';
                 const match = this.importFileName.match(/^(.+?)(?:-config)?(?:-\d+)?\.json$/i);
                 if (match) {
@@ -1431,7 +1431,7 @@ const app = createApp({
                 };
             }
 
-            // 检查是否是全量格式（域名 -> 配置）
+            // Verifique se está no formato completo (nome de domínio -> configuração)
             if (!this.validateImportedConfig(config)) {
                 return { valid: false };
             }
@@ -1470,12 +1470,12 @@ const app = createApp({
                 return true;
             }
 
-            // selectors 必须是对象（如果存在）
+            // selectors Deve ser um objeto, se presente
             if (config.selectors !== undefined && (typeof config.selectors !== 'object' || Array.isArray(config.selectors))) {
                 return false;
             }
 
-            // workflow 必须是数组（如果存在）
+            // workflow Deve ser uma matriz, se presente
             if (config.workflow !== undefined && !Array.isArray(config.workflow)) {
                 return false;
             }
@@ -1512,7 +1512,7 @@ const app = createApp({
             }
 
             const normalizedExisting = this.normalizeConfig({ existing: existingSite }).existing || {
-                default_preset: '主预设',
+                default_preset: 'predefinição mestre',
                 presets: {}
             }
 
@@ -1526,7 +1526,7 @@ const app = createApp({
                 mergedDefault = normalizedExisting.default_preset
             }
             if (!mergedDefault || !mergedPresets[mergedDefault]) {
-                mergedDefault = mergedPresets['主预设'] ? '主预设' : (Object.keys(mergedPresets)[0] || '主预设')
+                mergedDefault = mergedPresets['predefinição mestre'] ? 'predefinição mestre' : (Object.keys(mergedPresets)[0] || 'predefinição mestre')
             }
 
             return {
@@ -1541,25 +1541,25 @@ const app = createApp({
             if (!this.importedConfig) return;
 
             if (this.importType === 'single') {
-                // 单站点导入
+                // Importação de site único
                 const domain = this.singleSiteImportDomain.trim();
                 if (!domain) {
-                    this.notify('请输入站点域名', 'warning');
+                    this.notify('Insira o nome de domínio do site', 'warning');
                     return;
                 }
 
                 const normalizedMap = this.normalizeConfig({ [domain]: this.importedConfig });
                 const normalizedSite = normalizedMap[domain];
                 if (!normalizedSite) {
-                    this.notify('导入文件格式无效', 'error');
+                    this.notify('Formato de arquivo de importação inválido', 'error');
                     return;
                 }
 
                 const exists = !!this.sites[domain];
                 if (exists) {
                     const message = this.importMode === 'replace'
-                        ? '站点 "' + domain + '" 已存在，将完整替换该站点的当前配置，是否继续？'
-                        : '站点 "' + domain + '" 已存在，将按预设合并导入，同名预设会被覆盖，是否继续？';
+                        ? 'site "' + domain + '" Já existe. A configuração atual do site será totalmente substituída. Você quer continuar?'
+                        : 'site "' + domain + '" Já existe. Ele será mesclado e importado de acordo com a predefinição. A predefinição com o mesmo nome será substituída. Você quer continuar?';
                     if (!confirm(message)) {
                         return;
                     }
@@ -1576,12 +1576,12 @@ const app = createApp({
                         body: JSON.stringify({ config: this.sites })
                     });
 
-                    this.notify('成功导入站点: ' + domain, 'success');
+                    this.notify('Site importado com sucesso: ' + domain, 'success');
                 } catch (error) {
-                    this.notify('保存失败: ' + error.message, 'error');
+                    this.notify('Falha ao salvar: ' + error.message, 'error');
                 }
             } else {
-                // 全量导入
+                // Importação completa
                 const importCount = Object.keys(this.importedConfig).length;
 
                 if (this.importMode === 'replace') {
@@ -1597,9 +1597,9 @@ const app = createApp({
                         body: JSON.stringify({ config: this.sites })
                     });
 
-                    this.notify('成功导入 ' + importCount + ' 个站点配置', 'success');
+                    this.notify('Importado com sucesso ' + importCount + ' configuração do site', 'success');
                 } catch (error) {
-                    this.notify('保存失败: ' + error.message, 'error');
+                    this.notify('Falha ao salvar: ' + error.message, 'error');
                 }
 
                 if (!this.currentDomain && Object.keys(this.sites).length > 0) {
@@ -1607,7 +1607,7 @@ const app = createApp({
                 }
             }
 
-            // 清理
+            // limpar
             this.showImportDialog = false;
             this.importedConfig = null;
             this.importFileName = '';
@@ -1621,7 +1621,7 @@ const app = createApp({
             this.singleSiteImportDomain = '';
         },
 
-        // ========== 导出功能（支持全量和单站点） ==========
+        // ========== Função de exportação (suporta volume total e site único) ==========
 
         exportConfig() {
             const dataStr = JSON.stringify(this.sites, null, 2)
@@ -1633,17 +1633,17 @@ const app = createApp({
             a.click()
             URL.revokeObjectURL(url)
 
-            this.notify('全量配置已导出', 'success')
+            this.notify('A configuração completa foi exportada', 'success')
         },
 
-        // 导出单个站点
+        // Exportar um único site
         exportSingleSite(domain) {
             if (!domain || !this.sites[domain]) {
-                this.notify('站点不存在', 'error');
+                this.notify('Site não existe', 'error');
                 return;
             }
 
-            // 导出整个站点（含所有预设）
+            // Exporte o site inteiro (com todas as predefinições)
             const siteConfig = this.sites[domain];
             const dataStr = JSON.stringify(siteConfig, null, 2);
             const blob = new Blob([dataStr], { type: 'application/json' });
@@ -1654,13 +1654,13 @@ const app = createApp({
             a.click();
             URL.revokeObjectURL(url);
 
-            this.notify('站点配置已导出: ' + domain, 'success');
+            this.notify('Configuração do site exportada: ' + domain, 'success');
         },
 
-        // 导出当前站点
+        // Exportar site atual
         exportCurrentSite() {
             if (!this.currentDomain) {
-                this.notify('请先选择站点', 'warning');
+                this.notify('Selecione um site primeiro', 'warning');
                 return;
             }
             this.exportSingleSite(this.currentDomain);
@@ -1682,7 +1682,7 @@ const app = createApp({
                     const payload = JSON.parse(e.target.result);
                     await this.importSettingsBackup(payload);
                 } catch (error) {
-                    this.notify('完整备份导入失败: ' + error.message, 'error');
+                    this.notify('Falha na importação de backup completo: ' + error.message, 'error');
                 }
             };
             reader.readAsText(file, 'utf-8');
@@ -1740,15 +1740,15 @@ const app = createApp({
                 a.click();
                 URL.revokeObjectURL(url);
 
-                this.notify('完整配置备份已导出', 'success');
+                this.notify('Backup completo da configuração exportado', 'success');
             } catch (error) {
-                this.notify('完整备份导出失败: ' + error.message, 'error');
+                this.notify('Falha na exportação de backup completo: ' + error.message, 'error');
             }
         },
 
         async importSettingsBackup(payload) {
             if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-                throw new Error('备份文件格式无效');
+                throw new Error('O formato do arquivo de backup é inválido');
             }
 
             const result = await this.apiRequest('/api/settings/backup', {
@@ -1773,13 +1773,13 @@ const app = createApp({
                 : '';
             this.notify(
                 result.will_restart
-                    ? '完整备份已导入，服务将自动重启' + (sections ? '：' + sections : '')
-                    : '完整备份已导入' + (sections ? '：' + sections : ''),
+                    ? 'O backup completo foi importado e o serviço será reiniciado automaticamente' + (sections ? '：' + sections : '')
+                    : 'Backup completo importado' + (sections ? '：' + sections : ''),
                 result.will_restart ? 'warning' : 'success'
             );
         },
 
-        // ========== 环境配置 ==========
+        // ========== Configuração do ambiente ==========
 
         async loadEnvConfig() {
             this.isLoadingEnv = true;
@@ -1791,7 +1791,7 @@ const app = createApp({
                 };
                 this.envConfigOriginal = JSON.parse(JSON.stringify(this.envConfig));
             } catch (error) {
-                console.error('加载环境配置失败:', error);
+                console.error('Falha ao carregar a configuração do ambiente:', error);
                 this.envConfig = this.getEnvDefaults();
                 this.envConfigOriginal = JSON.parse(JSON.stringify(this.envConfig));
             } finally {
@@ -1864,27 +1864,27 @@ const app = createApp({
                     }).join(', ');
 
                     this.notify(
-                        '环境配置已保存。服务会自动重启，但以下启动型配置要完全生效，请关闭当前浏览器和脚本后重新运行 start.bat：' + launcherLabels,
+                        'Configuração do ambiente salva. O serviço será reiniciado automaticamente, mas para que a configuração de inicialização a seguir tenha efeito total, feche o navegador e o script atuais e execute-os novamente. start.bat：' + launcherLabels,
                         'warning'
                     );
                 } else {
-                    this.notify('环境配置已保存，服务将自动重启后生效', 'success');
+                    this.notify('A configuração do ambiente foi salva e entrará em vigor após o serviço ser reiniciado automaticamente.', 'success');
                 }
             } catch (error) {
-                this.notify('保存失败: ' + error.message, 'error');
+                this.notify('Falha ao salvar: ' + error.message, 'error');
             } finally {
                 this.isSavingEnv = false;
             }
         },
 
         resetEnvConfig() {
-            if (!confirm('确定要重置环境配置为默认值吗？')) return;
+            if (!confirm('Tem certeza de que deseja redefinir a configuração do ambiente para o padrão?')) return;
 
             this.envConfig = this.getEnvDefaults();
-            this.notify('已重置为默认值，请点击保存以应用', 'info');
+            this.notify('Redefinir para o padrão, clique em Salvar para aplicar', 'info');
         },
 
-        // ========== 浏览器常量 ==========
+        // ========== Constantes do navegador ==========
 
         normalizeBrowserConstantsForEditor(rawConfig = {}) {
             const raw = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
@@ -1949,7 +1949,7 @@ const app = createApp({
                 this.browserConstants = this.normalizeBrowserConstantsForEditor(this.browserConstantsRaw);
                 this.browserConstantsOriginal = JSON.parse(JSON.stringify(this.browserConstants));
             } catch (error) {
-                console.error('加载浏览器常量失败:', error);
+                console.error('Falha ao carregar constantes do navegador:', error);
                 this.browserConstants = this.getBrowserConstantsDefaults();
                 this.browserConstantsRaw = this.serializeBrowserConstants(this.browserConstants, {});
                 this.browserConstantsOriginal = JSON.parse(JSON.stringify(this.browserConstants));
@@ -1974,22 +1974,22 @@ const app = createApp({
                 this.browserConstantsRaw = JSON.parse(JSON.stringify(payload));
                 this.browserConstants = this.normalizeBrowserConstantsForEditor(payload);
                 this.browserConstantsOriginal = JSON.parse(JSON.stringify(this.browserConstants));
-                this.notify('浏览器常量已保存', 'success');
+                this.notify('Constantes do navegador salvas', 'success');
             } catch (error) {
-                this.notify('保存失败: ' + error.message, 'error');
+                this.notify('Falha ao salvar: ' + error.message, 'error');
             } finally {
                 this.isSavingConstants = false;
             }
         },
 
         resetBrowserConstants() {
-            if (!confirm('确定要重置浏览器常量为默认值吗？')) return;
+            if (!confirm('Tem certeza de que deseja redefinir as constantes do navegador para seus valores padrão?')) return;
 
             this.browserConstants = this.getBrowserConstantsDefaults();
-            this.notify('已重置为默认值，请点击保存以应用', 'info');
+            this.notify('Redefinir para o padrão, clique em Salvar para aplicar', 'info');
         },
 
-        // ========== 更新白名单 ==========
+        // ========== Atualizar lista de permissões ==========
 
         async loadUpdatePreserveSettings() {
             this.isLoadingUpdatePreserve = true;
@@ -1999,7 +1999,7 @@ const app = createApp({
                 this.updatePreserveSelected = Array.isArray(data.selected_patterns) ? data.selected_patterns.slice() : [];
                 this.updatePreserveSelectedOriginal = JSON.parse(JSON.stringify(this.updatePreserveSelected));
             } catch (error) {
-                console.error('加载更新白名单失败:', error);
+                console.error('Falha ao carregar a lista de permissões de atualização:', error);
                 this.updatePreserveOptions = [];
                 this.updatePreserveSelected = [];
                 this.updatePreserveSelectedOriginal = [];
@@ -2033,9 +2033,9 @@ const app = createApp({
                     ? data.selected_patterns.slice()
                     : this.updatePreserveSelected;
                 this.updatePreserveSelectedOriginal = JSON.parse(JSON.stringify(this.updatePreserveSelected));
-                this.notify('更新白名单已保存，下次自动更新生效', 'success');
+                this.notify('A lista de permissões atualizada foi salva e será atualizada automaticamente na próxima vez.', 'success');
             } catch (error) {
-                this.notify('保存失败: ' + error.message, 'error');
+                this.notify('Falha ao salvar: ' + error.message, 'error');
             } finally {
                 this.isSavingUpdatePreserve = false;
             }
@@ -2043,10 +2043,10 @@ const app = createApp({
 
         resetUpdatePreserveSettings() {
             this.updatePreserveSelected = JSON.parse(JSON.stringify(this.updatePreserveSelectedOriginal));
-            this.notify('已恢复到上次保存的更新白名单', 'info');
+            this.notify('Revertido para a última lista de permissões atualizada e salva', 'info');
         },
 
-        // ========== 元素定义管理方法 ==========
+        // ========== Método de gerenciamento de definição de elemento ==========
 
         async loadSelectorDefinitions() {
             this.isLoadingDefinitions = true;
@@ -2055,7 +2055,7 @@ const app = createApp({
                 this.selectorDefinitions = data.definitions || DEFAULT_SELECTOR_DEFINITIONS;
                 this.selectorDefinitionsOriginal = JSON.parse(JSON.stringify(this.selectorDefinitions));
             } catch (error) {
-                console.error('加载元素定义失败:', error);
+                console.error('Falha ao carregar a definição do elemento:', error);
                 this.selectorDefinitions = JSON.parse(JSON.stringify(DEFAULT_SELECTOR_DEFINITIONS));
                 this.selectorDefinitionsOriginal = JSON.parse(JSON.stringify(this.selectorDefinitions));
             } finally {
@@ -2072,16 +2072,16 @@ const app = createApp({
                 });
 
                 this.selectorDefinitionsOriginal = JSON.parse(JSON.stringify(this.selectorDefinitions));
-                this.notify('元素定义已保存', 'success');
+                this.notify('Definição de elemento salva', 'success');
             } catch (error) {
-                this.notify('保存失败: ' + error.message, 'error');
+                this.notify('Falha ao salvar: ' + error.message, 'error');
             } finally {
                 this.isSavingDefinitions = false;
             }
         },
 
         async resetSelectorDefinitions() {
-            if (!confirm('确定要重置元素定义为默认值吗？')) return;
+            if (!confirm('Tem certeza de que deseja redefinir as definições dos elementos para os valores padrão?')) return;
 
             try {
                 const data = await this.apiRequest('/api/settings/selector-definitions/reset', {
@@ -2090,9 +2090,9 @@ const app = createApp({
 
                 this.selectorDefinitions = data.definitions;
                 this.selectorDefinitionsOriginal = JSON.parse(JSON.stringify(this.selectorDefinitions));
-                this.notify('已重置为默认值', 'success');
+                this.notify('Redefinir para o padrão', 'success');
             } catch (error) {
-                this.notify('重置失败: ' + error.message, 'error');
+                this.notify('Falha na redefinição: ' + error.message, 'error');
             }
         },
 
@@ -2100,7 +2100,7 @@ const app = createApp({
             const def = this.selectorDefinitions[index];
 
             if (def.required) {
-                this.notify('必需字段不能禁用', 'warning');
+                this.notify('Os campos obrigatórios não podem ser desativados', 'warning');
                 return;
             }
 
@@ -2127,12 +2127,12 @@ const app = createApp({
 
         saveDefinition() {
             if (!this.newDefinition.key.trim()) {
-                this.notify('请输入关键词', 'warning');
+                this.notify('Insira palavras-chave', 'warning');
                 return;
             }
 
             if (!this.newDefinition.description.trim()) {
-                this.notify('请输入描述', 'warning');
+                this.notify('Por favor insira uma descrição', 'warning');
                 return;
             }
 
@@ -2140,9 +2140,9 @@ const app = createApp({
             const existingIndex = this.selectorDefinitions.findIndex(d => d.key === key);
 
             if (this.editingDefinitionIndex === null) {
-                // 新增模式
+                // Novo modo
                 if (existingIndex !== -1) {
-                    this.notify('关键词已存在', 'error');
+                    this.notify('A palavra-chave já existe', 'error');
                     return;
                 }
 
@@ -2153,9 +2153,9 @@ const app = createApp({
                     required: false
                 });
             } else {
-                // 编辑模式
+                // modo de edição
                 if (existingIndex !== -1 && existingIndex !== this.editingDefinitionIndex) {
-                    this.notify('关键词已存在', 'error');
+                    this.notify('A palavra-chave já existe', 'error');
                     return;
                 }
 
@@ -2168,21 +2168,21 @@ const app = createApp({
             }
 
             this.showAddDefinitionDialog = false;
-            this.notify('已添加，请点击保存以应用', 'info');
+            this.notify('Já adicionado, clique em Salvar para aplicar', 'info');
         },
 
         removeDefinition(index) {
             const def = this.selectorDefinitions[index];
 
             if (def.required) {
-                this.notify('必需字段不能删除', 'warning');
+                this.notify('Os campos obrigatórios não podem ser excluídos', 'warning');
                 return;
             }
 
-            if (!confirm('确定要删除 "' + def.key + '" 吗？')) return;
+            if (!confirm('Confirme para excluir "' + def.key + '" ?')) return;
 
             this.selectorDefinitions.splice(index, 1);
-            this.notify('已删除，请点击保存以应用', 'info');
+            this.notify('Excluído, clique em Salvar para aplicar', 'info');
         },
 
         moveDefinition(index, direction) {
@@ -2231,20 +2231,20 @@ const app = createApp({
                     total_downloads: 0,
                     default_sort: 'downloads',
                     source_mode: 'local',
-                    source_name: '配置市场',
+                    source_name: 'mercado de alocação',
                     source_url: '',
                     upload_url: '',
                     warning: '',
                     ...(data || {})
                 };
                 if (!silent) {
-                    this.notify('插件市场已刷新', 'success');
+                    this.notify('O mercado de plug-ins foi atualizado', 'success');
                 }
                 return true;
             } catch (error) {
                 this.marketplaceError = error.message;
                 if (!silent) {
-                    this.notify('加载插件市场失败: ' + error.message, 'error');
+                    this.notify('Falha ao carregar o mercado de plugins: ' + error.message, 'error');
                 }
                 return false;
             } finally {
@@ -2259,7 +2259,7 @@ const app = createApp({
         openExternalLink(url) {
             const target = String(url || '').trim();
             if (!target) {
-                this.notify('当前项目没有可打开的外部链接', 'warning');
+                this.notify('Não há links externos para abrir no projeto atual', 'warning');
                 return;
             }
             window.open(target, '_blank', 'noopener,noreferrer');
@@ -2271,25 +2271,25 @@ const app = createApp({
             }
             try {
                 const detail = await this.apiRequest('/api/marketplace/items/' + encodeURIComponent(item.id));
-                this.marketplacePreviewTitle = '市场预览 · ' + (detail.name || item.name || item.id);
+                this.marketplacePreviewTitle = 'prévia do mercado · ' + (detail.name || item.name || item.id);
                 this.marketplacePreviewData = detail;
                 this.showMarketplacePreview = true;
             } catch (error) {
-                this.notify('加载预览失败: ' + error.message, 'error');
+                this.notify('Falha ao carregar visualização: ' + error.message, 'error');
             }
         },
 
         copyMarketplacePreview() {
             const payload = JSON.stringify(this.marketplacePreviewData || {}, null, 2);
             navigator.clipboard.writeText(payload)
-                .then(() => this.notify('预览内容已复制', 'success'))
-                .catch(() => this.notify('复制失败', 'error'));
+                .then(() => this.notify('Visualizar conteúdo copiado', 'success'))
+                .catch(() => this.notify('Falha na cópia', 'error'));
         },
 
         saveMarketplacePreview() {
             const payload = JSON.stringify(this.marketplacePreviewData || {}, null, 2);
             this.downloadDataAsJson('marketplace-preview-' + Date.now() + '.json', payload);
-            this.notify('预览文件已导出', 'success');
+            this.notify('Visualização do arquivo exportado', 'success');
         },
 
         openMarketplaceSubmitDialog() {
@@ -2300,9 +2300,9 @@ const app = createApp({
         resetMarketplaceSubmitForm() {
             this.marketplaceSubmitForm = {
                 item_type: 'site_config',
-                title: this.currentDomain ? (this.currentDomain + ' 配置投稿') : '',
+                title: this.currentDomain ? (this.currentDomain + ' Postagem de posicionamento') : '',
                 summary: '',
-                author: '本地投稿',
+                author: 'Postagem principal',
                 site_domain: this.currentDomain || '',
                 category: this.currentDomain || '',
                 preset_name: this.getActivePresetName(),
@@ -2319,8 +2319,8 @@ const app = createApp({
                 if (!this.marketplaceCommandOptions.length) {
                     await this.loadMarketplaceCommandOptions();
                 }
-                this.marketplaceSubmitForm.title = this.marketplaceSubmitForm.title || '命令包投稿';
-                this.marketplaceSubmitForm.category = '命令系统';
+                this.marketplaceSubmitForm.title = this.marketplaceSubmitForm.title || 'Instruções de postagem';
+                this.marketplaceSubmitForm.category = 'sistema de comando';
             } else {
                 this.marketplaceSubmitForm.site_domain = this.marketplaceSubmitForm.site_domain || this.currentDomain || '';
                 this.marketplaceSubmitForm.category = this.marketplaceSubmitForm.category || this.marketplaceSubmitForm.site_domain;
@@ -2337,7 +2337,7 @@ const app = createApp({
                 this.marketplaceCommandOptions = commands;
                 return commands;
             } catch (error) {
-                this.notify('加载命令列表失败: ' + error.message, 'error');
+                this.notify('Falha ao carregar a lista de comandos: ' + error.message, 'error');
                 return [];
             } finally {
                 this.marketplaceCommandLoading = false;
@@ -2369,31 +2369,31 @@ const app = createApp({
             const form = this.marketplaceSubmitForm || {};
             const title = String(form.title || '').trim();
             const summary = String(form.summary || '').trim();
-            const author = String(form.author || '本地投稿').trim() || '本地投稿';
+            const author = String(form.author || 'Postagem principal').trim() || 'Postagem principal';
             const category = String(form.category || '').trim();
-            const presetName = String(form.preset_name || this.getActivePresetName() || '主预设').trim() || '主预设';
+            const presetName = String(form.preset_name || this.getActivePresetName() || 'predefinição mestre').trim() || 'predefinição mestre';
             const compatibility = String(form.compatibility || '').trim();
             const version = String(form.version || '1.0.0').trim() || '1.0.0';
             const tags = this.parseMarketplaceTags(form.tagsText);
 
             if (!title) {
-                throw new Error('请填写标题');
+                throw new Error('Por favor preencha o título');
             }
             if (!summary) {
-                throw new Error('请填写简介');
+                throw new Error('Por favor preencha a introdução');
             }
 
             if (form.item_type === 'command_bundle') {
                 const commands = this.getMarketplaceSelectedCommands();
                 if (!commands.length) {
-                    throw new Error('请至少选择一个命令');
+                    throw new Error('Selecione pelo menos um comando');
                 }
                 return {
                     item_type: 'command_bundle',
                     title,
                     summary,
                     author,
-                    category: category || '命令系统',
+                    category: category || 'sistema de comando',
                     compatibility,
                     version,
                     tags,
@@ -2406,11 +2406,11 @@ const app = createApp({
 
             const siteDomain = String(form.site_domain || this.currentDomain || '').trim();
             if (!siteDomain) {
-                throw new Error('请填写站点域名');
+                throw new Error('Por favor preencha o nome de domínio do site');
             }
             const presetConfig = this.getActivePresetConfig();
             if (!presetConfig) {
-                throw new Error('当前没有可上传的站点配置');
+                throw new Error('No momento não há configurações de site disponíveis para upload');
             }
 
             return {
@@ -2439,7 +2439,7 @@ const app = createApp({
             try {
                 return JSON.stringify(this.buildMarketplaceSubmissionPayload(), null, 2);
             } catch (error) {
-                return '// 预览暂不可用: ' + error.message;
+                return '// A visualização ainda não está disponível: ' + error.message;
             }
         },
 
@@ -2462,9 +2462,9 @@ const app = createApp({
                 this.activeTab = 'marketplace';
                 this.hasLoadedMarketplace = true;
                 await this.loadMarketplaceCatalog({ silent: true, force: true });
-                this.notify('投稿已加入本地市场', 'success');
+                this.notify('O envio foi adicionado ao mercado local', 'success');
             } catch (error) {
-                this.notify('投稿失败: ' + error.message, 'error');
+                this.notify('Falha no envio: ' + error.message, 'error');
             } finally {
                 this.marketplaceSubmitSaving = false;
             }
@@ -2485,10 +2485,10 @@ const app = createApp({
 
                 this.marketplacePendingImport = detail;
                 this.marketplaceImportStrategy = 'overwrite';
-                this.marketplaceImportPresetName = (detail.name || detail.preset_name || '市场预设').trim();
+                this.marketplaceImportPresetName = (detail.name || detail.preset_name || 'inadimplência de mercado').trim();
                 this.showMarketplaceImportDialog = true;
             } catch (error) {
-                this.notify('加载导入内容失败: ' + error.message, 'error');
+                this.notify('Falha ao carregar conteúdo importado: ' + error.message, 'error');
             } finally {
                 this.marketplaceImportingId = null;
             }
@@ -2509,26 +2509,26 @@ const app = createApp({
                 this.marketplacePendingImport = null;
                 this.activeTab = 'config';
             } catch (error) {
-                this.notify('导入失败: ' + error.message, 'error');
+                this.notify('Falha na importação: ' + error.message, 'error');
             }
         },
 
         getSingleImportedSite(detail) {
             const siteConfig = detail && detail.site_config;
             if (!this.validateImportedConfig(siteConfig)) {
-                throw new Error('市场配置格式无效');
+                throw new Error('O formato de configuração do mercado é inválido');
             }
 
             const domains = Object.keys(siteConfig || {});
             if (domains.length !== 1) {
-                throw new Error('当前仅支持单站点配置导入');
+                throw new Error('Atualmente, apenas a importação de configuração de site único é suportada');
             }
 
             const domain = domains[0];
             const normalizedMap = this.normalizeConfig(siteConfig);
             const normalizedSite = normalizedMap[domain];
             if (!normalizedSite) {
-                throw new Error('站点配置解析失败');
+                throw new Error('Falha na análise da configuração do site');
             }
 
             return { domain, site: normalizedSite };
@@ -2542,14 +2542,14 @@ const app = createApp({
                 method: 'POST',
                 body: JSON.stringify({ config: this.sites })
             });
-            this.notify('站点配置已覆盖导入: ' + imported.domain, 'success');
+            this.notify('A configuração do site foi substituída e importada: ' + imported.domain, 'success');
         },
 
         async applyMarketplaceSiteSaveAsPreset() {
             const imported = this.getSingleImportedSite(this.marketplacePendingImport);
             const newPresetName = String(this.marketplaceImportPresetName || '').trim();
             if (!newPresetName) {
-                throw new Error('请填写另存为预设名称');
+                throw new Error('Preencha e salve como nome padrão');
             }
 
             const targetSite = this.sites[imported.domain]
@@ -2557,7 +2557,7 @@ const app = createApp({
                 : { default_preset: newPresetName, presets: {} };
 
             if (targetSite.presets && targetSite.presets[newPresetName]) {
-                throw new Error('该预设名已存在，请换一个名字');
+                throw new Error('O nome padrão já existe, altere-o para um nome diferente');
             }
 
             const importedPresets = imported.site.presets || {};
@@ -2565,7 +2565,7 @@ const app = createApp({
                 ? imported.site.default_preset
                 : Object.keys(importedPresets)[0];
             if (!sourcePresetName) {
-                throw new Error('导入内容缺少预设');
+                throw new Error('O conteúdo importado não contém predefinições');
             }
 
             targetSite.presets = targetSite.presets || {};
@@ -2578,7 +2578,7 @@ const app = createApp({
                 method: 'POST',
                 body: JSON.stringify({ config: this.sites })
             });
-            this.notify('站点配置已另存为预设: ' + newPresetName, 'success');
+            this.notify('Configuração do site salva como predefinida: ' + newPresetName, 'success');
         },
 
         prepareCommandImportPayload(command) {
@@ -2593,7 +2593,7 @@ const app = createApp({
             const bundle = detail && detail.command_bundle;
             const commands = Array.isArray(bundle && bundle.commands) ? bundle.commands : [];
             if (!commands.length) {
-                throw new Error('命令包为空');
+                throw new Error('O pacote de comandos está vazio');
             }
 
             const idMap = {};
@@ -2634,7 +2634,7 @@ const app = createApp({
                 });
             }
 
-            this.notify('命令包已导入，共 ' + importedCommands.length + ' 条命令', 'success');
+            this.notify('O pacote de comando foi importado, um total de ' + importedCommands.length + ' comando', 'success');
         },
 
         downloadDataAsJson(filename, payloadText) {
@@ -2647,7 +2647,7 @@ const app = createApp({
             URL.revokeObjectURL(url);
         },
 
-        // ========== 预设辅助方法 ==========
+        // ========== Método auxiliar padrão ==========
 
         getActivePresetName() {
             try {
@@ -2661,15 +2661,15 @@ const app = createApp({
                 if (configuredDefault && presets[configuredDefault]) {
                     return configuredDefault
                 }
-                if (presets['主预设']) {
-                    return '主预设'
+                if (presets['predefinição mestre']) {
+                    return 'predefinição mestre'
                 }
                 const keys = Object.keys(presets)
                 if (keys.length > 0) {
                     return keys[0]
                 }
             }
-            return '主预设'
+            return 'predefinição mestre'
         },
 
         getActivePresetConfig() {
@@ -2680,16 +2680,16 @@ const app = createApp({
             const configuredDefault = this.currentConfig.default_preset
             return presets[name]
                 || (configuredDefault ? presets[configuredDefault] : null)
-                || presets['主预设']
+                || presets['predefinição mestre']
                 || Object.values(presets)[0]
                 || null
         },
 
-        // ========== 数据操作 ==========
+        // ========== Operações de dados ==========
 
         normalizeConfig(raw) {
             const norm = {}
-            // 预设内的字段列表（用于清理顶层残留）
+            // Lista de campos dentro da predefinição (usada para limpar resíduos de nível superior)
             const PRESET_FIELDS = [
                 'selectors', 'workflow', 'stealth', 'stream_config',
                 'image_extraction', 'file_paste',
@@ -2697,7 +2697,7 @@ const app = createApp({
             ]
             for (const [k, v] of Object.entries(raw || {})) {
                 if (v.presets) {
-                    // 新格式：保留 presets 结构，确保每个预设有基本字段
+                    // Novo formato: mantido presets Estrutura, garantindo que cada predefinição tenha campos básicos
                     const normalizedPresets = {}
                     for (const [presetName, presetData] of Object.entries(v.presets)) {
                         normalizedPresets[presetName] = {
@@ -2713,13 +2713,13 @@ const app = createApp({
                         : null
                     const resolvedDefault = (configuredDefault && normalizedPresets[configuredDefault])
                         ? configuredDefault
-                        : (normalizedPresets['主预设'] ? '主预设' : (presetKeys[0] || '主预设'))
-                    // 构建站点对象，只保留 presets，清理预设外的残留字段
+                        : (normalizedPresets['predefinição mestre'] ? 'predefinição mestre' : (presetKeys[0] || 'predefinição mestre'))
+                    // Crie o objeto do site e mantenha apenas presets, limpe os campos restantes fora da predefinição
                     const siteObj = {
                         presets: normalizedPresets,
                         default_preset: resolvedDefault
                     }
-                    // 保留非预设字段（如未来可能的站点级元数据）
+                    // Preservar campos não padrão (como possíveis futuros metadados no nível do site)
                     for (const [field, value] of Object.entries(v)) {
                         if (field !== 'presets' && field !== 'default_preset' && !PRESET_FIELDS.includes(field)) {
                             siteObj[field] = value
@@ -2727,11 +2727,11 @@ const app = createApp({
                     }
                     norm[k] = siteObj
                 } else {
-                    // 旧格式兼容：包装为预设（后端迁移后不应再出现，但做兜底）
+                    // Compatibilidade com formatos antigos: o empacotamento é padrão (não deve aparecer novamente após a migração de back-end, mas é seguro)
                     norm[k] = {
-                        default_preset: '主预设',
+                        default_preset: 'predefinição mestre',
                         presets: {
-                            '主预设': {
+                            'predefinição mestre': {
                                 ...v,
                                 selectors: v.selectors || {},
                                 workflow: v.workflow || [],
@@ -2746,14 +2746,14 @@ const app = createApp({
 
         validateConfig() {
             if (!this.currentDomain || !this.currentConfig) {
-                this.notify('请选择站点', 'warning')
+                this.notify('Selecione um site', 'warning')
                 return false
             }
 
-            // 获取当前活跃预设的配置
+            // Obtenha a configuração da predefinição atualmente ativa
             const presetConfig = this.getActivePresetConfig()
             if (!presetConfig) {
-                this.notify('无法获取预设配置', 'error')
+                this.notify('Não foi possível obter a configuração padrão', 'error')
                 return false
             }
 
@@ -2761,7 +2761,7 @@ const app = createApp({
             const workflow = presetConfig.workflow || []
             const hasSelectorActions = workflow.some(step => ['FILL_INPUT', 'CLICK', 'STREAM_WAIT'].includes(step.action))
             if (hasSelectorActions && Object.keys(selectors).length === 0) {
-                this.notify('至少需要一个选择器', 'warning')
+                this.notify('É necessário pelo menos um seletor', 'warning')
                 return false
             }
 
@@ -2769,13 +2769,13 @@ const app = createApp({
                 const step = workflow[i]
 
                 if (!step.action) {
-                    this.notify('步骤 ' + (i + 1) + ': 缺少动作类型', 'error')
+                    this.notify('etapa ' + (i + 1) + ': Tipo de ação ausente', 'error')
                     return false
                 }
 
                 if (['FILL_INPUT', 'CLICK', 'STREAM_WAIT'].includes(step.action)) {
                     if (!step.target) {
-                        this.notify('步骤 ' + (i + 1) + ': 请选择目标选择器', 'error')
+                        this.notify('etapa ' + (i + 1) + ': Selecione um seletor de destino', 'error')
                         return false
                     }
                 }
@@ -2784,18 +2784,18 @@ const app = createApp({
                     const x = Number(step.value?.x)
                     const y = Number(step.value?.y)
                     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-                        this.notify('步骤 ' + (i + 1) + ': 请输入有效的 X/Y 坐标', 'error')
+                        this.notify('etapa ' + (i + 1) + ': Por favor insira um válido X/Y coordenada', 'error')
                         return false
                     }
                 }
 
                 if (step.action === 'KEY_PRESS' && !step.target) {
-                    this.notify('步骤 ' + (i + 1) + ': 请输入按键名称', 'error')
+                    this.notify('etapa ' + (i + 1) + ': Por favor insira o nome da chave', 'error')
                     return false
                 }
 
                 if (step.action === 'WAIT' && (!step.value || step.value <= 0)) {
-                    this.notify('步骤 ' + (i + 1) + ': 等待时间必须大于 0', 'error')
+                    this.notify('etapa ' + (i + 1) + ': O tempo de espera deve ser maior que 0', 'error')
                     return false
                 }
             }
@@ -2803,7 +2803,7 @@ const app = createApp({
             for (let i = 0; i < workflow.length; i++) {
                 const step = workflow[i]
                 if (step.action === 'JS_EXEC' && !String(step.value || '').trim()) {
-                    this.notify('步骤 ' + (i + 1) + ': 请输入 JavaScript 代码', 'error')
+                    this.notify('etapa ' + (i + 1) + ': Por favor insira JavaScript código', 'error')
                     return false
                 }
             }
@@ -2816,19 +2816,19 @@ const app = createApp({
         },
 
         addNewSite() {
-            const domain = prompt('请输入域名（例如: chat.example.com）:')
+            const domain = prompt('Por favor, insira um nome de domínio (por exemplo,: chat.example.com）:')
             if (!domain) return
 
             if (this.sites[domain]) {
-                this.notify('该站点已存在', 'warning')
+                this.notify('O site já existe', 'warning')
                 this.currentDomain = domain
                 return
             }
 
             this.sites[domain] = {
-                default_preset: '主预设',
+                default_preset: 'predefinição mestre',
                 presets: {
-                    '主预设': {
+                    'predefinição mestre': {
                         selectors: {},
                         workflow: [],
                         stealth: false
@@ -2836,11 +2836,11 @@ const app = createApp({
                 }
             }
             this.currentDomain = domain
-            this.notify('已创建站点: ' + domain, 'success')
+            this.notify('Site criado: ' + domain, 'success')
         },
 
         confirmDelete(domain) {
-            if (!confirm('确定要删除 ' + domain + ' 的配置吗？')) {
+            if (!confirm('Confirme para excluir ' + domain + ' configuração?')) {
                 return
             }
 
@@ -2850,10 +2850,10 @@ const app = createApp({
                 this.currentDomain = Object.keys(this.sites)[0] || null
             }
 
-            this.notify('已删除: ' + domain, 'info')
+            this.notify('Excluído: ' + domain, 'info')
         },
 
-        // ========== 选择器操作 ==========
+        // ========== Operações do seletor ==========
 
         addSelector(preset) {
             this.showSelectorMenu = false
@@ -2862,23 +2862,23 @@ const app = createApp({
 
             let key
             if (preset === 'custom') {
-                key = prompt('请输入选择器名称（例如: input_box）')
+                key = prompt('Insira um nome de seletor (por exemplo,: input_box）')
                 if (!key) return
             } else {
                 key = preset
             }
 
             if (pc.selectors[key]) {
-                this.notify('选择器 "' + key + '" 已存在', 'warning')
+                this.notify('seletor "' + key + '" Já existe', 'warning')
                 return
             }
 
             pc.selectors[key] = ''
-            this.notify('已添加选择器: ' + key, 'success')
+            this.notify('Seletor adicionado: ' + key, 'success')
         },
 
         removeSelector(key) {
-            if (!confirm('确定删除选择器 ' + key + ' 吗？')) {
+            if (!confirm('OK para excluir o seletor ' + key + ' ?')) {
                 return
             }
 
@@ -2903,7 +2903,7 @@ const app = createApp({
             if (!pc) return
 
             if (pc.selectors[newKey]) {
-                this.notify('该键名已存在', 'error')
+                this.notify('O nome da chave já existe', 'error')
                 return
             }
 
@@ -2917,7 +2917,7 @@ const app = createApp({
                 })
         },
 
-        // ========== 工作流操作 ==========
+        // ========== Operações de fluxo de trabalho ==========
 
         addStep() {
             const pc = this.getActivePresetConfig()
@@ -2999,7 +2999,7 @@ const app = createApp({
                 ]
             }
 
-            if (!confirm('这将覆盖当前的工作流配置，确定继续吗？')) {
+            if (!confirm('Isso substituirá a configuração atual do fluxo de trabalho. Tem certeza de que deseja continuar?')) {
                 return
             }
 
@@ -3007,19 +3007,19 @@ const app = createApp({
             if (!pc) return
             pc.workflow = JSON.parse(JSON.stringify(templates[type]))
             this.showStepTemplates = false
-            this.notify('模板已应用', 'success')
+            this.notify('O modelo foi aplicado', 'success')
         },
 
-        // ========== 工具功能 ==========
+        // ========== Função da ferramenta ==========
 
         copyJson(textOverride) {
             const text = typeof textOverride === 'string'
                 ? textOverride
                 : JSON.stringify(this.getJsonPreviewData(), null, 2)
             navigator.clipboard.writeText(text).then(() => {
-                this.notify('已复制到剪贴板', 'success')
+                this.notify('Copiado para a área de transferência', 'success')
             }).catch(() => {
-                this.notify('复制失败', 'error')
+                this.notify('Falha na cópia', 'error')
             })
         },
 
@@ -3030,7 +3030,7 @@ const app = createApp({
 
         async saveJsonPreview(rawText) {
             if (!this.currentDomain) {
-                this.notify('请先选择站点', 'warning')
+                this.notify('Selecione um site primeiro', 'warning')
                 return
             }
 
@@ -3038,22 +3038,22 @@ const app = createApp({
             try {
                 parsed = JSON.parse(rawText)
             } catch (error) {
-                this.notify('JSON 解析失败: ' + error.message, 'error')
+                this.notify('JSON Falha na análise: ' + error.message, 'error')
                 return
             }
 
             if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                this.notify('JSON 顶层必须是对象', 'error')
+                this.notify('JSON O nível superior deve ser um objeto', 'error')
                 return
             }
 
             if (parsed.selectors !== undefined && (typeof parsed.selectors !== 'object' || Array.isArray(parsed.selectors))) {
-                this.notify('selectors 必须是对象', 'error')
+                this.notify('selectors Deve ser um objeto', 'error')
                 return
             }
 
             if (parsed.workflow !== undefined && !Array.isArray(parsed.workflow)) {
-                this.notify('workflow 必须是数组', 'error')
+                this.notify('workflow Deve ser uma matriz', 'error')
                 return
             }
 
@@ -3069,17 +3069,17 @@ const app = createApp({
                         body: JSON.stringify({ config: this.sites })
                     })
                     this.showJsonPreview = false
-                    this.notify('站点 JSON 已保存', 'success')
+                    this.notify('site JSON salvo', 'success')
                 } catch (error) {
-                    this.notify('保存失败: ' + error.message, 'error')
+                    this.notify('Falha ao salvar: ' + error.message, 'error')
                 }
                 return
             }
 
             const site = JSON.parse(JSON.stringify(this.sites[this.currentDomain] || {}))
-            const presets = site.presets || { '主预设': {} }
+            const presets = site.presets || { 'predefinição mestre': {} }
             const presetName = this.getActivePresetName()
-            const currentPreset = presets[presetName] || presets['主预设'] || {}
+            const currentPreset = presets[presetName] || presets['predefinição mestre'] || {}
             const { domain, preset_name, timestamp, ...presetPatch } = parsed
 
             presets[presetName] = {
@@ -3092,7 +3092,7 @@ const app = createApp({
 
             site.presets = presets
             if (!site.default_preset || !site.presets[site.default_preset]) {
-                site.default_preset = site.presets['主预设'] ? '主预设' : (Object.keys(site.presets)[0] || '主预设')
+                site.default_preset = site.presets['predefinição mestre'] ? 'predefinição mestre' : (Object.keys(site.presets)[0] || 'predefinição mestre')
             }
             this.sites[this.currentDomain] = site
 
@@ -3102,19 +3102,19 @@ const app = createApp({
                     body: JSON.stringify({ config: this.sites })
                 })
                 this.showJsonPreview = false
-                this.notify('JSON 修改已保存', 'success')
+                this.notify('JSON Alterações salvas', 'success')
             } catch (error) {
-                this.notify('保存失败: ' + error.message, 'error')
+                this.notify('Falha ao salvar: ' + error.message, 'error')
             }
         },
 
         saveToken() {
             if (this.tempToken.trim()) {
                 localStorage.setItem('api_token', this.tempToken.trim())
-                this.notify('Token 已保存', 'success')
+                this.notify('Token salvo', 'success')
             } else {
                 localStorage.removeItem('api_token')
-                this.notify('Token 已清除', 'info')
+                this.notify('Token limpo', 'info')
             }
 
             this.showTokenDialog = false
@@ -3123,7 +3123,7 @@ const app = createApp({
             this.loadConfig(true)
         },
 
-        // ========== Toast 通知 ==========
+        // ========== Toast notificar ==========
 
         notify(message, type) {
             if (!type) type = 'info'
@@ -3144,12 +3144,12 @@ const app = createApp({
     }
 });
 
-// ========== 组件注册 ==========
+// ========== Registro de componentes ==========
 app.component('sidebar-component', window.SidebarComponent);
 app.component('config-tab', window.ConfigTab);
 app.component('marketplace-tab', window.MarketplaceTab);
 app.component('tabpool-tab', window.TabPoolTabComponent);
-app.component('commands-tab', window.CommandsTabComponent);  // 🆕 命令系统
+app.component('commands-tab', window.CommandsTabComponent);  // 🆕 sistema de comando
 app.component('logs-tab', window.LogsTab);
 app.component('settings-tab', window.SettingsTab);
 app.component('json-preview-dialog', window.JsonPreviewDialog);
@@ -3159,7 +3159,7 @@ app.component('test-dialog', window.TestDialog);
 app.component('import-dialog', window.ImportDialog);
 app.component('definition-dialog', window.DefinitionDialog);
 
-// ========== 全局 Mixin (修复图标访问问题) ==========
+// ========== situação geral Mixin (Corrigir problema de acesso ao ícone) ==========
 app.mixin({
     computed: {
         $icons() {
@@ -3168,7 +3168,7 @@ app.mixin({
     }
 });
 
-// ========== 启动应用 ==========
+// ========== Iniciar aplicativo ==========
 app.mount('#app');
 document.body.classList.add('app-mounted');
 const appShell = document.getElementById('app-shell');

@@ -1,4 +1,4 @@
-﻿// ==================== 命令管理组件 ====================
+﻿// ==================== Componente de gerenciamento de comando ====================
 window.CommandsTabComponent = {
     name: 'CommandsTabComponent',
     props: {
@@ -35,28 +35,25 @@ window.CommandsTabComponent = {
             sourcePickerExpandedGroups: {},
             sourcePickerShowUngrouped: false,
 
-            // 编辑弹窗
-            showEditor: false,
+            // Editar janela pop-up             showEditor: false,
             editingCommand: null,
             isNew: false,
 
-            // 高级模式编辑器高度
-            scriptEditorHeight: '300px',
+            // Altura do editor de modo avançado             scriptEditorHeight: '300px',
 
-            // 代理切换默认配置
-            proxyDefaults: {
+            // Configuração padrão de comutação de agente             proxyDefaults: {
                 clash_api: 'http://127.0.0.1:9090',
                 clash_secret: '',
                 selector: 'Proxy',
                 mode: 'random',
                 node_name: '',
-                exclude_keywords: 'DIRECT,REJECT,GLOBAL,自动选择,故障转移',
+                exclude_keywords: 'DIRECT,REJECT,GLOBAL,seleção automática,failover',
                 refresh_after: true
             },
             webhookDefaults: {
                 method: 'POST',
                 url: '',
-                payload: '{"msg":"标签页#{{tab_index}} 在 {{domain}} 命中异常状态码 {{network_status}}"}',
+                payload: '{"msg":"página da guia#{{tab_index}} existir {{domain}} Código de status de exceção de hit {{network_status}}"}',
                 headers: '{"Content-Type":"application/json"}',
                 timeout: 8,
                 raise_for_status: false
@@ -66,7 +63,7 @@ window.CommandsTabComponent = {
                 target_type: 'private',
                 user_id: '',
                 group_id: '',
-                message: '命令通知：{{source_command_name}}\\n{{command_result_summary}}',
+                message: 'Notificação de comando:{{source_command_name}}\\n{{command_result_summary}}',
                 access_token: '',
                 timeout: 8,
                 raise_for_status: true

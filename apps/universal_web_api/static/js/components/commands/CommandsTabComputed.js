@@ -9,28 +9,28 @@ window.CommandsTabComputed = {
                 .map(([k, v]) => ({ value: k, label: v }));
         },
         actionTypeGroups() {
-            const categoryOrder = ['页面操作', '预设与流程', '通知与集成', '任务控制'];
+            const categoryOrder = ['Operações de página', 'Predefinições e processos', 'Notificações e Integração', 'controle de missão'];
             const categoryMap = {
-                clear_cookies: '页面操作',
-                refresh_page: '页面操作',
-                new_chat: '页面操作',
-                run_js: '页面操作',
-                wait: '页面操作',
-                navigate: '页面操作',
-                click_element: '页面操作',
-                click_coordinates: '页面操作',
-                execute_preset: '预设与流程',
-                execute_workflow: '预设与流程',
-                execute_command_group: '预设与流程',
-                switch_proxy: '通知与集成',
-                send_webhook: '通知与集成',
-                send_napcat: '通知与集成',
-                abort_task: '任务控制',
-                release_tab_lock: '任务控制'
+                clear_cookies: 'Operações de página',
+                refresh_page: 'Operações de página',
+                new_chat: 'Operações de página',
+                run_js: 'Operações de página',
+                wait: 'Operações de página',
+                navigate: 'Operações de página',
+                click_element: 'Operações de página',
+                click_coordinates: 'Operações de página',
+                execute_preset: 'Predefinições e processos',
+                execute_workflow: 'Predefinições e processos',
+                execute_command_group: 'Predefinições e processos',
+                switch_proxy: 'Notificações e Integração',
+                send_webhook: 'Notificações e Integração',
+                send_napcat: 'Notificações e Integração',
+                abort_task: 'controle de missão',
+                release_tab_lock: 'controle de missão'
             };
             const grouped = new Map();
             for (const option of (this.actionTypeOptions || [])) {
-                const category = categoryMap[option.value] || '其他';
+                const category = categoryMap[option.value] || 'outro';
                 if (!grouped.has(category)) grouped.set(category, []);
                 grouped.get(category).push(option);
             }
@@ -107,7 +107,7 @@ window.CommandsTabComputed = {
             if (ungrouped.length > 0) {
                 groupedSections.push({
                     key: 'group:__ungrouped__',
-                    name: '未分组命令',
+                    name: 'comandos desagrupados',
                     commands: ungrouped,
                     isUngrouped: true
                 });
@@ -222,18 +222,18 @@ window.CommandsTabComputed = {
         scriptPlaceholder() {
             if (!this.editingCommand) return '';
             if (this.editingCommand.script_lang === 'javascript') {
-                return '// 在页面中执行的 JavaScript\n' +
-                    '// 清除 cookies 并刷新页面\n' +
+                return '// executado na página JavaScript\n' +
+                    '// Claro cookies e atualize a página\n' +
                     'document.cookie.split(";").forEach(c => {\n' +
                     '  document.cookie = c.trim().split("=")[0] + "=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/";\n' +
                     '});\n' +
                     'location.reload();';
             } else {
-                return '# Python 脚本\n' +
-                    '# 可用变量: tab, session, browser, config_engine, logger, time, json\n\n' +
-                    'logger.info(f"当前 URL: {tab.url}")\n' +
-                    'logger.info(f"请求次数: {session.request_count}")\n\n' +
-                    '# 清除 cookies 并刷新\n' +
+                return '# Python Roteiro\n' +
+                    '# Variáveis ​​disponíveis: tab, session, browser, config_engine, logger, time, json\n\n' +
+                    'logger.info(f"atual URL: {tab.url}")\n' +
+                    'logger.info(f"Número de solicitações: {session.request_count}")\n\n' +
+                    '# Claro cookies e atualizar\n' +
                     'tab.run_js("document.cookie.split(\\";\\").forEach(c => document.cookie = c.trim().split(\\"=\\")[0] + \\"=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/\\");")\n' +
                     'time.sleep(0.5)\n' +
                     'tab.refresh()';

@@ -1,4 +1,4 @@
-// ==================== 日志 Tab 组件 ====================
+// ==================== registro Tab componentes ====================
 window.LogsTab = {
     name: 'LogsTab',
     props: {
@@ -26,11 +26,11 @@ window.LogsTab = {
             }
 
             const keyPatterns = [
-                '[CMD] 执行:',
-                '[CMD] 触发命令:',
-                '[CMD] 链式触发:',
-                '[CMD] 条件分支触发:',
-                '[CMD] 结果事件触发:'
+                '[CMD] implementar:',
+                '[CMD] comando de gatilho:',
+                '[CMD] gatilho de corrente:',
+                '[CMD] gatilho de ramificação condicional:',
+                '[CMD] gatilho de evento de resultado:'
             ];
 
             return keyPatterns.some(pattern => message.includes(pattern));
@@ -91,8 +91,7 @@ window.LogsTab = {
                     <button @click="$emit('change-filter', 'ALL')"
                             :class="['px-3 py-1 text-sm rounded', 
                                      filter === 'ALL' ? 'bg-blue-500 text-white' : 'border dark:border-gray-700 dark:text-gray-300']">
-                        全部
-                    </button>
+                        todos                     </button>
                     <button @click="$emit('change-filter', 'INFO')"
                             :class="['px-3 py-1 text-sm rounded', 
                                      filter === 'INFO' ? 'bg-green-500 text-white' : 'border dark:border-gray-700 dark:text-gray-300']">
@@ -117,12 +116,11 @@ window.LogsTab = {
                 <div class="flex gap-2">
                     <button @click="$emit('toggle-pause')" 
                             class="border dark:border-gray-700 rounded px-3 py-1 text-sm dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
-                        {{ paused ? '▶️ 继续' : '⏸ 暂停' }}
+                        {{ paused ? '▶️ continuar' : '⏸ pausa' }}
                     </button>
                     <button @click="$emit('clear')" 
                             class="border dark:border-gray-700 rounded px-3 py-1 text-sm dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
-                        <span v-html="$icons.trash"></span> 清除
-                    </button>
+                        <span v-html="$icons.trash"></span> Claro                     </button>
                 </div>
             </div>
 
@@ -140,14 +138,13 @@ window.LogsTab = {
                         </span>
                     </div>
                     <div class="mt-1 dark:text-gray-200 break-all whitespace-pre-wrap"
-                         :title="log.messageAlias ? ('原文：' + (log.originalMessageText || '')) : ''">
+                         :title="log.messageAlias ? ('original:' + (log.originalMessageText || '')) : ''">
                         {{ getLogText(log) }}
                     </div>
                 </div>
                 <div v-if="filteredLogs.length === 0" 
                      class="text-center text-gray-400 dark:text-gray-500 py-8">
-                    暂无日志
-                </div>
+                    Ainda não há registros                 </div>
             </div>
         </div>
     `

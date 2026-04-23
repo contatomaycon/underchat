@@ -19,6 +19,16 @@ Exposed ports:
 - `8199` API
 - `6080` noVNC
 
+OpenAI-compatible audio endpoints:
+
+- `POST /v1/audio/transcriptions`
+- `POST /v1/audio/speech`
+
+Backend strategy (configurable):
+
+- `AUDIO_TRANSCRIPTION_MODE=auto|api|local` (`local` uses `faster-whisper`)
+- `AUDIO_SPEECH_MODE=auto|api|local` (`local` uses `espeak-ng` + `ffmpeg`)
+
 Persistent volumes:
 
 - `/data/config`

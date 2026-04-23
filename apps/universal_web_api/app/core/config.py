@@ -271,6 +271,78 @@ class AppConfig:
         if raw_value in ("false", "0", "no", "off"):
             return False
         return not bool(AppConfig.get_marketplace_index_url())
+
+    # ===== Audio API 配置 =====
+    @staticmethod
+    def get_audio_api_timeout() -> float:
+        try:
+            return float(os.getenv("AUDIO_API_TIMEOUT", "180"))
+        except Exception:
+            return 180.0
+
+    @staticmethod
+    def get_audio_transcription_mode() -> str:
+        mode = os.getenv("AUDIO_TRANSCRIPTION_MODE", "auto").strip().lower()
+        if mode in ("api", "local", "auto"):
+            return mode
+        return "auto"
+
+    @staticmethod
+    def get_audio_transcription_base_url() -> str:
+        return os.getenv("AUDIO_TRANSCRIPTION_BASE_URL", "").strip()
+
+    @staticmethod
+    def get_audio_transcription_api_key() -> str:
+        value = os.getenv("AUDIO_TRANSCRIPTION_API_KEY", "").strip()
+        if value:
+            return value
+        return os.getenv("OPENAI_API_KEY", "").strip()
+
+    @staticmethod
+    def get_audio_transcription_model() -> str:
+        return os.getenv("AUDIO_TRANSCRIPTION_MODEL", "whisper-1").strip() or "whisper-1"
+
+    @staticmethod
+    def get_audio_transcription_local_model() -> str:
+        return os.getenv("AUDIO_TRANSCRIPTION_LOCAL_MODEL", "base").strip() or "base"
+
+    @staticmethod
+    def get_audio_transcription_device() -> str:
+        return os.getenv("AUDIO_TRANSCRIPTION_DEVICE", "cpu").strip() or "cpu"
+
+    @staticmethod
+    def get_audio_transcription_compute_type() -> str:
+        return os.getenv("AUDIO_TRANSCRIPTION_COMPUTE_TYPE", "int8").strip() or "int8"
+
+    @staticmethod
+    def get_audio_speech_mode() -> str:
+        mode = os.getenv("AUDIO_SPEECH_MODE", "auto").strip().lower()
+        if mode in ("api", "local", "auto"):
+            return mode
+        return "auto"
+
+    @staticmethod
+    def get_audio_speech_base_url() -> str:
+        return os.getenv("AUDIO_SPEECH_BASE_URL", "").strip()
+
+    @staticmethod
+    def get_audio_speech_api_key() -> str:
+        value = os.getenv("AUDIO_SPEECH_API_KEY", "").strip()
+        if value:
+            return value
+        return os.getenv("OPENAI_API_KEY", "").strip()
+
+    @staticmethod
+    def get_audio_speech_model() -> str:
+        return os.getenv("AUDIO_SPEECH_MODEL", "tts-1").strip() or "tts-1"
+
+    @staticmethod
+    def get_audio_speech_local_voice() -> str:
+        return os.getenv("AUDIO_SPEECH_LOCAL_VOICE", "en-us").strip() or "en-us"
+
+    @staticmethod
+    def get_audio_speech_default_format() -> str:
+        return os.getenv("AUDIO_SPEECH_DEFAULT_FORMAT", "mp3").strip().lower() or "mp3"
     
     # ===== 便捷属性（类属性风格访问）=====
     HOST = property(lambda self: self.get_host())

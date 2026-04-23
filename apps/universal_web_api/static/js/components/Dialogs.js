@@ -1,12 +1,12 @@
-// ==================== 所有弹窗组件 ====================
+// ==================== Todos os componentes pop-up====================
 
-// -------------------- JSON 预览弹窗 --------------------
+// -------------------- JSON Janela pop-up de visualização --------------------
 window.JsonPreviewDialog = {
     name: 'JsonPreviewDialog',
     props: {
         show: { type: Boolean, default: false },
         jsonData: { type: Object, default: () => ({}) },
-        title: { type: String, default: '配置 JSON' }
+        title: { type: String, default: 'JSON de configuração' }
     },
     emits: ['close', 'copy', 'save'],
     data() {
@@ -50,19 +50,17 @@ window.JsonPreviewDialog = {
                 <div class="mt-4 flex justify-end gap-2">
                     <button @click="$emit('copy', draft)" 
                             class="border dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white transition-colors px-2 py-0.5 text-sm">
-                        复制到剪贴板
-                    </button>
+                        copiar para a área de transferência</button>
                     <button @click="$emit('save', draft)" 
                             class="border rounded transition-colors bg-blue-500 text-white hover:bg-blue-600 border-blue-500 px-3 py-1 text-sm">
-                        保存修改
-                    </button>
+                        Salvar alterações</button>
                 </div>
             </div>
         </div>
     `
 };
 
-// -------------------- Token 配置弹窗 --------------------
+// -------------------- Token Configurar janela pop-up --------------------
 window.TokenDialog = {
     name: 'TokenDialog',
     props: {
@@ -81,35 +79,31 @@ window.TokenDialog = {
              class="fixed inset-0 bg-black/50 flex items-center justify-center z-40"
              @click.self="$emit('close')">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96">
-                <h3 class="font-semibold dark:text-white mb-4">配置认证 Token</h3>
+                <h3 class="font-semibold dark:text-white mb-4">Configurar token de autenticação</h3>
                 <div class="mb-4">
                     <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">
-                        Bearer Token（留空则清除）
-                    </label>
+                        Bearer Token（Deixe em branco para limpar)</label>
                     <input v-model="tempToken"
                            type="password"
                            placeholder="your-secret-token"
                            class="border dark:border-gray-700 px-2 py-1 rounded focus:outline-none focus:border-blue-400 w-full bg-white dark:bg-gray-700 dark:text-white">
                 </div>
                 <div class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                    Token 将保存在浏览器本地存储中
-                </div>
+                    Token será salvo no armazenamento local do navegador</div>
                 <div class="flex justify-end gap-2">
                     <button @click="$emit('close')" 
                             class="border dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white transition-colors px-2 py-0.5 text-sm">
-                        取消
-                    </button>
+                        Cancelar</button>
                     <button @click="$emit('save')" 
                             class="border rounded transition-colors bg-blue-500 text-white hover:bg-blue-600 border-blue-500 px-2 py-0.5 text-sm">
-                        保存
-                    </button>
+                        manter</button>
                 </div>
             </div>
         </div>
     `
 };
 
-// -------------------- 步骤模板弹窗 --------------------
+// -------------------- Janela pop-up do modelo de etapa --------------------
 window.StepTemplatesDialog = {
     name: 'StepTemplatesDialog',
     props: {
@@ -121,35 +115,32 @@ window.StepTemplatesDialog = {
              class="fixed inset-0 bg-black/50 flex items-center justify-center z-40"
              @click.self="$emit('close')">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-[500px]">
-                <h3 class="font-semibold dark:text-white mb-4">工作流模板</h3>
+                <h3 class="font-semibold dark:text-white mb-4">Modelo de fluxo de trabalho</h3>
                 <div class="space-y-2 mb-4">
                     <button @click="$emit('apply', 'default')"
                             class="w-full text-left p-3 border dark:border-gray-700 rounded hover:border-blue-400 dark:hover:border-blue-500 transition-colors">
-                        <div class="font-semibold text-sm dark:text-white">标准对话流程</div>
+                        <div class="font-semibold text-sm dark:text-white">Processo de conversa padrão</div>
                         <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            点击新建 → 填入 → 点击发送 → 等待 → 流式监听
-                        </div>
+                            Clique em Novo→ Preencha→ Clique para enviar→ espere→ Monitoramento de streaming</div>
                     </button>
                     <button @click="$emit('apply', 'simple')"
                             class="w-full text-left p-3 border dark:border-gray-700 rounded hover:border-blue-400 dark:hover:border-blue-500 transition-colors">
-                        <div class="font-semibold text-sm dark:text-white">简化流程</div>
+                        <div class="font-semibold text-sm dark:text-white">Simplifique o processo</div>
                         <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            填入 → 回车 → 流式监听
-                        </div>
+                            Preencha→ Digitar→ Monitoramento de streaming</div>
                     </button>
                 </div>
                 <div class="flex justify-end">
                     <button @click="$emit('close')" 
                             class="border dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white transition-colors px-2 py-0.5 text-sm">
-                        关闭
-                    </button>
+                        encerramento</button>
                 </div>
             </div>
         </div>
     `
 };
 
-// -------------------- 选择器测试弹窗 --------------------
+// -------------------- Pop-up de teste do seletor --------------------
 window.TestDialog = {
     name: 'TestDialog',
     props: {
@@ -205,15 +196,15 @@ window.TestDialog = {
              class="fixed inset-0 bg-black/50 flex items-center justify-center z-40"
              @click.self="$emit('close')">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-[600px]">
-                <h3 class="font-semibold dark:text-white mb-4">选择器测试</h3>
+                <h3 class="font-semibold dark:text-white mb-4">Teste seletor</h3>
                 <div class="mb-4">
-                    <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">选择器</label>
+                    <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">seletor</label>
                     <input v-model="selectorInput"
                            class="border dark:border-gray-700 px-2 py-1 rounded focus:outline-none focus:border-blue-400 w-full font-mono text-sm bg-white dark:bg-gray-700 dark:text-white"
-                           placeholder="例如: textarea">
+                           placeholder="Por exemplo: área de texto">
                 </div>
                 <div class="mb-4">
-                    <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">超时时间（秒）</label>
+                    <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">Tempo limite (segundos)</label>
                     <input v-model.number="timeout"
                            type="number"
                            min="1"
@@ -224,23 +215,23 @@ window.TestDialog = {
                 <div class="mb-4">
                     <label class="flex items-center text-sm cursor-pointer">
                         <input type="checkbox" v-model="highlight" class="mr-2">
-                        <span class="dark:text-gray-300">🎨 在浏览器中高亮显示</span>
-                        <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">（可能触发风控，谨慎使用）</span>
+                        <span class="dark:text-gray-300">🎨 Destaque no navegador</span>
+                        <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">（Pode desencadear o controle de risco, use com cautela)</span>
                     </label>
                 </div>
 
                 <div v-if="result" class="mb-4 p-3 rounded border"
                      :class="result.success ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800'">
                     <div class="font-semibold text-sm mb-2 dark:text-white">
-                        {{ result.success ? '✅ 找到' + (result.count > 1 ? ' ' + result.count + ' 个' : '') + '元素' : '❌ 未找到元素' }}
+                        {{ result.success ? '✅ virar para cima' + (result.count > 1 ? ' ' + result.count + ' individual' : '') + 'elemento' : '❌ elemento não encontrado' }}
                     </div>
                     <div v-if="result.success" class="text-xs space-y-1 dark:text-gray-300">
-                        <div><span class="text-gray-600 dark:text-gray-400">标签:</span> &lt;{{ result.tag }}&gt;</div>
+                        <div><span class="text-gray-600 dark:text-gray-400">Rótulo:</span> &lt;{{ result.tag }}&gt;</div>
                         <div v-if="result.text">
-                            <span class="text-gray-600 dark:text-gray-400">文本:</span> {{ result.text }}
+                            <span class="text-gray-600 dark:text-gray-400">texto:</span> {{ result.text }}
                         </div>
                         <div v-if="result.count > 1" class="mt-2">
-                            <span class="text-gray-600 dark:text-gray-400">找到 {{ result.count }} 个元素:</span>
+                            <span class="text-gray-600 dark:text-gray-400">virar para cima{{ result.count }} elementos:</span>
                             <div class="max-h-32 overflow-auto mt-1">
                                 <div v-for="(el, idx) in result.elements" :key="idx"
                                      class="text-xs p-1 border-b dark:border-gray-700">
@@ -249,7 +240,7 @@ window.TestDialog = {
                             </div>
                         </div>
                         <div v-if="result.attributes && Object.keys(result.attributes).length > 0">
-                            <span class="text-gray-600 dark:text-gray-400">属性:</span>
+                            <span class="text-gray-600 dark:text-gray-400">propriedade:</span>
                             <pre class="text-xs mt-1 bg-white dark:bg-gray-800 p-2 rounded dark:text-gray-300">{{ JSON.stringify(result.attributes, null, 2) }}</pre>
                         </div>
                     </div>
@@ -261,13 +252,12 @@ window.TestDialog = {
                 <div class="flex justify-end gap-2">
                     <button @click="$emit('close')" 
                             class="border dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white transition-colors px-2 py-0.5 text-sm">
-                        关闭
-                    </button>
+                        encerramento</button>
                     <button @click="$emit('test', { selector: selectorInput, timeout, highlight })"
                             :disabled="!selectorInput.trim() || testing"
                             class="border rounded transition-colors bg-blue-500 text-white hover:bg-blue-600 border-blue-500 px-2 py-0.5 text-sm"
                             :class="{'opacity-50 cursor-not-allowed': !selectorInput.trim() || testing}">
-                        {{ testing ? '测试中...' : '测试' }}
+                        {{ testing ? 'Testando...' : 'teste' }}
                     </button>
                 </div>
             </div>
@@ -275,7 +265,7 @@ window.TestDialog = {
     `
 };
 
-// -------------------- 导入确认弹窗 --------------------
+// -------------------- Janela pop-up de confirmação de importação --------------------
 window.ImportDialog = {
     name: 'ImportDialog',
     props: {
@@ -308,21 +298,21 @@ window.ImportDialog = {
     computed: {
         singleImportHint() {
             if (this.suggestedDomain) {
-                return '已从导入文件推断站点名，直接确认即可，也可以手动修改。';
+                return 'O nome do site foi inferido do arquivo importado. Você pode confirmá-lo diretamente ou modificá-lo manualmente.';
             }
-            return '未识别出站点名时，再手动补充即可。';
+            return 'Se o nome do site não for reconhecido, basta adicioná-lo manualmente.';
         },
         mergeDescription() {
             if (this.importType === 'single') {
-                return '保留当前站点里未导入的预设；导入文件中的同名预设会被覆盖。';
+                return 'As predefinições que não foram importadas para o site atual são mantidas; predefinições com o mesmo nome em arquivos importados serão substituídas.';
             }
-            return '只导入文件里的站点；同名站点整站覆盖，未出现在文件中的站点会保留。';
+            return 'Somente os sites do arquivo são importados; todo o site com o mesmo nome será coberto e os sites que não aparecerem no arquivo serão retidos.';
         },
         replaceDescription() {
             if (this.importType === 'single') {
-                return '用导入文件完整替换这个站点，当前站点已有预设和设置都会被清掉。';
+                return 'Substitua completamente este site pelo arquivo importado. As predefinições e configurações existentes do site atual serão apagadas.';
             }
-            return '先清空当前全部站点配置，再写入导入文件中的站点。';
+            return 'Primeiro limpe todas as configurações atuais do site e depois grave os sites no arquivo importado.';
         }
     },
     template: `
@@ -330,15 +320,15 @@ window.ImportDialog = {
              class="fixed inset-0 bg-black/50 flex items-center justify-center z-40"
              @click.self="$emit('close')">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-[450px]">
-                <h3 class="font-semibold dark:text-white mb-4">导入配置</h3>
+                <h3 class="font-semibold dark:text-white mb-4">Configuração de importação</h3>
 
                 <div class="mb-4 p-3 bg-gray-50 dark:bg-gray-900 rounded border dark:border-gray-700">
                     <div class="text-sm dark:text-gray-300">
-                        <span class="text-gray-600 dark:text-gray-400">文件:</span> {{ fileName }}
+                        <span class="text-gray-600 dark:text-gray-400">documento:</span> {{ fileName }}
                     </div>
                     <div class="text-sm dark:text-gray-300 mt-1">
-                        <span class="text-gray-600 dark:text-gray-400">类型:</span>
-                        {{ importType === 'single' ? '单站点配置' : '全量配置 (' + Object.keys(importedConfig || {}).length + ' 个站点)' }}
+                        <span class="text-gray-600 dark:text-gray-400">tipo:</span>
+                        {{ importType === 'single' ? 'Configuração de site único' : 'Totalmente configurado (' + Object.keys(importedConfig || {}).length + ' locais)' }}
                     </div>
                     <div v-if="importType === 'full' && importedConfig" 
                          class="text-xs text-gray-500 dark:text-gray-400 mt-2 max-h-24 overflow-auto">
@@ -346,26 +336,26 @@ window.ImportDialog = {
                     </div>
                 </div>
 
-                <!-- 单站点导入时需要输入域名 -->
+                <!-- Ao importar um único site, você precisa inserir o nome do domínio -->
                 <div v-if="importType === 'single'" class="mb-4">
-                    <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">站点名</label>
+                    <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">Nome do site</label>
                     <input v-model="singleDomain"
-                           placeholder="例如: chat.openai.com"
+                           placeholder="Por exemplo: chat.openai.com"
                            class="border dark:border-gray-700 px-3 py-2 rounded w-full text-sm bg-white dark:bg-gray-700 dark:text-white">
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ singleImportHint }}</p>
                 </div>
 
                 <div class="mb-4">
-                    <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">导入模式</label>
+                    <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">modo de importação</label>
                     <div class="space-y-2">
                         <label class="flex items-center cursor-pointer">
                             <input type="radio" v-model="mode" value="merge" class="mr-2">
-                            <span class="dark:text-gray-300">合并导入</span>
+                            <span class="dark:text-gray-300">Mesclar importação</span>
                             <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">（{{ mergeDescription }}）</span>
                         </label>
                         <label class="flex items-center cursor-pointer">
                             <input type="radio" v-model="mode" value="replace" class="mr-2">
-                            <span class="dark:text-gray-300">完全替换</span>
+                            <span class="dark:text-gray-300">Substituição completa</span>
                             <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">（{{ replaceDescription }}）</span>
                         </label>
                     </div>
@@ -374,23 +364,21 @@ window.ImportDialog = {
                 <div class="flex justify-end gap-2">
                     <button @click="$emit('close')" 
                             class="border dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white transition-colors px-3 py-1 text-sm">
-                        取消
-                    </button>
+                        Cancelar</button>
                     <button @click="$emit('confirm', { mode, domain: singleDomain })"
                             :disabled="importType === 'single' && !singleDomain.trim()"
                             :class="['border rounded transition-colors px-3 py-1 text-sm',
                                      importType === 'single' && !singleDomain.trim()
                                      ? 'bg-blue-400 cursor-not-allowed opacity-70 text-white border-blue-400'
                                      : 'bg-blue-500 text-white hover:bg-blue-600 border-blue-500']">
-                        确认导入
-                    </button>
+                        Confirmar importação</button>
                 </div>
             </div>
         </div>
     `
 };
 
-// -------------------- 新增/编辑元素定义弹窗 --------------------
+// -------------------- Janela pop-up para adicionar/editar definição de elemento --------------------
 window.DefinitionDialog = {
     name: 'DefinitionDialog',
     props: {
@@ -422,34 +410,32 @@ window.DefinitionDialog = {
              @click.self="$emit('close')">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-[500px]">
                 <h3 class="font-semibold dark:text-white mb-4">
-                    {{ isEdit ? '编辑元素定义' : '新增元素定义' }}
+                    {{ isEdit ? 'Editar definição de elemento' : 'Adicionar nova definição de elemento' }}
                 </h3>
 
                 <div class="space-y-4">
                     <div>
-                        <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">关键词 (key)</label>
+                        <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">Palavras-chave</label>
                         <input v-model="form.key"
                                :disabled="isEdit && definition.required"
-                               placeholder="例如: temp_chat_btn"
+                               placeholder="Por exemplo: temp_chat_btn"
                                class="border dark:border-gray-700 px-3 py-2 rounded w-full font-mono text-sm bg-white dark:bg-gray-700 dark:text-white disabled:opacity-50">
                         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            用于工作流配置中引用此元素
-                        </p>
+                            Usado para fazer referência a este elemento na configuração do fluxo de trabalho</p>
                     </div>
 
                     <div>
-                        <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">描述 (发送给 AI)</label>
+                        <label class="text-sm text-gray-600 dark:text-gray-400 mb-2 block">Descrição (enviada para AI)</label>
                         <textarea v-model="form.description"
-                                  placeholder="例如: 临时对话/隐私模式的切换按钮"
+                                  placeholder="Por exemplo: botão de alternância do modo de conversação/privacidade temporário"
                                   rows="3"
                                   class="border dark:border-gray-700 px-3 py-2 rounded w-full text-sm bg-white dark:bg-gray-700 dark:text-white resize-none"></textarea>
                         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            AI 会根据这个描述在页面中查找对应的元素
-                        </p>
+                            AI O elemento correspondente será encontrado na página com base nesta descrição.</p>
                     </div>
 
                     <div class="flex items-center justify-between">
-                        <span class="text-sm dark:text-gray-300">默认启用</span>
+                        <span class="text-sm dark:text-gray-300">Ativado por padrão</span>
                         <label class="toggle-label">
                             <input type="checkbox" v-model="form.enabled" class="sr-only peer">
                             <div class="toggle-bg"></div>
@@ -460,11 +446,10 @@ window.DefinitionDialog = {
                 <div class="flex justify-end gap-2 mt-6">
                     <button @click="$emit('close')"
                             class="border dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white transition-colors px-4 py-2 text-sm">
-                        取消
-                    </button>
+                        Cancelar</button>
                     <button @click="$emit('save', form)"
                             class="border rounded transition-colors bg-blue-500 text-white hover:bg-blue-600 border-blue-500 px-4 py-2 text-sm">
-                        {{ isEdit ? '保存' : '添加' }}
+                        {{ isEdit ? 'manter' : 'adicionar à' }}
                     </button>
                 </div>
             </div>

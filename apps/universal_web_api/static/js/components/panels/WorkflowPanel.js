@@ -24,7 +24,7 @@ window.WorkflowPanel = {
         workflow: { type: Array, required: true },
         selectors: { type: Object, required: true },
         currentDomain: { type: String, default: null },
-        selectedPreset: { type: String, default: '主预设' },
+        selectedPreset: { type: String, default: 'predefinição mestre' },
         collapsed: { type: Boolean, default: true }
     },
     emits: ['update:collapsed', 'add-step', 'remove-step', 'move-step', 'action-change', 'show-templates'],
@@ -56,13 +56,13 @@ window.WorkflowPanel = {
                 const result = await response.json();
                 if (result.success) {
                     alert(result.already_existed
-                        ? '编辑器已激活，请切换到浏览器窗口查看。'
-                        : '编辑器已注入，请切换到浏览器窗口，使用右下角工具栏编辑工作流。');
+                        ? 'O editor foi ativado, mude para a janela do navegador para visualizar.'
+                        : 'O editor foi injetado, mude para a janela do navegador e use a barra de ferramentas no canto inferior direito para editar o fluxo de trabalho.');
                 } else {
-                    alert('注入失败: ' + (result.message || '未知错误'));
+                    alert('Falha na injeção: ' + (result.message || 'erro desconhecido'));
                 }
             } catch (e) {
-                alert('网络错误: ' + e.message);
+                alert('erro de rede: ' + e.message);
             } finally {
                 this.editorInjecting = false;
             }
@@ -117,8 +117,8 @@ window.WorkflowPanel = {
                  @click="toggle">
                 <div class="flex items-center gap-2">
                     <span class="w-4 inline-flex justify-center text-gray-500 dark:text-gray-400" v-html="collapsed ? $icons.chevronDown : $icons.chevronUp"></span>
-                    <h3 class="font-semibold text-gray-900 dark:text-white">工作流</h3>
-                    <span class="text-sm text-gray-500 dark:text-gray-400">({{ workflow.length }} 步)</span>
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Fluxo de trabalho</h3>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">({{ workflow.length }} etapa)</span>
                 </div>
 
                 <div class="flex gap-2" @click.stop>
@@ -129,16 +129,14 @@ window.WorkflowPanel = {
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.364-6.364l-2.828 2.828M9.464 14.536l-2.828 2.828m12.728 0l-2.828-2.828M9.464 9.464L6.636 6.636"/>
                         </svg>
-                        {{ editorInjecting ? '注入中...' : '可视化' }}
+                        {{ editorInjecting ? 'Injetando...' : 'Visualização' }}
                     </button>
                     <button @click="$emit('show-templates')"
                             class="px-3 py-1 rounded-md text-sm font-medium transition-colors text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-1">
-                        <span v-html="$icons.clipboardList"></span> 模板
-                    </button>
+                        <span v-html="$icons.clipboardList"></span> modelo                     </button>
                     <button @click="$emit('add-step')"
                             class="px-3 py-1 rounded-md text-sm font-medium transition-colors bg-blue-500 text-white hover:bg-blue-600 border border-blue-500 flex items-center gap-1">
-                        <span v-html="$icons.plusCircle"></span> 新增步骤
-                    </button>
+                        <span v-html="$icons.plusCircle"></span> Adicionar novas etapas                     </button>
                 </div>
             </div>
 
@@ -161,28 +159,28 @@ window.WorkflowPanel = {
                         </div>
 
                         <div class="w-36">
-                            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">动作</label>
+                            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">Ação</label>
                             <select v-model="step.action" @change="$emit('action-change', step)"
                                     class="border dark:border-gray-600 px-2 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent w-full text-sm mt-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                                <option value="FILL_INPUT">填入内容</option>
-                                <option value="CLICK">点击元素</option>
-                                <option value="COORD_CLICK">坐标点击</option>
-                                <option value="STREAM_WAIT">流式等待</option>
-                                <option value="WAIT">等待</option>
-                                <option value="KEY_PRESS">按键</option>
-                                <option value="JS_EXEC">执行 JavaScript</option>
+                                <option value="FILL_INPUT">Preencha o conteúdo</option>
+                                <option value="CLICK">elemento de clique</option>
+                                <option value="COORD_CLICK">Clique em coordenadas</option>
+                                <option value="STREAM_WAIT">espera de streaming</option>
+                                <option value="WAIT">espere</option>
+                                <option value="KEY_PRESS">botão</option>
+                                <option value="JS_EXEC">implementar JavaScript</option>
                             </select>
                         </div>
 
                         <div class="flex-1 min-w-0">
                             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                                {{ ['FILL_INPUT', 'CLICK', 'STREAM_WAIT'].includes(step.action) ? '目标选择器' : step.action === 'COORD_CLICK' ? '坐标参数' : step.action === 'JS_EXEC' ? 'JavaScript' : '参数' }}
+                                {{ ['FILL_INPUT', 'CLICK', 'STREAM_WAIT'].includes(step.action) ? 'seletor de alvo' : step.action === 'COORD_CLICK' ? 'Parâmetros de coordenadas' : step.action === 'JS_EXEC' ? 'JavaScript' : 'parâmetro' }}
                             </label>
 
                             <select v-if="['FILL_INPUT', 'CLICK', 'STREAM_WAIT'].includes(step.action)" v-model="step.target"
                                     class="border dark:border-gray-600 px-2 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent w-full mt-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                                <option value="" disabled>选择选择器...</option>
-                                <option v-for="(v, k) in selectors" :key="k" :value="k">{{ k }} ({{ v || '未设置' }})</option>
+                                <option value="" disabled>selecione o seletor...</option>
+                                <option v-for="(v, k) in selectors" :key="k" :value="k">{{ k }} ({{ v || 'não definido' }})</option>
                             </select>
 
                             <div v-else-if="step.action === 'COORD_CLICK'" class="flex items-center gap-2 mt-1 flex-wrap">
@@ -204,37 +202,35 @@ window.WorkflowPanel = {
                                        min="0"
                                        step="1"
                                        class="border dark:border-gray-600 px-2 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent w-28 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                                       placeholder="随机半径">
+                                       placeholder="raio aleatório">
                                 <div class="w-full text-xs text-gray-500 dark:text-gray-400">
-                                    使用 viewport CSS 坐标，不是屏幕坐标。
-                                </div>
+                                    usar viewport CSS coordenadas, não coordenadas da tela.                                 </div>
                             </div>
 
                             <div v-else-if="step.action === 'KEY_PRESS'" class="mt-1 space-y-2">
                                 <select :value="getKeyPresetValue(index, step)"
                                         @change="applyKeyPreset(index, step, $event.target.value)"
                                         class="border dark:border-gray-600 px-2 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent w-full text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                                    <option value="">选择常用按键/组合键...</option>
+                                    <option value="">Selecione as chaves usadas com frequência/Combinação de teclas...</option>
                                     <option v-for="preset in keyPresets" :key="preset.value" :value="preset.value">{{ preset.label }}</option>
-                                    <option value="__custom__">自定义...</option>
+                                    <option value="__custom__">Personalizar...</option>
                                 </select>
                                 <input v-if="isCustomKeyPreset(index, step)"
                                        v-model="step.target"
                                        list="workflow-key-presets"
-                                       placeholder="例如: Enter / Ctrl+Enter / Ctrl+Shift+P"
+                                       placeholder="Por exemplo: Enter / Ctrl+Enter / Ctrl+Shift+P"
                                        class="border dark:border-gray-600 px-2 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent w-full text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                                 <div class="text-xs text-gray-500 dark:text-gray-400">
-                                    支持直接选择，也支持手输任意按键或组合键。
-                                </div>
+                                    Suporta seleção direta e entrada manual de quaisquer teclas ou combinações de teclas.                                 </div>
                             </div>
 
                             <div v-else-if="step.action === 'JS_EXEC'" class="mt-1 space-y-2">
                                 <div class="flex items-center justify-between gap-2">
-                                    <span class="text-xs text-gray-500 dark:text-gray-400">在当前页面上下文执行对应的 JavaScript 脚本。</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">Execute a função correspondente no contexto da página atual JavaScript Roteiro.</span>
                                     <button @click="toggleJsExpand(index)"
                                             type="button"
                                             class="px-2 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
-                                        {{ isJsExpanded(index) ? '收起' : '展开' }}
+                                        {{ isJsExpanded(index) ? 'fechar' : 'Expandir' }}
                                     </button>
                                 </div>
                                 <textarea v-model="step.value"
@@ -250,18 +246,18 @@ window.WorkflowPanel = {
                             <div v-else-if="step.action === 'WAIT'" class="flex items-center gap-2 mt-1">
                                 <input v-model.number="step.value" type="number" step="0.1" min="0"
                                        class="border dark:border-gray-600 px-2 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent w-24 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-                                <span class="text-sm text-gray-500 dark:text-gray-400">秒</span>
+                                <span class="text-sm text-gray-500 dark:text-gray-400">Segundo</span>
                             </div>
                         </div>
 
                         <div class="pt-5">
                             <label class="flex items-center text-xs cursor-pointer whitespace-nowrap text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
-                                   title="勾选后找不到元素会报错；不勾选则跳过该步骤">
+                                   title="Se marcada, um erro será relatado se o elemento não puder ser encontrado; se desmarcado, esta etapa será ignorada.">
                                 <input type="checkbox"
                                        :checked="!step.optional"
                                        @change="step.optional = !$event.target.checked"
                                        class="mr-1.5 rounded">
-                                <span>必需步骤</span>
+                                <span>Etapas necessárias</span>
                             </label>
                         </div>
 
@@ -277,8 +273,7 @@ window.WorkflowPanel = {
                 </div>
 
                 <div v-if="workflow.length === 0" class="text-center text-gray-400 dark:text-gray-500 text-sm py-8">
-                    暂无工作流步骤，点击新增步骤或使用模板。
-                </div>
+                    Atualmente não há etapas de fluxo de trabalho. Clique para adicionar uma etapa ou usar um modelo.                 </div>
 
                 <datalist id="workflow-key-presets">
                     <option v-for="preset in keyPresets" :key="'key-' + preset.value" :value="preset.value"></option>

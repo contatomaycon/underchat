@@ -1,13 +1,12 @@
 // ==================== CommandsTab Template ====================
 window.CommandsTabTemplate = `
     <div class="p-4 space-y-4">
-        <!-- 标题栏 -->
+        <!-- barra de título -->
         <div class="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(241,245,249,0.92))] p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.55)] dark:border-slate-700/70 dark:bg-[linear-gradient(145deg,rgba(15,23,42,0.98),rgba(30,41,59,0.92))] lg:flex-row lg:items-center lg:justify-between">
             <div>
-                <h2 class="text-xl font-bold dark:text-white">⚡ 自动化命令</h2>
+                <h2 class="text-xl font-bold dark:text-white">⚡ Comandos de automação</h2>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    设置触发条件和执行动作，实现标签页自动化管理
-                </p>
+                    Defina condições de gatilho e ações de execução para realizar o gerenciamento automático de guias                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
                 <button @click.stop="toggleHelp"
@@ -16,44 +15,43 @@ window.CommandsTabTemplate = `
                 </button>
                 <button @click="fetchCommands" :disabled="loading"
                         class="rounded-xl border border-slate-300/80 bg-white/85 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900/70 dark:text-white dark:hover:bg-slate-800">
-                    {{ loading ? '刷新中...' : '刷新' }}
+                    {{ loading ? 'Refrescante...' : 'atualizar' }}
                 </button>
                 <button @click="openNewCommand"
                         class="rounded-xl bg-blue-500 px-3 py-2 text-sm font-semibold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-600">
-                    + 新建命令
-                </button>
+                    + Novo comando                 </button>
             </div>
         </div>
 
-        <!-- 使用说明 -->
+        <!-- Instruções de uso -->
         <div v-if="showHelpTip" class="p-4 bg-amber-50/90 dark:bg-amber-900/20 rounded-2xl border border-amber-200 dark:border-amber-800 shadow-sm">
-            <h3 class="font-semibold text-amber-800 dark:text-amber-300 mb-2">💡 工作原理</h3>
+            <h3 class="font-semibold text-amber-800 dark:text-amber-300 mb-2">💡 Princípio de funcionamento</h3>
             <ul class="text-sm text-amber-700 dark:text-amber-200 space-y-1">
-                <li>• <strong>简单模式</strong>：选择触发条件 + 配置动作列表，零代码实现自动化</li>
-                <li>• <strong>高级模式</strong>：直接编写 JavaScript 或 Python 脚本，完全自由控制</li>
-                <li>• 支持“命令结果匹配”条件分支、网络状态码拦截、Webhook 外部告警</li>
-                <li>• 命令在每次对话完成后自动检查触发条件，网络拦截命中时会立即执行</li>
+                <li>• <strong>Modo simples</strong>：Selecione as condições de disparo + Configure listas de ações para obter automação sem código</li>
+                <li>• <strong>Modo avançado</strong>：Escreva diretamente JavaScript ou Python Script, total liberdade de controle</li>
+                <li>• apoiar“resultados do comando correspondem”Ramificação condicional, interceptação de código de status de rede,Webhook alarme externo</li>
+                <li>• O comando verifica automaticamente as condições de disparo após a conclusão de cada conversa e será executado imediatamente quando a interceptação da rede for atingida.</li>
             </ul>
         </div>
 
-        <!-- 空状态 -->
+        <!-- Estado vazio -->
         <div v-if="commands.length === 0 && !loading" class="text-center py-12 text-gray-500 dark:text-gray-400">
             <div class="text-4xl mb-4">⚙️</div>
-            <p>还没有自动化命令</p>
-            <p class="text-sm mt-2">点击「新建命令」开始配置</p>
+            <p>Ainda não há comandos automatizados</p>
+            <p class="text-sm mt-2">Clique em "Novo Comando" para iniciar a configuração</p>
         </div>
 
-        <!-- 命令列表 -->
+        <!-- lista de comandos -->
         <div v-if="commands.length > 0" class="rounded-xl border border-slate-200/80 bg-white/80 p-3 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/70">
             <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                    <span class="rounded-full bg-slate-900/5 px-3 py-1.5 dark:bg-white/5">总数 {{ commands.length }}</span>
-                    <span class="rounded-full bg-emerald-500/10 px-3 py-1.5 text-emerald-600 dark:text-emerald-300">启用 {{ enabledCount }}</span>
-                    <span class="rounded-full bg-slate-500/10 px-3 py-1.5">禁用 {{ disabledCount }}</span>
-                    <span>当前显示 {{ pageStartIndex }} - {{ pageEndIndex }}</span>
+                    <span class="rounded-full bg-slate-900/5 px-3 py-1.5 dark:bg-white/5">total {{ commands.length }}</span>
+                    <span class="rounded-full bg-emerald-500/10 px-3 py-1.5 text-emerald-600 dark:text-emerald-300">habilitar {{ enabledCount }}</span>
+                    <span class="rounded-full bg-slate-500/10 px-3 py-1.5">Desativar {{ disabledCount }}</span>
+                    <span>Atualmente em exibição {{ pageStartIndex }} - {{ pageEndIndex }}</span>
                 </div>
                 <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                    <span>每页</span>
+                    <span>por página</span>
                     <input v-model.number="pageSize"
                            @change="applyPageSize"
                            type="number"
@@ -71,32 +69,30 @@ window.CommandsTabTemplate = `
         <div v-if="commands.length > 0" class="rounded-xl border border-sky-200/80 bg-[linear-gradient(135deg,rgba(240,249,255,0.96),rgba(238,242,255,0.92))] p-2.5 shadow-sm dark:border-sky-800/60 dark:bg-[linear-gradient(145deg,rgba(10,25,47,0.7),rgba(30,41,59,0.75))]">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                    <span class="rounded-full bg-slate-900/5 px-3 py-1.5 dark:bg-white/5">命令组 {{ commandGroups.length }}</span>
-                    <span class="rounded-full bg-slate-900/5 px-3 py-1.5 dark:bg-white/5">已选 {{ selectedCommands.length }}</span>
+                    <span class="rounded-full bg-slate-900/5 px-3 py-1.5 dark:bg-white/5">grupo de comando {{ commandGroups.length }}</span>
+                    <span class="rounded-full bg-slate-900/5 px-3 py-1.5 dark:bg-white/5">Selecionado {{ selectedCommands.length }}</span>
                 </div>
                 <button @click="showGroupTools = !showGroupTools"
                         class="rounded-xl border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800">
-                    {{ showGroupTools ? '收起分组工具' : '展开分组工具' }}
+                    {{ showGroupTools ? 'Recolher ferramentas de agrupamento' : 'Expandir ferramentas de agrupamento' }}
                 </button>
             </div>
             <div v-show="showGroupTools" class="mt-3 space-y-3">
                 <div class="grid gap-3 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.45fr)_minmax(0,1fr)]">
                     <div class="rounded-2xl border border-slate-200/80 bg-white/70 p-3 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/50">
-                        <div class="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">选择操作</div>
+                        <div class="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">Selecione a ação</div>
                         <div class="flex flex-wrap items-center gap-2">
                             <button @click="toggleCurrentPageSelection"
                                     class="rounded-xl border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:bg-slate-800">
-                                当前可见全选/反选
-                            </button>
+                                Atualmente visível selecionar tudo/Contra-eleição                             </button>
                             <button @click="clearSelection"
                                     :disabled="!hasSelection"
                                     class="rounded-xl border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:bg-slate-800">
-                                清空选择
-                            </button>
+                                Limpar seleção                             </button>
                             <div class="relative">
                                 <button @click.stop="toggleBulkActionMenu"
                                         class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/85 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:bg-slate-800">
-                                    <span>批量操作</span>
+                                    <span>Operação em lote</span>
                                     <span class="text-[10px]">{{ isBulkActionMenuOpen() ? '▲' : '▼' }}</span>
                                 </button>
                                 <div v-if="isBulkActionMenuOpen()"
@@ -104,32 +100,29 @@ window.CommandsTabTemplate = `
                                     <button @click.stop="disableAllCommands"
                                             :disabled="groupWorking || commands.length === 0"
                                             class="flex w-full items-center rounded-lg px-3 py-2 text-left text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-40 dark:text-rose-300 dark:hover:bg-slate-800">
-                                        全部禁用
-                                    </button>
+                                        Desativar tudo                                     </button>
                                     <button @click.stop="enableAllDisabledCommands"
                                             :disabled="groupWorking || disabledCount === 0"
                                             class="flex w-full items-center rounded-lg px-3 py-2 text-left text-xs font-medium text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-40 dark:text-emerald-300 dark:hover:bg-slate-800">
-                                        全部解禁
-                                    </button>
+                                        Desbloquear tudo                                     </button>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="rounded-2xl border border-slate-200/80 bg-white/70 p-3 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/50">
-                        <div class="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">命令组操作</div>
+                        <div class="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">Operações de grupo de comando</div>
                         <div class="space-y-2.5">
                             <div class="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
                                 <input v-model.trim="pendingGroupName"
                                        type="text"
                                        list="existing-command-groups"
-                                       placeholder="输入新组名，留空时自动生成"
+                                       placeholder="Digite um novo nome de grupo, ele será gerado automaticamente se for deixado em branco"
                                        class="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
                                 <button @click="assignSelectedToGroup"
                                         :disabled="groupWorking || !hasSelection"
                                         class="rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:opacity-40">
-                                    收纳为命令组
-                                </button>
+                                    Consolidado em grupo de comando                                 </button>
                             </div>
                             <datalist id="existing-command-groups">
                                 <option v-for="group in commandGroups" :key="'group_hint_' + group.name" :value="group.name"></option>
@@ -138,7 +131,7 @@ window.CommandsTabTemplate = `
                                 <select v-model="selectedExistingGroupName"
                                         :disabled="groupWorking || commandGroups.length === 0"
                                         class="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
-                                    <option value="" disabled>选择已有命令组</option>
+                                    <option value="" disabled>Selecione um grupo de comandos existente</option>
                                     <option v-for="group in commandGroups" :key="'group_pick_' + group.name" :value="group.name">
                                         {{ group.name }}
                                     </option>
@@ -146,44 +139,40 @@ window.CommandsTabTemplate = `
                                 <button @click="assignSelectedToExistingGroup"
                                         :disabled="groupWorking || !hasSelection || !selectedExistingGroupName"
                                         class="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-40 dark:border-sky-700 dark:bg-sky-900/30 dark:text-sky-300 dark:hover:bg-sky-900/40">
-                                    加入已有组
-                                </button>
+                                    Junte-se ao grupo existente                                 </button>
                                 <button @click="renameSelectedGroup"
                                         :disabled="groupWorking || !selectedExistingGroupName || !pendingGroupName.trim()"
                                         class="rounded-xl border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 disabled:opacity-40 dark:border-violet-700 dark:bg-violet-900/20 dark:text-violet-300 dark:hover:bg-violet-900/30">
-                                    重命名
-                                </button>
+                                    Renomear                                 </button>
                             </div>
                             <button @click="ungroupSelectedCommands"
                                     :disabled="groupWorking || !hasSelection"
                                     class="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-40 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/30">
-                                解散选中分组
-                            </button>
+                                Dispensar grupo selecionado                             </button>
                         </div>
                     </div>
 
                     <div class="rounded-2xl border border-slate-200/80 bg-white/70 p-3 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/50">
-                        <div class="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">执行组设置</div>
+                        <div class="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">Configurações do grupo de execução</div>
                         <div class="space-y-2.5">
                             <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white/85 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-300">
                                 <input type="checkbox" v-model="includeDisabledWhenRunGroup">
-                                <span>执行组时包含禁用命令</span>
+                                <span>Incluir comandos desabilitados ao executar um grupo</span>
                             </label>
                             <label class="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white/85 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950/70 dark:text-slate-300">
-                                <span>执行组占用策略</span>
+                                <span>Executar política de ocupação de grupo</span>
                                 <select v-model="runGroupAcquirePolicy"
                                         class="rounded-lg border border-slate-200 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
-                                    <option value="inherit_session">沿用当前会话</option>
-                                    <option value="try_acquire">尝试重新占用</option>
-                                    <option value="require_acquire">必须重新占用</option>
+                                    <option value="inherit_session">Herdar a sessão atual</option>
+                                    <option value="try_acquire">Tente reocupar</option>
+                                    <option value="require_acquire">deve ser reocupado</option>
                                 </select>
                             </label>
                         </div>
                     </div>
                 </div>
                 <div class="text-xs text-slate-500 dark:text-slate-400">
-                    可直接拖动命令卡片到某个组头完成收纳。
-                </div>
+                    Você pode arrastar diretamente o cartão de comando para um cabeçalho de grupo para concluir o armazenamento.                 </div>
             </div>
         </div>
 
@@ -201,7 +190,7 @@ window.CommandsTabTemplate = `
                     <div class="flex items-center gap-2">
                         <button @click="toggleGroupCollapse(row.groupName)"
                                 class="rounded-lg border border-slate-200 bg-white/80 px-2 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
-                            {{ isGroupCollapsed(row.groupName) ? '展开' : '折叠' }}
+                            {{ isGroupCollapsed(row.groupName) ? 'Expandir' : 'dobrar' }}
                         </button>
                         <span class="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
                             {{ row.groupName }}
@@ -210,13 +199,13 @@ window.CommandsTabTemplate = `
                             {{ row.commands.filter(item => item.enabled).length }}/{{ row.commands.length }}
                         </span>
                         <span class="text-xs text-slate-400 dark:text-slate-500">
-                            已选 {{ getSelectedCount(row.commands) }}/{{ row.commands.length }}
+                            Selecionado {{ getSelectedCount(row.commands) }}/{{ row.commands.length }}
                         </span>
                     </div>
                     <div class="relative">
                         <button @click.stop="toggleGroupActionMenu(row.groupName)"
                                 class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white/80 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800">
-                            <span>批量操作</span>
+                            <span>Operação em lote</span>
                             <span class="text-[10px]">{{ isGroupActionMenuOpen(row.groupName) ? '▲' : '▼' }}</span>
                         </button>
                         <div v-if="isGroupActionMenuOpen(row.groupName)"
@@ -228,23 +217,19 @@ window.CommandsTabTemplate = `
                             <button @click.stop="runGroup(row.groupName)"
                                     :disabled="groupWorking"
                                     class="flex w-full items-center rounded-lg px-3 py-2 text-left text-xs font-medium text-blue-600 transition hover:bg-blue-50 disabled:opacity-40 dark:text-blue-300 dark:hover:bg-slate-800">
-                                执行组
-                            </button>
+                                grupo executivo                             </button>
                             <button @click.stop="disableGroup(row.groupName)"
                                     :disabled="groupWorking || row.commands.filter(item => item.enabled).length === 0"
                                     class="flex w-full items-center rounded-lg px-3 py-2 text-left text-xs font-medium text-amber-700 transition hover:bg-amber-50 disabled:opacity-40 dark:text-amber-300 dark:hover:bg-slate-800">
-                                全部禁用
-                            </button>
+                                Desativar tudo                             </button>
                             <button @click.stop="enableGroup(row.groupName)"
                                     :disabled="groupWorking || row.commands.filter(item => !item.enabled).length === 0"
                                     class="flex w-full items-center rounded-lg px-3 py-2 text-left text-xs font-medium text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-40 dark:text-emerald-300 dark:hover:bg-slate-800">
-                                全部解禁
-                            </button>
+                                Desbloquear tudo                             </button>
                             <button @click.stop="disbandGroup(row.groupName)"
                                     :disabled="groupWorking"
                                     class="flex w-full items-center rounded-lg px-3 py-2 text-left text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-40 dark:text-red-300 dark:hover:bg-slate-800">
-                                解散组
-                            </button>
+                                dissolver grupo                             </button>
                         </div>
                     </div>
                 </div>
@@ -273,25 +258,24 @@ window.CommandsTabTemplate = `
                                     <span class="font-semibold dark:text-white text-base">{{ cmd.name }}</span>
                                     <span v-if="cmd.group_name"
                                           class="px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300">
-                                        组: {{ cmd.group_name }}
+                                        Grupo: {{ cmd.group_name }}
                                     </span>
                                     <span :class="['px-2 py-0.5 rounded-full text-xs font-medium',
                                                    cmd.mode === 'advanced'
                                                    ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
                                                    : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300']">
-                                        {{ cmd.mode === 'advanced' ? '高级' : '简单' }}
+                                        {{ cmd.mode === 'advanced' ? 'avançado' : 'Simples' }}
                                     </span>
                                     <span v-if="!cmd.enabled" class="px-2 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
-                                        已禁用
-                                    </span>
+                                        Desabilitado                                     </span>
                                 </div>
 
                                 <div class="text-sm text-gray-600 dark:text-gray-300 mb-1">
-                                    <span class="font-medium">触发：</span>
+                                    <span class="font-medium">acionar:</span>
                                     {{ getTriggerLabel(cmd.trigger?.type) }}
                                     <span v-if="getTriggerValueDisplay(cmd.trigger)" class="text-blue-600 dark:text-blue-400 font-mono">= {{ getTriggerValueDisplay(cmd.trigger) }}</span>
                                     <span class="text-gray-400 mx-1">|</span>
-                                    <span>范围：{{ getScopeLabel(cmd.trigger?.scope) }}</span>
+                                    <span>escopo:{{ getScopeLabel(cmd.trigger?.scope) }}</span>
                                     <span v-if="cmd.trigger?.scope === 'domain' && cmd.trigger?.domain" class="text-green-600 dark:text-green-400">
                                         ({{ cmd.trigger.domain }})
                                     </span>
@@ -301,46 +285,43 @@ window.CommandsTabTemplate = `
                                 </div>
 
                                 <div v-if="cmd.mode === 'simple'" class="text-sm text-gray-500 dark:text-gray-400">
-                                    <span class="font-medium">动作：</span>
+                                    <span class="font-medium">Ação:</span>
                                     <span v-for="(a, i) in (cmd.actions || []).slice(0, 3)" :key="i">
                                         {{ getActionLabel(a.type) }}<span v-if="i < Math.min((cmd.actions || []).length, 3) - 1">、</span>
                                     </span>
-                                    <span v-if="(cmd.actions || []).length > 3"> 等{{ cmd.actions.length }} 步</span>
+                                    <span v-if="(cmd.actions || []).length > 3"> espere{{ cmd.actions.length }} etapa</span>
                                 </div>
                                 <div v-else class="text-sm text-gray-500 dark:text-gray-400">
-                                    <span class="font-medium">脚本：</span>
+                                    <span class="font-medium">Roteiro:</span>
                                     {{ cmd.script_lang === 'python' ? 'Python' : 'JavaScript' }}
-                                    ({{ (cmd.script || '').split('\\n').length }} 行)
+                                    ({{ (cmd.script || '').split('\\n').length }} OK)
                                 </div>
 
                                 <div class="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                                    已触发{{ cmd.trigger_count || 0 }} 次
-                                    <span v-if="cmd.last_triggered"> · 上次: {{ formatTime(cmd.last_triggered) }}</span>
+                                    Provocado{{ cmd.trigger_count || 0 }} Segunda categoria                                     <span v-if="cmd.last_triggered"> · última vez: {{ formatTime(cmd.last_triggered) }}</span>
                                 </div>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2 ml-4">
                                 <button @click="moveCommand(cmd, -1)" :disabled="reordering || getCommandOrder(cmd.id) === 1"
                                         class="rounded-lg border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800">
-                                    ↑ 上移
-                                </button>
+                                    ↑ subir                                 </button>
                                 <button @click="moveCommand(cmd, 1)" :disabled="reordering || getCommandOrder(cmd.id) === commands.length"
                                         class="rounded-lg border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800">
-                                    ↓ 下移
-                                </button>
-                                <button @click="testCommand(cmd)" title="手动执行"
+                                    ↓ descer                                 </button>
+                                <button @click="testCommand(cmd)" title="Execução manual"
                                         class="rounded-lg bg-blue-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-blue-600">
                                     ▶️
                                 </button>
-                                <button @click="toggleCommand(cmd)" :title="cmd.enabled ? '禁用' : '启用'"
+                                <button @click="toggleCommand(cmd)" :title="cmd.enabled ? 'Desativar' : 'habilitar'"
                                         class="rounded-lg border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800">
                                     {{ cmd.enabled ? '⏸️' : '▶️' }}
                                 </button>
-                                <button @click="openEditCommand(cmd)" title="编辑"
+                                <button @click="openEditCommand(cmd)" title="editar"
                                         class="rounded-lg border border-slate-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800">
                                     ✏️
                                 </button>
-                                <button @click="deleteCommand(cmd)" title="删除"
+                                <button @click="deleteCommand(cmd)" title="excluir"
                                         class="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-500 transition hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20">
                                     🗑️
                                 </button>
@@ -350,14 +331,14 @@ window.CommandsTabTemplate = `
                 </div>
             </div>
         </div>
-        <!-- ========== 编辑弹窗 ========== -->
+        <!-- ========== Editar janela pop-up ========== -->
         <div v-if="commands.length > 0" class="flex flex-col gap-2 rounded-xl border border-slate-200/80 bg-white/85 p-3 shadow-sm dark:border-slate-700/70 dark:bg-slate-900/75 sm:flex-row sm:items-center sm:justify-between">
             <div class="text-sm text-slate-500 dark:text-slate-400">
-                第<span class="font-semibold text-slate-900 dark:text-white">{{ currentPage }}</span> / {{ totalPages }} 页            </div>
+                Não.<span class="font-semibold text-slate-900 dark:text-white">{{ currentPage }}</span> / {{ totalPages }} Página            </div>
             <div class="flex flex-wrap items-center gap-2">
                 <button @click="changePage(currentPage - 1)" :disabled="currentPage === 1"
                         class="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800">
-                    上一页                </button>
+                    Página anterior                </button>
                 <button v-for="page in visiblePageNumbers" :key="page"
                         @click="changePage(page)"
                         :class="[
@@ -370,34 +351,34 @@ window.CommandsTabTemplate = `
                 </button>
                 <button @click="changePage(currentPage + 1)" :disabled="currentPage === totalPages"
                         class="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:bg-slate-800">
-                    下一页                </button>
+                    Próxima página                </button>
             </div>
         </div>
 
         <div v-if="showEditor" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto m-4">
                 <div class="p-6">
-                    <!-- 弹窗标题 -->
+                    <!-- Título da janela pop-up -->
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-lg font-bold dark:text-white">
-                            {{ isNew ? '新建命令' : '编辑命令' }}
+                            {{ isNew ? 'Novo comando' : 'Editar comando' }}
                         </h3>
                         <button @click="showEditor = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl">✕</button>
                     </div>
 
-                    <!-- 基本信息 -->
+                    <!-- Informações básicas -->
                     <div class="space-y-4 mb-6">
                         <div>
-                            <label class="block text-sm font-medium dark:text-gray-300 mb-1">命令名称</label>
+                            <label class="block text-sm font-medium dark:text-gray-300 mb-1">Nome do comando</label>
                             <input v-model="editingCommand.name" type="text"
                                    class="w-full px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-400">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium dark:text-gray-300 mb-1">命令组（可选）</label>
+                            <label class="block text-sm font-medium dark:text-gray-300 mb-1">Grupo de comando (opcional)</label>
                             <input v-model.trim="editingCommand.group_name"
                                    list="command-group-options"
                                    type="text"
-                                   placeholder="例如：过盾流程组"
+                                   placeholder="Por exemplo: grupo de processos Shield"
                                    class="w-full px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-sky-400">
                             <datalist id="command-group-options">
                                 <option v-for="group in commandGroups" :key="group.name" :value="group.name"></option>
@@ -407,22 +388,22 @@ window.CommandsTabTemplate = `
                         <div class="flex items-center gap-4">
                             <label class="flex items-center gap-2 cursor-pointer">
                                 <input type="radio" v-model="editingCommand.mode" value="simple" class="text-blue-500">
-                                <span class="text-sm dark:text-gray-300">简单模式</span>
+                                <span class="text-sm dark:text-gray-300">Modo simples</span>
                             </label>
                             <label class="flex items-center gap-2 cursor-pointer">
                                 <input type="radio" v-model="editingCommand.mode" value="advanced" class="text-purple-500">
-                                <span class="text-sm dark:text-gray-300">高级模式</span>
+                                <span class="text-sm dark:text-gray-300">Modo avançado</span>
                             </label>
                         </div>
                     </div>
 
-                    <!-- 触发条件 -->
+                    <!-- Condição de gatilho -->
                     <div class="mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                        <h4 class="text-sm font-semibold dark:text-gray-300 mb-3">🎯 触发条件</h4>
+                        <h4 class="text-sm font-semibold dark:text-gray-300 mb-3">🎯 Condição de gatilho</h4>
 
                         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                             <div>
-                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">类型</label>
+                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">tipo</label>
                                 <select v-model="editingCommand.trigger.type"
                                         @change="handleTriggerTypeChange"
                                         class="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
@@ -445,12 +426,12 @@ window.CommandsTabTemplate = `
                                             <div class="truncate font-medium">{{ getSourceCommandButtonLabel() }}</div>
                                             <div class="truncate text-xs text-slate-500 dark:text-slate-300">
                                                 <span v-if="editingCommand.trigger.type === 'command_result_event'">
-                                                    {{ editingCommand.trigger.listen_all_commands ? '全部命令结果' : ((selectedSourceCommandOptions || []).length + ' 条已选') }}
+                                                    {{ editingCommand.trigger.listen_all_commands ? 'Todos os resultados do comando' : ((selectedSourceCommandOptions || []).length + ' Artigo selecionado') }}
                                                 </span>
-                                                <span v-else>{{ selectedSourceCommandOption?.groupName || '未分组命令' }}</span>
+                                                <span v-else>{{ selectedSourceCommandOption?.groupName || 'comandos desagrupados' }}</span>
                                             </div>
                                         </div>
-                                        <span class="ml-3 text-xs text-slate-400">{{ sourceCommandPickerOpen ? '收起' : '展开' }}</span>
+                                        <span class="ml-3 text-xs text-slate-400">{{ sourceCommandPickerOpen ? 'fechar' : 'Expandir' }}</span>
                                     </button>
 
                                     <div v-if="sourceCommandPickerOpen"
@@ -459,25 +440,23 @@ window.CommandsTabTemplate = `
                                             <div class="flex items-center gap-2">
                                                 <input v-model.trim="sourceCommandSearch"
                                                        type="text"
-                                                       placeholder="搜索命令名 / 命令组 / ID"
+                                                       placeholder="Nome do comando de pesquisa / grupo de comando / ID"
                                                        class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-sky-300 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
                                                 <button v-if="sourceCommandSearch"
                                                         type="button"
                                                         @click="sourceCommandSearch = ''"
                                                         class="rounded-lg border border-slate-200 px-2 py-2 text-xs text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800">
-                                                    清空
-                                                </button>
+                                                    Claro                                                 </button>
                                             </div>
                                              <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                                 优先按命令组浏览，展开组后再选择具体命令
-                                             </p>
+                                                 Navegue primeiro pelo grupo de comandos, expanda o grupo e selecione comandos específicos.                                              </p>
                                              <div v-if="editingCommand.trigger.type === 'command_result_event'"
                                                   class="mt-3 flex items-center justify-between rounded-xl border border-emerald-200/80 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-900/20 dark:text-emerald-200">
-                                                 <div>可多选命令，或直接监听全部命令结果</div>
+                                                 <div>Você pode selecionar vários comandos ou monitorar diretamente os resultados de todos os comandos.</div>
                                                  <button type="button"
                                                          @click="toggleListenAllCommands"
                                                          class="rounded-lg border border-emerald-300 px-2 py-1 font-semibold hover:bg-emerald-100 dark:border-emerald-700 dark:hover:bg-emerald-900/40">
-                                                     {{ editingCommand.trigger.listen_all_commands ? '改为手动选择' : '监听全部命令' }}
+                                                     {{ editingCommand.trigger.listen_all_commands ? 'Mudar para seleção manual' : 'Ouça todos os comandos' }}
                                                  </button>
                                              </div>
                                          </div>
@@ -485,8 +464,7 @@ window.CommandsTabTemplate = `
                                         <div class="max-h-80 overflow-y-auto p-2">
                                             <div v-if="filteredSourceCommandSections.length === 0"
                                                  class="rounded-xl border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                                                没有匹配的来源命令
-                                            </div>
+                                                Nenhum comando de origem correspondente                                             </div>
 
                                             <div v-for="section in filteredSourceCommandSections" :key="section.key" class="mb-2 rounded-xl border border-slate-200/80 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800/70">
                                                 <button type="button"
@@ -494,10 +472,10 @@ window.CommandsTabTemplate = `
                                                         class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left">
                                                     <div class="min-w-0">
                                                         <div class="truncate text-sm font-semibold text-slate-700 dark:text-slate-100">{{ section.name }}</div>
-                                                        <div class="text-xs text-slate-500 dark:text-slate-400">{{ section.commands.length }} 条命令</div>
+                                                        <div class="text-xs text-slate-500 dark:text-slate-400">{{ section.commands.length }} comando</div>
                                                     </div>
                                                     <span class="rounded-full bg-slate-900/5 px-2 py-1 text-[11px] text-slate-500 dark:bg-white/5 dark:text-slate-300">
-                                                        {{ isSourceCommandSectionExpanded(section) ? '收起' : '展开' }}
+                                                        {{ isSourceCommandSectionExpanded(section) ? 'fechar' : 'Expandir' }}
                                                     </span>
                                                 </button>
 
@@ -518,8 +496,7 @@ window.CommandsTabTemplate = `
                                                         </div>
                                                         <span v-if="!opt.enabled"
                                                               class="rounded-full bg-slate-200 px-2 py-1 text-[11px] text-slate-500 dark:bg-slate-700 dark:text-slate-300">
-                                                            已禁用
-                                                        </span>
+                                                            Desabilitado                                                         </span>
                                                     </button>
                                                 </div>
                                             </div>
@@ -530,8 +507,8 @@ window.CommandsTabTemplate = `
                                        v-model.trim="editingCommand.trigger.url_pattern"
                                        type="text"
                                        :placeholder="editingCommand.trigger.match_mode === 'regex'
-                                           ? '如: .*/queue/join.* 或 .*conversation.*'
-                                           : '如: /queue/join 或 /conversation'"
+                                           ? 'como: .*/queue/join.* ou .*conversation.*'
+                                           : 'como: /queue/join ou /conversation'"
                                        class="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
                                 <input v-else-if="editingCommand.trigger.type === 'page_check'"
                                        v-model="editingCommand.trigger.value"
@@ -549,29 +526,29 @@ window.CommandsTabTemplate = `
                              class="mt-3 rounded-xl border border-emerald-200/70 bg-emerald-50/70 p-3 dark:border-emerald-800/60 dark:bg-emerald-900/20">
                             <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">目标步骤</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Etapas da meta</label>
                                     <select v-model="editingCommand.trigger.action_ref"
                                             class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                        <option value="">命令最终返回值</option>
+                                        <option value="">O valor de retorno final do comando</option>
                                         <option v-for="opt in resultSourceActionOptions" :key="opt.value" :value="opt.value">
                                             {{ opt.label }}
                                         </option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">匹配规则</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Regras de correspondência</label>
                                     <select v-model="editingCommand.trigger.match_rule"
                                             class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                        <option value="equals">等于</option>
-                                        <option value="contains">包含</option>
-                                        <option value="not_equals">不等于</option>
+                                        <option value="equals">igual</option>
+                                        <option value="contains">Incluir</option>
+                                        <option value="not_equals">não é igual a</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">期望值</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">valor esperado</label>
                                     <input v-model="editingCommand.trigger.expected_value"
                                            type="text"
-                                           placeholder="如: CSS_FAILED / SUCCESS"
+                                           placeholder="como: CSS_FAILED / SUCCESS"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
                             </div>
@@ -581,15 +558,15 @@ window.CommandsTabTemplate = `
                              class="mt-3 rounded-xl border border-rose-200/70 bg-rose-50/70 p-3 dark:border-rose-800/60 dark:bg-rose-900/20">
                             <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">规则类型</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tipo de regra</label>
                                     <select v-model="editingCommand.trigger.match_mode"
                                             class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                        <option value="keyword">关键词</option>
-                                        <option value="regex">正则表达式</option>
+                                        <option value="keyword">palavras-chave</option>
+                                        <option value="regex">expressão regular</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">状态码</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">código de status</label>
                                     <input v-model="editingCommand.trigger.status_codes"
                                            type="text"
                                            placeholder="403,429,500"
@@ -598,13 +575,13 @@ window.CommandsTabTemplate = `
                                 <div class="flex items-center pt-5">
                                     <label class="flex items-center gap-2 cursor-pointer text-sm dark:text-gray-300">
                                         <input type="checkbox" v-model="editingCommand.trigger.abort_on_match" class="rounded">
-                                        命中后立即中断等待                                    </label>
+                                        Interromper a espera imediatamente após o acerto                                    </label>
                                 </div>
                             </div>
                             <p class="mt-2 text-xs text-rose-700 dark:text-rose-300">
                                 {{ editingCommand.trigger.match_mode === 'regex'
-                                    ? '正则内容在上方“正则表达式”输入框填写。例如：.*/queue/join.*'
-                                    : '关键词模式同样在上方输入框填写，支持 URL 子串匹配。' }}
+                                    ? 'O conteúdo normal está acima“expressão regular”Preencha a caixa de entrada. Por exemplo:.*/queue/join.*'
+                                    : 'O modo de palavra-chave também é preenchido na caixa de entrada acima, suportado URL Correspondência de substring.' }}
                             </p>
                         </div>
 
@@ -613,15 +590,13 @@ window.CommandsTabTemplate = `
                             <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                                 <label class="flex items-center gap-2 text-sm dark:text-gray-300">
                                     <input type="checkbox" v-model="editingCommand.trigger.listen_all_commands" class="rounded">
-                                    监听全部命令返回结果
-                                </label>
+                                    Monitore todos os comandos e retorne resultados                                 </label>
                                 <label class="flex items-center gap-2 text-sm dark:text-gray-300">
                                     <input type="checkbox" v-model="editingCommand.trigger.informative_only" class="rounded">
-                                    仅通知有信息的结果
-                                </label>
+                                    Notificar apenas resultados informativos                                 </label>
                             </div>
                             <p class="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
-                                只监听命令最终返回值，不会按每个步骤单独触发。可用变量：<span v-pre>{{source_command_name}}</span>、<span v-pre>{{command_result_summary}}</span>、<span v-pre>{{command_result}}</span>
+                                Escuta apenas o valor final de retorno do comando e não o aciona individualmente para cada etapa. Variáveis ​​disponíveis:<span v-pre>{{source_command_name}}</span>、<span v-pre>{{command_result_summary}}</span>、<span v-pre>{{command_result}}</span>
                             </p>
                         </div>
 
@@ -629,17 +604,16 @@ window.CommandsTabTemplate = `
                             <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
                                 <label class="flex items-center gap-2 text-sm dark:text-gray-300 pt-5 md:pt-6">
                                     <input type="checkbox" v-model="editingCommand.trigger.periodic_enabled" class="rounded">
-                                    启用该命令周期检测
-                                </label>
+                                    Habilite esta detecção de ciclo de comando                                 </label>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">命令优先级（整数）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">prioridade de comando (inteiro)</label>
                                     <input v-model.number="editingCommand.trigger.priority"
                                            type="number"
                                            step="1"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">检测间隔（秒）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Intervalo de detecção (segundos)</label>
                                     <input v-model.number="editingCommand.trigger.periodic_interval_sec"
                                            type="number"
                                            min="1"
@@ -647,7 +621,7 @@ window.CommandsTabTemplate = `
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">随机抖动（秒）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tremulação aleatória (segundos)</label>
                                     <input v-model.number="editingCommand.trigger.periodic_jitter_sec"
                                            type="number"
                                            min="0"
@@ -656,25 +630,23 @@ window.CommandsTabTemplate = `
                                 </div>
                             </div>
                             <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                仅影响“空闲标签页周期扫描”；对话完成后的即时触发检查仍会执行。
-                            </p>
+                                Afeta apenas“Verificação periódica de guias gratuitas”；A verificação imediata do acionador após a conclusão da conversa ainda é executada.                             </p>
                             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                优先级支持任意整数，数值越大越高。默认请求基准优先级为 2（可用环境变量 <code>CMD_REQUEST_PRIORITY_BASELINE</code> 调整），所以像 <code>-99</code>、<code>0</code>、<code>2</code>、<code>99</code> 都可以。
-                            </p>
+                                A prioridade suporta qualquer número inteiro, quanto maior o valor, maior. A prioridade base da solicitação padrão é 2（Variáveis ​​de ambiente disponíveis <code>CMD_REQUEST_PRIORITY_BASELINE</code> ajustado), então algo como <code>-99</code>、<code>0</code>、<code>2</code>、<code>99</code> Tudo ficará bem.                             </p>
                         </div>
 
                         <div class="mt-3 rounded-xl border border-slate-200/70 bg-white/80 p-3 dark:border-slate-700/60 dark:bg-slate-900/40">
                             <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                                 <div v-if="editingCommand.trigger.type === 'page_check'">
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">页面命中触发模式</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Modo de gatilho de hit de página</label>
                                     <select v-model="editingCommand.trigger.fire_mode"
                                             class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                        <option value="edge">边沿触发</option>
-                                        <option value="level">持续触发</option>
+                                        <option value="edge">borda acionada</option>
+                                        <option value="level">Gatilho contínuo</option>
                                     </select>
                                 </div>
                                 <div v-if="editingCommand.trigger.type === 'page_check'">
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">冷却时间（秒）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tempo de resfriamento (segundos)</label>
                                     <input v-model.number="editingCommand.trigger.cooldown_sec"
                                            type="number"
                                            min="0"
@@ -682,7 +654,7 @@ window.CommandsTabTemplate = `
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
                                 <div v-if="editingCommand.trigger.type === 'page_check'">
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">页面稳定命中（秒）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Hits estáveis ​​da página (segundos)</label>
                                     <input v-model.number="editingCommand.trigger.stable_for_sec"
                                            type="number"
                                            min="0"
@@ -690,43 +662,39 @@ window.CommandsTabTemplate = `
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">工作流中断策略</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Estratégia de interrupção do fluxo de trabalho</label>
                                     <select v-model="editingCommand.trigger.interrupt_policy"
                                             class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                        <option value="auto">自动</option>
-                                        <option value="resume">恢复后继续</option>
-                                        <option value="abort">直接中止</option>
+                                        <option value="auto">automático</option>
+                                        <option value="resume">Continuar após a recuperação</option>
+                                        <option value="abort">aborto direto</option>
                                     </select>
                                 </div>
                                 <label class="flex items-center gap-2 text-sm dark:text-gray-300 pt-5 md:pt-6">
                                     <input type="checkbox" v-model="editingCommand.trigger.allow_during_workflow" class="rounded">
-                                    允许在工作流中插队
-                                </label>
+                                    Permitir corte de fila em fluxos de trabalho                                 </label>
                                 <label v-if="editingCommand.trigger.type === 'page_check'" class="flex items-center gap-2 text-sm dark:text-gray-300 pt-5 md:pt-6">
                                     <input type="checkbox" v-model="editingCommand.trigger.check_while_busy_workflow" class="rounded">
-                                    工作流忙碌时仍参与页面检查
-                                </label>
+                                    Participe da inspeção de páginas mesmo quando o fluxo de trabalho estiver ocupado                                 </label>
                             </div>
                             <div class="mt-3">
-                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">工作流中断提示（可选）</label>
+                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Solicitação de interrupção do fluxo de trabalho (opcional)</label>
                                 <input v-model.trim="editingCommand.trigger.interrupt_message"
                                        type="text"
-                                       placeholder="触发该命令时，后续工作流已打断，请重试"
+                                       placeholder="Quando este comando é acionado, o fluxo de trabalho subsequente foi interrompido, tente novamente."
                                        class="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                             </div>
                         </div>
 
                         <div class="mt-3">
-                            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">作用范围</label>
+                            <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Escopo</label>
                             <div class="flex items-center gap-4">
                                 <label class="flex items-center gap-1.5 text-sm dark:text-gray-300">
-                                    <input type="radio" v-model="editingCommand.trigger.scope" value="all" @change="handleTriggerScopeChange"> 所有标签页
-                                </label>
+                                    <input type="radio" v-model="editingCommand.trigger.scope" value="all" @change="handleTriggerScopeChange"> Todas as guias                                 </label>
                                 <label class="flex items-center gap-1.5 text-sm dark:text-gray-300">
-                                    <input type="radio" v-model="editingCommand.trigger.scope" value="domain" @change="handleTriggerScopeChange"> 指定域名
-                                </label>
+                                    <input type="radio" v-model="editingCommand.trigger.scope" value="domain" @change="handleTriggerScopeChange"> Especifique o nome de domínio                                 </label>
                                 <label class="flex items-center gap-1.5 text-sm dark:text-gray-300">
-                                    <input type="radio" v-model="editingCommand.trigger.scope" value="tab" @change="handleTriggerScopeChange"> 指定标签页                                </label>
+                                    <input type="radio" v-model="editingCommand.trigger.scope" value="tab" @change="handleTriggerScopeChange"> Especifique a página da guia                                </label>
                             </div>
                         </div>
 
@@ -734,7 +702,7 @@ window.CommandsTabTemplate = `
                             <input v-model.trim="editingCommand.trigger.domain"
                                    @change="handleTriggerTargetChange"
                                    list="command-domain-options"
-                                   type="text" placeholder="例如: chatgpt.com"
+                                   type="text" placeholder="Por exemplo: chatgpt.com"
                                    class="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                             <datalist id="command-domain-options">
                                 <option v-for="domain in availableDomains" :key="domain" :value="domain"></option>
@@ -745,7 +713,7 @@ window.CommandsTabTemplate = `
                                     v-model.number="editingCommand.trigger.tab_index"
                                     @change="handleTriggerTargetChange"
                                     class="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                <option :value="null" disabled>选择标签页</option>
+                                <option :value="null" disabled>Selecionar guia</option>
                                 <option v-for="tab in availableTabs" :key="tab.persistent_index" :value="tab.persistent_index">
                                     {{ getTabLabel(tab) }}
                                 </option>
@@ -753,26 +721,24 @@ window.CommandsTabTemplate = `
                             <input v-else
                                    v-model.number="editingCommand.trigger.tab_index"
                                    @change="handleTriggerTargetChange"
-                                   type="number" min="1" placeholder="标签页编号"
+                                   type="number" min="1" placeholder="Número da guia"
                                    class="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                         </div>
                     </div>
 
-                    <!-- 简单模式：动作列表 -->
+                    <!-- Modo simples: lista de ações -->
                     <div v-if="editingCommand.mode === 'simple'" class="mb-6">
                         <div class="flex items-center justify-between mb-3">
-                            <h4 class="text-sm font-semibold dark:text-gray-300">🔧 动作列表</h4>
-                            <button @click="addAction" class="text-xs text-blue-500 hover:text-blue-700">+ 添加动作</button>
+                            <h4 class="text-sm font-semibold dark:text-gray-300">🔧 lista de ações</h4>
+                            <button @click="addAction" class="text-xs text-blue-500 hover:text-blue-700">+ Adicionar ação</button>
                         </div>
 
                         <label class="mb-3 flex items-center gap-2 text-sm dark:text-gray-300">
                             <input type="checkbox" v-model="editingCommand.stop_on_error" class="rounded">
-                            动作失败后立即停止后续步骤
-                        </label>
+                            Pare imediatamente as etapas subsequentes após uma ação falhar                         </label>
 
                         <div v-if="editingCommand.actions.length === 0" class="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
-                            暂无动作，点击上方添加
-                        </div>
+                            Nenhuma ação ainda, clique acima para adicionar                         </div>
 
                         <div v-for="(action, i) in editingCommand.actions" :key="i"
                              class="flex flex-wrap items-start gap-2 mb-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
@@ -788,12 +754,12 @@ window.CommandsTabTemplate = `
                                     </optgroup>
                                 </select>
 
-                            <!-- 动作参数 -->
-                            <input v-if="action.type === 'wait'" v-model.number="action.seconds" type="number" min="0" step="0.5" placeholder="秒"
+                            <!-- parâmetros de ação -->
+                            <input v-if="action.type === 'wait'" v-model.number="action.seconds" type="number" min="0" step="0.5" placeholder="Segundo"
                                    class="w-20 px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                            <input v-if="action.type === 'run_js'" v-model="action.code" type="text" placeholder="JavaScript 代码"
+                            <input v-if="action.type === 'run_js'" v-model="action.code" type="text" placeholder="JavaScript código"
                                    class="flex-1 px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
-                            <input v-if="action.type === 'click_element'" v-model.trim="action.selector" type="text" placeholder="CSS / XPath 选择器"
+                            <input v-if="action.type === 'click_element'" v-model.trim="action.selector" type="text" placeholder="CSS / XPath seletor"
                                    class="flex-1 px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
                             <div v-if="action.type === 'click_coordinates'" class="flex flex-wrap items-center gap-2">
                                 <input v-model.number="action.x" type="number" step="1" placeholder="X"
@@ -814,7 +780,7 @@ window.CommandsTabTemplate = `
                                 <input v-if="action.type === 'execute_workflow'"
                                        v-model="action.prompt"
                                        type="text"
-                                       placeholder="可选测试消息"
+                                       placeholder="Mensagem de teste opcional"
                                        class="w-full mt-2 px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                                     {{ getPresetHint() }}
@@ -823,128 +789,125 @@ window.CommandsTabTemplate = `
                             <div v-if="action.type === 'execute_command_group'" class="flex-1 min-w-[220px] space-y-2">
                                 <select v-model="action.group_name"
                                         class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                    <option value="" disabled>请选择命令组</option>
+                                    <option value="" disabled>Selecione um grupo de comando</option>
                                     <option v-for="group in commandGroups" :key="group.name" :value="group.name">
                                         {{ group.name }}（{{ group.enabledCount }}/{{ group.count }}）
                                     </option>
                                 </select>
                                 <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                                     <input type="checkbox" v-model="action.include_disabled" class="rounded">
-                                    包含禁用命令
-                                </label>
+                                    Contém comandos desabilitados                                 </label>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">占用策略</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Política de ocupação</label>
                                     <select v-model="action.acquire_policy"
                                             class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                        <option value="inherit_session">沿用当前会话</option>
-                                        <option value="try_acquire">尝试重新占用</option>
-                                        <option value="require_acquire">必须重新占用</option>
+                                        <option value="inherit_session">Herdar a sessão atual</option>
+                                        <option value="try_acquire">Tente reocupar</option>
+                                        <option value="require_acquire">deve ser reocupado</option>
                                     </select>
                                 </div>
                             </div>
                             <input v-if="action.type === 'navigate'" v-model="action.url" type="text" placeholder="URL"
                                    class="flex-1 px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                             <span v-if="action.type === 'send_webhook'" class="text-xs text-gray-500 dark:text-gray-400 flex-1 font-mono">
-                                {{ (action.method || 'POST').toUpperCase() }} · {{ action.url || '未配置 URL' }}
+                                {{ (action.method || 'POST').toUpperCase() }} · {{ action.url || 'Não configurado URL' }}
                             </span>
                             <span v-if="action.type === 'send_napcat'" class="text-xs text-gray-500 dark:text-gray-400 flex-1 font-mono">
-                                NapCat · {{ action.target_type === 'group' ? ('群 ' + (action.group_id || '未填写')) : ('QQ ' + (action.user_id || '未填写')) }}
+                                NapCat · {{ action.target_type === 'group' ? ('grupo ' + (action.group_id || 'Não preenchido')) : ('QQ ' + (action.user_id || 'Não preenchido')) }}
                             </span>
                             <span v-if="action.type === 'abort_task'" class="text-xs text-gray-500 dark:text-gray-400 flex-1">
-                                触发后取消当前请求并停止后续动作
-                            </span>
+                                Após o acionamento, cancele a solicitação atual e interrompa as ações subsequentes.                             </span>
                             <span v-if="action.type === 'release_tab_lock'" class="text-xs text-gray-500 dark:text-gray-400 flex-1">
-                                解除当前标签页占用（可强制释放并清空页面）                            </span>
+                                Liberar a página da guia atual (pode forçar a liberação e limpar a página)                            </span>
 
-                            <!-- 代理切换 - 简略显示 -->
+                            <!-- comutação de proxy - Breve exibição -->
                             <span v-if="action.type === 'switch_proxy'" class="text-xs text-gray-500 dark:text-gray-400 flex-1">
-                                {{ action.mode === 'random' ? '随机' : action.mode === 'round_robin' ? '轮询' : action.node_name || '指定' }}
+                                {{ action.mode === 'random' ? 'aleatório' : action.mode === 'round_robin' ? 'votação' : action.node_name || 'designação' }}
                                 @ {{ action.selector || 'Proxy' }}
                             </span>
 
-                            <!-- 排序 & 删除 -->
+                            <!-- organizar & excluir -->
                             <button @click="moveAction(i, -1)" :disabled="i === 0" class="text-gray-400 hover:text-gray-600 disabled:opacity-30 text-sm">↑</button>
                             <button @click="moveAction(i, 1)" :disabled="i === editingCommand.actions.length - 1" class="text-gray-400 hover:text-gray-600 disabled:opacity-30 text-sm">↓</button>
                             <button @click="removeAction(i)" class="text-red-400 hover:text-red-600 text-sm">✕</button>
                         </div>
 
-                        <!-- 代理切换详细配置（当某个 switch_proxy 动作时显示） -->
+                        <!-- Configuração detalhada da comutação de agentes (quando um switch_proxy Exibido durante a ação) -->
                         <div v-for="(action, i) in editingCommand.actions.filter(a => a.type === 'switch_proxy')"
                              :key="'proxy-' + i"
                              class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <h5 class="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-3">🔀 代理切换配置</h5>
+                            <h5 class="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-3">🔀 Configuração de comutação de agente</h5>
 
                             <div class="grid grid-cols-2 gap-3">
-                                <!-- Clash API 地址 -->
+                                <!-- Clash API endereço -->
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Clash API 地址</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Clash API endereço</label>
                                     <input v-model="action.clash_api" type="text"
                                            :placeholder="proxyDefaults.clash_api"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
                                 </div>
 
-                                <!-- 代理组名称 -->
+                                <!-- Nome do grupo de agentes -->
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">代理组名称</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Nome do grupo de agentes</label>
                                     <input v-model="action.selector" type="text"
                                            :placeholder="proxyDefaults.selector"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
 
-                                <!-- 切换模式 -->
+                                <!-- Modo de mudança -->
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">切换模式</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Modo de mudança</label>
                                     <select v-model="action.mode"
                                             class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                        <option value="random">随机</option>
-                                        <option value="round_robin">轮询</option>
-                                        <option value="specific">指定节点</option>
+                                        <option value="random">aleatório</option>
+                                        <option value="round_robin">votação</option>
+                                        <option value="specific">Especifique o nó</option>
                                     </select>
                                 </div>
 
-                                <!-- 指定节点名称 -->
+                                <!-- Especifique o nome do nó -->
                                 <div v-if="action.mode === 'specific'">
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">节点名称</label>
-                                    <input v-model="action.node_name" type="text" placeholder="输入节点名称"
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Nome do nó</label>
+                                    <input v-model="action.node_name" type="text" placeholder="Insira o nome do nó"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
 
                                 <!-- Clash Secret -->
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Clash Secret（可选）</label>
-                                    <input v-model="action.clash_secret" type="password" placeholder="如未设置可留空"
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Clash Secret（opcional)</label>
+                                    <input v-model="action.clash_secret" type="password" placeholder="Deixe em branco se não estiver definido"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
 
-                                <!-- 刷新页面 -->
+                                <!-- atualizar página -->
                                 <div class="flex items-center">
                                     <label class="flex items-center gap-2 cursor-pointer text-sm dark:text-gray-300">
                                         <input type="checkbox" v-model="action.refresh_after" class="rounded">
-                                        切换后刷新页面
-                                    </label>
+                                        Atualize a página após mudar                                     </label>
                                 </div>
                             </div>
 
-                            <!-- 排除关键词 -->
+                            <!-- Excluir palavras-chave -->
                             <div class="mt-3">
-                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">排除节点关键词（逗号分隔）</label>
+                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Excluir palavras-chave de nó (separadas por vírgula)</label>
                                 <input v-model="action.exclude_keywords" type="text"
                                        :placeholder="proxyDefaults.exclude_keywords"
                                        class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                             </div>
 
                             <p class="mt-2 text-xs text-blue-600 dark:text-blue-400">
-                                💡 请确认 Clash 已启动并开启 External Controller（通常在 9090 端口）                            </p>
+                                💡 Por favor confirme Clash ativado e ligado External Controller（geralmente em 9090 porta)                            </p>
                         </div>
 
                         <div v-for="(action, i) in editingCommand.actions.filter(a => a.type === 'send_webhook')"
                              :key="'webhook-' + i"
                              class="mt-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                            <h5 class="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-3">📣 Webhook 配置</h5>
+                            <h5 class="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-3">📣 Webhook Configuração</h5>
 
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">请求方法</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Método de solicitação</label>
                                     <select v-model="action.method"
                                             class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                         <option value="POST">POST</option>
@@ -952,7 +915,7 @@ window.CommandsTabTemplate = `
                                     </select>
                                 </div>
                                 <div class="md:col-span-2">
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">请求 URL</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">perguntar URL</label>
                                     <input v-model.trim="action.url" type="text"
                                            placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
@@ -961,14 +924,14 @@ window.CommandsTabTemplate = `
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Payload（支持变量）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Payload（Variáveis ​​de suporte)</label>
                                     <textarea v-model="action.payload"
                                               rows="3"
                                               class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono resize-y"
-                                              placeholder='{"msg":"标签页#{{tab_index}} 在 {{domain}} 连续失败"}'></textarea>
+                                              placeholder='{"msg":"página da guia#{{tab_index}} existir {{domain}} falhas consecutivas"}'></textarea>
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Headers（JSON，可选）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Headers（JSON，opcional)</label>
                                     <textarea v-model="action.headers"
                                               rows="3"
                                               class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono resize-y"
@@ -978,18 +941,17 @@ window.CommandsTabTemplate = `
 
                             <div class="mt-3 flex flex-wrap items-center gap-4">
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tempo limite (segundos)</label>
                                     <input v-model.number="action.timeout" type="number" min="1" step="1"
                                            class="w-24 px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
                                 <label class="flex items-center gap-2 cursor-pointer text-sm dark:text-gray-300 pt-5">
                                     <input type="checkbox" v-model="action.raise_for_status" class="rounded">
-                                    HTTP 非 2xx 视为失败
-                                </label>
+                                    HTTP Não 2xx considerado como fracasso                                 </label>
                             </div>
 
                             <p class="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
-                                可用变量：                                <span v-pre>{{tab_index}}</span>、                                <span v-pre>{{domain}}</span>、                                <span v-pre>{{network_status}}</span>、                                <span v-pre>{{network_url}}</span>、                                <span v-pre>{{timestamp}}</span>
+                                Variáveis ​​disponíveis:                                <span v-pre>{{tab_index}}</span>、                                <span v-pre>{{domain}}</span>、                                <span v-pre>{{network_status}}</span>、                                <span v-pre>{{network_url}}</span>、                                <span v-pre>{{timestamp}}</span>
                             </p>
                         </div>
 
@@ -997,92 +959,89 @@ window.CommandsTabTemplate = `
                              :key="'napcat-' + i"
                              class="mt-4 p-4 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg border border-cyan-200 dark:border-cyan-800">
                             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                <h5 class="text-sm font-semibold text-cyan-800 dark:text-cyan-300">🐧 NapCat QQ 通知</h5>
+                                <h5 class="text-sm font-semibold text-cyan-800 dark:text-cyan-300">🐧 NapCat QQ notificar</h5>
                                 <div class="flex gap-2">
                                     <button @click="useNapcatPreset(action, 'private')"
                                             type="button"
                                             class="rounded-lg border border-cyan-300 px-2 py-1 text-xs font-semibold text-cyan-700 hover:bg-cyan-100 dark:border-cyan-700 dark:text-cyan-300 dark:hover:bg-cyan-900/40">
-                                        私聊模板
-                                    </button>
+                                        Modelo de bate-papo privado                                     </button>
                                     <button @click="useNapcatPreset(action, 'group')"
                                             type="button"
                                             class="rounded-lg border border-cyan-300 px-2 py-1 text-xs font-semibold text-cyan-700 hover:bg-cyan-100 dark:border-cyan-700 dark:text-cyan-300 dark:hover:bg-cyan-900/40">
-                                        群聊模板
-                                    </button>
+                                        Modelo de bate-papo em grupo                                     </button>
                                 </div>
                             </div>
 
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div class="md:col-span-2">
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">NapCat HTTP 地址</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">NapCat HTTP endereço</label>
                                     <input v-model.trim="action.base_url" type="text"
                                            placeholder="http://127.0.0.1:3000"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">发送目标</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Enviar alvo</label>
                                     <select v-model="action.target_type"
                                             class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
-                                        <option value="private">私聊</option>
-                                        <option value="group">群聊</option>
+                                        <option value="private">bate-papo privado</option>
+                                        <option value="group">bate-papo em grupo</option>
                                     </select>
                                 </div>
                             </div>
 
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                                 <div v-if="action.target_type !== 'group'">
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">QQ 号</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">QQ Número</label>
                                     <input v-model.trim="action.user_id" type="text"
-                                           placeholder="接收通知的 QQ 号"
+                                           placeholder="para receber notificações QQ Número"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
                                 </div>
                                 <div v-else>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">群号</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Número do grupo</label>
                                     <input v-model.trim="action.group_id" type="text"
-                                           placeholder="接收通知的群号"
+                                           placeholder="Número do grupo para receber notificações"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Access Token（可选）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Access Token（opcional)</label>
                                     <input v-model.trim="action.access_token" type="text"
-                                           placeholder="留空表示不带鉴权头"
+                                           placeholder="Deixe em branco para indicar que não há cabeçalho de autenticação."
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
                                 </div>
                             </div>
 
                             <div class="mt-3">
-                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">消息内容（支持变量）</label>
+                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Conteúdo da mensagem (suporta variáveis)</label>
                                 <textarea v-model="action.message"
                                           rows="4"
                                           class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono resize-y"
-                                          placeholder="命令通知：{{source_command_name}}&#10;{{command_result_summary}}"></textarea>
+                                          placeholder="Notificação de comando:{{source_command_name}}&#10;{{command_result_summary}}"></textarea>
                             </div>
 
                             <div class="mt-3 flex flex-wrap items-center gap-4">
                                 <div>
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">超时（秒）</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tempo limite (segundos)</label>
                                     <input v-model.number="action.timeout" type="number" min="1" step="1"
                                            class="w-24 px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm">
                                 </div>
                                 <label class="flex items-center gap-2 cursor-pointer text-sm dark:text-gray-300 pt-5">
                                     <input type="checkbox" v-model="action.raise_for_status" class="rounded">
-                                    HTTP 非 2xx 视为失败
-                                </label>
+                                    HTTP Não 2xx considerado como fracasso                                 </label>
                             </div>
 
                             <p class="mt-2 text-xs text-cyan-700 dark:text-cyan-300">
-                                常用变量：<span v-pre>{{source_command_name}}</span>、<span v-pre>{{command_result_summary}}</span>、<span v-pre>{{command_result}}</span>、<span v-pre>{{domain}}</span>、<span v-pre>{{network_url}}</span>
+                                Variáveis ​​comumente usadas:<span v-pre>{{source_command_name}}</span>、<span v-pre>{{command_result_summary}}</span>、<span v-pre>{{command_result}}</span>、<span v-pre>{{domain}}</span>、<span v-pre>{{network_url}}</span>
                             </p>
                         </div>
 
                         <div v-for="(action, i) in editingCommand.actions.filter(a => a.type === 'release_tab_lock')"
                              :key="'unlock-' + i"
                              class="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-                            <h5 class="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-3">🔓 解锁配置</h5>
+                            <h5 class="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-3">🔓 Configuração de desbloqueio</h5>
 
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div class="md:col-span-2">
-                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">原因标记</label>
+                                    <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">etiqueta de motivo</label>
                                     <input v-model.trim="action.reason" type="text"
                                            placeholder="release_tab_lock_action"
                                            class="w-full px-2 py-1.5 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-sm font-mono">
@@ -1090,22 +1049,22 @@ window.CommandsTabTemplate = `
                                 <div class="flex items-center pt-5">
                                     <label class="flex items-center gap-2 cursor-pointer text-sm dark:text-gray-300">
                                         <input type="checkbox" v-model="action.clear_page" class="rounded">
-                                        释放后重置为空白页                                    </label>
+                                        Redefine para página em branco após o lançamento                                    </label>
                                 </div>
                             </div>
 
                             <div class="mt-3">
                                 <label class="flex items-center gap-2 cursor-pointer text-sm dark:text-gray-300">
                                     <input type="checkbox" v-model="action.stop_actions" class="rounded">
-                                    执行后中断后续动作                                </label>
+                                    Interromper ações subsequentes após a execução                                </label>
                             </div>
                         </div>
                     </div>
 
-                    <!-- 高级模式：脚本编辑器 -->
+                    <!-- Modo Avançado: Editor de Script -->
                     <div v-if="editingCommand.mode === 'advanced'" class="mb-6">
                         <div class="flex items-center justify-between mb-3">
-                            <h4 class="text-sm font-semibold dark:text-gray-300">📝 脚本</h4>
+                            <h4 class="text-sm font-semibold dark:text-gray-300">📝 Roteiro</h4>
                             <select v-model="editingCommand.script_lang"
                                     class="px-2 py-1 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white text-xs">
                                 <option value="javascript">JavaScript</option>
@@ -1115,11 +1074,10 @@ window.CommandsTabTemplate = `
 
                         <div class="mb-2 p-3 bg-gray-50 dark:bg-gray-900 rounded text-xs text-gray-500 dark:text-gray-400">
                             <div v-if="editingCommand.script_lang === 'javascript'">
-                                💡 脚本将在浏览器页面中执行（等同于 DevTools Console）
+                                💡 O script será executado na página do navegador (equivalente a DevTools Console）
                             </div>
                             <div v-else>
-                                💡 可用变量：<code>tab</code>（标签页）、<code>session</code>（会话）、
-                                <code>browser</code>、<code>config_engine</code>、<code>logger</code>、
+                                💡 Variáveis ​​disponíveis:<code>tab</code>（página da guia),<code>session</code>（conversa),                                 <code>browser</code>、<code>config_engine</code>、<code>logger</code>、
                                 <code>time</code>、<code>json</code>
                             </div>
                         </div>
@@ -1132,15 +1090,14 @@ window.CommandsTabTemplate = `
                         </textarea>
                     </div>
 
-                    <!-- 底部按钮 -->
+                    <!-- botão inferior -->
                     <div class="flex justify-end gap-3 pt-4 border-t dark:border-gray-700">
                         <button @click="showEditor = false"
                                 class="px-4 py-2 border dark:border-gray-600 rounded-lg text-sm dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-                            取消
-                        </button>
+                            Cancelar                         </button>
                         <button @click="saveCommand"
                                 class="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600">
-                            {{ isNew ? '创建' : '保存' }}
+                            {{ isNew ? 'criar' : 'manter' }}
                         </button>
                     </div>
                 </div>

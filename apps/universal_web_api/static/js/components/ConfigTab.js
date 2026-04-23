@@ -1,4 +1,4 @@
-// ==================== 配置 Tab 组件 (拆分版) ====================
+// ==================== Configuração Tab componentes (versão dividida) ====================
 
 window.ConfigTab = {
     name: 'ConfigTab',
@@ -11,8 +11,7 @@ window.ConfigTab = {
         'add-step', 'remove-step', 'move-step', 'action-change', 'show-templates',
         'update-image-config', 'test-image-extraction', 'reload-config'
     ],
-        // 注册子组件（确保模板可解析）
-    components: {
+        // Registre componentes filhos (certifique-se de que o modelo possa ser resolvido)     components: {
         'selector-panel': window.SelectorPanel,
         'image-config-panel': window.ImageConfigPanel,
         'stream-config-panel': window.StreamConfigPanel,
@@ -21,9 +20,8 @@ window.ConfigTab = {
     },
     data() {
         return {
-            // 🆕 预设管理
-            selectedPreset: '主预设',
-            defaultPreset: '主预设',
+            // 🆕 Gerenciamento padrão             selectedPreset: 'predefinição mestre',
+            defaultPreset: 'predefinição mestre',
             availablePresets: [],
             presetLoading: false,
             newPresetName: '',
@@ -31,15 +29,13 @@ window.ConfigTab = {
             renamePresetName: '',
             showRenamePresetInput: false,
 
-            // 折叠状态
-            selectorCollapsed: true,
+            // estado dobrado             selectorCollapsed: true,
             workflowCollapsed: true,
             imageConfigCollapsed: true,
             streamConfigCollapsed: true,
             filePasteCollapsed: true,
 
-            // 默认配置
-            defaultImageConfig: {
+            // Configuração padrão             defaultImageConfig: {
                 enabled: false,
                 selector: 'img',
                 container_selector: null,
@@ -61,14 +57,12 @@ window.ConfigTab = {
         };
     },
     computed: {
-        // 🆕 当前预设的配置数据
-        presetConfig() {
+        // 🆕 Dados de configuração padrão atuais         presetConfig() {
             if (!this.currentConfig) return null;
             const presets = this.currentConfig.presets;
-            if (!presets) return this.currentConfig; // 兼容旧格式
-            return presets[this.selectedPreset]
+            if (!presets) return this.currentConfig; // Compatível com formatos mais antigos             return presets[this.selectedPreset]
                 || presets[this.defaultPreset]
-                || presets['主预设']
+                || presets['predefinição mestre']
                 || Object.values(presets)[0]
                 || null;
         },
@@ -82,16 +76,14 @@ window.ConfigTab = {
         }
     },
     methods: {
-        // 选择器值更新
-        updateSelectorValue(key, value) {
+        // Atualização do valor do seletor         updateSelectorValue(key, value) {
             const pc = this.presetConfig;
             if (pc && pc.selectors) {
                 pc.selectors[key] = value;
             }
         },
 
-        // 流式配置保存
-        async saveStreamConfig(config) {
+        // Configuração de streaming salva         async saveStreamConfig(config) {
             if (!this.currentDomain) return;
             try {
                 const payload = { ...config, preset_name: this.selectedPreset };
@@ -105,12 +97,12 @@ window.ConfigTab = {
                     if (pc) pc.stream_config = config;
                 }
             } catch (e) {
-                console.error('保存流式配置失败:', e);
-                alert('保存失败: ' + e.message);
+                console.error('Falha ao salvar a configuração de streaming:', e);
+                alert('Falha ao salvar: ' + e.message);
             }
         },
 
-        // ===== 🆕 预设管理方法 =====
+        // ===== 🆕 Método de gerenciamento padrão =====
 
         async loadPresets() {
             if (!this.currentDomain) return;
@@ -119,27 +111,26 @@ window.ConfigTab = {
                 const response = await fetch('/api/presets/' + encodeURIComponent(this.currentDomain));
                 if (response.ok) {
                     const data = await response.json();
-                    this.availablePresets = data.presets || ['主预设'];
+                    this.availablePresets = data.presets || ['predefinição mestre'];
                     const apiDefault = data.default_preset;
                     if (apiDefault && this.availablePresets.includes(apiDefault)) {
                         this.defaultPreset = apiDefault;
-                    } else if (this.availablePresets.includes('主预设')) {
-                        this.defaultPreset = '主预设';
+                    } else if (this.availablePresets.includes('predefinição mestre')) {
+                        this.defaultPreset = 'predefinição mestre';
                     } else {
-                        this.defaultPreset = this.availablePresets[0] || '主预设';
+                        this.defaultPreset = this.availablePresets[0] || 'predefinição mestre';
                     }
                 } else {
-                    this.availablePresets = ['主预设'];
-                    this.defaultPreset = '主预设';
+                    this.availablePresets = ['predefinição mestre'];
+                    this.defaultPreset = 'predefinição mestre';
                 }
-                // 确保选中的预设仍然有效
-                if (!this.availablePresets.includes(this.selectedPreset)) {
-                    this.selectedPreset = this.defaultPreset || this.availablePresets[0] || '主预设';
+                // Certifique-se de que a predefinição selecionada ainda seja válida                 if (!this.availablePresets.includes(this.selectedPreset)) {
+                    this.selectedPreset = this.defaultPreset || this.availablePresets[0] || 'predefinição mestre';
                 }
             } catch (e) {
-                console.error('加载预设列表失败:', e);
-                this.availablePresets = ['主预设'];
-                this.defaultPreset = '主预设';
+                console.error('Falha ao carregar a lista predefinida:', e);
+                this.availablePresets = ['predefinição mestre'];
+                this.defaultPreset = 'predefinição mestre';
             } finally {
                 this.presetLoading = false;
             }
@@ -147,8 +138,7 @@ window.ConfigTab = {
 
         switchPreset(presetName) {
             this.selectedPreset = presetName;
-            // 触发父组件重新加载该预设的配置
-            this.$emit('reload-config');
+            // Aciona o componente pai para recarregar a configuração da predefinição             this.$emit('reload-config');
         },
 
         async setDefaultPreset() {
@@ -165,13 +155,13 @@ window.ConfigTab = {
                 if (response.ok) {
                     this.defaultPreset = this.selectedPreset;
                     this.$emit('reload-config');
-                    alert('✅ 默认预设已设置为 "' + this.selectedPreset + '"（仅本地覆盖）');
+                    alert('✅ A predefinição padrão é definida como "' + this.selectedPreset + '"（Apenas cobertura local)');
                 } else {
                     const err = await response.json();
-                    alert('❌ 设置默认预设失败: ' + (err.detail || '未知错误'));
+                    alert('❌ Falha na configuração da predefinição padrão: ' + (err.detail || 'erro desconhecido'));
                 }
             } catch (e) {
-                alert('❌ 网络错误: ' + e.message);
+                alert('❌ erro de rede: ' + e.message);
             }
         },
 
@@ -197,13 +187,13 @@ window.ConfigTab = {
                     await this.loadPresets();
                     this.selectedPreset = name;
                     this.$emit('reload-config');
-                    alert('✅ 预设 "' + name + '" 已创建（克隆自 "' + sourcePreset + '"）');
+                    alert('✅ Padrão "' + name + '" Criado (clonado de "' + sourcePreset + '"）');
                 } else {
                     const err = await response.json();
-                    alert('❌ 创建失败: ' + (err.detail || '未知错误'));
+                    alert('❌ Falha na criação: ' + (err.detail || 'erro desconhecido'));
                 }
             } catch (e) {
-                alert('❌ 网络错误: ' + e.message);
+                alert('❌ erro de rede: ' + e.message);
             }
         },
 
@@ -234,22 +224,22 @@ window.ConfigTab = {
                     await this.loadPresets();
                     this.selectedPreset = newName;
                     this.$emit('reload-config');
-                    alert('✅ 预设已重命名为 "' + newName + '"');
+                    alert('✅ A predefinição foi renomeada para "' + newName + '"');
                 } else {
                     const err = await response.json();
-                    alert('❌ 重命名失败: ' + (err.detail || '未知错误'));
+                    alert('❌ Falha ao renomear: ' + (err.detail || 'erro desconhecido'));
                 }
             } catch (e) {
-                alert('❌ 网络错误: ' + e.message);
+                alert('❌ erro de rede: ' + e.message);
             }
         },
 
         async deletePreset() {
             if (this.availablePresets.length <= 1) {
-                alert('不能删除最后一个预设');
+                alert('Não é possível excluir a última predefinição');
                 return;
             }
-            if (!confirm('确定要删除预设 "' + this.selectedPreset + '" 吗？此操作不可撤销。')) {
+            if (!confirm('Confirme que deseja excluir a predefinição "' + this.selectedPreset + '" ? Esta ação não pode ser desfeita.')) {
                 return;
             }
 
@@ -261,15 +251,15 @@ window.ConfigTab = {
 
                 if (response.ok) {
                     await this.loadPresets();
-                    this.selectedPreset = this.defaultPreset || this.availablePresets[0] || '主预设';
+                    this.selectedPreset = this.defaultPreset || this.availablePresets[0] || 'predefinição mestre';
                     this.$emit('reload-config');
-                    alert('✅ 预设已删除');
+                    alert('✅ Predefinição excluída');
                 } else {
                     const err = await response.json();
-                    alert('❌ 删除失败: ' + (err.detail || '未知错误'));
+                    alert('❌ Falha na exclusão: ' + (err.detail || 'erro desconhecido'));
                 }
             } catch (e) {
-                alert('❌ 网络错误: ' + e.message);
+                alert('❌ erro de rede: ' + e.message);
             }
         }
     },
@@ -277,9 +267,8 @@ window.ConfigTab = {
         currentDomain: {
             handler(newDomain) {
                 if (newDomain) {
-                    // 切换站点时强制按站点默认预设初始化
-                    this.selectedPreset = '';
-                    this.defaultPreset = '主预设';
+                    // Forçar a inicialização por padrão do site ao trocar de site                     this.selectedPreset = '';
+                    this.defaultPreset = 'predefinição mestre';
                     this.showNewPresetInput = false;
                     this.showRenamePresetInput = false;
                     this.newPresetName = '';
@@ -287,8 +276,8 @@ window.ConfigTab = {
                     this.loadPresets();
                 } else {
                     this.availablePresets = [];
-                    this.selectedPreset = '主预设';
-                    this.defaultPreset = '主预设';
+                    this.selectedPreset = 'predefinição mestre';
+                    this.defaultPreset = 'predefinição mestre';
                     this.showNewPresetInput = false;
                     this.showRenamePresetInput = false;
                     this.newPresetName = '';
@@ -300,22 +289,22 @@ window.ConfigTab = {
     },
     template: `
         <div class="h-full overflow-auto p-4">
-            <!-- 空状态 -->
+            <!-- Estado vazio -->
             <div v-if="!currentDomain || !currentConfig" class="h-full flex items-center justify-center">
                 <div class="text-center text-gray-400 dark:text-gray-500">
                     <div class="text-4xl mb-4">📝</div>
-                    <div class="text-lg">请选择或新增站点配置</div>
+                    <div class="text-lg">Selecione ou adicione uma nova configuração de site</div>
                 </div>
             </div>
 
-            <!-- 配置内容 -->
+            <!-- Conteúdo de configuração -->
             <div v-else class="space-y-4">
 
-                <!-- 🆕 预设选择器 -->
+                <!-- 🆕 Seletor predefinido -->
                 <div class="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-sm px-4 py-3">
                     <div class="flex items-center justify-between flex-wrap gap-3">
                         <div class="flex items-center gap-3">
-                            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">🎛️ 预设:</span>
+                            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">🎛️ Padrão:</span>
                             <select v-model="selectedPreset"
                                     @change="switchPreset(selectedPreset)"
                                     :disabled="presetLoading"
@@ -323,83 +312,75 @@ window.ConfigTab = {
                                 <option v-for="p in availablePresets" :key="p" :value="p">{{ p }}</option>
                             </select>
                             <span class="text-xs text-gray-400 dark:text-gray-500">
-                                ({{ availablePresets.length }} 个预设)
+                                ({{ availablePresets.length }} predefinições)
                             </span>
                             <span class="text-xs px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                默认: {{ defaultPreset || '主预设' }}
+                                padrão: {{ defaultPreset || 'predefinição mestre' }}
                             </span>
                         </div>
 
                         <div class="flex items-center gap-2">
-                            <!-- 设为默认 -->
+                            <!-- Definir como padrão -->
                             <button @click="setDefaultPreset"
                                     :disabled="!selectedPreset || selectedPreset === defaultPreset"
                                     class="px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 rounded hover:bg-emerald-50 dark:hover:bg-emerald-900/30 disabled:opacity-30">
-                                ⭐ 设为默认
-                            </button>
+                                ⭐ Definir como padrão                             </button>
 
-                            <!-- 新建预设 -->
+                            <!-- Nova predefinição -->
                             <div v-if="showNewPresetInput" class="flex items-center gap-2">
                                 <input v-model="newPresetName"
                                        @keyup.enter="createPreset"
                                        @keyup.escape="showNewPresetInput = false; newPresetName = ''"
-                                       placeholder="输入预设名称"
+                                       placeholder="Insira o nome padrão"
                                        class="border dark:border-gray-600 px-2 py-1 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-32 focus:ring-2 focus:ring-blue-400"
                                        autofocus>
                                 <button @click="createPreset"
                                         :disabled="!newPresetName.trim()"
                                         class="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50">
-                                    创建
-                                </button>
+                                    criar                                 </button>
                                 <button @click="showNewPresetInput = false"
                                         class="px-2 py-1 text-xs bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-400 dark:hover:bg-gray-500">
-                                    取消
-                                </button>
+                                    Cancelar                                 </button>
                             </div>
                             <button v-else @click="showNewPresetInput = true; showRenamePresetInput = false; renamePresetName = ''"
                                     class="px-3 py-1 text-xs font-medium bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-1">
-                                ＋ 新建预设
-                            </button>
+                                ＋ Nova predefinição                             </button>
 
-                            <!-- 重命名预设 -->
+                            <!-- Renomear predefinição -->
                             <div v-if="showRenamePresetInput" class="flex items-center gap-2">
                                 <input v-model="renamePresetName"
                                        @keyup.enter="renamePreset"
                                        @keyup.escape="showRenamePresetInput = false; renamePresetName = ''"
-                                       :placeholder="'重命名 ' + selectedPreset"
+                                       :placeholder="'Renomear ' + selectedPreset"
                                        class="border dark:border-gray-600 px-2 py-1 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white w-36 focus:ring-2 focus:ring-amber-400">
                                 <button @click="renamePreset"
                                         :disabled="!renamePresetName.trim()"
                                         class="px-2 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 disabled:opacity-50">
-                                    重命名
-                                </button>
+                                    Renomear                                 </button>
                                 <button @click="showRenamePresetInput = false; renamePresetName = ''"
                                         class="px-2 py-1 text-xs bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-400 dark:hover:bg-gray-500">
-                                    取消
-                                </button>
+                                    Cancelar                                 </button>
                             </div>
                             <button v-else
                                     @click="showRenamePresetInput = true; renamePresetName = selectedPreset; showNewPresetInput = false; newPresetName = ''"
                                     :disabled="!selectedPreset"
                                     class="px-3 py-1 text-xs font-medium text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-30">
-                                ✎ 重命名
-                            </button>
+                                ✎ Renomear                             </button>
 
-                            <!-- 删除预设 -->
+                            <!-- Excluir predefinição -->
                             <button @click="deletePreset"
                                     :disabled="availablePresets.length <= 1"
                                     class="px-3 py-1 text-xs font-medium text-red-600 dark:text-red-400 border border-red-300 dark:border-red-600 rounded hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-30 disabled:cursor-not-allowed"
-                                    :title="availablePresets.length <= 1 ? '不能删除最后一个预设' : '删除当前预设'">
-                                🗑️ 删除
-                            </button>
+                                    :title="availablePresets.length <= 1 ? 'Não é possível excluir a última predefinição' : 'Excluir predefinição atual'">
+                                🗑️ excluir                             </button>
                         </div>
                     </div>
                     <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                        新建预设会克隆当前选中的预设配置。在标签页池中可为不同标签页选择不同预设。未手动指定时会自动使用“默认预设”。
+                        A criação de uma nova predefinição clonará a configuração predefinida atualmente selecionada. Diferentes predefinições podem ser selecionadas para diferentes guias no conjunto de guias. Será usado automaticamente se não for especificado manualmente“Predefinição padrão”。
                     </p>
                 </div>
 
-                <!-- 选择器面板 -->
+                <!-- painel seletor -->
                 <selector-panel v-if="presetConfig"
                     :selectors="presetConfig.selectors || {}"
                     :collapsed="selectorCollapsed"
@@ -411,7 +392,7 @@ window.ConfigTab = {
                     @test-selector="(key, val) => $emit('test-selector', key, val)"
                 />
 
-                <!-- 图片配置面板 -->
+                <!-- Painel de configuração de imagem -->
                 <image-config-panel v-if="presetConfig"
                     :image-config="imageConfig"
                     :current-domain="currentDomain"
@@ -422,7 +403,7 @@ window.ConfigTab = {
                     @reload-config="$emit('reload-config')"
                 />
 
-                <!-- 流式配置面板 -->
+                <!-- Painel de configuração de streaming -->
                 <stream-config-panel v-if="presetConfig"
                     :stream-config="streamConfig"
                     :current-domain="currentDomain"
@@ -430,14 +411,14 @@ window.ConfigTab = {
                     @update:collapsed="streamConfigCollapsed = $event"
                     @save-stream-config="saveStreamConfig"
                 />
-                <!-- 文件粘贴配置面板 -->
+                <!-- Painel de configuração de colagem de arquivo -->
                 <file-paste-panel v-if="presetConfig"
                     :sites="$parent.sites"
                     :current-domain="currentDomain"
                     :collapsed="filePasteCollapsed"
                     @update:collapsed="filePasteCollapsed = $event"
                 />
-                <!-- 工作流面板 -->
+                <!-- Painel de fluxo de trabalho -->
                 <workflow-panel v-if="presetConfig"
                     :workflow="presetConfig.workflow || []"
                     :selectors="presetConfig.selectors || {}"
