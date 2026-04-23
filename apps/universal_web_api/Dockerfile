@@ -30,7 +30,10 @@ WORKDIR /app
 
 COPY . /app
 
-RUN cp -a /app/config /app/config.dist \
+RUN if [ -d /app/apps/universal_web_api ]; then \
+      cp -a /app/apps/universal_web_api/. /app/; \
+    fi \
+  && cp -a /app/config /app/config.dist \
   && python3 -m pip install --upgrade pip \
   && python3 -m pip install -r requirements.txt \
   && python3 patch_drissionpage.py
