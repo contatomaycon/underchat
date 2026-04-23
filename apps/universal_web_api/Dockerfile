@@ -12,6 +12,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     VNC_PORT=5900 \
     NOVNC_PORT=6080
 
+ARG APP_UID=10001
+ARG APP_GID=10001
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     xvfb \
@@ -36,9 +39,11 @@ RUN if [ -d /app/apps/universal_web_api ]; then \
   && cp -a /app/config /app/config.dist \
   && python3 -m pip install --upgrade pip \
   && python3 -m pip install -r requirements.txt \
-  && python3 patch_drissionpage.py
+  && python3 patch_drissionpage.py \
+  && mkdir -p /data/config /data/chrome_profile /data/image /data/download_images \
+  && chown -R "${APP_UID}:${APP_GID}" /app /data
 
-VOLUME ["/data/config", "/data/chrome_profile", "/data/image", "/data/download_images"]
+USER ${APP_UID}:${APP_GID}
 
 EXPOSE 8199 6080
 

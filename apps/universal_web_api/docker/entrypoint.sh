@@ -18,6 +18,14 @@ export VNC_PORT="${VNC_PORT:-5900}"
 export NOVNC_PORT="${NOVNC_PORT:-6080}"
 export AUTO_UPDATE_ENABLED="${AUTO_UPDATE_ENABLED:-false}"
 
+# Non-root runtime defaults required by fluxbox/chromium in Kubernetes.
+if [ -z "${HOME:-}" ] || [ "${HOME}" = "/" ]; then
+  export HOME="/tmp/home"
+fi
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/xdg-runtime}"
+mkdir -p "${HOME}" "${XDG_RUNTIME_DIR}"
+chmod 700 "${XDG_RUNTIME_DIR}" || true
+
 mkdir -p "${CONFIG_DIR}" "${CHROME_PROFILE_DIR}" "${IMAGE_DIR}" "${DOWNLOAD_IMAGES_DIR}"
 
 seed_config_file() {
@@ -47,6 +55,12 @@ ln -sfn "${IMAGE_DIR}" "${APP_ROOT}/image"
 ln -sfn "${DOWNLOAD_IMAGES_DIR}" "${APP_ROOT}/download_images"
 
 Xvfb "${DISPLAY}" -screen 0 "${XVFB_SCREEN:-1920x1080x24}" -nolisten tcp &
+for _ in $(seq 1 100); do
+  if xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
 fluxbox -display "${DISPLAY}" &
 
 if [ -n "${VNC_PASSWORD:-}" ]; then
@@ -64,6 +78,9 @@ CHROMIUM_BIN="${CHROMIUM_BIN:-/usr/bin/chromium}"
   --remote-debugging-address=127.0.0.1 \
   --remote-debugging-port="${BROWSER_PORT}" \
   --user-data-dir="${CHROME_PROFILE_DIR}" \
+  --password-store=basic \
+  --use-mock-keychain \
+  --disable-crash-reporter \
   --no-sandbox \
   --disable-setuid-sandbox \
   --no-first-run \

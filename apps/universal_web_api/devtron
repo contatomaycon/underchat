@@ -282,7 +282,7 @@ podDisruptionBudget:
   minAvailable: '4'
 podLabels: {}
 podSecurityContext:
-  fsGroup: 2000
+  fsGroup: 10001
   runAsUser: 10001
   runAsGroup: 10001
 prometheus:
