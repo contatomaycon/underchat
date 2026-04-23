@@ -6,6 +6,13 @@ ContainerPort:
     servicePort: 80
     supportStreaming: false
     useHTTP2: false
+  - idleTimeout: 300s
+    name: novnc
+    port: 6080
+    protocol: TCP
+    servicePort: 6080
+    supportStreaming: true
+    useHTTP2: false
 EnvVariables: []
 GracePeriod: 60
 LivenessProbe:
@@ -185,12 +192,19 @@ ingress:
   labels: {}
   hosts:
     - host: openai.devunder.com
+      containerPort: 8199
+      pathType: Prefix
+      paths:
+        - /
+    - host: vnc.openai.devunder.com
+      containerPort: 6080
       pathType: Prefix
       paths:
         - /
   tls:
     - hosts:
         - openai.devunder.com
+        - vnc.openai.devunder.com
       secretName: openai-devunder-tls
 ingressInternal:
   annotations: {}
@@ -288,7 +302,7 @@ podSecurityContext:
 prometheus:
   release: monitoring
 rawYaml: []
-replicaCount: 3
+replicaCount: 1
 resources:
   requests:
     cpu: 250m
