@@ -196,7 +196,7 @@ ingress:
       pathType: Prefix
       paths:
         - /
-    - host: vnc.openai.devunder.com
+    - host: vnc.devunder.com
       containerPort: 6080
       pathType: Prefix
       paths:
@@ -204,7 +204,7 @@ ingress:
   tls:
     - hosts:
         - openai.devunder.com
-        - vnc.openai.devunder.com
+        - vnc.devunder.com
       secretName: openai-devunder-tls
 ingressInternal:
   annotations: {}
