@@ -338,7 +338,7 @@ class AppConfig:
 
     @staticmethod
     def get_audio_speech_local_voice() -> str:
-        return os.getenv("AUDIO_SPEECH_LOCAL_VOICE", "en-us").strip() or "en-us"
+        return os.getenv("AUDIO_SPEECH_LOCAL_VOICE", "pt-br").strip() or "pt-br"
 
     @staticmethod
     def get_audio_speech_default_format() -> str:

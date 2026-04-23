@@ -28,6 +28,7 @@ Backend strategy (configurable):
 
 - `AUDIO_TRANSCRIPTION_MODE=auto|api|local` (`local` uses `faster-whisper`)
 - `AUDIO_SPEECH_MODE=auto|api|local` (`local` uses `espeak-ng` + `ffmpeg`)
+- `AUDIO_SPEECH_LOCAL_VOICE=pt-br` for Brazilian Portuguese local TTS
 
 Persistent volumes:
 

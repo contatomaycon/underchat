@@ -646,12 +646,19 @@ class AudioService:
 
     @staticmethod
     def _resolve_local_voice(voice: Optional[str]) -> str:
-        requested = (voice or "").strip().lower()
+        configured_voice = AppConfig.get_audio_speech_local_voice().strip().lower().replace("_", "-")
+        requested = (voice or "").strip().lower().replace("_", "-")
         if not requested:
-            requested = AppConfig.get_audio_speech_local_voice().strip().lower()
+            requested = configured_voice
         if not requested:
-            return "en-us"
-        return _OPENAI_VOICE_ALIASES.get(requested, requested)
+            return "pt-br"
+
+        # For local backend, OpenAI voice names are aliases. Prefer configured
+        # local voice (pt-br, en-us, etc.) when provided.
+        if requested in _OPENAI_VOICE_ALIASES:
+            return configured_voice or _OPENAI_VOICE_ALIASES[requested]
+
+        return requested
 
     @staticmethod
     def _resolve_speech_rate(speed: Optional[float]) -> int:
