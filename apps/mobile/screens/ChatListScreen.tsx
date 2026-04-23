@@ -706,7 +706,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [closeServiceClosureComment, setCloseServiceClosureComment] =
     useState('');
   const [closeServiceInformClosureReason, setCloseServiceInformClosureReason] =
-    useState(true);
+    useState(false);
   const locallyClearedSummaryChatIdsRef = useRef<Set<string>>(new Set());
   const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -1861,8 +1861,8 @@ export function ChatListScreen({ route, navigation }: Props) {
     setIsLoadingCloseServiceWorkerConfig(false);
     setCloseServiceSendMessageOnFinishAttendance(true);
     setCloseServiceClosureComment('');
-    setCloseServiceInformClosureReason(true);
-  }, []);
+    setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
+  }, [canToggleOptionalClosureReasonAction]);
 
   const confirmCloseChat = useCallback(async () => {
     const chatId = closeServiceTargetChat?.chat_id;
@@ -1940,7 +1940,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       openedSwipeableRef.current?.close();
       setCloseServiceSendMessageOnFinishAttendance(true);
       setCloseServiceClosureComment('');
-      setCloseServiceInformClosureReason(true);
+      setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
       setCloseServiceTargetChat(chat);
       setCloseServiceWorkerConfig(null);
       setCloseServiceModalVisible(true);
@@ -1969,7 +1969,12 @@ export function ChatListScreen({ route, navigation }: Props) {
           setIsLoadingCloseServiceWorkerConfig(false);
         });
     },
-    [currentUserId, isCurrentUserMasterOrAdministrator, socketPermissions]
+    [
+      currentUserId,
+      isCurrentUserMasterOrAdministrator,
+      socketPermissions,
+      canToggleOptionalClosureReasonAction,
+    ]
   );
 
   const handleAttendQueueChat = useCallback(

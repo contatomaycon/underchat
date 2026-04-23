@@ -362,7 +362,7 @@ export const pt = {
   closure_reason_label: 'Motivo do encerramento',
   close_service_inform_closure_toggle_label: 'Informar motivo do encerramento',
   close_service_inform_closure_toggle_description:
-    'Desative para encerrar sem informar o motivo.',
+    'Ative para informar um motivo.',
   reply: 'Responder',
   retry: 'Tentar novamente',
   replying_to: 'Respondendo mensagem',
