@@ -330,6 +330,38 @@ rawYaml:
                     name: universalwebapi-production-service
                     port:
                       number: 80
+      tls:
+        - hosts:
+            - openai.devunder.com
+          secretName: openai-devunder-tls
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: universalwebapi-vnc-basic-auth
+      namespace: production
+    type: Opaque
+    stringData:
+      auth: "maycon:$apr1$0TVxqlCj$qZz6HzO8OWZzNu/vpc7d0."
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: universalwebapi-production-vnc-ingress
+      namespace: production
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/backend-protocol: HTTP
+        nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-buffering: "off"
+        nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+        nginx.ingress.kubernetes.io/auth-type: basic
+        nginx.ingress.kubernetes.io/auth-secret: universalwebapi-vnc-basic-auth
+        nginx.ingress.kubernetes.io/auth-realm: "Universal Web-to-API Dashboard"
+    spec:
+      ingressClassName: nginx
+      rules:
         - host: vnc.devunder.com
           http:
             paths:
@@ -342,9 +374,8 @@ rawYaml:
                       number: 6080
       tls:
         - hosts:
-            - openai.devunder.com
             - vnc.devunder.com
-          secretName: openai-devunder-tls
+          secretName: vnc-devunder-tls
 replicaCount: 1
 resources:
   requests:
