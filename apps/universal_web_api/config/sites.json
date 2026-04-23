@@ -3,55 +3,55 @@
     "selector_definitions": [
       {
         "key": "input_box",
-        "description": "用户输入文本的输入框（textarea 或 contenteditable 元素）",
+        "description": "Campo de entrada de texto do usuário (textarea ou elemento contenteditable)",
         "enabled": true,
         "required": true
       },
       {
         "key": "send_btn",
-        "description": "发送消息的按钮（通常是 type=submit 或带有发送图标的按钮）",
+        "description": "Botão para enviar mensagem (normalmente type=submit ou com ícone de envio)",
         "enabled": true,
         "required": true
       },
       {
         "key": "result_container",
-        "description": "AI 回复内容的容器（仅包含 AI 的输出文本，不含用户消息）",
+        "description": "Container da resposta da IA (apenas o texto de saída da IA, sem mensagens do usuário)",
         "enabled": true,
         "required": true
       },
       {
         "key": "new_chat_btn",
-        "description": "新建对话的按钮（点击后开始新的对话）",
+        "description": "Botão para iniciar nova conversa (ao clicar, começa um novo chat)",
         "enabled": true,
         "required": false
       },
       {
         "key": "message_wrapper",
-        "description": "消息完整容器（包裹单条消息的外层元素，用于多节点拼接）",
+        "description": "Container completo da mensagem (envolve cada mensagem para composição de múltiplos nós)",
         "enabled": false,
         "required": false
       },
       {
         "key": "generating_indicator",
-        "description": "生成中指示器（如停止按钮、加载动画，用于检测是否还在输出）",
+        "description": "Indicador de geração em andamento (ex.: botão parar, animação de carregamento)",
         "enabled": false,
         "required": false
       },
       {
         "key": "upload_btn",
-        "description": "打开文件选择器的上传按钮（点击后通常会弹出原生选文件）",
+        "description": "Botão de upload que abre o seletor de arquivos do sistema",
         "enabled": false,
         "required": false
       },
       {
         "key": "file_input",
-        "description": "原生文件输入框（input[type=file]），用于直接注入文件",
+        "description": "Campo nativo de arquivo (input[type=file]) para injeção direta de arquivos",
         "enabled": false,
         "required": false
       },
       {
         "key": "drop_zone",
-        "description": "支持拖拽上传的区域（某些站点不支持粘贴但支持拖拽）",
+        "description": "Área com suporte a upload por arrastar e soltar",
         "enabled": false,
         "required": false
       }
@@ -59,7 +59,7 @@
   },
   "aistudio.google.com": {
     "presets": {
-      "主预设": {
+      "Preset principal": {
         "selectors": {
           "input_box": "textarea[formcontrolname=\"promptText\"]",
           "send_btn": "button[aria-label=\"Run\"]",
@@ -152,21 +152,21 @@
         "file_paste": {
           "enabled": true,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容",
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo",
           "post_upload_settle": 5
         }
       }
     },
-    "default_preset": "主预设"
+    "default_preset": "Preset principal"
   },
   "grok.com": {
     "presets": {
-      "主预设": {
+      "Preset principal": {
         "selectors": {
           "input_box": "div.tiptap[contenteditable=\"true\"]",
-          "send_btn": "button[aria-label=\"提交\"]",
+          "send_btn": "button[aria-label=\"Submit\"], button[aria-label=\"Enviar\"], button[type=\"submit\"]",
           "result_container": "div[id^=\"response-\"].items-start .response-content-markdown",
-          "new_chat_btn": "a[aria-label=\"主页\"]",
+          "new_chat_btn": "a[aria-label=\"Home\"], a[aria-label=\"Início\"], a[href=\"/\"]",
           "message_wrapper": "div[id^=\"response-\"]",
           "generating_indicator": null
         },
@@ -223,15 +223,15 @@
         "file_paste": {
           "enabled": false,
           "threshold": 5000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       }
     },
-    "default_preset": "主预设"
+    "default_preset": "Preset principal"
   },
   "chatgpt.com": {
     "presets": {
-      "主预设": {
+      "Preset principal": {
         "selectors": {
           "input_box": "#prompt-textarea",
           "send_btn": "[data-testid=\"send-button\"]",
@@ -239,7 +239,7 @@
           "new_chat_btn": "[data-testid=\"create-new-chat-button\"]",
           "message_wrapper": "article[data-testid^=\"conversation-turn-\"]",
           "generating_indicator": null,
-          "temp_chat_btn": "button[aria-label=\"开启临时聊天\"]"
+          "temp_chat_btn": "button[aria-label=\"Temporary chat\"], button[aria-label=\"Conversa temporária\"], button[aria-label=\"Conversa temporaria\"], button[aria-label=\"Modo furtivo\"]"
         },
         "stream_config": {
           "mode": "network",
@@ -271,7 +271,7 @@
           {
             "action": "CLICK",
             "target": "temp_chat_btn",
-            "optional": false,
+            "optional": true,
             "value": null
           },
           {
@@ -308,15 +308,15 @@
         "file_paste": {
           "enabled": false,
           "threshold": 180000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       }
     },
-    "default_preset": "主预设"
+    "default_preset": "Preset principal"
   },
   "gemini.google.com": {
     "presets": {
-      "主预设": {
+      "Preset principal": {
         "selectors": {
           "input_box": "rich-textarea .ql-editor[contenteditable=\"true\"][role=\"textbox\"]",
           "send_btn": "button.send-button",
@@ -324,9 +324,9 @@
           "new_chat_btn": "[data-test-id=\"expanded-button\"]",
           "message_wrapper": null,
           "generating_indicator": "",
-          "点击模型选择": "[data-test-id=\"logo-pill-label-container\"]",
-          "选择模型": "//button[.//span[contains(text(), \"Pro\")]]",
-          "临时对话按钮": "button.temp-chat-button"
+          "clicar_seletor_modelo": "[data-test-id=\"logo-pill-label-container\"]",
+          "selecionar_modelo": "//button[.//span[contains(text(), \"Pro\")]]",
+          "botao_conversa_temporaria": "button.temp-chat-button"
         },
         "stream_config": {
           "mode": "network",
@@ -357,19 +357,19 @@
           },
           {
             "action": "CLICK",
-            "target": "临时对话按钮",
+            "target": "botao_conversa_temporaria",
             "optional": true,
             "value": null
           },
           {
             "action": "CLICK",
-            "target": "点击模型选择",
+            "target": "clicar_seletor_modelo",
             "optional": true,
             "value": null
           },
           {
             "action": "CLICK",
-            "target": "选择模型",
+            "target": "selecionar_modelo",
             "optional": true,
             "value": null
           },
@@ -413,7 +413,7 @@
         "file_paste": {
           "enabled": false,
           "threshold": 30000,
-          "hint_text": "完全专注于文件内容",
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo",
           "post_upload_settle": 5,
           "upload_signal_selectors": [
             "[class*=\"attachment\"]",
@@ -427,7 +427,7 @@
           ]
         }
       },
-      "快速模型": {
+      "Modelo rápido": {
         "selectors": {
           "input_box": "rich-textarea .ql-editor[contenteditable=\"true\"][role=\"textbox\"]",
           "send_btn": "button.send-button",
@@ -435,9 +435,9 @@
           "new_chat_btn": "[data-test-id=\"expanded-button\"]",
           "message_wrapper": null,
           "generating_indicator": "",
-          "点击模型选择": "[data-test-id=\"logo-pill-label-container\"]",
-          "选择模型": "//button[.//span[contains(text(), \"思考\")]]",
-          "临时对话按钮": "button.temp-chat-button"
+          "clicar_seletor_modelo": "[data-test-id=\"logo-pill-label-container\"]",
+          "selecionar_modelo": "//button[.//span[contains(text(), \"Thinking\") or contains(text(), \"Raciocínio\")]]",
+          "botao_conversa_temporaria": "button.temp-chat-button"
         },
         "stream_config": {
           "mode": "network",
@@ -468,19 +468,19 @@
           },
           {
             "action": "CLICK",
-            "target": "临时对话按钮",
+            "target": "botao_conversa_temporaria",
             "optional": true,
             "value": null
           },
           {
             "action": "CLICK",
-            "target": "点击模型选择",
+            "target": "clicar_seletor_modelo",
             "optional": false,
             "value": null
           },
           {
             "action": "CLICK",
-            "target": "选择模型",
+            "target": "selecionar_modelo",
             "optional": false,
             "value": null
           },
@@ -524,15 +524,15 @@
         "file_paste": {
           "enabled": false,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       }
     },
-    "default_preset": "主预设"
+    "default_preset": "Preset principal"
   },
   "chat.deepseek.com": {
     "presets": {
-      "主预设": {
+      "Preset principal": {
         "selectors": {
           "input_box": "textarea",
           "send_btn": "div.bf38813a > div > div[role='button']",
@@ -601,20 +601,20 @@
         "file_paste": {
           "enabled": true,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       }
     },
-    "default_preset": "主预设"
+    "default_preset": "Preset principal"
   },
   "www.doubao.com": {
     "presets": {
-      "主预设": {
+      "Preset principal": {
         "selectors": {
           "input_box": "textarea[data-testid=\"chat_input_input\"], textarea[placeholder], textarea",
-          "send_btn": "button[data-testid=\"chat_input_send_button\"], button[aria-label*=\"发送\"], button[type=\"submit\"]",
+          "send_btn": "button[data-testid=\"chat_input_send_button\"], button[aria-label*=\"Enviar\"], button[aria-label*=\"Send\"], button[type=\"submit\"]",
           "result_container": "[data-testid=\"message_content\"], [data-testid=\"message-content\"]",
-          "new_chat_btn": "[data-testid=\"create_conversation_button\"], [data-testid=\"create-new-chat-button\"], button[aria-label*=\"新对话\"]"
+          "new_chat_btn": "[data-testid=\"create_conversation_button\"], [data-testid=\"create-new-chat-button\"], button[aria-label*=\"Nova conversa\"], button[aria-label*=\"New chat\"]"
         },
         "workflow": [
           {
@@ -669,7 +669,7 @@
         "file_paste": {
           "enabled": true,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         },
         "stream_config": {
           "mode": "network",
@@ -687,18 +687,18 @@
         }
       }
     },
-    "default_preset": "主预设"
+    "default_preset": "Preset principal"
   },
   "claude.ai": {
     "presets": {
-      "主预设": {
+      "Preset principal": {
         "selectors": {
           "input_box": "div[data-testid=\"chat-input\"], div[contenteditable=\"true\"][data-testid=\"chat-input\"], div.ProseMirror[contenteditable=\"true\"]",
-          "send_btn": "button[type=\"submit\"], button[aria-label*=\"Send Message\"], button[aria-label*=\"发送\"]",
+          "send_btn": "button[type=\"submit\"], button[aria-label*=\"Send Message\"], button[aria-label*=\"Enviar mensagem\"], button[aria-label*=\"Enviar\"]",
           "result_container": "div.font-claude-response:last-of-type, div[data-testid=\"assistant-message\"] .font-claude-response:last-of-type",
-          "new_chat_btn": "a[aria-label=\"New chat\"], a[href=\"/new\"], button[aria-label*=\"New chat\"], button[aria-label*=\"新聊天\"]",
+          "new_chat_btn": "a[aria-label=\"New chat\"], a[aria-label=\"Nova conversa\"], a[href=\"/new\"], button[aria-label*=\"New chat\"], button[aria-label*=\"Nova conversa\"]",
           "message_wrapper": null,
-          "generating_indicator": "button[aria-label*=\"Stop\"], button[aria-label*=\"停止\"]"
+          "generating_indicator": "button[aria-label*=\"Stop\"], button[aria-label*=\"Parar\"]"
         },
         "workflow": [
           {
@@ -761,15 +761,15 @@
         "file_paste": {
           "enabled": false,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       }
     },
-    "default_preset": "主预设"
+    "default_preset": "Preset principal"
   },
   "arena.ai": {
     "presets": {
-      "主预设-direct模式": {
+      "Preset principal - modo direct": {
         "selectors": {
           "input_box": "textarea[name=\"message\"]",
           "send_btn": "button[type=\"submit\"]",
@@ -847,16 +847,16 @@
         "file_paste": {
           "enabled": false,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       },
-      "预设_选择模型": {
+      "Preset_selecionar_modelo": {
         "selectors": {
-          "点击battle": "xpath://button[@role='combobox' and .//*[contains(normalize-space(), 'Battle')]]",
-          "切换direct": "xpath://div[@role='option' and .//p[normalize-space()='Direct']]",
-          "点击gemini3.0pro": "css:[role='option'][data-value='gemini-3-pro']",
-          "点击max": "xpath://button[@aria-haspopup='dialog' and @data-state='closed' and .//*[contains(normalize-space(), 'Max')]]",
-          "点击gemini3_0pro": "css:[role='option'][data-value='gemini-3-pro']"
+          "clicar_battle": "xpath://button[@role='combobox' and .//*[contains(normalize-space(), 'Battle')]]",
+          "alternar_direct": "xpath://div[@role='option' and .//p[normalize-space()='Direct']]",
+          "clicar_gemini3_0pro": "css:[role='option'][data-value='gemini-3-pro']",
+          "clicar_max": "xpath://button[@aria-haspopup='dialog' and @data-state='closed' and .//*[contains(normalize-space(), 'Max')]]",
+          "clicar_gemini3_0pro_alt": "css:[role='option'][data-value='gemini-3-pro']"
         },
         "workflow": [
           {
@@ -949,10 +949,10 @@
         "file_paste": {
           "enabled": false,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       },
-      "预设_切换SideBySide": {
+      "Preset_alternar_side_by_side": {
         "selectors": {},
         "workflow": [
           {
@@ -993,10 +993,10 @@
         "file_paste": {
           "enabled": false,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       },
-      "预设_过cf盾": {
+      "Preset_contornar_cf": {
         "selectors": {
           "input_box": "textarea[name=\"message\"]",
           "send_btn": "button[type=\"submit\"]",
@@ -1048,10 +1048,10 @@
         "file_paste": {
           "enabled": false,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       },
-      "主预设-sidebyside模式": {
+      "Preset principal - modo lado a lado": {
         "selectors": {
           "input_box": "textarea[name=\"message\"]",
           "send_btn": "button[type=\"submit\"]",
@@ -1129,22 +1129,22 @@
         "file_paste": {
           "enabled": false,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       }
     },
-    "default_preset": "主预设-sidebyside模式"
+    "default_preset": "Preset principal - modo lado a lado"
   },
   "chat.qwen.ai": {
     "presets": {
-      "主预设": {
+      "Preset principal": {
         "selectors": {
           "input_box": "textarea.message-input-textarea, textarea#chat-input, textarea[data-testid=\"yuntu-textarea\"], textarea[placeholder], div[role=\"textbox\"][contenteditable=\"true\"]",
-          "send_btn": "button.send-button, .send-button, .message-input-right-button-send, .chat-prompt-send-button, #send-message-button, button[type=\"submit\"], button[aria-label*=\"发送\"], button[aria-label*=\"Send\"]",
+          "send_btn": "button.send-button, .send-button, .message-input-right-button-send, .chat-prompt-send-button, #send-message-button, button[type=\"submit\"], button[aria-label*=\"Enviar\"], button[aria-label*=\"Send\"]",
           "result_container": ".chat-response-message .qwen-markdown, .chat-response-message-right .qwen-markdown, .response-message-content, .custom-qwen-markdown, .qwen-markdown",
-          "new_chat_btn": "xpath://div[@id=\"sidebar\"]//div[contains(@class, \"sidebar-entry-list-content\")][.//div[contains(@class, \"sidebar-entry-list-text\") and normalize-space(.)=\"新建对话\"]][1]",
+          "new_chat_btn": "xpath://div[@id=\"sidebar\"]//div[contains(@class, \"sidebar-entry-list-content\")][.//div[contains(@class, \"sidebar-entry-list-text\") and (normalize-space(.)=\"Nova conversa\" or normalize-space(.)=\"New chat\")]][1]",
           "message_wrapper": ".qwen-chat-message, .chat-response-message, .chat-user-message, .chat-item, [data-role]",
-          "generating_indicator": "button[aria-label*=\"停止\"], button[aria-label*=\"Stop\"]",
+          "generating_indicator": "button[aria-label*=\"Parar\"], button[aria-label*=\"Stop\"]",
           "file_input": "input[type=\"file\"]",
           "drop_zone": "body"
         },
@@ -1209,22 +1209,22 @@
         "file_paste": {
           "enabled": true,
           "threshold": 40000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       }
     },
-    "default_preset": "主预设"
+    "default_preset": "Preset principal"
   },
   "www.kimi.com": {
     "presets": {
-      "主预设": {
+      "Preset principal": {
         "selectors": {
           "input_box": ".chat-input-editor[contenteditable=\"true\"], div[role=\"textbox\"][contenteditable=\"true\"], textarea[data-testid=\"chat-input\"], textarea",
-          "send_btn": ".send-button-container:not(.disabled), .send-button-container, .send-button, button.send-button, button[type=\"submit\"], button[aria-label*=\"发送\"]",
+          "send_btn": ".send-button-container:not(.disabled), .send-button-container, .send-button, button.send-button, button[type=\"submit\"], button[aria-label*=\"Enviar\"], button[aria-label*=\"Send\"]",
           "result_container": ".chat-content-list .markdown, .chat-content-list .segment-content, .chat-content-item-assistant .markdown, [data-message-role=\"assistant\"] .markdown",
-          "new_chat_btn": "a.new-chat-btn, .new-chat-btn, .create-new-chat-button, button.create-new-chat-button, button[aria-label*=\"新建会话\"], button[aria-label*=\"新建对话\"], button[aria-label*=\"New chat\"]",
+          "new_chat_btn": "a.new-chat-btn, .new-chat-btn, .create-new-chat-button, button.create-new-chat-button, button[aria-label*=\"Nova conversa\"], button[aria-label*=\"New chat\"]",
           "message_wrapper": ".chat-content-list > *, .chat-content-item",
-          "generating_indicator": "button[aria-label*=\"停止\"], button[aria-label*=\"Stop\"]"
+          "generating_indicator": "button[aria-label*=\"Parar\"], button[aria-label*=\"Stop\"]"
         },
         "workflow": [
           {
@@ -1293,10 +1293,10 @@
         "file_paste": {
           "enabled": false,
           "threshold": 50000,
-          "hint_text": "完全专注于文件内容"
+          "hint_text": "Concentre-se totalmente no conteúdo do arquivo"
         }
       }
     },
-    "default_preset": "主预设"
+    "default_preset": "Preset principal"
   }
 }
