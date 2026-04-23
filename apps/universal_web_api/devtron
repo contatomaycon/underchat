@@ -196,20 +196,15 @@ ingress:
       pathType: Prefix
       paths:
         - /
-    - host: openai.devunder.com
+    - host: vnc.devunder.com
       containerPort: 6080
       pathType: Prefix
       paths:
-        - /vnc.html
-        - /websockify
-        - /app
-        - /core
-        - /vendor
-        - /images
-        - /locale
+        - /
   tls:
     - hosts:
         - openai.devunder.com
+        - vnc.devunder.com
       secretName: openai-devunder-tls
 ingressInternal:
   annotations: {}
