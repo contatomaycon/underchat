@@ -293,7 +293,7 @@
             "value": null
           }
         ],
-        "stealth": true,
+        "stealth": false,
         "image_extraction": {
           "enabled": false,
           "selector": "img",
