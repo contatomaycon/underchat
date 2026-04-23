@@ -96,12 +96,13 @@ def _restore_secret_placeholders(updates, existing):
 async def verify_auth(authorization: Optional[str] = Header(None)) -> bool:
     if not AppConfig.is_auth_enabled():
         return True
-    if not AppConfig.AUTH_TOKEN:
+    token_value = AppConfig.get_auth_token()
+    if not token_value:
         raise HTTPException(status_code=500, detail="服务配置错误")
     if not authorization:
         raise HTTPException(status_code=401, detail="未提供认证令牌")
     token = authorization.replace("Bearer ", "").strip()
-    if token != AppConfig.get_auth_token():
+    if token != token_value:
         raise HTTPException(status_code=401, detail="认证令牌无效")
     return True
 
