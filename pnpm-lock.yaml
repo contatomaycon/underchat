@@ -129,8 +129,8 @@ importers:
         specifier: ^3.6.4
         version: 3.6.4
       '@whiskeysockets/baileys':
-        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/272
-        version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/272(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)
+        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/274
+        version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/274(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)
       '@wwebjs/whatsapp-web.js':
         specifier: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/273
         version: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/273(typescript@5.9.3)
@@ -935,6 +935,8 @@ importers:
         version: 3.2.4(typescript@5.9.3)
 
   apps/worker_baileys: {}
+
+  apps/worker_whatsmeow: {}
 
   apps/worker_wwebjs: {}
 
@@ -5748,8 +5750,8 @@ packages:
   '@wasm-audio-decoders/opus-ml@0.0.2':
     resolution: {integrity: sha512-58rWEqDGg+CKCyEeKm2KoxxSwTWtHh/NLTW9ObR4K8CGF6VwuuGudEI1CtniS/oSRmL1nJq/eh8MKARiluw4DQ==}
 
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/272':
-    resolution: {tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/272}
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/274':
+    resolution: {integrity: sha512-ZgaC4WS3Juo+h/HaZNgfF+XmLj1xRQzA35foizHcPziuW9qudxUbcZXPWUmpaVJJViikdiFRPMHey3uqk7gt/Q==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/274}
     version: 1.0.1
     engines: {node: '>=20.0.0'}
     peerDependencies:
@@ -5770,7 +5772,7 @@ packages:
     version: 2.0.1
 
   '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/273':
-    resolution: {integrity: sha512-pYgHv0XHzktCLv5g5sPNQUSJQrvmZQ9DH/nW+csgDMqfqXR+/IRxalGUPLQk2GwOvEvxVMvYkop7ENe23vIziQ==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/273}
+    resolution: {tarball: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/273}
     version: 1.34.8
     engines: {node: '>=18.0.0'}
 
@@ -19566,7 +19568,7 @@ snapshots:
     dependencies:
       '@wasm-audio-decoders/common': 9.0.7
 
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/272(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)':
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/274(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)':
     dependencies:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4

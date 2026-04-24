@@ -663,7 +663,7 @@ export class BaileysConnectionService {
     const socket = makeWASocket({
       auth: state,
       version,
-      browser: Browsers.android('14'),
+      browser: Browsers.macOS('Desktop'),
       logger: P({ level: 'silent' }),
       printQRInTerminal: false,
       getMessage: async (key) =>
@@ -675,7 +675,6 @@ export class BaileysConnectionService {
       keepAliveIntervalMs: 15_000,
       defaultQueryTimeoutMs: 60_000,
       maxMsgRetryCount: 10,
-      ignoreStatusBroadcast: true,
       ...(proxyAgent
         ? {
             agent: proxyAgent,
