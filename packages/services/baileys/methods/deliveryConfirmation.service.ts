@@ -36,7 +36,7 @@ export class BaileysDeliveryConfirmationService {
     }
 
     return new Promise<DeliveryWaitResult>((resolve) => {
-      let timeoutHandle: NodeJS.Timeout | undefined;
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
       const deliver = (outcome: DeliveryOutcome) => {
         if (timeoutHandle) {
