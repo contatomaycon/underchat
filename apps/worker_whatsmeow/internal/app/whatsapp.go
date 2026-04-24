@@ -34,6 +34,13 @@ type WhatsAppManager struct {
 	status      string
 	code        int
 	rejectCalls bool
+
+	pendingFreshLogin *freshLoginRequest
+}
+
+type freshLoginRequest struct {
+	Type  string
+	Phone string
 }
 
 func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, centrifugo *CentrifugoClient, balance *BalanceGRPCClient, storage *StorageClient) (*WhatsAppManager, error) {
@@ -163,14 +170,20 @@ func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) error {
 		return fmt.Errorf("client is not initialized")
 	}
 	if client.IsConnected() {
+		m.clearFreshLoginFallback()
 		m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
 		return nil
 	}
 	if client.Store.ID != nil {
+		m.armFreshLoginFallback(freshLoginRequest{Type: "qrcode"})
 		m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
-		return client.ConnectContext(ctx)
+		if err := client.ConnectContext(ctx); err != nil {
+			return m.handleStoredSessionConnectError(ctx, err)
+		}
+		return nil
 	}
 
+	m.clearFreshLoginFallback()
 	qrChan, err := client.GetQRChannel(ctx)
 	if err != nil {
 		return err
@@ -207,9 +220,19 @@ func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone str
 	if phone = digits(phone); phone == "" {
 		return fmt.Errorf("phone_connection is required")
 	}
-	if client.Store.ID != nil {
-		return client.ConnectContext(ctx)
+	if client.IsConnected() {
+		m.clearFreshLoginFallback()
+		m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
+		return nil
 	}
+	if client.Store.ID != nil {
+		m.armFreshLoginFallback(freshLoginRequest{Type: "phone", Phone: phone})
+		if err := client.ConnectContext(ctx); err != nil {
+			return m.handleStoredSessionConnectError(ctx, err)
+		}
+		return nil
+	}
+	m.clearFreshLoginFallback()
 	m.publishState(ctx, "connecting", CodeAwaitingPairingCode, WorkerStatusDisponible, "", "", true)
 	if !client.IsConnected() {
 		if err := client.ConnectContext(ctx); err != nil {
@@ -225,6 +248,7 @@ func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone str
 }
 
 func (m *WhatsAppManager) removeSession(ctx context.Context) error {
+	m.clearFreshLoginFallback()
 	client := m.getClient()
 	if client != nil {
 		if client.IsConnected() || client.IsLoggedIn() {
@@ -242,6 +266,7 @@ func (m *WhatsAppManager) removeSession(ctx context.Context) error {
 func (m *WhatsAppManager) handleEvent(evt any) {
 	switch event := evt.(type) {
 	case *events.Connected:
+		m.clearFreshLoginFallback()
 		client := m.getClient()
 		phone := ""
 		if client != nil {
@@ -261,13 +286,23 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.mu.Unlock()
 		m.publishState(context.Background(), "disconnected", CodeConnectionLost, WorkerStatusOffline, "", "", false)
 	case *events.LoggedOut:
+		if m.startFreshLoginAfterStoredSessionLogout() {
+			return
+		}
 		m.mu.Lock()
 		m.connected = false
 		m.status = "disconnected"
 		m.code = CodeLoggedOut
 		m.mu.Unlock()
 		m.publishState(context.Background(), "disconnected", CodeLoggedOut, WorkerStatusDisponible, "", "", false)
+	case *events.ConnectFailure:
+		if event.Reason.IsLoggedOut() && m.startFreshLoginAfterStoredSessionLogout() {
+			return
+		}
+		m.clearFreshLoginFallback()
+		m.publishState(context.Background(), "disconnected", CodeConnectionLost, WorkerStatusOffline, "", "", false)
 	case *events.StreamReplaced:
+		m.clearFreshLoginFallback()
 		m.publishState(context.Background(), "disconnected", CodeConnectionReplaced, WorkerStatusOffline, "", "", false)
 	case *events.Message:
 		go m.handleIncomingMessage(context.Background(), event)
@@ -280,6 +315,99 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 	case *events.ChatPresence:
 		go m.publishPresence(context.Background(), event)
 	}
+}
+
+func (m *WhatsAppManager) handleStoredSessionConnectError(ctx context.Context, err error) error {
+	if isStoredSessionInvalidError(err) {
+		req, ok := m.consumeFreshLoginFallback()
+		if ok {
+			return m.resetAndStartFreshLogin(ctx, req)
+		}
+	}
+	m.clearFreshLoginFallback()
+	return err
+}
+
+func (m *WhatsAppManager) armFreshLoginFallback(req freshLoginRequest) {
+	if req.Type == "" {
+		req.Type = "qrcode"
+	}
+	m.mu.Lock()
+	m.pendingFreshLogin = &req
+	m.mu.Unlock()
+}
+
+func (m *WhatsAppManager) clearFreshLoginFallback() {
+	m.mu.Lock()
+	m.pendingFreshLogin = nil
+	m.mu.Unlock()
+}
+
+func (m *WhatsAppManager) consumeFreshLoginFallback() (freshLoginRequest, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.pendingFreshLogin == nil {
+		return freshLoginRequest{}, false
+	}
+	req := *m.pendingFreshLogin
+	m.pendingFreshLogin = nil
+	return req, true
+}
+
+func (m *WhatsAppManager) startFreshLoginAfterStoredSessionLogout() bool {
+	req, ok := m.consumeFreshLoginFallback()
+	if !ok {
+		return false
+	}
+	go func() {
+		if err := m.resetAndStartFreshLogin(context.Background(), req); err != nil {
+			log.Printf("failed to restart whatsmeow fresh login after stale session logout: %v", err)
+			m.publishState(context.Background(), "disconnected", CodeLoggedOut, WorkerStatusDisponible, "", "", false)
+		}
+	}()
+	return true
+}
+
+func (m *WhatsAppManager) resetAndStartFreshLogin(ctx context.Context, req freshLoginRequest) error {
+	m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", true)
+	if err := m.resetLocalSession(ctx); err != nil {
+		return err
+	}
+	switch strings.ToLower(req.Type) {
+	case "phone":
+		return m.connectWithPhonePairing(ctx, req.Phone)
+	default:
+		return m.connectWithQRCode(ctx)
+	}
+}
+
+func (m *WhatsAppManager) resetLocalSession(ctx context.Context) error {
+	client := m.getClient()
+	if client != nil {
+		client.Disconnect()
+		if client.Store != nil && client.Store.ID != nil && !client.Store.Deleted {
+			if err := client.Store.Delete(ctx); err != nil {
+				return fmt.Errorf("delete stale whatsmeow store: %w", err)
+			}
+		}
+	}
+	m.mu.Lock()
+	m.connected = false
+	m.status = "connecting"
+	m.code = CodeAwaitConnection
+	m.mu.Unlock()
+	return m.initClient(ctx)
+}
+
+func isStoredSessionInvalidError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "logged out") ||
+		strings.Contains(msg, "deleted device") ||
+		strings.Contains(msg, "invalid use of deleted device") ||
+		strings.Contains(msg, "primary device was logged out")
 }
 
 func (m *WhatsAppManager) setState(status string, code int, workerStatusID string) {
