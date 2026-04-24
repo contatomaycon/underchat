@@ -150,7 +150,6 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 	workerID := w.cfg.WorkerID
 	topics := []string{
 		topicWorkerSendMessage(workerID),
-		topicWorkerSendMessageDLQ(workerID),
 		topicWorkerScheduleSend(workerID),
 		topicWorkerValidatePhone(workerID),
 		topicWorkerNotification(workerID),
@@ -170,7 +169,6 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 		fn    KafkaMessageHandler
 	}{
 		{topicWorkerSendMessage(workerID), "group-underchat-whatsmeow-send-" + workerID, w.handleSendMessage},
-		{topicWorkerSendMessageDLQ(workerID), "group-underchat-whatsmeow-send-dlq-" + workerID, w.handleSendMessageDLQ},
 		{topicWorkerScheduleSend(workerID), "group-underchat-schedule-message-whatsmeow-" + workerID, w.handleScheduleSend},
 		{topicWorkerValidatePhone(workerID), "group-underchat-whatsmeow-validate-phone-" + workerID, w.handlePhoneValidation},
 		{topicWorkerNotification(workerID), "group-underchat-whatsmeow-notification-send-" + workerID, w.handleNotification},
@@ -215,7 +213,7 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) error
 	}
 	result, err := w.whatsapp.SendChatMessage(ctx, data)
 	if err != nil {
-		return w.publishSendDLQ(ctx, msg, data, err)
+		return w.markSendAsNotSent(ctx, data.MessageID, data.ChatID, stringValue(data.Account["id"]), err)
 	}
 	return w.kafka.SendJSON(ctx, topicUpdateMessage, data.MessageID, UpdateMessage{Message: result, Data: data})
 }
@@ -230,7 +228,7 @@ func (w *Worker) handleProfileStatus(ctx context.Context, msg kafka.Message, dat
 	}
 	externalID, err := w.whatsapp.SendProfileStatus(ctx, data)
 	if err != nil {
-		return w.publishRawSendDLQ(ctx, msg, messageID, "", data.Raw, err)
+		return w.markSendAsNotSent(ctx, messageID, "", data.AccountID, err)
 	}
 	if externalID == "" {
 		return nil
@@ -250,7 +248,7 @@ func (w *Worker) handleProfileStatusDelete(ctx context.Context, msg kafka.Messag
 		return nil
 	}
 	if err := w.whatsapp.DeleteProfileStatus(ctx, data); err != nil {
-		return w.publishRawSendDLQ(ctx, msg, messageID, "", data.Raw, err)
+		return w.markSendAsNotSent(ctx, messageID, "", data.AccountID, err)
 	}
 	return nil
 }
@@ -264,30 +262,9 @@ func (w *Worker) handleProfileInfo(ctx context.Context, msg kafka.Message, data 
 		return nil
 	}
 	if err := w.whatsapp.UpdateProfileInfo(ctx, data); err != nil {
-		return w.publishRawSendDLQ(ctx, msg, messageID, "", data.Raw, err)
+		return w.markSendAsNotSent(ctx, messageID, "", data.AccountID, err)
 	}
 	return nil
-}
-
-func (w *Worker) handleSendMessageDLQ(ctx context.Context, msg kafka.Message) error {
-	var dlq WorkerSendMessageDLQ
-	if err := json.Unmarshal(msg.Value, &dlq); err != nil {
-		return nil
-	}
-	if dlq.RedriveCount >= 3 {
-		log.Printf("whatsmeow send dlq redrive limit reached message_id=%s error=%s", dlq.MessageID, dlq.Error)
-		return nil
-	}
-	payloadBytes, err := json.Marshal(dlq.Payload)
-	if err != nil {
-		return nil
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		return nil
-	}
-	payload["__whatsmeow_redrive_count"] = dlq.RedriveCount + 1
-	return w.kafka.SendJSON(ctx, topicWorkerSendMessage(w.cfg.WorkerID), dlq.MessageID, payload)
 }
 
 func (w *Worker) handleScheduleSend(ctx context.Context, msg kafka.Message) error {
@@ -489,35 +466,30 @@ func (w *Worker) claimMessage(ctx context.Context, messageID string) bool {
 	return acquired
 }
 
-func (w *Worker) publishSendDLQ(ctx context.Context, msg kafka.Message, data ChatMessage, err error) error {
-	return w.publishRawSendDLQ(ctx, msg, data.MessageID, data.ChatID, data.Raw, err)
-}
-
-func (w *Worker) publishRawSendDLQ(ctx context.Context, msg kafka.Message, messageID, chatID string, rawPayload any, err error) error {
-	redriveCount := 0
-	if value, ok := asMap(rawPayload)["__whatsmeow_redrive_count"]; ok {
-		redriveCount = int(floatValue(value))
+func (w *Worker) markSendAsNotSent(ctx context.Context, messageID, chatID, accountID string, err error) error {
+	messageID = strings.TrimSpace(messageID)
+	accountID = firstNonEmpty(accountID, w.cfg.AccountID)
+	log.Printf("whatsmeow send terminal failure message_id=%s chat_id=%s error=%v", messageID, chatID, err)
+	if messageID == "" {
+		return nil
 	}
-	dlq := WorkerSendMessageDLQ{
-		WorkerID:     w.cfg.WorkerID,
-		Topic:        msg.Topic,
-		Partition:    msg.Partition,
-		Offset:       msg.Offset,
-		ChatID:       chatID,
-		MessageID:    messageID,
-		QueueKey:     firstNonEmpty(chatID, "system"),
-		Attempts:     1,
-		RedriveCount: redriveCount,
-		Error:        err.Error(),
-		Payload:      rawPayload,
-		RawPayload:   string(msg.Value),
-		FailedAt:     nowISO(),
+	update := MessageStatusUpdate{
+		AccountID: accountID,
+		MessageID: messageID,
+		Patch: map[string]any{
+			"is_sent":      false,
+			"is_delivered": false,
+			"is_seen":      false,
+		},
+		Key: map[string]any{
+			"id":     messageID,
+			"fromMe": true,
+		},
 	}
-	var unsupported UnsupportedFeatureError
-	if errors.As(err, &unsupported) {
-		dlq.RedriveCount = 3
+	if strings.TrimSpace(chatID) != "" {
+		update.Key["remoteJid"] = chatID
 	}
-	return w.kafka.SendJSON(ctx, topicWorkerSendMessageDLQ(w.cfg.WorkerID), messageID, dlq)
+	return w.kafka.SendJSON(ctx, topicUpdateMessageStatus, accountID+":"+messageID, update)
 }
 
 func (w *Worker) publishScheduleStatus(ctx context.Context, data ScheduleMessage, status string) error {

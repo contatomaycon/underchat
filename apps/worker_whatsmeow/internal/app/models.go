@@ -252,22 +252,6 @@ type MessageStatusUpdate struct {
 	Key       map[string]any `json:"key,omitempty"`
 }
 
-type WorkerSendMessageDLQ struct {
-	WorkerID     string `json:"worker_id"`
-	Topic        string `json:"topic"`
-	Partition    int    `json:"partition"`
-	Offset       int64  `json:"offset"`
-	ChatID       string `json:"chat_id,omitempty"`
-	MessageID    string `json:"message_id,omitempty"`
-	QueueKey     string `json:"queue_key"`
-	Attempts     int    `json:"attempts"`
-	RedriveCount int    `json:"redrive_count,omitempty"`
-	Error        string `json:"error"`
-	Payload      any    `json:"payload"`
-	RawPayload   string `json:"raw_payload,omitempty"`
-	FailedAt     string `json:"failed_at"`
-}
-
 type S3BackupFallbackUpload struct {
 	AccountID       string `json:"account_id"`
 	Bucket          string `json:"bucket"`

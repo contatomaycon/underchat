@@ -197,10 +197,6 @@ func topicWorkerSendMessage(workerID string) string {
 	return "worker." + workerID + ".send.message"
 }
 
-func topicWorkerSendMessageDLQ(workerID string) string {
-	return "worker." + workerID + ".send.message.dlq"
-}
-
 func topicWorkerScheduleSend(workerID string) string {
 	return "worker." + workerID + ".schedule.send.message"
 }

@@ -33,7 +33,6 @@ O container recebe as mesmas variaveis globais dos workers existentes via `Worke
 Consumidores:
 
 - `worker.${WORKER_ID}.send.message`
-- `worker.${WORKER_ID}.send.message.dlq`
 - `worker.${WORKER_ID}.schedule.send.message`
 - `worker.${WORKER_ID}.validate.phone`
 - `worker.${WORKER_ID}.notification.message`
@@ -84,7 +83,7 @@ Coberto:
 
 ## Unsupported Explicito
 
-O worker nao ignora payload rico sem mapeamento seguro. Estes casos viram erro `unsupported_whatsmeow_feature:<feature>` e DLQ sem redrive infinito:
+O worker nao ignora payload rico sem mapeamento seguro. Estes casos viram erro terminal `unsupported_whatsmeow_feature:<feature>` sem redrive automatico:
 
 - iniciar ou aceitar chamada de voz/video pelo worker.
 - broadcast lists comuns.

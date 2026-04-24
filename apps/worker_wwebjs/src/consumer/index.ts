@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { startSendMessageWwebjsConsume } from './sendMessage.consume';
-import { startSendMessageWwebjsDlqConsume } from './sendMessageDlq.consume';
 import { startMarkMessageReadWwebjsConsume } from './markMessageRead.consume';
 import { startPhoneValidationWwebjsConsume } from './phoneValidation.consume';
 import { startNotificationMessageSendWwebjsConsume } from './notificationMessageSend.consume';
@@ -29,7 +28,6 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
 
   const starters = [
     () => startSendMessageWwebjsConsume(server),
-    () => startSendMessageWwebjsDlqConsume(server),
     () => startMarkMessageReadWwebjsConsume(server),
     () => startPhoneValidationWwebjsConsume(server),
     () => startNotificationMessageSendWwebjsConsume(server),

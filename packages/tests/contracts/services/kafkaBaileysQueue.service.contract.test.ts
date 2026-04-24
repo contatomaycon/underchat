@@ -17,7 +17,6 @@ describe('KafkaBaileysQueueService', () => {
     const topics = service.all('w1');
     expect(topics).toEqual([
       'worker.w1.send.message',
-      'worker.w1.send.message.dlq',
       'worker.w1.schedule.send.message',
       'worker.w1.validate.phone',
       'worker.w1.notification.message',
