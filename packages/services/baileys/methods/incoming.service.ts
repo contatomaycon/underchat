@@ -894,7 +894,6 @@ export class BaileysIncomingMessageService {
       const { callJid, callPhone } = resolveCallEventJidAndPhone({
         chatId: callEvent.chatId,
         from: callEvent.from,
-        caller: callEvent.caller,
         callerPn: callEvent.callerPn ?? null,
       });
       if (!callJid) {

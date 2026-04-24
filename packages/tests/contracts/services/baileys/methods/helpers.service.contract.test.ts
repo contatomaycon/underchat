@@ -308,6 +308,7 @@ describe('BaileysHelpersService', () => {
           waveform: new Uint8Array([1, 2]),
           mimetype: ' audio/ogg ',
           seconds: '12',
+          contextInfo: { participant: 'p1' },
         },
         {
           mediaUploadTimeoutMs: 5000,
@@ -324,6 +325,7 @@ describe('BaileysHelpersService', () => {
         seconds: 12,
         waveform: new Uint8Array([1, 2]),
         mimetype: 'audio/ogg',
+        contextInfo: { participant: 'p1' },
       },
       {
         upload: socket.waUploadToServer,

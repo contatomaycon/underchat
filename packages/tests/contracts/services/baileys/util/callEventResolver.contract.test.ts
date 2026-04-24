@@ -20,7 +20,6 @@ describe('resolveCallEventJidAndPhone', () => {
       resolveCallEventJidAndPhone({
         from: ' ',
         chatId: '123',
-        caller: null,
       })
     ).toEqual({ callJid: null, callPhone: null });
   });

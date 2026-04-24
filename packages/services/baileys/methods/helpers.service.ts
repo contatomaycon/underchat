@@ -203,6 +203,8 @@ export class BaileysHelpersService {
     const mimetype = this.toNonEmptyString(
       (content as { mimetype?: unknown }).mimetype
     );
+    const contextInfo = (content as { contextInfo?: proto.IContextInfo })
+      .contextInfo;
 
     const mediaContent: AnyMessageContent = {
       audio: content.audio,
@@ -210,6 +212,7 @@ export class BaileysHelpersService {
       seconds,
       waveform,
       mimetype,
+      contextInfo,
     };
 
     const generatedMediaMessage = await generateWAMessageContent(mediaContent, {

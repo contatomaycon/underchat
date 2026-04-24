@@ -91,6 +91,7 @@ describe('BaileysMessageMediaService', () => {
 
   it('sends audio as view-once forcing ptt=true and restricted fields', async () => {
     const { service, baileysHelpersService } = makeService();
+    const waveform = new Uint8Array([1, 2, 3]);
 
     await service.sendAudio(
       'jid-audio',
@@ -99,7 +100,7 @@ describe('BaileysMessageMediaService', () => {
         ptt: false,
         seconds: 10,
         mimetype: 'audio/mpeg',
-        waveform: new Uint8Array([1, 2, 3]),
+        waveform,
         viewOnce: true,
         contextInfo: { participant: 'x' } as never,
       },
@@ -111,6 +112,9 @@ describe('BaileysMessageMediaService', () => {
       {
         audio: Buffer.from('audio'),
         ptt: true,
+        seconds: 10,
+        mimetype: 'audio/mpeg',
+        waveform,
         viewOnce: true,
         contextInfo: { participant: 'x' },
       },

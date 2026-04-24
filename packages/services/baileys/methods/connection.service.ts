@@ -665,7 +665,6 @@ export class BaileysConnectionService {
       version,
       browser: Browsers.macOS('Desktop'),
       logger: P({ level: 'silent' }),
-      printQRInTerminal: false,
       getMessage: async (key) =>
         this.baileysIncomingMessageService.getCachedMessage(key),
       enableAutoSessionRecreation: true,

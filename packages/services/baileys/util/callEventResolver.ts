@@ -3,7 +3,6 @@ import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 export interface IResolveCallEventJidAndPhoneInput {
   chatId?: string | null;
   from?: string | null;
-  caller?: string | null;
   callerPn?: string | null;
 }
 
@@ -40,9 +39,8 @@ export function resolveCallEventJidAndPhone(
 ): IResolvedCallEventJidAndPhone {
   const from = toNonEmptyString(input.from);
   const chatId = toNonEmptyString(input.chatId);
-  const caller = toNonEmptyString(input.caller);
 
-  const callJidCandidates = [from, chatId, caller];
+  const callJidCandidates = [from, chatId];
   const callJid =
     callJidCandidates.find((candidate) => isValidJidCandidate(candidate)) ??
     null;

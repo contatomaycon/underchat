@@ -102,6 +102,9 @@ export class BaileysMessageMediaService {
       ? ({
           audio: audio as WAMediaUpload,
           ptt: true,
+          seconds: args?.seconds,
+          mimetype: args?.mimetype,
+          waveform: args?.waveform,
           viewOnce: true,
           contextInfo: args?.contextInfo,
         } as AnyMessageContent)
