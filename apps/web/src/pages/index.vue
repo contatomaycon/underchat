@@ -14,6 +14,7 @@ import { useDashboardStore } from '@/@webcore/stores/dashboard';
 import { useReleaseStore } from '@/@webcore/stores/release';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EHomePermissions } from '@core/common/enums/EPermissions/home';
 import { EReleasePermissions } from '@core/common/enums/EPermissions/release';
 import { EReleaseType } from '@core/common/enums/EReleaseType';
 
@@ -43,6 +44,22 @@ const canViewReleases = computed(
     ability.can(
       EReleasePermissions.release_group,
       EReleasePermissions.release_group
+    )
+);
+const canViewHomeDashboard = computed(
+  () =>
+    ability.can(
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access
+    ) ||
+    ability.can(
+      EGeneralPermissions.full_access_group,
+      EGeneralPermissions.full_access_group
+    ) ||
+    ability.can(EHomePermissions.home_group, EHomePermissions.home_group) ||
+    ability.can(
+      EHomePermissions.dashboard_view,
+      EHomePermissions.dashboard_view
     )
 );
 
@@ -81,6 +98,7 @@ const releaseUnreadLabel = computed(() => {
 });
 
 const openLatestUnreadRelease = () => {
+  if (!canViewReleases.value) return;
   const r = latestUnreadRelease.value;
   if (!r) return;
   router.push({ path: '/release', query: { open: r.release_id } });
@@ -612,8 +630,11 @@ onMounted(async () => {
 
   if (canViewReleases.value) {
     loadingReleaseNotifications.value = true;
-    await releaseStore.listReleaseNotifications();
-    loadingReleaseNotifications.value = false;
+    try {
+      await releaseStore.listReleaseNotifications();
+    } finally {
+      loadingReleaseNotifications.value = false;
+    }
   }
 });
 </script>
@@ -641,8 +662,7 @@ onMounted(async () => {
       :color="dashboardReleaseBannerColor"
       class="mb-4 dashboard-unread-release-banner cursor-pointer"
       :class="{
-        'dashboard-unread-release-banner--attention':
-          dashboardUnreadBannerAttention,
+        'dashboard-unread-release-banner--attention': dashboardUnreadBannerAttention,
       }"
       @click="openLatestUnreadRelease"
     >
@@ -663,15 +683,11 @@ onMounted(async () => {
             {{ latestUnreadRelease.title }}
           </p>
         </div>
-        <VIcon
-          icon="tabler-chevron-right"
-          size="20"
-          class="text-medium-emphasis"
-        />
+        <VIcon icon="tabler-chevron-right" size="20" class="text-medium-emphasis" />
       </VCardText>
     </VCard>
 
-    <VRow class="mb-4">
+    <VRow v-if="canViewHomeDashboard" class="mb-4">
       <VCol cols="12" sm="6" md="3">
         <VCard v-if="dashboardStore.loadingStats">
           <VCardText>
@@ -806,161 +822,185 @@ onMounted(async () => {
       </VCol>
     </VRow>
 
-    <VRow class="mb-4 dashboard-row">
-      <VCol cols="12" md="8" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle class="d-flex align-center justify-space-between">
-            <span>{{ t('dashboard_conversations_evolution') }}</span>
-            <VChip size="small" color="primary" variant="tonal">
-              {{ t('dashboard_last_12_months') }}
-            </VChip>
-          </VCardTitle>
-          <VCardText class="flex-grow-1 d-flex flex-column">
-            <div
-              v-if="dashboardStore.loadingConversations"
-              class="flex-grow-1"
-              style="min-height: 300px"
-            >
-              <VSkeletonLoader type="image" height="300" />
-            </div>
-            <div v-else class="flex-grow-1" style="min-height: 300px">
-              <LineChart
-                :chart-data="conversationsEvolutionData"
-                :chart-options="conversationsEvolutionOptions"
-                :height="300"
-              />
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-      <VCol cols="12" md="4" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>{{ t('dashboard_channels_status') }}</VCardTitle>
-          <VCardText class="flex-grow-1 d-flex flex-column">
-            <div
-              v-if="dashboardStore.loadingStats"
-              style="height: 300px; flex-shrink: 0"
-            >
-              <VSkeletonLoader type="image" height="300" />
-            </div>
-            <div v-else style="height: 300px; flex-shrink: 0">
-              <DoughnutChart
-                :chart-data="channelsStatusData"
-                :chart-options="channelsStatusOptions"
-                :height="300"
-              />
-            </div>
-            <div class="mt-4 d-flex flex-column gap-2" style="flex-shrink: 0">
-              <div class="d-flex align-center justify-space-between">
-                <div class="d-flex align-center gap-2">
-                  <VIcon icon="tabler-circle" size="12" color="success" />
-                  <span class="text-body-2">{{
-                    t('dashboard_connected')
-                  }}</span>
-                </div>
-                <span class="text-body-1 font-weight-medium">
-                  {{ channelsConnected }}
-                </span>
-              </div>
-              <div class="d-flex align-center justify-space-between">
-                <div class="d-flex align-center gap-2">
-                  <VIcon icon="tabler-circle" size="12" color="error" />
-                  <span class="text-body-2">{{
-                    t('dashboard_disconnected')
-                  }}</span>
-                </div>
-                <span class="text-body-1 font-weight-medium">
-                  {{ channelsTotal - channelsConnected }}
-                </span>
-              </div>
-            </div>
+    <VRow v-if="!canViewHomeDashboard" class="mb-4">
+      <VCol cols="12">
+        <VCard
+          variant="tonal"
+          color="surface"
+          class="dashboard-limited-view d-flex align-center"
+        >
+          <VCardText class="text-body-2 text-medium-emphasis">
+            {{ t('dashboard_limited_view') }}
           </VCardText>
         </VCard>
       </VCol>
     </VRow>
 
-    <VRow class="mb-4 dashboard-row">
-      <VCol cols="12" md="6" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>{{ t('dashboard_contacts_growth') }}</VCardTitle>
-          <VCardText class="flex-grow-1 d-flex flex-column">
-            <div
-              v-if="dashboardStore.loadingAdditional"
-              style="height: 250px; flex-shrink: 0"
-            >
-              <VSkeletonLoader type="image" height="250" />
-            </div>
-            <div v-else style="height: 250px; flex-shrink: 0">
-              <LineChart
-                :chart-data="contactsGrowthData"
-                :chart-options="contactsGrowthOptions"
-                :height="250"
-              />
-            </div>
-            <div class="mt-4 d-flex align-center gap-4" style="flex-shrink: 0">
-              <div>
-                <span class="text-body-2 text-medium-emphasis d-block">
-                  {{ t('dashboard_total') }}
-                </span>
-                <span class="text-h6 font-weight-bold">
-                  {{ contactsTotal.toLocaleString('pt-BR') }}
-                </span>
+    <template v-if="canViewHomeDashboard">
+      <VRow class="mb-4 dashboard-row">
+        <VCol cols="12" md="8" class="d-flex">
+          <VCard class="flex-grow-1 d-flex flex-column">
+            <VCardTitle class="d-flex align-center justify-space-between">
+              <span>{{ t('dashboard_conversations_evolution') }}</span>
+              <VChip size="small" color="primary" variant="tonal">
+                {{ t('dashboard_last_12_months') }}
+              </VChip>
+            </VCardTitle>
+            <VCardText class="flex-grow-1 d-flex flex-column">
+              <div
+                v-if="dashboardStore.loadingConversations"
+                class="flex-grow-1"
+                style="min-height: 300px"
+              >
+                <VSkeletonLoader type="image" height="300" />
               </div>
-              <VDivider vertical />
-              <div>
-                <span class="text-body-2 text-medium-emphasis d-block">
-                  {{ t('dashboard_growth') }}
-                </span>
-                <span class="text-h6 font-weight-bold text-success">
-                  +{{ contactsGrowth }}
-                </span>
+              <div v-else class="flex-grow-1" style="min-height: 300px">
+                <LineChart
+                  :chart-data="conversationsEvolutionData"
+                  :chart-options="conversationsEvolutionOptions"
+                  :height="300"
+                />
               </div>
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-      <VCol cols="12" md="6" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>{{ t('dashboard_attendance_performance') }}</VCardTitle>
-          <VCardText class="flex-grow-1 d-flex flex-column">
-            <div
-              v-if="dashboardStore.loadingAdditional"
-              style="height: 250px; flex-shrink: 0"
-            >
-              <VSkeletonLoader type="image" height="250" />
-            </div>
-            <div v-else style="height: 250px; flex-shrink: 0">
-              <BarChart
-                :chart-data="attendancePerformanceData"
-                :chart-options="attendancePerformanceOptions"
-                :height="250"
-              />
-            </div>
-            <div class="mt-4 d-flex align-center gap-4" style="flex-shrink: 0">
-              <div>
-                <span class="text-body-2 text-medium-emphasis d-block">
-                  {{ t('dashboard_total_attendances') }}
-                </span>
-                <span class="text-h6 font-weight-bold">
-                  {{ totalAttendances }}
-                </span>
+            </VCardText>
+          </VCard>
+        </VCol>
+        <VCol cols="12" md="4" class="d-flex">
+          <VCard class="flex-grow-1 d-flex flex-column">
+            <VCardTitle>{{ t('dashboard_channels_status') }}</VCardTitle>
+            <VCardText class="flex-grow-1 d-flex flex-column">
+              <div
+                v-if="dashboardStore.loadingStats"
+                style="height: 300px; flex-shrink: 0"
+              >
+                <VSkeletonLoader type="image" height="300" />
               </div>
-              <VDivider vertical />
-              <div>
-                <span class="text-body-2 text-medium-emphasis d-block">
-                  {{ t('dashboard_productivity') }}
-                </span>
-                <span class="text-h6 font-weight-bold text-success">
-                  {{ productivity }}%
-                </span>
+              <div v-else style="height: 300px; flex-shrink: 0">
+                <DoughnutChart
+                  :chart-data="channelsStatusData"
+                  :chart-options="channelsStatusOptions"
+                  :height="300"
+                />
               </div>
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-    </VRow>
+              <div
+                class="mt-4 d-flex flex-column gap-2"
+                style="flex-shrink: 0"
+              >
+                <div class="d-flex align-center justify-space-between">
+                  <div class="d-flex align-center gap-2">
+                    <VIcon icon="tabler-circle" size="12" color="success" />
+                    <span class="text-body-2">{{
+                      t('dashboard_connected')
+                    }}</span>
+                  </div>
+                  <span class="text-body-1 font-weight-medium">
+                    {{ channelsConnected }}
+                  </span>
+                </div>
+                <div class="d-flex align-center justify-space-between">
+                  <div class="d-flex align-center gap-2">
+                    <VIcon icon="tabler-circle" size="12" color="error" />
+                    <span class="text-body-2">{{
+                      t('dashboard_disconnected')
+                    }}</span>
+                  </div>
+                  <span class="text-body-1 font-weight-medium">
+                    {{ channelsTotal - channelsConnected }}
+                  </span>
+                </div>
+              </div>
+            </VCardText>
+          </VCard>
+        </VCol>
+      </VRow>
 
-    <VRow class="mb-4 dashboard-row">
+      <VRow class="mb-4 dashboard-row">
+        <VCol cols="12" md="6" class="d-flex">
+          <VCard class="flex-grow-1 d-flex flex-column">
+            <VCardTitle>{{ t('dashboard_contacts_growth') }}</VCardTitle>
+            <VCardText class="flex-grow-1 d-flex flex-column">
+              <div
+                v-if="dashboardStore.loadingAdditional"
+                style="height: 250px; flex-shrink: 0"
+              >
+                <VSkeletonLoader type="image" height="250" />
+              </div>
+              <div v-else style="height: 250px; flex-shrink: 0">
+                <LineChart
+                  :chart-data="contactsGrowthData"
+                  :chart-options="contactsGrowthOptions"
+                  :height="250"
+                />
+              </div>
+              <div
+                class="mt-4 d-flex align-center gap-4"
+                style="flex-shrink: 0"
+              >
+                <div>
+                  <span class="text-body-2 text-medium-emphasis d-block">
+                    {{ t('dashboard_total') }}
+                  </span>
+                  <span class="text-h6 font-weight-bold">
+                    {{ contactsTotal.toLocaleString('pt-BR') }}
+                  </span>
+                </div>
+                <VDivider vertical />
+                <div>
+                  <span class="text-body-2 text-medium-emphasis d-block">
+                    {{ t('dashboard_growth') }}
+                  </span>
+                  <span class="text-h6 font-weight-bold text-success">
+                    +{{ contactsGrowth }}
+                  </span>
+                </div>
+              </div>
+            </VCardText>
+          </VCard>
+        </VCol>
+        <VCol cols="12" md="6" class="d-flex">
+          <VCard class="flex-grow-1 d-flex flex-column">
+            <VCardTitle>{{ t('dashboard_attendance_performance') }}</VCardTitle>
+            <VCardText class="flex-grow-1 d-flex flex-column">
+              <div
+                v-if="dashboardStore.loadingAdditional"
+                style="height: 250px; flex-shrink: 0"
+              >
+                <VSkeletonLoader type="image" height="250" />
+              </div>
+              <div v-else style="height: 250px; flex-shrink: 0">
+                <BarChart
+                  :chart-data="attendancePerformanceData"
+                  :chart-options="attendancePerformanceOptions"
+                  :height="250"
+                />
+              </div>
+              <div
+                class="mt-4 d-flex align-center gap-4"
+                style="flex-shrink: 0"
+              >
+                <div>
+                  <span class="text-body-2 text-medium-emphasis d-block">
+                    {{ t('dashboard_total_attendances') }}
+                  </span>
+                  <span class="text-h6 font-weight-bold">
+                    {{ totalAttendances }}
+                  </span>
+                </div>
+                <VDivider vertical />
+                <div>
+                  <span class="text-body-2 text-medium-emphasis d-block">
+                    {{ t('dashboard_productivity') }}
+                  </span>
+                  <span class="text-h6 font-weight-bold text-success">
+                    {{ productivity }}%
+                  </span>
+                </div>
+              </div>
+            </VCardText>
+          </VCard>
+        </VCol>
+      </VRow>
+
+      <VRow class="mb-4 dashboard-row">
       <VCol cols="12" md="6" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
           <VCardTitle>{{ t('dashboard_sectors_distribution') }}</VCardTitle>
@@ -1097,7 +1137,7 @@ onMounted(async () => {
       </VCol>
     </VRow>
 
-    <VRow class="dashboard-row">
+      <VRow class="dashboard-row">
       <VCol cols="12" md="3" class="d-flex" style="align-self: stretch">
         <VCard
           class="flex-grow-1 d-flex flex-column w-100"
@@ -1256,7 +1296,8 @@ onMounted(async () => {
           </VCol>
         </VRow>
       </VCol>
-    </VRow>
+      </VRow>
+    </template>
 
     <VSnackbar
       v-model="channelsStore.snackbar.status"
@@ -1286,6 +1327,10 @@ onMounted(async () => {
   .v-card {
     width: 100%;
   }
+}
+
+.dashboard-limited-view {
+  min-height: 84px;
 }
 
 .dashboard-unread-release-banner {

@@ -141,12 +141,19 @@ const togglePermission = (
     return;
   }
 
+  if (group.permissions.length === 1) {
+    toggleGroup(group, value);
+    return;
+  }
+
   if (!group.permissions.length) {
     group.selected = value;
     return;
   }
 
-  group.selected = false;
+  const allPermissionsSelected = group.permissions.every((item) => item.selected);
+  group.selected = allPermissionsSelected;
+
   for (const item of group.permissions) {
     item.disabled = false;
   }

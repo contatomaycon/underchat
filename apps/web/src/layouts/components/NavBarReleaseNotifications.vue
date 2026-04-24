@@ -51,8 +51,11 @@ const unreadNotificationsOnly = computed(() =>
 const fetchNotifications = async () => {
   if (!canViewReleases.value) return;
   loading.value = true;
-  await releaseStore.listReleaseNotifications();
-  loading.value = false;
+  try {
+    await releaseStore.listReleaseNotifications();
+  } finally {
+    loading.value = false;
+  }
 };
 
 const getTypeColor = (type: EReleaseType): string => {
@@ -91,6 +94,7 @@ const onMenuUpdate = (open: boolean) => {
 };
 
 const openNotification = async (release: ListReleaseResponse) => {
+  if (!canViewReleases.value) return;
   const target = { path: '/release', query: { open: release.release_id } };
   if (route.path === '/release') {
     await router.replace(target);
@@ -101,6 +105,7 @@ const openNotification = async (release: ListReleaseResponse) => {
 };
 
 const onBellClickCapture = async (event: MouseEvent) => {
+  if (!canViewReleases.value) return;
   if (unreadCount.value <= 0 || loading.value) return;
   // Com mais de uma não lida: abre o menu para escolher. Só navega direto com exatamente uma.
   if (unreadCount.value > 1) return;
@@ -115,6 +120,7 @@ const onBellClickCapture = async (event: MouseEvent) => {
 };
 
 const viewAll = () => {
+  if (!canViewReleases.value) return;
   menuOpen.value = false;
   router.push('/release');
 };
@@ -134,6 +140,7 @@ watch(
   canViewReleases,
   (allowed) => {
     if (allowed) void fetchNotifications();
+    else menuOpen.value = false;
   }
 );
 </script>
@@ -169,117 +176,117 @@ watch(
       </template>
 
       <VCard class="d-flex flex-column">
-          <VCardItem class="notification-section">
-            <VCardTitle class="text-h6">
-              {{ t('notifications') }}
-            </VCardTitle>
-            <template #append>
-              <VChip
-                v-show="unreadCount > 0"
-                size="small"
-                color="primary"
-                class="me-2"
+        <VCardItem class="notification-section">
+          <VCardTitle class="text-h6">
+            {{ t('notifications') }}
+          </VCardTitle>
+          <template #append>
+            <VChip
+              v-show="unreadCount > 0"
+              size="small"
+              color="primary"
+              class="me-2"
+            >
+              {{ unreadCount }}
+              {{ unreadCount > 1 ? t('new_plural') : t('new') }}
+            </VChip>
+          </template>
+        </VCardItem>
+
+        <VDivider />
+
+        <PerfectScrollbar
+          :options="{ wheelPropagation: false }"
+          style="max-block-size: 23.75rem"
+        >
+          <VList class="notification-list rounded-0 py-0">
+            <template v-if="loading">
+              <VListItem
+                v-for="i in 4"
+                :key="`skeleton-${i}`"
+                class="list-item-hover-class"
+                min-height="66"
               >
-                {{ unreadCount }}
-                {{ unreadCount > 1 ? t('new_plural') : t('new') }}
-              </VChip>
+                <div class="d-flex align-start gap-3 w-100">
+                  <VSkeletonLoader type="chip" width="40" height="24" />
+                  <div class="flex-grow-1">
+                    <VSkeletonLoader
+                      type="text"
+                      width="80%"
+                      height="20"
+                      class="mb-1"
+                    />
+                    <VSkeletonLoader type="text" width="60%" height="14" />
+                  </div>
+                </div>
+              </VListItem>
             </template>
-          </VCardItem>
-
-          <VDivider />
-
-          <PerfectScrollbar
-            :options="{ wheelPropagation: false }"
-            style="max-block-size: 23.75rem"
-          >
-            <VList class="notification-list rounded-0 py-0">
-              <template v-if="loading">
+            <template v-else>
+              <template
+                v-for="(item, index) in unreadNotificationsOnly"
+                :key="item.release_id"
+              >
+                <VDivider v-if="index > 0" />
                 <VListItem
-                  v-for="i in 4"
-                  :key="`skeleton-${i}`"
+                  link
                   class="list-item-hover-class"
                   min-height="66"
+                  @click="openNotification(item)"
                 >
                   <div class="d-flex align-start gap-3 w-100">
-                    <VSkeletonLoader type="chip" width="40" height="24" />
-                    <div class="flex-grow-1">
-                      <VSkeletonLoader
-                        type="text"
-                        width="80%"
-                        height="20"
-                        class="mb-1"
-                      />
-                      <VSkeletonLoader type="text" width="60%" height="14" />
+                    <VIcon
+                      icon="tabler-circle-filled"
+                      :color="getTypeColor(item.type)"
+                      size="12"
+                      class="mt-1 flex-shrink-0"
+                    />
+                    <div class="flex-grow-1 min-w-0">
+                      <p
+                        class="text-sm font-weight-medium mb-1 text-truncate"
+                      >
+                        {{ item.title }}
+                      </p>
+                      <p
+                        class="text-body-2 mb-0 text-medium-emphasis text-truncate"
+                        style="letter-spacing: 0.4px; line-height: 18px"
+                      >
+                        {{ getMessagePreview(item.message) }}
+                      </p>
+                      <p
+                        class="text-sm text-disabled mt-1 mb-0"
+                        style="letter-spacing: 0.4px; line-height: 18px"
+                      >
+                        {{ formatDateToMonthShort(item.created_at, t) }}
+                      </p>
                     </div>
+                    <span
+                      class="text-caption flex-shrink-0 mt-1 text-nowrap text-primary"
+                    >
+                      {{ t('unread') }}
+                    </span>
                   </div>
                 </VListItem>
               </template>
-              <template v-else>
-                <template
-                  v-for="(item, index) in unreadNotificationsOnly"
-                  :key="item.release_id"
-                >
-                  <VDivider v-if="index > 0" />
-                  <VListItem
-                    link
-                    class="list-item-hover-class"
-                    min-height="66"
-                    @click="openNotification(item)"
-                  >
-                    <div class="d-flex align-start gap-3 w-100">
-                      <VIcon
-                        icon="tabler-circle-filled"
-                        :color="getTypeColor(item.type)"
-                        size="12"
-                        class="mt-1 flex-shrink-0"
-                      />
-                      <div class="flex-grow-1 min-w-0">
-                        <p
-                          class="text-sm font-weight-medium mb-1 text-truncate"
-                        >
-                          {{ item.title }}
-                        </p>
-                        <p
-                          class="text-body-2 mb-0 text-medium-emphasis text-truncate"
-                          style="letter-spacing: 0.4px; line-height: 18px"
-                        >
-                          {{ getMessagePreview(item.message) }}
-                        </p>
-                        <p
-                          class="text-sm text-disabled mt-1 mb-0"
-                          style="letter-spacing: 0.4px; line-height: 18px"
-                        >
-                          {{ formatDateToMonthShort(item.created_at, t) }}
-                        </p>
-                      </div>
-                      <span
-                        class="text-caption flex-shrink-0 mt-1 text-nowrap text-primary"
-                      >
-                        {{ t('unread') }}
-                      </span>
-                    </div>
-                  </VListItem>
-                </template>
 
-                <VListItem
-                  v-show="!unreadNotificationsOnly.length && !loading"
-                  class="text-center text-medium-emphasis"
-                  style="block-size: 56px"
-                >
-                  <VListItemTitle>{{ t('no_items_found') }}</VListItemTitle>
-                </VListItem>
-              </template>
-            </VList>
-          </PerfectScrollbar>
+              <VListItem
+                v-show="!unreadNotificationsOnly.length && !loading"
+                class="text-center text-medium-emphasis"
+                style="block-size: 56px"
+              >
+                <VListItemTitle>{{ t('no_items_found') }}</VListItemTitle>
+              </VListItem>
+            </template>
+          </VList>
+        </PerfectScrollbar>
 
-          <VDivider />
+        <VDivider />
 
-          <VCardText v-show="!loading" class="pa-4">
-            <VBtn block size="small" @click="viewAll">
-              {{ t('view_all_notifications') }}
-            </VBtn>
-          </VCardText>
-        </VCard>
+        <VCardText v-show="!loading" class="pa-4">
+          <VBtn block size="small" @click="viewAll">
+            {{ t('view_all_notifications') }}
+          </VBtn>
+        </VCardText>
+      </VCard>
     </VMenu>
   </template>
 </template>
