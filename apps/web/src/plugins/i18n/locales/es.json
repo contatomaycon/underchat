@@ -342,7 +342,7 @@
   "unofficial": "No Oficial",
   "unofficial_socket": "Opção 1 (Socket)",
   "unofficial_browser": "Opção 2 (Navegador)",
-  "unofficial_whatsmeow": "Opção 3 (Whatsmeow)",
+  "unofficial_whatsmeow": "Opção 3 (Socket)",
   "channel_connection_type_info_title": "Tipos de conexión",
   "channel_connection_type_info_socket_label": "Socket (Opción 1):",
   "channel_connection_type_info_socket_description": "conexión más ligera y rápida para el uso diario.",
