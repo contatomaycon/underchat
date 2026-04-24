@@ -2506,6 +2506,7 @@
   "dashboard_no_data": "Sin datos",
   "dashboard_unread_notification": "1 notificación sin leer",
   "dashboard_unread_notifications": "{count} notificaciones sin leer",
+  "dashboard_limited_view": "No hay paneles adicionales para mostrar por ahora.",
   "dashboard_additional_error": "Error al cargar datos adicionales del dashboard",
   "dashboard_offline_channels_error": "Error al cargar canais offline del dashboard",
   "schedule_list_error": "Error al listar agendamientos. Por favor, inténtalo de nuevo.",
