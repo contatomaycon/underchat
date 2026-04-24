@@ -32,6 +32,7 @@ const serverItems = ref<Array<{ value: string; title: string }>>([]);
 const itemsType = ref([
   { value: EWorkerType.baileys, title: t('unofficial_socket') },
   { value: EWorkerType.wwebjs, title: t('unofficial_browser') },
+  { value: EWorkerType.whatsmeow, title: t('unofficial_whatsmeow') },
 ]);
 
 const refFormEditChannel = ref<VForm>();

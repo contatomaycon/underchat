@@ -102,6 +102,7 @@ const itemsType = ref([
   { id: '', text: t('all') },
   { id: EWorkerType.baileys, text: t('unofficial_socket') },
   { id: EWorkerType.wwebjs, text: t('unofficial_browser') },
+  { id: EWorkerType.whatsmeow, text: t('unofficial_whatsmeow') },
 ]);
 
 const isDialogDeleterShow = ref(false);
@@ -156,6 +157,8 @@ const resolveTypeVariant = (s: string | undefined | null) => {
     return { color: EColor.info, text: t('unofficial_socket') };
   if (s === EWorkerType.wwebjs)
     return { color: EColor.info, text: t('unofficial_browser') };
+  if (s === EWorkerType.whatsmeow)
+    return { color: EColor.info, text: t('unofficial_whatsmeow') };
   if (s === EWorkerType.whatsapp)
     return { color: EColor.success, text: t('official') };
 

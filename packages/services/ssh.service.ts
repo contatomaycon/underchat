@@ -756,16 +756,16 @@ export class SshService {
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
       [EAllowedDistroVersion.Ubuntu_25_10]: [
-        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.whatsmeow} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
       ],
       [EAllowedDistroVersion.Ubuntu_25_04]: [
-        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.whatsmeow} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
       ],
       [EAllowedDistroVersion.Ubuntu_24_10]: [
-        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.whatsmeow} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
       ],
       [EAllowedDistroVersion.Ubuntu_24_04]: [
-        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.wwebjs} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.whatsmeow} > /dev/null 2>&1 && docker image inspect ${EWorkerImage.balance_api} > /dev/null 2>&1; then echo true; else echo false; fi"`,
       ],
     };
 

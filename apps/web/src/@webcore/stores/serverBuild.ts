@@ -24,6 +24,7 @@ type RealtimeLogsByJob = Record<string, string[]>;
 const emptyVersionsByType = (): VersionsByType => ({
   [EServerBuildType.baileys]: [],
   [EServerBuildType.wwebjs]: [],
+  [EServerBuildType.whatsmeow]: [],
   [EServerBuildType.balance_api]: [],
 });
 

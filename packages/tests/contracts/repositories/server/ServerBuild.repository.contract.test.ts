@@ -101,7 +101,8 @@ describe('ServerBuildRepository', () => {
       .mockReturnValueOnce('new-job-id')
       .mockReturnValueOnce('item-1')
       .mockReturnValueOnce('item-2')
-      .mockReturnValueOnce('item-3');
+      .mockReturnValueOnce('item-3')
+      .mockReturnValueOnce('item-4');
 
     const select = createSelectSequence([[]]);
     const insert = jest.fn(() => createChain({ rowCount: 1 }));
@@ -169,7 +170,7 @@ describe('ServerBuildRepository', () => {
         {
           server_build_job_item_id: 'item-2',
           server_build_job_id: 'job-1',
-          build_type: EServerBuildType.balance_api,
+          build_type: EServerBuildType.whatsmeow,
           status: 'pending',
           image_reference: null,
           error_message: null,
@@ -180,6 +181,18 @@ describe('ServerBuildRepository', () => {
         },
         {
           server_build_job_item_id: 'item-3',
+          server_build_job_id: 'job-1',
+          build_type: EServerBuildType.balance_api,
+          status: 'pending',
+          image_reference: null,
+          error_message: null,
+          created_at: '2026-04-21T10:00:00.000Z',
+          updated_at: '2026-04-21T10:00:00.000Z',
+          started_at: null,
+          finished_at: null,
+        },
+        {
+          server_build_job_item_id: 'item-4',
           server_build_job_id: 'job-1',
           build_type: EServerBuildType.baileys,
           status: 'pending',
@@ -203,6 +216,7 @@ describe('ServerBuildRepository', () => {
     expect(result?.items.map((item) => item.build_type)).toEqual([
       EServerBuildType.baileys,
       EServerBuildType.wwebjs,
+      EServerBuildType.whatsmeow,
       EServerBuildType.balance_api,
     ]);
   });
@@ -339,6 +353,10 @@ describe('ServerBuildRepository', () => {
           image_reference: 'harbor/wwebjs:1.0.0',
         },
         {
+          build_type: EServerBuildType.whatsmeow,
+          image_reference: 'harbor/whatsmeow:1.0.0',
+        },
+        {
           build_type: EServerBuildType.balance_api,
           image_reference: 'harbor/balance_api:1.0.0',
         },
@@ -353,6 +371,7 @@ describe('ServerBuildRepository', () => {
     await expect(repository.getDefaultImages()).resolves.toEqual({
       baileys: 'harbor/baileys:1.0.0',
       wwebjs: 'harbor/wwebjs:1.0.0',
+      whatsmeow: 'harbor/whatsmeow:1.0.0',
       balance_api: 'harbor/balance_api:1.0.0',
     });
   });

@@ -36,4 +36,8 @@ export class BalanceEnvironment {
   public get workerWwebjsGrpcPort(): number {
     return 50053;
   }
+
+  public get workerWhatsmeowGrpcPort(): number {
+    return 50054;
+  }
 }

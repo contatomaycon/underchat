@@ -1307,7 +1307,8 @@ export class WorkerCommandHandlerService {
     if (
       connectionRequest &&
       (data.worker_type_id === EWorkerType.baileys ||
-        data.worker_type_id === EWorkerType.wwebjs)
+        data.worker_type_id === EWorkerType.wwebjs ||
+        data.worker_type_id === EWorkerType.whatsmeow)
     ) {
       const payload: StatusConnectionWorkerRequest = {
         worker_id: data.worker_id,

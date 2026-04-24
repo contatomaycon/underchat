@@ -238,7 +238,12 @@ export const albumMessageSchema = Type.Object({
   item_index: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   association_type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   source: Type.Optional(
-    Type.Union([Type.Literal('baileys'), Type.Literal('wwebjs'), Type.Null()])
+    Type.Union([
+      Type.Literal('baileys'),
+      Type.Literal('wwebjs'),
+      Type.Literal('whatsmeow'),
+      Type.Null(),
+    ])
   ),
 });
 

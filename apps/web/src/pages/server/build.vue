@@ -53,6 +53,7 @@ const permissionsEdit = [
 const buildTypeOrder: EServerBuildType[] = [
   EServerBuildType.baileys,
   EServerBuildType.wwebjs,
+  EServerBuildType.whatsmeow,
   EServerBuildType.balance_api,
 ];
 
@@ -99,6 +100,8 @@ const canCancelActiveJob = computed(() => {
 const getBuildTypeLabel = (buildType: string): string => {
   if (buildType === EServerBuildType.baileys) return t('build_type_baileys');
   if (buildType === EServerBuildType.wwebjs) return t('build_type_wwebjs');
+  if (buildType === EServerBuildType.whatsmeow)
+    return t('build_type_whatsmeow');
   return t('build_type_balance_api');
 };
 

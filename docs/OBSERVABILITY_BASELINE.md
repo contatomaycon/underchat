@@ -11,6 +11,7 @@ Provide a minimum, production-ready baseline for traces, metrics, logs, and aler
 - `schedule_api`
 - `worker_baileys`
 - `worker_wwebjs`
+- `worker_whatsmeow`
 - `web`
 
 ## Required Runtime Conventions

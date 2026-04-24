@@ -6,5 +6,6 @@ export enum ERouteModule {
   web = 'web',
   worker_baileys = 'worker_baileys',
   worker_wwebjs = 'worker_wwebjs',
+  worker_whatsmeow = 'worker_whatsmeow',
   schedule = 'schedule',
 }

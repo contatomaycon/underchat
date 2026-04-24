@@ -67,6 +67,11 @@ export class ServerBuildExecutorService {
       dockerfilePath: 'apps/worker_wwebjs/Dockerfile',
     },
     {
+      buildType: EServerBuildType.whatsmeow,
+      imageName: 'under-worker-whatsmeow',
+      dockerfilePath: 'apps/worker_whatsmeow/Dockerfile',
+    },
+    {
       buildType: EServerBuildType.balance_api,
       imageName: 'under-balance-api',
       dockerfilePath: 'apps/balance_api/Dockerfile',

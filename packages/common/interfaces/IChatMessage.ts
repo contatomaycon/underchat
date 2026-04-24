@@ -100,7 +100,7 @@ export interface IEphemeralMessage {
   user_phone?: string | null;
 }
 
-export type TAlbumSource = 'baileys' | 'wwebjs';
+export type TAlbumSource = 'baileys' | 'wwebjs' | 'whatsmeow';
 
 export interface IAlbumMessage {
   id: string;

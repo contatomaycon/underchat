@@ -254,6 +254,10 @@ export class WorkerService {
       envOverrides.push('OTEL_SERVICE_NAME=wwebjs');
     }
 
+    if (imageName === EWorkerImage.whatsmeow) {
+      envOverrides.push('OTEL_SERVICE_NAME=whatsmeow');
+    }
+
     if (grpcHost !== undefined && grpcPort !== undefined) {
       envOverrides.push(
         `BALANCER_GRPC_HOST=${grpcHost}`,

@@ -140,5 +140,6 @@ apps/worker_baileys/storagex
 
 # storage de worker_wwebjs
 .wwebjs_cache
+apps/worker_whatsmeow/bin/
 logs.txt
 .codex

@@ -28,6 +28,7 @@ export async function installUbuntu2404(
   const harborPasswordValue = buildEnvironment.harborPassword;
   const baileysImage = escapeShellSingleQuotes(defaultImages.baileys);
   const wwebjsImage = escapeShellSingleQuotes(defaultImages.wwebjs);
+  const whatsmeowImage = escapeShellSingleQuotes(defaultImages.whatsmeow);
   const balanceApiImage = escapeShellSingleQuotes(defaultImages.balance_api);
   const harborLoginCommand = getHarborLoginCommand({
     harborRegistry: harborRegistryValue,
@@ -156,6 +157,24 @@ export async function installUbuntu2404(
       fi && \
       if ! docker tag '${wwebjsImage}' under-worker-wwebjs:latest; then \
         echo 'ERROR: Docker tag failed for under-worker-wwebjs' >&2; \
+        exit 1; \
+      fi"`,
+
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
+      docker stop under-worker-whatsmeow 2>/dev/null || true && \
+      docker rm -f under-worker-whatsmeow 2>/dev/null || true"`,
+
+    `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
+      hash -r && \
+      cd /home/app && \
+      if ! docker --config /home/app/.docker pull '${whatsmeowImage}'; then \
+        echo 'ERROR: Docker pull failed for under-worker-whatsmeow' >&2; \
+        exit 1; \
+      fi && \
+      if ! docker tag '${whatsmeowImage}' under-worker-whatsmeow:latest; then \
+        echo 'ERROR: Docker tag failed for under-worker-whatsmeow' >&2; \
         exit 1; \
       fi"`,
 

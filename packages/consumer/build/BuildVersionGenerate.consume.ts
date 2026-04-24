@@ -66,6 +66,7 @@ export class BuildVersionGenerateConsume {
         const isValidBuildType =
           parsed.build_type === EServerBuildType.baileys ||
           parsed.build_type === EServerBuildType.wwebjs ||
+          parsed.build_type === EServerBuildType.whatsmeow ||
           parsed.build_type === EServerBuildType.balance_api;
 
         if (!isValidBuildType) {

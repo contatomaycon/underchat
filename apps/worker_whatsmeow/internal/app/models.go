@@ -1,0 +1,286 @@
+package app
+
+import "time"
+
+const (
+	WorkerTypeWhatsmeow = "e80ad183-2b46-4628-9105-a036f2d28720"
+
+	WorkerStatusOnline     = "019a930d-c6f6-766d-9c84-30af6ecc33b2"
+	WorkerStatusOffline    = "019a930d-c6f6-766d-9c84-3696c2cd5ed8"
+	WorkerStatusDisponible = "019a930d-c6f6-766d-9c84-3904383fe742"
+	WorkerStatusError      = "019a930d-c6f6-766d-9c84-48cb970a9f21"
+
+	CodeConnectionEstablished = 200
+	CodeAwaitingReadQRCode    = 202
+	CodeAwaitConnection       = 203
+	CodeAwaitingPairingCode   = 204
+	CodeLoggedOut             = 401
+	CodeConnectionLost        = 408
+	CodeConnectionClosed      = 428
+	CodeConnectionReplaced    = 440
+	CodeUnavailableService    = 503
+	CodeInfo                  = 1000
+)
+
+const (
+	MessageTypeText      = "text"
+	MessageTypeLocation  = "location"
+	MessageTypeContact   = "contact_card"
+	MessageTypeContacts  = "contacts"
+	MessageTypeReact     = "react"
+	MessageTypeImage     = "image"
+	MessageTypeVideo     = "video"
+	MessageTypeVideoNote = "video_note"
+	MessageTypeAudio     = "audio"
+	MessageTypeSticker   = "sticker"
+	MessageTypeDocument  = "document"
+	MessageTypeViewOnce  = "view_once"
+	MessageTypeDelete    = "delete_message"
+	MessageTypeEditText  = "edit_text"
+	MessageTypeSystem    = "system"
+)
+
+const (
+	WorkerProfileStatusTypeText  = "019a9d00-0001-7000-8000-000000000001"
+	WorkerProfileStatusTypeImage = "019a9d00-0002-7000-8000-000000000002"
+	WorkerProfileStatusTypeVideo = "019a9d00-0003-7000-8000-000000000003"
+	WorkerProfileStatusTypeAudio = "019a9d00-0004-7000-8000-000000000004"
+)
+
+type ConnectionState struct {
+	Code                    int    `json:"code"`
+	Status                  string `json:"status"`
+	WorkerID                string `json:"worker_id"`
+	AccountID               string `json:"account_id"`
+	QRCode                  string `json:"qrcode,omitempty"`
+	IsNewLogin              bool   `json:"is_new_login,omitempty"`
+	Time                    int64  `json:"time,omitempty"`
+	Phone                   string `json:"phone,omitempty"`
+	DisconnectedUser        bool   `json:"disconnected_user,omitempty"`
+	PairingCode             string `json:"pairing_code,omitempty"`
+	SecondsUntilNextAttempt int    `json:"seconds_until_next_attempt,omitempty"`
+	WorkerStatusID          string `json:"worker_status_id,omitempty"`
+	Attempt                 int    `json:"attempt,omitempty"`
+	MaxAttempts             int    `json:"max_attempts,omitempty"`
+}
+
+type StatusConnectionRequest struct {
+	WorkerID        string `json:"worker_id"`
+	Status          string `json:"status"`
+	Type            string `json:"type"`
+	PhoneConnection string `json:"phone_connection"`
+	RemoveSession   bool   `json:"remove_session"`
+}
+
+type PhoneValidationRequest struct {
+	RequestID string `json:"request_id"`
+	AccountID string `json:"account_id"`
+	WorkerID  string `json:"worker_id"`
+	Phone     string `json:"phone"`
+	PhoneDDI  string `json:"phone_ddi"`
+}
+
+type PhoneValidationResponse struct {
+	RequestID string `json:"request_id"`
+	AccountID string `json:"account_id"`
+	WorkerID  string `json:"worker_id"`
+	Valid     bool   `json:"valid"`
+	JID       string `json:"jid,omitempty"`
+	Phone     string `json:"phone,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+type MessageKey struct {
+	RemoteJID       string `json:"remote_jid,omitempty"`
+	RemoteJIDAlt    string `json:"remote_jid_alt,omitempty"`
+	RemoteJIDC      string `json:"remoteJid,omitempty"`
+	RemoteJIDAltC   string `json:"remoteJidAlt,omitempty"`
+	FromMe          *bool  `json:"from_me,omitempty"`
+	FromMeC         *bool  `json:"fromMe,omitempty"`
+	ID              string `json:"id,omitempty"`
+	Participant     string `json:"participant,omitempty"`
+	ParticipantAlt  string `json:"participant_alt,omitempty"`
+	ParticipantAltC string `json:"participantAlt,omitempty"`
+	IsViewOnce      bool   `json:"is_view_once,omitempty"`
+	IsViewOnceC     bool   `json:"isViewOnce,omitempty"`
+	AddressingMode  string `json:"addressing_mode,omitempty"`
+}
+
+func (k MessageKey) Remote() string {
+	if k.RemoteJID != "" {
+		return k.RemoteJID
+	}
+	if k.RemoteJIDC != "" {
+		return k.RemoteJIDC
+	}
+	if k.RemoteJIDAlt != "" {
+		return k.RemoteJIDAlt
+	}
+	return k.RemoteJIDAltC
+}
+
+func (k MessageKey) FromMeValue() bool {
+	if k.FromMe != nil {
+		return *k.FromMe
+	}
+	if k.FromMeC != nil {
+		return *k.FromMeC
+	}
+	return false
+}
+
+type ChatMessage struct {
+	MessageID  string         `json:"message_id"`
+	ChatID     string         `json:"chat_id"`
+	MessageKey *MessageKey    `json:"message_key"`
+	TypeUser   string         `json:"type_user"`
+	Account    map[string]any `json:"account"`
+	Worker     map[string]any `json:"worker"`
+	User       map[string]any `json:"user"`
+	Phone      string         `json:"phone"`
+	PhoneDDI   string         `json:"phone_ddi"`
+	Content    map[string]any `json:"content"`
+	Summary    map[string]any `json:"summary"`
+	Date       string         `json:"date"`
+	Deleted    bool           `json:"deleted"`
+	HasQuoted  bool           `json:"has_quoted"`
+	Hash       string         `json:"hash"`
+	Raw        map[string]any `json:"-"`
+}
+
+type ProfileStatusMessage struct {
+	WorkerID                  string         `json:"worker_id"`
+	AccountID                 string         `json:"account_id"`
+	WorkerProfileStatusID     string         `json:"worker_profile_status_id"`
+	WorkerProfileStatusTypeID string         `json:"worker_profile_status_type_id"`
+	Value                     string         `json:"value"`
+	IsPermanent               bool           `json:"is_permanent"`
+	StatusJIDList             []string       `json:"statusJidList,omitempty"`
+	Raw                       map[string]any `json:"-"`
+}
+
+type ProfileStatusDeleteMessage struct {
+	WorkerID              string         `json:"worker_id"`
+	AccountID             string         `json:"account_id"`
+	WorkerProfileStatusID string         `json:"worker_profile_status_id"`
+	ExternalID            string         `json:"external_id"`
+	StatusJIDList         []string       `json:"statusJidList,omitempty"`
+	Raw                   map[string]any `json:"-"`
+}
+
+type ProfileInfoMessage struct {
+	WorkerID     string         `json:"worker_id"`
+	AccountID    string         `json:"account_id"`
+	Name         string         `json:"name,omitempty"`
+	Message      string         `json:"message,omitempty"`
+	Photo        string         `json:"photo,omitempty"`
+	PhotoPresent bool           `json:"-"`
+	PhotoRemove  bool           `json:"-"`
+	Raw          map[string]any `json:"-"`
+}
+
+type ScheduleMessage struct {
+	ScheduleID  string      `json:"schedule_id"`
+	ContactID   string      `json:"contact_id"`
+	Message     ChatMessage `json:"message"`
+	IsValidated bool        `json:"is_validated"`
+}
+
+type ScheduleStatusUpdate struct {
+	ScheduleID  string `json:"schedule_id"`
+	ContactID   string `json:"contact_id"`
+	MessageID   string `json:"message_id"`
+	ProcessedAt string `json:"processed_at,omitempty"`
+	Status      string `json:"status"`
+}
+
+type NotificationMessage struct {
+	ID             string `json:"id"`
+	UserID         string `json:"user_id"`
+	NotificationID string `json:"notification_id"`
+	MessageKey     struct {
+		RemoteJID   string `json:"remote_jid"`
+		PhoneDDI    string `json:"phone_ddi"`
+		PhoneNumber string `json:"phone_number"`
+	} `json:"message_key"`
+	Account         map[string]any `json:"account"`
+	Worker          map[string]any `json:"worker"`
+	MessageWhatsApp string         `json:"message_whatsapp"`
+}
+
+type WorkerConfigUpdateEvent struct {
+	WorkerID   string `json:"worker_id"`
+	RejectCall *bool  `json:"reject_call"`
+}
+
+type MarkReadRequest struct {
+	AccountID string       `json:"account_id"`
+	WorkerID  string       `json:"worker_id"`
+	Keys      []MessageKey `json:"keys"`
+}
+
+type UpsertMessage struct {
+	WorkerID             string         `json:"worker_id"`
+	AccountID            string         `json:"account_id"`
+	Type                 string         `json:"type"`
+	Message              map[string]any `json:"message"`
+	Content              map[string]any `json:"content,omitempty"`
+	Photo                string         `json:"photo,omitempty"`
+	HasQuoted            bool           `json:"has_quoted"`
+	IsCallEvent          bool           `json:"is_call_event,omitempty"`
+	CallPhone            string         `json:"call_phone,omitempty"`
+	CallJID              string         `json:"call_jid,omitempty"`
+	CallJIDAlt           string         `json:"call_jid_alt,omitempty"`
+	CallName             string         `json:"call_name,omitempty"`
+	WebhookMessageType   string         `json:"webhook_message_type,omitempty"`
+	WebhookChatbotID     string         `json:"webhook_chatbot_id,omitempty"`
+	TransferSectorID     string         `json:"transfer_sector_id,omitempty"`
+	TransferSectorUserID string         `json:"transfer_sector_user_id,omitempty"`
+	TransferUserID       string         `json:"transfer_user_id,omitempty"`
+	FromHistorySync      bool           `json:"from_history_sync,omitempty"`
+}
+
+type UpdateMessage struct {
+	Message map[string]any `json:"message"`
+	Data    ChatMessage    `json:"data"`
+}
+
+type MessageStatusUpdate struct {
+	AccountID string         `json:"account_id"`
+	MessageID string         `json:"message_id"`
+	Patch     map[string]any `json:"patch"`
+	Key       map[string]any `json:"key,omitempty"`
+}
+
+type WorkerSendMessageDLQ struct {
+	WorkerID     string `json:"worker_id"`
+	Topic        string `json:"topic"`
+	Partition    int    `json:"partition"`
+	Offset       int64  `json:"offset"`
+	ChatID       string `json:"chat_id,omitempty"`
+	MessageID    string `json:"message_id,omitempty"`
+	QueueKey     string `json:"queue_key"`
+	Attempts     int    `json:"attempts"`
+	RedriveCount int    `json:"redrive_count,omitempty"`
+	Error        string `json:"error"`
+	Payload      any    `json:"payload"`
+	RawPayload   string `json:"raw_payload,omitempty"`
+	FailedAt     string `json:"failed_at"`
+}
+
+type S3BackupFallbackUpload struct {
+	AccountID       string `json:"account_id"`
+	Bucket          string `json:"bucket"`
+	ObjectKey       string `json:"object_key"`
+	FileName        string `json:"file_name"`
+	ContentType     string `json:"content_type"`
+	SizeBytes       int64  `json:"size_bytes"`
+	PrimaryAttempts int32  `json:"primary_attempts"`
+	BackupAttempts  int32  `json:"backup_attempts"`
+	PrimaryError    string `json:"primary_error"`
+	BackupError     string `json:"backup_error"`
+}
+
+func nowISO() string {
+	return time.Now().UTC().Format(time.RFC3339Nano)
+}

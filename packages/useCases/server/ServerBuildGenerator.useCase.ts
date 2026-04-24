@@ -49,6 +49,7 @@ export class ServerBuildGeneratorUseCase {
     const buildTypes: EServerBuildType[] = [
       EServerBuildType.baileys,
       EServerBuildType.wwebjs,
+      EServerBuildType.whatsmeow,
       EServerBuildType.balance_api,
     ];
 

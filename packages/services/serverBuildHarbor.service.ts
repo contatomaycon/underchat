@@ -27,6 +27,7 @@ export class ServerBuildHarborService {
   private readonly buildImageByType: Record<EServerBuildType, string> = {
     [EServerBuildType.baileys]: 'under-worker-baileys',
     [EServerBuildType.wwebjs]: 'under-worker-wwebjs',
+    [EServerBuildType.whatsmeow]: 'under-worker-whatsmeow',
     [EServerBuildType.balance_api]: 'under-balance-api',
   };
 
@@ -215,6 +216,7 @@ export class ServerBuildHarborService {
     const buildTypes = [
       EServerBuildType.baileys,
       EServerBuildType.wwebjs,
+      EServerBuildType.whatsmeow,
       EServerBuildType.balance_api,
     ];
 
@@ -294,6 +296,7 @@ export class ServerBuildHarborService {
     const buildTypes = [
       EServerBuildType.baileys,
       EServerBuildType.wwebjs,
+      EServerBuildType.whatsmeow,
       EServerBuildType.balance_api,
     ];
 

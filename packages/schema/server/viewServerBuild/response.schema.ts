@@ -6,6 +6,7 @@ import { Static, Type } from '@sinclair/typebox';
 export const serverBuildTypeSchema = Type.Union([
   Type.Literal(EServerBuildType.baileys),
   Type.Literal(EServerBuildType.wwebjs),
+  Type.Literal(EServerBuildType.whatsmeow),
   Type.Literal(EServerBuildType.balance_api),
 ]);
 
@@ -67,6 +68,7 @@ export const serverBuildJobSchema = Type.Object({
 export const serverBuildVersionsByTypeSchema = Type.Object({
   [EServerBuildType.baileys]: Type.Array(serverBuildVersionSchema),
   [EServerBuildType.wwebjs]: Type.Array(serverBuildVersionSchema),
+  [EServerBuildType.whatsmeow]: Type.Array(serverBuildVersionSchema),
   [EServerBuildType.balance_api]: Type.Array(serverBuildVersionSchema),
 });
 

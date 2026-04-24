@@ -20,6 +20,7 @@ export class WorkerUpdaterUseCase {
   private readonly recreatableWorkerTypes = new Set<EWorkerType>([
     EWorkerType.baileys,
     EWorkerType.wwebjs,
+    EWorkerType.whatsmeow,
   ]);
 
   constructor(

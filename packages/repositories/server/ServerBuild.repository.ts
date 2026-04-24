@@ -55,6 +55,7 @@ export class ServerBuildRepository {
   private readonly buildTypes: EServerBuildType[] = [
     EServerBuildType.baileys,
     EServerBuildType.wwebjs,
+    EServerBuildType.whatsmeow,
     EServerBuildType.balance_api,
   ];
 
@@ -272,7 +273,7 @@ export class ServerBuildRepository {
       );
     }
 
-    const [baileys, wwebjs, balanceApi] = await Promise.all(
+    const [baileys, wwebjs, whatsmeow, balanceApi] = await Promise.all(
       this.buildTypes.map((buildType) =>
         this.dbRo
           .select()
@@ -292,6 +293,9 @@ export class ServerBuildRepository {
           this.mapVersion(item)
         ),
         [EServerBuildType.wwebjs]: wwebjs.map((item) => this.mapVersion(item)),
+        [EServerBuildType.whatsmeow]: whatsmeow.map((item) =>
+          this.mapVersion(item)
+        ),
         [EServerBuildType.balance_api]: balanceApi.map((item) =>
           this.mapVersion(item)
         ),
@@ -1423,15 +1427,17 @@ export class ServerBuildRepository {
 
     const baileys = imageMap.get(EServerBuildType.baileys);
     const wwebjs = imageMap.get(EServerBuildType.wwebjs);
+    const whatsmeow = imageMap.get(EServerBuildType.whatsmeow);
     const balanceApi = imageMap.get(EServerBuildType.balance_api);
 
-    if (!baileys || !wwebjs || !balanceApi) {
+    if (!baileys || !wwebjs || !whatsmeow || !balanceApi) {
       return null;
     }
 
     return {
       baileys,
       wwebjs,
+      whatsmeow,
       balance_api: balanceApi,
     };
   };

@@ -69,6 +69,10 @@ export class WorkerBaileysGrpcClientService {
       return [balanceEnvironment.workerWwebjsGrpcPort];
     }
 
+    if (workerType === EWorkerType.whatsmeow) {
+      return [balanceEnvironment.workerWhatsmeowGrpcPort];
+    }
+
     if (workerType === EWorkerType.baileys) {
       return [balanceEnvironment.workerBaileysGrpcPort];
     }
@@ -76,6 +80,7 @@ export class WorkerBaileysGrpcClientService {
     return [
       balanceEnvironment.workerBaileysGrpcPort,
       balanceEnvironment.workerWwebjsGrpcPort,
+      balanceEnvironment.workerWhatsmeowGrpcPort,
     ];
   }
 

@@ -18,5 +18,9 @@ export function getImageWorker(workerType: EWorkerType) {
     return EWorkerImage.wwebjs;
   }
 
+  if (workerType === EWorkerType.whatsmeow) {
+    return EWorkerImage.whatsmeow;
+  }
+
   return EWorkerImage.baileys;
 }

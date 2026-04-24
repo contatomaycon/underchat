@@ -4,6 +4,7 @@ import { Static, Type } from '@sinclair/typebox';
 export const serverBuildTypeSchema = Type.Union([
   Type.Literal(EServerBuildType.baileys),
   Type.Literal(EServerBuildType.wwebjs),
+  Type.Literal(EServerBuildType.whatsmeow),
   Type.Literal(EServerBuildType.balance_api),
 ]);
 
