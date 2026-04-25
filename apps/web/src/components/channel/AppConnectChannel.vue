@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { computed, onMounted, onUnmounted, shallowRef, toRef } from 'vue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -10,6 +11,10 @@ import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionTyp
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  normalizeWorkerConnectionModalState,
+  type WorkerConnectionModalState,
+} from '@core/common/functions/normalizeWorkerConnectionModalState';
 
 const channelStore = useChannelsStore();
 
@@ -31,60 +36,55 @@ const channelId = toRef(props, 'channelId');
 const channelType = toRef(props, 'channelType');
 const accountId = toRef(props, 'accountId');
 
-const statusConnection = ref<EBaileysConnectionStatus>(
-  EBaileysConnectionStatus.disconnected
+const statusConnection = shallowRef<EBaileysConnectionStatus>(
+  EBaileysConnectionStatus.connecting
 );
-const statusCode = ref<ECodeMessage>(ECodeMessage.awaitConnection);
+const statusCode = shallowRef<ECodeMessage>(ECodeMessage.awaitConnection);
+const qrcode = shallowRef<string | undefined>();
+const phoneNumber = shallowRef<string | null>(null);
+const disconnectedByUser = shallowRef(false);
+const isResetting = shallowRef(false);
 
-const totalSeconds = ref(60);
-const elapsedSeconds = ref(0);
-
-const qrcode = ref<string | null>(null);
-
-const intervalId = ref<number | null>(null);
-const intervalIdNextAttempt = ref<number | null>(null);
-
-const phoneNumber = ref<string | null>(null);
-
-const attempt = ref(0);
-const maxAttempts = ref(5);
-
-const removeInPhone = ref(false);
-const isPhoneNumber = ref(false);
-
-const pairingCodePrimary = ref<string>();
-const pairingCodeSecondary = ref<string>();
-
-const connectionType = ref<EBaileysConnectionType>(
+const isPhoneNumber = shallowRef(false);
+const phoneSent = shallowRef(false);
+const phoneConnection = shallowRef<string | undefined>();
+const connectionType = shallowRef<EBaileysConnectionType>(
   EBaileysConnectionType.qrcode
 );
+const pairingCodePrimary = shallowRef('');
+const pairingCodeSecondary = shallowRef('');
 
-const phoneConnection = ref<string | undefined>();
+const secondsNextAttempt = shallowRef(0);
+const intervalIdNextAttempt = shallowRef<number | null>(null);
 
-const phoneSent = ref(false);
-const isResetting = ref(false);
-
-const secondsNextAttempt = ref(0);
-const connectionAttempt = ref<number | null>(null);
-const connectionMaxAttempts = ref<number | null>(null);
-
-const isConnected = computed(
-  () => statusConnection.value === EBaileysConnectionStatus.connected
-);
-
-const isDisconnected = computed(
-  () => statusConnection.value === EBaileysConnectionStatus.disconnected
-);
 const isBrowserWorkerType = computed(
   () => channelType.value === EWorkerType.wwebjs
 );
-const isActionLocked = computed(
-  () => channelStore.loading || isResetting.value
+
+const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
+  status: statusConnection.value,
+  code: statusCode.value,
+  worker_id: channelId.value ?? '',
+  account_id: accountId.value ?? '',
+  qrcode: qrcode.value,
+  phone: phoneNumber.value ?? undefined,
+  disconnected_user: disconnectedByUser.value,
+}));
+
+const modalState = computed<WorkerConnectionModalState>(() =>
+  normalizeWorkerConnectionModalState(connectionState.value, {
+    isResetting: isResetting.value,
+    isPhoneNumber: isPhoneNumber.value,
+    phoneSent: phoneSent.value,
+  })
 );
 
-const progress = computed(() => calculateProgress(elapsedSeconds.value).value);
-const progressColor = computed(
-  () => calculateProgress(elapsedSeconds.value).color
+const isConnected = computed(() => modalState.value === 'connected');
+const isBlockingOperation = computed(
+  () => modalState.value === 'loggingOut' || modalState.value === 'resetting'
+);
+const isActionLocked = computed(
+  () => channelStore.loading || isBlockingOperation.value
 );
 
 const formattedTime = computed(() => {
@@ -96,201 +96,167 @@ const formattedTime = computed(() => {
   return `${m}:${s}`;
 });
 
-const connectionMaxAttemptsFallback = 5;
+const stageMeta = computed(() => {
+  const meta: Record<
+    WorkerConnectionModalState,
+    {
+      title: string;
+      description: string;
+      icon: string;
+      color: string;
+      loading?: boolean;
+    }
+  > = {
+    starting: {
+      title: 'connection_starting_title',
+      description: 'connection_starting_description',
+      icon: 'tabler-brand-whatsapp',
+      color: 'primary',
+      loading: true,
+    },
+    qrPreparing: {
+      title: 'connection_qr_preparing_title',
+      description: 'connection_qr_preparing_description',
+      icon: 'tabler-qrcode',
+      color: 'primary',
+      loading: true,
+    },
+    qrReady: {
+      title: 'awaiting_qr_code',
+      description: 'connection_qr_ready_description',
+      icon: 'tabler-qrcode',
+      color: 'primary',
+    },
+    connected: {
+      title: 'connection_success',
+      description: 'connection_success_description',
+      icon: 'tabler-brand-whatsapp',
+      color: 'success',
+    },
+    loggingOut: {
+      title: 'connection_logout_title',
+      description: 'connection_logout_description',
+      icon: 'tabler-logout',
+      color: 'warning',
+      loading: true,
+    },
+    resetting: {
+      title: 'connection_resetting_title',
+      description: 'connection_resetting_description',
+      icon: 'tabler-refresh',
+      color: 'info',
+      loading: true,
+    },
+    disconnected: {
+      title: disconnectedByUser.value
+        ? 'connection_removed'
+        : 'connection_disconnected_title',
+      description: 'connection_disconnected_description',
+      icon: 'tabler-plug-connected-x',
+      color: 'error',
+    },
+    phoneUnavailable: {
+      title: 'phone_not_available',
+      description: 'wait_until_next_attempt',
+      icon: 'tabler-device-mobile-off',
+      color: 'warning',
+    },
+    phoneInput: {
+      title: 'for_phone',
+      description: 'request_phone_number',
+      icon: 'tabler-device-mobile-message',
+      color: 'primary',
+    },
+    pairing: {
+      title: 'for_phone',
+      description: 'for_phone_description',
+      icon: 'tabler-device-mobile-code',
+      color: 'primary',
+      loading: !pairingCodePrimary.value || !pairingCodeSecondary.value,
+    },
+  };
 
-const attemptDisplay = computed(() => {
-  if (!connectionAttempt.value) return null;
-
-  const max = connectionMaxAttempts.value ?? connectionMaxAttemptsFallback;
-  return connectionAttempt.value > max
-    ? `${max}+`
-    : String(connectionAttempt.value);
+  return meta[modalState.value];
 });
 
-const maxAttemptDisplay = computed(() => {
-  if (!connectionAttempt.value) return null;
+const showPrimaryActions = computed(
+  () => modalState.value !== 'phoneInput' && modalState.value !== 'pairing'
+);
+const showReconnectAction = computed(
+  () =>
+    !isConnected.value &&
+    !isBlockingOperation.value &&
+    modalState.value !== 'phoneInput' &&
+    modalState.value !== 'pairing'
+);
+const showEnterPhoneLink = computed(
+  () =>
+    !isBrowserWorkerType.value &&
+    !isPhoneNumber.value &&
+    !isConnected.value &&
+    !isBlockingOperation.value &&
+    modalState.value !== 'phoneUnavailable'
+);
+const showEnterQrLink = computed(
+  () =>
+    isPhoneNumber.value &&
+    !isConnected.value &&
+    !isBlockingOperation.value &&
+    modalState.value !== 'phoneUnavailable' &&
+    !(
+      modalState.value === 'pairing' &&
+      pairingCodePrimary.value &&
+      pairingCodeSecondary.value
+    )
+);
+const showChangePhoneLink = computed(
+  () =>
+    modalState.value === 'pairing' &&
+    Boolean(pairingCodePrimary.value && pairingCodeSecondary.value) &&
+    !isBlockingOperation.value
+);
 
-  const max = connectionMaxAttempts.value ?? connectionMaxAttemptsFallback;
-  return String(max);
-});
-
-const showQrSkeleton = computed(() => {
-  if (isConnected.value || qrcode.value) return false;
-  if (attempt.value >= maxAttempts.value && !isPhoneNumber.value) return false;
-  if (isPhoneNumber.value) return false;
-  if (statusCode.value === ECodeMessage.phoneNotAvailable) return false;
-  if (statusCode.value === ECodeMessage.newLoginAttempt) return false;
-
-  const disconnectedWithRemovedMessage =
-    isDisconnected.value &&
-    (removeInPhone.value ||
-      statusCode.value === ECodeMessage.connectionLost ||
-      statusCode.value === ECodeMessage.connectionClosed ||
-      statusCode.value === ECodeMessage.connectionReplaced ||
-      statusCode.value === ECodeMessage.loggedOut);
-  if (disconnectedWithRemovedMessage) return false;
-
-  return true;
-});
-
-function prepareConnectionStart(resetAttempt = false) {
-  if (resetAttempt) attempt.value = 0;
-
-  isResetting.value = false;
-  statusConnection.value = EBaileysConnectionStatus.connecting;
-  statusCode.value = ECodeMessage.awaitConnection;
-  qrcode.value = null;
-  removeInPhone.value = false;
-  elapsedSeconds.value = 0;
-  connectionAttempt.value = null;
-  connectionMaxAttempts.value = null;
-  secondsNextAttempt.value = 0;
-  resetPairingCodes();
-  clearTimer();
-
-  if (intervalIdNextAttempt.value !== null) {
-    clearInterval(intervalIdNextAttempt.value);
-    intervalIdNextAttempt.value = null;
-  }
-}
-
-function calculateProgress(seconds: number, max = totalSeconds.value) {
-  const value = Math.min(Math.round((seconds / max) * 100), 100);
-
-  if (value > 75) return { value, color: 'error' as const };
-  if (value > 50) return { value, color: 'warning' as const };
-
-  return { value, color: 'success' as const };
+function resetPairingCodes() {
+  pairingCodePrimary.value = '';
+  pairingCodeSecondary.value = '';
 }
 
 function splitCode(code: string): [string, string] {
   return [code.slice(0, 4), code.slice(4)];
 }
 
-async function reconnectChannel(restart = false) {
-  if (!channelId.value) return;
-
-  prepareConnectionStart(restart);
-
-  await channelStore.updateConnectionChannel(
-    buildRequest(EWorkerStatus.online)
-  );
+function clearNextAttemptCountdown() {
+  if (intervalIdNextAttempt.value !== null) {
+    clearInterval(intervalIdNextAttempt.value);
+    intervalIdNextAttempt.value = null;
+  }
 }
 
-async function recreateChannelWithFullCleanup() {
-  if (!channelId.value) return;
+function startNextAttemptCountdown() {
+  clearNextAttemptCountdown();
 
-  const reseted = await channelStore.resetConnectionChannel(channelId.value);
+  intervalIdNextAttempt.value = (
+    globalThis as Window & typeof globalThis
+  ).setInterval(() => {
+    if (secondsNextAttempt.value > 0) {
+      secondsNextAttempt.value--;
+      return;
+    }
 
-  if (!reseted) {
-    return;
-  }
+    clearNextAttemptCountdown();
+  }, 1000);
+}
 
-  // Keep the modal in a locked state while the worker is recreated.
-  isResetting.value = true;
+function prepareConnectionStart() {
+  isResetting.value = false;
   statusConnection.value = EBaileysConnectionStatus.connecting;
   statusCode.value = ECodeMessage.awaitConnection;
-  qrcode.value = null;
-  removeInPhone.value = false;
-  attempt.value = 0;
-  connectionAttempt.value = null;
-  connectionMaxAttempts.value = null;
-  clearTimer();
-}
-
-async function sendPhoneNumber() {
-  if (!channelId.value || !phoneConnection.value) return;
-
-  phoneSent.value = true;
-  totalSeconds.value = 120;
-  maxAttempts.value = 5;
-
-  prepareConnectionStart();
-
-  await channelStore.updateConnectionChannel(
-    buildRequest(EWorkerStatus.online)
-  );
-}
-
-function enterPhoneNumber() {
-  if (isBrowserWorkerType.value) return;
-
-  secondsNextAttempt.value = 0;
-  isPhoneNumber.value = true;
-  phoneSent.value = false;
-  connectionType.value = EBaileysConnectionType.phone;
+  qrcode.value = undefined;
+  disconnectedByUser.value = false;
   phoneNumber.value = null;
-  attempt.value = 0;
-}
-
-function changePhone() {
-  isPhoneNumber.value = true;
-  phoneSent.value = false;
-  phoneConnection.value = undefined;
-
-  resetPairingCodes();
-}
-
-async function enterQrcode() {
-  isPhoneNumber.value = false;
-  connectionType.value = EBaileysConnectionType.qrcode;
-  phoneConnection.value = undefined;
-  attempt.value = 0;
   secondsNextAttempt.value = 0;
-  totalSeconds.value = 60;
-  prepareConnectionStart(true);
-
-  if (channelId.value) {
-    clearTimer();
-
-    await channelStore.updateConnectionChannel(
-      buildRequest(EWorkerStatus.online)
-    );
-  }
-}
-
-function startTimer() {
-  elapsedSeconds.value = 0;
-  clearTimer();
-
-  intervalId.value = (globalThis as Window & typeof globalThis).setInterval(
-    () => {
-      if (
-        (!phoneSent.value &&
-          connectionType.value === EBaileysConnectionType.phone) ||
-        statusCode.value === ECodeMessage.phoneNotAvailable
-      ) {
-        clearTimer();
-        return;
-      }
-
-      if (elapsedSeconds.value < totalSeconds.value) {
-        elapsedSeconds.value++;
-        return;
-      }
-
-      elapsedSeconds.value = 0;
-      if (attempt.value < maxAttempts.value) {
-        attempt.value++;
-        reconnectChannel();
-        return;
-      }
-
-      clearTimer();
-    },
-    1000
-  );
-}
-
-function clearTimer() {
-  if (intervalId.value !== null) clearInterval(intervalId.value);
-
-  intervalId.value = null;
-}
-
-function resetPairingCodes() {
-  pairingCodePrimary.value = '';
-  pairingCodeSecondary.value = '';
+  resetPairingCodes();
+  clearNextAttemptCountdown();
 }
 
 function buildRequest(
@@ -311,169 +277,242 @@ function buildRequest(
   return payload;
 }
 
-function startNextAttemptCountdown() {
-  clearInterval(intervalIdNextAttempt.value!);
+async function reconnectChannel(restart = false) {
+  if (!channelId.value) return;
 
-  intervalIdNextAttempt.value = (
-    globalThis as Window & typeof globalThis
-  ).setInterval(() => {
-    if (secondsNextAttempt.value > 0) {
-      secondsNextAttempt.value--;
-      return;
-    }
+  if (restart) {
+    connectionType.value = EBaileysConnectionType.qrcode;
+    phoneConnection.value = undefined;
+    isPhoneNumber.value = false;
+    phoneSent.value = false;
+  }
 
-    clearInterval(intervalIdNextAttempt.value!);
-    if (
-      statusCode.value === ECodeMessage.phoneNotAvailable &&
-      !isBrowserWorkerType.value
-    ) {
-      enterPhoneNumber();
-    }
-  }, 1000);
+  prepareConnectionStart();
+
+  await channelStore.updateConnectionChannel(
+    buildRequest(EWorkerStatus.online)
+  );
 }
 
-onMounted(async () => {
-  if (channelId.value && accountId.value) {
-    prepareConnectionStart(true);
+async function recreateChannelWithFullCleanup() {
+  if (!channelId.value) return;
 
-    await onMessage(
-      workerCentrifugoQueue(accountId.value),
-      (data: IBaileysConnectionState) => {
-        if (!channelId.value || data.worker_id !== channelId.value) {
-          return;
-        }
+  statusConnection.value = EBaileysConnectionStatus.connecting;
+  statusCode.value = ECodeMessage.logoutInProgress;
+  disconnectedByUser.value = true;
+  qrcode.value = undefined;
+  resetPairingCodes();
+  clearNextAttemptCountdown();
 
-        const incomingStatus = data.status as EBaileysConnectionStatus;
-        const incomingCode = data.code as ECodeMessage;
-        const isConnectedEvent =
-          incomingStatus === EBaileysConnectionStatus.connected ||
-          incomingCode === ECodeMessage.connectionEstablished;
+  const reseted = await channelStore.resetConnectionChannel(channelId.value);
 
-        if (
-          statusCode.value === ECodeMessage.phoneNotAvailable &&
-          !isConnectedEvent
-        ) {
-          return;
-        }
+  if (!reseted) {
+    statusConnection.value = EBaileysConnectionStatus.disconnected;
+    statusCode.value = ECodeMessage.connectionClosed;
+    return;
+  }
 
-        if (data.status) {
-          const isInfo = incomingStatus === EBaileysConnectionStatus.info;
-          if (
-            !isInfo ||
-            statusConnection.value !== EBaileysConnectionStatus.connected
-          ) {
-            statusConnection.value = incomingStatus;
-          }
+  isResetting.value = true;
+  statusConnection.value = EBaileysConnectionStatus.connecting;
+  statusCode.value = ECodeMessage.awaitConnection;
+}
 
-          if (isConnectedEvent) {
-            isResetting.value = false;
-            statusConnection.value = EBaileysConnectionStatus.connected;
-            statusCode.value = ECodeMessage.connectionEstablished;
-            phoneNumber.value = null;
-            isPhoneNumber.value = false;
-            phoneSent.value = false;
-            connectionType.value = EBaileysConnectionType.qrcode;
-            connectionAttempt.value = null;
-            connectionMaxAttempts.value = null;
-            removeInPhone.value = false;
-            qrcode.value = null;
+async function sendPhoneNumber() {
+  if (!channelId.value || !phoneConnection.value) return;
 
-            clearTimer();
-            if (intervalIdNextAttempt.value !== null) {
-              clearInterval(intervalIdNextAttempt.value);
-              intervalIdNextAttempt.value = null;
-            }
-            secondsNextAttempt.value = 0;
-            resetPairingCodes();
-          }
-        }
+  phoneSent.value = true;
+  connectionType.value = EBaileysConnectionType.phone;
+  prepareConnectionStart();
+  phoneSent.value = true;
 
-        if (data.worker_status_id) {
-          if (data.worker_status_id === EWorkerStatus.recreating) {
-            isResetting.value = true;
-            statusConnection.value = EBaileysConnectionStatus.connecting;
-            qrcode.value = null;
-            clearTimer();
-          } else {
-            isResetting.value = false;
-          }
-        }
+  await channelStore.updateConnectionChannel(
+    buildRequest(EWorkerStatus.online)
+  );
+}
 
-        if (data.qrcode) {
-          qrcode.value = data.qrcode;
-        }
-        if (data.code) {
-          const shouldIgnoreCode =
-            (isConnectedEvent && incomingCode === ECodeMessage.info) ||
-            (incomingCode === ECodeMessage.info &&
-              qrcode.value &&
-              !isConnected.value);
-          if (
-            !shouldIgnoreCode &&
-            !(incomingCode === ECodeMessage.awaitConnection && qrcode.value)
-          ) {
-            statusCode.value = incomingCode;
-          }
+function enterPhoneNumber() {
+  if (isBrowserWorkerType.value) return;
 
-          if (incomingCode === ECodeMessage.awaitConnection && !data.qrcode) {
-            qrcode.value = null;
-          }
+  isPhoneNumber.value = true;
+  phoneSent.value = false;
+  connectionType.value = EBaileysConnectionType.phone;
+  phoneConnection.value = undefined;
+  qrcode.value = undefined;
+  secondsNextAttempt.value = 0;
+  resetPairingCodes();
+  clearNextAttemptCountdown();
+}
 
-          if (incomingCode === ECodeMessage.loggedOut) {
-            attempt.value = 0;
-            removeInPhone.value = true;
-          }
-        }
+function changePhone() {
+  isPhoneNumber.value = true;
+  phoneSent.value = false;
+  phoneConnection.value = undefined;
+  resetPairingCodes();
+}
 
-        if (data.phone) phoneNumber.value = formatPhoneBR(data.phone);
+async function enterQrcode() {
+  isPhoneNumber.value = false;
+  phoneSent.value = false;
+  connectionType.value = EBaileysConnectionType.qrcode;
+  phoneConnection.value = undefined;
+  prepareConnectionStart();
 
-        if (data.attempt) connectionAttempt.value = data.attempt;
-        if (data.max_attempts) connectionMaxAttempts.value = data.max_attempts;
-
-        if (
-          data.status === EBaileysConnectionStatus.connecting &&
-          qrcode.value &&
-          attempt.value < maxAttempts.value
-        ) {
-          startTimer();
-        }
-
-        if (data.pairing_code) {
-          const [p, s] = splitCode(data.pairing_code);
-
-          pairingCodePrimary.value = p;
-          pairingCodeSecondary.value = s;
-        }
-
-        if (data.seconds_until_next_attempt) {
-          secondsNextAttempt.value = data.seconds_until_next_attempt;
-
-          startNextAttemptCountdown();
-        }
-      }
-    );
-
+  if (channelId.value) {
     await channelStore.updateConnectionChannel(
       buildRequest(EWorkerStatus.online)
     );
   }
+}
+
+function shouldIgnoreIncomingState(data: IBaileysConnectionState): boolean {
+  const incomingCode = data.code as ECodeMessage | undefined;
+  const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
+  const isIncomingConnected =
+    incomingStatus === EBaileysConnectionStatus.connected ||
+    incomingCode === ECodeMessage.connectionEstablished;
+
+  if (
+    statusCode.value === ECodeMessage.phoneNotAvailable &&
+    !isIncomingConnected
+  ) {
+    return true;
+  }
+
+  if (
+    qrcode.value &&
+    incomingCode === ECodeMessage.awaitConnection &&
+    !data.qrcode
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function applyConnectedState(data: IBaileysConnectionState) {
+  isResetting.value = false;
+  statusConnection.value = EBaileysConnectionStatus.connected;
+  statusCode.value = ECodeMessage.connectionEstablished;
+  phoneNumber.value = data.phone ? formatPhoneBR(data.phone) : null;
+  disconnectedByUser.value = false;
+  qrcode.value = undefined;
+  isPhoneNumber.value = false;
+  phoneSent.value = false;
+  connectionType.value = EBaileysConnectionType.qrcode;
+  phoneConnection.value = undefined;
+  secondsNextAttempt.value = 0;
+  resetPairingCodes();
+  clearNextAttemptCountdown();
+}
+
+function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
+  if (!channelId.value || data.worker_id !== channelId.value) {
+    return;
+  }
+
+  if (data.worker_status_id === EWorkerStatus.recreating) {
+    isResetting.value = true;
+    statusConnection.value = EBaileysConnectionStatus.connecting;
+    statusCode.value = ECodeMessage.awaitConnection;
+    qrcode.value = undefined;
+    resetPairingCodes();
+    return;
+  }
+
+  if (data.worker_status_id) {
+    isResetting.value = false;
+  }
+
+  if (shouldIgnoreIncomingState(data)) {
+    return;
+  }
+
+  const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
+  const incomingCode = data.code as ECodeMessage | undefined;
+  const isConnectedEvent =
+    incomingStatus === EBaileysConnectionStatus.connected ||
+    incomingCode === ECodeMessage.connectionEstablished;
+
+  if (isConnectedEvent) {
+    applyConnectedState(data);
+    return;
+  }
+
+  if (data.disconnected_user !== undefined) {
+    disconnectedByUser.value = data.disconnected_user;
+  }
+
+  if (data.qrcode) {
+    qrcode.value = data.qrcode;
+  } else if (
+    incomingCode === ECodeMessage.awaitConnection ||
+    incomingCode === ECodeMessage.logoutInProgress ||
+    incomingStatus === EBaileysConnectionStatus.disconnected
+  ) {
+    qrcode.value = undefined;
+  }
+
+  if (incomingStatus) {
+    const isInfo = incomingStatus === EBaileysConnectionStatus.info;
+    if (
+      !isInfo ||
+      statusConnection.value !== EBaileysConnectionStatus.connected
+    ) {
+      statusConnection.value = incomingStatus;
+    }
+  }
+
+  if (incomingCode && incomingCode !== ECodeMessage.info) {
+    statusCode.value = incomingCode;
+  }
+
+  if (data.phone) {
+    phoneNumber.value = formatPhoneBR(data.phone);
+  }
+
+  if (data.pairing_code) {
+    const [primary, secondary] = splitCode(data.pairing_code);
+    pairingCodePrimary.value = primary;
+    pairingCodeSecondary.value = secondary;
+  }
+
+  if (data.seconds_until_next_attempt) {
+    secondsNextAttempt.value = data.seconds_until_next_attempt;
+    startNextAttemptCountdown();
+  }
+}
+
+onMounted(async () => {
+  if (!channelId.value || !accountId.value) {
+    return;
+  }
+
+  prepareConnectionStart();
+
+  await onMessage(
+    workerCentrifugoQueue(accountId.value),
+    handleWorkerConnectionMessage
+  );
+
+  await channelStore.updateConnectionChannel(
+    buildRequest(EWorkerStatus.online)
+  );
 });
 
 onUnmounted(() => {
-  clearTimer();
-
-  if (intervalIdNextAttempt.value !== null) {
-    clearInterval(intervalIdNextAttempt.value);
-  }
+  clearNextAttemptCountdown();
 
   if (accountId.value) {
-    unsubscribe(workerCentrifugoQueue(accountId.value));
+    void unsubscribe(
+      workerCentrifugoQueue(accountId.value),
+      handleWorkerConnectionMessage
+    );
   }
 });
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
+  <VDialog v-model="isVisible" max-width="640">
     <DialogCloseBtn @click="isVisible = false" />
 
     <VCard>
@@ -483,227 +522,116 @@ onUnmounted(() => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <div v-if="isResetting">
-            <VCardText class="d-flex justify-center">
-              <VProgressCircular indeterminate color="info" size="84" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('recreating') }}...</i>
-            </VCardText>
-          </div>
-
-          <div v-else-if="showQrSkeleton" class="connection-pending-wrapper">
-            <VCardText class="d-flex justify-center">
-              <div class="connection-pending">
-                <VProgressCircular
-                  indeterminate
-                  color="primary"
-                  size="104"
-                  width="4"
-                >
-                  <VIcon
-                    icon="tabler-brand-whatsapp"
-                    color="primary"
-                    size="52"
-                  />
-                </VProgressCircular>
-              </div>
-            </VCardText>
-            <VCardText class="text-center">
-              <div class="text-body-1">
-                <strong v-if="attemptDisplay && maxAttemptDisplay">
-                  {{
-                    $t('connection_attempting', {
-                      attempt: attemptDisplay,
-                      max: maxAttemptDisplay,
-                    })
-                  }}
-                </strong>
-                <i v-else>{{ $t('awaiting_connection') }}</i>
-              </div>
-              <div class="text-body-2 mt-2">
-                {{ $t('keep_screen_open') }}
-              </div>
-            </VCardText>
-          </div>
-
-          <div
-            v-else-if="attempt >= maxAttempts && !isConnected && !isPhoneNumber"
-          >
-            <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-mobiledata-off" size="150" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('connection_timeout') }}</i>
-            </VCardText>
-          </div>
-
-          <div
-            v-else-if="
-              statusCode === ECodeMessage.newLoginAttempt && !isConnected
-            "
-          >
-            <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-brand-whatsapp" size="150" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('connection_in_progress') }}</i>
-            </VCardText>
-          </div>
-
-          <VCardText
-            v-else-if="
-              isPhoneNumber && !phoneSent && !isDisconnected && !isConnected
-            "
-          >
-            <h4 class="text-h4 mb-1">{{ $t('for_phone') }} 💬</h4>
-            <p class="mb-1">{{ $t('request_phone_number') }}</p>
-            <p class="mb-1">
-              <strong>{{ $t('attention') }}:</strong> {{ $t('is_limited') }}
-            </p>
+          <VCardText v-if="modalState === 'phoneInput'">
+            <div class="connection-copy">
+              <VIcon
+                :icon="stageMeta.icon"
+                :color="stageMeta.color"
+                size="52"
+              />
+              <h4 class="text-h5 mb-1">{{ $t(stageMeta.title) }}</h4>
+              <p class="mb-1">{{ $t(stageMeta.description) }}</p>
+              <p class="mb-3">
+                <strong>{{ $t('attention') }}:</strong>
+                {{ $t('is_limited') }}
+              </p>
+            </div>
 
             <v-phone-input v-model="phoneConnection" />
 
-            <VCol cols="12">
-              <VBtn
-                :loading="channelStore.loading"
-                :disabled="channelStore.loading"
-                block
-                class="mt-2"
-                @click="sendPhoneNumber"
-              >
-                {{ $t('request') }}
-              </VBtn>
-            </VCol>
-          </VCardText>
-
-          <VCardText
-            v-else-if="
-              statusCode === ECodeMessage.phoneNotAvailable &&
-              secondsNextAttempt &&
-              !isConnected
-            "
-          >
-            <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-device-mobile-off" size="150" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('phone_not_available') }}</i
-              ><br />
-              <strong>{{ $t('seconds_until_next_attempt') }}:</strong><br />
-              <strong class="text-h5">{{ formattedTime }}</strong
-              ><br />
-              <small>{{ $t('wait_until_next_attempt') }}</small>
-            </VCardText>
-          </VCardText>
-
-          <VCardText
-            v-else-if="isPhoneNumber && !isDisconnected && !isConnected"
-          >
-            <h4 class="text-h4 mb-1">{{ $t('for_phone') }} 💬</h4>
-            <VCardText
-              class="d-flex flex-column align-center gap-2"
-              v-if="!pairingCodePrimary || !pairingCodeSecondary"
+            <VBtn
+              :loading="channelStore.loading"
+              :disabled="channelStore.loading || !phoneConnection"
+              block
+              class="mt-3"
+              @click="sendPhoneNumber"
             >
-              <p class="mb-1">{{ $t('code_requested') }}</p>
-              <VProgressCircular indeterminate size="40" color="primary" />
-            </VCardText>
-
-            <VCardText v-else>
-              <p class="mb-1">{{ $t('for_phone_description') }}</p>
-
-              <VOtpInput
-                v-model="pairingCodePrimary"
-                disabled
-                length="4"
-                type="text"
-                class="pa-0"
-                :focused="false"
-              />
-              <VOtpInput
-                v-model="pairingCodeSecondary"
-                disabled
-                length="4"
-                type="text"
-                class="pa-0"
-                :focused="false"
-              />
-
-              <VCardText class="text-center">
-                <VProgressLinear
-                  :model-value="progress"
-                  :color="progressColor"
-                  size="32"
-                />
-              </VCardText>
-            </VCardText>
+              {{ $t('request') }}
+            </VBtn>
           </VCardText>
 
-          <div
-            v-else-if="
-              !isPhoneNumber &&
-              statusCode === ECodeMessage.awaitingReadQrCode &&
-              qrcode &&
-              !isDisconnected &&
-              !isConnected
-            "
-          >
-            <VCardText class="d-flex justify-center">
-              <VImg :src="qrcode" max-width="240" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('awaiting_qr_code') }}</i>
-              <VProgressLinear
-                :model-value="progress"
-                :color="progressColor"
-                size="32"
+          <VCardText v-else class="connection-stage">
+            <div class="connection-visual">
+              <VImg
+                v-if="modalState === 'qrReady' && qrcode"
+                :src="qrcode"
+                max-width="240"
+                width="240"
               />
-            </VCardText>
-          </div>
+              <VProgressCircular
+                v-else-if="stageMeta.loading"
+                indeterminate
+                :color="stageMeta.color"
+                size="112"
+                width="4"
+              >
+                <VIcon
+                  :icon="stageMeta.icon"
+                  :color="stageMeta.color"
+                  size="52"
+                />
+              </VProgressCircular>
+              <VIcon
+                v-else
+                :icon="stageMeta.icon"
+                :color="stageMeta.color"
+                size="124"
+              />
+            </div>
 
-          <div v-else-if="isDisconnected && removeInPhone && !isPhoneNumber">
-            <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('connection_removed_in_phone') }}</i>
-            </VCardText>
-          </div>
+            <div class="connection-copy text-center">
+              <h4 class="text-h6 mb-2">{{ $t(stageMeta.title) }}</h4>
+              <p class="text-body-2 mb-0">
+                {{ $t(stageMeta.description) }}
+              </p>
+              <small v-if="isConnected && phoneNumber" class="d-block mt-1">
+                {{ phoneNumber }}
+              </small>
+              <template v-if="modalState === 'phoneUnavailable'">
+                <strong class="d-block text-h5 mt-3">{{
+                  formattedTime
+                }}</strong>
+                <small>{{ $t('seconds_until_next_attempt') }}</small>
+              </template>
+            </div>
 
-          <div v-else-if="isDisconnected">
-            <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-plug-connected-x" color="error" size="150" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('connection_removed') }}</i>
-            </VCardText>
-          </div>
+            <div v-if="modalState === 'pairing'" class="pairing-code">
+              <template v-if="pairingCodePrimary && pairingCodeSecondary">
+                <VOtpInput
+                  v-model="pairingCodePrimary"
+                  disabled
+                  length="4"
+                  type="text"
+                  class="pa-0"
+                  :focused="false"
+                />
+                <VOtpInput
+                  v-model="pairingCodeSecondary"
+                  disabled
+                  length="4"
+                  type="text"
+                  class="pa-0"
+                  :focused="false"
+                />
+              </template>
+              <VProgressLinear v-else indeterminate color="primary" />
+            </div>
 
-          <div v-else-if="isConnected">
-            <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-brand-whatsapp" color="success" size="150" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('connection_success') }}</i
-              ><br />
-              <small>{{ phoneNumber }}</small>
-            </VCardText>
-          </div>
+            <VProgressLinear
+              v-if="modalState === 'qrReady'"
+              indeterminate
+              color="primary"
+              class="connection-progress"
+            />
+          </VCardText>
 
-          <VCardText
-            class="d-flex justify-center"
-            v-if="
-              !isPhoneNumber ||
-              isConnected ||
-              statusCode === ECodeMessage.newLoginAttempt
-            "
-          >
+          <VCardText v-if="showPrimaryActions" class="d-flex justify-center">
             <div class="d-flex gap-2">
               <VBtn
                 :disabled="isActionLocked"
-                :loading="channelStore.loading"
+                :loading="channelStore.loading && modalState === 'loggingOut'"
                 :color="isConnected ? 'error' : 'primary'"
-                @click="recreateChannelWithFullCleanup()"
+                @click="recreateChannelWithFullCleanup"
               >
                 <VTooltip
                   location="top"
@@ -720,13 +648,9 @@ onUnmounted(() => {
               </VBtn>
 
               <VBtn
-                v-if="!isDisconnected"
-                :disabled="
-                  isActionLocked ||
-                  (!(attempt >= maxAttempts && !isConnected) &&
-                    !(isDisconnected && removeInPhone))
-                "
-                :loading="channelStore.loading"
+                v-if="showReconnectAction"
+                :disabled="isActionLocked"
+                :loading="channelStore.loading && modalState === 'starting'"
                 color="warning"
                 @click="reconnectChannel(true)"
               >
@@ -742,60 +666,23 @@ onUnmounted(() => {
             </div>
           </VCardText>
 
-          <div
-            v-if="
-              isPhoneNumber &&
-              !isDisconnected &&
-              !isConnected &&
-              !pairingCodePrimary &&
-              !pairingCodeSecondary
-            "
-          >
-            <VCardText class="text-center">
-              <a class="clickable" @click="enterQrcode">{{
-                $t('enter_qrcode')
-              }}</a>
-            </VCardText>
-          </div>
+          <VCardText v-if="showEnterQrLink" class="text-center pt-0">
+            <a class="clickable" @click="enterQrcode">
+              {{ $t('enter_qrcode') }}
+            </a>
+          </VCardText>
 
-          <div
-            v-else-if="
-              isPhoneNumber &&
-              pairingCodePrimary &&
-              pairingCodeSecondary &&
-              !isConnected &&
-              statusCode !== ECodeMessage.newLoginAttempt &&
-              !(
-                statusCode === ECodeMessage.phoneNotAvailable &&
-                secondsNextAttempt
-              )
-            "
-          >
-            <VCardText class="text-center">
-              <a class="clickable" @click="changePhone">{{
-                $t('change_phone_number')
-              }}</a>
-            </VCardText>
-          </div>
+          <VCardText v-if="showChangePhoneLink" class="text-center pt-0">
+            <a class="clickable" @click="changePhone">
+              {{ $t('change_phone_number') }}
+            </a>
+          </VCardText>
 
-          <div
-            v-else-if="
-              !isBrowserWorkerType &&
-              !isDisconnected &&
-              !isConnected &&
-              statusCode !== ECodeMessage.newLoginAttempt &&
-              !(
-                statusCode === ECodeMessage.phoneNotAvailable &&
-                secondsNextAttempt
-              )
-            "
-          >
-            <VCardText class="text-center">
-              <a class="clickable" @click="enterPhoneNumber">{{
-                $t('enter_phone_number')
-              }}</a>
-            </VCardText>
-          </div>
+          <VCardText v-else-if="showEnterPhoneLink" class="text-center pt-0">
+            <a class="clickable" @click="enterPhoneNumber">
+              {{ $t('enter_phone_number') }}
+            </a>
+          </VCardText>
         </VCol>
 
         <VCol
@@ -823,15 +710,13 @@ onUnmounted(() => {
                 <template #icon>
                   <VIcon icon="tabler-circle" color="primary" size="16" />
                 </template>
-                <div
-                  class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2"
-                >
-                  <span class="app-timeline-title">{{
-                    $t('open_whatsapp')
-                  }}</span>
-                  <span class="app-timeline-meta">{{
-                    $t('certify_latest_version')
-                  }}</span>
+                <div class="connection-step">
+                  <span class="app-timeline-title">
+                    {{ $t('open_whatsapp') }}
+                  </span>
+                  <span class="app-timeline-meta">
+                    {{ $t('certify_latest_version') }}
+                  </span>
                 </div>
               </VTimelineItem>
 
@@ -842,15 +727,13 @@ onUnmounted(() => {
                 <template #icon>
                   <VIcon icon="tabler-circle" color="warning" size="16" />
                 </template>
-                <div
-                  class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2"
-                >
+                <div class="connection-step">
                   <span class="app-timeline-title">{{
                     $t('tap_settings')
                   }}</span>
-                  <span class="app-timeline-meta">{{
-                    $t('you_top_right_corner')
-                  }}</span>
+                  <span class="app-timeline-meta">
+                    {{ $t('you_top_right_corner') }}
+                  </span>
                 </div>
               </VTimelineItem>
 
@@ -861,15 +744,13 @@ onUnmounted(() => {
                 <template #icon>
                   <VIcon icon="tabler-circle" color="info" size="16" />
                 </template>
-                <div
-                  class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2"
-                >
-                  <span class="app-timeline-title">{{
-                    $t('select_connected_devices')
-                  }}</span>
-                  <span class="app-timeline-meta">{{
-                    $t('access_connect_device')
-                  }}</span>
+                <div class="connection-step">
+                  <span class="app-timeline-title">
+                    {{ $t('select_connected_devices') }}
+                  </span>
+                  <span class="app-timeline-meta">
+                    {{ $t('access_connect_device') }}
+                  </span>
                 </div>
               </VTimelineItem>
 
@@ -880,12 +761,10 @@ onUnmounted(() => {
                 <template #icon>
                   <VIcon icon="tabler-circle" color="success" size="16" />
                 </template>
-                <div
-                  class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2"
-                >
-                  <span class="app-timeline-title">{{
-                    $t('point_camera_screen')
-                  }}</span>
+                <div class="connection-step">
+                  <span class="app-timeline-title">
+                    {{ $t('point_camera_screen') }}
+                  </span>
                   <span class="app-timeline-meta">{{
                     $t('scan_qr_code')
                   }}</span>
@@ -900,38 +779,50 @@ onUnmounted(() => {
 </template>
 
 <style lang="scss" scoped>
-.connection-pending-wrapper {
-  min-height: 0;
-  overflow: hidden;
+.connection-stage {
+  display: flex;
+  min-block-size: 320px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
 }
 
-.connection-pending {
+.connection-visual {
   display: grid;
-  inline-size: 160px;
-  block-size: 160px;
+  min-inline-size: 172px;
+  min-block-size: 172px;
   place-items: center;
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 8px;
   background-color: rgb(var(--v-theme-surface));
-  box-shadow: inset 0 0 0 12px rgba(var(--v-theme-primary), 0.06);
+  box-shadow: inset 0 0 0 12px rgba(var(--v-theme-primary), 0.05);
 }
 
-.avatar-center {
-  position: absolute;
-  border: 3px solid rgb(var(--v-theme-surface));
-  inset-block-start: -2rem;
-  inset-inline-start: 1rem;
+.connection-copy {
+  max-inline-size: 300px;
+  margin-inline: auto;
+}
+
+.connection-progress {
+  max-inline-size: 240px;
+}
+
+.pairing-code {
+  display: grid;
+  inline-size: min(100%, 260px);
+  gap: 8px;
+}
+
+.connection-step {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .member-pricing-bg {
   position: relative;
   background-color: rgba(var(--v-theme-on-surface), var(--v-hover-opacity));
-}
-
-.membership-pricing {
-  sup {
-    inset-block-start: 9px;
-  }
 }
 
 .v-btn {

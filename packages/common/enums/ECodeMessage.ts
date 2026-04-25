@@ -4,6 +4,7 @@ export enum ECodeMessage {
   awaitingReadQrCode = 202,
   awaitConnection = 203,
   awaitingPairingCode = 204,
+  logoutInProgress = 205,
   loggedOut = 401,
   forbidden = 403,
   connectionLost = 408,

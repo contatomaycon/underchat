@@ -312,6 +312,32 @@ export class BaileysConnectionService {
     this.publishSub(retryPayload, true);
   }
 
+  private publishConnectionStarting(): void {
+    this.publishSub(
+      {
+        status: Status.connecting,
+        worker_id: WORKER,
+        account_id: ACCOUNT,
+        code: ECodeMessage.awaitConnection,
+      },
+      true
+    );
+  }
+
+  private publishLogoutInProgress(): void {
+    this.setStatus(Status.connecting, ECodeMessage.logoutInProgress);
+    this.publishSub(
+      {
+        status: Status.connecting,
+        worker_id: WORKER,
+        account_id: ACCOUNT,
+        code: ECodeMessage.logoutInProgress,
+        disconnected_user: true,
+      },
+      true
+    );
+  }
+
   private scheduleNextReconnectAttempt(): void {
     if (!this.shouldScheduleRetryAfterClose()) {
       return;
@@ -513,6 +539,8 @@ export class BaileysConnectionService {
     this.clearReconnectRetryTimer();
     this.prepareFolder();
     this.connecting = true;
+    this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+    this.publishConnectionStarting();
     if (!fromDisconnectRestart) {
       this.retryCount = 0;
     }
@@ -553,6 +581,9 @@ export class BaileysConnectionService {
 
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
+    if (disconnectedUser || shouldRemoveSession) {
+      this.publishLogoutInProgress();
+    }
 
     await this.healthCheckService.notifyDisconnected(
       disconnectedUser ? 'User requested disconnect' : 'Connection closed'

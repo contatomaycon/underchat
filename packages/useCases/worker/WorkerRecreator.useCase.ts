@@ -9,6 +9,9 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 
 @injectable()
 export class WorkerRecreatorUseCase {
@@ -46,6 +49,28 @@ export class WorkerRecreatorUseCase {
     }
   }
 
+  private async publishLogoutInProgress(
+    accountId: string,
+    workerId: string
+  ): Promise<void> {
+    const payload: IBaileysConnectionState = {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.logoutInProgress,
+      worker_id: workerId,
+      account_id: accountId,
+      disconnected_user: true,
+    };
+
+    try {
+      await this.centrifugoService.publishSub(
+        workerCentrifugoQueue(accountId),
+        payload
+      );
+    } catch (err) {
+      console.error('Failed to publish connection logout intent:', err);
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -75,6 +100,10 @@ export class WorkerRecreatorUseCase {
       ...(options?.remove_session === true ? { remove_session: true } : {}),
       ...(options?.remove_volume === true ? { remove_volume: true } : {}),
     };
+
+    if (options?.remove_session === true) {
+      await this.publishLogoutInProgress(accountId, workerId);
+    }
 
     const inputUpdate: IUpdateWorker = {
       worker_id: workerId,

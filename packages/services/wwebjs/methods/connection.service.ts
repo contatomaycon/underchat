@@ -329,6 +329,9 @@ export class WwebjsConnectionService {
 
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
+    if (disconnectedUser || shouldRemoveSession) {
+      this.publishLogoutInProgress();
+    }
 
     await this.healthCheckService.notifyDisconnected(
       disconnectedUser ? 'User requested disconnect' : 'Connection closed'
@@ -442,6 +445,8 @@ export class WwebjsConnectionService {
     this.prepareFolder();
     this.clearDisconnectRetryTimer();
     this.connecting = true;
+    this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+    this.publishConnectionStarting();
     this.activeConnectionAttemptId = attemptId;
     if (!fromDisconnectRestart) {
       this.retryCount = 0;
@@ -551,6 +556,32 @@ export class WwebjsConnectionService {
     };
 
     this.publishSub(retryPayload, true);
+  }
+
+  private publishConnectionStarting(): void {
+    this.publishSub(
+      {
+        status: Status.connecting,
+        worker_id: WORKER,
+        account_id: ACCOUNT,
+        code: ECodeMessage.awaitConnection,
+      },
+      true
+    );
+  }
+
+  private publishLogoutInProgress(): void {
+    this.setStatus(Status.connecting, ECodeMessage.logoutInProgress);
+    this.publishSub(
+      {
+        status: Status.connecting,
+        worker_id: WORKER,
+        account_id: ACCOUNT,
+        code: ECodeMessage.logoutInProgress,
+        disconnected_user: true,
+      },
+      true
+    );
   }
 
   private scheduleReconnectCooldown(): void {

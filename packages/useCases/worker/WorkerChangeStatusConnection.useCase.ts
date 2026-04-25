@@ -12,6 +12,7 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
@@ -196,6 +197,48 @@ export class WorkerChangeStatusConnectionUseCase {
     }
   }
 
+  private async publishConnectionIntent(
+    accountId: string,
+    input: StatusConnectionWorkerRequest
+  ): Promise<void> {
+    if (input.status !== EWorkerStatus.online) {
+      if (input.status !== EWorkerStatus.disponible) {
+        return;
+      }
+
+      try {
+        await this.centrifugoService.publishSub(
+          workerCentrifugoQueue(accountId),
+          {
+            status: EBaileysConnectionStatus.connecting,
+            worker_id: input.worker_id,
+            account_id: accountId,
+            disconnected_user: true,
+            code: ECodeMessage.logoutInProgress,
+          } satisfies IBaileysConnectionState
+        );
+      } catch (err) {
+        console.error('Failed to publish connection logout intent:', err);
+      }
+
+      return;
+    }
+
+    try {
+      await this.centrifugoService.publishSub(
+        workerCentrifugoQueue(accountId),
+        {
+          status: EBaileysConnectionStatus.connecting,
+          worker_id: input.worker_id,
+          account_id: accountId,
+          code: ECodeMessage.awaitConnection,
+        } satisfies IBaileysConnectionState
+      );
+    } catch (err) {
+      console.error('Failed to publish connection start intent:', err);
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -224,6 +267,7 @@ export class WorkerChangeStatusConnectionUseCase {
     }
 
     await this.validate(t, input, accountId);
+    await this.publishConnectionIntent(accountId, input);
     await this.onChangeConnectionStatus(t, accountId, input);
   }
 }

@@ -151,6 +151,8 @@ export class WorkerCommandHandlerService {
       remove_session: input.remove_session,
     };
 
+    this.publishConnectionIntent(payload, accountId);
+
     if (payload.status === EWorkerStatus.online) {
       const ensured = await this.ensureContainerAndRequestConnection(
         payload,
@@ -178,6 +180,39 @@ export class WorkerCommandHandlerService {
       if (!this.isTopicOrPartitionMissing(err)) {
         throw err;
       }
+    }
+  }
+
+  private publishConnectionIntent(
+    payload: StatusConnectionWorkerRequest,
+    accountId?: string
+  ): void {
+    if (!accountId) {
+      return;
+    }
+
+    if (payload.status === EWorkerStatus.online) {
+      void this.centrifugoPublish({
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitConnection,
+        worker_id: payload.worker_id,
+        account_id: accountId,
+      }).catch((err) => {
+        console.error('Failed to publish connection start intent:', err);
+      });
+      return;
+    }
+
+    if (payload.status === EWorkerStatus.disponible) {
+      void this.centrifugoPublish({
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.logoutInProgress,
+        worker_id: payload.worker_id,
+        account_id: accountId,
+        disconnected_user: true,
+      }).catch((err) => {
+        console.error('Failed to publish connection logout intent:', err);
+      });
     }
   }
 

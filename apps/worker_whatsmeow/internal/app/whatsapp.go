@@ -168,9 +168,11 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 		return fmt.Errorf("request worker_id %s does not match %s", req.WorkerID, m.cfg.WorkerID)
 	}
 
-	if req.RemoveSession {
+	if req.RemoveSession || req.Status == WorkerStatusDisponible {
 		return m.removeSession(ctx)
 	}
+
+	m.publishState(ctx, "connecting", CodeAwaitConnection, "", "", "", false)
 
 	switch strings.ToLower(req.Type) {
 	case "phone":
@@ -581,6 +583,7 @@ func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone str
 
 func (m *WhatsAppManager) removeSession(ctx context.Context) error {
 	log.Printf("whatsmeow remove session requested worker_id=%s", m.cfg.WorkerID)
+	m.publishState(ctx, "connecting", CodeLogoutInProgress, "", "", "", false)
 	m.clearFreshLoginFallback()
 	m.clearLoginArtifacts()
 	client := m.getClient()
