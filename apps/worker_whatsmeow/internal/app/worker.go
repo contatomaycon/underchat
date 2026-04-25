@@ -50,7 +50,7 @@ func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	whatsApp, err := NewWhatsAppManager(ctx, cfg, kafkaClient, centrifugo, balance, storage)
+	whatsApp, err := NewWhatsAppManager(ctx, cfg, kafkaClient, centrifugo, balance, storage, redisClient)
 	if err != nil {
 		return nil, err
 	}

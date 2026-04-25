@@ -270,6 +270,52 @@ func TestBuildIncomingUpsertSetsRemoteJIDAltForLIDChat(t *testing.T) {
 	}
 }
 
+func TestIncomingProfilePhotoJIDsPreferPhoneAliasForLIDChat(t *testing.T) {
+	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)
+	pnChat := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}
+
+	incoming := incomingTextEvent(lidChat, false, "")
+	incoming.Info.SenderAlt = pnChat
+
+	got := incomingProfilePhotoJIDs(incoming)
+	if len(got) != 2 {
+		t.Fatalf("unexpected candidates %#v", got)
+	}
+	if got[0].String() != "556195999040@s.whatsapp.net" {
+		t.Fatalf("expected phone alias first, got %q", got[0].String())
+	}
+	if got[1].String() != "158733669765176@lid" {
+		t.Fatalf("expected lid fallback second, got %q", got[1].String())
+	}
+}
+
+func TestIncomingProfilePhotoJIDsPreferRecipientAliasForOwnLIDMessage(t *testing.T) {
+	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)
+	pnChat := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}
+
+	incoming := incomingTextEvent(lidChat, true, "")
+	incoming.Info.RecipientAlt = pnChat
+
+	got := incomingProfilePhotoJIDs(incoming)
+	if len(got) != 2 {
+		t.Fatalf("unexpected candidates %#v", got)
+	}
+	if got[0].String() != "556195999040@s.whatsapp.net" {
+		t.Fatalf("expected recipient phone alias first, got %q", got[0].String())
+	}
+	if got[1].String() != "158733669765176@lid" {
+		t.Fatalf("expected lid fallback second, got %q", got[1].String())
+	}
+}
+
+func TestIncomingProfilePhotoCacheKeyStripsDevice(t *testing.T) {
+	jid := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}
+
+	if got := incomingProfilePhotoCacheKey(jid); got != "photo:jid:556195999040@s.whatsapp.net" {
+		t.Fatalf("unexpected cache key %q", got)
+	}
+}
+
 func incomingTextEvent(chat types.JID, fromMe bool, category string) *events.Message {
 	return &events.Message{
 		Info: types.MessageInfo{

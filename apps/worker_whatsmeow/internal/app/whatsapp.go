@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/redis/go-redis/v9"
 	qrcode "github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -29,6 +31,7 @@ type WhatsAppManager struct {
 	centrifugo *CentrifugoClient
 	balance    *BalanceGRPCClient
 	storage    *StorageClient
+	redis      *redis.Client
 	runtimeCtx context.Context
 
 	mu          sync.RWMutex
@@ -43,18 +46,27 @@ type WhatsAppManager struct {
 	currentPairingCode string
 }
 
+const (
+	whatsmeowPhotoCachePrefix     = "photo:jid:"
+	whatsmeowPhotoCacheNoPhoto    = "__no_photo__"
+	whatsmeowPhotoCacheTTL        = 24 * time.Hour
+	whatsmeowPhotoCacheNoPhotoTTL = 5 * time.Minute
+	whatsmeowPhotoFetchTimeout    = 5 * time.Second
+)
+
 type freshLoginRequest struct {
 	Type  string
 	Phone string
 }
 
-func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, centrifugo *CentrifugoClient, balance *BalanceGRPCClient, storage *StorageClient) (*WhatsAppManager, error) {
+func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, centrifugo *CentrifugoClient, balance *BalanceGRPCClient, storage *StorageClient, redisClient *redis.Client) (*WhatsAppManager, error) {
 	manager := &WhatsAppManager{
 		cfg:        cfg,
 		kafka:      kafka,
 		centrifugo: centrifugo,
 		balance:    balance,
 		storage:    storage,
+		redis:      redisClient,
 		runtimeCtx: ctx,
 		status:     "initial",
 		code:       CodeInfo,
@@ -101,6 +113,21 @@ func (m *WhatsAppManager) Bootstrap(ctx context.Context) {
 	client := m.getClient()
 	if client == nil || client.Store.ID == nil {
 		log.Printf("whatsmeow bootstrap skipped worker_id=%s has_client=%t has_store_id=%t", m.cfg.WorkerID, client != nil, client != nil && client.Store.ID != nil)
+		return
+	}
+	if m.isAuthenticated(client) {
+		log.Printf("whatsmeow bootstrap skipped worker_id=%s reason=already_authenticated", m.cfg.WorkerID)
+		m.mu.Lock()
+		m.connected = true
+		m.status = "connected"
+		m.code = CodeConnectionEstablished
+		m.mu.Unlock()
+		m.publishState(context.Background(), "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
+		return
+	}
+	if client.IsConnected() {
+		log.Printf("whatsmeow bootstrap skipped worker_id=%s reason=already_connected", m.cfg.WorkerID)
+		m.publishState(context.Background(), "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
 		return
 	}
 	go func() {
@@ -674,7 +701,7 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 		return
 	}
 	log.Printf(
-		"whatsmeow incoming message published worker_id=%s topic=%s key=%s type=%s chat=%s remote_jid_alt=%s sender=%s id=%s from_me=%t",
+		"whatsmeow incoming message published worker_id=%s topic=%s key=%s type=%s chat=%s remote_jid_alt=%s sender=%s id=%s from_me=%t has_photo=%t",
 		m.cfg.WorkerID,
 		topicUpsertMessage,
 		key,
@@ -684,6 +711,7 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 		incomingSenderString(evt),
 		incomingMessageID(evt),
 		incomingFromMe(evt),
+		upsert.Photo != "",
 	)
 }
 
@@ -796,6 +824,7 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 		return nil, nil
 	}
 	key := m.buildIncomingMessageKey(evt)
+	photo := m.incomingProfilePhoto(ctx, evt)
 
 	return &UpsertMessage{
 		WorkerID:  m.cfg.WorkerID,
@@ -808,6 +837,7 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 			"pushName":         evt.Info.PushName,
 		},
 		Content:   content,
+		Photo:     photo,
 		HasQuoted: false,
 	}, nil
 }
@@ -832,6 +862,105 @@ func (m *WhatsAppManager) buildIncomingMessageKey(evt *events.Message) map[strin
 		key["participantAlt"] = evt.Info.SenderAlt.String()
 	}
 	return key
+}
+
+func (m *WhatsAppManager) incomingProfilePhoto(ctx context.Context, evt *events.Message) string {
+	client := m.getClient()
+	if !m.isAuthenticated(client) {
+		return ""
+	}
+	candidates := incomingProfilePhotoJIDs(evt)
+	if len(candidates) == 0 {
+		return ""
+	}
+	photoCtx, cancel := context.WithTimeout(ctx, whatsmeowPhotoFetchTimeout)
+	defer cancel()
+
+	for _, jid := range candidates {
+		cacheKey := incomingProfilePhotoCacheKey(jid)
+		if m.redis != nil {
+			cachedPhoto, err := m.redis.Get(photoCtx, cacheKey).Result()
+			switch {
+			case err == nil && cachedPhoto == whatsmeowPhotoCacheNoPhoto:
+				continue
+			case err == nil && cachedPhoto != "":
+				return cachedPhoto
+			case err != nil && !errors.Is(err, redis.Nil):
+				log.Printf("whatsmeow profile photo cache read failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
+			}
+		}
+
+		info, err := client.GetProfilePictureInfo(photoCtx, jid, &whatsmeow.GetProfilePictureParams{Preview: false})
+		if err != nil {
+			if errors.Is(err, whatsmeow.ErrProfilePictureNotSet) || errors.Is(err, whatsmeow.ErrProfilePictureUnauthorized) {
+				m.cacheProfilePhotoNoPhoto(photoCtx, cacheKey)
+				continue
+			}
+			log.Printf("whatsmeow profile photo fetch failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
+			continue
+		}
+		if info == nil || strings.TrimSpace(info.URL) == "" {
+			m.cacheProfilePhotoNoPhoto(photoCtx, cacheKey)
+			continue
+		}
+		photo := strings.TrimSpace(info.URL)
+		if m.redis != nil {
+			if err := m.redis.Set(photoCtx, cacheKey, photo, whatsmeowPhotoCacheTTL).Err(); err != nil {
+				log.Printf("whatsmeow profile photo cache write failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
+			}
+		}
+		log.Printf("whatsmeow profile photo fetched worker_id=%s jid=%s photo_id=%s", m.cfg.WorkerID, jid.String(), info.ID)
+		return photo
+	}
+	return ""
+}
+
+func (m *WhatsAppManager) cacheProfilePhotoNoPhoto(ctx context.Context, cacheKey string) {
+	if m.redis == nil || cacheKey == "" {
+		return
+	}
+	if err := m.redis.Set(ctx, cacheKey, whatsmeowPhotoCacheNoPhoto, whatsmeowPhotoCacheNoPhotoTTL).Err(); err != nil {
+		log.Printf("whatsmeow profile photo no-photo cache write failed worker_id=%s error=%v", m.cfg.WorkerID, err)
+	}
+}
+
+func incomingProfilePhotoJIDs(evt *events.Message) []types.JID {
+	if evt == nil {
+		return nil
+	}
+	candidates := make([]types.JID, 0, 4)
+	seen := map[string]struct{}{}
+	add := func(jid types.JID) {
+		jid = nonADJID(jid)
+		if !isWhatsmeowUserChat(jid) {
+			return
+		}
+		key := jid.String()
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		candidates = append(candidates, jid)
+	}
+
+	if evt.Info.IsFromMe {
+		add(evt.Info.RecipientAlt)
+		add(evt.Info.SenderAlt)
+	} else {
+		add(evt.Info.SenderAlt)
+		add(evt.Info.RecipientAlt)
+	}
+	add(evt.Info.Chat)
+	add(evt.Info.Sender)
+	return candidates
+}
+
+func incomingProfilePhotoCacheKey(jid types.JID) string {
+	jid = nonADJID(jid)
+	if jid.IsEmpty() {
+		return ""
+	}
+	return whatsmeowPhotoCachePrefix + jid.String()
 }
 
 const incomingMessageRawLogLimit = 12000
