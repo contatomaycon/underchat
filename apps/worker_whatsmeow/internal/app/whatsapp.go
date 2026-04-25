@@ -745,25 +745,32 @@ func (m *WhatsAppManager) handleCallOffer(ctx context.Context, callFrom types.JI
 	if callJID == "" {
 		callJID = creator.String()
 	}
-	callPhone := phoneFromJID(callJID)
+	callJIDAlt := callAltJID(callFrom, creator)
+	callPhone := callPhoneFromJIDs(callFrom, creator)
 	callText := "Ligacao recebida"
 	if isVideo {
 		callText = "Ligacao de video recebida"
+	}
+	key := map[string]any{
+		"id":        "call_" + firstNonEmpty(callID, fmt.Sprintf("%d", time.Now().UnixMilli())),
+		"remoteJid": callJID,
+		"fromMe":    false,
+	}
+	if callJIDAlt != "" {
+		key["remoteJidAlt"] = callJIDAlt
 	}
 	upsert := UpsertMessage{
 		WorkerID:    m.cfg.WorkerID,
 		AccountID:   m.cfg.AccountID,
 		Type:        MessageTypeSystem,
+		Photo:       m.profilePhotoForJIDs(ctx, []types.JID{callFrom, creator}),
 		HasQuoted:   false,
 		IsCallEvent: true,
 		CallPhone:   callPhone,
 		CallJID:     callJID,
+		CallJIDAlt:  callJIDAlt,
 		Message: map[string]any{
-			"key": map[string]any{
-				"id":        "call_" + firstNonEmpty(callID, fmt.Sprintf("%d", time.Now().UnixMilli())),
-				"remoteJid": callJID,
-				"fromMe":    false,
-			},
+			"key":              key,
 			"message":          map[string]any{"conversation": callText},
 			"messageTimestamp": time.Now().Unix(),
 		},
@@ -847,7 +854,7 @@ func (m *WhatsAppManager) buildIncomingMessageKey(evt *events.Message) map[strin
 		"id":         evt.Info.ID,
 		"remoteJid":  evt.Info.Chat.String(),
 		"fromMe":     evt.Info.IsFromMe,
-		"isViewOnce": evt.IsViewOnce,
+		"isViewOnce": incomingMessageIsViewOnce(evt),
 	}
 	if remoteJIDAlt := incomingRemoteJIDAlt(evt); remoteJIDAlt != "" {
 		key["remoteJidAlt"] = remoteJIDAlt
@@ -864,12 +871,26 @@ func (m *WhatsAppManager) buildIncomingMessageKey(evt *events.Message) map[strin
 	return key
 }
 
+func incomingMessageIsViewOnce(evt *events.Message) bool {
+	if evt == nil {
+		return false
+	}
+	if evt.IsViewOnce || evt.IsViewOnceV2 || evt.IsViewOnceV2Extension {
+		return true
+	}
+	_, wrappedViewOnce := unwrapIncomingMessage(evt.Message)
+	return wrappedViewOnce
+}
+
 func (m *WhatsAppManager) incomingProfilePhoto(ctx context.Context, evt *events.Message) string {
+	return m.profilePhotoForJIDs(ctx, incomingProfilePhotoJIDs(evt))
+}
+
+func (m *WhatsAppManager) profilePhotoForJIDs(ctx context.Context, candidates []types.JID) string {
 	client := m.getClient()
 	if !m.isAuthenticated(client) {
 		return ""
 	}
-	candidates := incomingProfilePhotoJIDs(evt)
 	if len(candidates) == 0 {
 		return ""
 	}
@@ -911,6 +932,33 @@ func (m *WhatsAppManager) incomingProfilePhoto(ctx context.Context, evt *events.
 		}
 		log.Printf("whatsmeow profile photo fetched worker_id=%s jid=%s photo_id=%s", m.cfg.WorkerID, jid.String(), info.ID)
 		return photo
+	}
+	return ""
+}
+
+func callAltJID(callFrom, creator types.JID) string {
+	primary := nonADJID(callFrom)
+	fallback := nonADJID(creator)
+	if primary.IsEmpty() || fallback.IsEmpty() || primary == fallback {
+		return ""
+	}
+	return fallback.String()
+}
+
+func callPhoneFromJIDs(callFrom, creator types.JID) string {
+	candidates := []types.JID{nonADJID(callFrom), nonADJID(creator)}
+	for _, jid := range candidates {
+		if jid.Server != types.DefaultUserServer && jid.Server != types.LegacyUserServer {
+			continue
+		}
+		if phone := digits(jid.User); phone != "" {
+			return phone
+		}
+	}
+	for _, jid := range candidates {
+		if phone := digits(jid.User); phone != "" {
+			return phone
+		}
 	}
 	return ""
 }
@@ -1025,8 +1073,33 @@ func incomingMessageKinds(evt *events.Message) []string {
 	if evt == nil || evt.Message == nil {
 		return []string{"empty"}
 	}
-	msg := evt.Message
+	raw := evt.Message
+	msg, _ := unwrapIncomingMessage(evt.Message)
+	if msg == nil {
+		return []string{"empty"}
+	}
 	kinds := make([]string, 0, 8)
+	if raw.GetViewOnceMessage() != nil {
+		kinds = append(kinds, "wrapper:view_once")
+	}
+	if raw.GetViewOnceMessageV2() != nil {
+		kinds = append(kinds, "wrapper:view_once_v2")
+	}
+	if raw.GetViewOnceMessageV2Extension() != nil {
+		kinds = append(kinds, "wrapper:view_once_v2_extension")
+	}
+	if raw.GetEphemeralMessage() != nil {
+		kinds = append(kinds, "wrapper:ephemeral")
+	}
+	if raw.GetDocumentWithCaptionMessage() != nil {
+		kinds = append(kinds, "wrapper:document_with_caption")
+	}
+	if raw.GetLottieStickerMessage() != nil {
+		kinds = append(kinds, "wrapper:lottie_sticker")
+	}
+	if raw.GetEditedMessage() != nil {
+		kinds = append(kinds, "wrapper:edited")
+	}
 	if msg.GetConversation() != "" {
 		kinds = append(kinds, "conversation")
 	}
@@ -1113,7 +1186,10 @@ func incomingTextPreview(evt *events.Message) string {
 	if evt == nil || evt.Message == nil {
 		return ""
 	}
-	msg := evt.Message
+	msg, _ := unwrapIncomingMessage(evt.Message)
+	if msg == nil {
+		return ""
+	}
 	candidates := []string{
 		msg.GetConversation(),
 	}

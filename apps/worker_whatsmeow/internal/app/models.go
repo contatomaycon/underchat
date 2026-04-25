@@ -23,21 +23,22 @@ const (
 )
 
 const (
-	MessageTypeText      = "text"
-	MessageTypeLocation  = "location"
-	MessageTypeContact   = "contact_card"
-	MessageTypeContacts  = "contacts"
-	MessageTypeReact     = "react"
-	MessageTypeImage     = "image"
-	MessageTypeVideo     = "video"
-	MessageTypeVideoNote = "video_note"
-	MessageTypeAudio     = "audio"
-	MessageTypeSticker   = "sticker"
-	MessageTypeDocument  = "document"
-	MessageTypeViewOnce  = "view_once"
-	MessageTypeDelete    = "delete_message"
-	MessageTypeEditText  = "edit_text"
-	MessageTypeSystem    = "system"
+	MessageTypeText                    = "text"
+	MessageTypeLocation                = "location"
+	MessageTypeContact                 = "contact_card"
+	MessageTypeContacts                = "contacts"
+	MessageTypeReact                   = "react"
+	MessageTypeImage                   = "image"
+	MessageTypeVideo                   = "video"
+	MessageTypeVideoNote               = "video_note"
+	MessageTypeAudio                   = "audio"
+	MessageTypeSticker                 = "sticker"
+	MessageTypeDocument                = "document"
+	MessageTypeViewOnce                = "view_once"
+	MessageTypeDelete                  = "delete_message"
+	MessageTypeEditText                = "edit_text"
+	MessageTypeSetDisappearingMessages = "set_disappearing_messages"
+	MessageTypeSystem                  = "system"
 )
 
 const (

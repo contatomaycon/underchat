@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -173,6 +174,87 @@ func TestIncomingContentMapsCommonMessageTypes(t *testing.T) {
 	}
 }
 
+func TestIncomingContentUnwrapsEphemeralText(t *testing.T) {
+	manager := &WhatsAppManager{}
+
+	messageType, content := manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			EphemeralMessage: &waE2E.FutureProofMessage{
+				Message: &waE2E.Message{Conversation: proto.String("texto efemero")},
+			},
+		},
+	})
+
+	if messageType != MessageTypeText {
+		t.Fatalf("unexpected type %q", messageType)
+	}
+	if got := content["message"]; got != "texto efemero" {
+		t.Fatalf("unexpected content %#v", content)
+	}
+}
+
+func TestIncomingContentUnwrapsViewOnceImage(t *testing.T) {
+	manager := &WhatsAppManager{}
+	evt := &events.Message{
+		Message: &waE2E.Message{
+			ViewOnceMessageV2: &waE2E.FutureProofMessage{
+				Message: &waE2E.Message{
+					ImageMessage: &waE2E.ImageMessage{
+						Caption:  proto.String("foto"),
+						Mimetype: proto.String("image/jpeg"),
+					},
+				},
+			},
+		},
+	}
+
+	messageType, content := manager.incomingContent(context.Background(), evt)
+	if messageType != MessageTypeViewOnce {
+		t.Fatalf("unexpected type %q", messageType)
+	}
+	if got := content["type"]; got != MessageTypeViewOnce {
+		t.Fatalf("unexpected view once content %#v", content)
+	}
+	if !incomingMessageIsViewOnce(evt) {
+		t.Fatal("expected view once key marker")
+	}
+}
+
+func TestIncomingContentMapsDisappearingAndPinMessages(t *testing.T) {
+	manager := &WhatsAppManager{}
+
+	messageType, content := manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			ProtocolMessage: &waE2E.ProtocolMessage{
+				Type:                waE2E.ProtocolMessage_EPHEMERAL_SETTING.Enum(),
+				EphemeralExpiration: proto.Uint32(86400),
+			},
+		},
+	})
+	if messageType != MessageTypeSetDisappearingMessages {
+		t.Fatalf("unexpected disappearing type %q", messageType)
+	}
+	if got := content["type"]; got != MessageTypeSetDisappearingMessages {
+		t.Fatalf("unexpected disappearing content %#v", content)
+	}
+
+	pinType := waE2E.PinInChatMessage_PIN_FOR_ALL
+	messageType, content = manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			PinInChatMessage: &waE2E.PinInChatMessage{
+				Type: &pinType,
+				Key:  &waCommon.MessageKey{ID: proto.String("target-id")},
+			},
+		},
+	})
+	if messageType != MessageTypeSystem {
+		t.Fatalf("unexpected pin type %q", messageType)
+	}
+	if got := content["type"]; got != MessageTypeSystem {
+		t.Fatalf("unexpected pin content %#v", content)
+	}
+}
+
 func TestBuildIncomingUpsertSkipsBaileysIgnoredEvents(t *testing.T) {
 	manager := &WhatsAppManager{}
 	userChat := types.NewJID("5511999999999", types.DefaultUserServer)
@@ -313,6 +395,18 @@ func TestIncomingProfilePhotoCacheKeyStripsDevice(t *testing.T) {
 
 	if got := incomingProfilePhotoCacheKey(jid); got != "photo:jid:556195999040@s.whatsapp.net" {
 		t.Fatalf("unexpected cache key %q", got)
+	}
+}
+
+func TestCallPhoneFromJIDsPrefersPhoneAliasOverLID(t *testing.T) {
+	lid := types.NewJID("158733669765176", types.HiddenUserServer)
+	pn := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}
+
+	if got := callPhoneFromJIDs(lid, pn); got != "556195999040" {
+		t.Fatalf("expected phone alias, got %q", got)
+	}
+	if got := callAltJID(lid, pn); got != "556195999040@s.whatsapp.net" {
+		t.Fatalf("expected call alt jid, got %q", got)
 	}
 }
 

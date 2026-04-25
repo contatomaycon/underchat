@@ -358,7 +358,14 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 }
 
 func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Message) (string, map[string]any) {
-	msg := evt.Message
+	msg, wrappedViewOnce := unwrapIncomingMessage(evt.Message)
+	if msg == nil {
+		return "", nil
+	}
+	viewOnce := evt.IsViewOnce || evt.IsViewOnceV2 || evt.IsViewOnceV2Extension || wrappedViewOnce
+	if viewOnce {
+		return MessageTypeViewOnce, map[string]any{"type": MessageTypeViewOnce}
+	}
 	base := map[string]any{}
 	if text := msg.GetConversation(); text != "" {
 		return MessageTypeText, map[string]any{"type": MessageTypeText, "message": text}
@@ -383,6 +390,8 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 				message = edited.GetExtendedTextMessage().GetText()
 			}
 			return MessageTypeEditText, map[string]any{"type": MessageTypeEditText, "message": message}
+		case waE2E.ProtocolMessage_EPHEMERAL_SETTING, waE2E.ProtocolMessage_EPHEMERAL_SYNC_RESPONSE:
+			return MessageTypeSetDisappearingMessages, map[string]any{"type": MessageTypeSetDisappearingMessages}
 		default:
 			return "", nil
 		}
@@ -396,33 +405,44 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 			}},
 		}
 	}
+	if msg.GetEncReactionMessage() != nil {
+		return MessageTypeReact, map[string]any{"type": MessageTypeReact, "message": ""}
+	}
+	if msg.GetPinInChatMessage() != nil {
+		return MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": ""}
+	}
+	if template := msg.GetTemplateMessage(); template != nil && template.GetHydratedTemplate() != nil {
+		text := template.GetHydratedTemplate().GetHydratedContentText()
+		return MessageTypeText, map[string]any{"type": MessageTypeText, "message": text}
+	}
 	if image := msg.GetImageMessage(); image != nil {
-		base = mediaContent(ctx, m, image, MessageTypeImage, image.GetCaption(), image.GetMimetype(), evt.IsViewOnce)
+		base = mediaContent(ctx, m, image, MessageTypeImage, image.GetCaption(), image.GetMimetype(), viewOnce)
 		return MessageTypeImage, base
 	}
 	if video := msg.GetVideoMessage(); video != nil {
-		base = mediaContent(ctx, m, video, MessageTypeVideo, video.GetCaption(), video.GetMimetype(), evt.IsViewOnce)
+		base = mediaContent(ctx, m, video, MessageTypeVideo, video.GetCaption(), video.GetMimetype(), viewOnce)
 		return MessageTypeVideo, base
 	}
 	if video := msg.GetPtvMessage(); video != nil {
-		base = mediaContent(ctx, m, video, MessageTypeVideoNote, video.GetCaption(), video.GetMimetype(), evt.IsViewOnce)
+		base = mediaContent(ctx, m, video, MessageTypeVideoNote, video.GetCaption(), video.GetMimetype(), viewOnce)
 		return MessageTypeVideoNote, base
 	}
 	if audio := msg.GetAudioMessage(); audio != nil {
-		base = mediaContent(ctx, m, audio, MessageTypeAudio, "", audio.GetMimetype(), evt.IsViewOnce)
+		base = mediaContent(ctx, m, audio, MessageTypeAudio, "", audio.GetMimetype(), viewOnce)
 		if audio.GetPTT() {
 			asMap(base["audio"])["ptt"] = true
 		}
 		return MessageTypeAudio, base
 	}
 	if doc := msg.GetDocumentMessage(); doc != nil {
-		base = mediaContent(ctx, m, doc, MessageTypeDocument, doc.GetCaption(), doc.GetMimetype(), evt.IsViewOnce)
+		base = mediaContent(ctx, m, doc, MessageTypeDocument, doc.GetCaption(), doc.GetMimetype(), viewOnce)
 		asMap(base["document"])["name"] = firstNonEmpty(doc.GetFileName(), doc.GetTitle())
 		return MessageTypeDocument, base
 	}
 	if sticker := msg.GetStickerMessage(); sticker != nil {
-		base = mediaContent(ctx, m, sticker, MessageTypeSticker, "", sticker.GetMimetype(), evt.IsViewOnce)
+		base = mediaContent(ctx, m, sticker, MessageTypeSticker, "", sticker.GetMimetype(), viewOnce)
 		asMap(base["sticker"])["is_animated"] = sticker.GetIsAnimated()
+		asMap(base["sticker"])["is_lottie"] = sticker.GetIsLottie()
 		return MessageTypeSticker, base
 	}
 	if loc := msg.GetLocationMessage(); loc != nil {
@@ -450,6 +470,52 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		return MessageTypeContacts, map[string]any{"type": MessageTypeContacts, "contacts": items}
 	}
 	return "", nil
+}
+
+func unwrapIncomingMessage(msg *waE2E.Message) (*waE2E.Message, bool) {
+	viewOnce := false
+	for i := 0; i < 16 && msg != nil; i++ {
+		if inner := futureProofInner(msg.GetEphemeralMessage()); inner != nil {
+			msg = inner
+			continue
+		}
+		if inner := futureProofInner(msg.GetViewOnceMessage()); inner != nil {
+			viewOnce = true
+			msg = inner
+			continue
+		}
+		if inner := futureProofInner(msg.GetViewOnceMessageV2()); inner != nil {
+			viewOnce = true
+			msg = inner
+			continue
+		}
+		if inner := futureProofInner(msg.GetViewOnceMessageV2Extension()); inner != nil {
+			viewOnce = true
+			msg = inner
+			continue
+		}
+		if inner := futureProofInner(msg.GetDocumentWithCaptionMessage()); inner != nil {
+			msg = inner
+			continue
+		}
+		if inner := futureProofInner(msg.GetLottieStickerMessage()); inner != nil {
+			msg = inner
+			continue
+		}
+		if inner := futureProofInner(msg.GetEditedMessage()); inner != nil {
+			msg = inner
+			continue
+		}
+		return msg, viewOnce
+	}
+	return msg, viewOnce
+}
+
+func futureProofInner(msg *waE2E.FutureProofMessage) *waE2E.Message {
+	if msg == nil {
+		return nil
+	}
+	return msg.GetMessage()
 }
 
 func mediaContent(ctx context.Context, manager *WhatsAppManager, media whatsmeow.DownloadableMessage, messageType, caption, mimetype string, viewOnce bool) map[string]any {
