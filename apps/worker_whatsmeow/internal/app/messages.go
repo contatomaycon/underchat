@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"path"
@@ -528,29 +529,171 @@ func mediaContent(ctx context.Context, manager *WhatsAppManager, media whatsmeow
 		"caption":      caption,
 		"mimetype":     mimetype,
 		"is_view_once": viewOnce,
+		"view_once":    viewOnce,
 	}
-	client := manager.getClient()
-	if client != nil && manager.storage != nil {
-		data, err := client.Download(ctx, media)
-		if err == nil {
-			name := randomHex(8) + extensionFromMime(mimetype)
-			object, uploadErr := manager.storage.Upload(ctx, manager.cfg.AccountID, data, name, mimetype)
-			if uploadErr == nil {
-				entry["url"] = object.URL
-				entry["name"] = object.Name
-				entry["size"] = object.Size
+	enrichIncomingMediaMetadata(entry, media)
+
+	failMedia := func(reason string, err error) map[string]any {
+		entry["media_download_failed"] = true
+		content["media_download_failed"] = true
+		content[key] = entry
+		if manager != nil {
+			if err != nil {
+				log.Printf("whatsmeow media failed worker_id=%s type=%s key=%s reason=%s error=%v", manager.cfg.WorkerID, messageType, key, reason, err)
 			} else {
-				entry["media_download_failed"] = true
+				log.Printf("whatsmeow media failed worker_id=%s type=%s key=%s reason=%s", manager.cfg.WorkerID, messageType, key, reason)
 			}
-		} else {
-			entry["media_download_failed"] = true
+		}
+		return content
+	}
+
+	if manager == nil {
+		return failMedia("manager_unavailable", nil)
+	}
+
+	client := manager.getClient()
+	if client == nil {
+		return failMedia("client_unavailable", nil)
+	}
+	if manager.storage == nil {
+		return failMedia("storage_unavailable", nil)
+	}
+
+	data, err := client.Download(ctx, media)
+	if err != nil {
+		return failMedia("download_failed", err)
+	}
+	contentType := normalizeIncomingMediaMimetype(media, firstNonEmpty(mimetype, http.DetectContentType(data)), data)
+	entry["mimetype"] = contentType
+	name := incomingMediaFileName(media, messageType, contentType)
+	object, uploadErr := manager.storage.Upload(ctx, manager.cfg.AccountID, data, name, contentType)
+	if uploadErr != nil {
+		return failMedia("upload_failed", uploadErr)
+	}
+	entry["url"] = object.URL
+	entry["name"] = firstNonEmpty(stringValue(entry["name"]), object.Name)
+	entry["size"] = object.Size
+	entry["extension"] = extensionName(firstNonEmpty(object.Name, name), contentType)
+	content[key] = entry
+	log.Printf(
+		"whatsmeow media uploaded worker_id=%s type=%s key=%s name=%s mimetype=%s size=%d url=%s backup=%t",
+		manager.cfg.WorkerID,
+		messageType,
+		key,
+		object.Name,
+		contentType,
+		object.Size,
+		object.URL,
+		object.UsedBackup,
+	)
+	return content
+}
+
+func enrichIncomingMediaMetadata(entry map[string]any, media whatsmeow.DownloadableMessage) {
+	switch msg := media.(type) {
+	case *waE2E.ImageMessage:
+		setPositiveNumber(entry, "height", msg.GetHeight())
+		setPositiveNumber(entry, "width", msg.GetWidth())
+		setThumbnail(entry, msg.GetJPEGThumbnail())
+	case *waE2E.VideoMessage:
+		setPositiveNumber(entry, "height", msg.GetHeight())
+		setPositiveNumber(entry, "width", msg.GetWidth())
+		setPositiveNumber(entry, "duration", msg.GetSeconds())
+		setThumbnail(entry, msg.GetJPEGThumbnail())
+	case *waE2E.AudioMessage:
+		setPositiveNumber(entry, "duration", msg.GetSeconds())
+		entry["ptt"] = msg.GetPTT()
+		if waveform := msg.GetWaveform(); len(waveform) > 0 {
+			entry["waveform"] = base64.StdEncoding.EncodeToString(waveform)
+		}
+	case *waE2E.DocumentMessage:
+		if name := firstNonEmpty(msg.GetFileName(), msg.GetTitle()); name != "" {
+			entry["name"] = name
+		}
+		setThumbnail(entry, msg.GetJPEGThumbnail())
+	case *waE2E.StickerMessage:
+		setPositiveNumber(entry, "height", msg.GetHeight())
+		setPositiveNumber(entry, "width", msg.GetWidth())
+		entry["is_animated"] = msg.GetIsAnimated()
+		entry["is_lottie"] = msg.GetIsLottie()
+	}
+}
+
+func setPositiveNumber(entry map[string]any, key string, value uint32) {
+	if value > 0 {
+		entry[key] = int(value)
+	}
+}
+
+func setThumbnail(entry map[string]any, thumbnail []byte) {
+	if len(thumbnail) == 0 {
+		return
+	}
+	entry["thumbnail"] = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(thumbnail)
+}
+
+func incomingMediaFileName(media whatsmeow.DownloadableMessage, messageType, mimetype string) string {
+	if doc, ok := media.(*waE2E.DocumentMessage); ok {
+		if name := firstNonEmpty(doc.GetFileName(), doc.GetTitle()); name != "" {
+			return name
 		}
 	}
-	content[key] = entry
-	if failed, _ := entry["media_download_failed"].(bool); failed {
-		content["media_download_failed"] = true
+	prefix := messageType
+	if prefix == MessageTypeVideoNote {
+		prefix = MessageTypeVideo
 	}
-	return content
+	return prefix + "-" + randomHex(8) + extensionFromMime(mimetype)
+}
+
+func normalizeIncomingMediaMimetype(media whatsmeow.DownloadableMessage, mimetype string, data []byte) string {
+	normalized := strings.ToLower(strings.TrimSpace(strings.Split(mimetype, ";")[0]))
+	if sticker, ok := media.(*waE2E.StickerMessage); ok {
+		if sticker.GetIsLottie() || normalized == "application/was" {
+			return "application/was"
+		}
+		if normalized == "application/x-tgsticker" {
+			return "application/x-tgsticker"
+		}
+		if normalized == "" || normalized == "application/octet-stream" {
+			if looksLikeLottie(data) {
+				return "application/was"
+			}
+			return "image/webp"
+		}
+	}
+	if normalized == "" || normalized == "application/octet-stream" {
+		return firstNonEmpty(http.DetectContentType(data), "application/octet-stream")
+	}
+	return normalized
+}
+
+func looksLikeLottie(data []byte) bool {
+	if len(data) < 4 {
+		return false
+	}
+	return data[0] == 0x50 && data[1] == 0x4b
+}
+
+func extensionName(fileName, mimetype string) string {
+	ext := strings.TrimPrefix(strings.ToLower(path.Ext(fileName)), ".")
+	if ext != "" {
+		return ext
+	}
+	return strings.TrimPrefix(strings.ToLower(extensionFromMime(mimetype)), ".")
+}
+
+func mediaContentPublishStatus(content map[string]any, messageType string) (bool, bool) {
+	if len(content) == 0 {
+		return false, false
+	}
+	key := messageType
+	if messageType == MessageTypeVideoNote {
+		key = "video"
+	}
+	media := asMap(content[key])
+	hasURL := stringValue(media["url"]) != ""
+	failed := boolValue(content["media_download_failed"]) || boolValue(media["media_download_failed"])
+	return hasURL, failed
 }
 
 func buildContextInfo(data ChatMessage) *waE2E.ContextInfo {

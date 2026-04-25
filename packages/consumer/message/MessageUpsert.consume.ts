@@ -1472,11 +1472,18 @@ export class MessageUpsertConsume {
     }
 
     if (data.content?.image) {
-      content.image = data.content.image;
+      if (this.hasMediaUrl(data.content.image)) {
+        content.image = data.content.image;
+      } else {
+        content.media_download_failed = true;
+      }
       return;
     }
 
     if (content.image) {
+      if (!this.hasMediaUrl(content.image)) {
+        content.media_download_failed = true;
+      }
       return;
     }
 
@@ -1500,11 +1507,18 @@ export class MessageUpsertConsume {
     }
 
     if (data.content?.video) {
-      content.video = data.content.video;
+      if (this.hasMediaUrl(data.content.video)) {
+        content.video = data.content.video;
+      } else {
+        content.media_download_failed = true;
+      }
       return;
     }
 
     if (content.video) {
+      if (!this.hasMediaUrl(content.video)) {
+        content.media_download_failed = true;
+      }
       return;
     }
 
@@ -1525,11 +1539,18 @@ export class MessageUpsertConsume {
     }
 
     if (data.content?.audio) {
-      content.audio = data.content.audio;
+      if (this.hasMediaUrl(data.content.audio)) {
+        content.audio = data.content.audio;
+      } else {
+        content.media_download_failed = true;
+      }
       return;
     }
 
     if (content.audio) {
+      if (!this.hasMediaUrl(content.audio)) {
+        content.media_download_failed = true;
+      }
       return;
     }
 
@@ -1550,11 +1571,18 @@ export class MessageUpsertConsume {
     }
 
     if (data.content?.document) {
-      content.document = data.content.document;
+      if (this.hasMediaUrl(data.content.document)) {
+        content.document = data.content.document;
+      } else {
+        content.media_download_failed = true;
+      }
       return;
     }
 
     if (content.document) {
+      if (!this.hasMediaUrl(content.document)) {
+        content.media_download_failed = true;
+      }
       return;
     }
 
@@ -1575,11 +1603,18 @@ export class MessageUpsertConsume {
     }
 
     if (data.content?.sticker) {
-      content.sticker = data.content.sticker;
+      if (this.hasMediaUrl(data.content.sticker)) {
+        content.sticker = data.content.sticker;
+      } else {
+        content.media_download_failed = true;
+      }
       return;
     }
 
     if (content.sticker) {
+      if (!this.hasMediaUrl(content.sticker)) {
+        content.media_download_failed = true;
+      }
       return;
     }
 
@@ -1589,6 +1624,10 @@ export class MessageUpsertConsume {
     }
 
     content.media_download_failed = true;
+  }
+
+  private hasMediaUrl(media?: { url?: string | null } | null): boolean {
+    return typeof media?.url === 'string' && media.url.trim().length > 0;
   }
 
   private async handleLocationMessage(
@@ -2766,6 +2805,10 @@ export class MessageUpsertConsume {
           )
         : null,
     };
+
+    if (data.content?.media_download_failed) {
+      content.media_download_failed = true;
+    }
 
     if (data.type === EMessageType.set_disappearing_messages) {
       const protocolMessage = (msg as any)?.protocolMessage;

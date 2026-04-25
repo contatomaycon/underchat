@@ -150,7 +150,9 @@ func (s *StorageClient) uploadWithAttempts(ctx context.Context, client *minio.Cl
 			}
 			lastErr = err
 		}
-		time.Sleep(time.Duration(attempt) * time.Second)
+		if attempt < 3 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
 	}
 	return 3, lastErr
 }

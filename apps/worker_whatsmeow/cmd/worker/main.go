@@ -24,7 +24,7 @@ func main() {
 		log.Fatalf("invalid config: %v", err)
 	}
 	log.Printf(
-		"worker_whatsmeow config loaded worker_id=%s account_id=%s http_addr=%s grpc_addr=%s kafka_brokers=%d redis=%s:%d balance_grpc=%s otel_enabled=%t centrifugo_configured=%t",
+		"worker_whatsmeow config loaded worker_id=%s account_id=%s http_addr=%s grpc_addr=%s kafka_brokers=%d redis=%s:%d balance_grpc=%s otel_enabled=%t centrifugo_configured=%t s3_configured=%t s3_backup_configured=%t",
 		cfg.WorkerID,
 		cfg.AccountID,
 		cfg.HTTPAddr,
@@ -35,6 +35,8 @@ func main() {
 		cfg.BalanceGRPCAddress(),
 		cfg.OTELEnabled,
 		cfg.CentrifugoHTTPAPIURL != "" && cfg.CentrifugoHTTPAPIKey != "",
+		cfg.S3Endpoint != "" && cfg.S3AccessKeyID != "" && cfg.S3SecretAccessKey != "",
+		cfg.S3EndpointBackup != "" && cfg.S3AccessKeyIDBackup != "" && cfg.S3SecretBackup != "",
 	)
 
 	shutdownTelemetry, err := app.InitTelemetry(ctx, cfg)

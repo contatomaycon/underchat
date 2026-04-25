@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -217,6 +218,46 @@ func TestIncomingContentUnwrapsViewOnceImage(t *testing.T) {
 	}
 	if !incomingMessageIsViewOnce(evt) {
 		t.Fatal("expected view once key marker")
+	}
+}
+
+func TestMediaContentMarksFailedWhenMediaCannotBePersisted(t *testing.T) {
+	manager := &WhatsAppManager{cfg: Config{WorkerID: "worker-1", AccountID: "account-1"}}
+	image := &waE2E.ImageMessage{
+		Caption:       proto.String("foto"),
+		Mimetype:      proto.String("image/jpeg"),
+		Height:        proto.Uint32(1600),
+		Width:         proto.Uint32(1200),
+		JPEGThumbnail: []byte{1, 2, 3},
+	}
+
+	content := mediaContent(context.Background(), manager, image, MessageTypeImage, image.GetCaption(), image.GetMimetype(), false)
+	if !boolValue(content["media_download_failed"]) {
+		t.Fatalf("expected top-level media failure, got %#v", content)
+	}
+	imageContent := asMap(content["image"])
+	if !boolValue(imageContent["media_download_failed"]) {
+		t.Fatalf("expected image media failure, got %#v", imageContent)
+	}
+	if got := imageContent["url"]; got != nil {
+		t.Fatalf("failed media must not expose a url, got %#v", got)
+	}
+	if got := imageContent["height"]; got != 1600 {
+		t.Fatalf("unexpected height %#v", got)
+	}
+	if got := imageContent["width"]; got != 1200 {
+		t.Fatalf("unexpected width %#v", got)
+	}
+	if got := stringValue(imageContent["thumbnail"]); !strings.HasPrefix(got, "data:image/jpeg;base64,") {
+		t.Fatalf("expected data-uri thumbnail, got %q", got)
+	}
+
+	hasURL, failed := mediaContentPublishStatus(content, MessageTypeImage)
+	if hasURL {
+		t.Fatal("failed media must not be reported with url")
+	}
+	if !failed {
+		t.Fatal("expected media failure publish status")
 	}
 }
 

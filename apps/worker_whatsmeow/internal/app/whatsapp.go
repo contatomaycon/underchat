@@ -701,8 +701,9 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 		log.Printf("failed to publish incoming message: %v", err)
 		return
 	}
+	hasMediaURL, mediaFailed := mediaContentPublishStatus(upsert.Content, upsert.Type)
 	log.Printf(
-		"whatsmeow incoming message published worker_id=%s topic=%s key=%s type=%s chat=%s remote_jid_alt=%s sender=%s id=%s from_me=%t has_photo=%t",
+		"whatsmeow incoming message published worker_id=%s topic=%s key=%s type=%s chat=%s remote_jid_alt=%s sender=%s id=%s from_me=%t has_photo=%t has_media_url=%t media_download_failed=%t",
 		m.cfg.WorkerID,
 		topicUpsertMessage,
 		key,
@@ -713,6 +714,8 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 		incomingMessageID(evt),
 		incomingFromMe(evt),
 		upsert.Photo != "",
+		hasMediaURL,
+		mediaFailed,
 	)
 }
 
