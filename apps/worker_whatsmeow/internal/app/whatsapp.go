@@ -928,16 +928,13 @@ func (m *WhatsAppManager) profilePhotoForJIDs(ctx context.Context, candidates []
 			m.cacheProfilePhotoNoPhoto(photoCtx, cacheKey)
 			continue
 		}
-		photo := m.persistProfilePhoto(photoCtx, jid, strings.TrimSpace(info.URL))
-		if photo == "" {
-			continue
-		}
+		photo := strings.TrimSpace(info.URL)
 		if m.redis != nil {
 			if err := m.redis.Set(photoCtx, cacheKey, photo, whatsmeowPhotoCacheTTL).Err(); err != nil {
 				log.Printf("whatsmeow profile photo cache write failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
 			}
 		}
-		log.Printf("whatsmeow profile photo fetched worker_id=%s jid=%s photo_id=%s persisted=%t", m.cfg.WorkerID, jid.String(), info.ID, !strings.EqualFold(photo, strings.TrimSpace(info.URL)))
+		log.Printf("whatsmeow profile photo fetched worker_id=%s jid=%s photo_id=%s persisted=false", m.cfg.WorkerID, jid.String(), info.ID)
 		return photo
 	}
 	return ""
