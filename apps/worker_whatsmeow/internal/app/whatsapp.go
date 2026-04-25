@@ -633,12 +633,36 @@ func (m *WhatsAppManager) publishState(ctx context.Context, status string, code 
 }
 
 func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events.Message) {
+	if reason := incomingSkipReason(evt); reason != "" {
+		log.Printf(
+			"whatsmeow incoming message skipped worker_id=%s reason=%s chat=%s sender=%s id=%s from_me=%t category=%s source_web_msg=%t",
+			m.cfg.WorkerID,
+			reason,
+			incomingChatString(evt),
+			incomingSenderString(evt),
+			incomingMessageID(evt),
+			incomingFromMe(evt),
+			incomingCategory(evt),
+			evt != nil && evt.SourceWebMsg != nil,
+		)
+		return
+	}
 	upsert, err := m.buildIncomingUpsert(ctx, evt)
 	if err != nil {
 		log.Printf("failed to map incoming message: %v", err)
 		return
 	}
 	if upsert == nil {
+		log.Printf(
+			"whatsmeow incoming message ignored worker_id=%s reason=unmapped_message chat=%s sender=%s id=%s from_me=%t category=%s source_web_msg=%t",
+			m.cfg.WorkerID,
+			incomingChatString(evt),
+			incomingSenderString(evt),
+			incomingMessageID(evt),
+			incomingFromMe(evt),
+			incomingCategory(evt),
+			evt != nil && evt.SourceWebMsg != nil,
+		)
 		return
 	}
 	key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
@@ -743,7 +767,7 @@ func (m *WhatsAppManager) publishPresence(ctx context.Context, evt *events.ChatP
 }
 
 func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.Message) (*UpsertMessage, error) {
-	if evt.Message == nil {
+	if incomingSkipReason(evt) != "" {
 		return nil, nil
 	}
 	messageMap := map[string]any{}
@@ -752,6 +776,9 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 	}
 
 	messageType, content := m.incomingContent(ctx, evt)
+	if messageType == "" {
+		return nil, nil
+	}
 	key := map[string]any{
 		"id":         evt.Info.ID,
 		"remoteJid":  evt.Info.Chat.String(),
@@ -778,6 +805,72 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 		Content:   content,
 		HasQuoted: false,
 	}, nil
+}
+
+func incomingSkipReason(evt *events.Message) string {
+	if evt == nil || evt.Message == nil {
+		return "empty_message"
+	}
+	if strings.EqualFold(evt.Info.Category, "peer") {
+		return "peer_category"
+	}
+	if evt.SourceWebMsg != nil && evt.UnavailableRequestID == "" {
+		return "history_sync_message"
+	}
+	if evt.Info.IsIncomingBroadcast() {
+		return "incoming_broadcast"
+	}
+	if !isWhatsmeowUserChat(evt.Info.Chat) {
+		return "non_user_chat"
+	}
+	return ""
+}
+
+func isWhatsmeowUserChat(jid types.JID) bool {
+	if jid.User == "" {
+		return false
+	}
+	switch jid.Server {
+	case types.DefaultUserServer, types.HiddenUserServer, types.LegacyUserServer:
+		return true
+	default:
+		return false
+	}
+}
+
+func incomingChatString(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return evt.Info.Chat.String()
+}
+
+func incomingSenderString(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return evt.Info.Sender.String()
+}
+
+func incomingMessageID(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return string(evt.Info.ID)
+}
+
+func incomingFromMe(evt *events.Message) bool {
+	if evt == nil {
+		return false
+	}
+	return evt.Info.IsFromMe
+}
+
+func incomingCategory(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return evt.Info.Category
 }
 
 var digitsRE = regexp.MustCompile(`\D+`)

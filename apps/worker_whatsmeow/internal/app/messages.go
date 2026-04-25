@@ -367,15 +367,24 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		return MessageTypeText, map[string]any{"type": MessageTypeText, "message": ext.GetText()}
 	}
 	if protocolMsg := msg.GetProtocolMessage(); protocolMsg != nil {
-		if protocolMsg.GetType() == waE2E.ProtocolMessage_REVOKE {
-			return MessageTypeDelete, map[string]any{"type": MessageTypeDelete, "message": "Mensagem apagada"}
+		if protocolMsg.Type == nil {
+			return "", nil
 		}
-		if edited := protocolMsg.GetEditedMessage(); edited != nil {
+		switch protocolMsg.GetType() {
+		case waE2E.ProtocolMessage_REVOKE:
+			return MessageTypeDelete, map[string]any{"type": MessageTypeDelete, "message": "Mensagem apagada"}
+		case waE2E.ProtocolMessage_MESSAGE_EDIT:
+			edited := protocolMsg.GetEditedMessage()
+			if edited == nil {
+				return "", nil
+			}
 			message := edited.GetConversation()
 			if message == "" && edited.GetExtendedTextMessage() != nil {
 				message = edited.GetExtendedTextMessage().GetText()
 			}
 			return MessageTypeEditText, map[string]any{"type": MessageTypeEditText, "message": message}
+		default:
+			return "", nil
 		}
 	}
 	if reaction := msg.GetReactionMessage(); reaction != nil {
@@ -440,7 +449,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		}
 		return MessageTypeContacts, map[string]any{"type": MessageTypeContacts, "contacts": items}
 	}
-	return MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": "Mensagem recebida"}
+	return "", nil
 }
 
 func mediaContent(ctx context.Context, manager *WhatsAppManager, media whatsmeow.DownloadableMessage, messageType, caption, mimetype string, viewOnce bool) map[string]any {

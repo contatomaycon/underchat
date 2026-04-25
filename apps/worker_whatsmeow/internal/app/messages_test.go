@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
@@ -158,6 +159,103 @@ func TestIncomingContentMapsCommonMessageTypes(t *testing.T) {
 	}
 	if got := content["message"]; got != "Mensagem apagada" {
 		t.Fatalf("unexpected delete content %#v", content)
+	}
+
+	messageType, content = manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			ProtocolMessage: &waE2E.ProtocolMessage{
+				Type: waE2E.ProtocolMessage_HISTORY_SYNC_NOTIFICATION.Enum(),
+			},
+		},
+	})
+	if messageType != "" || content != nil {
+		t.Fatalf("history sync protocol must not be mapped as user message: type=%q content=%#v", messageType, content)
+	}
+}
+
+func TestBuildIncomingUpsertSkipsBaileysIgnoredEvents(t *testing.T) {
+	manager := &WhatsAppManager{}
+	userChat := types.NewJID("5511999999999", types.DefaultUserServer)
+
+	tests := []struct {
+		name string
+		evt  *events.Message
+	}{
+		{
+			name: "status broadcast",
+			evt:  incomingTextEvent(types.StatusBroadcastJID, false, ""),
+		},
+		{
+			name: "broadcast list",
+			evt:  incomingTextEvent(types.NewJID("12345", types.BroadcastServer), false, ""),
+		},
+		{
+			name: "group",
+			evt:  incomingTextEvent(types.NewJID("12345", types.GroupServer), false, ""),
+		},
+		{
+			name: "newsletter",
+			evt:  incomingTextEvent(types.NewJID("12345", types.NewsletterServer), false, ""),
+		},
+		{
+			name: "peer category",
+			evt:  incomingTextEvent(userChat, false, "peer"),
+		},
+		{
+			name: "history sync protocol",
+			evt: &events.Message{
+				Info: types.MessageInfo{
+					MessageSource: types.MessageSource{
+						Chat:     userChat,
+						Sender:   userChat,
+						IsFromMe: true,
+					},
+					ID:        "history-sync",
+					Timestamp: time.Unix(1, 0),
+				},
+				Message: &waE2E.Message{
+					ProtocolMessage: &waE2E.ProtocolMessage{
+						Type: waE2E.ProtocolMessage_HISTORY_SYNC_NOTIFICATION.Enum(),
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upsert, err := manager.buildIncomingUpsert(context.Background(), tt.evt)
+			if err != nil {
+				t.Fatalf("buildIncomingUpsert returned error: %v", err)
+			}
+			if upsert != nil {
+				t.Fatalf("expected event to be skipped, got %#v", upsert)
+			}
+		})
+	}
+
+	upsert, err := manager.buildIncomingUpsert(context.Background(), incomingTextEvent(userChat, false, ""))
+	if err != nil {
+		t.Fatalf("build normal text: %v", err)
+	}
+	if upsert == nil || upsert.Type != MessageTypeText {
+		t.Fatalf("expected normal user text to be mapped, got %#v", upsert)
+	}
+}
+
+func incomingTextEvent(chat types.JID, fromMe bool, category string) *events.Message {
+	return &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				Chat:     chat,
+				Sender:   chat,
+				IsFromMe: fromMe,
+			},
+			ID:        "message-id",
+			Timestamp: time.Unix(1, 0),
+			Category:  category,
+		},
+		Message: &waE2E.Message{Conversation: proto.String("texto recebido")},
 	}
 }
 
