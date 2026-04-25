@@ -188,13 +188,6 @@ func (m *WhatsAppManager) connectionContext() context.Context {
 }
 
 func (m *WhatsAppManager) connectClient(ctx context.Context, client *whatsmeow.Client, stage string) error {
-	connectCtx := ctx
-	cancel := func() {}
-	if m.cfg.WhatsAppConnectTimeout > 0 {
-		connectCtx, cancel = context.WithTimeout(ctx, m.cfg.WhatsAppConnectTimeout)
-	}
-	defer cancel()
-
 	startedAt := time.Now()
 	log.Printf(
 		"whatsmeow connect start worker_id=%s stage=%s has_store_id=%t timeout=%s",
@@ -203,11 +196,34 @@ func (m *WhatsAppManager) connectClient(ctx context.Context, client *whatsmeow.C
 		client != nil && client.Store != nil && client.Store.ID != nil,
 		m.cfg.WhatsAppConnectTimeout,
 	)
-	err := client.ConnectContext(connectCtx)
-	if err != nil {
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- client.ConnectContext(ctx)
+	}()
+
+	var timeout <-chan time.Time
+	if m.cfg.WhatsAppConnectTimeout > 0 {
+		timeout = time.After(m.cfg.WhatsAppConnectTimeout)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			log.Printf("whatsmeow connect failed worker_id=%s stage=%s elapsed=%s error=%v", m.cfg.WorkerID, stage, time.Since(startedAt), err)
+			return err
+		}
+	case <-timeout:
+		client.Disconnect()
+		err := fmt.Errorf("whatsmeow connect timeout after %s", m.cfg.WhatsAppConnectTimeout)
+		log.Printf("whatsmeow connect failed worker_id=%s stage=%s elapsed=%s error=%v", m.cfg.WorkerID, stage, time.Since(startedAt), err)
+		return err
+	case <-ctx.Done():
+		err := ctx.Err()
 		log.Printf("whatsmeow connect failed worker_id=%s stage=%s elapsed=%s error=%v", m.cfg.WorkerID, stage, time.Since(startedAt), err)
 		return err
 	}
+
 	log.Printf("whatsmeow connect returned worker_id=%s stage=%s elapsed=%s", m.cfg.WorkerID, stage, time.Since(startedAt))
 	return nil
 }
