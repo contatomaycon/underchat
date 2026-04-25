@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import {
   S3Client,
   CreateBucketCommand,
+  HeadBucketCommand,
   PutBucketPolicyCommand,
   DeletePublicAccessBlockCommand,
   PutBucketLifecycleConfigurationCommand,
@@ -118,6 +119,10 @@ export class BucketManager {
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
+        console.info('[BucketManager] Creating S3 bucket', {
+          bucket: bucketId,
+          attempt: attempt + 1,
+        });
         await this.client.send(
           new CreateBucketCommand({
             Bucket: bucketId,
@@ -142,6 +147,23 @@ export class BucketManager {
 
         throw createError;
       }
+    }
+  }
+
+  private async bucketExists(bucketId: string): Promise<boolean> {
+    try {
+      await this.client.send(
+        new HeadBucketCommand({
+          Bucket: bucketId,
+        })
+      );
+      return true;
+    } catch (error: any) {
+      if (this.isNoSuchBucketError(error)) {
+        return false;
+      }
+
+      throw error;
     }
   }
 
@@ -329,6 +351,27 @@ export class BucketManager {
     this.verifiedBuckets.add(bucketId);
 
     return bucketId;
+  }
+
+  async isBucketReady(accountId: string): Promise<boolean> {
+    const bucketId = this.validateAccountId(accountId);
+
+    if (!this.verifiedBuckets.has(bucketId)) {
+      return false;
+    }
+
+    const exists = await this.bucketExists(bucketId);
+
+    if (exists) {
+      return true;
+    }
+
+    this.verifiedBuckets.delete(bucketId);
+    console.warn('[BucketManager] Cached S3 bucket no longer exists', {
+      bucket: bucketId,
+    });
+
+    return false;
   }
 
   isBucketVerified(accountId: string): boolean {

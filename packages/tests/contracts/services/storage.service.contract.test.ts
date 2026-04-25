@@ -38,6 +38,7 @@ describe('StorageService', () => {
     const bucketManager = {
       validateAndGetBucketId: jest.fn((id: string) => id.trim()),
       isBucketVerified: jest.fn(() => false),
+      isBucketReady: jest.fn(async () => false),
       ensurePublicBucket: jest.fn(async (id: string) => id.trim()),
     };
 
@@ -580,7 +581,7 @@ describe('StorageService', () => {
   it('uploads pdf with normalized path and verified bucket shortcut', async () => {
     const { service, bucketManager, uploader } = makeService();
 
-    bucketManager.isBucketVerified.mockReturnValueOnce(true);
+    bucketManager.isBucketReady.mockResolvedValueOnce(true);
     uploader.uploadWithRetry.mockResolvedValueOnce({
       usedBackup: false,
       primaryAttempts: 1,

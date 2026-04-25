@@ -3,6 +3,7 @@ import {
   CreateBucketCommand,
   DeletePublicAccessBlockCommand,
   ExpirationStatus,
+  HeadBucketCommand,
   PutBucketLifecycleConfigurationCommand,
   PutBucketPolicyCommand,
 } from '@aws-sdk/client-s3';
@@ -355,6 +356,31 @@ describe('BucketManager', () => {
     removeSpy.mockRestore();
     policySpy.mockRestore();
     lifecycleSpy.mockRestore();
+  });
+
+  it('checks cached bucket existence before using verified shortcut', async () => {
+    const { service, send } = makeService();
+
+    jest.spyOn(service as any, 'createBucket').mockResolvedValue(undefined);
+    jest
+      .spyOn(service as any, 'removePublicAccessBlock')
+      .mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'setPublicPolicy').mockResolvedValue(undefined);
+    jest
+      .spyOn(service as any, 'setLifecyclePolicy')
+      .mockResolvedValue(undefined);
+
+    await service.ensurePublicBucket('acc-ready');
+
+    send.mockResolvedValueOnce({});
+    await expect(service.isBucketReady('acc-ready')).resolves.toBe(true);
+    expect(send.mock.calls[send.mock.calls.length - 1]?.[0]).toBeInstanceOf(
+      HeadBucketCommand
+    );
+
+    send.mockRejectedValueOnce({ name: 'NoSuchBucket' });
+    await expect(service.isBucketReady('acc-ready')).resolves.toBe(false);
+    expect(service.isBucketVerified('acc-ready')).toBe(false);
   });
 
   it('covers command types for lifecycle and policy operations', async () => {

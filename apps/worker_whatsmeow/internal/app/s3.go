@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"mime"
 	"net/url"
 	"path"
@@ -159,13 +160,23 @@ func (s *StorageClient) uploadWithAttempts(ctx context.Context, client *minio.Cl
 
 func (s *StorageClient) ensureBucket(ctx context.Context, client *minio.Client, bucket string) error {
 	if _, ok := s.verified.Load(bucket); ok {
-		return nil
+		exists, err := client.BucketExists(ctx, bucket)
+		if err != nil {
+			log.Printf("whatsmeow s3 verified bucket check failed bucket=%s error=%v", bucket, err)
+			return err
+		}
+		if exists {
+			return nil
+		}
+		s.verified.Delete(bucket)
+		log.Printf("whatsmeow s3 verified bucket missing bucket=%s recreating=true", bucket)
 	}
 	exists, err := client.BucketExists(ctx, bucket)
 	if err != nil {
 		return err
 	}
 	if !exists {
+		log.Printf("whatsmeow s3 creating bucket bucket=%s", bucket)
 		if err := client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
 			return err
 		}

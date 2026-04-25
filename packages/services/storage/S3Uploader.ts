@@ -63,6 +63,18 @@ export class S3Uploader {
         return { attempts: attempt + 1 };
       } catch (error: any) {
         lastError = error;
+        console.error('[S3Uploader] Upload attempt failed', {
+          bucket: params.bucket,
+          key: params.key,
+          contentType: params.contentType,
+          size: params.body.byteLength,
+          attempt: attempt + 1,
+          maxAttempts: MAX_RETRIES,
+          errorName: error?.name,
+          errorCode: error?.Code ?? error?.code,
+          statusCode: error?.$metadata?.httpStatusCode,
+          message: error?.message ?? String(error),
+        });
 
         if (attempt < MAX_RETRIES - 1) {
           const delay = RETRY_DELAY_MS * (attempt + 1);

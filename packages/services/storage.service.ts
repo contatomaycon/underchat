@@ -31,7 +31,7 @@ export class StorageService {
   private async ensureBucket(accountId: string): Promise<string> {
     const bucketId = this.bucketManager.validateAndGetBucketId(accountId);
 
-    if (this.bucketManager.isBucketVerified(bucketId)) {
+    if (await this.bucketManager.isBucketReady(bucketId)) {
       return bucketId;
     }
 
