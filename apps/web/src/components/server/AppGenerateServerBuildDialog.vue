@@ -155,7 +155,7 @@ watch(
         </VList>
       </VCardText>
 
-      <VCardActions class="justify-end flex-wrap gap-3 pa-4">
+      <VCardText class="d-flex justify-end gap-3 flex-wrap">
         <VBtn
           color="secondary"
           variant="tonal"
@@ -166,15 +166,13 @@ watch(
         </VBtn>
 
         <VBtn
-          color="primary"
-          prepend-icon="tabler-hammer"
           :disabled="selectedBuildTypes.length === 0"
           :loading="loading"
           @click="confirm"
         >
           {{ $t('build_generate') }}
         </VBtn>
-      </VCardActions>
+      </VCardText>
     </VCard>
   </VDialog>
 </template>
