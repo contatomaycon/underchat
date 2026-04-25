@@ -445,6 +445,39 @@ export class MessageUpsertConsume {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
+  private toRecord(value: unknown): Record<string, unknown> | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+    return value as Record<string, unknown>;
+  }
+
+  private firstStringField(
+    record: Record<string, unknown> | undefined,
+    keys: string[]
+  ): string | undefined {
+    if (!record) return undefined;
+    for (const key of keys) {
+      const value = this.toNonEmptyString(record[key]);
+      if (value) return value;
+    }
+    return undefined;
+  }
+
+  private getProtocolMessagePayload(
+    data: IUpsertMessage
+  ): Record<string, unknown> | undefined {
+    const baseMessage = this.getBaseMessage(data);
+    const rawMessage = this.toRecord(baseMessage?.message);
+    const editedWrapper =
+      this.toRecord(rawMessage?.editedMessage) ?? rawMessage;
+
+    return (
+      this.toRecord(editedWrapper?.message) ??
+      this.toRecord(editedWrapper?.protocolMessage)
+    );
+  }
+
   private isSystemMessageJid(value: string): boolean {
     const raw = this.toNonEmptyString(value)?.toLowerCase();
     if (!raw) {
@@ -959,23 +992,29 @@ export class MessageUpsertConsume {
   ): Promise<boolean | null> {
     if (data.type !== EMessageType.edit_text) return null;
 
-    const baseMessage = this.getBaseMessage(data);
-    const rawEdited = baseMessage?.message as
-      | Record<string, unknown>
-      | undefined;
-    const editedMessage = (rawEdited?.editedMessage ?? rawEdited) as
-      | Record<string, unknown>
-      | undefined;
+    const protocolMessage = this.getProtocolMessagePayload(data);
+    const protocolKey = this.toRecord(protocolMessage?.key);
+    const targetMessageId = this.firstStringField(protocolKey, ['id', 'ID']);
+    const editedContent = this.toRecord(protocolMessage?.editedMessage);
 
-    const protocolMessage = (editedMessage?.message ??
-      editedMessage?.protocolMessage) as Record<string, unknown> | undefined;
-    const protocolKey = protocolMessage?.key as { id?: string } | undefined;
-    const targetMessageId = protocolKey?.id;
-    const editedContent = protocolMessage?.editedMessage as
-      | Record<string, unknown>
-      | undefined;
-
-    if (!targetMessageId || !editedContent) return true;
+    if (!targetMessageId || !editedContent) {
+      logger.warn(
+        {
+          component: 'message_upsert_consume',
+          event: 'edit_message_skipped',
+          reason: !targetMessageId
+            ? 'missing_target_message_id'
+            : 'missing_edited_content',
+          account_id: data.account_id,
+          chat_id: getChat.chat_id,
+          worker_id: data.worker_id,
+          event_message_id: data.message?.key?.id,
+          protocol_key: protocolKey,
+        },
+        'Message edit skipped'
+      );
+      return true;
+    }
 
     let targetMessage = await this.findMessageByKeyId(
       data.account_id,
@@ -999,16 +1038,42 @@ export class MessageUpsertConsume {
     }
 
     if (!targetMessage?.content) {
+      logger.warn(
+        {
+          component: 'message_upsert_consume',
+          event: 'edit_message_skipped',
+          reason: 'target_message_not_found',
+          account_id: data.account_id,
+          chat_id: getChat.chat_id,
+          worker_id: data.worker_id,
+          target_message_id: targetMessageId,
+          event_message_id: data.message?.key?.id,
+        },
+        'Message edit skipped'
+      );
       return true;
     }
 
-    const extText = editedContent.extendedTextMessage as
-      | { text?: string }
-      | undefined;
+    const extText = this.toRecord(editedContent.extendedTextMessage);
     const newText =
-      (editedContent.conversation as string | undefined) ?? extText?.text ?? '';
+      this.firstStringField(editedContent, ['conversation']) ??
+      this.firstStringField(extText, ['text']) ??
+      '';
 
     if (!newText) {
+      logger.warn(
+        {
+          component: 'message_upsert_consume',
+          event: 'edit_message_skipped',
+          reason: 'empty_edited_text',
+          account_id: data.account_id,
+          chat_id: getChat.chat_id,
+          worker_id: data.worker_id,
+          target_message_id: targetMessageId,
+          event_message_id: data.message?.key?.id,
+        },
+        'Message edit skipped'
+      );
       return true;
     }
 
@@ -1042,22 +1107,11 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean | null> {
-    const rawMsg = this.getBaseMessage(data)?.message as
-      | Record<string, unknown>
-      | undefined;
-    const protocolMessage = rawMsg?.protocolMessage as
-      | { key?: { id?: string } }
-      | undefined;
-    if (
-      data.type !== EMessageType.delete_message ||
-      !protocolMessage?.key?.id
-    ) {
+    const protocolMessage = this.getProtocolMessagePayload(data);
+    const protocolKey = this.toRecord(protocolMessage?.key);
+    const targetMessageId = this.firstStringField(protocolKey, ['id', 'ID']);
+    if (data.type !== EMessageType.delete_message || !targetMessageId) {
       return null;
-    }
-
-    const targetMessageId = protocolMessage.key.id;
-    if (!targetMessageId) {
-      return true;
     }
 
     const targetMessage = await this.findMessageByKeyId(
