@@ -243,6 +243,33 @@ func TestBuildIncomingUpsertSkipsBaileysIgnoredEvents(t *testing.T) {
 	}
 }
 
+func TestBuildIncomingUpsertSetsRemoteJIDAltForLIDChat(t *testing.T) {
+	manager := &WhatsAppManager{}
+	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)
+	pnChat := types.NewJID("556195999040", types.DefaultUserServer)
+
+	incoming := incomingTextEvent(lidChat, false, "")
+	incoming.Info.SenderAlt = pnChat
+
+	upsert, err := manager.buildIncomingUpsert(context.Background(), incoming)
+	if err != nil {
+		t.Fatalf("build incoming lid upsert: %v", err)
+	}
+	if upsert == nil {
+		t.Fatal("expected incoming lid upsert")
+	}
+	key, ok := upsert.Message["key"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected key payload %#v", upsert.Message["key"])
+	}
+	if got := key["remoteJid"]; got != "158733669765176@lid" {
+		t.Fatalf("unexpected remoteJid %#v", got)
+	}
+	if got := key["remoteJidAlt"]; got != "556195999040@s.whatsapp.net" {
+		t.Fatalf("unexpected remoteJidAlt %#v", got)
+	}
+}
+
 func incomingTextEvent(chat types.JID, fromMe bool, category string) *events.Message {
 	return &events.Message{
 		Info: types.MessageInfo{

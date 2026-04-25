@@ -674,12 +674,13 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 		return
 	}
 	log.Printf(
-		"whatsmeow incoming message published worker_id=%s topic=%s key=%s type=%s chat=%s sender=%s id=%s from_me=%t",
+		"whatsmeow incoming message published worker_id=%s topic=%s key=%s type=%s chat=%s remote_jid_alt=%s sender=%s id=%s from_me=%t",
 		m.cfg.WorkerID,
 		topicUpsertMessage,
 		key,
 		upsert.Type,
 		incomingChatString(evt),
+		valueString(upsert.Message["key"], "remoteJidAlt"),
 		incomingSenderString(evt),
 		incomingMessageID(evt),
 		incomingFromMe(evt),
@@ -794,18 +795,7 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 	if messageType == "" {
 		return nil, nil
 	}
-	key := map[string]any{
-		"id":         evt.Info.ID,
-		"remoteJid":  evt.Info.Chat.String(),
-		"fromMe":     evt.Info.IsFromMe,
-		"isViewOnce": evt.IsViewOnce,
-	}
-	if !evt.Info.Sender.IsEmpty() && evt.Info.Sender != evt.Info.Chat {
-		key["participant"] = evt.Info.Sender.String()
-	}
-	if !evt.Info.SenderAlt.IsEmpty() {
-		key["participantAlt"] = evt.Info.SenderAlt.String()
-	}
+	key := m.buildIncomingMessageKey(evt)
 
 	return &UpsertMessage{
 		WorkerID:  m.cfg.WorkerID,
@@ -820,6 +810,28 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 		Content:   content,
 		HasQuoted: false,
 	}, nil
+}
+
+func (m *WhatsAppManager) buildIncomingMessageKey(evt *events.Message) map[string]any {
+	key := map[string]any{
+		"id":         evt.Info.ID,
+		"remoteJid":  evt.Info.Chat.String(),
+		"fromMe":     evt.Info.IsFromMe,
+		"isViewOnce": evt.IsViewOnce,
+	}
+	if remoteJIDAlt := incomingRemoteJIDAlt(evt); remoteJIDAlt != "" {
+		key["remoteJidAlt"] = remoteJIDAlt
+	}
+	if evt.Info.AddressingMode != "" {
+		key["addressingMode"] = string(evt.Info.AddressingMode)
+	}
+	if !evt.Info.Sender.IsEmpty() && evt.Info.Sender != evt.Info.Chat {
+		key["participant"] = evt.Info.Sender.String()
+	}
+	if !evt.Info.SenderAlt.IsEmpty() {
+		key["participantAlt"] = evt.Info.SenderAlt.String()
+	}
+	return key
 }
 
 const incomingMessageRawLogLimit = 12000
@@ -1024,6 +1036,34 @@ func incomingSkipReason(evt *events.Message) string {
 		return "non_user_chat"
 	}
 	return ""
+}
+
+func incomingRemoteJIDAlt(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	altCandidates := []types.JID{}
+	if evt.Info.IsFromMe {
+		altCandidates = append(altCandidates, evt.Info.RecipientAlt, evt.Info.SenderAlt)
+	} else {
+		altCandidates = append(altCandidates, evt.Info.SenderAlt, evt.Info.RecipientAlt)
+	}
+	chat := nonADJID(evt.Info.Chat)
+	for _, candidate := range altCandidates {
+		alt := nonADJID(candidate)
+		if alt.IsEmpty() || alt == chat {
+			continue
+		}
+		return alt.String()
+	}
+	return ""
+}
+
+func nonADJID(jid types.JID) types.JID {
+	if jid.IsEmpty() {
+		return jid
+	}
+	return jid.ToNonAD()
 }
 
 func isWhatsmeowUserChat(jid types.JID) bool {
