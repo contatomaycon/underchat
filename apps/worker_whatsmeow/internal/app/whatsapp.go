@@ -53,6 +53,7 @@ const (
 	whatsmeowPhotoCacheTTL        = 24 * time.Hour
 	whatsmeowPhotoCacheNoPhotoTTL = 5 * time.Minute
 	whatsmeowPhotoFetchTimeout    = 5 * time.Second
+	whatsmeowLogoutTimeout        = 30 * time.Second
 )
 
 type freshLoginRequest struct {
@@ -584,15 +585,51 @@ func (m *WhatsAppManager) removeSession(ctx context.Context) error {
 	m.clearLoginArtifacts()
 	client := m.getClient()
 	if client != nil {
-		if client.IsConnected() || client.IsLoggedIn() {
-			_ = client.Logout(ctx)
+		if err := m.logoutAndDeleteDevice(client); err != nil {
+			log.Printf("whatsmeow remove session logout failed worker_id=%s error=%v", m.cfg.WorkerID, err)
+			client.Disconnect()
+			if client.Store != nil && client.Store.ID != nil && !client.Store.Deleted {
+				if deleteErr := client.Store.Delete(context.Background()); deleteErr != nil {
+					log.Printf("whatsmeow remove session local store delete failed worker_id=%s error=%v", m.cfg.WorkerID, deleteErr)
+				}
+			}
+		} else {
+			log.Printf("whatsmeow remove session logout sent worker_id=%s", m.cfg.WorkerID)
 		}
-		client.Disconnect()
 	}
 	m.mu.Lock()
 	m.connected = false
 	m.mu.Unlock()
-	m.publishState(ctx, "disconnected", CodeLoggedOut, WorkerStatusDisponible, "", "", false)
+	if err := m.initClient(context.Background()); err != nil {
+		log.Printf("whatsmeow remove session client reinit failed worker_id=%s error=%v", m.cfg.WorkerID, err)
+	}
+	m.publishStateDisconnectedByUser(ctx, CodeLoggedOut, WorkerStatusDisponible)
+	return nil
+}
+
+func (m *WhatsAppManager) logoutAndDeleteDevice(client *whatsmeow.Client) error {
+	if client == nil {
+		return nil
+	}
+	if client.Store == nil || client.Store.ID == nil {
+		log.Printf("whatsmeow remove session skipped logout worker_id=%s reason=no_store_id", m.cfg.WorkerID)
+		client.Disconnect()
+		return nil
+	}
+
+	logoutCtx, cancel := context.WithTimeout(context.Background(), whatsmeowLogoutTimeout)
+	defer cancel()
+
+	if !client.IsConnected() {
+		log.Printf("whatsmeow remove session connecting before logout worker_id=%s", m.cfg.WorkerID)
+		if err := m.connectClient(logoutCtx, client, "remove-session-logout"); err != nil {
+			return fmt.Errorf("connect before logout: %w", err)
+		}
+	}
+
+	if err := client.Logout(logoutCtx); err != nil {
+		return fmt.Errorf("send remove-companion-device: %w", err)
+	}
 	return nil
 }
 
@@ -634,7 +671,7 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.status = "disconnected"
 		m.code = CodeLoggedOut
 		m.mu.Unlock()
-		m.publishState(context.Background(), "disconnected", CodeLoggedOut, WorkerStatusDisponible, "", "", false)
+		m.publishStateDisconnectedByUser(context.Background(), CodeLoggedOut, WorkerStatusDisponible)
 	case *events.ConnectFailure:
 		log.Printf("whatsmeow event connect_failure worker_id=%s reason=%s message=%s", m.cfg.WorkerID, event.Reason.String(), event.Message)
 		m.clearLoginArtifacts()
@@ -798,6 +835,33 @@ func (m *WhatsAppManager) publishState(ctx context.Context, status string, code 
 	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
 			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, status, code, workerStatusID, err)
+		}
+	}
+}
+
+func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, code int, workerStatusID string) {
+	state := ConnectionState{
+		Code:             code,
+		Status:           "disconnected",
+		WorkerID:         m.cfg.WorkerID,
+		AccountID:        m.cfg.AccountID,
+		DisconnectedUser: true,
+		Time:             time.Now().Unix(),
+		WorkerStatusID:   workerStatusID,
+	}
+	log.Printf(
+		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s disconnected_user=true has_qr=false has_pairing_code=false is_new_login=false",
+		m.cfg.WorkerID,
+		state.Status,
+		code,
+		workerStatusID,
+	)
+	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
+		log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, state.Status, code, err)
+	}
+	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
+		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
+			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, state.Status, code, workerStatusID, err)
 		}
 	}
 }

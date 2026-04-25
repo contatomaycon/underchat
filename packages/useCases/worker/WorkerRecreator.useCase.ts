@@ -79,6 +79,9 @@ export class WorkerRecreatorUseCase {
     const inputUpdate: IUpdateWorker = {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.recreating,
+      ...(options?.remove_session === true
+        ? { number: null, connection_date: null }
+        : {}),
     };
 
     await this.workerService.updateWorkerById(accountId, inputUpdate);

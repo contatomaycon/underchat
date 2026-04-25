@@ -1532,6 +1532,21 @@ export class WwebjsConnectionService {
       return;
     }
 
+    if (forceLogout) {
+      try {
+        await this.client.logout();
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } catch {
+        this.saveLogWppConnection({
+          worker_id: WORKER,
+          status: Status.disconnected,
+          code: ECodeMessage.connectionLost,
+          message: 'Error during logout',
+          date: new Date(),
+        });
+      }
+    }
+
     try {
       await this.client.destroy();
     } catch {

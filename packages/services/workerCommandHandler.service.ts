@@ -972,6 +972,7 @@ export class WorkerCommandHandlerService {
       worker_status_id: EWorkerStatus.disponible,
       worker_type_id: workerType,
       container_id: containerId,
+      ...(shouldRemoveSession ? { number: null, connection_date: null } : {}),
     };
 
     const updated = await this.retryOperation(
