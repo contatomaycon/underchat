@@ -917,6 +917,7 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 	}
 	key := m.buildIncomingMessageKey(evt)
 	photo := m.incomingProfilePhoto(ctx, evt)
+	_, hasQuoted := content["quoted"]
 
 	return &UpsertMessage{
 		WorkerID:  m.cfg.WorkerID,
@@ -930,7 +931,7 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 		},
 		Content:   content,
 		Photo:     photo,
-		HasQuoted: false,
+		HasQuoted: hasQuoted,
 	}, nil
 }
 

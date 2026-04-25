@@ -2806,6 +2806,22 @@ export class MessageUpsertConsume {
         : null,
     };
 
+    if (data.content?.message && !content.message) {
+      content.message = data.content.message;
+    }
+
+    if (data.content?.quoted) {
+      content.quoted = data.content.quoted;
+    }
+
+    if (data.content?.context_info && !content.context_info) {
+      content.context_info = data.content.context_info;
+    }
+
+    if (data.content?.message_quoted_id) {
+      content.message_quoted_id = data.content.message_quoted_id;
+    }
+
     if (data.content?.media_download_failed) {
       content.media_download_failed = true;
     }

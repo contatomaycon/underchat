@@ -365,14 +365,14 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 	}
 	viewOnce := evt.IsViewOnce || evt.IsViewOnceV2 || evt.IsViewOnceV2Extension || wrappedViewOnce
 	if viewOnce {
-		return MessageTypeViewOnce, map[string]any{"type": MessageTypeViewOnce}
+		return m.withIncomingQuoted(evt, msg, MessageTypeViewOnce, map[string]any{"type": MessageTypeViewOnce})
 	}
 	base := map[string]any{}
 	if text := msg.GetConversation(); text != "" {
-		return MessageTypeText, map[string]any{"type": MessageTypeText, "message": text}
+		return m.withIncomingQuoted(evt, msg, MessageTypeText, map[string]any{"type": MessageTypeText, "message": text})
 	}
 	if ext := msg.GetExtendedTextMessage(); ext != nil {
-		return MessageTypeText, map[string]any{"type": MessageTypeText, "message": ext.GetText()}
+		return m.withIncomingQuoted(evt, msg, MessageTypeText, map[string]any{"type": MessageTypeText, "message": ext.GetText()})
 	}
 	if protocolMsg := msg.GetProtocolMessage(); protocolMsg != nil {
 		if protocolMsg.Type == nil {
@@ -380,7 +380,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		}
 		switch protocolMsg.GetType() {
 		case waE2E.ProtocolMessage_REVOKE:
-			return MessageTypeDelete, map[string]any{"type": MessageTypeDelete, "message": "Mensagem apagada"}
+			return m.withIncomingQuoted(evt, msg, MessageTypeDelete, map[string]any{"type": MessageTypeDelete, "message": "Mensagem apagada"})
 		case waE2E.ProtocolMessage_MESSAGE_EDIT:
 			edited := protocolMsg.GetEditedMessage()
 			if edited == nil {
@@ -390,64 +390,64 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 			if message == "" && edited.GetExtendedTextMessage() != nil {
 				message = edited.GetExtendedTextMessage().GetText()
 			}
-			return MessageTypeEditText, map[string]any{"type": MessageTypeEditText, "message": message}
+			return m.withIncomingQuoted(evt, msg, MessageTypeEditText, map[string]any{"type": MessageTypeEditText, "message": message})
 		case waE2E.ProtocolMessage_EPHEMERAL_SETTING, waE2E.ProtocolMessage_EPHEMERAL_SYNC_RESPONSE:
-			return MessageTypeSetDisappearingMessages, map[string]any{"type": MessageTypeSetDisappearingMessages}
+			return m.withIncomingQuoted(evt, msg, MessageTypeSetDisappearingMessages, map[string]any{"type": MessageTypeSetDisappearingMessages})
 		default:
 			return "", nil
 		}
 	}
 	if reaction := msg.GetReactionMessage(); reaction != nil {
-		return MessageTypeReact, map[string]any{
+		return m.withIncomingQuoted(evt, msg, MessageTypeReact, map[string]any{
 			"type":    MessageTypeReact,
 			"message": reaction.GetText(),
 			"reactions": []map[string]any{{
 				"emoji": reaction.GetText(),
 			}},
-		}
+		})
 	}
 	if msg.GetEncReactionMessage() != nil {
-		return MessageTypeReact, map[string]any{"type": MessageTypeReact, "message": ""}
+		return m.withIncomingQuoted(evt, msg, MessageTypeReact, map[string]any{"type": MessageTypeReact, "message": ""})
 	}
 	if msg.GetPinInChatMessage() != nil {
-		return MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": ""}
+		return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": ""})
 	}
 	if template := msg.GetTemplateMessage(); template != nil && template.GetHydratedTemplate() != nil {
 		text := template.GetHydratedTemplate().GetHydratedContentText()
-		return MessageTypeText, map[string]any{"type": MessageTypeText, "message": text}
+		return m.withIncomingQuoted(evt, msg, MessageTypeText, map[string]any{"type": MessageTypeText, "message": text})
 	}
 	if image := msg.GetImageMessage(); image != nil {
 		base = mediaContent(ctx, m, image, MessageTypeImage, image.GetCaption(), image.GetMimetype(), viewOnce)
-		return MessageTypeImage, base
+		return m.withIncomingQuoted(evt, msg, MessageTypeImage, base)
 	}
 	if video := msg.GetVideoMessage(); video != nil {
 		base = mediaContent(ctx, m, video, MessageTypeVideo, video.GetCaption(), video.GetMimetype(), viewOnce)
-		return MessageTypeVideo, base
+		return m.withIncomingQuoted(evt, msg, MessageTypeVideo, base)
 	}
 	if video := msg.GetPtvMessage(); video != nil {
 		base = mediaContent(ctx, m, video, MessageTypeVideoNote, video.GetCaption(), video.GetMimetype(), viewOnce)
-		return MessageTypeVideoNote, base
+		return m.withIncomingQuoted(evt, msg, MessageTypeVideoNote, base)
 	}
 	if audio := msg.GetAudioMessage(); audio != nil {
 		base = mediaContent(ctx, m, audio, MessageTypeAudio, "", audio.GetMimetype(), viewOnce)
 		if audio.GetPTT() {
 			asMap(base["audio"])["ptt"] = true
 		}
-		return MessageTypeAudio, base
+		return m.withIncomingQuoted(evt, msg, MessageTypeAudio, base)
 	}
 	if doc := msg.GetDocumentMessage(); doc != nil {
 		base = mediaContent(ctx, m, doc, MessageTypeDocument, doc.GetCaption(), doc.GetMimetype(), viewOnce)
 		asMap(base["document"])["name"] = firstNonEmpty(doc.GetFileName(), doc.GetTitle())
-		return MessageTypeDocument, base
+		return m.withIncomingQuoted(evt, msg, MessageTypeDocument, base)
 	}
 	if sticker := msg.GetStickerMessage(); sticker != nil {
 		base = mediaContent(ctx, m, sticker, MessageTypeSticker, "", sticker.GetMimetype(), viewOnce)
 		asMap(base["sticker"])["is_animated"] = sticker.GetIsAnimated()
 		asMap(base["sticker"])["is_lottie"] = sticker.GetIsLottie()
-		return MessageTypeSticker, base
+		return m.withIncomingQuoted(evt, msg, MessageTypeSticker, base)
 	}
 	if loc := msg.GetLocationMessage(); loc != nil {
-		return MessageTypeLocation, map[string]any{
+		return m.withIncomingQuoted(evt, msg, MessageTypeLocation, map[string]any{
 			"type": MessageTypeLocation,
 			"location": map[string]any{
 				"latitude":  loc.GetDegreesLatitude(),
@@ -455,20 +455,20 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 				"name":      loc.GetName(),
 				"address":   loc.GetAddress(),
 			},
-		}
+		})
 	}
 	if contact := msg.GetContactMessage(); contact != nil {
-		return MessageTypeContact, map[string]any{
+		return m.withIncomingQuoted(evt, msg, MessageTypeContact, map[string]any{
 			"type":    MessageTypeContact,
 			"contact": parseVCard(contact.GetDisplayName(), contact.GetVcard()),
-		}
+		})
 	}
 	if contacts := msg.GetContactsArrayMessage(); contacts != nil {
 		items := make([]map[string]any, 0, len(contacts.GetContacts()))
 		for _, contact := range contacts.GetContacts() {
 			items = append(items, parseVCard(contact.GetDisplayName(), contact.GetVcard()))
 		}
-		return MessageTypeContacts, map[string]any{"type": MessageTypeContacts, "contacts": items}
+		return m.withIncomingQuoted(evt, msg, MessageTypeContacts, map[string]any{"type": MessageTypeContacts, "contacts": items})
 	}
 	return "", nil
 }
@@ -696,17 +696,333 @@ func mediaContentPublishStatus(content map[string]any, messageType string) (bool
 	return hasURL, failed
 }
 
+func (m *WhatsAppManager) withIncomingQuoted(evt *events.Message, msg *waE2E.Message, messageType string, content map[string]any) (string, map[string]any) {
+	if content == nil {
+		return messageType, content
+	}
+	quoted := incomingQuotedMessage(evt, msg)
+	if len(quoted) == 0 {
+		return messageType, content
+	}
+	content["quoted"] = quoted
+	if key := asMap(quoted["key"]); stringValue(key["id"]) != "" {
+		content["message_quoted_id"] = stringValue(key["id"])
+	}
+	if m != nil {
+		log.Printf(
+			"whatsmeow incoming quoted mapped worker_id=%s message_id=%s quoted_id=%s quoted_type=%s participant=%s",
+			m.cfg.WorkerID,
+			evt.Info.ID,
+			stringValue(asMap(quoted["key"])["id"]),
+			stringValue(quoted["type"]),
+			stringValue(asMap(quoted["key"])["participant"]),
+		)
+	}
+	return messageType, content
+}
+
+func incomingQuotedMessage(evt *events.Message, msg *waE2E.Message) map[string]any {
+	if evt == nil || msg == nil {
+		return nil
+	}
+	ctx := incomingMessageContextInfo(msg)
+	if ctx == nil || ctx.GetQuotedMessage() == nil || ctx.GetStanzaID() == "" {
+		return nil
+	}
+
+	currentParticipant := ""
+	if !evt.Info.Sender.IsEmpty() && evt.Info.Sender != evt.Info.Chat {
+		currentParticipant = evt.Info.Sender.String()
+	}
+	participant := firstNonEmpty(ctx.GetParticipant(), currentParticipant, evt.Info.Sender.String())
+	fromMe := evt.Info.IsFromMe
+	if ctx.GetParticipant() != "" {
+		fromMe = ctx.GetParticipant() == currentParticipant
+	}
+
+	key := map[string]any{
+		"remote_jid":   evt.Info.Chat.String(),
+		"from_me":      fromMe,
+		"id":           ctx.GetStanzaID(),
+		"participant":  participant,
+		"is_view_once": false,
+		"addressing_mode": func() string {
+			if evt.Info.AddressingMode != "" {
+				return string(evt.Info.AddressingMode)
+			}
+			return ""
+		}(),
+	}
+	if remoteJIDAlt := incomingRemoteJIDAlt(evt); remoteJIDAlt != "" {
+		key["remote_jid_alt"] = remoteJIDAlt
+	}
+	if !evt.Info.SenderAlt.IsEmpty() {
+		key["participant_alt"] = nonADJID(evt.Info.SenderAlt).String()
+	}
+	if key["addressing_mode"] == "" {
+		delete(key, "addressing_mode")
+	}
+
+	quotedMsg := ctx.GetQuotedMessage()
+	quoted := map[string]any{
+		"key":     key,
+		"message": quotedMessageText(quotedMsg),
+		"type":    quotedMessageType(quotedMsg),
+	}
+	enrichQuotedContent(quotedMsg, quoted)
+	if quoted["message"] == "" {
+		quoted["message"] = nil
+	}
+	return quoted
+}
+
+func incomingMessageContextInfo(msg *waE2E.Message) *waE2E.ContextInfo {
+	switch {
+	case msg.GetExtendedTextMessage() != nil:
+		return msg.GetExtendedTextMessage().GetContextInfo()
+	case msg.GetImageMessage() != nil:
+		return msg.GetImageMessage().GetContextInfo()
+	case msg.GetVideoMessage() != nil:
+		return msg.GetVideoMessage().GetContextInfo()
+	case msg.GetPtvMessage() != nil:
+		return msg.GetPtvMessage().GetContextInfo()
+	case msg.GetAudioMessage() != nil:
+		return msg.GetAudioMessage().GetContextInfo()
+	case msg.GetDocumentMessage() != nil:
+		return msg.GetDocumentMessage().GetContextInfo()
+	case msg.GetStickerMessage() != nil:
+		return msg.GetStickerMessage().GetContextInfo()
+	case msg.GetLocationMessage() != nil:
+		return msg.GetLocationMessage().GetContextInfo()
+	case msg.GetContactMessage() != nil:
+		return msg.GetContactMessage().GetContextInfo()
+	case msg.GetContactsArrayMessage() != nil:
+		return msg.GetContactsArrayMessage().GetContextInfo()
+	}
+	return nil
+}
+
+func quotedMessageType(msg *waE2E.Message) string {
+	switch {
+	case msg == nil:
+		return MessageTypeText
+	case msg.GetDocumentMessage() != nil:
+		return MessageTypeDocument
+	case msg.GetPtvMessage() != nil:
+		return MessageTypeVideoNote
+	case msg.GetVideoMessage() != nil:
+		return MessageTypeVideo
+	case msg.GetImageMessage() != nil:
+		return MessageTypeImage
+	case msg.GetAudioMessage() != nil:
+		return MessageTypeAudio
+	case msg.GetStickerMessage() != nil:
+		return MessageTypeSticker
+	case msg.GetLocationMessage() != nil:
+		return MessageTypeLocation
+	case msg.GetContactMessage() != nil:
+		return MessageTypeContact
+	case msg.GetContactsArrayMessage() != nil:
+		return MessageTypeContacts
+	default:
+		return MessageTypeText
+	}
+}
+
+func quotedMessageText(msg *waE2E.Message) string {
+	if msg == nil {
+		return ""
+	}
+	switch {
+	case msg.GetConversation() != "":
+		return msg.GetConversation()
+	case msg.GetExtendedTextMessage() != nil:
+		return msg.GetExtendedTextMessage().GetText()
+	case msg.GetImageMessage() != nil:
+		return msg.GetImageMessage().GetCaption()
+	case msg.GetVideoMessage() != nil:
+		return msg.GetVideoMessage().GetCaption()
+	case msg.GetPtvMessage() != nil:
+		return msg.GetPtvMessage().GetCaption()
+	case msg.GetDocumentMessage() != nil:
+		return msg.GetDocumentMessage().GetCaption()
+	case msg.GetLocationMessage() != nil:
+		loc := msg.GetLocationMessage()
+		return firstNonEmpty(loc.GetName(), loc.GetAddress())
+	case msg.GetContactMessage() != nil:
+		return msg.GetContactMessage().GetDisplayName()
+	case msg.GetContactsArrayMessage() != nil:
+		return msg.GetContactsArrayMessage().GetDisplayName()
+	default:
+		return ""
+	}
+}
+
+func enrichQuotedContent(msg *waE2E.Message, quoted map[string]any) {
+	if msg == nil {
+		return
+	}
+	if image := msg.GetImageMessage(); image != nil {
+		quoted["image"] = map[string]any{
+			"url":       nil,
+			"caption":   nullableString(image.GetCaption()),
+			"mimetype":  nullableString(image.GetMimetype()),
+			"extension": nil,
+			"size":      nullableUint64(image.GetFileLength()),
+			"height":    nullableUint32(image.GetHeight()),
+			"width":     nullableUint32(image.GetWidth()),
+			"thumbnail": thumbnailDataURI(image.GetJPEGThumbnail()),
+		}
+		return
+	}
+	if video := firstVideoMessage(msg); video != nil {
+		quoted["video"] = map[string]any{
+			"url":       nil,
+			"caption":   nullableString(video.GetCaption()),
+			"name":      nil,
+			"mimetype":  nullableString(video.GetMimetype()),
+			"extension": nil,
+			"size":      nullableUint64(video.GetFileLength()),
+			"duration":  nullableUint32(video.GetSeconds()),
+			"height":    nullableUint32(video.GetHeight()),
+			"width":     nullableUint32(video.GetWidth()),
+			"thumbnail": thumbnailDataURI(video.GetJPEGThumbnail()),
+		}
+		return
+	}
+	if doc := msg.GetDocumentMessage(); doc != nil {
+		quoted["document"] = map[string]any{
+			"url":       nil,
+			"name":      nullableString(firstNonEmpty(doc.GetFileName(), doc.GetTitle())),
+			"mimetype":  nullableString(doc.GetMimetype()),
+			"extension": nil,
+			"size":      nullableUint64(doc.GetFileLength()),
+		}
+		return
+	}
+	if audio := msg.GetAudioMessage(); audio != nil {
+		quoted["audio"] = map[string]any{
+			"url":       nil,
+			"name":      nil,
+			"mimetype":  nullableString(audio.GetMimetype()),
+			"extension": nil,
+			"size":      nullableUint64(audio.GetFileLength()),
+			"duration":  nullableUint32(audio.GetSeconds()),
+			"ptt":       audio.GetPTT(),
+			"view_once": false,
+		}
+		return
+	}
+	if sticker := msg.GetStickerMessage(); sticker != nil {
+		quoted["sticker"] = map[string]any{
+			"url":         nil,
+			"mimetype":    nullableString(sticker.GetMimetype()),
+			"extension":   nil,
+			"size":        nullableUint64(sticker.GetFileLength()),
+			"height":      nullableUint32(sticker.GetHeight()),
+			"width":       nullableUint32(sticker.GetWidth()),
+			"is_animated": sticker.GetIsAnimated(),
+		}
+		return
+	}
+	if loc := msg.GetLocationMessage(); loc != nil {
+		quoted["location"] = map[string]any{
+			"latitude":  loc.GetDegreesLatitude(),
+			"longitude": loc.GetDegreesLongitude(),
+			"name":      nullableString(loc.GetName()),
+			"address":   nullableString(loc.GetAddress()),
+		}
+		return
+	}
+	if contact := msg.GetContactMessage(); contact != nil {
+		quoted["contact"] = quotedContactPayload(contact.GetDisplayName(), contact.GetVcard())
+		return
+	}
+	if contacts := msg.GetContactsArrayMessage(); contacts != nil {
+		items := make([]map[string]any, 0, len(contacts.GetContacts()))
+		for _, contact := range contacts.GetContacts() {
+			items = append(items, quotedContactPayload(contact.GetDisplayName(), contact.GetVcard()))
+		}
+		quoted["contacts"] = items
+	}
+}
+
+func firstVideoMessage(msg *waE2E.Message) *waE2E.VideoMessage {
+	if msg.GetVideoMessage() != nil {
+		return msg.GetVideoMessage()
+	}
+	return msg.GetPtvMessage()
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableUint32(value uint32) any {
+	if value == 0 {
+		return nil
+	}
+	return int(value)
+}
+
+func nullableUint64(value uint64) any {
+	if value == 0 {
+		return nil
+	}
+	return int64(value)
+}
+
+func thumbnailDataURI(thumbnail []byte) any {
+	if len(thumbnail) == 0 {
+		return nil
+	}
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(thumbnail)
+}
+
+func quotedContactPayload(name, vcard string) map[string]any {
+	parsed := parseVCard(name, vcard)
+	fullName := firstNonEmpty(stringValue(parsed["name"]), strings.TrimSpace(name), "Contato")
+	phone := stringValue(parsed["phone"])
+	return map[string]any{
+		"contact_id":    "quoted_" + base64.RawURLEncoding.EncodeToString([]byte(firstNonEmpty(vcard, fullName, phone))),
+		"name":          fullName,
+		"last_name":     nil,
+		"phone":         nullableString(phone),
+		"phone_partial": nullableString(digits(phone)),
+		"phone_ddi":     nil,
+		"email":         nil,
+		"email_partial": nil,
+	}
+}
+
 func buildContextInfo(data ChatMessage) *waE2E.ContextInfo {
 	var contextInfo *waE2E.ContextInfo
 	if quoted := asMap(data.Content["quoted"]); len(quoted) > 0 {
 		key := asMap(quoted["key"])
 		stanzaID := stringValue(key["id"])
 		if stanzaID != "" {
+			remoteJID := firstNonEmpty(
+				stringValue(key["remote_jid"]),
+				stringValue(key["remoteJid"]),
+				stringValue(key["remote_jid_alt"]),
+				stringValue(key["remoteJidAlt"]),
+			)
+			participant := firstNonEmpty(
+				stringValue(key["participant"]),
+				stringValue(key["participant_alt"]),
+				stringValue(key["participantAlt"]),
+			)
+			if participant == "" && !(boolValue(key["from_me"]) || boolValue(key["fromMe"])) {
+				participant = remoteJID
+			}
 			contextInfo = &waE2E.ContextInfo{
 				StanzaID:      proto.String(stanzaID),
-				Participant:   proto.String(firstNonEmpty(stringValue(key["participant"]), stringValue(key["remote_jid"]))),
-				RemoteJID:     proto.String(stringValue(key["remote_jid"])),
-				QuotedMessage: &waE2E.Message{Conversation: proto.String(stringValue(quoted["message"]))},
+				Participant:   proto.String(participant),
+				RemoteJID:     proto.String(remoteJID),
+				QuotedMessage: quotedMessageForContext(quoted),
 			}
 		}
 	}
@@ -721,6 +1037,110 @@ func buildContextInfo(data ChatMessage) *waE2E.ContextInfo {
 		contextInfo.MentionedJID = mentions
 	}
 	return contextInfo
+}
+
+func quotedMessageForContext(quoted map[string]any) *waE2E.Message {
+	quotedType := firstNonEmpty(stringValue(quoted["type"]), inferQuotedContentType(quoted))
+	text := stringValue(quoted["message"])
+
+	switch quotedType {
+	case MessageTypeImage:
+		image := asMap(quoted["image"])
+		return &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
+			Caption:       proto.String(firstNonEmpty(stringValue(image["caption"]), text)),
+			Mimetype:      proto.String(firstNonEmpty(stringValue(image["mimetype"]), "image/jpeg")),
+			FileLength:    proto.Uint64(uint64Value(image["size"])),
+			Height:        proto.Uint32(uint32Value(image["height"])),
+			Width:         proto.Uint32(uint32Value(image["width"])),
+			JPEGThumbnail: bytesFromJSONValue(image["thumbnail"]),
+		}}
+	case MessageTypeVideo, MessageTypeVideoNote:
+		video := asMap(quoted["video"])
+		videoMessage := &waE2E.VideoMessage{
+			Caption:       proto.String(firstNonEmpty(stringValue(video["caption"]), text)),
+			Mimetype:      proto.String(firstNonEmpty(stringValue(video["mimetype"]), "video/mp4")),
+			FileLength:    proto.Uint64(uint64Value(video["size"])),
+			Seconds:       proto.Uint32(uint32Value(video["duration"])),
+			Height:        proto.Uint32(uint32Value(video["height"])),
+			Width:         proto.Uint32(uint32Value(video["width"])),
+			JPEGThumbnail: bytesFromJSONValue(video["thumbnail"]),
+		}
+		if quotedType == MessageTypeVideoNote {
+			return &waE2E.Message{PtvMessage: videoMessage}
+		}
+		return &waE2E.Message{VideoMessage: videoMessage}
+	case MessageTypeDocument:
+		doc := asMap(quoted["document"])
+		name := firstNonEmpty(stringValue(doc["name"]), stringValue(doc["file_name"]), "document")
+		return &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
+			Caption:       proto.String(firstNonEmpty(stringValue(doc["caption"]), text)),
+			Mimetype:      proto.String(firstNonEmpty(stringValue(doc["mimetype"]), "application/octet-stream")),
+			FileLength:    proto.Uint64(uint64Value(doc["size"])),
+			FileName:      proto.String(name),
+			Title:         proto.String(name),
+			JPEGThumbnail: bytesFromJSONValue(doc["thumbnail"]),
+		}}
+	case MessageTypeAudio:
+		audio := asMap(quoted["audio"])
+		return &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
+			Mimetype:   proto.String(firstNonEmpty(stringValue(audio["mimetype"]), "audio/ogg; codecs=opus")),
+			FileLength: proto.Uint64(uint64Value(audio["size"])),
+			Seconds:    proto.Uint32(uint32Value(audio["duration"])),
+			PTT:        proto.Bool(boolValue(audio["ptt"]) || boolValue(audio["is_voice"])),
+		}}
+	case MessageTypeSticker:
+		sticker := asMap(quoted["sticker"])
+		return &waE2E.Message{StickerMessage: &waE2E.StickerMessage{
+			Mimetype:   proto.String(firstNonEmpty(stringValue(sticker["mimetype"]), "image/webp")),
+			FileLength: proto.Uint64(uint64Value(sticker["size"])),
+			Height:     proto.Uint32(uint32Value(sticker["height"])),
+			Width:      proto.Uint32(uint32Value(sticker["width"])),
+			IsAnimated: proto.Bool(boolValue(sticker["is_animated"])),
+		}}
+	case MessageTypeLocation:
+		location := asMap(quoted["location"])
+		return &waE2E.Message{LocationMessage: &waE2E.LocationMessage{
+			DegreesLatitude:  proto.Float64(floatValue(firstNonEmptyAny(location["latitude"], location["degreesLatitude"]))),
+			DegreesLongitude: proto.Float64(floatValue(firstNonEmptyAny(location["longitude"], location["degreesLongitude"]))),
+			Name:             proto.String(stringValue(location["name"])),
+			Address:          proto.String(stringValue(location["address"])),
+		}}
+	case MessageTypeContact:
+		return &waE2E.Message{ContactMessage: buildContactMessage(asMap(quoted["contact"]), nil)}
+	case MessageTypeContacts:
+		contactsRaw, _ := quoted["contacts"].([]any)
+		contacts := make([]*waE2E.ContactMessage, 0, len(contactsRaw))
+		for _, item := range contactsRaw {
+			contacts = append(contacts, buildContactMessage(asMap(item), nil))
+		}
+		return &waE2E.Message{ContactsArrayMessage: &waE2E.ContactsArrayMessage{
+			DisplayName: proto.String("Contacts"),
+			Contacts:    contacts,
+		}}
+	default:
+		return &waE2E.Message{Conversation: proto.String(text)}
+	}
+}
+
+func inferQuotedContentType(quoted map[string]any) string {
+	for _, item := range []struct {
+		key         string
+		messageType string
+	}{
+		{"image", MessageTypeImage},
+		{"video", MessageTypeVideo},
+		{"document", MessageTypeDocument},
+		{"audio", MessageTypeAudio},
+		{"sticker", MessageTypeSticker},
+		{"location", MessageTypeLocation},
+		{"contact", MessageTypeContact},
+		{"contacts", MessageTypeContacts},
+	} {
+		if value, ok := quoted[item.key]; ok && value != nil {
+			return item.messageType
+		}
+	}
+	return MessageTypeText
 }
 
 func buildExtendedTextMessage(text string, data ChatMessage, contextInfo *waE2E.ContextInfo) *waE2E.ExtendedTextMessage {
@@ -955,12 +1375,81 @@ func floatValue(value any) float64 {
 		return float64(typed)
 	case int:
 		return float64(typed)
+	case int64:
+		return float64(typed)
+	case uint32:
+		return float64(typed)
+	case uint64:
+		return float64(typed)
+	case json.Number:
+		parsed, _ := typed.Float64()
+		return parsed
 	case string:
 		parsed, _ := strconv.ParseFloat(strings.TrimSpace(typed), 64)
 		return parsed
 	default:
 		return 0
 	}
+}
+
+func uint32Value(value any) uint32 {
+	if value == nil {
+		return 0
+	}
+	if parsed := floatValue(value); parsed > 0 {
+		return uint32(parsed)
+	}
+	return 0
+}
+
+func uint64Value(value any) uint64 {
+	if value == nil {
+		return 0
+	}
+	if parsed := floatValue(value); parsed > 0 {
+		return uint64(parsed)
+	}
+	return 0
+}
+
+func firstNonEmptyAny(values ...any) any {
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+		if stringValue(value) != "" {
+			return value
+		}
+		switch typed := value.(type) {
+		case int:
+			if typed != 0 {
+				return value
+			}
+		case int64:
+			if typed != 0 {
+				return value
+			}
+		case uint32:
+			if typed != 0 {
+				return value
+			}
+		case uint64:
+			if typed != 0 {
+				return value
+			}
+		case float32:
+			if typed != 0 {
+				return value
+			}
+		case float64:
+			if typed != 0 {
+				return value
+			}
+		case bool:
+			return value
+		}
+	}
+	return nil
 }
 
 func stringSlice(value any) []string {
@@ -985,7 +1474,13 @@ func bytesFromJSONValue(value any) []byte {
 	case []byte:
 		return typed
 	case string:
-		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(typed))
+		encoded := strings.TrimSpace(typed)
+		if strings.HasPrefix(encoded, "data:") {
+			if _, payload, ok := strings.Cut(encoded, ","); ok {
+				encoded = payload
+			}
+		}
+		data, err := base64.StdEncoding.DecodeString(encoded)
 		if err == nil {
 			return data
 		}

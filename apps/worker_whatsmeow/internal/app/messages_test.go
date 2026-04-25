@@ -101,8 +101,63 @@ func TestBuildOutgoingTextWithQuotedMessageAndMentions(t *testing.T) {
 	if got := contextInfo.GetStanzaID(); got != "quoted-id" {
 		t.Fatalf("unexpected stanza id %q", got)
 	}
+	if contextInfo.GetQuotedMessage().GetConversation() != "mensagem original" {
+		t.Fatalf("unexpected quoted message %#v", contextInfo.GetQuotedMessage())
+	}
 	if mentions := contextInfo.GetMentionedJID(); len(mentions) != 1 || mentions[0] != "551188887777@s.whatsapp.net" {
 		t.Fatalf("unexpected mentions %#v", mentions)
+	}
+}
+
+func TestBuildOutgoingQuotedImageContext(t *testing.T) {
+	manager := &WhatsAppManager{}
+	target := types.NewJID("5511999999999", types.DefaultUserServer)
+
+	msg, err := manager.buildOutgoingMessage(context.Background(), nil, target, ChatMessage{
+		Content: map[string]any{
+			"type":    MessageTypeText,
+			"message": "respondendo foto",
+			"quoted": map[string]any{
+				"type": MessageTypeImage,
+				"key": map[string]any{
+					"id":          "image-quoted-id",
+					"remote_jid":  "5511999999999@s.whatsapp.net",
+					"participant": "5511999999999@s.whatsapp.net",
+				},
+				"message": "legenda original",
+				"image": map[string]any{
+					"caption":   "legenda original",
+					"mimetype":  "image/jpeg",
+					"size":      12,
+					"height":    40,
+					"width":     30,
+					"thumbnail": "data:image/jpeg;base64,AQID",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("build quoted image text: %v", err)
+	}
+
+	quoted := msg.GetExtendedTextMessage().GetContextInfo().GetQuotedMessage().GetImageMessage()
+	if quoted == nil {
+		t.Fatal("expected quoted image message")
+	}
+	if got := quoted.GetCaption(); got != "legenda original" {
+		t.Fatalf("unexpected quoted caption %q", got)
+	}
+	if got := quoted.GetMimetype(); got != "image/jpeg" {
+		t.Fatalf("unexpected quoted mimetype %q", got)
+	}
+	if got := quoted.GetFileLength(); got != 12 {
+		t.Fatalf("unexpected quoted size %d", got)
+	}
+	if got := quoted.GetHeight(); got != 40 {
+		t.Fatalf("unexpected quoted height %d", got)
+	}
+	if len(quoted.GetJPEGThumbnail()) != 3 {
+		t.Fatalf("expected quoted thumbnail bytes, got %#v", quoted.GetJPEGThumbnail())
 	}
 }
 
@@ -172,6 +227,63 @@ func TestIncomingContentMapsCommonMessageTypes(t *testing.T) {
 	})
 	if messageType != "" || content != nil {
 		t.Fatalf("history sync protocol must not be mapped as user message: type=%q content=%#v", messageType, content)
+	}
+}
+
+func TestIncomingContentMapsQuotedText(t *testing.T) {
+	manager := &WhatsAppManager{cfg: Config{WorkerID: "worker-1"}}
+	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)
+	pnChat := types.NewJID("556195999040", types.DefaultUserServer)
+	incoming := incomingTextEvent(lidChat, false, "")
+	incoming.Info.ID = "reply-id"
+	incoming.Info.SenderAlt = pnChat
+	incoming.Message = &waE2E.Message{
+		ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text: proto.String("Teste"),
+			ContextInfo: &waE2E.ContextInfo{
+				StanzaID:    proto.String("quoted-id"),
+				Participant: proto.String(lidChat.String()),
+				QuotedMessage: &waE2E.Message{
+					ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("Oi")},
+				},
+			},
+		},
+	}
+
+	messageType, content := manager.incomingContent(context.Background(), incoming)
+	if messageType != MessageTypeText {
+		t.Fatalf("unexpected type %q", messageType)
+	}
+	if got := content["message"]; got != "Teste" {
+		t.Fatalf("unexpected message %#v", content)
+	}
+	if got := content["message_quoted_id"]; got != "quoted-id" {
+		t.Fatalf("unexpected quoted id %#v", content)
+	}
+	quoted := asMap(content["quoted"])
+	if stringValue(quoted["message"]) != "Oi" {
+		t.Fatalf("unexpected quoted payload %#v", quoted)
+	}
+	if got := quoted["type"]; got != MessageTypeText {
+		t.Fatalf("unexpected quoted type %#v", got)
+	}
+	key := asMap(quoted["key"])
+	if got := key["remote_jid"]; got != "158733669765176@lid" {
+		t.Fatalf("unexpected quoted remote jid %#v", got)
+	}
+	if got := key["remote_jid_alt"]; got != "556195999040@s.whatsapp.net" {
+		t.Fatalf("unexpected quoted remote jid alt %#v", got)
+	}
+	if got := key["from_me"]; got != false {
+		t.Fatalf("unexpected quoted from_me %#v", got)
+	}
+
+	upsert, err := manager.buildIncomingUpsert(context.Background(), incoming)
+	if err != nil {
+		t.Fatalf("build incoming upsert: %v", err)
+	}
+	if upsert == nil || !upsert.HasQuoted {
+		t.Fatalf("expected upsert has_quoted, got %#v", upsert)
 	}
 }
 
