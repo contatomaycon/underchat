@@ -106,6 +106,12 @@ type ChatFilters = {
   sort_order?: string | null;
 };
 
+type KanbanFilters = {
+  filter_worker_id: string | null;
+  filter_name: string | null;
+  filter_phone: string | null;
+};
+
 type ChatCounts = {
   total: number;
   queue: number;
@@ -333,6 +339,11 @@ export const useChatStore = defineStore('chat', {
       count: 0,
       total: 0,
     },
+    kanbanFilters: {
+      filter_worker_id: null,
+      filter_name: null,
+      filter_phone: null,
+    } as KanbanFilters,
     loadingKanban: false,
     loadingKanbanColumn: null as string | null,
   }),
@@ -355,11 +366,68 @@ export const useChatStore = defineStore('chat', {
     clearUser() {
       this.user = null;
     },
+    sanitizeKanbanFilterValue(value: string | null | undefined): string | null {
+      if (typeof value !== 'string') {
+        return null;
+      }
+
+      const trimmedValue = value.trim();
+      if (!trimmedValue) {
+        return null;
+      }
+
+      return trimmedValue;
+    },
+    normalizeKanbanFilters(filters?: Partial<ChatFilters>): KanbanFilters {
+      return {
+        filter_worker_id: this.sanitizeKanbanFilterValue(
+          filters?.filter_worker_id
+        ),
+        filter_name: this.sanitizeKanbanFilterValue(filters?.filter_name),
+        filter_phone: this.sanitizeKanbanFilterValue(filters?.filter_phone),
+      };
+    },
+    setKanbanFilters(filters?: Partial<ChatFilters>): KanbanFilters {
+      const normalizedFilters = this.normalizeKanbanFilters(filters);
+      this.kanbanFilters = normalizedFilters;
+      return normalizedFilters;
+    },
+    getKanbanFilters(): KanbanFilters {
+      return {
+        ...this.kanbanFilters,
+      };
+    },
+    hasActiveKanbanFilters(): boolean {
+      return Boolean(
+        this.kanbanFilters.filter_worker_id ||
+          this.kanbanFilters.filter_name ||
+          this.kanbanFilters.filter_phone
+      );
+    },
+    applyKanbanFiltersToQuery(
+      params: ListKanbanQuery,
+      filters: KanbanFilters
+    ): void {
+      if (filters.filter_worker_id) {
+        params.filter_worker_id = filters.filter_worker_id;
+      }
+
+      if (filters.filter_name) {
+        params.filter_name = filters.filter_name;
+      }
+
+      if (filters.filter_phone) {
+        params.filter_phone = filters.filter_phone;
+      }
+    },
     async loadKanbanInitial(filters?: Partial<ChatFilters>): Promise<void> {
       if (this.loadingKanban) return;
 
       this.loadingKanban = true;
       try {
+        const resolvedFilters = filters
+          ? this.setKanbanFilters(filters)
+          : this.getKanbanFilters();
         const params: ListKanbanQuery = {
           chatbot_page: 1,
           queue_page: 1,
@@ -367,46 +435,7 @@ export const useChatStore = defineStore('chat', {
           closed_page: 1,
           per_page: 50,
         };
-
-        if (filters) {
-          if (
-            filters.filter_label_template_id !== undefined &&
-            filters.filter_label_template_id !== null
-          )
-            params.filter_label_template_id = filters.filter_label_template_id;
-          if (
-            filters.filter_worker_id !== undefined &&
-            filters.filter_worker_id !== null
-          )
-            params.filter_worker_id = filters.filter_worker_id;
-          if (
-            filters.filter_sector_id !== undefined &&
-            filters.filter_sector_id !== null
-          )
-            params.filter_sector_id = filters.filter_sector_id;
-          if (filters.filter_name !== undefined && filters.filter_name !== null)
-            params.filter_name = filters.filter_name;
-          if (
-            filters.filter_phone !== undefined &&
-            filters.filter_phone !== null
-          )
-            params.filter_phone = filters.filter_phone;
-          if (
-            filters.filter_protocol !== undefined &&
-            filters.filter_protocol !== null
-          )
-            params.filter_protocol = filters.filter_protocol;
-          if (
-            filters.filter_date_start !== undefined &&
-            filters.filter_date_start !== null
-          )
-            params.filter_date_start = filters.filter_date_start;
-          if (
-            filters.filter_date_end !== undefined &&
-            filters.filter_date_end !== null
-          )
-            params.filter_date_end = filters.filter_date_end;
-        }
+        this.applyKanbanFiltersToQuery(params, resolvedFilters);
 
         const response = await axios.get<IApiResponse<ListKanbanResponse>>(
           '/chat/kanban',
@@ -469,6 +498,7 @@ export const useChatStore = defineStore('chat', {
       const nextPage = pagings.current_page + 1;
 
       try {
+        const activeKanbanFilters = this.getKanbanFilters();
         const params: ListKanbanQuery = {
           chatbot_page: column === 'chatbot' ? nextPage : 1,
           queue_page: column === 'queue' ? nextPage : 1,
@@ -476,6 +506,7 @@ export const useChatStore = defineStore('chat', {
           closed_page: column === 'closed' ? nextPage : 1,
           per_page: 50,
         };
+        this.applyKanbanFiltersToQuery(params, activeKanbanFilters);
         const response = await axios.get<IApiResponse<ListKanbanResponse>>(
           '/chat/kanban',
           { params }
