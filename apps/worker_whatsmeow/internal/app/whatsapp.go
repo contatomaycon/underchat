@@ -633,11 +633,14 @@ func (m *WhatsAppManager) publishState(ctx context.Context, status string, code 
 }
 
 func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events.Message) {
-	if reason := incomingSkipReason(evt); reason != "" {
+	skipReason := incomingSkipReason(evt)
+	m.logIncomingMessageDebug(evt, skipReason)
+
+	if skipReason != "" {
 		log.Printf(
 			"whatsmeow incoming message skipped worker_id=%s reason=%s chat=%s sender=%s id=%s from_me=%t category=%s source_web_msg=%t",
 			m.cfg.WorkerID,
-			reason,
+			skipReason,
 			incomingChatString(evt),
 			incomingSenderString(evt),
 			incomingMessageID(evt),
@@ -668,7 +671,19 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 	key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
 	if err := m.kafka.SendJSON(ctx, topicUpsertMessage, key, upsert); err != nil {
 		log.Printf("failed to publish incoming message: %v", err)
+		return
 	}
+	log.Printf(
+		"whatsmeow incoming message published worker_id=%s topic=%s key=%s type=%s chat=%s sender=%s id=%s from_me=%t",
+		m.cfg.WorkerID,
+		topicUpsertMessage,
+		key,
+		upsert.Type,
+		incomingChatString(evt),
+		incomingSenderString(evt),
+		incomingMessageID(evt),
+		incomingFromMe(evt),
+	)
 }
 
 func (m *WhatsAppManager) handleReceipt(ctx context.Context, evt *events.Receipt) {
@@ -807,6 +822,191 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 	}, nil
 }
 
+const incomingMessageRawLogLimit = 12000
+
+func (m *WhatsAppManager) logIncomingMessageDebug(evt *events.Message, skipReason string) {
+	rawJSON, rawTruncated, rawErr := incomingRawMessageJSON(evt, incomingMessageRawLogLimit)
+	log.Printf(
+		"whatsmeow incoming message received worker_id=%s skip_reason=%s chat=%s chat_server=%s sender=%s sender_alt=%s recipient_alt=%s id=%s server_id=%d from_me=%t category=%s info_type=%s media_type=%s edit=%s multicast=%t timestamp=%s retry_count=%d unavailable_request_id=%s source_web_msg=%t is_ephemeral=%t is_view_once=%t is_view_once_v2=%t is_view_once_v2_extension=%t is_document_with_caption=%t is_lottie_sticker=%t is_bot_invoke=%t is_edit=%t kinds=%s text_preview=%q raw_truncated=%t raw_error=%q raw_message_json=%s",
+		m.cfg.WorkerID,
+		firstNonEmpty(skipReason, "none"),
+		incomingChatString(evt),
+		incomingChatServer(evt),
+		incomingSenderString(evt),
+		incomingSenderAltString(evt),
+		incomingRecipientAltString(evt),
+		incomingMessageID(evt),
+		incomingServerID(evt),
+		incomingFromMe(evt),
+		incomingCategory(evt),
+		incomingInfoType(evt),
+		incomingMediaType(evt),
+		incomingEdit(evt),
+		incomingMulticast(evt),
+		incomingTimestamp(evt),
+		incomingRetryCount(evt),
+		incomingUnavailableRequestID(evt),
+		evt != nil && evt.SourceWebMsg != nil,
+		evt != nil && evt.IsEphemeral,
+		evt != nil && evt.IsViewOnce,
+		evt != nil && evt.IsViewOnceV2,
+		evt != nil && evt.IsViewOnceV2Extension,
+		evt != nil && evt.IsDocumentWithCaption,
+		evt != nil && evt.IsLottieSticker,
+		evt != nil && evt.IsBotInvoke,
+		evt != nil && evt.IsEdit,
+		strings.Join(incomingMessageKinds(evt), ","),
+		incomingTextPreview(evt),
+		rawTruncated,
+		rawErr,
+		rawJSON,
+	)
+}
+
+func incomingRawMessageJSON(evt *events.Message, limit int) (string, bool, string) {
+	if evt == nil || evt.Message == nil {
+		return "null", false, ""
+	}
+	raw, err := protojson.MarshalOptions{EmitUnpopulated: false}.Marshal(evt.Message)
+	if err != nil {
+		return "null", false, err.Error()
+	}
+	value := string(raw)
+	truncated := false
+	if limit > 0 && len(value) > limit {
+		value = value[:limit] + "...<truncated>"
+		truncated = true
+	}
+	return value, truncated, ""
+}
+
+func incomingMessageKinds(evt *events.Message) []string {
+	if evt == nil || evt.Message == nil {
+		return []string{"empty"}
+	}
+	msg := evt.Message
+	kinds := make([]string, 0, 8)
+	if msg.GetConversation() != "" {
+		kinds = append(kinds, "conversation")
+	}
+	if msg.GetExtendedTextMessage() != nil {
+		kinds = append(kinds, "extended_text")
+	}
+	if protocolMsg := msg.GetProtocolMessage(); protocolMsg != nil {
+		if protocolMsg.Type == nil {
+			kinds = append(kinds, "protocol:unknown")
+		} else {
+			kinds = append(kinds, "protocol:"+protocolMsg.GetType().String())
+		}
+	}
+	if msg.GetReactionMessage() != nil {
+		kinds = append(kinds, "reaction")
+	}
+	if msg.GetImageMessage() != nil {
+		kinds = append(kinds, "image")
+	}
+	if msg.GetVideoMessage() != nil {
+		kinds = append(kinds, "video")
+	}
+	if msg.GetPtvMessage() != nil {
+		kinds = append(kinds, "ptv")
+	}
+	if msg.GetAudioMessage() != nil {
+		kinds = append(kinds, "audio")
+	}
+	if msg.GetDocumentMessage() != nil {
+		kinds = append(kinds, "document")
+	}
+	if msg.GetStickerMessage() != nil {
+		kinds = append(kinds, "sticker")
+	}
+	if msg.GetLocationMessage() != nil {
+		kinds = append(kinds, "location")
+	}
+	if msg.GetContactMessage() != nil {
+		kinds = append(kinds, "contact")
+	}
+	if msg.GetContactsArrayMessage() != nil {
+		kinds = append(kinds, "contacts")
+	}
+	if msg.GetDeviceSentMessage() != nil {
+		kinds = append(kinds, "device_sent")
+	}
+	if msg.GetViewOnceMessage() != nil {
+		kinds = append(kinds, "view_once")
+	}
+	if msg.GetViewOnceMessageV2() != nil {
+		kinds = append(kinds, "view_once_v2")
+	}
+	if msg.GetViewOnceMessageV2Extension() != nil {
+		kinds = append(kinds, "view_once_v2_extension")
+	}
+	if msg.GetEphemeralMessage() != nil {
+		kinds = append(kinds, "ephemeral")
+	}
+	if msg.GetDocumentWithCaptionMessage() != nil {
+		kinds = append(kinds, "document_with_caption")
+	}
+	if msg.GetAlbumMessage() != nil {
+		kinds = append(kinds, "album")
+	}
+	if msg.GetPollCreationMessage() != nil || msg.GetPollCreationMessageV2() != nil || msg.GetPollCreationMessageV3() != nil || msg.GetPollCreationMessageV5() != nil || msg.GetPollCreationMessageV6() != nil {
+		kinds = append(kinds, "poll_creation")
+	}
+	if msg.GetPollUpdateMessage() != nil {
+		kinds = append(kinds, "poll_update")
+	}
+	if msg.GetPinInChatMessage() != nil {
+		kinds = append(kinds, "pin_in_chat")
+	}
+	if msg.GetKeepInChatMessage() != nil {
+		kinds = append(kinds, "keep_in_chat")
+	}
+	if len(kinds) == 0 {
+		kinds = append(kinds, "unknown")
+	}
+	return kinds
+}
+
+func incomingTextPreview(evt *events.Message) string {
+	if evt == nil || evt.Message == nil {
+		return ""
+	}
+	msg := evt.Message
+	candidates := []string{
+		msg.GetConversation(),
+	}
+	if ext := msg.GetExtendedTextMessage(); ext != nil {
+		candidates = append(candidates, ext.GetText())
+	}
+	if reaction := msg.GetReactionMessage(); reaction != nil {
+		candidates = append(candidates, reaction.GetText())
+	}
+	if image := msg.GetImageMessage(); image != nil {
+		candidates = append(candidates, image.GetCaption())
+	}
+	if video := msg.GetVideoMessage(); video != nil {
+		candidates = append(candidates, video.GetCaption())
+	}
+	if doc := msg.GetDocumentMessage(); doc != nil {
+		candidates = append(candidates, doc.GetCaption(), doc.GetFileName(), doc.GetTitle())
+	}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate != "" {
+			return truncateLogValue(candidate, 500)
+		}
+	}
+	return ""
+}
+
+func truncateLogValue(value string, limit int) string {
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	return value[:limit] + "...<truncated>"
+}
+
 func incomingSkipReason(evt *events.Message) string {
 	if evt == nil || evt.Message == nil {
 		return "empty_message"
@@ -852,6 +1052,20 @@ func incomingSenderString(evt *events.Message) string {
 	return evt.Info.Sender.String()
 }
 
+func incomingSenderAltString(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return evt.Info.SenderAlt.String()
+}
+
+func incomingRecipientAltString(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return evt.Info.RecipientAlt.String()
+}
+
 func incomingMessageID(evt *events.Message) string {
 	if evt == nil {
 		return ""
@@ -871,6 +1085,69 @@ func incomingCategory(evt *events.Message) string {
 		return ""
 	}
 	return evt.Info.Category
+}
+
+func incomingChatServer(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return evt.Info.Chat.Server
+}
+
+func incomingInfoType(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return evt.Info.Type
+}
+
+func incomingMediaType(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return evt.Info.MediaType
+}
+
+func incomingEdit(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return string(evt.Info.Edit)
+}
+
+func incomingMulticast(evt *events.Message) bool {
+	if evt == nil {
+		return false
+	}
+	return evt.Info.Multicast
+}
+
+func incomingServerID(evt *events.Message) int {
+	if evt == nil {
+		return 0
+	}
+	return evt.Info.ServerID
+}
+
+func incomingTimestamp(evt *events.Message) string {
+	if evt == nil || evt.Info.Timestamp.IsZero() {
+		return ""
+	}
+	return evt.Info.Timestamp.Format(time.RFC3339Nano)
+}
+
+func incomingRetryCount(evt *events.Message) int {
+	if evt == nil {
+		return 0
+	}
+	return evt.RetryCount
+}
+
+func incomingUnavailableRequestID(evt *events.Message) string {
+	if evt == nil {
+		return ""
+	}
+	return string(evt.UnavailableRequestID)
 }
 
 var digitsRE = regexp.MustCompile(`\D+`)
