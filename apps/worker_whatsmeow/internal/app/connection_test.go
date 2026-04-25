@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -37,5 +39,39 @@ func TestStoredSessionInvalidErrorDetection(t *testing.T) {
 
 	if isStoredSessionInvalidError(errors.New("dial tcp timeout")) {
 		t.Fatal("network errors should not be treated as invalid session errors")
+	}
+}
+
+func TestClearLocalSessionFilesRemovesStaleStore(t *testing.T) {
+	manager := &WhatsAppManager{
+		cfg: Config{
+			DataDir:  t.TempDir(),
+			WorkerID: "worker-1",
+		},
+	}
+
+	sessionDir := manager.sessionDir()
+	if err := os.MkdirAll(filepath.Join(sessionDir, "stale"), 0o755); err != nil {
+		t.Fatalf("create stale dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, "store.db"), []byte("stale"), 0o644); err != nil {
+		t.Fatalf("write stale store: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, "stale", "file"), []byte("stale"), 0o644); err != nil {
+		t.Fatalf("write stale file: %v", err)
+	}
+
+	if err := manager.clearLocalSessionFiles(); err != nil {
+		t.Fatalf("clear local session files: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(sessionDir, "store.db")); !os.IsNotExist(err) {
+		t.Fatalf("expected store.db to be removed, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(sessionDir, "stale")); !os.IsNotExist(err) {
+		t.Fatalf("expected stale dir to be removed, got %v", err)
+	}
+	if info, err := os.Stat(sessionDir); err != nil || !info.IsDir() {
+		t.Fatalf("expected session dir to be recreated, info=%v err=%v", info, err)
 	}
 }

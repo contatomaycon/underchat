@@ -36,6 +36,7 @@ type WhatsAppManager struct {
 	runtimeCtx context.Context
 
 	mu          sync.RWMutex
+	sessionMu   sync.Mutex
 	client      *whatsmeow.Client
 	connected   bool
 	status      string
@@ -79,8 +80,12 @@ func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, cen
 	return manager, nil
 }
 
+func (m *WhatsAppManager) sessionDir() string {
+	return filepath.Join(m.cfg.DataDir, "whatsmeow", m.cfg.WorkerID)
+}
+
 func (m *WhatsAppManager) initClient(ctx context.Context) error {
-	storeDir := filepath.Join(m.cfg.DataDir, "whatsmeow", m.cfg.WorkerID)
+	storeDir := m.sessionDir()
 	if err := os.MkdirAll(storeDir, 0o755); err != nil {
 		return err
 	}
@@ -147,6 +152,45 @@ func (m *WhatsAppManager) getClient() *whatsmeow.Client {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.client
+}
+
+func hasDeletedStore(client *whatsmeow.Client) bool {
+	return client != nil && client.Store != nil && client.Store.Deleted
+}
+
+func (m *WhatsAppManager) ensureUsableClientForLogin(ctx context.Context, reason string) (*whatsmeow.Client, error) {
+	client := m.getClient()
+	if client != nil && client.Store != nil && !client.Store.Deleted {
+		return client, nil
+	}
+
+	log.Printf(
+		"whatsmeow login client reinit required worker_id=%s reason=%s has_client=%t has_store=%t store_deleted=%t",
+		m.cfg.WorkerID,
+		reason,
+		client != nil,
+		client != nil && client.Store != nil,
+		hasDeletedStore(client),
+	)
+
+	if err := m.resetLocalSession(ctx); err != nil {
+		return nil, err
+	}
+
+	client = m.getClient()
+	if client == nil || client.Store == nil || client.Store.Deleted {
+		return nil, fmt.Errorf("client is not initialized")
+	}
+
+	return client, nil
+}
+
+func (m *WhatsAppManager) clearLocalSessionFiles() error {
+	storeDir := m.sessionDir()
+	if err := os.RemoveAll(storeDir); err != nil {
+		return err
+	}
+	return os.MkdirAll(storeDir, 0o755)
 }
 
 func (m *WhatsAppManager) IsConnected() bool {
@@ -450,9 +494,14 @@ func (m *WhatsAppManager) connectClient(ctx context.Context, client *whatsmeow.C
 }
 
 func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) error {
-	client := m.getClient()
-	if client == nil {
-		return fmt.Errorf("client is not initialized")
+	return m.connectWithQRCodeInternal(ctx, true)
+}
+
+func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDeletedStoreRetry bool) error {
+	client, err := m.ensureUsableClientForLogin(ctx, "qrcode-request")
+	if err != nil {
+		m.publishState(ctx, "disconnected", CodeConnectionLost, WorkerStatusDisponible, "", "", false)
+		return err
 	}
 	connectCtx := m.connectionContext()
 	if m.isAuthenticated(client) {
@@ -490,11 +539,11 @@ func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) error {
 	qrChan, err := client.GetQRChannel(connectCtx)
 	if err != nil {
 		log.Printf("whatsmeow GetQRChannel failed worker_id=%s error=%v", m.cfg.WorkerID, err)
-		return err
+		return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "qrcode"}, err, allowDeletedStoreRetry)
 	}
 	m.publishState(ctx, "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", "", true)
 	if err := m.connectClient(connectCtx, client, "qrcode-new-login"); err != nil {
-		return err
+		return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "qrcode"}, err, allowDeletedStoreRetry)
 	}
 
 	go func() {
@@ -527,9 +576,14 @@ func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) error {
 }
 
 func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone string) error {
-	client := m.getClient()
-	if client == nil {
-		return fmt.Errorf("client is not initialized")
+	return m.connectWithPhonePairingInternal(ctx, phone, true)
+}
+
+func (m *WhatsAppManager) connectWithPhonePairingInternal(ctx context.Context, phone string, allowDeletedStoreRetry bool) error {
+	client, err := m.ensureUsableClientForLogin(ctx, "phone-pairing-request")
+	if err != nil {
+		m.publishState(ctx, "disconnected", CodeConnectionLost, WorkerStatusDisponible, "", "", false)
+		return err
 	}
 	connectCtx := m.connectionContext()
 	if phone = digits(phone); phone == "" {
@@ -567,13 +621,13 @@ func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone str
 	m.publishState(ctx, "connecting", CodeAwaitingPairingCode, WorkerStatusDisponible, "", "", true)
 	if !client.IsConnected() {
 		if err := m.connectClient(connectCtx, client, "phone-new-login"); err != nil {
-			return err
+			return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "phone", Phone: phone}, err, allowDeletedStoreRetry)
 		}
 	}
 	pairingCode, err := client.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 	if err != nil {
 		log.Printf("whatsmeow phone pairing failed worker_id=%s error=%v", m.cfg.WorkerID, err)
-		return err
+		return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "phone", Phone: phone}, err, allowDeletedStoreRetry)
 	}
 	m.setCurrentPairingCode(pairingCode)
 	log.Printf("whatsmeow phone pairing code generated worker_id=%s", m.cfg.WorkerID)
@@ -602,10 +656,19 @@ func (m *WhatsAppManager) removeSession(ctx context.Context) error {
 	}
 	m.mu.Lock()
 	m.connected = false
+	m.status = "disconnected"
+	m.code = CodeLoggedOut
 	m.mu.Unlock()
+
+	m.sessionMu.Lock()
+	if err := m.clearLocalSessionFiles(); err != nil {
+		log.Printf("whatsmeow remove session local files cleanup failed worker_id=%s error=%v", m.cfg.WorkerID, err)
+	}
 	if err := m.initClient(context.Background()); err != nil {
 		log.Printf("whatsmeow remove session client reinit failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 	}
+	m.sessionMu.Unlock()
+
 	m.publishStateDisconnectedByUser(ctx, CodeLoggedOut, WorkerStatusDisponible)
 	return nil
 }
@@ -713,6 +776,30 @@ func (m *WhatsAppManager) handleStoredSessionConnectError(ctx context.Context, e
 	return err
 }
 
+func (m *WhatsAppManager) handleFreshLoginConnectError(ctx context.Context, req freshLoginRequest, err error, allowDeletedStoreRetry bool) error {
+	if allowDeletedStoreRetry && isStoredSessionInvalidError(err) {
+		log.Printf("whatsmeow fresh login found invalid local session, resetting worker_id=%s type=%s error=%v", m.cfg.WorkerID, req.Type, err)
+		m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", true)
+		if resetErr := m.resetLocalSession(ctx); resetErr != nil {
+			log.Printf("whatsmeow fresh login reset failed worker_id=%s error=%v", m.cfg.WorkerID, resetErr)
+			m.publishState(ctx, "disconnected", CodeConnectionLost, WorkerStatusDisponible, "", "", false)
+			return fmt.Errorf("reset invalid whatsmeow session: %w", resetErr)
+		}
+
+		switch strings.ToLower(req.Type) {
+		case "phone":
+			return m.connectWithPhonePairingInternal(ctx, req.Phone, false)
+		default:
+			return m.connectWithQRCodeInternal(ctx, false)
+		}
+	}
+
+	m.clearLoginArtifacts()
+	m.clearFreshLoginFallback()
+	m.publishState(ctx, "disconnected", CodeConnectionLost, WorkerStatusDisponible, "", "", false)
+	return err
+}
+
 func (m *WhatsAppManager) armFreshLoginFallback(req freshLoginRequest) {
 	if req.Type == "" {
 		req.Type = "qrcode"
@@ -769,16 +856,24 @@ func (m *WhatsAppManager) resetAndStartFreshLogin(ctx context.Context, req fresh
 }
 
 func (m *WhatsAppManager) resetLocalSession(ctx context.Context) error {
+	m.sessionMu.Lock()
+	defer m.sessionMu.Unlock()
+
 	client := m.getClient()
 	if client != nil {
 		client.Disconnect()
 		if client.Store != nil && client.Store.ID != nil && !client.Store.Deleted {
 			log.Printf("whatsmeow deleting stale local store worker_id=%s", m.cfg.WorkerID)
 			if err := client.Store.Delete(ctx); err != nil {
-				return fmt.Errorf("delete stale whatsmeow store: %w", err)
+				log.Printf("whatsmeow stale local store delete failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 			}
 		}
 	}
+
+	if err := m.clearLocalSessionFiles(); err != nil {
+		return fmt.Errorf("clear whatsmeow local session files: %w", err)
+	}
+
 	m.mu.Lock()
 	m.connected = false
 	m.status = "connecting"
