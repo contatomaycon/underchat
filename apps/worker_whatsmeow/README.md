@@ -67,7 +67,7 @@ Coberto:
 - Mensagens recebidas de sistema para pin/unpin e configuracao de mensagens temporarias (`set_disappearing_messages`), publicadas no mesmo contrato consumido por `MessageUpsert`.
 - Templates recebidos com `hydratedTemplate` sao classificados como texto, como no Baileys.
 - Conversas LID usam `remoteJidAlt` quando o whatsmeow entrega alias PN, evitando DLQ por telefone ausente.
-- Foto de contato em mensagens e chamadas recebidas via `GetProfilePictureInfo`, com cache Redis e fallback sem foto quando o WhatsApp negar ou nao houver imagem.
+- Foto de contato em mensagens e chamadas recebidas via `GetProfilePictureInfo`, persistida no S3 pelo proprio worker antes do `upsert.message`, com cache Redis e fallback sem foto quando o WhatsApp negar ou nao houver imagem.
 - Receipts de enviada/entregue/lida/reproduzida mapeados para `update.message.status`.
 - Mark read.
 - Presenca/digitando via Centrifugo.

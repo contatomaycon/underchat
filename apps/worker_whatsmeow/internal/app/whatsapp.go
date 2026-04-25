@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -47,7 +48,7 @@ type WhatsAppManager struct {
 }
 
 const (
-	whatsmeowPhotoCachePrefix     = "photo:jid:"
+	whatsmeowPhotoCachePrefix     = "photo:s3:jid:"
 	whatsmeowPhotoCacheNoPhoto    = "__no_photo__"
 	whatsmeowPhotoCacheTTL        = 24 * time.Hour
 	whatsmeowPhotoCacheNoPhotoTTL = 5 * time.Minute
@@ -924,16 +925,57 @@ func (m *WhatsAppManager) profilePhotoForJIDs(ctx context.Context, candidates []
 			m.cacheProfilePhotoNoPhoto(photoCtx, cacheKey)
 			continue
 		}
-		photo := strings.TrimSpace(info.URL)
+		photo := m.persistProfilePhoto(photoCtx, jid, strings.TrimSpace(info.URL))
+		if photo == "" {
+			continue
+		}
 		if m.redis != nil {
 			if err := m.redis.Set(photoCtx, cacheKey, photo, whatsmeowPhotoCacheTTL).Err(); err != nil {
 				log.Printf("whatsmeow profile photo cache write failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
 			}
 		}
-		log.Printf("whatsmeow profile photo fetched worker_id=%s jid=%s photo_id=%s", m.cfg.WorkerID, jid.String(), info.ID)
+		log.Printf("whatsmeow profile photo fetched worker_id=%s jid=%s photo_id=%s persisted=%t", m.cfg.WorkerID, jid.String(), info.ID, !strings.EqualFold(photo, strings.TrimSpace(info.URL)))
 		return photo
 	}
 	return ""
+}
+
+func (m *WhatsAppManager) persistProfilePhoto(ctx context.Context, jid types.JID, rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	if m.storage == nil {
+		log.Printf("whatsmeow profile photo storage unavailable worker_id=%s jid=%s using_raw_url=true", m.cfg.WorkerID, jid.String())
+		return rawURL
+	}
+	body, contentType, fileName, err := downloadURL(ctx, rawURL)
+	if err != nil {
+		log.Printf("whatsmeow profile photo download failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
+		return rawURL
+	}
+	if !isImageContentType(contentType) {
+		detected := http.DetectContentType(body)
+		if isImageContentType(detected) {
+			contentType = detected
+		} else {
+			log.Printf("whatsmeow profile photo ignored non-image worker_id=%s jid=%s content_type=%s detected=%s", m.cfg.WorkerID, jid.String(), contentType, detected)
+			return ""
+		}
+	}
+	if fileName == "" || fileName == "." || fileName == "/" {
+		fileName = "profile_photo_" + firstNonEmpty(digits(jid.User), randomHex(4)) + extensionFromMime(contentType)
+	}
+	object, err := m.storage.Upload(ctx, m.cfg.AccountID, body, fileName, contentType)
+	if err != nil {
+		log.Printf("whatsmeow profile photo upload failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
+		return rawURL
+	}
+	log.Printf("whatsmeow profile photo uploaded worker_id=%s jid=%s url=%s size=%d", m.cfg.WorkerID, jid.String(), object.URL, object.Size)
+	return object.URL
+}
+
+func isImageContentType(contentType string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "image/")
 }
 
 func callAltJID(callFrom, creator types.JID) string {
