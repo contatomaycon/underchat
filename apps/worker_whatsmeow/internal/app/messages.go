@@ -385,6 +385,18 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 		}
 		return &waE2E.Message{VideoMessage: video}, nil
 	case "audio":
+		ptt := outgoingAudioPTT(media, viewOnce)
+		duration := uint32Value(firstNonEmptyAny(media["duration"], media["seconds"]))
+		waveform := outgoingAudioWaveform(media, ptt)
+		log.Printf(
+			"whatsmeow audio message build worker_id=%s ptt=%t view_once=%t mimetype=%s duration=%d has_waveform=%t",
+			m.cfg.WorkerID,
+			ptt,
+			viewOnce,
+			firstNonEmpty(contentType, "audio/ogg; codecs=opus"),
+			duration,
+			len(waveform) > 0,
+		)
 		return &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
 			URL:               proto.String(upload.URL),
 			DirectPath:        proto.String(upload.DirectPath),
@@ -393,9 +405,11 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 			FileEncSHA256:     upload.FileEncSHA256,
 			FileSHA256:        upload.FileSHA256,
 			FileLength:        proto.Uint64(upload.FileLength),
+			Seconds:           proto.Uint32(duration),
 			MediaKeyTimestamp: proto.Int64(now),
 			ContextInfo:       contextInfo,
-			PTT:               proto.Bool(boolValue(media["ptt"]) || boolValue(media["is_voice"])),
+			PTT:               proto.Bool(ptt),
+			Waveform:          waveform,
 			ViewOnce:          proto.Bool(viewOnce),
 		}}, nil
 	case "document":
@@ -1155,11 +1169,14 @@ func quotedMessageForContext(quoted map[string]any) *waE2E.Message {
 		}}
 	case MessageTypeAudio:
 		audio := asMap(quoted["audio"])
+		viewOnce := boolValue(firstNonEmptyAny(audio["is_view_once"], audio["view_once"]))
+		ptt := outgoingAudioPTT(audio, viewOnce)
 		return &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
 			Mimetype:   proto.String(firstNonEmpty(stringValue(audio["mimetype"]), "audio/ogg; codecs=opus")),
 			FileLength: proto.Uint64(uint64Value(audio["size"])),
-			Seconds:    proto.Uint32(uint32Value(audio["duration"])),
-			PTT:        proto.Bool(boolValue(audio["ptt"]) || boolValue(audio["is_voice"])),
+			Seconds:    proto.Uint32(uint32Value(firstNonEmptyAny(audio["duration"], audio["seconds"]))),
+			PTT:        proto.Bool(ptt),
+			Waveform:   outgoingAudioWaveform(audio, ptt),
 		}}
 	case MessageTypeSticker:
 		sticker := asMap(quoted["sticker"])
@@ -1438,6 +1455,61 @@ func boolValue(value any) bool {
 	default:
 		return false
 	}
+}
+
+func optionalBoolValue(value any) (bool, bool) {
+	if value == nil {
+		return false, false
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		normalized := strings.ToLower(strings.TrimSpace(typed))
+		if normalized == "" {
+			return false, false
+		}
+		return normalized == "true" || normalized == "1" || normalized == "yes" || normalized == "on", true
+	case float64:
+		return typed == 1, true
+	case float32:
+		return typed == 1, true
+	case int:
+		return typed == 1, true
+	case int64:
+		return typed == 1, true
+	case uint32:
+		return typed == 1, true
+	case uint64:
+		return typed == 1, true
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return false, false
+		}
+		return parsed == 1, true
+	default:
+		return false, false
+	}
+}
+
+func outgoingAudioPTT(media map[string]any, viewOnce bool) bool {
+	if viewOnce {
+		return true
+	}
+	for _, key := range []string{"ptt", "is_voice", "isVoice"} {
+		if value, ok := optionalBoolValue(media[key]); ok {
+			return value
+		}
+	}
+	return true
+}
+
+func outgoingAudioWaveform(media map[string]any, ptt bool) []byte {
+	if !ptt {
+		return nil
+	}
+	return bytesFromJSONValue(firstNonEmptyAny(media["waveform"], media["waveform_base64"], media["waveformBase64"]))
 }
 
 func floatValue(value any) float64 {

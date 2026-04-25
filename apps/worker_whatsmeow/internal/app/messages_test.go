@@ -161,6 +161,55 @@ func TestBuildOutgoingQuotedImageContext(t *testing.T) {
 	}
 }
 
+func TestOutgoingAudioPTTDefaultsLikeBaileys(t *testing.T) {
+	tests := []struct {
+		name     string
+		media    map[string]any
+		viewOnce bool
+		want     bool
+	}{
+		{name: "default true", media: map[string]any{}, want: true},
+		{name: "explicit ptt true", media: map[string]any{"ptt": true}, want: true},
+		{name: "explicit ptt false", media: map[string]any{"ptt": false}, want: false},
+		{name: "string false", media: map[string]any{"ptt": "false"}, want: false},
+		{name: "legacy is_voice", media: map[string]any{"is_voice": true}, want: true},
+		{name: "view once forces ptt", media: map[string]any{"ptt": false}, viewOnce: true, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := outgoingAudioPTT(tt.media, tt.viewOnce); got != tt.want {
+				t.Fatalf("unexpected ptt: got %t want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestQuotedAudioDefaultsToPTT(t *testing.T) {
+	quoted := quotedMessageForContext(map[string]any{
+		"type": MessageTypeAudio,
+		"audio": map[string]any{
+			"duration": 3,
+			"mimetype": "audio/ogg; codecs=opus",
+			"waveform": "AQID",
+		},
+	})
+
+	audio := quoted.GetAudioMessage()
+	if audio == nil {
+		t.Fatal("expected quoted audio message")
+	}
+	if !audio.GetPTT() {
+		t.Fatal("expected quoted audio to default to ptt")
+	}
+	if got := audio.GetSeconds(); got != 3 {
+		t.Fatalf("unexpected duration %d", got)
+	}
+	if got := audio.GetWaveform(); len(got) != 3 {
+		t.Fatalf("unexpected waveform %#v", got)
+	}
+}
+
 func TestBuildOutgoingTextEditFromLatestVersion(t *testing.T) {
 	manager := &WhatsAppManager{}
 	target := types.NewJID("5511999999999", types.DefaultUserServer)
