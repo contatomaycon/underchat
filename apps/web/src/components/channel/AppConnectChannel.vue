@@ -117,8 +117,9 @@ const maxAttemptDisplay = computed(() => {
 const showQrSkeleton = computed(() => {
   if (isConnected.value || qrcode.value) return false;
   if (attempt.value >= maxAttempts.value && !isPhoneNumber.value) return false;
-  if (isPhoneNumber.value && !phoneSent.value) return false;
+  if (isPhoneNumber.value) return false;
   if (statusCode.value === ECodeMessage.phoneNotAvailable) return false;
+  if (statusCode.value === ECodeMessage.newLoginAttempt) return false;
 
   const disconnectedWithRemovedMessage =
     isDisconnected.value &&
@@ -131,6 +132,27 @@ const showQrSkeleton = computed(() => {
 
   return true;
 });
+
+function prepareConnectionStart(resetAttempt = false) {
+  if (resetAttempt) attempt.value = 0;
+
+  isResetting.value = false;
+  statusConnection.value = EBaileysConnectionStatus.connecting;
+  statusCode.value = ECodeMessage.awaitConnection;
+  qrcode.value = null;
+  removeInPhone.value = false;
+  elapsedSeconds.value = 0;
+  connectionAttempt.value = null;
+  connectionMaxAttempts.value = null;
+  secondsNextAttempt.value = 0;
+  resetPairingCodes();
+  clearTimer();
+
+  if (intervalIdNextAttempt.value !== null) {
+    clearInterval(intervalIdNextAttempt.value);
+    intervalIdNextAttempt.value = null;
+  }
+}
 
 function calculateProgress(seconds: number, max = totalSeconds.value) {
   const value = Math.min(Math.round((seconds / max) * 100), 100);
@@ -147,9 +169,8 @@ function splitCode(code: string): [string, string] {
 
 async function reconnectChannel(restart = false) {
   if (!channelId.value) return;
-  if (restart) attempt.value = 0;
 
-  resetPairingCodes();
+  prepareConnectionStart(restart);
 
   await channelStore.updateConnectionChannel(
     buildRequest(EWorkerStatus.online)
@@ -184,7 +205,7 @@ async function sendPhoneNumber() {
   totalSeconds.value = 120;
   maxAttempts.value = 5;
 
-  resetPairingCodes();
+  prepareConnectionStart();
 
   await channelStore.updateConnectionChannel(
     buildRequest(EWorkerStatus.online)
@@ -217,7 +238,7 @@ async function enterQrcode() {
   attempt.value = 0;
   secondsNextAttempt.value = 0;
   totalSeconds.value = 60;
-  statusCode.value = ECodeMessage.awaitConnection;
+  prepareConnectionStart(true);
 
   if (channelId.value) {
     clearTimer();
@@ -313,6 +334,8 @@ function startNextAttemptCountdown() {
 
 onMounted(async () => {
   if (channelId.value && accountId.value) {
+    prepareConnectionStart(true);
+
     await onMessage(
       workerCentrifugoQueue(accountId.value),
       (data: IBaileysConnectionState) => {
