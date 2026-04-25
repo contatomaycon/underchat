@@ -179,6 +179,11 @@ func (m *WhatsAppManager) buildOutgoingMessage(ctx context.Context, client *what
 		return nil, UnsupportedFeatureError{Feature: unsupported}
 	}
 
+	if isTextEditMessage(data, contentType) {
+		log.Printf("whatsmeow edit message requested worker_id=%s message_id=%s target_key_id=%s", m.cfg.WorkerID, data.MessageID, data.MessageKey.ID)
+		return buildTextEditMessage(client, target, data)
+	}
+
 	contextInfo := buildContextInfo(data)
 	switch contentType {
 	case MessageTypeText, MessageTypeSystem:
@@ -251,6 +256,74 @@ func (m *WhatsAppManager) buildOutgoingMessage(ctx context.Context, client *what
 		}}, nil
 	default:
 		return nil, UnsupportedFeatureError{Feature: contentType}
+	}
+}
+
+func isTextEditMessage(data ChatMessage, contentType string) bool {
+	if contentType != MessageTypeText {
+		return false
+	}
+	if data.MessageKey == nil || data.MessageKey.ID == "" {
+		return false
+	}
+	return len(versionItems(data.Content["version"])) > 0
+}
+
+func buildTextEditMessage(client *whatsmeow.Client, target types.JID, data ChatMessage) (*waE2E.Message, error) {
+	if data.MessageKey == nil || data.MessageKey.ID == "" {
+		return nil, fmt.Errorf("edit_text requires message_key.id")
+	}
+	if !data.MessageKey.FromMeValue() {
+		return nil, fmt.Errorf("Message edit is not allowed for non-own message")
+	}
+	newText := firstNonEmpty(latestVersionMessage(data.Content["version"]), stringValue(data.Content["message"]))
+	if newText == "" {
+		return nil, fmt.Errorf("edit_text requires message")
+	}
+	return client.BuildEdit(target, data.MessageKey.ID, &waE2E.Message{
+		Conversation: proto.String(newText),
+	}), nil
+}
+
+func latestVersionMessage(value any) string {
+	versions := versionItems(value)
+	if len(versions) == 0 {
+		return ""
+	}
+	latestIndex := -1
+	latestTime := time.Time{}
+	for index, item := range versions {
+		message := stringValue(item["message"])
+		if message == "" {
+			continue
+		}
+		parsedTime, _ := time.Parse(time.RFC3339Nano, stringValue(item["date"]))
+		if latestIndex == -1 || parsedTime.After(latestTime) || (parsedTime.IsZero() && latestTime.IsZero() && index > latestIndex) {
+			latestIndex = index
+			latestTime = parsedTime
+		}
+	}
+	if latestIndex < 0 {
+		return ""
+	}
+	return stringValue(versions[latestIndex]["message"])
+}
+
+func versionItems(value any) []map[string]any {
+	switch typed := value.(type) {
+	case []map[string]any:
+		return typed
+	case []any:
+		items := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			mapped := asMap(item)
+			if len(mapped) > 0 {
+				items = append(items, mapped)
+			}
+		}
+		return items
+	default:
+		return nil
 	}
 }
 

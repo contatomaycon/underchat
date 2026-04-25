@@ -161,6 +161,90 @@ func TestBuildOutgoingQuotedImageContext(t *testing.T) {
 	}
 }
 
+func TestBuildOutgoingTextEditFromLatestVersion(t *testing.T) {
+	manager := &WhatsAppManager{}
+	target := types.NewJID("5511999999999", types.DefaultUserServer)
+	fromMe := true
+
+	msg, err := manager.buildOutgoingMessage(context.Background(), nil, target, ChatMessage{
+		MessageKey: &MessageKey{
+			RemoteJID: "5511999999999@s.whatsapp.net",
+			FromMe:    &fromMe,
+			ID:        "original-wa-id",
+		},
+		Content: map[string]any{
+			"type":    MessageTypeText,
+			"message": "texto 1",
+			"version": []any{
+				map[string]any{
+					"type":    MessageTypeText,
+					"message": "texto 1",
+					"date":    "2026-04-25T17:00:00Z",
+				},
+				map[string]any{
+					"type":    MessageTypeText,
+					"message": "texto 2",
+					"date":    "2026-04-25T17:01:00Z",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("build text edit: %v", err)
+	}
+
+	protocol := msg.GetEditedMessage().GetMessage().GetProtocolMessage()
+	if protocol == nil {
+		t.Fatal("expected protocol edit message")
+	}
+	if got := protocol.GetType(); got != waE2E.ProtocolMessage_MESSAGE_EDIT {
+		t.Fatalf("unexpected protocol type %v", got)
+	}
+	if got := protocol.GetKey().GetID(); got != "original-wa-id" {
+		t.Fatalf("unexpected edit target id %q", got)
+	}
+	if got := protocol.GetEditedMessage().GetConversation(); got != "texto 2" {
+		t.Fatalf("unexpected edited text %q", got)
+	}
+}
+
+func TestBuildOutgoingTextEditRejectsNonOwnMessage(t *testing.T) {
+	manager := &WhatsAppManager{}
+	target := types.NewJID("5511999999999", types.DefaultUserServer)
+	fromMe := false
+
+	_, err := manager.buildOutgoingMessage(context.Background(), nil, target, ChatMessage{
+		MessageKey: &MessageKey{
+			RemoteJID: "5511999999999@s.whatsapp.net",
+			FromMe:    &fromMe,
+			ID:        "original-wa-id",
+		},
+		Content: map[string]any{
+			"type": MessageTypeText,
+			"version": []any{map[string]any{
+				"type":    MessageTypeText,
+				"message": "texto 2",
+				"date":    "2026-04-25T17:01:00Z",
+			}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "non-own message") {
+		t.Fatalf("expected non-own edit error, got %v", err)
+	}
+}
+
+func TestChatMessageClaimIDPrefersHashForEdits(t *testing.T) {
+	got := chatMessageClaimID(ChatMessage{MessageID: "same-message-id", Hash: "edit-hash"})
+	if got != "hash:edit-hash" {
+		t.Fatalf("expected hash claim id, got %q", got)
+	}
+
+	got = chatMessageClaimID(ChatMessage{MessageID: "message-id"})
+	if got != "message:message-id" {
+		t.Fatalf("expected message claim id, got %q", got)
+	}
+}
+
 func TestBuildOutgoingTextWithLinkPreview(t *testing.T) {
 	manager := &WhatsAppManager{}
 	target := types.NewJID("5511999999999", types.DefaultUserServer)

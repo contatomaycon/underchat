@@ -217,7 +217,7 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) error
 	if err != nil {
 		return nil
 	}
-	if ok := w.claimMessage(ctx, data.MessageID); !ok {
+	if ok := w.claimMessage(ctx, chatMessageClaimID(data)); !ok {
 		return nil
 	}
 	result, err := w.whatsapp.SendChatMessage(ctx, data)
@@ -473,6 +473,16 @@ func (w *Worker) claimMessage(ctx context.Context, messageID string) bool {
 		return true
 	}
 	return acquired
+}
+
+func chatMessageClaimID(data ChatMessage) string {
+	if hash := strings.TrimSpace(data.Hash); hash != "" {
+		return "hash:" + hash
+	}
+	if messageID := strings.TrimSpace(data.MessageID); messageID != "" {
+		return "message:" + messageID
+	}
+	return ""
 }
 
 func (w *Worker) markSendAsNotSent(ctx context.Context, messageID, chatID, accountID string, err error) error {
