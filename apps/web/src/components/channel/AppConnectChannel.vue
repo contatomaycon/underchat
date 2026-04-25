@@ -492,91 +492,21 @@ onUnmounted(() => {
             </VCardText>
           </div>
 
-          <div v-else-if="showQrSkeleton" class="qrcode-skeleton-wrapper">
+          <div v-else-if="showQrSkeleton" class="connection-pending-wrapper">
             <VCardText class="d-flex justify-center">
-              <div class="qrcode-skeleton qrcode-skeleton--shimmer">
-                <svg
-                  viewBox="0 0 21 21"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  class="qrcode-skeleton__grid"
+              <div class="connection-pending">
+                <VProgressCircular
+                  indeterminate
+                  color="primary"
+                  size="104"
+                  width="4"
                 >
-                  <rect
-                    width="21"
-                    height="21"
-                    fill="currentColor"
-                    opacity="0.08"
+                  <VIcon
+                    icon="tabler-brand-whatsapp"
+                    color="primary"
+                    size="52"
                   />
-                  <g fill="currentColor" opacity="0.2">
-                    <rect x="0" y="0" width="7" height="7" />
-                    <rect
-                      x="1"
-                      y="1"
-                      width="5"
-                      height="5"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="0.5"
-                      opacity="0.4"
-                    />
-                    <rect x="2" y="2" width="3" height="3" />
-                    <rect x="14" y="0" width="7" height="7" />
-                    <rect
-                      x="15"
-                      y="1"
-                      width="5"
-                      height="5"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="0.5"
-                      opacity="0.4"
-                    />
-                    <rect x="16" y="2" width="3" height="3" />
-                    <rect x="0" y="14" width="7" height="7" />
-                    <rect
-                      x="1"
-                      y="15"
-                      width="5"
-                      height="5"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="0.5"
-                      opacity="0.4"
-                    />
-                    <rect x="2" y="16" width="3" height="3" />
-                  </g>
-                  <g fill="currentColor" opacity="0.15">
-                    <rect x="8" y="0" width="1" height="1" />
-                    <rect x="10" y="0" width="1" height="1" />
-                    <rect x="12" y="0" width="1" height="1" />
-                    <rect x="8" y="2" width="1" height="1" />
-                    <rect x="12" y="2" width="1" height="1" />
-                    <rect x="0" y="8" width="1" height="1" />
-                    <rect x="2" y="8" width="1" height="1" />
-                    <rect x="4" y="8" width="1" height="1" />
-                    <rect x="8" y="8" width="1" height="1" />
-                    <rect x="10" y="8" width="1" height="1" />
-                    <rect x="12" y="8" width="1" height="1" />
-                    <rect x="14" y="8" width="1" height="1" />
-                    <rect x="16" y="8" width="1" height="1" />
-                    <rect x="18" y="8" width="1" height="1" />
-                    <rect x="20" y="8" width="1" height="1" />
-                    <rect x="8" y="10" width="1" height="1" />
-                    <rect x="10" y="10" width="1" height="1" />
-                    <rect x="12" y="10" width="1" height="1" />
-                    <rect x="8" y="12" width="1" height="1" />
-                    <rect x="10" y="12" width="1" height="1" />
-                    <rect x="12" y="12" width="1" height="1" />
-                    <rect x="14" y="14" width="1" height="1" />
-                    <rect x="16" y="14" width="1" height="1" />
-                    <rect x="14" y="16" width="1" height="1" />
-                    <rect x="16" y="16" width="1" height="1" />
-                    <rect x="18" y="18" width="1" height="1" />
-                    <rect x="20" y="18" width="1" height="1" />
-                    <rect x="18" y="20" width="1" height="1" />
-                    <rect x="20" y="20" width="1" height="1" />
-                  </g>
-                </svg>
+                </VProgressCircular>
               </div>
             </VCardText>
             <VCardText class="text-center">
@@ -970,39 +900,20 @@ onUnmounted(() => {
 </template>
 
 <style lang="scss" scoped>
-.qrcode-skeleton {
-  width: 240px;
-  height: 240px;
-  padding: 12px;
-  border-radius: 8px;
-  background-color: rgb(var(--v-theme-surface));
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  color: rgb(var(--v-theme-on-surface));
-
-  .qrcode-skeleton__grid {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-
-  &--shimmer .qrcode-skeleton__grid {
-    animation: qrcode-skeleton-shimmer 1.5s ease-in-out infinite;
-  }
-}
-
-.qrcode-skeleton-wrapper {
+.connection-pending-wrapper {
   min-height: 0;
   overflow: hidden;
 }
 
-@keyframes qrcode-skeleton-shimmer {
-  0%,
-  100% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
+.connection-pending {
+  display: grid;
+  inline-size: 160px;
+  block-size: 160px;
+  place-items: center;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+  background-color: rgb(var(--v-theme-surface));
+  box-shadow: inset 0 0 0 12px rgba(var(--v-theme-primary), 0.06);
 }
 
 .avatar-center {
