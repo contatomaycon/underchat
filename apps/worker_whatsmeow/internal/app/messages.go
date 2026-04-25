@@ -1,10 +1,15 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif"
+	"image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
 	"mime"
@@ -15,6 +20,7 @@ import (
 	"time"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -101,29 +107,92 @@ func (m *WhatsAppManager) UpdateProfileInfo(ctx context.Context, data ProfileInf
 		return fmt.Errorf("client is not initialized")
 	}
 	if strings.TrimSpace(data.Name) != "" {
-		return UnsupportedFeatureError{Feature: "profile_name"}
+		name := strings.TrimSpace(data.Name)
+		log.Printf("whatsmeow profile info updating name worker_id=%s", m.cfg.WorkerID)
+		if err := client.SendAppState(ctx, appstate.BuildSettingPushName(name)); err != nil {
+			return fmt.Errorf("update profile name: %w", err)
+		}
+		client.Store.PushName = name
+		if err := client.Store.Save(ctx); err != nil {
+			log.Printf("whatsmeow profile info local push name save failed worker_id=%s error=%v", m.cfg.WorkerID, err)
+		}
+		log.Printf("whatsmeow profile info name updated worker_id=%s", m.cfg.WorkerID)
 	}
 	if strings.TrimSpace(data.Message) != "" {
+		log.Printf("whatsmeow profile info updating status worker_id=%s", m.cfg.WorkerID)
 		if err := client.SetStatusMessage(ctx, data.Message); err != nil {
-			return err
+			return fmt.Errorf("update profile status: %w", err)
 		}
+		log.Printf("whatsmeow profile info status updated worker_id=%s", m.cfg.WorkerID)
 	}
 	if data.PhotoPresent {
 		if client.Store.ID == nil {
 			return fmt.Errorf("own profile jid is unavailable")
 		}
 		if data.PhotoRemove {
-			_, err := client.SetGroupPhoto(ctx, *client.Store.ID, nil)
+			log.Printf("whatsmeow profile info removing picture worker_id=%s jid=%s", m.cfg.WorkerID, client.Store.ID.String())
+			_, err := client.SetProfilePhoto(ctx, nil)
+			if err != nil {
+				return fmt.Errorf("remove profile picture: %w", err)
+			}
+			log.Printf("whatsmeow profile info picture removed worker_id=%s", m.cfg.WorkerID)
 			return err
 		}
-		body, _, _, err := downloadURL(ctx, data.Photo)
+		log.Printf("whatsmeow profile info updating picture worker_id=%s jid=%s", m.cfg.WorkerID, client.Store.ID.String())
+		body, contentType, _, err := downloadURL(ctx, data.Photo)
 		if err != nil {
-			return err
+			return fmt.Errorf("download profile picture: %w", err)
 		}
-		_, err = client.SetGroupPhoto(ctx, *client.Store.ID, body)
-		return err
+		avatar, err := normalizeProfilePhotoJPEG(body, contentType)
+		if err != nil {
+			return fmt.Errorf("normalize profile picture: %w", err)
+		}
+		pictureID, err := client.SetProfilePhoto(ctx, avatar)
+		if err != nil {
+			return fmt.Errorf("update profile picture: %w", err)
+		}
+		log.Printf("whatsmeow profile info picture updated worker_id=%s picture_id=%s bytes=%d", m.cfg.WorkerID, pictureID, len(avatar))
 	}
 	return nil
+}
+
+func normalizeProfilePhotoJPEG(body []byte, contentType string) ([]byte, error) {
+	if len(body) == 0 {
+		return nil, fmt.Errorf("profile picture is empty")
+	}
+	img, format, err := image.Decode(bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width <= 0 || height <= 0 {
+		return nil, fmt.Errorf("profile picture has invalid dimensions")
+	}
+
+	side := width
+	if height < side {
+		side = height
+	}
+	cropX := bounds.Min.X + (width-side)/2
+	cropY := bounds.Min.Y + (height-side)/2
+	size := 640
+	dst := image.NewRGBA(image.Rect(0, 0, size, size))
+	for y := 0; y < size; y++ {
+		srcY := cropY + y*side/size
+		for x := 0; x < size; x++ {
+			srcX := cropX + x*side/size
+			dst.Set(x, y, img.At(srcX, srcY))
+		}
+	}
+
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: 90}); err != nil {
+		return nil, err
+	}
+	log.Printf("whatsmeow profile picture normalized format=%s content_type=%s input_bytes=%d output_bytes=%d size=%d", format, contentType, len(body), out.Len(), size)
+	return out.Bytes(), nil
 }
 
 func (m *WhatsAppManager) buildProfileStatusMessage(ctx context.Context, client *whatsmeow.Client, data ProfileStatusMessage) (*waE2E.Message, error) {

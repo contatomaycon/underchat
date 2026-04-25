@@ -320,6 +320,38 @@ func (cli *Client) SetGroupPhoto(ctx context.Context, jid types.JID, avatar []by
 	return pictureID, nil
 }
 
+// SetProfilePhoto updates the current user's profile picture on WhatsApp.
+// The avatar should be a JPEG photo. The bytes can be nil to remove the photo.
+func (cli *Client) SetProfilePhoto(ctx context.Context, avatar []byte) (string, error) {
+	var content interface{}
+	if avatar != nil {
+		content = []waBinary.Node{{
+			Tag:     "picture",
+			Attrs:   waBinary.Attrs{"type": "image"},
+			Content: avatar,
+		}}
+	}
+	resp, err := cli.sendIQ(ctx, infoQuery{
+		Namespace: "w:profile:picture",
+		Type:      iqSet,
+		To:        types.ServerJID,
+		Content:   content,
+	})
+	if errors.Is(err, ErrIQNotAcceptable) {
+		return "", wrapIQError(ErrInvalidImageFormat, err)
+	} else if err != nil {
+		return "", err
+	}
+	if avatar == nil {
+		return "remove", nil
+	}
+	pictureID, ok := resp.GetChildByTag("picture").Attrs["id"].(string)
+	if !ok {
+		return "", fmt.Errorf("didn't find picture ID in response")
+	}
+	return pictureID, nil
+}
+
 // SetGroupName updates the name (subject) of the given group on WhatsApp.
 func (cli *Client) SetGroupName(ctx context.Context, jid types.JID, name string) error {
 	_, err := cli.sendGroupIQ(ctx, iqSet, jid, waBinary.Node{

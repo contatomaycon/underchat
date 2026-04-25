@@ -1,8 +1,12 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"strings"
 	"testing"
 	"time"
@@ -763,5 +767,44 @@ func TestMapsProfileStatusAndProfileInfoPayloads(t *testing.T) {
 	}
 	if !profileInfo.PhotoPresent || !profileInfo.PhotoRemove {
 		t.Fatalf("expected profile photo removal flags %#v", profileInfo)
+	}
+
+	profileInfo, ok, err = mapToProfileInfoMessage([]byte(`{"worker_id":"w1","account_id":"a1","name":"Maycon","message":"about","photo":"https://cdn.test/photo.png"}`))
+	if err != nil || !ok {
+		t.Fatalf("expected profile info update payload ok=%v err=%v", ok, err)
+	}
+	if profileInfo.Name != "Maycon" || profileInfo.Message != "about" || profileInfo.Photo != "https://cdn.test/photo.png" {
+		t.Fatalf("unexpected profile info payload %#v", profileInfo)
+	}
+	if !profileInfo.PhotoPresent || profileInfo.PhotoRemove {
+		t.Fatalf("unexpected profile photo flags %#v", profileInfo)
+	}
+}
+
+func TestNormalizeProfilePhotoJPEG(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 800, 600))
+	for y := 0; y < 600; y++ {
+		for x := 0; x < 800; x++ {
+			src.Set(x, y, color.RGBA{R: uint8(x % 255), G: uint8(y % 255), B: 80, A: 255})
+		}
+	}
+	var input bytes.Buffer
+	if err := jpeg.Encode(&input, src, &jpeg.Options{Quality: 85}); err != nil {
+		t.Fatalf("encode source jpeg: %v", err)
+	}
+
+	output, err := normalizeProfilePhotoJPEG(input.Bytes(), "image/jpeg")
+	if err != nil {
+		t.Fatalf("normalize profile photo: %v", err)
+	}
+	decoded, format, err := image.Decode(bytes.NewReader(output))
+	if err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if format != "jpeg" {
+		t.Fatalf("expected jpeg, got %s", format)
+	}
+	if decoded.Bounds().Dx() != 640 || decoded.Bounds().Dy() != 640 {
+		t.Fatalf("expected 640x640, got %dx%d", decoded.Bounds().Dx(), decoded.Bounds().Dy())
 	}
 }
