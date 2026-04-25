@@ -123,6 +123,7 @@ func (m *WhatsAppManager) Bootstrap(ctx context.Context) {
 		m.status = "connected"
 		m.code = CodeConnectionEstablished
 		m.mu.Unlock()
+		go m.markPresenceAvailable(context.Background(), "bootstrap-already-authenticated")
 		m.publishState(context.Background(), "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
 		return
 	}
@@ -317,6 +318,7 @@ func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) error {
 		log.Printf("whatsmeow qrcode request already authenticated worker_id=%s", m.cfg.WorkerID)
 		m.clearFreshLoginFallback()
 		m.clearLoginArtifacts()
+		go m.markPresenceAvailable(context.Background(), "qrcode-already-authenticated")
 		m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
 		return nil
 	}
@@ -396,6 +398,7 @@ func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone str
 		log.Printf("whatsmeow phone pairing request already authenticated worker_id=%s", m.cfg.WorkerID)
 		m.clearFreshLoginFallback()
 		m.clearLoginArtifacts()
+		go m.markPresenceAvailable(context.Background(), "phone-already-authenticated")
 		m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
 		return nil
 	}
@@ -471,6 +474,7 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.status = "connected"
 		m.code = CodeConnectionEstablished
 		m.mu.Unlock()
+		go m.markPresenceAvailable(context.Background(), "connected-event")
 		m.publishState(context.Background(), "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", false)
 	case *events.Disconnected:
 		log.Printf("whatsmeow event disconnected worker_id=%s", m.cfg.WorkerID)
@@ -808,17 +812,94 @@ func (m *WhatsAppManager) handleCallOffer(ctx context.Context, callFrom types.JI
 	}
 }
 
-func (m *WhatsAppManager) publishPresence(ctx context.Context, evt *events.ChatPresence) {
-	payload := map[string]any{
-		"worker_id":  m.cfg.WorkerID,
-		"account_id": m.cfg.AccountID,
-		"chat_jid":   evt.Chat.String(),
-		"sender_jid": evt.Sender.String(),
-		"state":      string(evt.State),
-		"media":      string(evt.Media),
-		"provider":   "whatsmeow",
+func (m *WhatsAppManager) markPresenceAvailable(ctx context.Context, reason string) {
+	client := m.getClient()
+	if client == nil {
+		log.Printf("whatsmeow presence available skipped worker_id=%s reason=%s client_nil=true", m.cfg.WorkerID, reason)
+		return
 	}
-	_ = m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), payload)
+	if client.Store != nil && strings.TrimSpace(client.Store.PushName) == "" {
+		client.Store.PushName = "Underchat"
+		log.Printf("whatsmeow presence available using fallback push name worker_id=%s reason=%s", m.cfg.WorkerID, reason)
+	}
+
+	presenceCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := client.SendPresence(presenceCtx, types.PresenceAvailable); err != nil {
+		log.Printf("whatsmeow presence available failed worker_id=%s reason=%s error=%v", m.cfg.WorkerID, reason, err)
+		return
+	}
+	log.Printf("whatsmeow presence available sent worker_id=%s reason=%s", m.cfg.WorkerID, reason)
+}
+
+func chatPresencePayload(cfg Config, evt *events.ChatPresence) (map[string]any, bool) {
+	if evt == nil {
+		return nil, false
+	}
+
+	jid := evt.Chat.String()
+	if jid == "" {
+		jid = evt.Sender.String()
+	}
+	if jid == "" {
+		return nil, false
+	}
+
+	typingState := ""
+	isTyping := false
+	isRecording := false
+
+	switch evt.State {
+	case types.ChatPresenceComposing:
+		if evt.Media == types.ChatPresenceMediaAudio {
+			typingState = "recording"
+			isRecording = true
+		} else {
+			typingState = "typing"
+			isTyping = true
+		}
+	case types.ChatPresencePaused:
+		typingState = "available"
+	default:
+		return nil, false
+	}
+
+	payload := map[string]any{
+		"type":         "typing",
+		"jid":          jid,
+		"is_typing":    isTyping,
+		"is_recording": isRecording,
+		"typing_state": typingState,
+		"account_id":   cfg.AccountID,
+		"worker_id":    cfg.WorkerID,
+		"provider":     "whatsmeow",
+		"chat_jid":     evt.Chat.String(),
+		"sender_jid":   evt.Sender.String(),
+		"state":        string(evt.State),
+		"media":        string(evt.Media),
+	}
+	if alt := evt.SenderAlt.String(); alt != "" {
+		payload["sender_jid_alt"] = alt
+	}
+	if alt := evt.RecipientAlt.String(); alt != "" {
+		payload["recipient_jid_alt"] = alt
+	}
+	return payload, true
+}
+
+func (m *WhatsAppManager) publishPresence(ctx context.Context, evt *events.ChatPresence) {
+	payload, ok := chatPresencePayload(m.cfg, evt)
+	if !ok {
+		if evt != nil {
+			log.Printf("whatsmeow chat presence skipped worker_id=%s chat=%s sender=%s state=%s media=%s", m.cfg.WorkerID, evt.Chat.String(), evt.Sender.String(), evt.State, evt.Media)
+		}
+		return
+	}
+	log.Printf("whatsmeow chat presence received worker_id=%s jid=%s state=%s media=%s typing_state=%s", m.cfg.WorkerID, payload["jid"], payload["state"], payload["media"], payload["typing_state"])
+	if m.centrifugo == nil {
+		return
+	}
+	_ = m.centrifugo.Publish(ctx, chatAccountCentrifugo(m.cfg.AccountID), payload)
 }
 
 func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.Message) (*UpsertMessage, error) {

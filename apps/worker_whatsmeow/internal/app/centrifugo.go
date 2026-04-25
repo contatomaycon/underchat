@@ -66,6 +66,10 @@ func workerCentrifugoQueue(accountID string) string {
 	return "worker:account#" + accountID
 }
 
+func chatAccountCentrifugo(accountID string) string {
+	return "chat:account#" + accountID
+}
+
 func channelsConfigCentrifugo() string {
 	return "channels:config"
 }
