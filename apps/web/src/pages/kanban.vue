@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { refDebounced } from '@vueuse/core';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
@@ -8,6 +9,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { useChatSocket } from '@/composables/useChatSocket';
 import ChatQueue from '@/components/chat/ChatQueue.vue';
 import type { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
+import AppSelectSearch from '@/components/AppSelectSearch.vue';
 
 definePage({
   meta: {
@@ -28,8 +30,19 @@ const isInitialLoading = ref(true);
 const isManualOnlyKanbanMode = ref(false);
 const isBrowserFullscreen = ref(false);
 const isApiFullscreen = ref(false);
+const isLoadingKanbanChannels = ref(false);
+const isKanbanFiltersInitialized = ref(false);
+const isApplyingKanbanFilters = ref(false);
+const hasPendingKanbanReload = ref(false);
+const selectedKanbanChannelId = ref('__all__');
+const kanbanFilterName = ref('');
+const kanbanFilterPhone = ref('');
+const debouncedKanbanFilterName = refDebounced(kanbanFilterName, 400);
+const debouncedKanbanFilterPhone = refDebounced(kanbanFilterPhone, 400);
+const kanbanChannelOptions = ref<Array<{ value: string; title: string }>>([]);
 
 const ONLY_KANBAN_MODE_CLASS = 'kanban-only-mode';
+const ALL_KANBAN_CHANNELS_OPTION = '__all__';
 
 const INITIAL_SKELETON_ITEMS = 6;
 const LOAD_MORE_SKELETON_ITEMS = 3;
@@ -75,6 +88,100 @@ const columnScrollRefs = ref<
   in_chat: null,
   closed: null,
 });
+
+const hasActiveKanbanFilters = computed(() => {
+  return Boolean(
+    selectedKanbanChannelId.value !== ALL_KANBAN_CHANNELS_OPTION ||
+      kanbanFilterName.value.trim() ||
+      kanbanFilterPhone.value.trim()
+  );
+});
+
+const buildKanbanFilters = () => {
+  const filterName = kanbanFilterName.value.trim();
+  const filterPhone = kanbanFilterPhone.value.trim();
+  const filters: {
+    filter_worker_id?: string | null;
+    filter_name?: string | null;
+    filter_phone?: string | null;
+  } = {};
+
+  if (selectedKanbanChannelId.value !== ALL_KANBAN_CHANNELS_OPTION) {
+    filters.filter_worker_id = selectedKanbanChannelId.value;
+  }
+
+  if (filterName) {
+    filters.filter_name = filterName;
+  }
+
+  if (filterPhone) {
+    filters.filter_phone = filterPhone;
+  }
+
+  return filters;
+};
+
+const hydrateKanbanFiltersFromStore = () => {
+  const storedFilters = chatStore.getKanbanFilters();
+  selectedKanbanChannelId.value =
+    storedFilters.filter_worker_id ?? ALL_KANBAN_CHANNELS_OPTION;
+  kanbanFilterName.value = storedFilters.filter_name ?? '';
+  kanbanFilterPhone.value = storedFilters.filter_phone ?? '';
+};
+
+const loadKanbanChannels = async () => {
+  if (isLoadingKanbanChannels.value) {
+    return;
+  }
+
+  isLoadingKanbanChannels.value = true;
+  try {
+    const workers = await chatStore.listChatWorkers();
+    const allOption = {
+      value: ALL_KANBAN_CHANNELS_OPTION,
+      title: chatStore.i18n.global.t('all', 'Todos'),
+    };
+
+    const workerOptions = (workers ?? []).map((worker) => ({
+      value: worker.id,
+      title: worker.name,
+    }));
+
+    kanbanChannelOptions.value = [allOption, ...workerOptions];
+  } catch {
+    kanbanChannelOptions.value = [
+      {
+        value: ALL_KANBAN_CHANNELS_OPTION,
+        title: chatStore.i18n.global.t('all', 'Todos'),
+      },
+    ];
+  } finally {
+    isLoadingKanbanChannels.value = false;
+  }
+};
+
+const reloadKanbanWithCurrentFilters = async () => {
+  if (isApplyingKanbanFilters.value) {
+    hasPendingKanbanReload.value = true;
+    return;
+  }
+
+  isApplyingKanbanFilters.value = true;
+  try {
+    do {
+      hasPendingKanbanReload.value = false;
+      await chatStore.loadKanbanInitial(buildKanbanFilters());
+    } while (hasPendingKanbanReload.value);
+  } finally {
+    isApplyingKanbanFilters.value = false;
+  }
+};
+
+const clearKanbanFilters = () => {
+  selectedKanbanChannelId.value = ALL_KANBAN_CHANNELS_OPTION;
+  kanbanFilterName.value = '';
+  kanbanFilterPhone.value = '';
+};
 
 const hasMore = (column: KanbanColumnKey) => {
   const pagingsKey = KANBAN_COLUMNS.find((c) => c.key === column)!.pagingsKey;
@@ -232,6 +339,21 @@ watch(isOnlyKanbanMode, () => {
   syncOnlyKanbanBodyClass();
 });
 
+watch(
+  [
+    selectedKanbanChannelId,
+    debouncedKanbanFilterName,
+    debouncedKanbanFilterPhone,
+  ],
+  () => {
+    if (!isKanbanFiltersInitialized.value) {
+      return;
+    }
+
+    void reloadKanbanWithCurrentFilters();
+  }
+);
+
 onMounted(async () => {
   window.addEventListener('keydown', handleWindowKeydown);
   window.addEventListener('resize', handleWindowResize);
@@ -239,12 +361,15 @@ onMounted(async () => {
   detectBrowserFullscreen();
   syncApiFullscreenState();
   syncOnlyKanbanBodyClass();
+  hydrateKanbanFiltersFromStore();
+  await loadKanbanChannels();
   if (!chatSocket.isInitialized()) {
     await chatSocket.initializeSocket();
   }
   try {
-    await chatStore.loadKanbanInitial();
+    await reloadKanbanWithCurrentFilters();
   } finally {
+    isKanbanFiltersInitialized.value = true;
     isInitialLoading.value = false;
   }
 });
@@ -283,6 +408,55 @@ onUnmounted(() => {
           size="20"
         />
       </VBtn>
+    </div>
+    <VDivider />
+    <div class="kanban-filters px-4 py-3">
+      <VRow dense class="kanban-filters-row">
+        <VCol cols="12" md="4">
+          <VLabel class="text-body-2 mb-1">{{ $t('filter_by_channel') }}</VLabel>
+          <AppSelectSearch
+            v-model="selectedKanbanChannelId"
+            :items="kanbanChannelOptions"
+            :placeholder="$t('select_channel_filter')"
+            :loading="isLoadingKanbanChannels"
+            item-value="value"
+            item-title="title"
+            class="kanban-filter-field"
+          />
+        </VCol>
+
+        <VCol cols="12" md="3">
+          <VLabel class="text-body-2 mb-1">{{ $t('filter_by_name') }}</VLabel>
+          <AppTextField
+            v-model="kanbanFilterName"
+            :placeholder="$t('filter_by_name_placeholder')"
+            clearable
+            class="kanban-filter-field"
+          />
+        </VCol>
+
+        <VCol cols="12" md="3">
+          <VLabel class="text-body-2 mb-1">{{ $t('filter_by_phone') }}</VLabel>
+          <AppTextField
+            v-model="kanbanFilterPhone"
+            :placeholder="$t('filter_by_phone_placeholder')"
+            clearable
+            class="kanban-filter-field"
+          />
+        </VCol>
+
+        <VCol cols="12" md="2" class="d-flex align-end">
+          <VBtn
+            block
+            variant="tonal"
+            color="secondary"
+            :disabled="!hasActiveKanbanFilters"
+            @click="clearKanbanFilters"
+          >
+            {{ $t('clear_filters', 'Limpar filtros') }}
+          </VBtn>
+        </VCol>
+      </VRow>
     </div>
     <VDivider />
     <div
@@ -392,6 +566,23 @@ onUnmounted(() => {
 
 .kanban-header h1 {
   margin: 0;
+}
+
+.kanban-filters {
+  background: rgba(248, 250, 252, 0.65);
+  border-bottom: 1px solid var(--kanban-surface-border);
+}
+
+:global(.v-theme--dark .kanban-page .kanban-filters) {
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.kanban-filters-row {
+  align-items: end;
+}
+
+.kanban-filter-field {
+  min-height: 40px;
 }
 
 .kanban-fullscreen-btn {

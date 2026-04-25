@@ -40,11 +40,13 @@ const MAX_MESSAGE_BATCH_SIZE = 500;
 const MAX_CHAT_UPDATE_BATCH_SIZE = 200;
 const MAX_PENDING_CHATS = 100;
 const MAX_PENDING_MESSAGES_PER_CHAT = 200;
+const KANBAN_FILTERED_REFRESH_DEBOUNCE_MS = 700;
 
 let messageBatchBuffer: IChatMessage[] = [];
 let messageBatchTimer: ReturnType<typeof setTimeout> | null = null;
 let chatUpdateBatchBuffer: IChat[] = [];
 let chatUpdateBatchTimer: ReturnType<typeof setTimeout> | null = null;
+let kanbanFilteredRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let visibilityHandler: (() => void) | null = null;
 
 const telemetry = getCentrifugoTelemetry();
@@ -160,6 +162,29 @@ const createChatSocket = () => {
     syncFromCentrifugoHistory();
   };
 
+  const scheduleKanbanFilteredRefresh = () => {
+    if (route.name !== 'kanban' || !chatStore.hasActiveKanbanFilters()) {
+      return;
+    }
+
+    if (kanbanFilteredRefreshTimer) {
+      clearTimeout(kanbanFilteredRefreshTimer);
+      kanbanFilteredRefreshTimer = null;
+    }
+
+    kanbanFilteredRefreshTimer = setTimeout(() => {
+      kanbanFilteredRefreshTimer = null;
+
+      if (route.name !== 'kanban' || !chatStore.hasActiveKanbanFilters()) {
+        return;
+      }
+
+      void chatStore.loadKanbanInitial().catch((error: unknown) => {
+        telemetry.trackError('kanban_filtered_refresh', error);
+      });
+    }, KANBAN_FILTERED_REFRESH_DEBOUNCE_MS);
+  };
+
   /**
    * BUG 6 FIX: Evict oldest entries from pending maps to prevent unbounded memory growth.
    */
@@ -248,7 +273,7 @@ const createChatSocket = () => {
     }
   };
 
-  const flushChatUpdateBatch = () => {
+  const flushChatUpdateBatch = (shouldScheduleKanbanRefresh = true) => {
     if (chatUpdateBatchBuffer.length === 0) return;
 
     const updates = [...chatUpdateBatchBuffer];
@@ -302,6 +327,10 @@ const createChatSocket = () => {
       const pendingUpdates = pendingChatUpdates.value.get(chatId) ?? [];
       pendingUpdates.push(chatData);
       evictPendingChatUpdates(chatId, pendingUpdates);
+    }
+
+    if (shouldScheduleKanbanRefresh) {
+      scheduleKanbanFilteredRefresh();
     }
   };
 
@@ -360,8 +389,12 @@ const createChatSocket = () => {
       clearTimeout(chatUpdateBatchTimer);
       chatUpdateBatchTimer = null;
     }
+    if (kanbanFilteredRefreshTimer) {
+      clearTimeout(kanbanFilteredRefreshTimer);
+      kanbanFilteredRefreshTimer = null;
+    }
     flushMessageBatch();
-    flushChatUpdateBatch();
+    flushChatUpdateBatch(false);
   };
 
   const removeVisibilityHandler = () => {
@@ -460,6 +493,7 @@ const createChatSocket = () => {
               chatStore.activeChat?.chat_id === data.chat_id;
 
             chatStore.addChat(data);
+            scheduleKanbanFilteredRefresh();
 
             if (
               isActiveChat &&
