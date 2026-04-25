@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -26,6 +28,7 @@ func NewCentrifugoClient(cfg Config) *CentrifugoClient {
 
 func (c *CentrifugoClient) Publish(ctx context.Context, channel string, data any) error {
 	if c.url == "" || c.apiKey == "" || channel == "" {
+		log.Printf("centrifugo publish skipped configured=%t channel_set=%t", c.url != "" && c.apiKey != "", channel != "")
 		return nil
 	}
 
@@ -53,7 +56,8 @@ func (c *CentrifugoClient) Publish(ctx context.Context, channel string, data any
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("centrifugo publish failed: %s", resp.Status)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("centrifugo publish failed: %s body=%s", resp.Status, strings.TrimSpace(string(body)))
 	}
 	return nil
 }

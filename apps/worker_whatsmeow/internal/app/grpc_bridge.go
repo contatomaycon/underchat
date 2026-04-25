@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
@@ -45,6 +46,7 @@ func (s *WorkerConnectionGRPCServer) Start() error {
 			fmt.Printf("worker connection grpc server stopped: %v\n", err)
 		}
 	}()
+	log.Printf("worker connection grpc server listening addr=%s", s.addr)
 	return nil
 }
 
@@ -66,9 +68,19 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		PhoneConnection: dynamicString(msg, "phone_connection"),
 		RemoveSession:   dynamicBool(msg, "remove_session"),
 	}
+	log.Printf(
+		"grpc RequestConnection received worker_id=%s status=%s type=%s remove_session=%t phone_connection_set=%t",
+		req.WorkerID,
+		req.Status,
+		req.Type,
+		req.RemoveSession,
+		req.PhoneConnection != "",
+	)
 	if err := s.handler.RequestConnection(ctx, req); err != nil {
+		log.Printf("grpc RequestConnection failed worker_id=%s type=%s error=%v", req.WorkerID, req.Type, err)
 		return nil, err
 	}
+	log.Printf("grpc RequestConnection completed worker_id=%s type=%s", req.WorkerID, req.Type)
 	return newDynamicMessage(descs.workerConnectionResponse), nil
 }
 
@@ -84,8 +96,10 @@ func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dyn
 		Phone:     dynamicString(msg, "phone"),
 		PhoneDDI:  dynamicString(msg, "phone_ddi"),
 	}
+	log.Printf("grpc ValidatePhone received worker_id=%s request_id=%s", req.WorkerID, req.RequestID)
 	resp, err := s.handler.ValidatePhone(ctx, req)
 	if err != nil {
+		log.Printf("grpc ValidatePhone failed worker_id=%s request_id=%s error=%v", req.WorkerID, req.RequestID, err)
 		return nil, err
 	}
 	out := newDynamicMessage(descs.connectionPhoneValidationResponse)

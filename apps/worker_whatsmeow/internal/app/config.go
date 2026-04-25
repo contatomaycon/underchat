@@ -56,8 +56,9 @@ type Config struct {
 	ProxyUsername string
 	ProxyPassword string
 
-	SendTimeout       time.Duration
-	KafkaPollInterval time.Duration
+	SendTimeout            time.Duration
+	WhatsAppConnectTimeout time.Duration
+	KafkaPollInterval      time.Duration
 }
 
 func LoadConfig() (Config, error) {
@@ -100,7 +101,11 @@ func LoadConfig() (Config, error) {
 		ProxyUsername:        os.Getenv("PROXY_USERNAME"),
 		ProxyPassword:        os.Getenv("PROXY_PASSWORD"),
 		SendTimeout:          envDurationDefault("WORKER_SEND_TIMEOUT", 90*time.Second),
-		KafkaPollInterval:    250 * time.Millisecond,
+		WhatsAppConnectTimeout: envDurationDefault(
+			"WORKER_WHATSAPP_CONNECT_TIMEOUT",
+			45*time.Second,
+		),
+		KafkaPollInterval: 250 * time.Millisecond,
 	}
 
 	if cfg.WorkerID == "" {

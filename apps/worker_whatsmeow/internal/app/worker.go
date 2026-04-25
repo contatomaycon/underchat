@@ -34,10 +34,12 @@ type Worker struct {
 }
 
 func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
+	log.Printf("initializing kafka client brokers=%s protocol=%s", strings.Join(cfg.KafkaBrokers, ","), cfg.KafkaProtocol)
 	kafkaClient, err := NewKafkaClient(cfg)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("initializing redis client addr=%s:%d", cfg.RedisHost, cfg.RedisPort)
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisHost + ":" + strconv.Itoa(cfg.RedisPort),
 		Password: cfg.RedisPassword,
@@ -72,6 +74,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
 
+	log.Printf("worker run starting worker_id=%s", w.cfg.WorkerID)
 	if err := w.startHTTP(); err != nil {
 		return err
 	}
@@ -82,8 +85,10 @@ func (w *Worker) Run(ctx context.Context) error {
 		return err
 	}
 	w.whatsapp.Bootstrap(runCtx)
+	log.Printf("worker run ready worker_id=%s", w.cfg.WorkerID)
 
 	<-runCtx.Done()
+	log.Printf("worker run stopping worker_id=%s reason=%v", w.cfg.WorkerID, runCtx.Err())
 	return runCtx.Err()
 }
 
@@ -137,6 +142,7 @@ func (w *Worker) startHTTP() error {
 			log.Printf("http server stopped: %v", err)
 		}
 	}()
+	log.Printf("http server listening addr=%s", w.cfg.HTTPAddr)
 	return nil
 }
 
@@ -160,6 +166,8 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 	for _, topic := range topics {
 		if err := w.kafka.EnsureTopic(ctx, topic, 1, 2); err != nil {
 			log.Printf("failed to ensure kafka topic %s: %v", topic, err)
+		} else {
+			log.Printf("kafka topic ready topic=%s", topic)
 		}
 	}
 
@@ -180,6 +188,7 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 		if err := w.kafka.StartConsumer(ctx, consumer.topic, consumer.group, consumer.fn); err != nil {
 			return err
 		}
+		log.Printf("kafka consumer started topic=%s group=%s", consumer.topic, consumer.group)
 		time.Sleep(500 * time.Millisecond)
 	}
 	return nil
