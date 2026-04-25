@@ -27,6 +27,7 @@ type WhatsAppManager struct {
 	centrifugo *CentrifugoClient
 	balance    *BalanceGRPCClient
 	storage    *StorageClient
+	runtimeCtx context.Context
 
 	mu          sync.RWMutex
 	client      *whatsmeow.Client
@@ -50,6 +51,7 @@ func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, cen
 		centrifugo: centrifugo,
 		balance:    balance,
 		storage:    storage,
+		runtimeCtx: ctx,
 		status:     "initial",
 		code:       CodeInfo,
 	}
@@ -178,6 +180,13 @@ func (m *WhatsAppManager) ValidatePhone(ctx context.Context, req PhoneValidation
 	return resp, nil
 }
 
+func (m *WhatsAppManager) connectionContext() context.Context {
+	if m.runtimeCtx != nil {
+		return m.runtimeCtx
+	}
+	return context.Background()
+}
+
 func (m *WhatsAppManager) connectClient(ctx context.Context, client *whatsmeow.Client, stage string) error {
 	connectCtx := ctx
 	cancel := func() {}
@@ -208,6 +217,7 @@ func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) error {
 	if client == nil {
 		return fmt.Errorf("client is not initialized")
 	}
+	connectCtx := m.connectionContext()
 	if client.IsConnected() {
 		log.Printf("whatsmeow qrcode request already connected worker_id=%s", m.cfg.WorkerID)
 		m.clearFreshLoginFallback()
@@ -218,7 +228,7 @@ func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) error {
 		log.Printf("whatsmeow qrcode request using stored session worker_id=%s", m.cfg.WorkerID)
 		m.armFreshLoginFallback(freshLoginRequest{Type: "qrcode"})
 		m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
-		if err := m.connectClient(ctx, client, "qrcode-stored-session"); err != nil {
+		if err := m.connectClient(connectCtx, client, "qrcode-stored-session"); err != nil {
 			return m.handleStoredSessionConnectError(ctx, err)
 		}
 		return nil
@@ -226,13 +236,13 @@ func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) error {
 
 	log.Printf("whatsmeow qrcode request starting new login worker_id=%s", m.cfg.WorkerID)
 	m.clearFreshLoginFallback()
-	qrChan, err := client.GetQRChannel(ctx)
+	qrChan, err := client.GetQRChannel(connectCtx)
 	if err != nil {
 		log.Printf("whatsmeow GetQRChannel failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 		return err
 	}
 	m.publishState(ctx, "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", "", true)
-	if err := m.connectClient(ctx, client, "qrcode-new-login"); err != nil {
+	if err := m.connectClient(connectCtx, client, "qrcode-new-login"); err != nil {
 		return err
 	}
 
@@ -266,6 +276,7 @@ func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone str
 	if client == nil {
 		return fmt.Errorf("client is not initialized")
 	}
+	connectCtx := m.connectionContext()
 	if phone = digits(phone); phone == "" {
 		return fmt.Errorf("phone_connection is required")
 	}
@@ -278,7 +289,7 @@ func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone str
 	if client.Store.ID != nil {
 		log.Printf("whatsmeow phone pairing request using stored session worker_id=%s", m.cfg.WorkerID)
 		m.armFreshLoginFallback(freshLoginRequest{Type: "phone", Phone: phone})
-		if err := m.connectClient(ctx, client, "phone-stored-session"); err != nil {
+		if err := m.connectClient(connectCtx, client, "phone-stored-session"); err != nil {
 			return m.handleStoredSessionConnectError(ctx, err)
 		}
 		return nil
@@ -286,7 +297,7 @@ func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone str
 	m.clearFreshLoginFallback()
 	m.publishState(ctx, "connecting", CodeAwaitingPairingCode, WorkerStatusDisponible, "", "", true)
 	if !client.IsConnected() {
-		if err := m.connectClient(ctx, client, "phone-new-login"); err != nil {
+		if err := m.connectClient(connectCtx, client, "phone-new-login"); err != nil {
 			return err
 		}
 	}
