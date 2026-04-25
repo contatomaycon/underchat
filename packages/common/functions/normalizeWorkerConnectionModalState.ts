@@ -7,6 +7,7 @@ export type WorkerConnectionModalState =
   | 'starting'
   | 'qrPreparing'
   | 'qrReady'
+  | 'pairingInProgress'
   | 'connected'
   | 'loggingOut'
   | 'resetting'
@@ -61,6 +62,13 @@ export function normalizeWorkerConnectionModalState(
 
   if (context.isPhoneNumber && !context.phoneSent) {
     return 'phoneInput';
+  }
+
+  if (
+    code === ECodeMessage.pairingInProgress ||
+    code === ECodeMessage.newLoginAttempt
+  ) {
+    return 'pairingInProgress';
   }
 
   if (code === ECodeMessage.awaitingPairingCode) {

@@ -15,6 +15,7 @@ const (
 	CodeAwaitConnection       = 203
 	CodeAwaitingPairingCode   = 204
 	CodeLogoutInProgress      = 205
+	CodePairingInProgress     = 206
 	CodeLoggedOut             = 401
 	CodeConnectionLost        = 408
 	CodeConnectionClosed      = 428

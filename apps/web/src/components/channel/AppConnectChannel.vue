@@ -36,6 +36,8 @@ const channelId = toRef(props, 'channelId');
 const channelType = toRef(props, 'channelType');
 const accountId = toRef(props, 'accountId');
 
+const MIN_PAIRING_STAGE_MS = 900;
+
 const statusConnection = shallowRef<EBaileysConnectionStatus>(
   EBaileysConnectionStatus.connecting
 );
@@ -56,6 +58,8 @@ const pairingCodeSecondary = shallowRef('');
 
 const secondsNextAttempt = shallowRef(0);
 const intervalIdNextAttempt = shallowRef<number | null>(null);
+const pairingStartedAt = shallowRef<number | null>(null);
+const connectedStateDelayTimeout = shallowRef<number | null>(null);
 
 const isBrowserWorkerType = computed(
   () => channelType.value === EWorkerType.wwebjs
@@ -81,7 +85,10 @@ const modalState = computed<WorkerConnectionModalState>(() =>
 
 const isConnected = computed(() => modalState.value === 'connected');
 const isBlockingOperation = computed(
-  () => modalState.value === 'loggingOut' || modalState.value === 'resetting'
+  () =>
+    modalState.value === 'loggingOut' ||
+    modalState.value === 'resetting' ||
+    modalState.value === 'pairingInProgress'
 );
 const isActionLocked = computed(
   () => channelStore.loading || isBlockingOperation.value
@@ -126,6 +133,13 @@ const stageMeta = computed(() => {
       description: 'connection_qr_ready_description',
       icon: 'tabler-qrcode',
       color: 'primary',
+    },
+    pairingInProgress: {
+      title: 'connection_pairing_title',
+      description: 'connection_pairing_description',
+      icon: 'tabler-link',
+      color: 'primary',
+      loading: true,
     },
     connected: {
       title: 'connection_success',
@@ -232,6 +246,13 @@ function clearNextAttemptCountdown() {
   }
 }
 
+function clearConnectedStateDelay() {
+  if (connectedStateDelayTimeout.value !== null) {
+    clearTimeout(connectedStateDelayTimeout.value);
+    connectedStateDelayTimeout.value = null;
+  }
+}
+
 function startNextAttemptCountdown() {
   clearNextAttemptCountdown();
 
@@ -255,8 +276,10 @@ function prepareConnectionStart() {
   disconnectedByUser.value = false;
   phoneNumber.value = null;
   secondsNextAttempt.value = 0;
+  pairingStartedAt.value = null;
   resetPairingCodes();
   clearNextAttemptCountdown();
+  clearConnectedStateDelay();
 }
 
 function buildRequest(
@@ -303,6 +326,8 @@ async function recreateChannelWithFullCleanup() {
   qrcode.value = undefined;
   resetPairingCodes();
   clearNextAttemptCountdown();
+  clearConnectedStateDelay();
+  pairingStartedAt.value = null;
 
   const reseted = await channelStore.resetConnectionChannel(channelId.value);
 
@@ -339,15 +364,40 @@ function enterPhoneNumber() {
   phoneConnection.value = undefined;
   qrcode.value = undefined;
   secondsNextAttempt.value = 0;
+  pairingStartedAt.value = null;
   resetPairingCodes();
   clearNextAttemptCountdown();
+  clearConnectedStateDelay();
+}
+
+function scheduleConnectedState(data: IBaileysConnectionState) {
+  const startedAt = pairingStartedAt.value;
+  if (!startedAt) {
+    applyConnectedState(data);
+    return;
+  }
+
+  const remaining = MIN_PAIRING_STAGE_MS - (Date.now() - startedAt);
+  if (remaining <= 0) {
+    applyConnectedState(data);
+    return;
+  }
+
+  clearConnectedStateDelay();
+  connectedStateDelayTimeout.value = (
+    globalThis as Window & typeof globalThis
+  ).setTimeout(() => {
+    applyConnectedState(data);
+  }, remaining);
 }
 
 function changePhone() {
   isPhoneNumber.value = true;
   phoneSent.value = false;
   phoneConnection.value = undefined;
+  pairingStartedAt.value = null;
   resetPairingCodes();
+  clearConnectedStateDelay();
 }
 
 async function enterQrcode() {
@@ -401,8 +451,10 @@ function applyConnectedState(data: IBaileysConnectionState) {
   connectionType.value = EBaileysConnectionType.qrcode;
   phoneConnection.value = undefined;
   secondsNextAttempt.value = 0;
+  pairingStartedAt.value = null;
   resetPairingCodes();
   clearNextAttemptCountdown();
+  clearConnectedStateDelay();
 }
 
 function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
@@ -415,7 +467,9 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
     statusConnection.value = EBaileysConnectionStatus.connecting;
     statusCode.value = ECodeMessage.awaitConnection;
     qrcode.value = undefined;
+    pairingStartedAt.value = null;
     resetPairingCodes();
+    clearConnectedStateDelay();
     return;
   }
 
@@ -434,8 +488,17 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
     incomingCode === ECodeMessage.connectionEstablished;
 
   if (isConnectedEvent) {
-    applyConnectedState(data);
+    scheduleConnectedState(data);
     return;
+  }
+
+  clearConnectedStateDelay();
+
+  if (
+    incomingCode === ECodeMessage.pairingInProgress ||
+    incomingCode === ECodeMessage.newLoginAttempt
+  ) {
+    pairingStartedAt.value = Date.now();
   }
 
   if (data.disconnected_user !== undefined) {
@@ -447,6 +510,8 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
   } else if (
     incomingCode === ECodeMessage.awaitConnection ||
     incomingCode === ECodeMessage.logoutInProgress ||
+    incomingCode === ECodeMessage.pairingInProgress ||
+    incomingCode === ECodeMessage.newLoginAttempt ||
     incomingStatus === EBaileysConnectionStatus.disconnected
   ) {
     qrcode.value = undefined;
@@ -501,6 +566,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearNextAttemptCountdown();
+  clearConnectedStateDelay();
 
   if (accountId.value) {
     void unsubscribe(

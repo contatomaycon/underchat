@@ -95,6 +95,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     const awaitingUserAction =
       currentCode === ECodeMessage.awaitingReadQrCode ||
       currentCode === ECodeMessage.awaitingPairingCode ||
+      currentCode === ECodeMessage.pairingInProgress ||
       currentCode === ECodeMessage.newLoginAttempt;
 
     if (

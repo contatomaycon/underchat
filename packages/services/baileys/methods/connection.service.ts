@@ -841,7 +841,7 @@ export class BaileysConnectionService {
       account_id: ACCOUNT,
       worker_status_id: EWorkerStatus.disponible,
     };
-    this.publishSub(payload);
+    this.publishSub(payload, true);
     void this.notifyWorkerStatusSafely(payload, 'qr');
 
     if (!this.initialConnection) {
@@ -1125,18 +1125,22 @@ export class BaileysConnectionService {
   private onNewLoginAttempt() {
     this.awaitingNewLogin = true;
     this.connectionEstablished = false;
+    this.qrReadSessionActive = false;
+    this.qrReadSessionLocked = true;
+    this.qrHash = undefined;
+    this.setStatus(Status.connecting, ECodeMessage.pairingInProgress);
 
     const payload: IBaileysConnectionState = {
-      status: this.status,
+      status: Status.connecting,
       worker_id: WORKER,
       account_id: ACCOUNT,
       is_new_login: true,
-      code: ECodeMessage.newLoginAttempt,
+      code: ECodeMessage.pairingInProgress,
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    this.centrifugo.publishSub(CHANNEL, payload);
-    void this.notifyWorkerStatusSafely(payload, 'new_login_attempt');
+    this.publishSub(payload);
+    void this.notifyWorkerStatusSafely(payload, 'pairing_in_progress');
   }
 
   private canShowQr(): boolean {

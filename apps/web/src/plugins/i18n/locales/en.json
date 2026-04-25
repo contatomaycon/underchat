@@ -411,6 +411,8 @@
   "connection_qr_preparing_title": "Preparing QR Code",
   "connection_qr_preparing_description": "The QR Code will appear automatically as soon as WhatsApp allows scanning.",
   "connection_qr_ready_description": "Scan the QR Code in WhatsApp to finish connecting.",
+  "connection_pairing_title": "Connecting and pairing",
+  "connection_pairing_description": "QR Code scanned. Please wait while WhatsApp confirms pairing.",
   "connection_logout_title": "Logging out",
   "connection_logout_description": "We are ending the session and removing this channel connection.",
   "connection_resetting_title": "Recreating channel",

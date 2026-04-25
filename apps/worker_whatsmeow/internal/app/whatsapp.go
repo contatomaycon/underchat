@@ -556,8 +556,8 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 				m.publishState(context.Background(), "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", qrImage, true)
 			case "success":
 				m.clearLoginArtifacts()
-				log.Printf("whatsmeow qr pairing success worker_id=%s", m.cfg.WorkerID)
-				m.publishState(context.Background(), "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", true)
+				log.Printf("whatsmeow qr scanned, pairing in progress worker_id=%s", m.cfg.WorkerID)
+				m.publishState(context.Background(), "connecting", CodePairingInProgress, WorkerStatusDisponible, "", "", true)
 			case "timeout":
 				m.clearLoginArtifacts()
 				log.Printf("whatsmeow qr timeout worker_id=%s", m.cfg.WorkerID)

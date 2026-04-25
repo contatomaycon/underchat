@@ -226,6 +226,7 @@ export class WwebjsHealthCheckService {
     const awaitingUserAction =
       currentCode === ECodeMessage.awaitingReadQrCode ||
       currentCode === ECodeMessage.awaitingPairingCode ||
+      currentCode === ECodeMessage.pairingInProgress ||
       currentCode === ECodeMessage.newLoginAttempt;
 
     if (!hasInitialSession) {
@@ -317,6 +318,7 @@ export class WwebjsHealthCheckService {
     return (
       code === ECodeMessage.awaitingReadQrCode ||
       code === ECodeMessage.awaitingPairingCode ||
+      code === ECodeMessage.pairingInProgress ||
       code === ECodeMessage.newLoginAttempt
     );
   }

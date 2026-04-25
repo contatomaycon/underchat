@@ -32,6 +32,22 @@ describe('normalizeWorkerConnectionModalState', () => {
     ).toBe('qrReady');
   });
 
+  it('maps QR scanned and pairing in progress states', () => {
+    expect(
+      normalizeWorkerConnectionModalState({
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.pairingInProgress,
+      })
+    ).toBe('pairingInProgress');
+
+    expect(
+      normalizeWorkerConnectionModalState({
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.newLoginAttempt,
+      })
+    ).toBe('pairingInProgress');
+  });
+
   it('maps successful, logout, reset and disconnected states', () => {
     expect(
       normalizeWorkerConnectionModalState({

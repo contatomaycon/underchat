@@ -909,7 +909,7 @@ export class WwebjsConnectionService {
           worker_status_id: EWorkerStatus.disponible,
         };
 
-        this.publishSub(payload);
+        this.publishSub(payload, true);
         void this.notifyWorkerStatusSafely(payload, 'pairing_code');
         this.pendingResolve?.(payload);
         this.pendingResolve = undefined;
@@ -978,6 +978,43 @@ export class WwebjsConnectionService {
 
         this.pendingResolve?.(this.state(img));
         this.pendingResolve = undefined;
+      });
+
+      client.on('authenticated', () => {
+        if (!this.isActiveClient(client)) {
+          return;
+        }
+
+        if (
+          this.typeConnection !== EBaileysConnectionType.qrcode ||
+          (!this.qrReadSessionActive &&
+            this.code !== ECodeMessage.awaitingReadQrCode) ||
+          this.connectionEstablished ||
+          this.status === Status.connected
+        ) {
+          return;
+        }
+
+        this.qrReadSessionActive = false;
+        this.qrReadSessionLocked = true;
+        this.qrHash = undefined;
+        this.setStatus(Status.connecting, ECodeMessage.pairingInProgress);
+
+        const payload: IBaileysConnectionState = {
+          status: this.status,
+          code: this.code,
+          worker_id: WORKER,
+          account_id: ACCOUNT,
+          is_new_login: true,
+          worker_status_id: EWorkerStatus.disponible,
+        };
+
+        this.publishSub(payload);
+        void this.notifyWorkerStatusSafely(payload, 'pairing_in_progress');
+        this.logConnectionEvent('pairing_in_progress', {
+          attempt_id: attemptId,
+          connection_type: this.typeConnection,
+        });
       });
 
       client.on('ready', () => {

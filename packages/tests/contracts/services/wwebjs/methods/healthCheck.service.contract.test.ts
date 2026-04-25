@@ -538,6 +538,7 @@ describe('WwebjsHealthCheckService', () => {
     expect(sut.isAwaitingUserAction(ECodeMessage.awaitingPairingCode)).toBe(
       true
     );
+    expect(sut.isAwaitingUserAction(ECodeMessage.pairingInProgress)).toBe(true);
     expect(sut.isAwaitingUserAction(ECodeMessage.newLoginAttempt)).toBe(true);
     expect(sut.isAwaitingUserAction(ECodeMessage.awaitConnection)).toBe(false);
   });
