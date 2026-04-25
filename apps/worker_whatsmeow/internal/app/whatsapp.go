@@ -187,8 +187,8 @@ func (m *WhatsAppManager) ValidatePhone(ctx context.Context, req PhoneValidation
 		AccountID: firstNonEmpty(req.AccountID, m.cfg.AccountID),
 		WorkerID:  firstNonEmpty(req.WorkerID, m.cfg.WorkerID),
 	}
-	phone := digits(req.PhoneDDI + req.Phone)
-	if phone == "" {
+	candidates := buildPhoneValidationCandidates(req.PhoneDDI, req.Phone)
+	if len(candidates) == 0 {
 		resp.Error = "phone is required"
 		return resp, nil
 	}
@@ -197,20 +197,158 @@ func (m *WhatsAppManager) ValidatePhone(ctx context.Context, req PhoneValidation
 		resp.Error = "client is not initialized"
 		return resp, nil
 	}
-	results, err := client.IsOnWhatsApp(ctx, []string{"+" + phone})
-	if err != nil {
-		resp.Error = err.Error()
-		return resp, nil
+
+	var deferredLIDFallback *PhoneValidationResponse
+	for _, candidate := range candidates {
+		results, err := client.IsOnWhatsApp(ctx, []string{"+" + candidate})
+		if err != nil {
+			resp.Error = err.Error()
+			return resp, nil
+		}
+		if len(results) == 0 {
+			log.Printf("whatsmeow phone validation candidate worker_id=%s request_id=%s candidate=%s result=empty", m.cfg.WorkerID, req.RequestID, candidate)
+			continue
+		}
+
+		result := results[0]
+		jid := normalizeValidationJID(result.JID)
+		log.Printf(
+			"whatsmeow phone validation candidate worker_id=%s request_id=%s candidate=%s query=%s exists=%t jid=%s",
+			m.cfg.WorkerID,
+			req.RequestID,
+			candidate,
+			result.Query,
+			result.IsIn,
+			jid,
+		)
+		if !result.IsIn || jid == "" {
+			continue
+		}
+
+		validResponse := resp
+		validResponse.Valid = true
+		validResponse.JID = jid
+
+		if result.JID.Server == types.HiddenUserServer {
+			if phone := m.resolveReliablePhoneFromLID(ctx, client, result.JID.ToNonAD(), candidates); phone != "" {
+				validResponse.Phone = phone
+				return validResponse, nil
+			}
+			if deferredLIDFallback == nil {
+				fallback := validResponse
+				fallback.Phone = candidate
+				deferredLIDFallback = &fallback
+			}
+			continue
+		}
+
+		if phone := phoneFromJID(jid); phone != "" {
+			validResponse.Phone = phone
+		} else {
+			validResponse.Phone = candidate
+		}
+		return validResponse, nil
 	}
-	if len(results) == 0 || !results[0].IsIn {
-		resp.Valid = false
-		resp.Phone = phone
-		return resp, nil
+
+	if deferredLIDFallback != nil {
+		return *deferredLIDFallback, nil
 	}
-	resp.Valid = true
-	resp.JID = results[0].JID.String()
-	resp.Phone = phone
+
+	resp.Valid = false
 	return resp, nil
+}
+
+func buildPhoneValidationCandidates(phoneDDI, phone string) []string {
+	fullNumber := digits(phoneDDI + phone)
+	if fullNumber == "" {
+		return nil
+	}
+	if !strings.HasPrefix(fullNumber, "55") {
+		return []string{fullNumber}
+	}
+
+	rest := fullNumber[2:]
+	if len(rest) < 10 {
+		return []string{fullNumber}
+	}
+
+	ddd := rest[:2]
+	local := rest[2:]
+	without9Local := local
+	if len(local) == 9 && strings.HasPrefix(local, "9") {
+		without9Local = local[1:]
+	}
+	with9Local := local
+	if len(local) == 8 {
+		with9Local = "9" + local
+	}
+
+	without9 := "55" + ddd + without9Local
+	with9 := "55" + ddd + with9Local
+	fallback := with9
+	if fullNumber == with9 {
+		fallback = without9
+	}
+	return uniqueStrings([]string{fullNumber, fallback})
+}
+
+func uniqueStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func normalizeValidationJID(jid types.JID) string {
+	if jid.IsEmpty() || jid.User == "" {
+		return ""
+	}
+	normalized := jid.ToNonAD()
+	if normalized.Server == types.LegacyUserServer {
+		normalized.Server = types.DefaultUserServer
+	}
+	return normalized.String()
+}
+
+func (m *WhatsAppManager) resolveReliablePhoneFromLID(ctx context.Context, client *whatsmeow.Client, lid types.JID, candidates []string) string {
+	if client == nil || client.Store == nil || client.Store.LIDs == nil || lid.Server != types.HiddenUserServer {
+		return ""
+	}
+	pn, err := client.Store.LIDs.GetPNForLID(ctx, lid)
+	if err != nil || pn.IsEmpty() {
+		log.Printf("whatsmeow phone validation lid mapping not found worker_id=%s lid=%s error=%v", m.cfg.WorkerID, lid.String(), err)
+		return ""
+	}
+	phone := phoneFromJID(normalizeValidationJID(pn))
+	if !isReliablePhoneForLID(lid, phone, candidates) {
+		log.Printf("whatsmeow phone validation lid mapping discarded worker_id=%s lid=%s resolved_phone=%s", m.cfg.WorkerID, lid.String(), phone)
+		return ""
+	}
+	return phone
+}
+
+func isReliablePhoneForLID(lid types.JID, phone string, candidates []string) bool {
+	if phone == "" {
+		return false
+	}
+	if digits(lid.User) == digits(phone) {
+		return false
+	}
+	for _, candidate := range candidates {
+		if phone == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *WhatsAppManager) connectionContext() context.Context {
@@ -1527,6 +1665,9 @@ func digits(value string) string {
 
 func phoneFromJID(jid string) string {
 	user := strings.Split(jid, "@")[0]
+	if strings.Contains(user, ":") {
+		user = strings.Split(user, ":")[0]
+	}
 	return digits(user)
 }
 
