@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { useServerBuildStore } from '@/@webcore/stores/serverBuild';
+import AppGenerateServerBuildDialog from '@/components/server/AppGenerateServerBuildDialog.vue';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EServerBuildJobItemStatus } from '@core/common/enums/EServerBuildJobItemStatus';
 import { EServerBuildJobStatus } from '@core/common/enums/EServerBuildJobStatus';
@@ -69,7 +70,10 @@ const terminalStatusSet = new Set<string>([
 ]);
 
 const isBuildRealtimeSubscribed = ref(false);
+const isDialogGenerateBuildShow = ref(false);
 const isDialogDeleteBuildShow = ref(false);
+const generateBuildVersion = ref<string | null>(null);
+const generateBuildTypes = ref<EServerBuildType[]>([...buildTypeOrder]);
 const serverBuildJobToDelete = ref<string | null>(null);
 
 const activeJob = computed(() => serverBuildStore.active_job);
@@ -189,6 +193,54 @@ const getRetryableItems = (job: ServerBuildJob): ServerBuildJobItem[] => {
   );
 };
 
+const getCompletedBuildTypesByVersion = (
+  version: string
+): Set<EServerBuildType> => {
+  const completedBuildTypes = new Set(
+    buildTypeOrder.filter((buildType) =>
+      (versionsByType.value[buildType] ?? []).some(
+        (buildVersion) => buildVersion.version === version
+      )
+    )
+  );
+
+  const jobsToInspect = [
+    activeJob.value,
+    ...buildJobs.value,
+  ].filter((job): job is ServerBuildJob => Boolean(job));
+
+  for (const job of jobsToInspect) {
+    if (job.version !== version) {
+      continue;
+    }
+
+    for (const item of job.items) {
+      if (item.status === EServerBuildJobItemStatus.success) {
+        completedBuildTypes.add(item.build_type);
+      }
+    }
+  }
+
+  return completedBuildTypes;
+};
+
+const getCompletableBuildTypes = (
+  job: ServerBuildJob
+): EServerBuildType[] => {
+  if (!terminalStatusSet.has(job.status)) {
+    return [];
+  }
+
+  const completedBuildTypes = getCompletedBuildTypesByVersion(job.version);
+  if (completedBuildTypes.size === 0) {
+    return [];
+  }
+
+  return buildTypeOrder.filter(
+    (buildType) => !completedBuildTypes.has(buildType)
+  );
+};
+
 const handleBuildRealtimeMessage = (data: IServerBuildCentrifugo): void => {
   serverBuildStore.applyRealtimeEvent(data);
 };
@@ -224,12 +276,37 @@ const refreshBuilds = async (): Promise<void> => {
   await serverBuildStore.fetchBuilds();
 };
 
-const handleGenerateVersion = async (): Promise<void> => {
-  const generated = await serverBuildStore.generateVersion();
+const openGenerateVersionDialog = (): void => {
+  generateBuildVersion.value = null;
+  generateBuildTypes.value = [...buildTypeOrder];
+  isDialogGenerateBuildShow.value = true;
+};
+
+const openGenerateMissingBuildDialog = (job: ServerBuildJob): void => {
+  const completableBuildTypes = getCompletableBuildTypes(job);
+  if (completableBuildTypes.length === 0) {
+    return;
+  }
+
+  generateBuildVersion.value = job.version;
+  generateBuildTypes.value = completableBuildTypes;
+  isDialogGenerateBuildShow.value = true;
+};
+
+const handleGenerateVersion = async (
+  buildTypes: EServerBuildType[]
+): Promise<void> => {
+  const generated = await serverBuildStore.generateVersion({
+    build_types: buildTypes,
+    ...(generateBuildVersion.value
+      ? { version: generateBuildVersion.value }
+      : {}),
+  });
   if (!generated) {
     return;
   }
 
+  isDialogGenerateBuildShow.value = false;
   await refreshBuilds();
 };
 
@@ -332,7 +409,7 @@ onBeforeUnmount(async () => {
             color="primary"
             prepend-icon="tabler-hammer"
             :disabled="serverBuildStore.loading || hasActiveJob"
-            @click="handleGenerateVersion"
+            @click="openGenerateVersionDialog"
           >
             {{ $t('build_generate_version') }}
           </VBtn>
@@ -456,7 +533,8 @@ onBeforeUnmount(async () => {
             v-for="buildType in buildTypeOrder"
             :key="buildType"
             cols="12"
-            md="4"
+            sm="6"
+            lg="3"
           >
             <VCard class="h-100" variant="outlined">
               <VCardTitle>{{ getBuildTypeLabel(buildType) }}</VCardTitle>
@@ -568,37 +646,60 @@ onBeforeUnmount(async () => {
                   </td>
                   <td class="build-actions-cell">
                     <div
-                      v-if="$canPermission(permissionsEdit)"
+                      v-if="
+                        ($canPermission(permissionsGenerate) &&
+                          getCompletableBuildTypes(job).length > 0) ||
+                        $canPermission(permissionsEdit)
+                      "
                       class="d-flex flex-column gap-2"
                     >
                       <VBtn
-                        v-for="item in getRetryableItems(job)"
-                        :key="`${job.server_build_job_id}:${item.build_type}`"
+                        v-if="
+                          $canPermission(permissionsGenerate) &&
+                          getCompletableBuildTypes(job).length > 0
+                        "
                         size="x-small"
                         color="primary"
                         variant="tonal"
-                        :disabled="serverBuildStore.loading"
-                        @click="
-                          handleRetryBuildItem(
-                            job.server_build_job_id,
-                            item.build_type
-                          )
-                        "
+                        prepend-icon="tabler-hammer"
+                        :disabled="serverBuildStore.loading || hasActiveJob"
+                        @click="openGenerateMissingBuildDialog(job)"
                       >
-                        {{
-                          `${$t('build_retry_item')} ${getBuildTypeLabel(item.build_type)}`
-                        }}
+                        {{ $t('build_generate_missing') }}
                       </VBtn>
 
-                      <VBtn
-                        size="x-small"
-                        color="error"
-                        variant="tonal"
-                        :disabled="serverBuildStore.loading"
-                        @click="openDeleteBuildDialog(job.server_build_job_id)"
-                      >
-                        {{ $t('build_delete') }}
-                      </VBtn>
+                      <template v-if="$canPermission(permissionsEdit)">
+                        <VBtn
+                          v-for="item in getRetryableItems(job)"
+                          :key="`${job.server_build_job_id}:${item.build_type}`"
+                          size="x-small"
+                          color="primary"
+                          variant="tonal"
+                          :disabled="serverBuildStore.loading"
+                          @click="
+                            handleRetryBuildItem(
+                              job.server_build_job_id,
+                              item.build_type
+                            )
+                          "
+                        >
+                          {{
+                            `${$t('build_retry_item')} ${getBuildTypeLabel(item.build_type)}`
+                          }}
+                        </VBtn>
+
+                        <VBtn
+                          size="x-small"
+                          color="error"
+                          variant="tonal"
+                          :disabled="serverBuildStore.loading"
+                          @click="
+                            openDeleteBuildDialog(job.server_build_job_id)
+                          "
+                        >
+                          {{ $t('build_delete') }}
+                        </VBtn>
+                      </template>
                     </div>
 
                     <span v-else>-</span>
@@ -615,6 +716,16 @@ onBeforeUnmount(async () => {
         </VCard>
       </VCardText>
     </VCard>
+
+    <AppGenerateServerBuildDialog
+      v-if="isDialogGenerateBuildShow"
+      v-model="isDialogGenerateBuildShow"
+      :available-build-types="generateBuildTypes"
+      :allow-all="!generateBuildVersion"
+      :loading="serverBuildStore.loading"
+      :version="generateBuildVersion"
+      @confirm="handleGenerateVersion"
+    />
 
     <VDialogHandler
       v-if="isDialogDeleteBuildShow"

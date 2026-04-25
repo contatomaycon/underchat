@@ -2,14 +2,27 @@ import { inject, injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { IBuildVersionGeneratePayload } from '@core/common/interfaces/IBuildVersionGeneratePayload';
+import {
+  TCreateServerBuildJobInvalidReason,
+} from '@core/common/interfaces/ICreateServerBuildJobResult';
+import { ServerBuildGenerateRequest } from '@core/schema/server/generateServerBuild/request.schema';
 import { ServerBuildGenerateResponse } from '@core/schema/server/generateServerBuild/response.schema';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ServerBuildService } from '@core/services/serverBuild.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 
+type ServerBuildGenerateInvalidMessage =
+  | 'server_build_generate_invalid_targets'
+  | 'server_build_generate_version_not_found'
+  | 'server_build_generate_target_exists';
+
 type ServerBuildGenerateResult =
   | {
       status: 'conflict';
+    }
+  | {
+      status: 'invalid';
+      message: ServerBuildGenerateInvalidMessage;
     }
   | {
       status: 'created';
@@ -27,11 +40,67 @@ export class ServerBuildGeneratorUseCase {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
+  private readonly buildTypes: EServerBuildType[] = [
+    EServerBuildType.baileys,
+    EServerBuildType.wwebjs,
+    EServerBuildType.whatsmeow,
+    EServerBuildType.balance_api,
+  ];
+
+  private getInvalidMessage(
+    reason: TCreateServerBuildJobInvalidReason
+  ): ServerBuildGenerateInvalidMessage {
+    if (reason === 'version_not_found') {
+      return 'server_build_generate_version_not_found';
+    }
+
+    if (reason === 'build_type_exists') {
+      return 'server_build_generate_target_exists';
+    }
+
+    return 'server_build_generate_invalid_targets';
+  }
+
+  private normalizeBuildTypes(
+    buildTypes: EServerBuildType[]
+  ): EServerBuildType[] | null {
+    const selectedBuildTypes = new Set(buildTypes);
+    const hasInvalidBuildType = buildTypes.some(
+      (buildType) => !this.buildTypes.includes(buildType)
+    );
+
+    if (
+      buildTypes.length === 0 ||
+      selectedBuildTypes.size !== buildTypes.length ||
+      hasInvalidBuildType
+    ) {
+      return null;
+    }
+
+    return this.buildTypes.filter((buildType) =>
+      selectedBuildTypes.has(buildType)
+    );
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
-    requestedBy: string
+    requestedBy: string,
+    input: ServerBuildGenerateRequest
   ): Promise<ServerBuildGenerateResult> {
-    const created = await this.serverBuildService.createBuildJob(requestedBy);
+    const buildTypes = this.normalizeBuildTypes(input.build_types);
+    if (!buildTypes) {
+      return {
+        status: 'invalid',
+        message: 'server_build_generate_invalid_targets',
+      };
+    }
+
+    const version = input.version?.trim() || undefined;
+    const created = await this.serverBuildService.createBuildJob(
+      requestedBy,
+      buildTypes,
+      version
+    );
 
     if (created.conflict) {
       return {
@@ -39,19 +108,19 @@ export class ServerBuildGeneratorUseCase {
       };
     }
 
-    const serverBuildJobId = created.server_build_job_id;
-    const version = created.version;
-
-    if (!serverBuildJobId || !version) {
-      throw new Error(t('server_build_generate_failed'));
+    if (created.invalid_reason) {
+      return {
+        status: 'invalid',
+        message: this.getInvalidMessage(created.invalid_reason),
+      };
     }
 
-    const buildTypes: EServerBuildType[] = [
-      EServerBuildType.baileys,
-      EServerBuildType.wwebjs,
-      EServerBuildType.whatsmeow,
-      EServerBuildType.balance_api,
-    ];
+    const serverBuildJobId = created.server_build_job_id;
+    const createdVersion = created.version;
+
+    if (!serverBuildJobId || !createdVersion) {
+      throw new Error(t('server_build_generate_failed'));
+    }
 
     const enqueueResults = await Promise.allSettled(
       buildTypes.map((buildType) => {
@@ -95,7 +164,7 @@ export class ServerBuildGeneratorUseCase {
       status: 'created',
       data: {
         server_build_job_id: serverBuildJobId,
-        version,
+        version: createdVersion,
       },
     };
   }

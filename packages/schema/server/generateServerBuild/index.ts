@@ -1,6 +1,7 @@
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { Type } from '@sinclair/typebox';
+import { serverBuildGenerateRequestSchema } from './request.schema';
 import { serverBuildGenerateResponseSchema } from './response.schema';
 
 export const serverBuildGenerateSchema = {
@@ -21,6 +22,7 @@ export const serverBuildGenerateSchema = {
       })
     ),
   }),
+  body: serverBuildGenerateRequestSchema,
   response: {
     200: Type.Object(
       {
@@ -30,6 +32,15 @@ export const serverBuildGenerateSchema = {
         data: serverBuildGenerateResponseSchema,
       },
       { description: 'Successful' }
+    ),
+    400: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ const: false }),
+        message: Type.String(),
+        data: Type.Null(),
+      },
+      { description: 'Bad Request' }
     ),
     401: Type.Object(
       {

@@ -10,6 +10,7 @@ import {
   ServerBuildVersion,
   ServerBuildViewResponse,
 } from '@core/schema/server/viewServerBuild/response.schema';
+import { ServerBuildGenerateRequest } from '@core/schema/server/generateServerBuild/request.schema';
 import { ServerBuildGenerateResponse } from '@core/schema/server/generateServerBuild/response.schema';
 import { PairServerBuildResponse } from '@core/schema/server/pairServerBuild/response.schema';
 import { DeleteServerBuildResponse } from '@core/schema/server/deleteServerBuild/response.schema';
@@ -203,13 +204,15 @@ export const useServerBuildStore = defineStore('serverBuild', {
       }
     },
 
-    async generateVersion(): Promise<ServerBuildGenerateResponse | null> {
+    async generateVersion(
+      input: ServerBuildGenerateRequest
+    ): Promise<ServerBuildGenerateResponse | null> {
       try {
         this.loading = true;
 
         const response = await axios.post<
           IApiResponse<ServerBuildGenerateResponse>
-        >('/server/build/generate');
+        >('/server/build/generate', input);
 
         this.loading = false;
 

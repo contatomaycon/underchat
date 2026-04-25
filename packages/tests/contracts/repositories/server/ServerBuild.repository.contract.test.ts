@@ -70,11 +70,11 @@ describe('ServerBuildRepository', () => {
       {} as never
     );
 
-    await expect(repository.createBuildJob('user-1', '1.0.0')).resolves.toEqual(
-      {
-        conflict: true,
-      }
-    );
+    await expect(
+      repository.createBuildJob('user-1', '1.0.0', [EServerBuildType.baileys])
+    ).resolves.toEqual({
+      conflict: true,
+    });
   });
 
   it('createBuildJob returns conflict when unique index conflict happens', async () => {
@@ -89,20 +89,39 @@ describe('ServerBuildRepository', () => {
       {} as never
     );
 
-    await expect(repository.createBuildJob('user-1', '1.0.0')).resolves.toEqual(
-      {
-        conflict: true,
-      }
-    );
+    await expect(
+      repository.createBuildJob('user-1', '1.0.0', [EServerBuildType.baileys])
+    ).resolves.toEqual({
+      conflict: true,
+    });
   });
 
-  it('createBuildJob creates job and items when there is no active job', async () => {
+  it('createBuildJob rejects empty or duplicated build types', async () => {
+    const repository = new ServerBuildRepository({} as never, {} as never);
+
+    await expect(
+      repository.createBuildJob('user-1', '1.0.0', [])
+    ).resolves.toEqual({
+      conflict: false,
+      invalid_reason: 'invalid_build_types',
+    });
+
+    await expect(
+      repository.createBuildJob('user-1', '1.0.0', [
+        EServerBuildType.baileys,
+        EServerBuildType.baileys,
+      ])
+    ).resolves.toEqual({
+      conflict: false,
+      invalid_reason: 'invalid_build_types',
+    });
+  });
+
+  it('createBuildJob creates job and selected items when there is no active job', async () => {
     (uuidv7 as unknown as jest.Mock)
       .mockReturnValueOnce('new-job-id')
       .mockReturnValueOnce('item-1')
-      .mockReturnValueOnce('item-2')
-      .mockReturnValueOnce('item-3')
-      .mockReturnValueOnce('item-4');
+      .mockReturnValueOnce('item-2');
 
     const select = createSelectSequence([[]]);
     const insert = jest.fn(() => createChain({ rowCount: 1 }));
@@ -118,15 +137,94 @@ describe('ServerBuildRepository', () => {
       {} as never
     );
 
-    await expect(repository.createBuildJob('user-1', '1.0.0')).resolves.toEqual(
-      {
-        conflict: false,
-        server_build_job_id: 'new-job-id',
-        version: '1.0.0',
-      }
-    );
+    await expect(
+      repository.createBuildJob('user-1', '1.0.0', [
+        EServerBuildType.baileys,
+        EServerBuildType.balance_api,
+      ])
+    ).resolves.toEqual({
+      conflict: false,
+      server_build_job_id: 'new-job-id',
+      version: '1.0.0',
+    });
 
     expect(insert).toHaveBeenCalledTimes(2);
+    const itemInsertChain = insert.mock.results[1].value;
+    const insertedItems = itemInsertChain.values.mock.calls[0][0];
+    expect(insertedItems).toHaveLength(2);
+    expect(
+      insertedItems.map(
+        (item: { build_type: EServerBuildType }) => item.build_type
+      )
+    ).toEqual([EServerBuildType.baileys, EServerBuildType.balance_api]);
+  });
+
+  it('createBuildJob rejects completion when version does not exist', async () => {
+    (uuidv7 as unknown as jest.Mock).mockReturnValueOnce('new-job-id');
+
+    const select = createSelectSequence([[], []]);
+    const insert = jest.fn(() => createChain({ rowCount: 1 }));
+    const transaction = jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+      cb({
+        select,
+        insert,
+      })
+    );
+
+    const repository = new ServerBuildRepository(
+      { transaction } as never,
+      {} as never
+    );
+
+    await expect(
+      repository.createBuildJob(
+        'user-1',
+        '1.0.0',
+        [EServerBuildType.wwebjs],
+        true
+      )
+    ).resolves.toEqual({
+      conflict: false,
+      invalid_reason: 'version_not_found',
+    });
+
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('createBuildJob rejects completion when selected target already exists', async () => {
+    (uuidv7 as unknown as jest.Mock).mockReturnValueOnce('new-job-id');
+
+    const select = createSelectSequence([
+      [],
+      [{ server_build_version_id: 'version-1' }],
+      [{ build_type: EServerBuildType.baileys }],
+    ]);
+    const insert = jest.fn(() => createChain({ rowCount: 1 }));
+    const transaction = jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+      cb({
+        select,
+        insert,
+      })
+    );
+
+    const repository = new ServerBuildRepository(
+      { transaction } as never,
+      {} as never
+    );
+
+    await expect(
+      repository.createBuildJob(
+        'user-1',
+        '1.0.0',
+        [EServerBuildType.baileys],
+        true
+      )
+    ).resolves.toEqual({
+      conflict: false,
+      invalid_reason: 'build_type_exists',
+    });
+
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it('getBuildJobById returns null when build job does not exist', async () => {

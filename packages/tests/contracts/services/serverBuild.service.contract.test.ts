@@ -5,6 +5,7 @@ jest.mock('@core/repositories/server/ServerBuild.repository', () => ({
 }));
 
 import { ServerBuildService } from '@core/services/serverBuild.service';
+import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 
 describe('ServerBuildService', () => {
   const makeService = () => {
@@ -67,12 +68,32 @@ describe('ServerBuildService', () => {
 
     await expect(service.listBuilds()).resolves.toEqual({ jobs: [] });
 
-    await expect(service.createBuildJob('user-1')).resolves.toEqual({
+    await expect(
+      service.createBuildJob('user-1', [EServerBuildType.baileys])
+    ).resolves.toEqual({
       server_build_job_id: 'job-1',
     });
     expect(serverBuildRepository.createBuildJob).toHaveBeenCalledWith(
       'user-1',
-      'v20260102030405678'
+      'v20260102030405678',
+      [EServerBuildType.baileys],
+      false
+    );
+
+    await expect(
+      service.createBuildJob(
+        'user-1',
+        [EServerBuildType.balance_api],
+        'v20260101000000000'
+      )
+    ).resolves.toEqual({
+      server_build_job_id: 'job-1',
+    });
+    expect(serverBuildRepository.createBuildJob).toHaveBeenLastCalledWith(
+      'user-1',
+      'v20260101000000000',
+      [EServerBuildType.balance_api],
+      true
     );
 
     await expect(service.getBuildJobById('job-1')).resolves.toEqual({

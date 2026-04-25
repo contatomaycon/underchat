@@ -305,13 +305,31 @@ export class ServerBuildRepository {
 
   createBuildJob = async (
     requestedBy: string,
-    version: string
+    version: string,
+    buildTypes: EServerBuildType[],
+    requireExistingVersion = false
   ): Promise<ICreateServerBuildJobResult> => {
+    const selectedBuildTypes = new Set(buildTypes);
+    const hasInvalidBuildType = buildTypes.some(
+      (buildType) => !this.buildTypes.includes(buildType)
+    );
+
+    if (
+      buildTypes.length === 0 ||
+      selectedBuildTypes.size !== buildTypes.length ||
+      hasInvalidBuildType
+    ) {
+      return {
+        conflict: false,
+        invalid_reason: 'invalid_build_types',
+      };
+    }
+
     const serverBuildJobId = uuidv7();
     const now = currentTime();
 
     try {
-      await this.dbRw.transaction(async (tx) => {
+      const invalidReason = await this.dbRw.transaction(async (tx) => {
         const [activeJob] = await tx
           .select({
             server_build_job_id: serverBuildJob.server_build_job_id,
@@ -323,6 +341,40 @@ export class ServerBuildRepository {
 
         if (activeJob) {
           throw new ActiveBuildJobConflictError();
+        }
+
+        if (requireExistingVersion) {
+          const [existingVersion] = await tx
+            .select({
+              server_build_version_id:
+                serverBuildVersion.server_build_version_id,
+            })
+            .from(serverBuildVersion)
+            .where(eq(serverBuildVersion.version, version))
+            .limit(1)
+            .execute();
+
+          if (!existingVersion) {
+            return 'version_not_found' as const;
+          }
+
+          const existingTargetVersions = await tx
+            .select({
+              build_type: serverBuildVersion.build_type,
+            })
+            .from(serverBuildVersion)
+            .where(
+              and(
+                eq(serverBuildVersion.version, version),
+                inArray(serverBuildVersion.build_type, buildTypes)
+              )
+            )
+            .limit(1)
+            .execute();
+
+          if (existingTargetVersions.length > 0) {
+            return 'build_type_exists' as const;
+          }
         }
 
         await tx
@@ -340,7 +392,7 @@ export class ServerBuildRepository {
         await tx
           .insert(serverBuildJobItem)
           .values(
-            this.buildTypes.map((buildType) => ({
+            buildTypes.map((buildType) => ({
               server_build_job_item_id: uuidv7(),
               server_build_job_id: serverBuildJobId,
               build_type: buildType,
@@ -350,7 +402,16 @@ export class ServerBuildRepository {
             }))
           )
           .execute();
+
+        return null;
       });
+
+      if (invalidReason) {
+        return {
+          conflict: false,
+          invalid_reason: invalidReason,
+        };
+      }
     } catch (error) {
       if (
         error instanceof ActiveBuildJobConflictError ||

@@ -37,10 +37,17 @@ export class ServerBuildService {
   };
 
   createBuildJob = async (
-    requestedBy: string
+    requestedBy: string,
+    buildTypes: EServerBuildType[],
+    version?: string
   ): Promise<ICreateServerBuildJobResult> => {
-    const version = this.generateVersion();
-    return this.serverBuildRepository.createBuildJob(requestedBy, version);
+    const buildVersion = version ?? this.generateVersion();
+    return this.serverBuildRepository.createBuildJob(
+      requestedBy,
+      buildVersion,
+      buildTypes,
+      Boolean(version)
+    );
   };
 
   getBuildJobById = async (
