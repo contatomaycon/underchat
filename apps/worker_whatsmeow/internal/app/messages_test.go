@@ -689,6 +689,44 @@ func TestBuildIncomingUpsertNormalizesReactionPayloadForBaileys(t *testing.T) {
 	}
 }
 
+func TestIncomingContentMapsImageAlbumMetadata(t *testing.T) {
+	manager := &WhatsAppManager{cfg: Config{WorkerID: "worker-1"}}
+	parentID := "album-parent-id"
+	index := int32(1)
+
+	messageType, content := manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			ImageMessage: &waE2E.ImageMessage{
+				Mimetype: proto.String("image/jpeg"),
+			},
+			MessageContextInfo: &waE2E.MessageContextInfo{
+				MessageAssociation: &waE2E.MessageAssociation{
+					AssociationType:  waE2E.MessageAssociation_MEDIA_ALBUM.Enum(),
+					ParentMessageKey: &waCommon.MessageKey{ID: proto.String(parentID)},
+					MessageIndex:     proto.Int32(index),
+				},
+			},
+		},
+	})
+	if messageType != MessageTypeImage {
+		t.Fatalf("unexpected image type %q", messageType)
+	}
+
+	album := asMap(content["album"])
+	if got := stringValue(album["id"]); got != parentID {
+		t.Fatalf("unexpected album id %#v", album)
+	}
+	if got := stringValue(album["parent_message_id"]); got != parentID {
+		t.Fatalf("unexpected album parent id %#v", album)
+	}
+	if got := album["item_index"]; got != int(index) {
+		t.Fatalf("unexpected album item index %#v", album)
+	}
+	if got := stringValue(album["source"]); got != "whatsmeow" {
+		t.Fatalf("unexpected album source %#v", album)
+	}
+}
+
 func TestIncomingProfilePhotoJIDsPreferPhoneAliasForLIDChat(t *testing.T) {
 	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)
 	pnChat := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}

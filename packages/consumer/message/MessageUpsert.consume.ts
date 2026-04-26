@@ -705,6 +705,33 @@ export class MessageUpsertConsume {
     return Array.from(candidates);
   }
 
+  private buildAlbumIdCandidates(
+    messageId: string,
+    ...keyContexts: Array<IMessageKeyIdContext | undefined>
+  ): string[] {
+    const candidates = new Set<string>();
+    const normalizedId = this.toNonEmptyString(messageId);
+    if (!normalizedId) return [];
+
+    candidates.add(normalizedId);
+
+    const parsed = parseSerializedMessageId(normalizedId);
+    if (parsed?.stanzaId) {
+      candidates.add(parsed.stanzaId);
+    }
+
+    for (const keyContext of keyContexts) {
+      for (const candidate of this.buildMessageKeyIdCandidates(
+        normalizedId,
+        keyContext
+      )) {
+        candidates.add(candidate);
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
   private async findMessageByKeyId(
     accountId: string,
     chatId: string,
@@ -769,6 +796,109 @@ export class MessageUpsertConsume {
     }
 
     return result.hits.hits[0]._source as IChatMessage;
+  }
+
+  private albumItemIndex(message: IChatMessage): number | null {
+    const value: unknown = message.content?.album?.item_index;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  }
+
+  private messageDateMillis(message: IChatMessage): number {
+    const parsed = new Date(message.date).getTime();
+    return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+  }
+
+  private sortAlbumMessagesForGalleryHead(
+    messages: IChatMessage[]
+  ): IChatMessage[] {
+    return [...messages].sort((a, b) => {
+      const aIndex = this.albumItemIndex(a);
+      const bIndex = this.albumItemIndex(b);
+
+      if (aIndex !== null && bIndex !== null && aIndex !== bIndex) {
+        return aIndex - bIndex;
+      }
+      if (aIndex !== null && bIndex === null) return -1;
+      if (aIndex === null && bIndex !== null) return 1;
+
+      const dateDiff = this.messageDateMillis(a) - this.messageDateMillis(b);
+      if (dateDiff !== 0) return dateDiff;
+
+      return String(a.message_id ?? '').localeCompare(
+        String(b.message_id ?? '')
+      );
+    });
+  }
+
+  private async findAlbumHeadMessageByAlbumId(
+    accountId: string,
+    chatId: string,
+    albumId: string,
+    ...keyContexts: Array<IMessageKeyIdContext | undefined>
+  ): Promise<IChatMessage | null> {
+    const albumIdCandidates = this.buildAlbumIdCandidates(
+      albumId,
+      ...keyContexts
+    );
+    if (!albumIdCandidates.length) {
+      return null;
+    }
+
+    const must: Array<Record<string, unknown>> = [
+      {
+        term: { chat_id: chatId },
+      },
+      {
+        nested: {
+          path: 'content.album',
+          query: {
+            terms: { 'content.album.id': albumIdCandidates },
+          },
+        },
+      },
+    ];
+
+    if (accountId) {
+      must.push({
+        nested: {
+          path: 'account',
+          query: {
+            term: { 'account.id': accountId },
+          },
+        },
+      });
+    }
+
+    const queryElastic = {
+      size: 50,
+      query: {
+        bool: {
+          must,
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    if (!result || result.hits.hits.length === 0) {
+      return null;
+    }
+
+    const messages = result.hits.hits
+      .map((hit) => hit._source as IChatMessage | undefined)
+      .filter((message): message is IChatMessage => Boolean(message));
+
+    return this.sortAlbumMessagesForGalleryHead(messages)[0] ?? null;
   }
 
   private async findMessageByKeyIdInAccount(
@@ -848,12 +978,22 @@ export class MessageUpsertConsume {
 
     const targetMessageId = reactionMsg.key.id;
 
-    const targetMessage = await this.findMessageByKeyId(
+    let targetMessage = await this.findMessageByKeyId(
       data.account_id,
       getChat.chat_id,
       targetMessageId,
       data.message?.key
     );
+
+    if (!targetMessage) {
+      targetMessage = await this.findAlbumHeadMessageByAlbumId(
+        data.account_id,
+        getChat.chat_id,
+        targetMessageId,
+        reactionMsg.key as IMessageKeyIdContext,
+        data.message?.key
+      );
+    }
 
     if (!targetMessage) {
       return true;

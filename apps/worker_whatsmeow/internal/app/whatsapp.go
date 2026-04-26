@@ -1278,6 +1278,7 @@ func normalizeIncomingMessageMapForBaileys(messageMap map[string]any) {
 
 	normalizeReactionMessagePayload(messageMap, "reactionMessage")
 	normalizeReactionMessagePayload(messageMap, "encReactionMessage")
+	normalizeMessageAssociationPayload(messageMap)
 
 	for _, wrapperName := range []string{
 		"ephemeralMessage",
@@ -1305,6 +1306,17 @@ func normalizeReactionMessagePayload(messageMap map[string]any, field string) {
 		copyCanonicalStringField(key, "remoteJid", "remoteJID")
 	}
 	copyCanonicalStringField(reaction, "senderTimestampMs", "senderTimestampMS")
+}
+
+func normalizeMessageAssociationPayload(messageMap map[string]any) {
+	messageContextInfo := asMap(messageMap["messageContextInfo"])
+	association := asMap(messageContextInfo["messageAssociation"])
+	parentKey := asMap(association["parentMessageKey"])
+	if len(parentKey) == 0 {
+		return
+	}
+	copyCanonicalStringField(parentKey, "id", "ID")
+	copyCanonicalStringField(parentKey, "remoteJid", "remoteJID")
 }
 
 func copyCanonicalStringField(target map[string]any, canonical string, aliases ...string) {

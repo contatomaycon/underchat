@@ -21,6 +21,7 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
+	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -574,6 +575,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 	}
 	if image := msg.GetImageMessage(); image != nil {
 		base = mediaContent(ctx, m, image, MessageTypeImage, image.GetCaption(), image.GetMimetype(), viewOnce)
+		enrichIncomingAlbumContent(base, msg)
 		return m.withIncomingQuoted(evt, msg, MessageTypeImage, base)
 	}
 	if video := msg.GetVideoMessage(); video != nil {
@@ -850,6 +852,46 @@ func mediaContentPublishStatus(content map[string]any, messageType string) (bool
 	hasURL := stringValue(media["url"]) != ""
 	failed := boolValue(content["media_download_failed"]) || boolValue(media["media_download_failed"])
 	return hasURL, failed
+}
+
+func enrichIncomingAlbumContent(content map[string]any, msg *waE2E.Message) {
+	if len(content) == 0 || msg == nil {
+		return
+	}
+	association := incomingMessageAssociation(msg)
+	if association == nil || association.GetAssociationType() != waE2E.MessageAssociation_MEDIA_ALBUM {
+		return
+	}
+
+	parentMessageID := incomingMessageKeyID(association.GetParentMessageKey())
+	if parentMessageID == "" {
+		return
+	}
+
+	album := map[string]any{
+		"id":                parentMessageID,
+		"parent_message_id": parentMessageID,
+		"association_type":  "MEDIA_ALBUM",
+		"source":            "whatsmeow",
+	}
+	if association.MessageIndex != nil {
+		album["item_index"] = int(association.GetMessageIndex())
+	}
+	content["album"] = album
+}
+
+func incomingMessageAssociation(msg *waE2E.Message) *waE2E.MessageAssociation {
+	if msg == nil || msg.GetMessageContextInfo() == nil {
+		return nil
+	}
+	return msg.GetMessageContextInfo().GetMessageAssociation()
+}
+
+func incomingMessageKeyID(key *waCommon.MessageKey) string {
+	if key == nil {
+		return ""
+	}
+	return strings.TrimSpace(key.GetID())
 }
 
 func (m *WhatsAppManager) withIncomingQuoted(evt *events.Message, msg *waE2E.Message, messageType string, content map[string]any) (string, map[string]any) {
