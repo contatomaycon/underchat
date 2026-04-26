@@ -43,6 +43,9 @@ const MAX_QR_GENERATIONS = 5;
 const CONNECTION_STATE_RECONCILE_INTERVAL_MS = 5_000;
 const CONNECTION_STATE_RECONCILE_TIMEOUT_MS = 120_000;
 const CONNECTION_STATE_CHECK_TIMEOUT_MS = 10_000;
+const CONNECTION_STATE_READY_GRACE_MS = 30_000;
+const CONNECTION_EVENT_BRIDGE_ATTACH_TIMEOUT_MS = 20_000;
+const CONNECTION_PAGE_CHECK_TIMEOUT_MS = 5_000;
 const DEFAULT_PUPPETEER_PROTOCOL_TIMEOUT_MS = 300_000;
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
@@ -101,6 +104,13 @@ function readProxyConfig(): {
 
 const { Client: ClientCtor, LocalAuth } = whatsappWeb;
 type Client = InstanceType<typeof ClientCtor>;
+type WwebjsPageLike = {
+  evaluate<T>(pageFunction: () => T | Promise<T>): Promise<T>;
+};
+type WwebjsClientInternals = Client & {
+  attachEventListeners?: () => Promise<void>;
+  pupPage?: WwebjsPageLike;
+};
 
 @singleton()
 export class WwebjsConnectionService {
@@ -1334,21 +1344,35 @@ export class WwebjsConnectionService {
     client: Client,
     timeoutMs = CONNECTION_STATE_CHECK_TIMEOUT_MS
   ): Promise<string | undefined> {
+    return this.withTimeout(
+      Promise.resolve()
+        .then(() => client.getState())
+        .then((state) => state ?? undefined),
+      timeoutMs,
+      'State check timeout'
+    );
+  }
+
+  private withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    errorMessage: string
+  ): Promise<T> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error('State check timeout'));
+        reject(new Error(errorMessage));
       }, timeoutMs);
 
-      client
-        .getState()
-        .then((state) => {
+      promise.then(
+        (value) => {
           clearTimeout(timeout);
-          resolve(state ?? undefined);
-        })
-        .catch((error) => {
+          resolve(value);
+        },
+        (error) => {
           clearTimeout(timeout);
           reject(error);
-        });
+        }
+      );
     });
   }
 
@@ -1360,6 +1384,84 @@ export class WwebjsConnectionService {
   private getClientPhone(client: Client): string | undefined {
     const identityJid = this.getClientIdentityJid(client);
     return identityJid ? getPhoneNumber(identityJid) : undefined;
+  }
+
+  private async hasWwebjsStoreInjected(client: Client): Promise<boolean> {
+    const page = (client as WwebjsClientInternals).pupPage;
+    if (!page) {
+      return false;
+    }
+
+    return this.withTimeout(
+      page.evaluate(() => {
+        return (
+          typeof (globalThis as unknown as { WWebJS?: unknown }).WWebJS !==
+          'undefined'
+        );
+      }),
+      CONNECTION_PAGE_CHECK_TIMEOUT_MS,
+      'WWebJS store check timeout'
+    );
+  }
+
+  private async ensureClientEventBridgeReady(
+    client: Client,
+    attemptId: number
+  ): Promise<boolean> {
+    const clientWithInternals = client as WwebjsClientInternals;
+    if (!this.getClientIdentityJid(client)) {
+      return false;
+    }
+
+    try {
+      const hasStore = await this.hasWwebjsStoreInjected(client);
+      if (!hasStore) {
+        this.logConnectionEvent('connection_state_probe_waiting_store', {
+          attempt_id: attemptId,
+        });
+        return false;
+      }
+    } catch (error) {
+      this.logConnectionEvent('connection_state_probe_waiting_store', {
+        attempt_id: attemptId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+
+    if (typeof clientWithInternals.attachEventListeners !== 'function') {
+      this.logConnectionEvent(
+        'connection_event_bridge_unavailable',
+        {
+          attempt_id: attemptId,
+          reason: 'attachEventListeners_missing',
+        },
+        'warn'
+      );
+      return false;
+    }
+
+    try {
+      await this.withTimeout(
+        clientWithInternals.attachEventListeners.call(client),
+        CONNECTION_EVENT_BRIDGE_ATTACH_TIMEOUT_MS,
+        'Event bridge attach timeout'
+      );
+      this.logConnectionEvent('connection_event_bridge_ready', {
+        attempt_id: attemptId,
+      });
+      return true;
+    } catch (error) {
+      this.logConnectionEvent(
+        'connection_event_bridge_pending',
+        {
+          attempt_id: attemptId,
+          reason: error instanceof Error ? error.message : String(error),
+        },
+        'warn'
+      );
+      return false;
+    }
   }
 
   private startConnectionStateProbe(
@@ -1399,21 +1501,34 @@ export class WwebjsConnectionService {
         return;
       }
 
-      if (waState === 'CONNECTED' && this.getClientIdentityJid(client)) {
-        this.markConnected(client, attemptId, proxy, 'state_probe');
-        return;
-      }
-
-      if (waState === 'CONNECTED') {
-        this.logConnectionEvent('connection_state_probe_waiting_identity', {
-          attempt_id: attemptId,
-          wa_state: waState,
-          has_info: Boolean(client.info),
-          has_wid: Boolean(client.info?.wid),
-        });
-      }
-
       const elapsedMs = Date.now() - startedAt;
+      if (waState === 'CONNECTED') {
+        if (!this.getClientIdentityJid(client)) {
+          this.logConnectionEvent('connection_state_probe_waiting_identity', {
+            attempt_id: attemptId,
+            wa_state: waState,
+            has_info: Boolean(client.info),
+            has_wid: Boolean(client.info?.wid),
+          });
+        } else if (elapsedMs < CONNECTION_STATE_READY_GRACE_MS) {
+          this.logConnectionEvent('connection_state_probe_waiting_ready', {
+            attempt_id: attemptId,
+            wa_state: waState,
+            elapsed_ms: elapsedMs,
+            grace_ms: CONNECTION_STATE_READY_GRACE_MS,
+          });
+        } else if (await this.ensureClientEventBridgeReady(client, attemptId)) {
+          if (
+            this.isActiveClient(client) &&
+            this.status === Status.connecting &&
+            !this.connectionEstablished
+          ) {
+            this.markConnected(client, attemptId, proxy, 'state_probe');
+          }
+          return;
+        }
+      }
+
       if (elapsedMs >= CONNECTION_STATE_RECONCILE_TIMEOUT_MS) {
         this.logConnectionEvent(
           'connection_state_probe_timeout',
