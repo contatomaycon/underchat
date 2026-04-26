@@ -490,7 +490,7 @@ export class WwebjsUpsertMediaEnricher {
     }
 
     const objectValue = value as Record<string, unknown>;
-    const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
+    const directKeys = ['_serialized', 'id', 'ID', 'stanzaId', 'stanzaID'];
     for (const key of directKeys) {
       const normalized = this.getNonEmptyString(objectValue[key]);
       if (normalized) {

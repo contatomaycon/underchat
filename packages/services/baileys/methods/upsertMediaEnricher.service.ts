@@ -87,7 +87,7 @@ export class BaileysUpsertMediaEnricher {
     if (typeof value !== 'object') return null;
 
     const objectValue = value as Record<string, unknown>;
-    const directKeys = ['_serialized', 'id', 'stanzaId', 'stanzaID'];
+    const directKeys = ['_serialized', 'id', 'ID', 'stanzaId', 'stanzaID'];
     for (const key of directKeys) {
       const normalized = this.toNonEmptyString(objectValue[key]);
       if (normalized) {

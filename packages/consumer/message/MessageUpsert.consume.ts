@@ -859,7 +859,17 @@ export class MessageUpsertConsume {
         nested: {
           path: 'content.album',
           query: {
-            terms: { 'content.album.id': albumIdCandidates },
+            bool: {
+              should: [
+                { terms: { 'content.album.id': albumIdCandidates } },
+                {
+                  terms: {
+                    'content.album.parent_message_id': albumIdCandidates,
+                  },
+                },
+              ],
+              minimum_should_match: 1,
+            },
           },
         },
       },
