@@ -1244,6 +1244,7 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 	messageMap := map[string]any{}
 	if raw, err := protojson.Marshal(evt.Message); err == nil {
 		_ = json.Unmarshal(raw, &messageMap)
+		normalizeIncomingMessageMapForBaileys(messageMap)
 	}
 
 	messageType, content := m.incomingContent(ctx, evt)
@@ -1268,6 +1269,56 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 		Photo:     photo,
 		HasQuoted: hasQuoted,
 	}, nil
+}
+
+func normalizeIncomingMessageMapForBaileys(messageMap map[string]any) {
+	if len(messageMap) == 0 {
+		return
+	}
+
+	normalizeReactionMessagePayload(messageMap, "reactionMessage")
+	normalizeReactionMessagePayload(messageMap, "encReactionMessage")
+
+	for _, wrapperName := range []string{
+		"ephemeralMessage",
+		"viewOnceMessage",
+		"viewOnceMessageV2",
+		"viewOnceMessageV2Extension",
+	} {
+		wrapper := asMap(messageMap[wrapperName])
+		inner := asMap(wrapper["message"])
+		if len(inner) > 0 {
+			normalizeIncomingMessageMapForBaileys(inner)
+		}
+	}
+}
+
+func normalizeReactionMessagePayload(messageMap map[string]any, field string) {
+	reaction := asMap(messageMap[field])
+	if len(reaction) == 0 {
+		return
+	}
+
+	key := asMap(reaction["key"])
+	if len(key) > 0 {
+		copyCanonicalStringField(key, "id", "ID")
+		copyCanonicalStringField(key, "remoteJid", "remoteJID")
+	}
+	copyCanonicalStringField(reaction, "senderTimestampMs", "senderTimestampMS")
+}
+
+func copyCanonicalStringField(target map[string]any, canonical string, aliases ...string) {
+	if len(target) == 0 || stringValue(target[canonical]) != "" {
+		return
+	}
+	for _, alias := range aliases {
+		value, ok := target[alias]
+		if !ok || stringValue(value) == "" {
+			continue
+		}
+		target[canonical] = value
+		return
+	}
 }
 
 func (m *WhatsAppManager) buildIncomingMessageKey(evt *events.Message) map[string]any {

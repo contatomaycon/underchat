@@ -642,6 +642,53 @@ func TestBuildIncomingUpsertSetsRemoteJIDAltForLIDChat(t *testing.T) {
 	}
 }
 
+func TestBuildIncomingUpsertNormalizesReactionPayloadForBaileys(t *testing.T) {
+	manager := &WhatsAppManager{}
+	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)
+	pnChat := types.NewJID("556195999040", types.DefaultUserServer)
+	targetJID := types.NewJID("128317164409045", types.HiddenUserServer)
+
+	incoming := incomingTextEvent(lidChat, false, "")
+	incoming.Info.ID = "reaction-event-id"
+	incoming.Info.SenderAlt = pnChat
+	incoming.Message = &waE2E.Message{
+		ReactionMessage: &waE2E.ReactionMessage{
+			Key: &waCommon.MessageKey{
+				RemoteJID: proto.String(targetJID.String()),
+				FromMe:    proto.Bool(true),
+				ID:        proto.String("target-message-id"),
+			},
+			Text:              proto.String("\u2764\ufe0f"),
+			SenderTimestampMS: proto.Int64(1777208911964),
+		},
+	}
+
+	upsert, err := manager.buildIncomingUpsert(context.Background(), incoming)
+	if err != nil {
+		t.Fatalf("build incoming reaction upsert: %v", err)
+	}
+	if upsert == nil || upsert.Type != MessageTypeReact {
+		t.Fatalf("expected reaction upsert, got %#v", upsert)
+	}
+
+	rawMessage := asMap(upsert.Message["message"])
+	reaction := asMap(rawMessage["reactionMessage"])
+	if got := stringValue(reaction["text"]); got != "\u2764\ufe0f" {
+		t.Fatalf("unexpected reaction text %q", got)
+	}
+
+	reactionKey := asMap(reaction["key"])
+	if got := stringValue(reactionKey["id"]); got != "target-message-id" {
+		t.Fatalf("reaction key must expose baileys id, got %#v", reactionKey)
+	}
+	if got := stringValue(reactionKey["remoteJid"]); got != "128317164409045@lid" {
+		t.Fatalf("reaction key must expose baileys remoteJid, got %#v", reactionKey)
+	}
+	if got := stringValue(reaction["senderTimestampMs"]); got != "1777208911964" {
+		t.Fatalf("reaction must expose baileys senderTimestampMs, got %#v", reaction)
+	}
+}
+
 func TestIncomingProfilePhotoJIDsPreferPhoneAliasForLIDChat(t *testing.T) {
 	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)
 	pnChat := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}

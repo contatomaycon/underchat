@@ -13,6 +13,26 @@ describe('extractReactionMessage', () => {
     ).toEqual(reaction);
   });
 
+  it('normalizes whatsmeow proto JSON reaction key casing', () => {
+    const reaction = {
+      key: {
+        ID: 'target-message-id',
+        remoteJID: '158733669765176@lid',
+        fromMe: true,
+      },
+      text: '\u2764\ufe0f',
+      senderTimestampMS: '1777208911964',
+    };
+
+    const result = extractReactionMessage({
+      reactionMessage: reaction,
+    } as never) as any;
+
+    expect(result?.key?.id).toBe('target-message-id');
+    expect(result?.key?.remoteJid).toBe('158733669765176@lid');
+    expect(result?.senderTimestampMs).toBe('1777208911964');
+  });
+
   it('returns encrypted reaction when present', () => {
     const reaction = { key: { id: 'r2' } };
     expect(

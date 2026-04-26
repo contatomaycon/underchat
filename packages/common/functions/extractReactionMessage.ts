@@ -1,17 +1,52 @@
 import { proto } from '@whiskeysockets/baileys';
 
+type ReactionMessageWithProtoJSONFields = proto.Message.IReactionMessage & {
+  senderTimestampMS?: unknown;
+  key?:
+    | (proto.IMessageKey & {
+        ID?: string | null;
+        remoteJID?: string | null;
+      })
+    | null;
+};
+
+function normalizeReactionMessage(
+  reaction: ReactionMessageWithProtoJSONFields
+): proto.Message.IReactionMessage {
+  const key = reaction.key;
+  if (key) {
+    if (!key.id && key.ID) {
+      key.id = key.ID;
+    }
+    if (!key.remoteJid && key.remoteJID) {
+      key.remoteJid = key.remoteJID;
+    }
+  }
+
+  const reactionAny = reaction as any;
+  if (!reactionAny.senderTimestampMs && reactionAny.senderTimestampMS) {
+    reactionAny.senderTimestampMs = reactionAny.senderTimestampMS;
+  }
+
+  return reaction;
+}
+
 export function extractReactionMessage(
   msg: proto.IMessage | null | undefined
 ): proto.Message.IReactionMessage | null {
   if (!msg) return null;
 
-  if (msg.reactionMessage) return msg.reactionMessage;
+  if (msg.reactionMessage) {
+    return normalizeReactionMessage(
+      msg.reactionMessage as ReactionMessageWithProtoJSONFields
+    );
+  }
 
   // encReactionMessage é uma reação criptografada que pode vir do WhatsApp
   const encReaction = (msg as any).encReactionMessage;
   if (encReaction) {
     // encReactionMessage tem estrutura similar a reactionMessage
-    return encReaction as proto.Message.IReactionMessage;
+    return normalizeReactionMessage(encReaction);
   }
 
   const ephemeral = (msg as any).ephemeralMessage?.message as
