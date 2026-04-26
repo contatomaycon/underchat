@@ -118,6 +118,8 @@ const channelToEdit = ref<string | null>(null);
 
 const channelConnectionChannel = ref<string | null>(null);
 const channelConnectionType = ref<string | null>(null);
+const channelConnectionStatus = ref<string | null>(null);
+const channelConnectionPhone = ref<string | null>(null);
 const isDialogConnectionChannelShow = ref(false);
 
 const channelConnectionLogs = ref<string | null>(null);
@@ -235,9 +237,11 @@ const openEditDialog = (id: string) => {
   isDialogEditChannelShow.value = true;
 };
 
-const openConnectionDialog = (id: string, typeId: string | null = null) => {
-  channelConnectionChannel.value = id;
-  channelConnectionType.value = typeId;
+const openConnectionDialog = (channel: ListWorkerResponse) => {
+  channelConnectionChannel.value = channel.id;
+  channelConnectionType.value = channel.type?.id ?? null;
+  channelConnectionStatus.value = channel.status?.id ?? null;
+  channelConnectionPhone.value = channel.number ?? null;
   isDialogConnectionChannelShow.value = true;
 };
 
@@ -292,6 +296,8 @@ watch(isDialogConnectionChannelShow, (isOpen) => {
   if (!isOpen) {
     channelConnectionChannel.value = null;
     channelConnectionType.value = null;
+    channelConnectionStatus.value = null;
+    channelConnectionPhone.value = null;
   }
 });
 
@@ -484,7 +490,7 @@ onUnmounted(async () => {
                     <span>{{ $t('connect_channel') }}</span> </VTooltip
                   ><VIcon
                     icon="tabler-plug-connected"
-                    @click="openConnectionDialog(item.id, item.type?.id ?? null)"
+                    @click="openConnectionDialog(item)"
                 /></IconBtn>
 
                 <IconBtn v-if="$canPermission(permissionsEdit)"
@@ -599,6 +605,8 @@ onUnmounted(async () => {
         :channel-id="channelConnectionChannel"
         :channel-type="channelConnectionType"
         :account-id="user.account_id"
+        :initial-status-id="channelConnectionStatus"
+        :initial-phone="channelConnectionPhone"
       />
 
       <AppLogsChannel

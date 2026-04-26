@@ -963,7 +963,7 @@ export class WwebjsConnectionService {
           worker_status_id: EWorkerStatus.disponible,
         };
 
-        this.publishSub(payload);
+        this.publishSub(payload, true);
         void this.notifyWorkerStatusSafely(payload, 'qr');
 
         if (!this.initialConnection) {

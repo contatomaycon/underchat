@@ -219,6 +219,10 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 		return m.removeSession(ctx)
 	}
 
+	if m.publishConnectedIfAuthenticated(ctx, "request-connection-already-authenticated") {
+		return nil
+	}
+
 	m.publishState(ctx, "connecting", CodeAwaitConnection, "", "", "", false)
 
 	switch strings.ToLower(req.Type) {
@@ -413,6 +417,34 @@ func (m *WhatsAppManager) isAuthenticated(client *whatsmeow.Client) bool {
 		client.Store != nil &&
 		client.Store.ID != nil &&
 		client.IsLoggedIn()
+}
+
+func (m *WhatsAppManager) publishConnectedIfAuthenticated(ctx context.Context, reason string) bool {
+	client := m.getClient()
+	if client == nil || client.Store == nil || client.Store.ID == nil {
+		return false
+	}
+
+	m.mu.RLock()
+	connected := m.connected
+	m.mu.RUnlock()
+
+	if !m.isAuthenticated(client) && !connected {
+		return false
+	}
+
+	phone := phoneFromOwnID(client.Store.ID)
+	log.Printf("whatsmeow already connected worker_id=%s reason=%s", m.cfg.WorkerID, reason)
+	m.clearFreshLoginFallback()
+	m.clearLoginArtifacts()
+	m.mu.Lock()
+	m.connected = true
+	m.status = "connected"
+	m.code = CodeConnectionEstablished
+	m.mu.Unlock()
+	go m.markPresenceAvailable(context.Background(), reason)
+	m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", false)
+	return true
 }
 
 func (m *WhatsAppManager) setCurrentQRCode(qr string) {

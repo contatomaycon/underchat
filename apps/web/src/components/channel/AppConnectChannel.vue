@@ -23,6 +23,8 @@ const props = defineProps<{
   channelId: string | null;
   channelType: string | null;
   accountId: string | null;
+  initialStatusId?: string | null;
+  initialPhone?: string | null;
 }>();
 
 const emit = defineEmits<(e: 'update:modelValue', v: boolean) => void>();
@@ -282,6 +284,31 @@ function prepareConnectionStart() {
   clearConnectedStateDelay();
 }
 
+function prepareInitialModalState() {
+  if (props.initialStatusId !== EWorkerStatus.online) {
+    prepareConnectionStart();
+    return;
+  }
+
+  isResetting.value = false;
+  statusConnection.value = EBaileysConnectionStatus.connected;
+  statusCode.value = ECodeMessage.connectionEstablished;
+  qrcode.value = undefined;
+  phoneNumber.value = props.initialPhone
+    ? formatPhoneBR(props.initialPhone)
+    : null;
+  disconnectedByUser.value = false;
+  isPhoneNumber.value = false;
+  phoneSent.value = false;
+  connectionType.value = EBaileysConnectionType.qrcode;
+  phoneConnection.value = undefined;
+  secondsNextAttempt.value = 0;
+  pairingStartedAt.value = null;
+  resetPairingCodes();
+  clearNextAttemptCountdown();
+  clearConnectedStateDelay();
+}
+
 function buildRequest(
   status: EWorkerStatus,
   removeSession = false
@@ -420,6 +447,13 @@ function shouldIgnoreIncomingState(data: IBaileysConnectionState): boolean {
   const isIncomingConnected =
     incomingStatus === EBaileysConnectionStatus.connected ||
     incomingCode === ECodeMessage.connectionEstablished;
+  const isStaleStartupEvent =
+    incomingCode === ECodeMessage.awaitConnection && !data.qrcode;
+  const isCurrentUserActionState =
+    statusCode.value === ECodeMessage.awaitingReadQrCode ||
+    statusCode.value === ECodeMessage.awaitingPairingCode ||
+    statusCode.value === ECodeMessage.pairingInProgress ||
+    statusCode.value === ECodeMessage.newLoginAttempt;
 
   if (
     statusCode.value === ECodeMessage.phoneNotAvailable &&
@@ -428,10 +462,17 @@ function shouldIgnoreIncomingState(data: IBaileysConnectionState): boolean {
     return true;
   }
 
+  if (isStaleStartupEvent && qrcode.value) {
+    return true;
+  }
+
+  if (isStaleStartupEvent && isCurrentUserActionState) {
+    return true;
+  }
+
   if (
-    qrcode.value &&
-    incomingCode === ECodeMessage.awaitConnection &&
-    !data.qrcode
+    isStaleStartupEvent &&
+    statusConnection.value === EBaileysConnectionStatus.connected
   ) {
     return true;
   }
@@ -552,7 +593,7 @@ onMounted(async () => {
     return;
   }
 
-  prepareConnectionStart();
+  prepareInitialModalState();
 
   await onMessage(
     workerCentrifugoQueue(accountId.value),

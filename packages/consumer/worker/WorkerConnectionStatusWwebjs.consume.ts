@@ -281,6 +281,15 @@ export class WorkerConnectionStatusWwebjsConsume {
       .catch(() => {});
   }
 
+  private isAwaitingUserAction(code: ECodeMessage): boolean {
+    return (
+      code === ECodeMessage.awaitingReadQrCode ||
+      code === ECodeMessage.awaitingPairingCode ||
+      code === ECodeMessage.pairingInProgress ||
+      code === ECodeMessage.newLoginAttempt
+    );
+  }
+
   private async publishConnectedStatus(): Promise<void> {
     const workerId = wwebjsEnvironment.wwebjsWorkerId;
     const accountId = wwebjsEnvironment.wwebjsAccountId;
@@ -342,6 +351,27 @@ export class WorkerConnectionStatusWwebjsConsume {
       return;
     }
 
+    const status = this.wwebjsService.getStatus();
+    const code = this.wwebjsService.getCode();
+    const hasActiveSocket = Boolean(this.wwebjsService.socket);
+    const fromDisconnectRestart = this.restartAfterDisconnect;
+
+    if (
+      status === EBaileysConnectionStatus.connecting &&
+      hasActiveSocket &&
+      this.isAwaitingUserAction(code) &&
+      !fromDisconnectRestart
+    ) {
+      this.logConnectionEvent('connection_retry_paused_user_action', {
+        status,
+        code,
+        has_active_socket: hasActiveSocket,
+      });
+      this.wwebjsService.republishLastState();
+      this.stopConnectionRetry();
+      return;
+    }
+
     this.connectionRetryAttempt += 1;
     this.logConnectionEvent('connection_retry_attempt', {
       attempt: this.connectionRetryAttempt,
@@ -354,7 +384,6 @@ export class WorkerConnectionStatusWwebjsConsume {
       return;
     }
 
-    const fromDisconnectRestart = this.restartAfterDisconnect;
     if (fromDisconnectRestart) {
       this.restartAfterDisconnect = false;
     }
@@ -363,8 +392,6 @@ export class WorkerConnectionStatusWwebjsConsume {
       this.wwebjsService.clearUserRequestedDisconnect();
     }
 
-    const status = this.wwebjsService.getStatus();
-    const hasActiveSocket = Boolean(this.wwebjsService.socket);
     this.logConnectionEvent('connection_connect_invoked', {
       attempt: this.connectionRetryAttempt,
       max_attempts: this.connectionRetryMinAttempts,
@@ -387,7 +414,6 @@ export class WorkerConnectionStatusWwebjsConsume {
       return;
     }
 
-    const code = this.wwebjsService.getCode();
     const skipRestore =
       code === ECodeMessage.badSession || code === ECodeMessage.loggedOut;
 

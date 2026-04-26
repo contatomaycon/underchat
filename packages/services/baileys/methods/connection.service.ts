@@ -713,7 +713,12 @@ export class BaileysConnectionService {
         : {}),
     });
 
-    socket.ev.on('creds.update', saveCreds);
+    socket.ev.on('creds.update', (creds) => {
+      void saveCreds().catch((error) => {
+        console.error('[BaileysConnection] Failed to save credentials', error);
+      });
+      this.maybeMarkPairingInProgressFromCreds(creds);
+    });
 
     return { socket, saveCreds };
   }
@@ -781,6 +786,10 @@ export class BaileysConnectionService {
         }
 
         if (isNewLogin) {
+          return this.onNewLoginAttempt();
+        }
+
+        if (this.shouldMarkQrPairingInProgress(connection)) {
           return this.onNewLoginAttempt();
         }
 
@@ -1123,6 +1132,10 @@ export class BaileysConnectionService {
   }
 
   private onNewLoginAttempt() {
+    if (this.code === ECodeMessage.pairingInProgress) {
+      return;
+    }
+
     this.awaitingNewLogin = true;
     this.connectionEstablished = false;
     this.qrReadSessionActive = false;
@@ -1139,8 +1152,37 @@ export class BaileysConnectionService {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    this.publishSub(payload);
+    this.publishSub(payload, true);
     void this.notifyWorkerStatusSafely(payload, 'pairing_in_progress');
+  }
+
+  private maybeMarkPairingInProgressFromCreds(
+    creds: Partial<{ registered: boolean; me: unknown }>
+  ): void {
+    if (creds.registered !== true && !creds.me) {
+      return;
+    }
+
+    if (this.shouldMarkQrPairingInProgress()) {
+      this.onNewLoginAttempt();
+    }
+  }
+
+  private shouldMarkQrPairingInProgress(
+    connection?: IBaileysUpdateEvent['connection']
+  ): boolean {
+    if (connection && connection !== 'connecting') {
+      return false;
+    }
+
+    return (
+      this.typeConnection === EBaileysConnectionType.qrcode &&
+      this.status === Status.connecting &&
+      this.code === ECodeMessage.awaitingReadQrCode &&
+      Boolean(this.qrHash) &&
+      this.qrReadSessionActive &&
+      !this.qrReadSessionLocked
+    );
   }
 
   private canShowQr(): boolean {

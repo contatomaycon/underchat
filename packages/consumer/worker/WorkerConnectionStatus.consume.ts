@@ -225,6 +225,15 @@ export class WorkerConnectionStatusConsume {
       .catch(() => {});
   }
 
+  private isAwaitingUserAction(code: ECodeMessage): boolean {
+    return (
+      code === ECodeMessage.awaitingReadQrCode ||
+      code === ECodeMessage.awaitingPairingCode ||
+      code === ECodeMessage.pairingInProgress ||
+      code === ECodeMessage.newLoginAttempt
+    );
+  }
+
   private async publishConnectedStatus(): Promise<void> {
     const workerId = baileysEnvironment.baileysWorkerId;
     const accountId = baileysEnvironment.baileysAccountId;
@@ -286,6 +295,27 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
+    const status = this.baileysService.getStatus();
+    const code = this.baileysService.getCode();
+    const hasActiveSocket = Boolean(this.baileysService.socket);
+    const fromDisconnectRestart = this.restartAfterDisconnect;
+
+    if (
+      status === EBaileysConnectionStatus.connecting &&
+      hasActiveSocket &&
+      this.isAwaitingUserAction(code) &&
+      !fromDisconnectRestart
+    ) {
+      this.logConnectionEvent('connection_retry_paused_user_action', {
+        status,
+        code,
+        has_active_socket: hasActiveSocket,
+      });
+      this.baileysService.republishLastState();
+      this.stopConnectionRetry();
+      return;
+    }
+
     this.connectionRetryAttempt += 1;
     this.logConnectionEvent('connection_retry_attempt', {
       attempt: this.connectionRetryAttempt,
@@ -298,7 +328,6 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
-    const fromDisconnectRestart = this.restartAfterDisconnect;
     if (fromDisconnectRestart) {
       this.restartAfterDisconnect = false;
     }
@@ -307,8 +336,6 @@ export class WorkerConnectionStatusConsume {
       this.baileysService.clearUserRequestedDisconnect();
     }
 
-    const status = this.baileysService.getStatus();
-    const hasActiveSocket = Boolean(this.baileysService.socket);
     this.logConnectionEvent('connection_connect_invoked', {
       attempt: this.connectionRetryAttempt,
       max_attempts: this.connectionRetryMinAttempts,
