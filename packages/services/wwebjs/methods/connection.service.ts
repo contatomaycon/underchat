@@ -40,6 +40,9 @@ const RETRY_DELAY = 60_000;
 const MAX_RETRIES = 10;
 const RECONNECT_COOLDOWN_DELAY = 30 * 60 * 1000;
 const MAX_QR_GENERATIONS = 5;
+const CONNECTION_STATE_RECONCILE_INTERVAL_MS = 5_000;
+const CONNECTION_STATE_RECONCILE_TIMEOUT_MS = 120_000;
+const CONNECTION_STATE_CHECK_TIMEOUT_MS = 10_000;
 const DEFAULT_PUPPETEER_PROTOCOL_TIMEOUT_MS = 300_000;
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
@@ -113,6 +116,7 @@ export class WwebjsConnectionService {
   private qrReadSessionActive = false;
   private qrReadSessionLocked = false;
   private disconnectRetryTimer: NodeJS.Timeout | undefined;
+  private connectionStateProbeTimer: NodeJS.Timeout | undefined;
   private teardownPromise: Promise<void> = Promise.resolve();
   private currentPromise: Promise<IBaileysConnectionState> | undefined;
   private pendingResolve: ((s: IBaileysConnectionState) => void) | undefined;
@@ -425,6 +429,7 @@ export class WwebjsConnectionService {
     this.retryCount = 0;
     this.healthCheckService.stop();
     this.clearDisconnectRetryTimer();
+    this.clearConnectionStateProbe();
     this.incomingMessageService.unbind();
 
     if (this.client) {
@@ -444,6 +449,7 @@ export class WwebjsConnectionService {
 
     this.prepareFolder();
     this.clearDisconnectRetryTimer();
+    this.clearConnectionStateProbe();
     this.connecting = true;
     this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
     this.publishConnectionStarting();
@@ -542,6 +548,15 @@ export class WwebjsConnectionService {
 
     clearTimeout(this.disconnectRetryTimer);
     this.disconnectRetryTimer = undefined;
+  }
+
+  private clearConnectionStateProbe(): void {
+    if (!this.connectionStateProbeTimer) {
+      return;
+    }
+
+    clearTimeout(this.connectionStateProbeTimer);
+    this.connectionStateProbeTimer = undefined;
   }
 
   private publishReconnectAttempt(attempt: number, delayMs: number): void {
@@ -743,6 +758,7 @@ export class WwebjsConnectionService {
     );
     console.error('[Wwebjs] client.initialize() failed:', message);
     this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
+    this.clearConnectionStateProbe();
     this.pendingResolve?.(this.state());
     this.pendingResolve = undefined;
     this.clearDisconnectRetryTimer();
@@ -876,6 +892,7 @@ export class WwebjsConnectionService {
       const client = new ClientCtor(clientOptions);
 
       this.client = client;
+      this.startConnectionStateProbe(client, attemptId, proxy);
       this.logConnectionEvent('client_initialized', {
         attempt_id: attemptId,
       });
@@ -1009,7 +1026,7 @@ export class WwebjsConnectionService {
           worker_status_id: EWorkerStatus.disponible,
         };
 
-        this.publishSub(payload);
+        this.publishSub(payload, true);
         void this.notifyWorkerStatusSafely(payload, 'pairing_in_progress');
         this.logConnectionEvent('pairing_in_progress', {
           attempt_id: attemptId,
@@ -1022,37 +1039,7 @@ export class WwebjsConnectionService {
           return;
         }
 
-        this.resetQrReadSession();
-        this.qrReadSessionLocked = false;
-        this.qrHash = undefined;
-        this.retryCount = 0;
-        this.clearDisconnectRetryTimer();
-        this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
-        this.connectionEstablished = true;
-        this.incomingMessageService.bindTo(client);
-
-        const phone = getPhoneNumber(client.info?.wid?._serialized);
-
-        const payload: IBaileysConnectionState = {
-          status: this.status,
-          worker_id: WORKER,
-          account_id: ACCOUNT,
-          code: this.code,
-          phone,
-          worker_status_id: EWorkerStatus.online,
-        };
-
-        this.publishSub(payload);
-        void this.notifyWorkerStatusSafely(payload, 'ready');
-        void this.logConnectionIpInLocal(client, proxy);
-        this.logConnectionEvent('connected_ready', {
-          attempt_id: attemptId,
-          worker_status_id: payload.worker_status_id,
-          has_phone: Boolean(payload.phone),
-        });
-        this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
-        this.pendingResolve?.(this.state());
-        this.pendingResolve = undefined;
+        this.markConnected(client, attemptId, proxy, 'ready');
       });
 
       client.on('disconnected', (reason: string) => {
@@ -1061,6 +1048,7 @@ export class WwebjsConnectionService {
         }
 
         this.connectionEstablished = false;
+        this.clearConnectionStateProbe();
         const statusCode = this.mapDisconnectReason(reason);
 
         void this.healthCheckService.notifyDisconnected(reason);
@@ -1164,6 +1152,7 @@ export class WwebjsConnectionService {
         }
 
         this.setStatus(Status.disconnected, ECodeMessage.badSession);
+        this.clearConnectionStateProbe();
         this.logConnectionEvent('auth_failure', {
           attempt_id: attemptId,
           reason: 'auth_failure_event',
@@ -1339,6 +1328,161 @@ export class WwebjsConnectionService {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private getClientStateWithTimeout(
+    client: Client,
+    timeoutMs = CONNECTION_STATE_CHECK_TIMEOUT_MS
+  ): Promise<string | undefined> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('State check timeout'));
+      }, timeoutMs);
+
+      client
+        .getState()
+        .then((state) => {
+          clearTimeout(timeout);
+          resolve(state ?? undefined);
+        })
+        .catch((error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+    });
+  }
+
+  private startConnectionStateProbe(
+    client: Client,
+    attemptId: number,
+    proxy: ReturnType<typeof readProxyConfig>
+  ): void {
+    this.clearConnectionStateProbe();
+
+    const startedAt = Date.now();
+    const probe = async (): Promise<void> => {
+      if (
+        !this.isActiveClient(client) ||
+        this.status !== Status.connecting ||
+        this.connectionEstablished
+      ) {
+        this.clearConnectionStateProbe();
+        return;
+      }
+
+      let waState: string | undefined;
+      try {
+        waState = await this.getClientStateWithTimeout(client);
+      } catch (error) {
+        this.logConnectionEvent('connection_state_probe_pending', {
+          attempt_id: attemptId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      if (
+        !this.isActiveClient(client) ||
+        this.status !== Status.connecting ||
+        this.connectionEstablished
+      ) {
+        this.clearConnectionStateProbe();
+        return;
+      }
+
+      if (waState === 'CONNECTED') {
+        this.markConnected(client, attemptId, proxy, 'state_probe');
+        return;
+      }
+
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs >= CONNECTION_STATE_RECONCILE_TIMEOUT_MS) {
+        this.logConnectionEvent(
+          'connection_state_probe_timeout',
+          {
+            attempt_id: attemptId,
+            elapsed_ms: elapsedMs,
+            wa_state: waState,
+          },
+          'warn'
+        );
+        this.clearConnectionStateProbe();
+
+        if (this.shouldScheduleRetryAfterDisconnect()) {
+          this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
+          this.pendingResolve?.(this.state());
+          this.pendingResolve = undefined;
+          this.queueTeardown('connection_state_probe_timeout', async () => {
+            if (!this.client || !this.isActiveClient(client)) {
+              return;
+            }
+
+            try {
+              await this.client.destroy();
+            } catch {}
+
+            this.client = undefined;
+            this.clearChromiumProfileLock();
+          });
+          await this.waitForPendingTeardown();
+          this.scheduleNextReconnectAttempt(true);
+        }
+
+        return;
+      }
+
+      this.connectionStateProbeTimer = setTimeout(() => {
+        void probe();
+      }, CONNECTION_STATE_RECONCILE_INTERVAL_MS);
+    };
+
+    this.connectionStateProbeTimer = setTimeout(() => {
+      void probe();
+    }, CONNECTION_STATE_RECONCILE_INTERVAL_MS);
+  }
+
+  private markConnected(
+    client: Client,
+    attemptId: number,
+    proxy: ReturnType<typeof readProxyConfig>,
+    source: 'ready' | 'state_probe'
+  ): void {
+    if (!this.isActiveClient(client)) {
+      return;
+    }
+
+    this.clearConnectionStateProbe();
+    this.resetQrReadSession();
+    this.qrReadSessionLocked = false;
+    this.qrHash = undefined;
+    this.retryCount = 0;
+    this.clearDisconnectRetryTimer();
+    this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
+    this.connectionEstablished = true;
+    this.incomingMessageService.bindTo(client);
+
+    const phone = getPhoneNumber(client.info?.wid?._serialized);
+
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      code: this.code,
+      phone,
+      worker_status_id: EWorkerStatus.online,
+    };
+
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, source);
+    void this.logConnectionIpInLocal(client, proxy);
+    this.logConnectionEvent('connected_ready', {
+      attempt_id: attemptId,
+      source,
+      worker_status_id: payload.worker_status_id,
+      has_phone: Boolean(payload.phone),
+    });
+    this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
+    this.pendingResolve?.(payload);
+    this.pendingResolve = undefined;
   }
 
   private extractPublicIpFromBody(bodyText: string): string | undefined {
@@ -1569,6 +1713,7 @@ export class WwebjsConnectionService {
   }
 
   private cancelAttempt(skipDestroy = false): void {
+    this.clearConnectionStateProbe();
     this.pendingResolve?.(this.state());
     this.pendingResolve = undefined;
     this.currentPromise = undefined;
@@ -1595,6 +1740,7 @@ export class WwebjsConnectionService {
 
   private async safeDestroy(forceLogout = false): Promise<void> {
     this.clearDisconnectRetryTimer();
+    this.clearConnectionStateProbe();
 
     if (!this.client) {
       return;
