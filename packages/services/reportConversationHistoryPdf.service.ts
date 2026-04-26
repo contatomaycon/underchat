@@ -25,6 +25,11 @@ import {
   QuotedMessageType,
 } from '@core/common/interfaces/IChatMessage';
 import { WAUrlInfo } from '@whiskeysockets/baileys';
+import {
+  resolveClosureAnnotationKind,
+  TClosureAnnotationKind,
+} from '@core/common/functions/closureAnnotation';
+import { formatWhatsAppTextToHtml } from '@core/common/functions/whatsAppTextFormat';
 
 @injectable()
 export class ReportConversationHistoryPdfService {
@@ -419,7 +424,8 @@ export class ReportConversationHistoryPdfService {
     contentType: string,
     isSystem: boolean,
     hasReactions: boolean,
-    isDeleted: boolean
+    isDeleted: boolean,
+    closureAnnotationKind: TClosureAnnotationKind
   ): string {
     const isMediaType = [
       'audio',
@@ -433,8 +439,12 @@ export class ReportConversationHistoryPdfService {
     const systemClass = isSystem ? 'is-system' : '';
     const reactionsClass = hasReactions ? 'has-reactions' : '';
     const deletedClass = isDeleted ? 'is-deleted' : '';
+    const closureReasonClass =
+      closureAnnotationKind === 'reason' ? 'is-closure-reason' : '';
+    const closureAuditClass =
+      closureAnnotationKind === 'audit' ? 'is-closure-audit' : '';
 
-    return `${mediaClass} ${reactionsClass} ${deletedClass} ${annotationClass} ${systemClass}`.trim();
+    return `${mediaClass} ${reactionsClass} ${deletedClass} ${annotationClass} ${systemClass} ${closureReasonClass} ${closureAuditClass}`.trim();
   }
 
   private getBubbleStyle(
@@ -602,11 +612,17 @@ export class ReportConversationHistoryPdfService {
           : [];
       const reactionsCount = reactionsSummary.length;
 
+      const closureAnnotationKind = resolveClosureAnnotationKind(
+        msg.content?.annotation_subtype ?? null,
+        msg.content?.message
+      );
+
       const bubbleClasses = this.getBubbleClasses(
         contentType,
         isSystem,
         hasReactions,
-        isDeleted
+        isDeleted,
+        closureAnnotationKind
       );
 
       const bubbleStyle = this.getBubbleStyle(
@@ -684,6 +700,8 @@ export class ReportConversationHistoryPdfService {
             .bubble.is-deleted .content .message-edited-badge { text-decoration: none !important; }
             .bubble.is-deleted .quoted-text, .bubble.is-deleted .image-caption, .bubble.is-deleted .video-caption, .bubble.is-deleted .audio-caption, .bubble.is-deleted .contact-caption { text-decoration: line-through; }
             .bubble.is-system { border-radius: 6px; text-align: center; margin: 0 auto; }
+            .bubble.is-closure-reason { border-left: 4px solid #f39c12; background: #fff3cd !important; }
+            .bubble.is-closure-audit { border-left: 4px solid #2563eb; background: #dbeafe !important; }
             .bubble.is-system .content { text-align: center; }
             .bubble.is-system .content .message-text { text-align: center; }
             .bubble.is-system .meta { text-align: center; }
@@ -1369,11 +1387,22 @@ export class ReportConversationHistoryPdfService {
     t: TFunction<'translation', undefined>
   ): string {
     if (content.type === EMessageType.annotation && content.message) {
-      const body = content.message.replaceAll('\n', '<br>');
-      if (content.annotation_subtype === 'closure') {
+      const body = formatWhatsAppTextToHtml(content.message);
+      const annotationKind = resolveClosureAnnotationKind(
+        content.annotation_subtype ?? null,
+        content.message
+      );
+
+      if (annotationKind === 'reason') {
         const label = this.escapeHtml(t('closure_reason_message_label'));
         return `<div class="pdf-closure-reason-label" style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px;">${label}</div>${body}`;
       }
+
+      if (annotationKind === 'audit') {
+        const label = this.escapeHtml(t('closure_audit_message_label'));
+        return `<div class="pdf-closure-audit-label" style="font-size:11px;font-weight:600;color:#1d4ed8;margin-bottom:4px;">${label}</div>${body}`;
+      }
+
       return body;
     }
     return '';

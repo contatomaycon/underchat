@@ -50,6 +50,8 @@ import { viewAiAgentConfigSchema } from '@core/schema/worker/viewAiAgentConfig';
 import { updateAiAgentConfigSchema } from '@core/schema/worker/updateAiAgentConfig';
 import { viewAttendanceHoursSchema } from '@core/schema/worker/viewAttendanceHours';
 import { updateAttendanceHoursSchema } from '@core/schema/worker/updateAttendanceHours';
+import { viewAttendanceInactivityAlertSchema } from '@core/schema/worker/viewAttendanceInactivityAlert';
+import { updateAttendanceInactivityAlertSchema } from '@core/schema/worker/updateAttendanceInactivityAlert';
 import { checkWorkerOpenConversationsSchema } from '@core/schema/worker/checkWorkerOpenConversations';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
@@ -434,6 +436,28 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/attendance-hours', {
     schema: updateAttendanceHoursSchema,
     handler: workerController.updateAttendanceHours,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/attendance-inactivity-alert', {
+    schema: viewAttendanceInactivityAlertSchema,
+    handler: workerController.viewAttendanceInactivityAlert,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/attendance-inactivity-alert', {
+    schema: updateAttendanceInactivityAlertSchema,
+    handler: workerController.updateAttendanceInactivityAlert,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

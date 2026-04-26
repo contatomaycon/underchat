@@ -20,6 +20,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { EColor } from '@core/common/enums/EColor';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { formatWhatsAppTextToHtml } from '@core/common/functions/whatsAppTextFormat';
+import { resolveClosureAnnotationKind } from '@core/common/functions/closureAnnotation';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import LottieSticker from '@/components/chat/LottieSticker.vue';
@@ -656,9 +657,22 @@ const shouldFormatMessage = (message: ListMessageResult): boolean => {
 };
 
 const isClosureReasonAnnotation = (message: ListMessageResult): boolean => {
+  if (message.content?.type !== EMessageType.annotation) return false;
   return (
-    message.content?.type === EMessageType.annotation &&
-    message.content?.annotation_subtype === 'closure'
+    resolveClosureAnnotationKind(
+      message.content?.annotation_subtype ?? null,
+      message.content?.message
+    ) === 'reason'
+  );
+};
+
+const isClosureAuditAnnotation = (message: ListMessageResult): boolean => {
+  if (message.content?.type !== EMessageType.annotation) return false;
+  return (
+    resolveClosureAnnotationKind(
+      message.content?.annotation_subtype ?? null,
+      message.content?.message
+    ) === 'audit'
   );
 };
 
@@ -1762,6 +1776,8 @@ const handleContactClick = (message: ListMessageResult) => {
                       hasMessageVersions(item.message) && !item.message.deleted,
                     'is-closure-reason-annotation':
                       isClosureReasonAnnotation(item.message),
+                    'is-closure-audit-annotation':
+                      isClosureAuditAnnotation(item.message),
                   },
                 ]"
                 @click.stop="
@@ -2760,7 +2776,8 @@ const handleContactClick = (message: ListMessageResult) => {
                     "
                     :class="
                       item.message.content?.ephemeral ||
-                      isClosureReasonAnnotation(item.message)
+                      isClosureReasonAnnotation(item.message) ||
+                      isClosureAuditAnnotation(item.message)
                         ? 'd-flex flex-column'
                         : 'd-flex align-center'
                     "
@@ -2770,6 +2787,12 @@ const handleContactClick = (message: ListMessageResult) => {
                       class="closure-reason-label"
                     >
                       {{ t('closure_reason_message_label') }}
+                    </div>
+                    <div
+                      v-if="isClosureAuditAnnotation(item.message)"
+                      class="closure-audit-label"
+                    >
+                      {{ t('closure_audit_message_label') }}
                     </div>
                     <div class="d-flex align-center">
                       <VIcon
@@ -3542,6 +3565,13 @@ const handleContactClick = (message: ListMessageResult) => {
         inset 0 0 0 2px rgba(217, 119, 6, 0.45),
         0 1px 3px rgba(0, 0, 0, 0.12) !important;
     }
+
+    &.is-closure-audit-annotation {
+      box-shadow:
+        inset 0 0 0 2px rgba(59, 130, 246, 0.4),
+        0 1px 3px rgba(0, 0, 0, 0.12) !important;
+      background: rgba(219, 234, 254, 0.75) !important;
+    }
   }
 
   .closure-reason-label {
@@ -3550,6 +3580,17 @@ const handleContactClick = (message: ListMessageResult) => {
     padding-bottom: 4px;
     border-bottom: 1px solid rgba(180, 83, 9, 0.35);
     color: rgba(120, 53, 15, 0.95);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  .closure-audit-label {
+    width: 100%;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(37, 99, 235, 0.35);
+    color: rgba(30, 64, 175, 0.95);
     font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.01em;

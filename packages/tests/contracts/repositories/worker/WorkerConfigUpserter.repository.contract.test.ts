@@ -122,6 +122,22 @@ describe('WorkerConfigUpserterRepository', () => {
     });
   });
 
+  it('updateAttendanceInactivityAlert returns persisted value', async () => {
+    const { repository } = buildRepository();
+    (repository as any).upsertConfigValue = jest.fn(async () => undefined);
+    (repository as any).getConfigValue = jest
+      .fn()
+      .mockResolvedValueOnce('inactivity-json');
+
+    await expect(
+      repository.updateAttendanceInactivityAlert(
+        'w-1',
+        'inactivity-json',
+        'active'
+      )
+    ).resolves.toBe('inactivity-json');
+  });
+
   it('updateChatbot updates existing config and returns chatbot id', async () => {
     const { repository } = buildRepository();
     (repository as any).findConfigByWorkerAndTypeId = jest.fn(async () => ({
@@ -202,6 +218,7 @@ describe('WorkerConfigUpserterRepository', () => {
     await repository.updateTransferProtocolText('w-1', null, 'active');
     await repository.updateStartProtocolText('w-1', null, 'active');
     await repository.updateAttendanceHours('w-1', null, null, 'active');
+    await repository.updateAttendanceInactivityAlert('w-1', null, 'active');
 
     expect(upsertConfigValue).toHaveBeenCalledWith(
       expect.anything(),
@@ -215,6 +232,13 @@ describe('WorkerConfigUpserterRepository', () => {
       'w-1',
       'active',
       EWorkerConfigType.generate_protocol_at_start,
+      null
+    );
+    expect(upsertConfigValue).toHaveBeenCalledWith(
+      expect.anything(),
+      'w-1',
+      'active',
+      EWorkerConfigType.attendance_inactivity_alert,
       null
     );
   });

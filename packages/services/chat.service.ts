@@ -1972,6 +1972,93 @@ export class ChatService {
     return hit?._source ?? null;
   };
 
+  findLastMessageByChatId = async (
+    accountId: string,
+    chatId: string
+  ): Promise<IChatMessage | null> => {
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                chat_id: chatId,
+              },
+            },
+          ],
+        },
+      },
+      sort: [{ date: { order: 'desc' } }],
+    };
+
+    const result = await this.elasticDatabaseService.select<IChatMessage>(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0] as ElasticHit<IChatMessage> | undefined;
+    return hit?._source ?? null;
+  };
+
+  findLastHumanMessageByChatId = async (
+    accountId: string,
+    chatId: string
+  ): Promise<IChatMessage | null> => {
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                chat_id: chatId,
+              },
+            },
+          ],
+          must_not: [
+            {
+              terms: {
+                type_user: ['system', 'bot'],
+              },
+            },
+          ],
+        },
+      },
+      sort: [{ date: { order: 'desc' } }],
+    };
+
+    const result = await this.elasticDatabaseService.select<IChatMessage>(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0] as ElasticHit<IChatMessage> | undefined;
+    return hit?._source ?? null;
+  };
+
   updateMessageContent = async (
     messageId: string,
     content: IChatMessage['content']

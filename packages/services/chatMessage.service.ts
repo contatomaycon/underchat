@@ -1069,8 +1069,9 @@ export class ChatMessageService {
     const annotationSubtype =
       type === EMessageType.annotation &&
       'annotationSubtype' in options &&
-      options.annotationSubtype === 'closure'
-        ? 'closure'
+      (options.annotationSubtype === 'closure' ||
+        options.annotationSubtype === 'closure_audit')
+        ? options.annotationSubtype
         : undefined;
 
     const textMessage = this.createTextMessage({

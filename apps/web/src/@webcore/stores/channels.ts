@@ -34,6 +34,9 @@ import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerCon
 import { ViewAttendanceHoursResponse } from '@core/schema/worker/viewAttendanceHours/response.schema';
 import { UpdateAttendanceHoursRequest } from '@core/schema/worker/updateAttendanceHours/request.schema';
 import { UpdateAttendanceHoursResponse } from '@core/schema/worker/updateAttendanceHours/response.schema';
+import { ViewAttendanceInactivityAlertResponse } from '@core/schema/worker/viewAttendanceInactivityAlert/response.schema';
+import { UpdateAttendanceInactivityAlertRequest } from '@core/schema/worker/updateAttendanceInactivityAlert/request.schema';
+import { UpdateAttendanceInactivityAlertResponse } from '@core/schema/worker/updateAttendanceInactivityAlert/response.schema';
 
 const workerConfigForChatPendingModule: Record<
   string,
@@ -1832,6 +1835,70 @@ export const useChannelsStore = defineStore('channels', {
       } catch (error) {
         let message = this.i18n.global.t(
           'send_message_on_finish_attendance_update_error'
+        );
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
+    async fetchAttendanceInactivityAlert(
+      workerId: string
+    ): Promise<ViewAttendanceInactivityAlertResponse | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewAttendanceInactivityAlertResponse>
+        >(`/worker/${workerId}/config/attendance-inactivity-alert`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateAttendanceInactivityAlert(
+      workerId: string,
+      body: UpdateAttendanceInactivityAlertRequest
+    ): Promise<UpdateAttendanceInactivityAlertResponse | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.patch<
+          IApiResponse<UpdateAttendanceInactivityAlertResponse>
+        >(`/worker/${workerId}/config/attendance-inactivity-alert`, body);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('attendance_inactivity_alert_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('attendance_inactivity_alert_update_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t(
+          'attendance_inactivity_alert_update_error'
         );
         if (error instanceof AxiosError) {
           message = error?.response?.data?.message ?? message;
