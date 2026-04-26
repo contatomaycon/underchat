@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { ConfigService } from '@core/services/config.service';
 import { ChannelRecreatorUseCase } from './ChannelRecreator.useCase';
 import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 @injectable()
 export class ChannelsRecreatorAllUseCase {
@@ -17,9 +18,25 @@ export class ChannelsRecreatorAllUseCase {
     t: TFunction<'translation', undefined>,
     filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
   ): Promise<{ success: number; errors: number }> {
-    const channelIds = await this.getChannelIds(t, filters);
+    const channelIds = await this.getChannelIds(
+      t,
+      this.normalizeFilters(filters)
+    );
     const results = await this.recreateAllChannels(t, channelIds);
     return this.countResults(results);
+  }
+
+  private normalizeFilters(
+    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+  ): Omit<IConfigChannelsRecreateAllPayload, 'account_id'> {
+    return {
+      ...filters,
+      status: filters.status ?? EWorkerStatus.online,
+      type: filters.type ?? undefined,
+      account: filters.account || undefined,
+      name: filters.name || undefined,
+      number: filters.number || undefined,
+    };
   }
 
   private async getChannelIds(

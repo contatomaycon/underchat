@@ -18,6 +18,7 @@ import {
   SQLWrapper,
   count,
   SQL,
+  or,
 } from 'drizzle-orm';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
@@ -28,6 +29,22 @@ export class ChannelsListerRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
+
+  private readonly buildNameOrNumberFilter = (
+    name?: string | null,
+    number?: string | null
+  ): SQLWrapper | undefined => {
+    const filters = [
+      name ? ilike(worker.name, `%${name}%`) : undefined,
+      number ? ilike(worker.number, `%${number}%`) : undefined,
+    ].filter((filter): filter is SQL => Boolean(filter));
+
+    if (!filters.length) {
+      return undefined;
+    }
+
+    return or(...filters);
+  };
 
   private readonly setOrders = (query: ListChannelsRequest): SQL[] => {
     if (!query.sort_by?.length) {
@@ -73,12 +90,9 @@ export class ChannelsListerRepository {
       filters.push(eq(account.account_id, query.account));
     }
 
-    if (query.name) {
-      filters.push(ilike(worker.name, `%${query.name}%`));
-    }
-
-    if (query.number) {
-      filters.push(ilike(worker.number, `%${query.number}%`));
+    const searchFilter = this.buildNameOrNumberFilter(query.name, query.number);
+    if (searchFilter) {
+      filters.push(searchFilter);
     }
 
     return filters;
@@ -207,12 +221,12 @@ export class ChannelsListerRepository {
       filters.push(eq(account.account_id, filtersInput.account));
     }
 
-    if (filtersInput.name) {
-      filters.push(ilike(worker.name, `%${filtersInput.name}%`));
-    }
-
-    if (filtersInput.number) {
-      filters.push(ilike(worker.number, `%${filtersInput.number}%`));
+    const searchFilter = this.buildNameOrNumberFilter(
+      filtersInput.name,
+      filtersInput.number
+    );
+    if (searchFilter) {
+      filters.push(searchFilter);
     }
 
     const result = await this.dbRo

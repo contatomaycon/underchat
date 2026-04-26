@@ -1,5 +1,7 @@
 import 'reflect-metadata';
 import { ChannelsListerRepository } from '@core/repositories/config/ChannelsLister.repository';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 function createListChain(result: unknown[]) {
   const queryBuilder = {
@@ -19,7 +21,7 @@ function createListChain(result: unknown[]) {
   const from = jest.fn(() => queryBuilder);
   const select = jest.fn(() => ({ from }));
 
-  return { select };
+  return { queryBuilder, select };
 }
 
 function createCountChain(result: unknown[]) {
@@ -34,7 +36,45 @@ function createCountChain(result: unknown[]) {
   const from = jest.fn(() => queryBuilder);
   const select = jest.fn(() => ({ from }));
 
-  return { select };
+  return { queryBuilder, select };
+}
+
+function collectSqlParts(value: unknown): string[] {
+  if (!value) {
+    return [];
+  }
+
+  if (typeof value !== 'object') {
+    return [String(value)];
+  }
+
+  const record = value as {
+    queryChunks?: unknown[];
+    value?: unknown;
+    name?: unknown;
+    columnType?: unknown;
+  };
+
+  if (Array.isArray(record.queryChunks)) {
+    return record.queryChunks.flatMap((chunk) => collectSqlParts(chunk));
+  }
+
+  if (Array.isArray(record.value)) {
+    return record.value.map(String);
+  }
+
+  if ('value' in record && typeof record.value !== 'object') {
+    return [String(record.value)];
+  }
+
+  if (
+    typeof record.name === 'string' &&
+    typeof record.columnType === 'string'
+  ) {
+    return [record.name];
+  }
+
+  return [];
 }
 
 describe('ChannelsListerRepository', () => {
@@ -92,5 +132,32 @@ describe('ChannelsListerRepository', () => {
     await expect(
       repository.listAllNonDeletedChannelIds({} as never)
     ).resolves.toEqual(['w1', 'w2']);
+  });
+
+  it('keeps exact filters and searches name or number for recreate-all ids', async () => {
+    const chain = createCountChain([{ worker_id: 'w1' }]);
+    const dbRo = { select: chain.select };
+    const repository = new ChannelsListerRepository(dbRo as never);
+
+    await expect(
+      repository.listAllNonDeletedChannelIds({
+        status: EWorkerStatus.error,
+        type: EWorkerType.baileys,
+        account: 'acc-1',
+        name: 'Display',
+        number: '5511999999999',
+      })
+    ).resolves.toEqual(['w1']);
+
+    const whereSql = collectSqlParts(
+      chain.queryBuilder.where.mock.calls[0][0]
+    ).join(' ');
+
+    expect(whereSql).toContain(EWorkerStatus.error);
+    expect(whereSql).toContain(EWorkerType.baileys);
+    expect(whereSql).toContain('acc-1');
+    expect(whereSql).toContain('%Display%');
+    expect(whereSql).toContain('%5511999999999%');
+    expect(whereSql).toContain(' or ');
   });
 });

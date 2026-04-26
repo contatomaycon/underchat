@@ -8,6 +8,7 @@ jest.mock('@core/useCases/config/ChannelRecreator.useCase', () => ({
 }));
 
 import { ChannelsRecreatorAllUseCase } from '@core/useCases/config/ChannelsRecreatorAll.useCase';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 describe('ChannelsRecreatorAllUseCase', () => {
   it('throws when there are no channels to recreate', async () => {
@@ -24,12 +25,19 @@ describe('ChannelsRecreatorAllUseCase', () => {
     const t = jest.fn((key: string) => key);
 
     await expect(
-      useCase.execute(t as never, { server_id: 'srv-1' } as never)
+      useCase.execute(t as never, { account: 'acc-filter' })
     ).rejects.toThrow('no_channels_to_recreate');
+    expect(configService.listAllNonDeletedChannelIds).toHaveBeenCalledWith({
+      status: EWorkerStatus.online,
+      type: undefined,
+      account: 'acc-filter',
+      name: undefined,
+      number: undefined,
+    });
     expect(channelRecreatorUseCase.execute).not.toHaveBeenCalled();
   });
 
-  it('returns all success when all channel recreations succeed', async () => {
+  it('preserves explicit status when listing channels to recreate', async () => {
     const configService = {
       listAllNonDeletedChannelIds: jest.fn(async () => ['w1', 'w2']),
     };
@@ -42,10 +50,21 @@ describe('ChannelsRecreatorAllUseCase', () => {
     );
 
     await expect(
-      useCase.execute(jest.fn() as never, { server_id: 'srv-1' } as never)
+      useCase.execute(jest.fn() as never, {
+        status: EWorkerStatus.error,
+        name: 'Channel',
+        number: '5511999999999',
+      })
     ).resolves.toEqual({
       success: 2,
       errors: 0,
+    });
+    expect(configService.listAllNonDeletedChannelIds).toHaveBeenCalledWith({
+      status: EWorkerStatus.error,
+      type: undefined,
+      account: undefined,
+      name: 'Channel',
+      number: '5511999999999',
     });
   });
 
