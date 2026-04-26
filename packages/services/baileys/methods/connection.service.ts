@@ -468,6 +468,13 @@ export class BaileysConnectionService {
       has_active_socket: Boolean(this.socket),
     });
 
+    if (typeConnection === EBaileysConnectionType.phone) {
+      this.logConnectionEvent('connect_rejected', {
+        reason: 'phone_connection_disabled',
+      });
+      throw new Error('Phone connection is disabled. Use QR Code.');
+    }
+
     if (requestedByUser) {
       this.userRequestedDisconnect = false;
     }
@@ -582,10 +589,6 @@ export class BaileysConnectionService {
     const { socket } = await this.createSocket();
     this.baileysIncomingMessageService.bindTo(socket);
     this.socket = socket;
-
-    if (this.typeConnection === EBaileysConnectionType.phone) {
-      await this.requestPairing(socket);
-    }
 
     this.currentPromise = this.wait(socket, this.socketId).finally(() => {
       this.connecting = false;
@@ -754,30 +757,6 @@ export class BaileysConnectionService {
     });
 
     return { socket, saveCreds };
-  }
-
-  private async requestPairing(socket: WASocket): Promise<void> {
-    if (!this.phoneConnection) {
-      return;
-    }
-
-    if (!socket.authState.creds.registered) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      const code = await socket.requestPairingCode(this.phoneConnection);
-
-      const payload: IBaileysConnectionState = {
-        status: Status.connecting,
-        worker_id: WORKER,
-        account_id: ACCOUNT,
-        pairing_code: code,
-        code: ECodeMessage.awaitingPairingCode,
-        worker_status_id: EWorkerStatus.disponible,
-      };
-
-      this.publishSub(payload);
-      void this.notifyWorkerStatusSafely(payload, 'pairing_code');
-    }
   }
 
   private restoreSessionInProgress(): boolean {

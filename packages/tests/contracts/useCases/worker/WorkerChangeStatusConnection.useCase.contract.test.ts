@@ -87,4 +87,26 @@ describe('WorkerChangeStatusConnectionUseCase', () => {
     );
     expect(workerGrpcClientService.changeConnectionStatus).toHaveBeenCalled();
   });
+
+  it('rejects phone connection without creating phone connection records', async () => {
+    const { sut, workerService, centrifugoService, workerGrpcClientService } =
+      makeSut();
+
+    await expect(
+      sut.execute(t, 'account-1', {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.phone,
+        phone_connection: '5511999999999',
+      })
+    ).rejects.toThrow('phone_connection_disabled');
+
+    expect(workerService.viewWorkerPhoneConnection).not.toHaveBeenCalled();
+    expect(workerService.createWorkerPhoneConnection).not.toHaveBeenCalled();
+    expect(workerService.updateWorkerPhoneConnection).not.toHaveBeenCalled();
+    expect(centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(
+      workerGrpcClientService.changeConnectionStatus
+    ).not.toHaveBeenCalled();
+  });
 });

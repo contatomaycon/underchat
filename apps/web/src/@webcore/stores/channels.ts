@@ -37,6 +37,8 @@ import { UpdateAttendanceHoursResponse } from '@core/schema/worker/updateAttenda
 import { ViewAttendanceInactivityAlertResponse } from '@core/schema/worker/viewAttendanceInactivityAlert/response.schema';
 import { UpdateAttendanceInactivityAlertRequest } from '@core/schema/worker/updateAttendanceInactivityAlert/request.schema';
 import { UpdateAttendanceInactivityAlertResponse } from '@core/schema/worker/updateAttendanceInactivityAlert/response.schema';
+import { WorkerExternalConnectionLinkResponse } from '@core/schema/worker/externalConnectionLink/response.schema';
+import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
 
 const workerConfigForChatPendingModule: Record<
   string,
@@ -411,6 +413,77 @@ export const useChannelsStore = defineStore('channels', {
 
         this.loading = false;
 
+        return false;
+      }
+    },
+
+    async createExternalConnectionLink(
+      workerId: string
+    ): Promise<WorkerExternalConnectionLinkResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<WorkerExternalConnectionLinkResponse>
+        >(`/worker/${workerId}/external-connection-link`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('external_connection_link_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('external_connection_link_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async viewExternalConnection(
+      token: string
+    ): Promise<WorkerExternalConnectionViewResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<WorkerExternalConnectionViewResponse>
+        >(`/worker/external-connection/${encodeURIComponent(token)}`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async requestExternalConnectionQrCode(token: string): Promise<boolean> {
+      try {
+        const response = await axios.post<IApiResponse<null>>(
+          `/worker/external-connection/${encodeURIComponent(token)}/qrcode`
+        );
+
+        return Boolean(response?.data?.status);
+      } catch {
         return false;
       }
     },

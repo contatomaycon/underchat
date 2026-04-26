@@ -38,6 +38,11 @@ export class WorkerConnectionStatusWwebjsConsume {
       remove_session: payload.remove_session === true,
       has_phone_connection: Boolean(payload.phone_connection),
     });
+
+    if (payload.type === EBaileysConnectionType.phone) {
+      throw new Error('Phone connection is disabled. Use QR Code.');
+    }
+
     void this.handleConnectionStatus(payload);
   }
 

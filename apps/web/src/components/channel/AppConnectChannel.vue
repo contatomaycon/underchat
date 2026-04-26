@@ -1,9 +1,15 @@
 <script lang="ts" setup>
-import { computed, onMounted, onUnmounted, shallowRef, toRef } from 'vue';
+import {
+  computed,
+  onMounted,
+  onUnmounted,
+  shallowRef,
+  toRef,
+  watch,
+} from 'vue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
-import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -35,7 +41,6 @@ const isVisible = computed({
 });
 
 const channelId = toRef(props, 'channelId');
-const channelType = toRef(props, 'channelType');
 const accountId = toRef(props, 'accountId');
 
 const MIN_PAIRING_STAGE_MS = 900;
@@ -48,24 +53,17 @@ const qrcode = shallowRef<string | undefined>();
 const phoneNumber = shallowRef<string | null>(null);
 const disconnectedByUser = shallowRef(false);
 const isResetting = shallowRef(false);
-
-const isPhoneNumber = shallowRef(false);
-const phoneSent = shallowRef(false);
-const phoneConnection = shallowRef<string | undefined>();
-const connectionType = shallowRef<EBaileysConnectionType>(
-  EBaileysConnectionType.qrcode
-);
 const pairingCodePrimary = shallowRef('');
 const pairingCodeSecondary = shallowRef('');
+const externalConnectionUrl = shallowRef('');
+const externalConnectionExpiresAt = shallowRef<string | null>(null);
+const isExternalConnectionLinkLoading = shallowRef(false);
+const isExternalConnectionCopied = shallowRef(false);
 
 const secondsNextAttempt = shallowRef(0);
 const intervalIdNextAttempt = shallowRef<number | null>(null);
 const pairingStartedAt = shallowRef<number | null>(null);
 const connectedStateDelayTimeout = shallowRef<number | null>(null);
-
-const isBrowserWorkerType = computed(
-  () => channelType.value === EWorkerType.wwebjs
-);
 
 const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   status: statusConnection.value,
@@ -80,8 +78,6 @@ const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
 const modalState = computed<WorkerConnectionModalState>(() =>
   normalizeWorkerConnectionModalState(connectionState.value, {
     isResetting: isResetting.value,
-    isPhoneNumber: isPhoneNumber.value,
-    phoneSent: phoneSent.value,
   })
 );
 
@@ -195,42 +191,68 @@ const stageMeta = computed(() => {
   return meta[modalState.value];
 });
 
-const showPrimaryActions = computed(
-  () => modalState.value !== 'phoneInput' && modalState.value !== 'pairing'
-);
+const showPrimaryActions = computed(() => modalState.value !== 'pairing');
 const showReconnectAction = computed(
   () =>
     !isConnected.value &&
     !isBlockingOperation.value &&
-    modalState.value !== 'phoneInput' &&
     modalState.value !== 'pairing'
 );
-const showEnterPhoneLink = computed(
-  () =>
-    !isBrowserWorkerType.value &&
-    !isPhoneNumber.value &&
-    !isConnected.value &&
-    !isBlockingOperation.value &&
-    modalState.value !== 'phoneUnavailable'
-);
-const showEnterQrLink = computed(
-  () =>
-    isPhoneNumber.value &&
-    !isConnected.value &&
-    !isBlockingOperation.value &&
-    modalState.value !== 'phoneUnavailable' &&
-    !(
-      modalState.value === 'pairing' &&
-      pairingCodePrimary.value &&
-      pairingCodeSecondary.value
-    )
-);
-const showChangePhoneLink = computed(
-  () =>
-    modalState.value === 'pairing' &&
-    Boolean(pairingCodePrimary.value && pairingCodeSecondary.value) &&
-    !isBlockingOperation.value
-);
+
+const externalConnectionExpiresAtFormatted = computed(() => {
+  if (!externalConnectionExpiresAt.value) {
+    return '';
+  }
+
+  const expiresAt = new Date(externalConnectionExpiresAt.value);
+  if (Number.isNaN(expiresAt.getTime())) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(expiresAt);
+});
+
+async function loadExternalConnectionLink() {
+  if (!channelId.value) {
+    externalConnectionUrl.value = '';
+    externalConnectionExpiresAt.value = null;
+    return;
+  }
+
+  isExternalConnectionLinkLoading.value = true;
+  isExternalConnectionCopied.value = false;
+
+  try {
+    const link = await channelStore.createExternalConnectionLink(
+      channelId.value
+    );
+
+    externalConnectionUrl.value = link?.url ?? '';
+    externalConnectionExpiresAt.value = link?.expires_at ?? null;
+  } finally {
+    isExternalConnectionLinkLoading.value = false;
+  }
+}
+
+async function copyExternalConnectionLink() {
+  if (!externalConnectionUrl.value) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(externalConnectionUrl.value);
+    isExternalConnectionCopied.value = true;
+  } catch {
+    return;
+  }
+
+  window.setTimeout(() => {
+    isExternalConnectionCopied.value = false;
+  }, 2000);
+}
 
 function resetPairingCodes() {
   pairingCodePrimary.value = '';
@@ -298,10 +320,6 @@ function prepareInitialModalState() {
     ? formatPhoneBR(props.initialPhone)
     : null;
   disconnectedByUser.value = false;
-  isPhoneNumber.value = false;
-  phoneSent.value = false;
-  connectionType.value = EBaileysConnectionType.qrcode;
-  phoneConnection.value = undefined;
   secondsNextAttempt.value = 0;
   pairingStartedAt.value = null;
   resetPairingCodes();
@@ -316,8 +334,7 @@ function buildRequest(
   const payload: StatusConnectionWorkerRequest = {
     worker_id: channelId.value!,
     status,
-    type: connectionType.value,
-    phone_connection: phoneConnection.value,
+    type: EBaileysConnectionType.qrcode,
   };
 
   if (removeSession) {
@@ -327,15 +344,8 @@ function buildRequest(
   return payload;
 }
 
-async function reconnectChannel(restart = false) {
+async function reconnectChannel() {
   if (!channelId.value) return;
-
-  if (restart) {
-    connectionType.value = EBaileysConnectionType.qrcode;
-    phoneConnection.value = undefined;
-    isPhoneNumber.value = false;
-    phoneSent.value = false;
-  }
 
   prepareConnectionStart();
 
@@ -369,34 +379,6 @@ async function recreateChannelWithFullCleanup() {
   statusCode.value = ECodeMessage.awaitConnection;
 }
 
-async function sendPhoneNumber() {
-  if (!channelId.value || !phoneConnection.value) return;
-
-  phoneSent.value = true;
-  connectionType.value = EBaileysConnectionType.phone;
-  prepareConnectionStart();
-  phoneSent.value = true;
-
-  await channelStore.updateConnectionChannel(
-    buildRequest(EWorkerStatus.online)
-  );
-}
-
-function enterPhoneNumber() {
-  if (isBrowserWorkerType.value) return;
-
-  isPhoneNumber.value = true;
-  phoneSent.value = false;
-  connectionType.value = EBaileysConnectionType.phone;
-  phoneConnection.value = undefined;
-  qrcode.value = undefined;
-  secondsNextAttempt.value = 0;
-  pairingStartedAt.value = null;
-  resetPairingCodes();
-  clearNextAttemptCountdown();
-  clearConnectedStateDelay();
-}
-
 function scheduleConnectedState(data: IBaileysConnectionState) {
   const startedAt = pairingStartedAt.value;
   if (!startedAt) {
@@ -416,29 +398,6 @@ function scheduleConnectedState(data: IBaileysConnectionState) {
   ).setTimeout(() => {
     applyConnectedState(data);
   }, remaining);
-}
-
-function changePhone() {
-  isPhoneNumber.value = true;
-  phoneSent.value = false;
-  phoneConnection.value = undefined;
-  pairingStartedAt.value = null;
-  resetPairingCodes();
-  clearConnectedStateDelay();
-}
-
-async function enterQrcode() {
-  isPhoneNumber.value = false;
-  phoneSent.value = false;
-  connectionType.value = EBaileysConnectionType.qrcode;
-  phoneConnection.value = undefined;
-  prepareConnectionStart();
-
-  if (channelId.value) {
-    await channelStore.updateConnectionChannel(
-      buildRequest(EWorkerStatus.online)
-    );
-  }
 }
 
 function shouldIgnoreIncomingState(data: IBaileysConnectionState): boolean {
@@ -487,10 +446,6 @@ function applyConnectedState(data: IBaileysConnectionState) {
   phoneNumber.value = data.phone ? formatPhoneBR(data.phone) : null;
   disconnectedByUser.value = false;
   qrcode.value = undefined;
-  isPhoneNumber.value = false;
-  phoneSent.value = false;
-  connectionType.value = EBaileysConnectionType.qrcode;
-  phoneConnection.value = undefined;
   secondsNextAttempt.value = 0;
   pairingStartedAt.value = null;
   resetPairingCodes();
@@ -594,6 +549,7 @@ onMounted(async () => {
   }
 
   prepareInitialModalState();
+  await loadExternalConnectionLink();
 
   await onMessage(
     workerCentrifugoQueue(accountId.value),
@@ -603,6 +559,14 @@ onMounted(async () => {
   await channelStore.updateConnectionChannel(
     buildRequest(EWorkerStatus.online)
   );
+});
+
+watch(isVisible, (visible) => {
+  if (!visible) {
+    return;
+  }
+
+  void loadExternalConnectionLink();
 });
 
 onUnmounted(() => {
@@ -629,35 +593,7 @@ onUnmounted(() => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <VCardText v-if="modalState === 'phoneInput'">
-            <div class="connection-copy">
-              <VIcon
-                :icon="stageMeta.icon"
-                :color="stageMeta.color"
-                size="52"
-              />
-              <h4 class="text-h5 mb-1">{{ $t(stageMeta.title) }}</h4>
-              <p class="mb-1">{{ $t(stageMeta.description) }}</p>
-              <p class="mb-3">
-                <strong>{{ $t('attention') }}:</strong>
-                {{ $t('is_limited') }}
-              </p>
-            </div>
-
-            <v-phone-input v-model="phoneConnection" />
-
-            <VBtn
-              :loading="channelStore.loading"
-              :disabled="channelStore.loading || !phoneConnection"
-              block
-              class="mt-3"
-              @click="sendPhoneNumber"
-            >
-              {{ $t('request') }}
-            </VBtn>
-          </VCardText>
-
-          <VCardText v-else class="connection-stage">
+          <VCardText class="connection-stage">
             <div class="connection-visual">
               <VImg
                 v-if="modalState === 'qrReady' && qrcode"
@@ -759,7 +695,7 @@ onUnmounted(() => {
                 :disabled="isActionLocked"
                 :loading="channelStore.loading && modalState === 'starting'"
                 color="warning"
-                @click="reconnectChannel(true)"
+                @click="reconnectChannel"
               >
                 <VTooltip
                   location="top"
@@ -773,22 +709,65 @@ onUnmounted(() => {
             </div>
           </VCardText>
 
-          <VCardText v-if="showEnterQrLink" class="text-center pt-0">
-            <a class="clickable" @click="enterQrcode">
-              {{ $t('enter_qrcode') }}
-            </a>
-          </VCardText>
+          <VCardText class="pt-0">
+            <div class="external-connection-box">
+              <div class="external-connection-header">
+                <VIcon icon="tabler-link" color="primary" size="22" />
+                <div>
+                  <p class="text-body-2 font-weight-medium mb-0">
+                    {{ $t('external_connection_link') }}
+                  </p>
+                  <small class="text-medium-emphasis">
+                    {{ $t('external_connection_link_validity') }}
+                    <template v-if="externalConnectionExpiresAtFormatted">
+                      - {{ externalConnectionExpiresAtFormatted }}
+                    </template>
+                  </small>
+                </div>
+              </div>
 
-          <VCardText v-if="showChangePhoneLink" class="text-center pt-0">
-            <a class="clickable" @click="changePhone">
-              {{ $t('change_phone_number') }}
-            </a>
-          </VCardText>
-
-          <VCardText v-else-if="showEnterPhoneLink" class="text-center pt-0">
-            <a class="clickable" @click="enterPhoneNumber">
-              {{ $t('enter_phone_number') }}
-            </a>
+              <AppTextField
+                v-model="externalConnectionUrl"
+                readonly
+                density="compact"
+                hide-details
+                :loading="isExternalConnectionLinkLoading"
+                :placeholder="$t('external_connection_link_loading')"
+              >
+                <template #append-inner>
+                  <VBtn
+                    icon
+                    variant="text"
+                    size="small"
+                    :disabled="
+                      !externalConnectionUrl || isExternalConnectionLinkLoading
+                    "
+                    @click.stop="copyExternalConnectionLink"
+                  >
+                    <VIcon
+                      :icon="
+                        isExternalConnectionCopied
+                          ? 'tabler-check'
+                          : 'tabler-copy'
+                      "
+                    />
+                    <VTooltip
+                      activator="parent"
+                      location="top"
+                      transition="scroll-x-transition"
+                    >
+                      <span>
+                        {{
+                          isExternalConnectionCopied
+                            ? $t('external_connection_link_copied')
+                            : $t('copy_external_connection_link')
+                        }}
+                      </span>
+                    </VTooltip>
+                  </VBtn>
+                </template>
+              </AppTextField>
+            </div>
           </VCardText>
         </VCol>
 
@@ -921,6 +900,17 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.external-connection-box {
+  display: grid;
+  gap: 10px;
+}
+
+.external-connection-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .connection-step {
   display: flex;
   flex-direction: column;
@@ -934,9 +924,5 @@ onUnmounted(() => {
 
 .v-btn {
   transform: none;
-}
-
-.clickable {
-  cursor: pointer;
 }
 </style>

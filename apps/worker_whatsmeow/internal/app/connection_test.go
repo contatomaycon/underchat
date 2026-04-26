@@ -1,9 +1,11 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
@@ -13,18 +15,40 @@ import (
 func TestFreshLoginFallbackIsConsumedOnce(t *testing.T) {
 	manager := &WhatsAppManager{}
 
-	manager.armFreshLoginFallback(freshLoginRequest{Type: "phone", Phone: "5511999999999"})
+	manager.armFreshLoginFallback(freshLoginRequest{Type: "qrcode"})
 
 	req, ok := manager.consumeFreshLoginFallback()
 	if !ok {
 		t.Fatal("expected fallback request")
 	}
-	if req.Type != "phone" || req.Phone != "5511999999999" {
+	if req.Type != "qrcode" {
 		t.Fatalf("unexpected fallback request %#v", req)
 	}
 
 	if _, ok := manager.consumeFreshLoginFallback(); ok {
 		t.Fatal("expected fallback request to be consumed only once")
+	}
+}
+
+func TestRequestConnectionRejectsPhonePairing(t *testing.T) {
+	manager := &WhatsAppManager{
+		cfg: Config{
+			WorkerID: "worker-1",
+		},
+	}
+
+	err := manager.RequestConnection(context.Background(), StatusConnectionRequest{
+		WorkerID:        "worker-1",
+		Status:          WorkerStatusOnline,
+		Type:            "phone",
+		PhoneConnection: "5511999999999",
+	})
+
+	if err == nil {
+		t.Fatal("expected phone connection to be rejected")
+	}
+	if !strings.Contains(err.Error(), "phone connection is disabled") {
+		t.Fatalf("unexpected error %q", err.Error())
 	}
 }
 

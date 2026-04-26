@@ -11,6 +11,7 @@ export enum EHTTPStatusCode {
   not_found = 404,
   request_timeout = 408,
   conflict = 409,
+  gone = 410,
   internal_server_error = 500,
   service_unavailable = 503,
 }

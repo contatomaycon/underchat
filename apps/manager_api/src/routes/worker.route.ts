@@ -53,6 +53,11 @@ import { updateAttendanceHoursSchema } from '@core/schema/worker/updateAttendanc
 import { viewAttendanceInactivityAlertSchema } from '@core/schema/worker/viewAttendanceInactivityAlert';
 import { updateAttendanceInactivityAlertSchema } from '@core/schema/worker/updateAttendanceInactivityAlert';
 import { checkWorkerOpenConversationsSchema } from '@core/schema/worker/checkWorkerOpenConversations';
+import { workerExternalConnectionLinkSchema } from '@core/schema/worker/externalConnectionLink';
+import {
+  requestWorkerExternalConnectionQrCodeSchema,
+  viewWorkerExternalConnectionSchema,
+} from '@core/schema/worker/externalConnection';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -92,6 +97,17 @@ export default function workerRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.post('/worker/:worker_id/external-connection-link', {
+    schema: workerExternalConnectionLinkSchema,
+    handler: workerController.createExternalConnectionLink,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
   server.get('/worker', {
     schema: listWorkerSchema,
     handler: workerController.listWorker,
@@ -112,6 +128,16 @@ export default function workerRoutes(server: FastifyInstance) {
       planGuard,
       planStatus,
     ],
+  });
+
+  server.get('/worker/external-connection/:token', {
+    schema: viewWorkerExternalConnectionSchema,
+    handler: workerController.viewExternalConnection,
+  });
+
+  server.post('/worker/external-connection/:token/qrcode', {
+    schema: requestWorkerExternalConnectionQrCodeSchema,
+    handler: workerController.requestExternalConnectionQrCode,
   });
 
   server.get('/worker/:worker_id', {

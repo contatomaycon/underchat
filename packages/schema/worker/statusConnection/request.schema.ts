@@ -5,7 +5,7 @@ import { Static, Type } from '@sinclair/typebox';
 export const statusConnectionWorkerRequestSchema = Type.Object({
   worker_id: Type.String(),
   status: Type.String({ enum: Object.values(EWorkerStatus) }),
-  type: Type.String({ enum: Object.values(EBaileysConnectionType) }),
+  type: Type.String({ enum: [EBaileysConnectionType.qrcode] }),
   phone_connection: Type.Optional(Type.String()),
   remove_session: Type.Optional(Type.Boolean()),
 });

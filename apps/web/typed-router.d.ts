@@ -186,6 +186,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'connection-external-token': RouteRecordInfo<
+      'connection-external-token',
+      '/connection/external/:token',
+      { token: ParamValue<true> },
+      { token: ParamValue<false> },
+      | never
+    >,
     'contact': RouteRecordInfo<
       'contact',
       '/contact',
@@ -585,6 +592,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/config/s3-backup-tab.vue': {
       routes:
         | 'config-s3-backup-tab'
+      views:
+        | never
+    }
+    'src/pages/connection/external/[token].vue': {
+      routes:
+        | 'connection-external-token'
       views:
         | never
     }

@@ -217,6 +217,11 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 		return fmt.Errorf("request worker_id %s does not match %s", req.WorkerID, m.cfg.WorkerID)
 	}
 
+	connectionType := strings.ToLower(req.Type)
+	if connectionType == "phone" {
+		return fmt.Errorf("phone connection is disabled; use qrcode")
+	}
+
 	if req.RemoveSession || req.Status == WorkerStatusDisponible {
 		return m.removeSession(ctx)
 	}
@@ -227,9 +232,7 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 
 	m.publishState(ctx, "connecting", CodeAwaitConnection, "", "", "", false)
 
-	switch strings.ToLower(req.Type) {
-	case "phone":
-		return m.connectWithPhonePairing(ctx, req.PhoneConnection)
+	switch connectionType {
 	case "qrcode", "":
 		return m.connectWithQRCode(ctx)
 	default:
@@ -823,12 +826,7 @@ func (m *WhatsAppManager) handleFreshLoginConnectError(ctx context.Context, req 
 			return fmt.Errorf("reset invalid whatsmeow session: %w", resetErr)
 		}
 
-		switch strings.ToLower(req.Type) {
-		case "phone":
-			return m.connectWithPhonePairingInternal(ctx, req.Phone, false)
-		default:
-			return m.connectWithQRCodeInternal(ctx, false)
-		}
+		return m.connectWithQRCodeInternal(ctx, false)
 	}
 
 	m.clearLoginArtifacts()
@@ -884,12 +882,7 @@ func (m *WhatsAppManager) resetAndStartFreshLogin(ctx context.Context, req fresh
 	if err := m.resetLocalSession(ctx); err != nil {
 		return err
 	}
-	switch strings.ToLower(req.Type) {
-	case "phone":
-		return m.connectWithPhonePairing(ctx, req.Phone)
-	default:
-		return m.connectWithQRCode(ctx)
-	}
+	return m.connectWithQRCode(ctx)
 }
 
 func (m *WhatsAppManager) resetLocalSession(ctx context.Context) error {

@@ -40,6 +40,9 @@ import { updateAttendanceHours } from './methods/updateAttendanceHours';
 import { viewAttendanceInactivityAlert } from './methods/viewAttendanceInactivityAlert';
 import { updateAttendanceInactivityAlert } from './methods/updateAttendanceInactivityAlert';
 import { checkWorkerOpenConversations } from './methods/checkWorkerOpenConversations';
+import { createExternalConnectionLink } from './methods/createExternalConnectionLink';
+import { viewExternalConnection } from './methods/viewExternalConnection';
+import { requestExternalConnectionQrCode } from './methods/requestExternalConnectionQrCode';
 
 @injectable()
 class WorkerController {
@@ -87,6 +90,9 @@ class WorkerController {
   public viewAttendanceInactivityAlert = viewAttendanceInactivityAlert;
   public updateAttendanceInactivityAlert = updateAttendanceInactivityAlert;
   public checkWorkerOpenConversations = checkWorkerOpenConversations;
+  public createExternalConnectionLink = createExternalConnectionLink;
+  public viewExternalConnection = viewExternalConnection;
+  public requestExternalConnectionQrCode = requestExternalConnectionQrCode;
 }
 
 export default WorkerController;

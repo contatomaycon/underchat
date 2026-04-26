@@ -2161,7 +2161,7 @@ export class WwebjsIncomingMessageService {
   private async withProfileTimeout(
     promise: Promise<string>
   ): Promise<string | undefined> {
-    let timeoutId: NodeJS.Timeout | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     try {
       const timeout = new Promise<undefined>((resolve) => {

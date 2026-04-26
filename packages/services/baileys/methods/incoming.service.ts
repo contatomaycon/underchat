@@ -59,7 +59,7 @@ export class BaileysIncomingMessageService {
   private readonly contactJidAliasesByJid = new Map<string, Set<string>>();
   private readonly MAX_SIZE = 100000;
   private readonly DEDUP_WINDOW_MS = 3000;
-  private cleanupInterval?: NodeJS.Timeout;
+  private cleanupInterval?: ReturnType<typeof setInterval>;
   private rejectCallConfig: boolean = false;
 
   private readonly pendingQueue: IBaileysPendingMessage[] = [];
@@ -69,7 +69,7 @@ export class BaileysIncomingMessageService {
   private readonly MAX_RETRY_DELAY_MS = 5000;
   private readonly MAX_QUEUE_SIZE = 500000;
   private readonly DESTROY_TIMEOUT_MS = 30000;
-  private queueProcessorInterval?: NodeJS.Timeout;
+  private queueProcessorInterval?: ReturnType<typeof setTimeout>;
   private isDestroying = false;
 
   private readonly PHOTO_CACHE_TTL = 86400;
@@ -950,7 +950,7 @@ export class BaileysIncomingMessageService {
   private async withProfileTimeout(
     promise: Promise<string | undefined>
   ): Promise<string | undefined> {
-    let timeoutId: NodeJS.Timeout | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     try {
       const timeout = new Promise<undefined>((resolve) => {

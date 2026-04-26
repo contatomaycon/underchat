@@ -125,8 +125,8 @@ export class WwebjsConnectionService {
   private qrGenerationCount = 0;
   private qrReadSessionActive = false;
   private qrReadSessionLocked = false;
-  private disconnectRetryTimer: NodeJS.Timeout | undefined;
-  private connectionStateProbeTimer: NodeJS.Timeout | undefined;
+  private disconnectRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  private connectionStateProbeTimer: ReturnType<typeof setTimeout> | undefined;
   private teardownPromise: Promise<void> = Promise.resolve();
   private currentPromise: Promise<IBaileysConnectionState> | undefined;
   private pendingResolve: ((s: IBaileysConnectionState) => void) | undefined;
@@ -248,6 +248,13 @@ export class WwebjsConnectionService {
       has_session: this.hasSession(),
       has_active_socket: Boolean(this.client),
     });
+
+    if (typeConnection === EBaileysConnectionType.phone) {
+      this.logConnectionEvent('connect_rejected', {
+        reason: 'phone_connection_disabled',
+      });
+      throw new Error('Phone connection is disabled. Use QR Code.');
+    }
 
     if (requestedByUser) {
       this.userRequestedDisconnect = false;
