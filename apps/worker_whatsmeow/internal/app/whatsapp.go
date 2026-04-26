@@ -55,6 +55,9 @@ const (
 	whatsmeowPhotoCacheNoPhotoTTL = 5 * time.Minute
 	whatsmeowPhotoFetchTimeout    = 5 * time.Second
 	whatsmeowLogoutTimeout        = 30 * time.Second
+
+	whatsmeowPairClientDesktop     whatsmeow.PairClientType = 7
+	whatsmeowPairClientDisplayName                          = "Desktop (Mac OS)"
 )
 
 type freshLoginRequest struct {
@@ -624,7 +627,7 @@ func (m *WhatsAppManager) connectWithPhonePairingInternal(ctx context.Context, p
 			return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "phone", Phone: phone}, err, allowDeletedStoreRetry)
 		}
 	}
-	pairingCode, err := client.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+	pairingCode, err := client.PairPhone(ctx, phone, true, whatsmeowPairClientDesktop, whatsmeowPairClientDisplayName)
 	if err != nil {
 		log.Printf("whatsmeow phone pairing failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 		return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "phone", Phone: phone}, err, allowDeletedStoreRetry)

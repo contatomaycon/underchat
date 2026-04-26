@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
+	"go.mau.fi/whatsmeow/store"
 )
 
 func TestFreshLoginFallbackIsConsumedOnce(t *testing.T) {
@@ -73,5 +76,23 @@ func TestClearLocalSessionFilesRemovesStaleStore(t *testing.T) {
 	}
 	if info, err := os.Stat(sessionDir); err != nil || !info.IsDir() {
 		t.Fatalf("expected session dir to be recreated, info=%v err=%v", info, err)
+	}
+}
+
+func TestLinkedDeviceProfileMatchesBaileysDesktopMacOS(t *testing.T) {
+	if got := store.DeviceProps.GetOs(); got != "Mac OS" {
+		t.Fatalf("expected linked device OS Mac OS, got %q", got)
+	}
+	if got := store.DeviceProps.GetPlatformType(); got != waCompanionReg.DeviceProps_DESKTOP {
+		t.Fatalf("expected linked device platform DESKTOP, got %s", got.String())
+	}
+	if got := store.DeviceProps.GetVersion(); got.GetPrimary() != 10 || got.GetSecondary() != 15 || got.GetTertiary() != 7 {
+		t.Fatalf("expected linked device version 10.15.7, got %d.%d.%d", got.GetPrimary(), got.GetSecondary(), got.GetTertiary())
+	}
+	if whatsmeowPairClientDisplayName != "Desktop (Mac OS)" {
+		t.Fatalf("unexpected pairing display name %q", whatsmeowPairClientDisplayName)
+	}
+	if int(whatsmeowPairClientDesktop) != int(waCompanionReg.DeviceProps_DESKTOP) {
+		t.Fatalf("expected pairing client type to match desktop platform id")
 	}
 }

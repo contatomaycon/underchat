@@ -125,11 +125,11 @@ var BaseClientPayload = &waWa6.ClientPayload{
 }
 
 var DeviceProps = &waCompanionReg.DeviceProps{
-	Os: proto.String("whatsmeow"),
+	Os: proto.String("Mac OS"),
 	Version: &waCompanionReg.DeviceProps_AppVersion{
-		Primary:   proto.Uint32(0),
-		Secondary: proto.Uint32(1),
-		Tertiary:  proto.Uint32(0),
+		Primary:   proto.Uint32(10),
+		Secondary: proto.Uint32(15),
+		Tertiary:  proto.Uint32(7),
 	},
 	HistorySyncConfig: &waCompanionReg.DeviceProps_HistorySyncConfig{
 		FullSyncDaysLimit:                        nil,
@@ -155,7 +155,7 @@ var DeviceProps = &waCompanionReg.DeviceProps{
 		SupportManusHistory:                      proto.Bool(true),
 		SupportHatchHistory:                      proto.Bool(true),
 	},
-	PlatformType:    waCompanionReg.DeviceProps_UNKNOWN.Enum(),
+	PlatformType:    waCompanionReg.DeviceProps_DESKTOP.Enum(),
 	RequireFullSync: proto.Bool(false),
 }
 
