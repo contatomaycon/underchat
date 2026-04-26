@@ -56,6 +56,7 @@ export class BaileysIncomingMessageService {
   private readonly processedMessages = new Map<string, number>();
   private readonly processedCalls = new Map<string, number>();
   private readonly contactNamesByJid = new Map<string, string>();
+  private readonly contactJidAliasesByJid = new Map<string, Set<string>>();
   private readonly MAX_SIZE = 100000;
   private readonly DEDUP_WINDOW_MS = 3000;
   private cleanupInterval?: NodeJS.Timeout;
@@ -75,6 +76,7 @@ export class BaileysIncomingMessageService {
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
   private readonly PHOTO_CACHE_NO_PHOTO = '__no_photo__';
+  private readonly PROFILE_PIC_TIMEOUT_MS = 3000;
   private readonly MESSAGE_CACHE_TTL_SECONDS_DEFAULT = 60 * 60 * 8;
   private readonly MESSAGE_CACHE_TTL_SECONDS_POLL = 60 * 60 * 24 * 7;
   private readonly MESSAGE_CACHE_PREFIX = 'wa:msg:';
@@ -218,6 +220,62 @@ export class BaileysIncomingMessageService {
     return undefined;
   }
 
+  private toNonEmptyString(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private normalizePhotoCandidate(value: unknown): string | undefined {
+    const raw = this.toNonEmptyString(value);
+    if (!raw) return undefined;
+
+    if (!raw.includes('@')) {
+      const digits = raw.replaceAll(/\D/g, '');
+      return digits.length >= 8 ? `${digits}@s.whatsapp.net` : undefined;
+    }
+
+    return normalizeJid(raw) ?? raw;
+  }
+
+  private cacheContactJidAliases(candidates: string[]): void {
+    const expanded = new Set<string>();
+
+    for (const candidate of candidates) {
+      const normalized = this.normalizePhotoCandidate(candidate);
+      if (!normalized) continue;
+
+      for (const alias of this.buildJidAliases(normalized)) {
+        expanded.add(alias);
+      }
+    }
+
+    if (expanded.size < 2) return;
+
+    for (const alias of expanded) {
+      const existing = this.contactJidAliasesByJid.get(alias) ?? new Set();
+      for (const linkedAlias of expanded) {
+        existing.add(linkedAlias);
+      }
+      this.contactJidAliasesByJid.set(alias, existing);
+    }
+  }
+
+  private resolveContactJidAliases(jid: string): string[] {
+    const aliases = new Set(this.buildJidAliases(jid));
+
+    for (const alias of Array.from(aliases)) {
+      const cachedAliases = this.contactJidAliasesByJid.get(alias);
+      if (!cachedAliases) continue;
+
+      for (const cachedAlias of cachedAliases) {
+        aliases.add(cachedAlias);
+      }
+    }
+
+    return Array.from(aliases);
+  }
+
   private cacheContactName(jid: string | undefined, name: string | null): void {
     if (!jid || !name) return;
     for (const alias of this.buildJidAliases(jid)) {
@@ -229,11 +287,14 @@ export class BaileysIncomingMessageService {
     contacts: Array<Contact | Partial<Contact>>
   ): void {
     for (const contact of contacts) {
-      const contactId =
-        normalizeJid(contact.id) ??
-        normalizeJid(contact.lid) ??
-        normalizeJid(contact.phoneNumber);
-      if (!contactId) continue;
+      const contactIds = [
+        this.normalizePhotoCandidate(contact.id),
+        this.normalizePhotoCandidate(contact.lid),
+        this.normalizePhotoCandidate(contact.phoneNumber),
+      ].filter((candidate): candidate is string => !!candidate);
+
+      if (!contactIds.length) continue;
+      this.cacheContactJidAliases(contactIds);
 
       const name =
         this.normalizeNameCandidate(contact.name) ??
@@ -241,7 +302,9 @@ export class BaileysIncomingMessageService {
         this.normalizeNameCandidate(contact.verifiedName);
 
       if (!name) continue;
-      this.cacheContactName(contactId, name);
+      for (const contactId of contactIds) {
+        this.cacheContactName(contactId, name);
+      }
     }
   }
 
@@ -480,10 +543,13 @@ export class BaileysIncomingMessageService {
       item.inputUpsert.message &&
       (item.inputUpsert.message as WAMessage).message
     ) {
+      await this.ensurePhotoResolved(item);
       await this.upsertMediaEnricher.enrich(
         item.inputUpsert,
         item.inputUpsert.message as WAMessage
       );
+    } else {
+      await this.ensurePhotoResolved(item);
     }
 
     await this.streamProducerService.send(
@@ -655,68 +721,214 @@ export class BaileysIncomingMessageService {
 
       const pendingItem = this.enqueueMessage(inputUpsert, messageKey, topic);
       if (!pendingItem) return;
-
-      this.fetchPhotoNonBlocking(socket, pendingItem);
     } catch (error) {
       console.error('[CRITICAL] Error processing message:', error, m.key?.id);
     }
   }
 
-  private fetchPhotoNonBlocking(
+  private async ensurePhotoResolved(
+    pendingItem: IBaileysPendingMessage
+  ): Promise<void> {
+    if (pendingItem.inputUpsert.photo) {
+      return;
+    }
+
+    const socket = this.currentSocket;
+    if (!socket) {
+      return;
+    }
+
+    const photo = await this.resolvePhotoForUpsert(socket, pendingItem);
+    if (photo) {
+      pendingItem.inputUpsert.photo = photo;
+    }
+  }
+
+  private buildPhotoCandidates(
     socket: WASocket,
     pendingItem: IBaileysPendingMessage,
     jid?: string
-  ): void {
-    const resolvedJid = this.resolvePeerJid(
+  ): string[] {
+    const key = pendingItem.inputUpsert.message?.key;
+    const resolvedPeerJid = this.resolvePeerJid(
       pendingItem.inputUpsert.message?.key,
       socket,
       jid
     );
 
-    if (!resolvedJid) return;
+    const callPhoneDigits = pendingItem.inputUpsert.call_phone?.replaceAll(
+      /\D/g,
+      ''
+    );
+    const callPhoneJid = callPhoneDigits
+      ? `${callPhoneDigits}@s.whatsapp.net`
+      : undefined;
 
-    const cacheKey = `${this.PHOTO_CACHE_PREFIX}${resolvedJid}`;
+    const rawCandidates = [
+      callPhoneJid,
+      resolvedPeerJid,
+      jid,
+      pendingItem.inputUpsert.call_jid,
+      pendingItem.inputUpsert.call_jid_alt,
+      remoteJid(key),
+      remoteJidAlt(key),
+    ];
 
-    this.redis
-      .get(cacheKey)
-      .then((cachedPhoto) => {
-        if (cachedPhoto === this.PHOTO_CACHE_NO_PHOTO) {
-          return;
+    const candidates = new Set<string>();
+    const selfAliases = this.buildSelfJidAliases(socket);
+
+    for (const rawCandidate of rawCandidates) {
+      const normalized = this.normalizePhotoCandidate(rawCandidate);
+      if (!normalized) continue;
+
+      for (const alias of this.resolveContactJidAliases(normalized)) {
+        const fetchCandidate = this.normalizePhotoCandidate(alias);
+        if (!fetchCandidate) continue;
+
+        const isSelf = this.buildJidAliases(fetchCandidate).some(
+          (candidateAlias) => selfAliases.has(candidateAlias)
+        );
+        if (!isSelf) {
+          candidates.add(fetchCandidate);
+        }
+      }
+    }
+
+    const orderedCandidates = Array.from(candidates);
+    const phoneCandidates = orderedCandidates.filter(
+      (candidate) => !candidate.endsWith('@lid')
+    );
+    const lidCandidates = orderedCandidates.filter((candidate) =>
+      candidate.endsWith('@lid')
+    );
+
+    return [...phoneCandidates, ...lidCandidates];
+  }
+
+  private async getCachedPhoto(
+    candidates: string[]
+  ): Promise<string | null | undefined> {
+    let hasNoPhotoCache = false;
+    let hasMissingCache = false;
+
+    for (const candidate of candidates) {
+      try {
+        const cached = await this.redis.get(
+          `${this.PHOTO_CACHE_PREFIX}${candidate}`
+        );
+        if (!cached) {
+          hasMissingCache = true;
+          continue;
         }
 
-        if (cachedPhoto) {
-          if (pendingItem.retries === 0) {
-            pendingItem.inputUpsert.photo = cachedPhoto;
-          }
-          return;
+        if (cached === this.PHOTO_CACHE_NO_PHOTO) {
+          hasNoPhotoCache = true;
+          continue;
         }
 
-        return socket
-          .profilePictureUrl(resolvedJid, 'image')
-          .then((photo) => {
-            if (photo) {
-              this.redis
-                .set(cacheKey, photo, 'EX', this.PHOTO_CACHE_TTL)
-                .catch(() => {});
+        return cached;
+      } catch {
+        hasMissingCache = true;
+      }
+    }
 
-              if (pendingItem.retries === 0) {
-                pendingItem.inputUpsert.photo = photo;
-              }
-              return;
-            }
+    if (hasNoPhotoCache && !hasMissingCache) {
+      return null;
+    }
 
-            this.redis
-              .set(
-                cacheKey,
-                this.PHOTO_CACHE_NO_PHOTO,
-                'EX',
-                this.PHOTO_CACHE_NO_PHOTO_TTL
-              )
-              .catch(() => {});
-          })
-          .catch(() => {});
-      })
-      .catch(() => {});
+    return undefined;
+  }
+
+  private cachePhoto(candidates: string[], photo: string): void {
+    const uniqueCandidates = new Set(candidates);
+    for (const candidate of uniqueCandidates) {
+      this.redis
+        .set(
+          `${this.PHOTO_CACHE_PREFIX}${candidate}`,
+          photo,
+          'EX',
+          this.PHOTO_CACHE_TTL
+        )
+        .catch(() => {});
+    }
+  }
+
+  private cacheNoPhoto(candidates: string[]): void {
+    const uniqueCandidates = new Set(candidates);
+    for (const candidate of uniqueCandidates) {
+      this.redis
+        .set(
+          `${this.PHOTO_CACHE_PREFIX}${candidate}`,
+          this.PHOTO_CACHE_NO_PHOTO,
+          'EX',
+          this.PHOTO_CACHE_NO_PHOTO_TTL
+        )
+        .catch(() => {});
+    }
+  }
+
+  private async withProfileTimeout(
+    promise: Promise<string | undefined>
+  ): Promise<string | undefined> {
+    let timeoutId: NodeJS.Timeout | undefined;
+
+    try {
+      const timeout = new Promise<undefined>((resolve) => {
+        timeoutId = setTimeout(
+          () => resolve(undefined),
+          this.PROFILE_PIC_TIMEOUT_MS
+        );
+      });
+      const result = await Promise.race([promise, timeout]);
+      return this.toNonEmptyString(result);
+    } catch {
+      return undefined;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  private async fetchPhotoByCandidates(
+    socket: WASocket,
+    candidates: string[]
+  ): Promise<string | undefined> {
+    const results = await Promise.all(
+      candidates.map((candidate) =>
+        this.withProfileTimeout(socket.profilePictureUrl(candidate, 'image'))
+      )
+    );
+
+    return results.find((photo): photo is string => !!photo);
+  }
+
+  private async resolvePhotoForUpsert(
+    socket: WASocket,
+    pendingItem: IBaileysPendingMessage,
+    jid?: string
+  ): Promise<string | undefined> {
+    const candidates = this.buildPhotoCandidates(socket, pendingItem, jid);
+    if (!candidates.length) {
+      return undefined;
+    }
+
+    const cached = await this.getCachedPhoto(candidates);
+    if (cached === null) {
+      return undefined;
+    }
+    if (cached) {
+      return cached;
+    }
+
+    const photo = await this.fetchPhotoByCandidates(socket, candidates);
+    if (photo) {
+      this.cachePhoto(candidates, photo);
+      return photo;
+    }
+
+    this.cacheNoPhoto(candidates);
+    return undefined;
   }
 
   private async handlePresenceUpdate(data: {
@@ -951,7 +1163,12 @@ export class BaileysIncomingMessageService {
 
         pendingItem = this.enqueueMessage(callUpsert, callKey);
         if (pendingItem) {
-          this.fetchPhotoNonBlocking(socket, pendingItem, callJid);
+          const photo = await this.resolvePhotoForUpsert(
+            socket,
+            pendingItem,
+            callJid
+          );
+          pendingItem.inputUpsert.photo = photo ?? null;
         }
       } else {
         console.warn(
