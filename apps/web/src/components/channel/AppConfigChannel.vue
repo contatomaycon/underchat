@@ -17,6 +17,8 @@ import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/r
 import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
 import { ViewAttendanceHoursResponse } from '@core/schema/worker/viewAttendanceHours/response.schema';
 import { UpdateAttendanceHoursRequest } from '@core/schema/worker/updateAttendanceHours/request.schema';
+import { ViewAttendanceInactivityAlertResponse } from '@core/schema/worker/viewAttendanceInactivityAlert/response.schema';
+import { UpdateAttendanceInactivityAlertRequest } from '@core/schema/worker/updateAttendanceInactivityAlert/request.schema';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 import AppSelectSearch from '@/components/AppSelectSearch.vue';
 
@@ -210,6 +212,7 @@ type WorkerConfigForm = {
   chatbot: boolean;
   ai_agent: boolean;
   attendance_hours: boolean;
+  attendance_inactivity_alert: boolean;
 };
 
 type ChatbotWorkingHoursRulePayload = {
@@ -244,6 +247,7 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   chatbot: false,
   ai_agent: false,
   attendance_hours: false,
+  attendance_inactivity_alert: false,
 });
 
 type AttendanceRulePayload = UpdateAttendanceHoursRequest['rules'][number];
@@ -268,6 +272,9 @@ interface ChatbotWorkingHoursRuleForm {
 const ATTENDANCE_TIMEZONE = 'America/Sao_Paulo';
 const ATTENDANCE_DEFAULT_START = '09:00';
 const ATTENDANCE_DEFAULT_END = '18:00';
+const ATTENDANCE_INACTIVITY_DEFAULT_QUANTITY = 1;
+const ATTENDANCE_INACTIVITY_DEFAULT_TIME = 180;
+const ATTENDANCE_INACTIVITY_DEFAULT_ACTION = 'finish';
 const CHATBOT_WORKING_HOURS_TIMEZONE = 'America/Sao_Paulo';
 const CHATBOT_WORKING_HOURS_DEFAULT_START = '09:00';
 const CHATBOT_WORKING_HOURS_DEFAULT_END = '18:00';
@@ -360,6 +367,9 @@ const defaultAttendanceOutsideHoursMessage = computed(() =>
     name: '{{ name }}',
   })
 );
+const defaultAttendanceInactivityMessage = computed(() =>
+  t('attendance_inactivity_message_default')
+);
 const attendanceOutsideHoursActionOptions = computed(() => [
   {
     value: 'continue_flow' as const,
@@ -378,6 +388,12 @@ const attendanceMessageOnlyDestinationOptions = computed(() => [
   {
     value: 'closed' as const,
     title: t('attendance_hours_destination_closed'),
+  },
+]);
+const attendanceInactivityActionOptions = computed(() => [
+  {
+    value: 'finish' as const,
+    title: t('attendance_inactivity_alert_action_finish'),
   },
 ]);
 
@@ -466,6 +482,20 @@ const sendMessageOnFinishAttendanceText = ref<string>('');
 const sendMessageOnFinishAttendanceModalOpen = ref(false);
 const isSavingSendMessageOnFinishAttendance = ref(false);
 const sendMessageOnFinishAttendanceEnabledInModal = ref<boolean>(false);
+const attendanceInactivityAlertModalOpen = ref(false);
+const isSavingAttendanceInactivityAlert = ref(false);
+const attendanceInactivityAlertEnabledInModal = ref(false);
+const attendanceInactivityAlertQuantityInModal = ref(
+  ATTENDANCE_INACTIVITY_DEFAULT_QUANTITY
+);
+const attendanceInactivityAlertTimeInModal = ref(
+  ATTENDANCE_INACTIVITY_DEFAULT_TIME
+);
+const attendanceInactivityAlertActionInModal = ref<
+  UpdateAttendanceInactivityAlertRequest['action']
+>(ATTENDANCE_INACTIVITY_DEFAULT_ACTION);
+const attendanceInactivityMessageEnabledInModal = ref(true);
+const attendanceInactivityMessageTextInModal = ref('');
 const chatbotId = ref<string | null>(null);
 const chatbotModalOpen = ref(false);
 const isSavingChatbot = ref(false);
@@ -1056,6 +1086,7 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
 const resetWorkerConfigState = () => {
   applyWorkerConfig();
   applyAttendanceHoursState();
+  applyAttendanceInactivityAlertState();
   workerConfigLoadedFor.value = null;
 };
 
@@ -1206,6 +1237,74 @@ const buildAttendanceHoursPayload = (
   text: attendanceOutsideHoursMessage.value.trim(),
 });
 
+const normalizePositiveInteger = (value: number): number | null => {
+  if (!Number.isInteger(value) || value < 1) {
+    return null;
+  }
+
+  return value;
+};
+
+const normalizeAttendanceInactivityMessage = (): string | null => {
+  const normalized = attendanceInactivityMessageTextInModal.value.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized;
+};
+
+const applyAttendanceInactivityAlertState = (
+  config?: ViewAttendanceInactivityAlertResponse | null
+): void => {
+  workerConfigForm.attendance_inactivity_alert = config?.enabled ?? false;
+  attendanceInactivityAlertEnabledInModal.value = config?.enabled ?? false;
+  attendanceInactivityAlertQuantityInModal.value =
+    config?.quantity ?? ATTENDANCE_INACTIVITY_DEFAULT_QUANTITY;
+  attendanceInactivityAlertTimeInModal.value =
+    config?.time ?? ATTENDANCE_INACTIVITY_DEFAULT_TIME;
+  attendanceInactivityAlertActionInModal.value =
+    config?.action ?? ATTENDANCE_INACTIVITY_DEFAULT_ACTION;
+  attendanceInactivityMessageEnabledInModal.value =
+    config?.inactivity_message_enabled ?? true;
+  attendanceInactivityMessageTextInModal.value =
+    config?.inactivity_message ?? '';
+};
+
+const buildAttendanceInactivityAlertPayload = (
+  enabled: boolean
+): UpdateAttendanceInactivityAlertRequest | null => {
+  const quantity = normalizePositiveInteger(
+    attendanceInactivityAlertQuantityInModal.value
+  );
+  if (!quantity) {
+    channelStore.showSnackbar(
+      t('attendance_inactivity_alert_invalid_quantity'),
+      EColor.warning
+    );
+    return null;
+  }
+
+  const time = normalizePositiveInteger(attendanceInactivityAlertTimeInModal.value);
+  if (!time) {
+    channelStore.showSnackbar(
+      t('attendance_inactivity_alert_invalid_time'),
+      EColor.warning
+    );
+    return null;
+  }
+
+  return {
+    enabled,
+    quantity,
+    time,
+    action: ATTENDANCE_INACTIVITY_DEFAULT_ACTION,
+    inactivity_message_enabled: attendanceInactivityMessageEnabledInModal.value,
+    inactivity_message: normalizeAttendanceInactivityMessage(),
+  };
+};
+
 const loadWorkerConfig = async (force = false) => {
   if (!channelId.value) return;
   if (!force && workerConfigLoadedFor.value === channelId.value) return;
@@ -1225,6 +1324,7 @@ const loadWorkerConfig = async (force = false) => {
       simultaneousAttendanceData,
       showMessageOnCallData,
       sendMessageOnFinishAttendanceData,
+      attendanceInactivityAlertData,
       chatbotData,
       attendanceHoursData,
       aiAgentData,
@@ -1236,6 +1336,7 @@ const loadWorkerConfig = async (force = false) => {
       channelStore.fetchSimultaneousAttendance(channelId.value),
       channelStore.fetchShowMessageOnCall(channelId.value),
       channelStore.fetchSendMessageOnFinishAttendance(channelId.value),
+      channelStore.fetchAttendanceInactivityAlert(channelId.value),
       channelStore.fetchChatbot(channelId.value),
       channelStore.fetchAttendanceHours(channelId.value),
       channelStore.fetchAiAgentConfig(channelId.value),
@@ -1313,6 +1414,8 @@ const loadWorkerConfig = async (force = false) => {
       workerConfigForm.send_message_on_finish_attendance = false;
     }
 
+    applyAttendanceInactivityAlertState(attendanceInactivityAlertData);
+
     applyChatbotState(chatbotData as ChatbotConfigResponse | null);
 
     applyAiAgentState(aiAgentData);
@@ -1328,7 +1431,11 @@ const saveWorkerConfig = async () => {
 
   try {
     isSavingWorkerConfig.value = true;
-    const { attendance_hours: _attendanceHours, ...payload } = workerConfigForm;
+    const {
+      attendance_hours: _attendanceHours,
+      attendance_inactivity_alert: _attendanceInactivityAlert,
+      ...payload
+    } = workerConfigForm;
     const result = await channelStore.updateWorkerConfig(
       channelId.value,
       payload
@@ -2006,6 +2113,76 @@ const saveSendMessageOnFinishAttendanceText = async () => {
   }
 };
 
+const openAttendanceInactivityAlertModal = async () => {
+  if (!channelId.value) return;
+
+  const data = await channelStore.fetchAttendanceInactivityAlert(channelId.value);
+
+  applyAttendanceInactivityAlertState(data);
+  attendanceInactivityAlertModalOpen.value = true;
+};
+
+const closeAttendanceInactivityAlertModal = () => {
+  attendanceInactivityAlertModalOpen.value = false;
+};
+
+const toggleAttendanceInactivityAlertStatus = async () => {
+  if (!channelId.value) return;
+
+  const newEnabled = !workerConfigForm.attendance_inactivity_alert;
+  const body = buildAttendanceInactivityAlertPayload(newEnabled);
+  if (!body) {
+    return;
+  }
+
+  try {
+    isSavingAttendanceInactivityAlert.value = true;
+
+    const result = await channelStore.updateAttendanceInactivityAlert(
+      channelId.value,
+      body
+    );
+
+    if (result) {
+      applyAttendanceInactivityAlertState(result);
+    }
+  } finally {
+    isSavingAttendanceInactivityAlert.value = false;
+  }
+};
+
+const toggleAttendanceInactivityAlertStatusInModal = () => {
+  attendanceInactivityAlertEnabledInModal.value =
+    !attendanceInactivityAlertEnabledInModal.value;
+};
+
+const saveAttendanceInactivityAlertConfiguration = async () => {
+  if (!channelId.value) return;
+
+  const body = buildAttendanceInactivityAlertPayload(
+    attendanceInactivityAlertEnabledInModal.value
+  );
+  if (!body) {
+    return;
+  }
+
+  try {
+    isSavingAttendanceInactivityAlert.value = true;
+
+    const result = await channelStore.updateAttendanceInactivityAlert(
+      channelId.value,
+      body
+    );
+
+    if (result) {
+      applyAttendanceInactivityAlertState(result);
+      closeAttendanceInactivityAlertModal();
+    }
+  } finally {
+    isSavingAttendanceInactivityAlert.value = false;
+  }
+};
+
 const openChatbotModal = async () => {
   if (!channelId.value) return;
 
@@ -2365,6 +2542,13 @@ const workerConfigOptions = computed(() => [
     description: t('channel_general_config_mark_as_read_description'),
   },
   {
+    key: 'attendance_inactivity_alert' as WorkerConfigField,
+    title: t('channel_general_config_attendance_inactivity_alert_title'),
+    description: t(
+      'channel_general_config_attendance_inactivity_alert_description'
+    ),
+  },
+  {
     key: 'attendance_hours' as WorkerConfigField,
     title: t('channel_general_config_attendance_hours_title'),
     description: t('channel_general_config_attendance_hours_description'),
@@ -2388,6 +2572,7 @@ const hasModal = (key: WorkerConfigField): boolean => {
     key === 'simultaneous_attendance' ||
     key === 'show_message_on_call' ||
     key === 'send_message_on_finish_attendance' ||
+    key === 'attendance_inactivity_alert' ||
     key === 'attendance_hours' ||
     key === 'chatbot' ||
     key === 'ai_agent'
@@ -2490,6 +2675,12 @@ const getToggleDisabled = (key: WorkerConfigField): boolean => {
     return false;
   }
 
+  if (key === 'attendance_inactivity_alert') {
+    return (
+      isSavingWorkerConfig.value || isSavingAttendanceInactivityAlert.value
+    );
+  }
+
   if (key === 'chatbot') {
     return isSavingWorkerConfig.value || isSavingChatbot.value;
   }
@@ -2549,6 +2740,12 @@ const handleToggleClick = (key: WorkerConfigField): void => {
     return;
   }
 
+  if (key === 'attendance_inactivity_alert') {
+    toggleAttendanceInactivityAlertStatus();
+
+    return;
+  }
+
   if (key === 'chatbot') {
     toggleChatbotStatus();
 
@@ -2597,6 +2794,12 @@ const handleCardClick = (key: WorkerConfigField): void => {
 
   if (key === 'attendance_hours') {
     openAttendanceHoursModal();
+
+    return;
+  }
+
+  if (key === 'attendance_inactivity_alert') {
+    openAttendanceInactivityAlertModal();
 
     return;
   }
@@ -5283,6 +5486,153 @@ onMounted(async () => {
           :loading="isSavingSendMessageOnFinishAttendance"
           :disabled="isSavingSendMessageOnFinishAttendance"
           @click="saveSendMessageOnFinishAttendanceText"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog
+    v-model="attendanceInactivityAlertModalOpen"
+    max-width="700"
+    persistent
+  >
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_attendance_inactivity_alert_title')
+        }}</span>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="attendanceInactivityAlertEnabledInModal"
+            color="primary"
+            :disabled="isSavingAttendanceInactivityAlert"
+            @click="toggleAttendanceInactivityAlertStatusInModal"
+          />
+          <IconBtn @click="closeAttendanceInactivityAlertModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
+      </VCardTitle>
+
+      <VCardText>
+        <p class="text-body-2 text-medium-emphasis mb-4">
+          {{
+            $t(
+              'channel_general_config_attendance_inactivity_alert_description'
+            )
+          }}
+        </p>
+
+        <VRow dense>
+          <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">
+              {{ $t('attendance_inactivity_alert_quantity_label') }}:
+            </VLabel>
+            <AppTextField
+              v-model.number="attendanceInactivityAlertQuantityInModal"
+              type="number"
+              min="1"
+              :disabled="
+                isSavingAttendanceInactivityAlert ||
+                !attendanceInactivityAlertEnabledInModal
+              "
+            />
+          </VCol>
+          <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">
+              {{ $t('attendance_inactivity_alert_time_label') }}:
+            </VLabel>
+            <AppTextField
+              v-model.number="attendanceInactivityAlertTimeInModal"
+              type="number"
+              min="1"
+              :disabled="
+                isSavingAttendanceInactivityAlert ||
+                !attendanceInactivityAlertEnabledInModal
+              "
+            />
+          </VCol>
+          <VCol cols="12">
+            <VLabel class="text-body-2 mb-1">
+              {{ $t('attendance_inactivity_alert_action_label') }}:
+            </VLabel>
+            <VSelect
+              v-model="attendanceInactivityAlertActionInModal"
+              :items="attendanceInactivityActionOptions"
+              item-title="title"
+              item-value="value"
+              density="comfortable"
+              hide-details
+              disabled
+            />
+          </VCol>
+        </VRow>
+
+        <VDivider class="my-4" />
+
+        <div class="d-flex justify-space-between align-center flex-wrap gap-2">
+          <div class="d-flex flex-column">
+            <h6 class="text-body-1 font-weight-bold mb-1">
+              {{ $t('attendance_inactivity_alert_message_section_title') }}
+            </h6>
+            <p class="text-body-2 text-medium-emphasis mb-0">
+              {{
+                $t(
+                  'attendance_inactivity_alert_message_section_description'
+                )
+              }}
+            </p>
+          </div>
+          <VSwitch
+            :model-value="attendanceInactivityMessageEnabledInModal"
+            color="primary"
+            :disabled="
+              isSavingAttendanceInactivityAlert ||
+              !attendanceInactivityAlertEnabledInModal
+            "
+            @click="
+              attendanceInactivityMessageEnabledInModal =
+                !attendanceInactivityMessageEnabledInModal
+            "
+          />
+        </div>
+
+        <VTextarea
+          v-model="attendanceInactivityMessageTextInModal"
+          class="mt-4"
+          :placeholder="$t('attendance_inactivity_alert_message_placeholder')"
+          :maxlength="2000"
+          rows="6"
+          counter
+          auto-grow
+          :disabled="
+            isSavingAttendanceInactivityAlert ||
+            !attendanceInactivityAlertEnabledInModal ||
+            !attendanceInactivityMessageEnabledInModal
+          "
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('attendance_inactivity_alert_message_default_label') }}:
+          <strong>{{ defaultAttendanceInactivityMessage }}</strong>
+        </div>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingAttendanceInactivityAlert"
+          @click="closeAttendanceInactivityAlertModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingAttendanceInactivityAlert"
+          :disabled="isSavingAttendanceInactivityAlert"
+          @click="saveAttendanceInactivityAlertConfiguration"
         >
           {{ $t('save') }}
         </VBtn>

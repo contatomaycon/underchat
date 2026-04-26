@@ -141,7 +141,7 @@ export interface IContent {
   ephemeral?: IEphemeralMessage | null;
   album?: IAlbumMessage | null;
   forward?: IForwardMessageContent | null;
-  annotation_subtype?: 'closure' | null;
+  annotation_subtype?: 'closure' | 'closure_audit' | null;
 }
 
 export interface IMessageKey {

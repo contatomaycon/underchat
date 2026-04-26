@@ -17,6 +17,12 @@ import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours
 import { parseAttendanceHoursConfig } from '@core/common/functions/attendanceHoursConfig';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import {
+  IAttendanceInactivityAlertConfig,
+} from '@core/common/interfaces/IAttendanceInactivityAlert';
+import {
+  parseAttendanceInactivityAlertConfig,
+} from '@core/common/functions/attendanceInactivityAlertConfig';
+import {
   CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
   normalizeChatbotWorkingHoursTimezone,
 } from '@core/common/functions/chatbotWorkingHours';
@@ -850,6 +856,71 @@ export class WorkerConfigService {
     return {
       attendance_hours: parseAttendanceHoursConfig(attendanceHoursConfig.value),
       outside_hours_message: outsideHoursMessageConfig.value || null,
+      enabled,
+    };
+  }
+
+  async updateAttendanceInactivityAlert(
+    workerId: string,
+    config: IAttendanceInactivityAlertConfig,
+    enabled: boolean
+  ): Promise<{
+    quantity: number;
+    time: number;
+    action: 'finish';
+    inactivity_message_enabled: boolean;
+    inactivity_message: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+    const valueToSave = JSON.stringify(config);
+
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateAttendanceInactivityAlert(
+        workerId,
+        valueToSave,
+        statusId
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    const parsed = parseAttendanceInactivityAlertConfig(result);
+
+    return {
+      quantity: parsed.quantity,
+      time: parsed.time,
+      action: parsed.action,
+      inactivity_message_enabled: parsed.inactivity_message_enabled,
+      inactivity_message: parsed.inactivity_message,
+      enabled,
+    };
+  }
+
+  async viewAttendanceInactivityAlert(workerId: string): Promise<{
+    quantity: number;
+    time: number;
+    action: 'finish';
+    inactivity_message_enabled: boolean;
+    inactivity_message: string | null;
+    enabled: boolean;
+  }> {
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.attendance_inactivity_alert
+      );
+
+    const parsed = parseAttendanceInactivityAlertConfig(config.value);
+    const enabled = config.statusId === EWorkerConfigStatus.active;
+
+    return {
+      quantity: parsed.quantity,
+      time: parsed.time,
+      action: parsed.action,
+      inactivity_message_enabled: parsed.inactivity_message_enabled,
+      inactivity_message: parsed.inactivity_message,
       enabled,
     };
   }

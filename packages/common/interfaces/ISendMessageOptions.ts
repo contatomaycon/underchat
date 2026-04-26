@@ -18,7 +18,7 @@ export interface ISendMessageOptions {
 
 export interface ISendTextMessageOptions extends ISendMessageOptions {
   type: EMessageType.text | EMessageType.system | EMessageType.annotation;
-  annotationSubtype?: 'closure';
+  annotationSubtype?: 'closure' | 'closure_audit';
 }
 
 export interface ISendImageMessageOptions extends ISendMessageOptions {

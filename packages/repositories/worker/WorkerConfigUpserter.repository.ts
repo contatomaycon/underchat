@@ -278,6 +278,27 @@ export class WorkerConfigUpserterRepository {
     };
   };
 
+  updateAttendanceInactivityAlert = async (
+    workerId: string,
+    value: string | null,
+    statusId: string
+  ): Promise<string | null> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.attendance_inactivity_alert,
+        value
+      );
+    });
+
+    return this.getConfigValue(
+      workerId,
+      EWorkerConfigType.attendance_inactivity_alert
+    );
+  };
+
   updateChatbot = async (
     workerId: string,
     chatbotId: string | null,

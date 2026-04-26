@@ -220,6 +220,32 @@ export function createChatbotInactivityCacheKey(
   ]);
 }
 
+export function createAttendanceInactivityCacheKey(
+  accountId: string,
+  workerId: string,
+  chatId: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!workerId) {
+    throw new Error('worker id is required');
+  }
+
+  if (!chatId) {
+    throw new Error('chat id is required');
+  }
+
+  return joinParts([
+    'underchat',
+    'attendance-inactivity',
+    accountId,
+    workerId,
+    chatId,
+  ]);
+}
+
 export function createChatbotFailedAttemptsCacheKey(
   accountId: string,
   workerId: string,

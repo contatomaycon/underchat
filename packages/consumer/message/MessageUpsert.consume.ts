@@ -59,6 +59,7 @@ import { TFunction } from 'i18next';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
+import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
@@ -141,6 +142,8 @@ export class MessageUpsertConsume {
     private readonly workerConfigService: WorkerConfigService,
     @inject(ChatbotFlowRunnerService)
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
+    @inject(AttendanceInactivityService)
+    private readonly attendanceInactivityService: AttendanceInactivityService,
     @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
     @inject(PushNotificationService)
@@ -3256,6 +3259,12 @@ export class MessageUpsertConsume {
 
     await this.saveChatWithCaches(chatWithProtocol);
 
+    if (chatWithProtocol.status === EChatStatus.in_chat) {
+      await this.attendanceInactivityService.startTrackingOnInChatEntry(
+        chatWithProtocol
+      );
+    }
+
     return chatWithProtocol;
   }
 
@@ -3394,6 +3403,9 @@ export class MessageUpsertConsume {
           };
 
           await this.saveChatWithCaches(closedChat);
+          await this.attendanceInactivityService.cancelInactivityTracking(
+            createChat
+          );
 
           return;
         }
@@ -3417,10 +3429,47 @@ export class MessageUpsertConsume {
     const shouldDiscardEmptyText = this.shouldDiscardEmptyText(data);
     const shouldSkipMessageCreation =
       shouldDiscardEmptyText && data.webhook_message_type === 'message';
+    const isFromMe = data.message?.key?.fromMe ?? false;
+    const typeUserForInactivity = this.buildTypeUserAndSummary(
+      data.type,
+      isFromMe,
+      data
+    ).typeUser;
+    const wasInChat = getChat.status === EChatStatus.in_chat;
+    const hasTransfer =
+      Boolean(data.transfer_sector_id) || Boolean(data.transfer_user_id);
 
     await this.processTransferIfNeeded(t, getChat, data);
+
+    let currentStatusAfterTransfer: IChat['status'] | null = getChat.status;
+    if (wasInChat && hasTransfer) {
+      const currentChat = await this.chatService.findChatByChatId(
+        data.account_id,
+        getChat.chat_id
+      );
+      currentStatusAfterTransfer = currentChat?.status ?? null;
+
+      if (currentStatusAfterTransfer !== EChatStatus.in_chat) {
+        await this.attendanceInactivityService.cancelInactivityTracking(getChat);
+      }
+    }
+
     if (!shouldSkipMessageCreation) {
       await this.createChatMessage(getChat, data);
+    }
+
+    if (
+      wasInChat &&
+      typeUserForInactivity === ETypeUserChat.client &&
+      (!hasTransfer || currentStatusAfterTransfer === EChatStatus.in_chat)
+    ) {
+      await this.attendanceInactivityService.resetOnContactMessage(getChat);
+    } else if (
+      wasInChat &&
+      typeUserForInactivity === ETypeUserChat.operator &&
+      (!hasTransfer || currentStatusAfterTransfer === EChatStatus.in_chat)
+    ) {
+      await this.attendanceInactivityService.resetOnOperatorMessage(getChat);
     }
   }
 

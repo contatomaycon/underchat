@@ -1,4 +1,5 @@
 import {
+  createAttendanceInactivityCacheKey,
   createAiResponseHistoryCacheKey,
   createChatbotFailedAttemptsCacheKey,
   createChatbotFlowCacheKey,
@@ -111,6 +112,9 @@ describe('createCacheKey', () => {
     expect(createChatbotInactivityCacheKey('acc', 'worker', 'chat-1')).toBe(
       'underchat:chatbot-inactivity:acc:worker:chat-1'
     );
+    expect(createAttendanceInactivityCacheKey('acc', 'worker', 'chat-1')).toBe(
+      'underchat:attendance-inactivity:acc:worker:chat-1'
+    );
     expect(createChatbotFailedAttemptsCacheKey('acc', 'worker', 'chat-1')).toBe(
       'underchat:chatbot-failed-attempts:acc:worker:chat-1'
     );
@@ -151,6 +155,16 @@ describe('createCacheKey', () => {
     expect(() => createChatbotInactivityCacheKey('acc', 'worker', '')).toThrow(
       'chat id is required'
     );
+
+    expect(() =>
+      createAttendanceInactivityCacheKey('', 'worker', 'chat')
+    ).toThrow('account id is required');
+    expect(() =>
+      createAttendanceInactivityCacheKey('acc', '', 'chat')
+    ).toThrow('worker id is required');
+    expect(() =>
+      createAttendanceInactivityCacheKey('acc', 'worker', '')
+    ).toThrow('chat id is required');
 
     expect(() =>
       createChatbotFailedAttemptsCacheKey('', 'worker', 'chat')

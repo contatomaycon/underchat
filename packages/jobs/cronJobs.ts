@@ -5,6 +5,7 @@ import Redis from 'ioredis';
 import { ProfileStatusRenewalActivity } from '@core/jobs/activities/profileStatusRenewal.activities';
 import { BalanceMonitorActivity } from '@core/jobs/activities/balanceMonitor.activities';
 import { ChatbotInactivityActivity } from '@core/jobs/activities/chatbotInactivity.activities';
+import { AttendanceInactivityActivity } from '@core/jobs/activities/attendanceInactivity.activities';
 import { WorkerCreationActivity } from '@core/jobs/activities/workerCreation.activities';
 import { PlanRenewalActivity } from '@core/jobs/activities/planRenewal.activities';
 import { PlanExpirationReminderActivity } from '@core/jobs/activities/planExpirationReminder.activities';
@@ -94,6 +95,9 @@ export function cronJobs(server: FastifyInstance): CronJob[] {
   const chatbotInactivityActivity = container.resolve(
     ChatbotInactivityActivity
   );
+  const attendanceInactivityActivity = container.resolve(
+    AttendanceInactivityActivity
+  );
   const workerCreationActivity = container.resolve(WorkerCreationActivity);
   const planRenewalActivity = container.resolve(PlanRenewalActivity);
   const planExpirationReminderActivity = container.resolve(
@@ -124,6 +128,11 @@ export function cronJobs(server: FastifyInstance): CronJob[] {
       jobId: 'chatbot-inactivity-schedule',
       cronExpression: '*/30 * * * * *',
       handler: chatbotInactivityActivity.processScheduledInactivityChecks,
+    }),
+    createCronJob(server, redis, {
+      jobId: 'attendance-inactivity-schedule',
+      cronExpression: '*/30 * * * * *',
+      handler: attendanceInactivityActivity.processScheduledInactivityChecks,
     }),
     createCronJob(server, redis, {
       jobId: 'worker-creation-schedule',

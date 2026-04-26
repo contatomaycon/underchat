@@ -18,7 +18,10 @@ export function enrichMessagesWithClosureAnnotationSubtype(
 
   const usedMessageIds = new Set<string>();
   for (const msg of messages) {
-    if (msg.content?.annotation_subtype === 'closure') {
+    if (
+      msg.content?.annotation_subtype === 'closure' ||
+      msg.content?.annotation_subtype === 'closure_audit'
+    ) {
       usedMessageIds.add(msg.message_id);
     }
   }

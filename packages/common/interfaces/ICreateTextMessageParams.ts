@@ -6,5 +6,5 @@ export interface ICreateTextMessageParams extends ICreateMessageParams {
   linkPreview: CreateMessageChatsBody['link_preview'];
   hash: string | null;
   typeUser: ETypeUserChat;
-  annotationSubtype?: 'closure';
+  annotationSubtype?: 'closure' | 'closure_audit';
 }
