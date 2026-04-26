@@ -768,8 +768,16 @@ func TestIncomingProfilePhotoJIDsPreferRecipientAliasForOwnLIDMessage(t *testing
 func TestIncomingProfilePhotoCacheKeyStripsDevice(t *testing.T) {
 	jid := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}
 
-	if got := incomingProfilePhotoCacheKey(jid); got != "photo:s3:jid:556195999040@s.whatsapp.net" {
+	if got := incomingProfilePhotoCacheKey(jid); got != "photo:jid:556195999040@s.whatsapp.net" {
 		t.Fatalf("unexpected cache key %q", got)
+	}
+}
+
+func TestIncomingProfilePhotoNoPhotoCacheKeyIsProviderLocal(t *testing.T) {
+	jid := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}
+
+	if got := incomingProfilePhotoNoPhotoCacheKey(jid); got != "photo:no-photo:whatsmeow:jid:556195999040@s.whatsapp.net" {
+		t.Fatalf("unexpected no-photo cache key %q", got)
 	}
 }
 

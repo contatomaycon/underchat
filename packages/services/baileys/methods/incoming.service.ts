@@ -75,6 +75,7 @@ export class BaileysIncomingMessageService {
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
+  private readonly PHOTO_NO_PHOTO_CACHE_PREFIX = 'photo:no-photo:baileys:jid:';
   private readonly PHOTO_CACHE_NO_PHOTO = '__no_photo__';
   private readonly PROFILE_PIC_TIMEOUT_MS = 3000;
   private readonly MESSAGE_CACHE_TTL_SECONDS_DEFAULT = 60 * 60 * 8;
@@ -808,16 +809,35 @@ export class BaileysIncomingMessageService {
   private async getCachedPhoto(
     candidates: string[]
   ): Promise<string | null | undefined> {
-    let hasNoPhotoCache = false;
-    let hasMissingCache = false;
-
     for (const candidate of candidates) {
       try {
         const cached = await this.redis.get(
           `${this.PHOTO_CACHE_PREFIX}${candidate}`
         );
         if (!cached) {
-          hasMissingCache = true;
+          continue;
+        }
+
+        if (cached === this.PHOTO_CACHE_NO_PHOTO) {
+          continue;
+        }
+
+        return cached;
+      } catch {
+        continue;
+      }
+    }
+
+    let hasNoPhotoCache = false;
+    let hasMissingNoPhotoCache = false;
+
+    for (const candidate of candidates) {
+      try {
+        const cached = await this.redis.get(
+          `${this.PHOTO_NO_PHOTO_CACHE_PREFIX}${candidate}`
+        );
+        if (!cached) {
+          hasMissingNoPhotoCache = true;
           continue;
         }
 
@@ -826,13 +846,13 @@ export class BaileysIncomingMessageService {
           continue;
         }
 
-        return cached;
+        hasMissingNoPhotoCache = true;
       } catch {
-        hasMissingCache = true;
+        hasMissingNoPhotoCache = true;
       }
     }
 
-    if (hasNoPhotoCache && !hasMissingCache) {
+    if (hasNoPhotoCache && !hasMissingNoPhotoCache) {
       return null;
     }
 
@@ -858,7 +878,7 @@ export class BaileysIncomingMessageService {
     for (const candidate of uniqueCandidates) {
       this.redis
         .set(
-          `${this.PHOTO_CACHE_PREFIX}${candidate}`,
+          `${this.PHOTO_NO_PHOTO_CACHE_PREFIX}${candidate}`,
           this.PHOTO_CACHE_NO_PHOTO,
           'EX',
           this.PHOTO_CACHE_NO_PHOTO_TTL

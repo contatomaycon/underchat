@@ -585,6 +585,7 @@ export class WwebjsIncomingMessageService {
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
+  private readonly PHOTO_NO_PHOTO_CACHE_PREFIX = 'photo:no-photo:wwebjs:jid:';
   private readonly PHOTO_CACHE_NO_PHOTO = '__no_photo__';
   private readonly NAME_CACHE_TTL = 86400;
   private readonly NAME_CACHE_NO_NAME_TTL = 300;
@@ -2103,6 +2104,7 @@ export class WwebjsIncomingMessageService {
           candidates.add(`${resolvedPhone}@c.us`);
           candidates.add(`${resolvedPhone}@s.whatsapp.net`);
         }
+        candidates.add(normalized);
         continue;
       }
 
@@ -2158,22 +2160,29 @@ export class WwebjsIncomingMessageService {
   private async withProfileTimeout(
     promise: Promise<string>
   ): Promise<string | undefined> {
+    let timeoutId: NodeJS.Timeout | undefined;
+
     try {
-      const timeout = new Promise<undefined>((resolve) =>
-        setTimeout(() => resolve(undefined), this.PROFILE_PIC_TIMEOUT_MS)
-      );
+      const timeout = new Promise<undefined>((resolve) => {
+        timeoutId = setTimeout(
+          () => resolve(undefined),
+          this.PROFILE_PIC_TIMEOUT_MS
+        );
+      });
       const result = await Promise.race([promise, timeout]);
       return getNonEmptyString(result);
     } catch {
       return undefined;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 
   private async getCachedPhoto(
     candidates: string[]
   ): Promise<string | null | undefined> {
-    let hasNoPhotoCache = false;
-
     for (const candidate of candidates) {
       try {
         const cached = await this.redis.get(
@@ -2184,7 +2193,6 @@ export class WwebjsIncomingMessageService {
         }
 
         if (cached === this.PHOTO_CACHE_NO_PHOTO) {
-          hasNoPhotoCache = true;
           continue;
         }
 
@@ -2192,7 +2200,31 @@ export class WwebjsIncomingMessageService {
       } catch {}
     }
 
-    return hasNoPhotoCache ? null : undefined;
+    let hasNoPhotoCache = false;
+    let hasMissingNoPhotoCache = false;
+
+    for (const candidate of candidates) {
+      try {
+        const cached = await this.redis.get(
+          `${this.PHOTO_NO_PHOTO_CACHE_PREFIX}${candidate}`
+        );
+        if (!cached) {
+          hasMissingNoPhotoCache = true;
+          continue;
+        }
+
+        if (cached === this.PHOTO_CACHE_NO_PHOTO) {
+          hasNoPhotoCache = true;
+          continue;
+        }
+
+        hasMissingNoPhotoCache = true;
+      } catch {
+        hasMissingNoPhotoCache = true;
+      }
+    }
+
+    return hasNoPhotoCache && !hasMissingNoPhotoCache ? null : undefined;
   }
 
   private cachePhoto(candidates: string[], photo: string): void {
@@ -2214,7 +2246,7 @@ export class WwebjsIncomingMessageService {
     for (const candidate of unique) {
       this.redis
         .set(
-          `${this.PHOTO_CACHE_PREFIX}${candidate}`,
+          `${this.PHOTO_NO_PHOTO_CACHE_PREFIX}${candidate}`,
           this.PHOTO_CACHE_NO_PHOTO,
           'EX',
           this.PHOTO_CACHE_NO_PHOTO_TTL

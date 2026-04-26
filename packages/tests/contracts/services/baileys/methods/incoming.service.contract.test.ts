@@ -153,6 +153,106 @@ describe('BaileysIncomingMessageService', () => {
     );
   });
 
+  it('reuses a shared cached profile photo without fetching from Baileys', async () => {
+    const { service, redisStore, streamProducerService } = makeService();
+    const sut = service as unknown as {
+      currentSocket?: unknown;
+      sendToKafkaWithRetry: (item: unknown) => Promise<void>;
+    };
+    const phoneJid = '5511999999999@s.whatsapp.net';
+    const socket = {
+      user: { id: '5500000000000@s.whatsapp.net' },
+      profilePictureUrl: jest.fn(async () => undefined),
+    };
+    sut.currentSocket = socket;
+    redisStore.set(`photo:jid:${phoneJid}`, 'https://cdn.test/shared.jpg');
+
+    const item = {
+      inputUpsert: {
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        type: EMessageType.text,
+        message: {
+          key: {
+            id: 'message-shared',
+            remoteJid: phoneJid,
+            fromMe: false,
+          },
+          message: { conversation: 'Oi' },
+        },
+        photo: null,
+        has_quoted: false,
+      },
+      messageKey: 'message-key-shared',
+      topic: 'upsert-message',
+      retries: 0,
+      addedAt: Date.now(),
+    };
+
+    await sut.sendToKafkaWithRetry(item);
+
+    expect(socket.profilePictureUrl).not.toHaveBeenCalled();
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert-message',
+      expect.objectContaining({
+        photo: 'https://cdn.test/shared.jpg',
+      }),
+      'message-key-shared'
+    );
+  });
+
+  it('ignores legacy shared no-photo cache and still fetches from Baileys', async () => {
+    const { service, redisStore, streamProducerService } = makeService();
+    const sut = service as unknown as {
+      currentSocket?: unknown;
+      sendToKafkaWithRetry: (item: unknown) => Promise<void>;
+    };
+    const phoneJid = '5511999999999@s.whatsapp.net';
+    const socket = {
+      user: { id: '5500000000000@s.whatsapp.net' },
+      profilePictureUrl: jest.fn(async (jid: string) =>
+        jid === phoneJid
+          ? 'https://cdn.test/fetched-after-legacy.jpg'
+          : undefined
+      ),
+    };
+    sut.currentSocket = socket;
+    redisStore.set(`photo:jid:${phoneJid}`, '__no_photo__');
+
+    const item = {
+      inputUpsert: {
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        type: EMessageType.text,
+        message: {
+          key: {
+            id: 'message-legacy',
+            remoteJid: phoneJid,
+            fromMe: false,
+          },
+          message: { conversation: 'Oi' },
+        },
+        photo: null,
+        has_quoted: false,
+      },
+      messageKey: 'message-key-legacy',
+      topic: 'upsert-message',
+      retries: 0,
+      addedAt: Date.now(),
+    };
+
+    await sut.sendToKafkaWithRetry(item);
+
+    expect(socket.profilePictureUrl).toHaveBeenCalledWith(phoneJid, 'image');
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert-message',
+      expect.objectContaining({
+        photo: 'https://cdn.test/fetched-after-legacy.jpg',
+      }),
+      'message-key-legacy'
+    );
+  });
+
   it('uses contact aliases so an @lid message can fetch photo by phone jid', async () => {
     const { service, redisStore, streamProducerService } = makeService();
     const sut = service as unknown as {

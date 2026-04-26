@@ -49,12 +49,13 @@ type WhatsAppManager struct {
 }
 
 const (
-	whatsmeowPhotoCachePrefix     = "photo:s3:jid:"
-	whatsmeowPhotoCacheNoPhoto    = "__no_photo__"
-	whatsmeowPhotoCacheTTL        = 24 * time.Hour
-	whatsmeowPhotoCacheNoPhotoTTL = 5 * time.Minute
-	whatsmeowPhotoFetchTimeout    = 5 * time.Second
-	whatsmeowLogoutTimeout        = 30 * time.Second
+	whatsmeowPhotoCachePrefix        = "photo:jid:"
+	whatsmeowPhotoNoPhotoCachePrefix = "photo:no-photo:whatsmeow:jid:"
+	whatsmeowPhotoCacheNoPhoto       = "__no_photo__"
+	whatsmeowPhotoCacheTTL           = 24 * time.Hour
+	whatsmeowPhotoCacheNoPhotoTTL    = 5 * time.Minute
+	whatsmeowPhotoFetchTimeout       = 5 * time.Second
+	whatsmeowLogoutTimeout           = 30 * time.Second
 
 	whatsmeowPairClientDesktop     whatsmeow.PairClientType = 7
 	whatsmeowPairClientDisplayName                          = "Desktop (Mac OS)"
@@ -1386,34 +1387,44 @@ func (m *WhatsAppManager) profilePhotoForJIDs(ctx context.Context, candidates []
 		if m.redis != nil {
 			cachedPhoto, err := m.redis.Get(photoCtx, cacheKey).Result()
 			switch {
-			case err == nil && cachedPhoto == whatsmeowPhotoCacheNoPhoto:
-				continue
 			case err == nil && cachedPhoto != "":
+				if cachedPhoto == whatsmeowPhotoCacheNoPhoto {
+					continue
+				}
 				return cachedPhoto
 			case err != nil && !errors.Is(err, redis.Nil):
 				log.Printf("whatsmeow profile photo cache read failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
+			}
+		}
+	}
+
+	for _, jid := range candidates {
+		noPhotoCacheKey := incomingProfilePhotoNoPhotoCacheKey(jid)
+		if m.redis != nil {
+			cachedNoPhoto, err := m.redis.Get(photoCtx, noPhotoCacheKey).Result()
+			switch {
+			case err == nil && cachedNoPhoto == whatsmeowPhotoCacheNoPhoto:
+				continue
+			case err != nil && !errors.Is(err, redis.Nil):
+				log.Printf("whatsmeow profile photo no-photo cache read failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
 			}
 		}
 
 		info, err := client.GetProfilePictureInfo(photoCtx, jid, &whatsmeow.GetProfilePictureParams{Preview: false})
 		if err != nil {
 			if errors.Is(err, whatsmeow.ErrProfilePictureNotSet) || errors.Is(err, whatsmeow.ErrProfilePictureUnauthorized) {
-				m.cacheProfilePhotoNoPhoto(photoCtx, cacheKey)
+				m.cacheProfilePhotoNoPhoto(photoCtx, jid)
 				continue
 			}
 			log.Printf("whatsmeow profile photo fetch failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
 			continue
 		}
 		if info == nil || strings.TrimSpace(info.URL) == "" {
-			m.cacheProfilePhotoNoPhoto(photoCtx, cacheKey)
+			m.cacheProfilePhotoNoPhoto(photoCtx, jid)
 			continue
 		}
 		photo := strings.TrimSpace(info.URL)
-		if m.redis != nil {
-			if err := m.redis.Set(photoCtx, cacheKey, photo, whatsmeowPhotoCacheTTL).Err(); err != nil {
-				log.Printf("whatsmeow profile photo cache write failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
-			}
-		}
+		m.cacheProfilePhoto(photoCtx, candidates, photo)
 		log.Printf("whatsmeow profile photo fetched worker_id=%s jid=%s photo_id=%s persisted=false", m.cfg.WorkerID, jid.String(), info.ID)
 		return photo
 	}
@@ -1485,7 +1496,28 @@ func callPhoneFromJIDs(callFrom, creator types.JID) string {
 	return ""
 }
 
-func (m *WhatsAppManager) cacheProfilePhotoNoPhoto(ctx context.Context, cacheKey string) {
+func (m *WhatsAppManager) cacheProfilePhoto(ctx context.Context, candidates []types.JID, photo string) {
+	if m.redis == nil || strings.TrimSpace(photo) == "" {
+		return
+	}
+	seen := map[string]struct{}{}
+	for _, jid := range candidates {
+		cacheKey := incomingProfilePhotoCacheKey(jid)
+		if cacheKey == "" {
+			continue
+		}
+		if _, ok := seen[cacheKey]; ok {
+			continue
+		}
+		seen[cacheKey] = struct{}{}
+		if err := m.redis.Set(ctx, cacheKey, photo, whatsmeowPhotoCacheTTL).Err(); err != nil {
+			log.Printf("whatsmeow profile photo cache write failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
+		}
+	}
+}
+
+func (m *WhatsAppManager) cacheProfilePhotoNoPhoto(ctx context.Context, jid types.JID) {
+	cacheKey := incomingProfilePhotoNoPhotoCacheKey(jid)
 	if m.redis == nil || cacheKey == "" {
 		return
 	}
@@ -1531,6 +1563,14 @@ func incomingProfilePhotoCacheKey(jid types.JID) string {
 		return ""
 	}
 	return whatsmeowPhotoCachePrefix + jid.String()
+}
+
+func incomingProfilePhotoNoPhotoCacheKey(jid types.JID) string {
+	jid = nonADJID(jid)
+	if jid.IsEmpty() {
+		return ""
+	}
+	return whatsmeowPhotoNoPhotoCachePrefix + jid.String()
 }
 
 const incomingMessageRawLogLimit = 12000
