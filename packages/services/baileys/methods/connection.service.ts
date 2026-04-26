@@ -300,6 +300,11 @@ export class BaileysConnectionService {
   }
 
   private publishReconnectAttempt(attempt: number, delayMs: number): void {
+    if (this.isQrPairingInProgress()) {
+      this.publishPairingInProgress('pairing_reconnect_attempt');
+      return;
+    }
+
     const retryPayload: IBaileysConnectionState = {
       status: Status.connecting,
       worker_id: WORKER,
@@ -322,6 +327,20 @@ export class BaileysConnectionService {
       },
       true
     );
+  }
+
+  private publishPairingInProgress(context: string): void {
+    const payload: IBaileysConnectionState = {
+      status: Status.connecting,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      is_new_login: true,
+      code: ECodeMessage.pairingInProgress,
+      worker_status_id: EWorkerStatus.disponible,
+    };
+
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, context);
   }
 
   private publishLogoutInProgress(): void {
@@ -522,9 +541,14 @@ export class BaileysConnectionService {
       return connectingState;
     }
 
+    const canContinueQrPairing = this.canContinueQrPairingReconnect(
+      fromDisconnectRestart
+    );
+
     if (
       this.typeConnection === EBaileysConnectionType.qrcode &&
       !requestedByUser &&
+      !canContinueQrPairing &&
       (this.qrReadSessionLocked ||
         (!this.qrReadSessionActive && !this.hasSession()))
     ) {
@@ -539,8 +563,17 @@ export class BaileysConnectionService {
     this.clearReconnectRetryTimer();
     this.prepareFolder();
     this.connecting = true;
-    this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
-    this.publishConnectionStarting();
+    this.setStatus(
+      Status.connecting,
+      canContinueQrPairing
+        ? ECodeMessage.pairingInProgress
+        : ECodeMessage.awaitConnection
+    );
+    if (canContinueQrPairing) {
+      this.publishPairingInProgress('pairing_reconnect_starting');
+    } else {
+      this.publishConnectionStarting();
+    }
     if (!fromDisconnectRestart) {
       this.retryCount = 0;
     }
@@ -1029,14 +1062,28 @@ export class BaileysConnectionService {
     const statusCode = this.extractStatusCode(last?.error);
     const statusMessage = this.extractStatusMessage(last?.error);
 
-    await this.healthCheckService.notifyDisconnected(
-      statusMessage ?? 'Connection closed'
-    );
+    const shouldKeepPairingState =
+      statusCode === ECodeMessage.restartRequired &&
+      this.isQrPairingInProgress();
+
+    if (statusCode !== ECodeMessage.restartRequired) {
+      await this.healthCheckService.notifyDisconnected(
+        statusMessage ?? 'Connection closed'
+      );
+    }
     this.healthCheckService.stop();
     this.clearReconnectRetryTimer();
 
     if (statusCode === ECodeMessage.restartRequired) {
-      this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+      this.setStatus(
+        Status.connecting,
+        shouldKeepPairingState
+          ? ECodeMessage.pairingInProgress
+          : ECodeMessage.awaitConnection
+      );
+      if (shouldKeepPairingState) {
+        this.publishPairingInProgress('pairing_restart_required');
+      }
       resolve(this.state());
       this.pendingResolve = undefined;
 
@@ -1133,6 +1180,7 @@ export class BaileysConnectionService {
 
   private onNewLoginAttempt() {
     if (this.code === ECodeMessage.pairingInProgress) {
+      this.publishPairingInProgress('pairing_in_progress_republish');
       return;
     }
 
@@ -1143,17 +1191,27 @@ export class BaileysConnectionService {
     this.qrHash = undefined;
     this.setStatus(Status.connecting, ECodeMessage.pairingInProgress);
 
-    const payload: IBaileysConnectionState = {
-      status: Status.connecting,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
-      is_new_login: true,
-      code: ECodeMessage.pairingInProgress,
-      worker_status_id: EWorkerStatus.disponible,
-    };
+    this.publishPairingInProgress('pairing_in_progress');
+  }
 
-    this.publishSub(payload, true);
-    void this.notifyWorkerStatusSafely(payload, 'pairing_in_progress');
+  private isQrPairingInProgress(): boolean {
+    return (
+      this.typeConnection === EBaileysConnectionType.qrcode &&
+      (this.code === ECodeMessage.pairingInProgress ||
+        this.awaitingNewLogin ||
+        (this.qrReadSessionLocked && this.hasSession()))
+    );
+  }
+
+  private canContinueQrPairingReconnect(
+    fromDisconnectRestart: boolean
+  ): boolean {
+    return (
+      fromDisconnectRestart &&
+      !this.userRequestedDisconnect &&
+      this.hasSession() &&
+      this.isQrPairingInProgress()
+    );
   }
 
   private maybeMarkPairingInProgressFromCreds(
