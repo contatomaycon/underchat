@@ -287,9 +287,18 @@ export class ChatStatusUpdaterUseCase {
     accountId: string;
     chat: IChat;
     operatorName: string;
+    senderUser?: IChat['user'] | null;
   }): Promise<void> {
+    const chatForAudit =
+      data.senderUser && data.senderUser.id
+        ? {
+            ...data.chat,
+            user: data.senderUser,
+          }
+        : data.chat;
+
     await this.chatMessageService.sendMessage(data.t, {
-      chat: data.chat,
+      chat: chatForAudit,
       accountId: data.accountId,
       type: EMessageType.annotation,
       message: data.t('chat_closed_by_operator_audit', {
@@ -868,7 +877,18 @@ export class ChatStatusUpdaterUseCase {
     }
 
     if (finalStatus === EChatStatus.closed) {
+      const closureExecutorData = await this.userService.viewUserNamePhoto(userId);
+
+      const closureActor: IChat['user'] | null = closureExecutorData
+        ? {
+            id: closureExecutorData.id,
+            name: closureExecutorData.name,
+            photo: closureExecutorData.photo,
+          }
+        : null;
+
       const operatorName =
+        closureActor?.name ||
         chatWithProtocol.user?.name ||
         updatedChat.user?.name ||
         chat.user?.name ||
@@ -879,6 +899,7 @@ export class ChatStatusUpdaterUseCase {
         accountId,
         chat: chatWithProtocol,
         operatorName,
+        senderUser: closureActor,
       });
     }
 
