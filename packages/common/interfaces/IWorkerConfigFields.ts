@@ -11,6 +11,7 @@ export interface IWorkerConfigFields {
   send_message_on_finish_attendance: string | null;
   attendance_hours: string | null;
   outside_hours_message: string | null;
+  attendance_inactivity_alert: string | null;
   reject_call: boolean | null;
   auto_save_contacts: boolean | null;
   simultaneous_attendance: number | null;

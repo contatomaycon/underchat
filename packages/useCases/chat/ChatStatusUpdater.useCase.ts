@@ -35,6 +35,7 @@ import {
 import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAdministratorRole';
 import { PushNotificationService } from '@core/services/pushNotification.service';
 import { ChatClosureCommentCreatorRepository } from '@core/repositories/chat/ChatClosureCommentCreator.repository';
+import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 
 interface IClosedStatusProtocolResult {
   protocol: string | null;
@@ -63,7 +64,9 @@ export class ChatStatusUpdaterUseCase {
     @inject(PushNotificationService)
     private readonly pushNotificationService: PushNotificationService,
     @inject(ChatClosureCommentCreatorRepository)
-    private readonly chatClosureCommentCreatorRepository: ChatClosureCommentCreatorRepository
+    private readonly chatClosureCommentCreatorRepository: ChatClosureCommentCreatorRepository,
+    @inject(AttendanceInactivityService)
+    private readonly attendanceInactivityService: AttendanceInactivityService
   ) {}
 
   private async sendProtocolMessage(
@@ -71,7 +74,11 @@ export class ChatStatusUpdaterUseCase {
     accountId: string,
     chatId: string,
     protocolText: string,
-    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer'
+    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer',
+    options?: {
+      typeUser?: ETypeUserChat;
+      senderUser?: IChat['user'] | null;
+    }
   ): Promise<string> {
     const chat = await this.chatService.findChatByChatId(accountId, chatId);
     if (!chat) {
@@ -100,7 +107,8 @@ export class ChatStatusUpdaterUseCase {
       accountId,
       type: EMessageType.system,
       message,
-      typeUser: ETypeUserChat.system,
+      typeUser: options?.typeUser ?? ETypeUserChat.system,
+      senderUser: options?.senderUser ?? null,
     });
 
     return protocol;
@@ -155,7 +163,11 @@ export class ChatStatusUpdaterUseCase {
         accountId,
         chatId,
         workerConfigFields.generate_protocol_at_start,
-        'protocol_start'
+        'protocol_start',
+        {
+          typeUser: ETypeUserChat.operator,
+          senderUser: chat.user ?? null,
+        }
       );
     }
 
@@ -267,6 +279,24 @@ export class ChatStatusUpdaterUseCase {
       message: data.comment,
       typeUser: ETypeUserChat.system,
       annotationSubtype: 'closure',
+    });
+  }
+
+  private async sendClosureAuditAnnotation(data: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    chat: IChat;
+    operatorName: string;
+  }): Promise<void> {
+    await this.chatMessageService.sendMessage(data.t, {
+      chat: data.chat,
+      accountId: data.accountId,
+      type: EMessageType.annotation,
+      message: data.t('chat_closed_by_operator_audit', {
+        operator: data.operatorName,
+      }),
+      typeUser: ETypeUserChat.system,
+      annotationSubtype: 'closure_audit',
     });
   }
 
@@ -549,7 +579,7 @@ export class ChatStatusUpdaterUseCase {
         t,
         accountId,
         chatId,
-        originalChat
+        updatedChat
       );
     }
 
@@ -767,6 +797,20 @@ export class ChatStatusUpdaterUseCase {
       throw new Error(t('chat_status_update_failed'));
     }
 
+    if (
+      chat.status !== EChatStatus.in_chat &&
+      finalStatus === EChatStatus.in_chat
+    ) {
+      await this.attendanceInactivityService.startTrackingOnInChatEntry(
+        updatedChat
+      );
+    } else if (
+      chat.status === EChatStatus.in_chat &&
+      finalStatus !== EChatStatus.in_chat
+    ) {
+      await this.attendanceInactivityService.cancelInactivityTracking(updatedChat);
+    }
+
     await this.chatService.clearChatSummary(params.chat_id, accountId);
 
     if (requestedStatus === EChatStatus.closed && closureComment) {
@@ -821,6 +865,21 @@ export class ChatStatusUpdaterUseCase {
             : [...existingProtocols, closedStatusResult.protocol],
         };
       }
+    }
+
+    if (finalStatus === EChatStatus.closed) {
+      const operatorName =
+        chatWithProtocol.user?.name ||
+        updatedChat.user?.name ||
+        chat.user?.name ||
+        t('operator');
+
+      await this.sendClosureAuditAnnotation({
+        t,
+        accountId,
+        chat: chatWithProtocol,
+        operatorName,
+      });
     }
 
     if (finalStatus === EChatStatus.ura_output) {

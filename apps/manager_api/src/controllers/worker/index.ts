@@ -37,6 +37,8 @@ import { viewAiAgentConfig } from './methods/viewAiAgentConfig';
 import { updateAiAgentConfig } from './methods/updateAiAgentConfig';
 import { viewAttendanceHours } from './methods/viewAttendanceHours';
 import { updateAttendanceHours } from './methods/updateAttendanceHours';
+import { viewAttendanceInactivityAlert } from './methods/viewAttendanceInactivityAlert';
+import { updateAttendanceInactivityAlert } from './methods/updateAttendanceInactivityAlert';
 import { checkWorkerOpenConversations } from './methods/checkWorkerOpenConversations';
 
 @injectable()
@@ -82,6 +84,8 @@ class WorkerController {
   public updateAiAgentConfig = updateAiAgentConfig;
   public viewAttendanceHours = viewAttendanceHours;
   public updateAttendanceHours = updateAttendanceHours;
+  public viewAttendanceInactivityAlert = viewAttendanceInactivityAlert;
+  public updateAttendanceInactivityAlert = updateAttendanceInactivityAlert;
   public checkWorkerOpenConversations = checkWorkerOpenConversations;
 }
 

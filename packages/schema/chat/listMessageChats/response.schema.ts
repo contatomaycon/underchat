@@ -292,7 +292,11 @@ export const contentSchema = Type.Object(
     album: Type.Optional(Type.Union([albumMessageSchema, Type.Null()])),
     forward: Type.Optional(Type.Union([forwardMessageSchema, Type.Null()])),
     annotation_subtype: Type.Optional(
-      Type.Union([Type.Literal('closure'), Type.Null()])
+      Type.Union([
+        Type.Literal('closure'),
+        Type.Literal('closure_audit'),
+        Type.Null(),
+      ])
     ),
   },
   { additionalProperties: true }

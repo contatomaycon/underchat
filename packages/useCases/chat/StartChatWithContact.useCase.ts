@@ -33,6 +33,7 @@ import {
 } from '@core/common/functions/createCacheKey';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 
 type StartChatWithContactExistingInChatBehavior =
   | 'error'
@@ -67,6 +68,8 @@ export class StartChatWithContactUseCase {
     private readonly phoneValidationService: PhoneValidationService,
     @inject(ChatUserViewerRepository)
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
+    @inject(AttendanceInactivityService)
+    private readonly attendanceInactivityService: AttendanceInactivityService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -446,6 +449,12 @@ export class StartChatWithContactUseCase {
       throw new Error(t('chat_update_failed'));
     }
 
+    if (existingChat.status !== EChatStatus.in_chat) {
+      await this.attendanceInactivityService.startTrackingOnInChatEntry(
+        updatedChat
+      );
+    }
+
     if (wasUraStatus) {
       await this.invalidateChatbotFlow(updatedChat);
     }
@@ -621,6 +630,10 @@ export class StartChatWithContactUseCase {
     if (!result) {
       throw new Error('chat_create_error');
     }
+
+    await this.attendanceInactivityService.startTrackingOnInChatEntry(
+      chatWithProtocol
+    );
 
     await this.publishChatUpdate(chatWithProtocol);
 
