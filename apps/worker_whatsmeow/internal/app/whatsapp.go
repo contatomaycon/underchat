@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1391,6 +1392,10 @@ func (m *WhatsAppManager) profilePhotoForJIDs(ctx context.Context, candidates []
 				if cachedPhoto == whatsmeowPhotoCacheNoPhoto {
 					continue
 				}
+				if !cachedProfilePhotoUsable(photoCtx, cachedPhoto) {
+					log.Printf("whatsmeow shared profile photo cache is not usable worker_id=%s jid=%s host=%s", m.cfg.WorkerID, jid.String(), urlHost(cachedPhoto))
+					continue
+				}
 				return cachedPhoto
 			case err != nil && !errors.Is(err, redis.Nil):
 				log.Printf("whatsmeow profile photo cache read failed worker_id=%s jid=%s error=%v", m.cfg.WorkerID, jid.String(), err)
@@ -1467,6 +1472,44 @@ func (m *WhatsAppManager) persistProfilePhoto(ctx context.Context, jid types.JID
 
 func isImageContentType(contentType string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "image/")
+}
+
+func urlHost(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
+}
+
+func isLikelyTemporaryProfilePhotoURL(rawURL string) bool {
+	host := strings.ToLower(urlHost(rawURL))
+	return strings.Contains(host, "whatsapp.net") || strings.Contains(host, "fbcdn.net")
+}
+
+func cachedProfilePhotoUsable(ctx context.Context, rawURL string) bool {
+	if !isLikelyTemporaryProfilePhotoURL(rawURL) {
+		return true
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Range", "bytes=0-0")
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return false
+	}
+
+	contentType := strings.ToLower(strings.TrimSpace(res.Header.Get("content-type")))
+	return contentType == "" || strings.HasPrefix(contentType, "image/")
 }
 
 func callAltJID(callFrom, creator types.JID) string {

@@ -112,6 +112,10 @@ describe('WwebjsIncomingMessageService profile photo cache', () => {
     })),
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('reuses a shared cached profile photo without fetching from WWebJS', async () => {
     const { service, redisStore } = makeService();
     const phoneJid = '5511999999999@s.whatsapp.net';
@@ -139,6 +143,35 @@ describe('WwebjsIncomingMessageService profile photo cache', () => {
     await expect(
       service.resolvePhotoForMessage(client, msg, { remoteJid: phoneJid })
     ).resolves.toBe('https://cdn.test/fetched.jpg');
+
+    expect(client.getProfilePicUrl).toHaveBeenCalledWith(phoneJid);
+  });
+
+  it('ignores stale shared WhatsApp photo urls and fetches a fresh one', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const { service, redisStore } = makeService();
+    const phoneJid = '5511999999999@s.whatsapp.net';
+    const client = makeClient(async (jid: string) =>
+      jid === phoneJid ? 'https://cdn.test/fresh.jpg' : undefined
+    );
+    const msg = makeMessage(phoneJid);
+    redisStore.set(
+      `photo:jid:${phoneJid}`,
+      'https://pps.whatsapp.net/stale.jpg'
+    );
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', {
+        status: 403,
+        headers: {
+          'content-type': 'text/html',
+        },
+      })
+    );
+
+    await expect(
+      service.resolvePhotoForMessage(client, msg, { remoteJid: phoneJid })
+    ).resolves.toBe('https://cdn.test/fresh.jpg');
 
     expect(client.getProfilePicUrl).toHaveBeenCalledWith(phoneJid);
   });

@@ -97,7 +97,7 @@ describe('BaileysIncomingMessageService', () => {
     await Promise.all(
       createdServices.splice(0).map((service) => service.destroy())
     );
-    jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   it('resolves the Baileys profile photo before publishing the upsert', async () => {
@@ -250,6 +250,69 @@ describe('BaileysIncomingMessageService', () => {
         photo: 'https://cdn.test/fetched-after-legacy.jpg',
       }),
       'message-key-legacy'
+    );
+  });
+
+  it('ignores stale shared WhatsApp photo urls and fetches a fresh one', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const { service, redisStore, streamProducerService } = makeService();
+    const sut = service as unknown as {
+      currentSocket?: unknown;
+      sendToKafkaWithRetry: (item: unknown) => Promise<void>;
+    };
+    const phoneJid = '5511999999999@s.whatsapp.net';
+    const socket = {
+      user: { id: '5500000000000@s.whatsapp.net' },
+      profilePictureUrl: jest.fn(async (jid: string) =>
+        jid === phoneJid ? 'https://cdn.test/fresh.jpg' : undefined
+      ),
+    };
+    sut.currentSocket = socket;
+    redisStore.set(
+      `photo:jid:${phoneJid}`,
+      'https://pps.whatsapp.net/stale.jpg'
+    );
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', {
+        status: 403,
+        headers: {
+          'content-type': 'text/html',
+        },
+      })
+    );
+
+    const item = {
+      inputUpsert: {
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        type: EMessageType.text,
+        message: {
+          key: {
+            id: 'message-stale',
+            remoteJid: phoneJid,
+            fromMe: false,
+          },
+          message: { conversation: 'Oi' },
+        },
+        photo: null,
+        has_quoted: false,
+      },
+      messageKey: 'message-key-stale',
+      topic: 'upsert-message',
+      retries: 0,
+      addedAt: Date.now(),
+    };
+
+    await sut.sendToKafkaWithRetry(item);
+
+    expect(socket.profilePictureUrl).toHaveBeenCalledWith(phoneJid, 'image');
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert-message',
+      expect.objectContaining({
+        photo: 'https://cdn.test/fresh.jpg',
+      }),
+      'message-key-stale'
     );
   });
 

@@ -781,6 +781,18 @@ func TestIncomingProfilePhotoNoPhotoCacheKeyIsProviderLocal(t *testing.T) {
 	}
 }
 
+func TestCachedProfilePhotoUsableOnlyValidatesTemporaryWhatsAppUrls(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if !cachedProfilePhotoUsable(ctx, "https://cdn.test/profile.jpg") {
+		t.Fatal("expected durable non-whatsapp url to be accepted without validation")
+	}
+	if cachedProfilePhotoUsable(ctx, "https://pps.whatsapp.net/stale.jpg") {
+		t.Fatal("expected canceled temporary whatsapp url validation to fail")
+	}
+}
+
 func TestIsImageContentType(t *testing.T) {
 	if !isImageContentType("image/jpeg") {
 		t.Fatal("expected image/jpeg to be image")

@@ -587,6 +587,7 @@ export class WwebjsIncomingMessageService {
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
   private readonly PHOTO_NO_PHOTO_CACHE_PREFIX = 'photo:no-photo:wwebjs:jid:';
   private readonly PHOTO_CACHE_NO_PHOTO = '__no_photo__';
+  private readonly PROFILE_PIC_CACHE_VALIDATE_TIMEOUT_MS = 2000;
   private readonly NAME_CACHE_TTL = 86400;
   private readonly NAME_CACHE_NO_NAME_TTL = 300;
   private readonly NAME_CACHE_PREFIX = 'name:jid:';
@@ -2196,6 +2197,14 @@ export class WwebjsIncomingMessageService {
           continue;
         }
 
+        if (!(await this.isCachedPhotoUsable(cached))) {
+          console.warn('[wwebjs] shared profile photo cache is not usable', {
+            candidate,
+            host: this.getUrlHost(cached),
+          });
+          continue;
+        }
+
         return cached;
       } catch {}
     }
@@ -2225,6 +2234,57 @@ export class WwebjsIncomingMessageService {
     }
 
     return hasNoPhotoCache && !hasMissingNoPhotoCache ? null : undefined;
+  }
+
+  private getUrlHost(value: string): string | undefined {
+    try {
+      return new URL(value).host;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private isLikelyTemporaryProfilePhotoUrl(value: string): boolean {
+    const host = this.getUrlHost(value)?.toLowerCase();
+    if (!host) {
+      return false;
+    }
+
+    return host.includes('whatsapp.net') || host.includes('fbcdn.net');
+  }
+
+  private async isCachedPhotoUsable(photo: string): Promise<boolean> {
+    if (!this.isLikelyTemporaryProfilePhotoUrl(photo)) {
+      return true;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      this.PROFILE_PIC_CACHE_VALIDATE_TIMEOUT_MS
+    );
+
+    try {
+      const response = await fetch(photo, {
+        method: 'GET',
+        headers: {
+          Range: 'bytes=0-0',
+        },
+        signal: controller.signal,
+      });
+      await response.body?.cancel().catch(() => undefined);
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const contentType = response.headers.get('content-type') ?? '';
+      return !contentType || contentType.toLowerCase().startsWith('image/');
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   private cachePhoto(candidates: string[], photo: string): void {
