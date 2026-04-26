@@ -626,6 +626,10 @@ export class WwebjsIncomingMessageService {
   }
 
   bindTo(client: Client): void {
+    if (this.currentClient === client) {
+      return;
+    }
+
     this.currentClient = client;
     client.on('message', (msg: Message) => {
       this.logEvent('message', {

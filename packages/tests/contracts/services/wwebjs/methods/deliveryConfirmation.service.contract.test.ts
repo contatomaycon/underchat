@@ -44,4 +44,20 @@ describe('WwebjsDeliveryConfirmationService', () => {
     jest.advanceTimersByTime(11);
     await expect(expiredPromise).resolves.toBe('timeout');
   });
+
+  it('matches serialized and raw stanza ids in both directions', async () => {
+    const service = new WwebjsDeliveryConfirmationService();
+
+    const serializedId = 'true_158733669765176@lid_3EB0568349A91325BAD72D';
+    const rawStanzaId = '3EB0568349A91325BAD72D';
+
+    const sentPromise = service.waitForOutcome(serializedId, 1000);
+    service.markSent(rawStanzaId);
+    await expect(sentPromise).resolves.toBe('sent');
+
+    service.markFailed(serializedId);
+    await expect(service.waitForOutcome(rawStanzaId, 1000)).resolves.toBe(
+      'failed'
+    );
+  });
 });

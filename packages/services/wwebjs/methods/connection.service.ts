@@ -1352,6 +1352,16 @@ export class WwebjsConnectionService {
     });
   }
 
+  private getClientIdentityJid(client: Client): string | undefined {
+    const rawWid = client.info?.wid?._serialized?.trim();
+    return rawWid || undefined;
+  }
+
+  private getClientPhone(client: Client): string | undefined {
+    const identityJid = this.getClientIdentityJid(client);
+    return identityJid ? getPhoneNumber(identityJid) : undefined;
+  }
+
   private startConnectionStateProbe(
     client: Client,
     attemptId: number,
@@ -1389,9 +1399,18 @@ export class WwebjsConnectionService {
         return;
       }
 
-      if (waState === 'CONNECTED') {
+      if (waState === 'CONNECTED' && this.getClientIdentityJid(client)) {
         this.markConnected(client, attemptId, proxy, 'state_probe');
         return;
+      }
+
+      if (waState === 'CONNECTED') {
+        this.logConnectionEvent('connection_state_probe_waiting_identity', {
+          attempt_id: attemptId,
+          wa_state: waState,
+          has_info: Boolean(client.info),
+          has_wid: Boolean(client.info?.wid),
+        });
       }
 
       const elapsedMs = Date.now() - startedAt;
@@ -1450,6 +1469,15 @@ export class WwebjsConnectionService {
       return;
     }
 
+    if (this.connectionEstablished && this.status === Status.connected) {
+      this.logConnectionEvent('connect_short_circuit', {
+        reason: 'already_marked_connected',
+        attempt_id: attemptId,
+        source,
+      });
+      return;
+    }
+
     this.clearConnectionStateProbe();
     this.resetQrReadSession();
     this.qrReadSessionLocked = false;
@@ -1460,7 +1488,7 @@ export class WwebjsConnectionService {
     this.connectionEstablished = true;
     this.incomingMessageService.bindTo(client);
 
-    const phone = getPhoneNumber(client.info?.wid?._serialized);
+    const phone = this.getClientPhone(client);
 
     const payload: IBaileysConnectionState = {
       status: this.status,

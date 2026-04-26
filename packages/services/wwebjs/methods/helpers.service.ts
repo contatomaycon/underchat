@@ -90,6 +90,7 @@ export class WwebjsHelpersService {
       duration_ms: Date.now() - startedAt,
     });
 
+    this.deliveryConfirmation.markSent(sentMessageId);
     const outcome = await this.deliveryConfirmation.waitForOutcome(
       sentMessageId,
       this.SEND_CONFIRMATION_TIMEOUT_MS

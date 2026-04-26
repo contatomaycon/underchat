@@ -3,6 +3,7 @@ import { singleton } from 'tsyringe';
 
 type DeliveryOutcome = 'sent' | 'failed';
 export type DeliveryWaitResult = DeliveryOutcome | 'timeout';
+type DeliveryListener = (outcome: DeliveryOutcome) => void;
 
 interface IOutcomeCacheEntry {
   outcome: DeliveryOutcome;
@@ -11,10 +12,7 @@ interface IOutcomeCacheEntry {
 
 @singleton()
 export class WwebjsDeliveryConfirmationService {
-  private readonly pending = new Map<
-    string,
-    Set<(outcome: DeliveryOutcome) => void>
-  >();
+  private readonly pending = new Map<string, Set<DeliveryListener>>();
   private readonly cache = new Map<string, IOutcomeCacheEntry>();
   private readonly outcomeTtlMs = 120_000;
   private readonly defaultWaitTimeoutMs = 20_000;
@@ -23,44 +21,70 @@ export class WwebjsDeliveryConfirmationService {
     messageId: string,
     timeoutMs = this.defaultWaitTimeoutMs
   ): Promise<DeliveryWaitResult> {
-    const normalizedMessageId = this.normalizeMessageId(messageId);
-    if (!normalizedMessageId) {
+    const messageIdAliases = this.getMessageIdAliases(messageId);
+    if (!messageIdAliases.length) {
       return 'timeout';
     }
 
     this.cleanupExpiredCache();
 
-    const cached = this.cache.get(normalizedMessageId);
-    if (cached) {
-      return cached.outcome;
+    for (const messageIdAlias of messageIdAliases) {
+      const cached = this.cache.get(messageIdAlias);
+      if (cached) {
+        return cached.outcome;
+      }
     }
 
     return new Promise<DeliveryWaitResult>((resolve) => {
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const registeredListeners = new Set<DeliveryListener>();
 
-      const deliver = (outcome: DeliveryOutcome) => {
+      const removeListener = (listener: DeliveryListener) => {
+        for (const messageIdAlias of messageIdAliases) {
+          const listeners = this.pending.get(messageIdAlias);
+          if (!listeners) {
+            continue;
+          }
+
+          listeners.delete(listener);
+          if (listeners.size === 0) {
+            this.pending.delete(messageIdAlias);
+          }
+        }
+      };
+
+      const finish = (result: DeliveryWaitResult) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
         if (timeoutHandle) {
           clearTimeout(timeoutHandle);
         }
-        resolve(outcome);
+        for (const listener of registeredListeners) {
+          removeListener(listener);
+        }
+        registeredListeners.clear();
+        resolve(result);
       };
 
+      const deliver: DeliveryListener = (outcome) => {
+        finish(outcome);
+      };
+      registeredListeners.add(deliver);
+
       timeoutHandle = setTimeout(() => {
-        const listeners = this.pending.get(normalizedMessageId);
-        if (listeners) {
-          listeners.delete(deliver);
-          if (listeners.size === 0) {
-            this.pending.delete(normalizedMessageId);
-          }
-        }
-        resolve('timeout');
+        finish('timeout');
       }, timeoutMs);
 
-      const listeners =
-        this.pending.get(normalizedMessageId) ??
-        new Set<(outcome: DeliveryOutcome) => void>();
-      listeners.add(deliver);
-      this.pending.set(normalizedMessageId, listeners);
+      for (const messageIdAlias of messageIdAliases) {
+        const listeners =
+          this.pending.get(messageIdAlias) ?? new Set<DeliveryListener>();
+        listeners.add(deliver);
+        this.pending.set(messageIdAlias, listeners);
+      }
     });
   }
 
@@ -73,23 +97,33 @@ export class WwebjsDeliveryConfirmationService {
   }
 
   private markOutcome(messageId: string, outcome: DeliveryOutcome): void {
-    const normalizedMessageId = this.normalizeMessageId(messageId);
-    if (!normalizedMessageId) {
+    const messageIdAliases = this.getMessageIdAliases(messageId);
+    if (!messageIdAliases.length) {
       return;
     }
 
-    this.cache.set(normalizedMessageId, {
-      outcome,
-      expiresAt: Date.now() + this.outcomeTtlMs,
-    });
-
-    const listeners = this.pending.get(normalizedMessageId);
-    if (!listeners) {
-      return;
+    const expiresAt = Date.now() + this.outcomeTtlMs;
+    for (const messageIdAlias of messageIdAliases) {
+      this.cache.set(messageIdAlias, {
+        outcome,
+        expiresAt,
+      });
     }
 
-    this.pending.delete(normalizedMessageId);
-    for (const listener of listeners) {
+    const listenersToNotify = new Set<DeliveryListener>();
+    for (const messageIdAlias of messageIdAliases) {
+      const listeners = this.pending.get(messageIdAlias);
+      if (!listeners) {
+        continue;
+      }
+
+      this.pending.delete(messageIdAlias);
+      for (const listener of listeners) {
+        listenersToNotify.add(listener);
+      }
+    }
+
+    for (const listener of listenersToNotify) {
       listener(outcome);
     }
   }
@@ -103,13 +137,18 @@ export class WwebjsDeliveryConfirmationService {
     }
   }
 
-  private normalizeMessageId(messageId: string): string | null {
+  private getMessageIdAliases(messageId: string): string[] {
     const normalized = messageId?.trim();
     if (!normalized) {
-      return null;
+      return [];
     }
 
+    const aliases = new Set<string>([normalized]);
     const parsed = parseSerializedMessageId(normalized);
-    return parsed?.stanzaId ?? normalized;
+    if (parsed?.stanzaId) {
+      aliases.add(parsed.stanzaId);
+    }
+
+    return Array.from(aliases);
   }
 }
