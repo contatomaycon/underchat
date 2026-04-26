@@ -52,6 +52,80 @@ func TestRequestConnectionRejectsPhonePairing(t *testing.T) {
 	}
 }
 
+func TestQRCodeReadSessionAllowsThreeUniqueCodes(t *testing.T) {
+	manager := &WhatsAppManager{}
+
+	manager.resetQRCodeReadSession(true)
+
+	for attempt, raw := range []string{"qr-1", "qr-2", "qr-3"} {
+		gotAttempt, allowed, duplicate := manager.recordQRCodeGeneration(raw)
+		if !allowed {
+			t.Fatalf("expected qr %q to be allowed", raw)
+		}
+		if duplicate {
+			t.Fatalf("expected qr %q to be counted as unique", raw)
+		}
+		if gotAttempt != attempt+1 {
+			t.Fatalf("expected attempt %d, got %d", attempt+1, gotAttempt)
+		}
+	}
+
+	gotAttempt, allowed, duplicate := manager.recordQRCodeGeneration("qr-4")
+	if allowed {
+		t.Fatal("expected fourth unique qr to be rejected")
+	}
+	if duplicate {
+		t.Fatal("expected fourth unique qr to be treated as limit exhaustion")
+	}
+	if gotAttempt != maxQRCodeGenerations+1 {
+		t.Fatalf("expected exhausted attempt %d, got %d", maxQRCodeGenerations+1, gotAttempt)
+	}
+	if !manager.isQRCodeReadSessionLocked() {
+		t.Fatal("expected qr read session to be locked")
+	}
+}
+
+func TestQRCodeReadSessionIgnoresDuplicateCodes(t *testing.T) {
+	manager := &WhatsAppManager{}
+
+	manager.resetQRCodeReadSession(true)
+
+	if attempt, allowed, duplicate := manager.recordQRCodeGeneration("qr-1"); !allowed || duplicate || attempt != 1 {
+		t.Fatalf("expected first qr to be attempt 1, got attempt=%d allowed=%t duplicate=%t", attempt, allowed, duplicate)
+	}
+
+	if attempt, allowed, duplicate := manager.recordQRCodeGeneration("qr-1"); !allowed || !duplicate || attempt != 1 {
+		t.Fatalf("expected duplicate qr to keep attempt 1, got attempt=%d allowed=%t duplicate=%t", attempt, allowed, duplicate)
+	}
+
+	if attempt, allowed, duplicate := manager.recordQRCodeGeneration("qr-2"); !allowed || duplicate || attempt != 2 {
+		t.Fatalf("expected second unique qr to be attempt 2, got attempt=%d allowed=%t duplicate=%t", attempt, allowed, duplicate)
+	}
+}
+
+func TestQRCodeReadSessionResetRestartsLimit(t *testing.T) {
+	manager := &WhatsAppManager{}
+
+	manager.resetQRCodeReadSession(true)
+	for _, raw := range []string{"qr-1", "qr-2", "qr-3", "qr-4"} {
+		manager.recordQRCodeGeneration(raw)
+	}
+
+	if !manager.isQRCodeReadSessionLocked() {
+		t.Fatal("expected qr read session to be locked before reset")
+	}
+
+	manager.resetQRCodeReadSession(true)
+
+	attempt, allowed, duplicate := manager.recordQRCodeGeneration("qr-1")
+	if !allowed || duplicate || attempt != 1 {
+		t.Fatalf("expected reset qr attempt to restart at 1, got attempt=%d allowed=%t duplicate=%t", attempt, allowed, duplicate)
+	}
+	if manager.isQRCodeReadSessionLocked() {
+		t.Fatal("expected reset qr read session to be unlocked")
+	}
+}
+
 func TestStoredSessionInvalidErrorDetection(t *testing.T) {
 	invalidErrors := []error{
 		errors.New("logged out from another device"),

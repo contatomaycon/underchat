@@ -50,6 +50,8 @@ const statusConnection = shallowRef<EBaileysConnectionStatus>(
 );
 const statusCode = shallowRef<ECodeMessage>(ECodeMessage.awaitConnection);
 const qrcode = shallowRef<string | undefined>();
+const qrAttempt = shallowRef(0);
+const qrMaxAttempts = shallowRef(0);
 const phoneNumber = shallowRef<string | null>(null);
 const disconnectedByUser = shallowRef(false);
 const isResetting = shallowRef(false);
@@ -71,6 +73,8 @@ const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   worker_id: channelId.value ?? '',
   account_id: accountId.value ?? '',
   qrcode: qrcode.value,
+  attempt: qrAttempt.value || undefined,
+  max_attempts: qrMaxAttempts.value || undefined,
   phone: phoneNumber.value ?? undefined,
   disconnected_user: disconnectedByUser.value,
 }));
@@ -82,6 +86,9 @@ const modalState = computed<WorkerConnectionModalState>(() =>
 );
 
 const isConnected = computed(() => modalState.value === 'connected');
+const isQrAttemptsExpired = computed(
+  () => qrMaxAttempts.value > 0 && qrAttempt.value > qrMaxAttempts.value
+);
 const isBlockingOperation = computed(
   () =>
     modalState.value === 'loggingOut' ||
@@ -160,10 +167,14 @@ const stageMeta = computed(() => {
       loading: true,
     },
     disconnected: {
-      title: disconnectedByUser.value
-        ? 'connection_removed'
-        : 'connection_disconnected_title',
-      description: 'connection_disconnected_description',
+      title: isQrAttemptsExpired.value
+        ? 'qrcode_attempts_expired_title'
+        : disconnectedByUser.value
+          ? 'connection_removed'
+          : 'connection_disconnected_title',
+      description: isQrAttemptsExpired.value
+        ? 'qrcode_attempts_expired_description'
+        : 'connection_disconnected_description',
       icon: 'tabler-plug-connected-x',
       color: 'error',
     },
@@ -192,9 +203,13 @@ const stageMeta = computed(() => {
 });
 
 const showPrimaryActions = computed(() => modalState.value !== 'pairing');
+const showQrRetryOnly = computed(
+  () => modalState.value === 'disconnected' && isQrAttemptsExpired.value
+);
 const showReconnectAction = computed(
   () =>
     !isConnected.value &&
+    !showQrRetryOnly.value &&
     !isBlockingOperation.value &&
     modalState.value !== 'pairing'
 );
@@ -259,6 +274,30 @@ function resetPairingCodes() {
   pairingCodeSecondary.value = '';
 }
 
+function resetQrAttempts() {
+  qrAttempt.value = 0;
+  qrMaxAttempts.value = 0;
+}
+
+function hasExceededQrAttempts(data: Partial<IBaileysConnectionState>) {
+  return (
+    typeof data.attempt === 'number' &&
+    typeof data.max_attempts === 'number' &&
+    data.max_attempts > 0 &&
+    data.attempt > data.max_attempts
+  );
+}
+
+function applyQrAttempts(data: Partial<IBaileysConnectionState>) {
+  if (typeof data.attempt === 'number') {
+    qrAttempt.value = data.attempt;
+  }
+
+  if (typeof data.max_attempts === 'number') {
+    qrMaxAttempts.value = data.max_attempts;
+  }
+}
+
 function splitCode(code: string): [string, string] {
   return [code.slice(0, 4), code.slice(4)];
 }
@@ -297,6 +336,7 @@ function prepareConnectionStart() {
   statusConnection.value = EBaileysConnectionStatus.connecting;
   statusCode.value = ECodeMessage.awaitConnection;
   qrcode.value = undefined;
+  resetQrAttempts();
   disconnectedByUser.value = false;
   phoneNumber.value = null;
   secondsNextAttempt.value = 0;
@@ -316,6 +356,7 @@ function prepareInitialModalState() {
   statusConnection.value = EBaileysConnectionStatus.connected;
   statusCode.value = ECodeMessage.connectionEstablished;
   qrcode.value = undefined;
+  resetQrAttempts();
   phoneNumber.value = props.initialPhone
     ? formatPhoneBR(props.initialPhone)
     : null;
@@ -354,6 +395,10 @@ async function reconnectChannel() {
   );
 }
 
+async function restartQrCodeAttempt() {
+  await reconnectChannel();
+}
+
 async function recreateChannelWithFullCleanup() {
   if (!channelId.value) return;
 
@@ -361,6 +406,7 @@ async function recreateChannelWithFullCleanup() {
   statusCode.value = ECodeMessage.logoutInProgress;
   disconnectedByUser.value = true;
   qrcode.value = undefined;
+  resetQrAttempts();
   resetPairingCodes();
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
@@ -403,6 +449,7 @@ function scheduleConnectedState(data: IBaileysConnectionState) {
 function shouldIgnoreIncomingState(data: IBaileysConnectionState): boolean {
   const incomingCode = data.code as ECodeMessage | undefined;
   const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
+  const incomingQrAttemptsExceeded = hasExceededQrAttempts(data);
   const isIncomingConnected =
     incomingStatus === EBaileysConnectionStatus.connected ||
     incomingCode === ECodeMessage.connectionEstablished;
@@ -421,17 +468,22 @@ function shouldIgnoreIncomingState(data: IBaileysConnectionState): boolean {
     return true;
   }
 
-  if (isStaleStartupEvent && qrcode.value) {
-    return true;
-  }
-
-  if (isStaleStartupEvent && isCurrentUserActionState) {
+  if (isStaleStartupEvent && qrcode.value && !incomingQrAttemptsExceeded) {
     return true;
   }
 
   if (
     isStaleStartupEvent &&
-    statusConnection.value === EBaileysConnectionStatus.connected
+    isCurrentUserActionState &&
+    !incomingQrAttemptsExceeded
+  ) {
+    return true;
+  }
+
+  if (
+    isStaleStartupEvent &&
+    statusConnection.value === EBaileysConnectionStatus.connected &&
+    !incomingQrAttemptsExceeded
   ) {
     return true;
   }
@@ -446,6 +498,7 @@ function applyConnectedState(data: IBaileysConnectionState) {
   phoneNumber.value = data.phone ? formatPhoneBR(data.phone) : null;
   disconnectedByUser.value = false;
   qrcode.value = undefined;
+  resetQrAttempts();
   secondsNextAttempt.value = 0;
   pairingStartedAt.value = null;
   resetPairingCodes();
@@ -477,6 +530,8 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
     return;
   }
 
+  applyQrAttempts(data);
+
   const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
   const incomingCode = data.code as ECodeMessage | undefined;
   const isConnectedEvent =
@@ -501,7 +556,9 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
     disconnectedByUser.value = data.disconnected_user;
   }
 
-  if (data.qrcode) {
+  if (hasExceededQrAttempts(data)) {
+    qrcode.value = undefined;
+  } else if (data.qrcode) {
     qrcode.value = data.qrcode;
   } else if (
     incomingCode === ECodeMessage.awaitConnection ||
@@ -567,6 +624,9 @@ watch(isVisible, (visible) => {
   }
 
   void loadExternalConnectionLink();
+  if (!isConnected.value) {
+    void reconnectChannel();
+  }
 });
 
 onUnmounted(() => {
@@ -671,6 +731,18 @@ onUnmounted(() => {
           <VCardText v-if="showPrimaryActions" class="d-flex justify-center">
             <div class="d-flex gap-2">
               <VBtn
+                v-if="showQrRetryOnly"
+                color="primary"
+                :disabled="isActionLocked"
+                :loading="channelStore.loading"
+                @click="restartQrCodeAttempt"
+              >
+                <VIcon icon="tabler-refresh" start />
+                {{ $t('retry_qrcode') }}
+              </VBtn>
+
+              <VBtn
+                v-else
                 :disabled="isActionLocked"
                 :loading="channelStore.loading && modalState === 'loggingOut'"
                 :color="isConnected ? 'error' : 'primary'"

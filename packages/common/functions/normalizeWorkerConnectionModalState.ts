@@ -37,6 +37,11 @@ export function normalizeWorkerConnectionModalState(
 ): WorkerConnectionModalState {
   const status = state.status as EBaileysConnectionStatus | undefined;
   const code = state.code as ECodeMessage | undefined;
+  const hasExceededQrAttempts =
+    typeof state.attempt === 'number' &&
+    typeof state.max_attempts === 'number' &&
+    state.max_attempts > 0 &&
+    state.attempt > state.max_attempts;
 
   if (code === ECodeMessage.logoutInProgress) {
     return 'loggingOut';
@@ -51,6 +56,10 @@ export function normalizeWorkerConnectionModalState(
 
   if (code === ECodeMessage.phoneNotAvailable) {
     return 'phoneUnavailable';
+  }
+
+  if (hasExceededQrAttempts) {
+    return 'disconnected';
   }
 
   if (

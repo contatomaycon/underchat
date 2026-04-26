@@ -39,7 +39,7 @@ const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 const RETRY_DELAY = 60_000;
 const MAX_RETRIES = 10;
 const RECONNECT_COOLDOWN_DELAY = 30 * 60 * 1000;
-const MAX_QR_GENERATIONS = 5;
+const MAX_QR_GENERATIONS = 3;
 const CONNECTION_STATE_RECONCILE_INTERVAL_MS = 5_000;
 const CONNECTION_STATE_RECONCILE_TIMEOUT_MS = 120_000;
 const CONNECTION_STATE_CHECK_TIMEOUT_MS = 10_000;
@@ -994,6 +994,8 @@ export class WwebjsConnectionService {
           qrcode: img,
           worker_id: WORKER,
           account_id: ACCOUNT,
+          attempt: this.qrGenerationCount,
+          max_attempts: MAX_QR_GENERATIONS,
           worker_status_id: EWorkerStatus.disponible,
         };
 
@@ -1828,7 +1830,7 @@ export class WwebjsConnectionService {
     this.qrReadSessionLocked = true;
     this.retryCount = 0;
     this.qrHash = undefined;
-    this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+    this.setStatus(Status.disconnected, ECodeMessage.connectionClosed);
 
     const payload: IBaileysConnectionState = {
       status: this.status,

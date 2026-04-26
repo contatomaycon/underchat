@@ -93,8 +93,8 @@ export class WorkerConnectionStatusConsume {
     const currentStatus = this.baileysService.getStatus();
     const currentCode = this.baileysService.getCode();
     const hasActiveSocket = Boolean(this.baileysService.socket);
-    const awaitingUserAction =
-      currentCode === ECodeMessage.awaitingReadQrCode ||
+    const awaitingQrRead = currentCode === ECodeMessage.awaitingReadQrCode;
+    const pairingInProgress =
       currentCode === ECodeMessage.awaitingPairingCode ||
       currentCode === ECodeMessage.pairingInProgress ||
       currentCode === ECodeMessage.newLoginAttempt;
@@ -102,9 +102,41 @@ export class WorkerConnectionStatusConsume {
     if (
       currentStatus === EBaileysConnectionStatus.connecting &&
       hasActiveSocket &&
-      awaitingUserAction
+      pairingInProgress
     ) {
       this.baileysService.republishLastState();
+      return;
+    }
+
+    if (
+      currentStatus === EBaileysConnectionStatus.connecting &&
+      hasActiveSocket &&
+      awaitingQrRead
+    ) {
+      this.logConnectionEvent('connection_reopening_user_action_attempt', {
+        status: currentStatus,
+        code: currentCode,
+        has_active_socket: hasActiveSocket,
+      });
+      try {
+        await this.baileysService.connect({
+          initial_connection: true,
+          force_new: true,
+          requested_by_user: true,
+          type: data.type as EBaileysConnectionType,
+          phone_connection: data.phone_connection,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logConnectionEvent(
+          'connection_reopening_user_action_error',
+          {
+            reason: errorMessage,
+          },
+          'error'
+        );
+      }
       return;
     }
 
@@ -326,12 +358,13 @@ export class WorkerConnectionStatusConsume {
       attempt: this.connectionRetryAttempt,
       max_attempts: this.connectionRetryMinAttempts,
     });
-    this.publishConnectionAttempt(this.connectionRetryAttempt);
 
     if (this.connectionRetryAttempt > this.connectionRetryMinAttempts) {
       this.handoffToServiceReconnect();
       return;
     }
+
+    this.publishConnectionAttempt(this.connectionRetryAttempt);
 
     if (fromDisconnectRestart) {
       this.restartAfterDisconnect = false;

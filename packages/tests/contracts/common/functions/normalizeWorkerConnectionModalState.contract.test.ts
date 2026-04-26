@@ -32,6 +32,18 @@ describe('normalizeWorkerConnectionModalState', () => {
     ).toBe('qrReady');
   });
 
+  it('maps exhausted QR attempts to disconnected', () => {
+    expect(
+      normalizeWorkerConnectionModalState({
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        qrcode: 'data:image/png;base64,qr',
+        attempt: 4,
+        max_attempts: 3,
+      })
+    ).toBe('disconnected');
+  });
+
   it('maps QR scanned and pairing in progress states', () => {
     expect(
       normalizeWorkerConnectionModalState({

@@ -122,7 +122,7 @@ export class BaileysConnectionService {
   private readonly retryDelay = 60_000;
   private readonly maxRetries = 10;
   private readonly reconnectCooldownDelay = 30 * 60 * 1000;
-  private readonly maxQrGenerations = 5;
+  private readonly maxQrGenerations = 3;
 
   private socket?: WASocket;
   private status: Status = Status.initial;
@@ -860,6 +860,8 @@ export class BaileysConnectionService {
       qrcode: img,
       worker_id: WORKER,
       account_id: ACCOUNT,
+      attempt: this.qrGenerationCount,
+      max_attempts: this.maxQrGenerations,
       worker_status_id: EWorkerStatus.disponible,
     };
     this.publishSub(payload, true);
@@ -1285,7 +1287,7 @@ export class BaileysConnectionService {
     this.qrReadSessionLocked = true;
     this.retryCount = 0;
     this.qrHash = undefined;
-    this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+    this.setStatus(Status.disconnected, ECodeMessage.connectionClosed);
 
     const payload: IBaileysConnectionState = {
       status: this.status,

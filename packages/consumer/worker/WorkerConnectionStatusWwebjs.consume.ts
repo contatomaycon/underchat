@@ -97,8 +97,8 @@ export class WorkerConnectionStatusWwebjsConsume {
 
     const currentStatus = this.wwebjsService.getStatus();
     const hasActiveSocket = Boolean(this.wwebjsService.socket);
-    const awaitingUserAction =
-      currentCode === ECodeMessage.awaitingReadQrCode ||
+    const awaitingQrRead = currentCode === ECodeMessage.awaitingReadQrCode;
+    const pairingInProgress =
       currentCode === ECodeMessage.awaitingPairingCode ||
       currentCode === ECodeMessage.pairingInProgress ||
       currentCode === ECodeMessage.newLoginAttempt;
@@ -106,9 +106,22 @@ export class WorkerConnectionStatusWwebjsConsume {
     if (
       currentStatus === EBaileysConnectionStatus.connecting &&
       hasActiveSocket &&
-      awaitingUserAction
+      pairingInProgress
     ) {
       this.wwebjsService.republishLastState();
+      return;
+    }
+
+    if (
+      currentStatus === EBaileysConnectionStatus.connecting &&
+      hasActiveSocket &&
+      awaitingQrRead
+    ) {
+      await this.connectWithService(data, {
+        fromDisconnectRestart: false,
+        requestedByUser: true,
+        forceNew: true,
+      });
       return;
     }
 
@@ -183,13 +196,16 @@ export class WorkerConnectionStatusWwebjsConsume {
       fromDisconnectRestart: boolean;
       requestedByUser: boolean;
       allowRestore?: boolean;
+      forceNew?: boolean;
     }
   ): Promise<void> {
     const allowRestore = options.allowRestore ?? true;
+    const forceNew = options.forceNew ?? options.fromDisconnectRestart;
 
     this.logConnectionEvent('connection_connect_invoked', {
       from_disconnect_restart: options.fromDisconnectRestart,
       requested_by_user: options.requestedByUser,
+      force_new: forceNew,
       connection_type: data.type,
       has_phone_connection: Boolean(data.phone_connection),
       allow_restore: allowRestore,
@@ -200,7 +216,7 @@ export class WorkerConnectionStatusWwebjsConsume {
       const state = await this.wwebjsService.connect({
         initial_connection: true,
         allow_restore: allowRestore,
-        force_new: options.fromDisconnectRestart,
+        force_new: forceNew,
         requested_by_user: options.requestedByUser,
         from_disconnect_restart: options.fromDisconnectRestart,
         type: data.type as EBaileysConnectionType,
@@ -382,12 +398,13 @@ export class WorkerConnectionStatusWwebjsConsume {
       attempt: this.connectionRetryAttempt,
       max_attempts: this.connectionRetryMinAttempts,
     });
-    this.publishConnectionAttempt(this.connectionRetryAttempt);
 
     if (this.connectionRetryAttempt > this.connectionRetryMinAttempts) {
       this.handoffToServiceReconnect();
       return;
     }
+
+    this.publishConnectionAttempt(this.connectionRetryAttempt);
 
     if (fromDisconnectRestart) {
       this.restartAfterDisconnect = false;
