@@ -1,7 +1,8 @@
 import { singleton, inject } from 'tsyringe';
 import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
-import { KafkaClient } from '@core/plugins/kafkaStreams';
+import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import {
   MessageStatusService,
@@ -40,7 +41,17 @@ export class MessageStatusUpdateConsume {
   private readonly batchMaxSize = 20;
   private readonly maxConsecutiveFailures = 10;
   private readonly partitionRecoveryIntervalMs = 60_000;
+  private readonly missingStatusRetrySetKey =
+    'message-status:update:missing:retry';
+  private readonly missingStatusRetryPayloadHashKey =
+    'message-status:update:missing:retry:payloads';
+  private readonly missingStatusRetryIntervalMs = 1_000;
+  private readonly missingStatusRetryBatchSize = 100;
+  private readonly missingStatusRetryDelaysMs = [
+    2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 120_000, 300_000,
+  ];
   private partitionRecoveryTimer: ReturnType<typeof setInterval> | null = null;
+  private missingStatusRetryTimer: ReturnType<typeof setInterval> | null = null;
   private currentTopic: string | null = null;
 
   private messagePatchBuffer = new Map<string, BufferedUpdate[]>();
@@ -50,6 +61,8 @@ export class MessageStatusUpdateConsume {
     @inject('Kafka') private readonly kafka: KafkaClient,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(StreamProducerService)
+    private readonly streamProducerService: StreamProducerService,
     @inject(MessageStatusService)
     private readonly messageStatusService: MessageStatusService,
     @inject('Redis') private readonly redis: Redis
@@ -102,6 +115,7 @@ export class MessageStatusUpdateConsume {
     );
 
     this.startPartitionRecovery();
+    this.startMissingStatusRetryWorker(topic);
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
@@ -116,8 +130,9 @@ export class MessageStatusUpdateConsume {
         return;
       }
 
-      const previousChain =
-        this.partitionChains.get(partition) ?? Promise.resolve();
+      const previousChain = (
+        this.partitionChains.get(partition) ?? Promise.resolve()
+      ).catch(() => undefined);
 
       const currentChain = previousChain.then(async () => {
         const heartbeat = async () => {
@@ -140,6 +155,7 @@ export class MessageStatusUpdateConsume {
       });
 
       this.partitionChains.set(partition, currentChain);
+      void currentChain.catch(() => undefined);
     });
 
     this.consumer.on('event.error', (err) => {
@@ -160,6 +176,11 @@ export class MessageStatusUpdateConsume {
     if (this.partitionRecoveryTimer) {
       clearInterval(this.partitionRecoveryTimer);
       this.partitionRecoveryTimer = null;
+    }
+
+    if (this.missingStatusRetryTimer) {
+      clearInterval(this.missingStatusRetryTimer);
+      this.missingStatusRetryTimer = null;
     }
 
     for (const timer of this.batchTimers.values()) {
@@ -205,7 +226,7 @@ export class MessageStatusUpdateConsume {
     } catch (error: unknown) {
       if (
         MessageStatusUpdateConsume.isLibrdKafkaError(error) &&
-        error.code === 22
+        MessageStatusUpdateConsume.isNonFatalCommitError(error.code)
       ) {
         return;
       }
@@ -221,6 +242,10 @@ export class MessageStatusUpdateConsume {
       'code' in error &&
       typeof (error as { code: unknown }).code === 'number'
     );
+  }
+
+  private static isNonFatalCommitError(code: number): boolean {
+    return code === 22 || code === 25 || code === 27;
   }
 
   private markPartitionAsFailed(
@@ -347,6 +372,241 @@ export class MessageStatusUpdateConsume {
     }
   }
 
+  private startMissingStatusRetryWorker(topic: string): void {
+    if (this.missingStatusRetryTimer) {
+      clearInterval(this.missingStatusRetryTimer);
+    }
+
+    this.missingStatusRetryTimer = setInterval(() => {
+      void this.processDueMissingStatusRetries(topic).catch((error) => {
+        logger.error(
+          {
+            err: error,
+            topic,
+            type: 'message_status_missing_retry_worker_error',
+          },
+          'Error while processing deferred message status updates'
+        );
+      });
+    }, this.missingStatusRetryIntervalMs);
+
+    this.missingStatusRetryTimer.unref?.();
+  }
+
+  private getRetryCount(data: IMessageStatusUpdate): number {
+    const retryCount = data.retry_count ?? 0;
+    if (!Number.isFinite(retryCount)) {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor(retryCount));
+  }
+
+  private getFirstSeenAt(data: IMessageStatusUpdate): number {
+    const firstSeenAt = data.first_seen_at ?? Date.now();
+    if (!Number.isFinite(firstSeenAt)) {
+      return Date.now();
+    }
+
+    return firstSeenAt;
+  }
+
+  private getStatusUpdateKafkaKey(data: IMessageStatusUpdate): string {
+    return `${data.account_id}:${data.message_id}:${MessageStatusService.hashPatch(data.patch)}`;
+  }
+
+  private getMissingStatusRetryMember(data: IMessageStatusUpdate): string {
+    return this.getStatusUpdateKafkaKey(data);
+  }
+
+  private parseRetryPayload(raw: string | null): IMessageStatusUpdate | null {
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw) as IMessageStatusUpdate;
+    } catch {
+      return null;
+    }
+  }
+
+  private async deferMissingStatusUpdate(
+    data: IMessageStatusUpdate,
+    patch: MessageSummaryPatch,
+    batchSize: number,
+    duration: number
+  ): Promise<void> {
+    const retryCount = this.getRetryCount(data);
+    const maxRetries = this.missingStatusRetryDelaysMs.length;
+
+    if (retryCount >= maxRetries) {
+      logger.warn(
+        {
+          account_id: data.account_id,
+          message_id: data.message_id,
+          retry_count: retryCount,
+          max_retries: maxRetries,
+          batch_size: batchSize,
+          duration,
+          type: 'message_status_missing_retry_exhausted',
+        },
+        'Message status update exhausted retries because target message was not found'
+      );
+
+      incrementCounter('message_status_update_missing_retry_exhausted', 1, {
+        account_id: data.account_id,
+      });
+      return;
+    }
+
+    const delayMs = this.missingStatusRetryDelaysMs[retryCount];
+    const retryPayload: IMessageStatusUpdate = {
+      ...data,
+      patch,
+      retry_count: retryCount + 1,
+      first_seen_at: this.getFirstSeenAt(data),
+    };
+    const member = this.getMissingStatusRetryMember(retryPayload);
+
+    const existingPayload = this.parseRetryPayload(
+      await this.redis.hget(this.missingStatusRetryPayloadHashKey, member)
+    );
+    if (existingPayload) {
+      retryPayload.retry_count = Math.max(
+        this.getRetryCount(existingPayload),
+        retryPayload.retry_count ?? 0
+      );
+      retryPayload.first_seen_at = Math.min(
+        this.getFirstSeenAt(existingPayload),
+        retryPayload.first_seen_at ?? Date.now()
+      );
+    }
+
+    await this.redis.hset(
+      this.missingStatusRetryPayloadHashKey,
+      member,
+      JSON.stringify(retryPayload)
+    );
+
+    const existingScore = await this.redis.zscore(
+      this.missingStatusRetrySetKey,
+      member
+    );
+    if (existingScore === null) {
+      await this.redis.zadd(
+        this.missingStatusRetrySetKey,
+        Date.now() + delayMs,
+        member
+      );
+    }
+
+    logger.warn(
+      {
+        account_id: data.account_id,
+        message_id: data.message_id,
+        retry_count: retryPayload.retry_count,
+        delay_ms: delayMs,
+        batch_size: batchSize,
+        duration,
+        type: 'message_status_update_deferred_missing_message',
+      },
+      'Message status update deferred because target message was not indexed yet'
+    );
+
+    incrementCounter('message_status_update_deferred_missing_message', 1, {
+      account_id: data.account_id,
+      retry_count: String(retryPayload.retry_count ?? 0),
+    });
+  }
+
+  private async processDueMissingStatusRetries(topic: string): Promise<void> {
+    const dueMembers = await this.redis.zrangebyscore(
+      this.missingStatusRetrySetKey,
+      '-inf',
+      Date.now(),
+      'LIMIT',
+      0,
+      this.missingStatusRetryBatchSize
+    );
+
+    if (!dueMembers.length) {
+      return;
+    }
+
+    await Promise.all(
+      dueMembers.map((member) => this.publishMissingStatusRetry(topic, member))
+    );
+  }
+
+  private async publishMissingStatusRetry(
+    topic: string,
+    member: string
+  ): Promise<void> {
+    const removed = await this.redis.zrem(
+      this.missingStatusRetrySetKey,
+      member
+    );
+    if (removed !== 1) {
+      return;
+    }
+
+    const rawPayload = await this.redis.hget(
+      this.missingStatusRetryPayloadHashKey,
+      member
+    );
+    const payload = this.parseRetryPayload(rawPayload);
+    if (!payload || !rawPayload) {
+      await this.redis.hdel(this.missingStatusRetryPayloadHashKey, member);
+      return;
+    }
+
+    try {
+      await this.streamProducerService.send(
+        topic,
+        payload,
+        this.getStatusUpdateKafkaKey(payload)
+      );
+      await this.redis.hdel(this.missingStatusRetryPayloadHashKey, member);
+
+      logger.info(
+        {
+          account_id: payload.account_id,
+          message_id: payload.message_id,
+          retry_count: payload.retry_count ?? 0,
+          type: 'message_status_missing_retry_requeued',
+        },
+        'Deferred message status update requeued'
+      );
+
+      incrementCounter('message_status_missing_retry_requeued', 1, {
+        account_id: payload.account_id,
+      });
+    } catch (error) {
+      await this.redis.hset(
+        this.missingStatusRetryPayloadHashKey,
+        member,
+        rawPayload
+      );
+      await this.redis.zadd(
+        this.missingStatusRetrySetKey,
+        Date.now() + this.missingStatusRetryIntervalMs * 5,
+        member
+      );
+
+      logger.error(
+        {
+          err: error,
+          account_id: payload.account_id,
+          message_id: payload.message_id,
+          retry_count: payload.retry_count ?? 0,
+          type: 'message_status_missing_retry_publish_error',
+        },
+        'Failed to requeue deferred message status update'
+      );
+    }
+  }
+
   private getIdempotencyKey(data: IMessageStatusUpdate): string {
     const patchHash = MessageStatusService.hashPatch(data.patch);
     return `${this.idempotencyPrefix}${data.account_id}:${data.message_id}:${patchHash}`;
@@ -442,12 +702,37 @@ export class MessageStatusUpdateConsume {
         return;
       }
 
-      await this.messageStatusService.updateSummaryByWhatsAppId(
-        firstUpdate.account_id,
-        firstUpdate.message_id,
-        mergedPatch,
-        firstUpdate.key
-      );
+      const updatedMessage =
+        await this.messageStatusService.updateSummaryByWhatsAppId(
+          firstUpdate.account_id,
+          firstUpdate.message_id,
+          mergedPatch,
+          firstUpdate.key
+        );
+
+      if (!updatedMessage) {
+        const duration = Date.now() - startTime;
+
+        await this.deferMissingStatusUpdate(
+          firstUpdate,
+          mergedPatch,
+          buffered.length,
+          duration
+        );
+
+        recordHistogram('message_status_update_deferred_duration', duration, {
+          account_id: firstUpdate.account_id,
+          batch_size: buffered.length.toString(),
+        });
+
+        await Promise.all(
+          buffered.map((item) =>
+            this.commitNext(item.topic, item.partition, item.offset)
+          )
+        );
+
+        return;
+      }
 
       for (const item of buffered) {
         this.resetPartitionFailureCount(item.partition);

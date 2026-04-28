@@ -1,0 +1,180 @@
+import 'reflect-metadata';
+
+jest.mock('@core/common/functions/commitOffset', () => ({
+  commitOffset: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/connectConsumer', () => ({
+  connectConsumer: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/createConsumer', () => ({
+  createConsumer: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/ensureKafkaTopic', () => ({
+  ensureKafkaTopic: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/handleConsumerError', () => ({
+  handleConsumerError: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/startHeartbeat', () => ({
+  startHeartbeat: jest.fn(() => jest.fn()),
+}));
+
+jest.mock('@core/plugins/kafkaStreams', () => ({}));
+
+jest.mock('@core/services/kafkaServiceQueue.service', () => ({
+  KafkaServiceQueueService: class KafkaServiceQueueService {},
+}));
+
+jest.mock('@core/services/streamProducer.service', () => ({
+  StreamProducerService: class StreamProducerService {},
+}));
+
+jest.mock('@core/services/messageStatus.service', () => ({
+  MessageStatusService: class MessageStatusService {
+    static hashPatch(): string {
+      return 'status-hash';
+    }
+  },
+}));
+
+jest.mock('@whiskeysockets/baileys', () => ({
+  jidNormalizedUser: jest.fn((jid: string) => jid),
+}));
+
+jest.mock('@core/plugins/telemetry/logger', () => ({
+  logger: {
+    error: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+  },
+}));
+
+jest.mock('@core/plugins/telemetry/observability', () => ({
+  incrementCounter: jest.fn(),
+  recordHistogram: jest.fn(),
+}));
+
+import type { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
+
+const { MessageStatusUpdateConsume } =
+  require('@core/consumer/message/MessageStatusUpdate.consume') as typeof import('@core/consumer/message/MessageStatusUpdate.consume');
+
+describe('MessageStatusUpdateConsume', () => {
+  const makeConsumer = () => {
+    const redis = {
+      exists: jest.fn().mockResolvedValue(0),
+      hget: jest.fn().mockResolvedValue(null),
+      hset: jest.fn().mockResolvedValue(1),
+      setex: jest.fn().mockResolvedValue('OK'),
+      zadd: jest.fn().mockResolvedValue(1),
+      zscore: jest.fn().mockResolvedValue(null),
+    };
+    const streamProducerService = {
+      send: jest.fn().mockResolvedValue(undefined),
+    };
+    const messageStatusService = {
+      updateSummaryByWhatsAppId: jest.fn(),
+    };
+    const kafkaServiceQueueService = {
+      updateMessageStatus: jest.fn().mockReturnValue('update.message.status'),
+    };
+
+    const consumer = new MessageStatusUpdateConsume(
+      {} as never,
+      kafkaServiceQueueService as never,
+      streamProducerService as never,
+      messageStatusService as never,
+      redis as never
+    );
+
+    return {
+      consumer,
+      redis,
+      streamProducerService,
+      messageStatusService,
+    };
+  };
+
+  const makeStatusUpdate = (
+    patch: IMessageStatusUpdate['patch'] = { is_delivered: true }
+  ): IMessageStatusUpdate => ({
+    account_id: 'acc-1',
+    message_id: 'msg-1',
+    patch,
+    key: {
+      id: 'msg-1',
+      fromMe: true,
+      remoteJid: '5511999999999@s.whatsapp.net',
+    },
+  });
+
+  it('defers and commits a status update when the target message is not indexed yet', async () => {
+    const { consumer, redis, messageStatusService } = makeConsumer();
+    const data = makeStatusUpdate();
+    const commitSpy = jest
+      .spyOn(consumer as any, 'commitNext')
+      .mockResolvedValue(undefined);
+
+    messageStatusService.updateSummaryByWhatsAppId.mockResolvedValue(null);
+    (consumer as any).messagePatchBuffer.set('acc-1:msg-1', [
+      {
+        data,
+        offset: 41,
+        partition: 3,
+        topic: 'update.message.status',
+      },
+    ]);
+
+    await (consumer as any).flushBatch('acc-1:msg-1');
+
+    const retryMember = 'acc-1:msg-1:status-hash';
+    expect(redis.hset).toHaveBeenCalledWith(
+      'message-status:update:missing:retry:payloads',
+      retryMember,
+      expect.stringContaining('"retry_count":1')
+    );
+    expect(redis.zadd).toHaveBeenCalledWith(
+      'message-status:update:missing:retry',
+      expect.any(Number),
+      retryMember
+    );
+    expect(redis.setex).not.toHaveBeenCalled();
+    expect(commitSpy).toHaveBeenCalledWith('update.message.status', 3, 41);
+  });
+
+  it('marks a status update as processed only after the message is updated', async () => {
+    const { consumer, redis, messageStatusService } = makeConsumer();
+    const data = makeStatusUpdate({ is_seen: true });
+    const commitSpy = jest
+      .spyOn(consumer as any, 'commitNext')
+      .mockResolvedValue(undefined);
+
+    messageStatusService.updateSummaryByWhatsAppId.mockResolvedValue({
+      message_id: 'internal-message-id',
+    });
+    (consumer as any).messagePatchBuffer.set('acc-1:msg-1', [
+      {
+        data,
+        offset: 42,
+        partition: 4,
+        topic: 'update.message.status',
+      },
+    ]);
+
+    await (consumer as any).flushBatch('acc-1:msg-1');
+
+    expect(redis.hset).not.toHaveBeenCalled();
+    expect(redis.zadd).not.toHaveBeenCalled();
+    expect(redis.setex).toHaveBeenCalledWith(
+      expect.stringContaining('status-update:acc-1:msg-1:'),
+      86400,
+      '1'
+    );
+    expect(commitSpy).toHaveBeenCalledWith('update.message.status', 4, 42);
+  });
+});

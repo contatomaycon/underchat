@@ -1,6 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import type { Producer, LibrdKafkaError } from 'node-rdkafka';
-import { KafkaClient } from '@core/plugins/kafkaStreams';
+import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { toError, getErrorMessage } from '@core/common/functions/toError';
 import { ulid } from 'ulid';
 import { IPendingMessageWithTimestamp } from '@core/common/interfaces/IPendingMessageWithTimestamp';

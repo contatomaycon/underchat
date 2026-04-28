@@ -14,6 +14,7 @@ const EXPIRATION_DAYS = 180; // 6 months
 @injectable()
 export class BucketManager {
   private readonly verifiedBuckets = new Set<string>();
+  private readonly bucketSetupPromises = new Map<string, Promise<string>>();
 
   constructor(
     @inject('S3Client')
@@ -343,6 +344,24 @@ export class BucketManager {
       return bucketId;
     }
 
+    const existingSetup = this.bucketSetupPromises.get(bucketId);
+    if (existingSetup) {
+      return existingSetup;
+    }
+
+    const setupPromise = this.ensurePublicBucketUncached(bucketId);
+    this.bucketSetupPromises.set(bucketId, setupPromise);
+
+    try {
+      return await setupPromise;
+    } finally {
+      if (this.bucketSetupPromises.get(bucketId) === setupPromise) {
+        this.bucketSetupPromises.delete(bucketId);
+      }
+    }
+  }
+
+  private async ensurePublicBucketUncached(bucketId: string): Promise<string> {
     await this.createBucket(bucketId);
     await this.removePublicAccessBlock(bucketId);
     await this.setPublicPolicy(bucketId);
@@ -357,6 +376,19 @@ export class BucketManager {
     const bucketId = this.validateAccountId(accountId);
 
     if (!this.verifiedBuckets.has(bucketId)) {
+      try {
+        const exists = await this.bucketExists(bucketId);
+        if (exists) {
+          this.verifiedBuckets.add(bucketId);
+          return true;
+        }
+      } catch (error) {
+        console.warn('[BucketManager] Failed to verify uncached S3 bucket', {
+          bucket: bucketId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       return false;
     }
 

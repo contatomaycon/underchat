@@ -6,4 +6,6 @@ export interface IMessageStatusUpdate {
   message_id: string;
   patch: MessageSummaryPatch;
   key?: WAMessageKey;
+  retry_count?: number;
+  first_seen_at?: number;
 }

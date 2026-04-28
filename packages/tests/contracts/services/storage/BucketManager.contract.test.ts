@@ -383,6 +383,58 @@ describe('BucketManager', () => {
     expect(service.isBucketVerified('acc-ready')).toBe(false);
   });
 
+  it('recognizes an existing uncached bucket as ready without create flow', async () => {
+    const { service, send } = makeService();
+
+    send.mockResolvedValueOnce({});
+
+    await expect(service.isBucketReady('acc-existing')).resolves.toBe(true);
+
+    expect(service.isBucketVerified('acc-existing')).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[0]).toBeInstanceOf(HeadBucketCommand);
+  });
+
+  it('deduplicates concurrent bucket setup for the same account', async () => {
+    const { service } = makeService();
+
+    let releaseCreate: (() => void) | undefined;
+    const createStarted = new Promise<void>((resolve) => {
+      jest.spyOn(service as any, 'createBucket').mockImplementation(
+        () =>
+          new Promise<void>((release) => {
+            releaseCreate = release;
+            resolve();
+          })
+      );
+    });
+    const removeSpy = jest
+      .spyOn(service as any, 'removePublicAccessBlock')
+      .mockResolvedValue(undefined);
+    const policySpy = jest
+      .spyOn(service as any, 'setPublicPolicy')
+      .mockResolvedValue(undefined);
+    const lifecycleSpy = jest
+      .spyOn(service as any, 'setLifecyclePolicy')
+      .mockResolvedValue(undefined);
+
+    const first = service.ensurePublicBucket('acc-concurrent');
+    await createStarted;
+    const second = service.ensurePublicBucket('acc-concurrent');
+
+    releaseCreate?.();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      'acc-concurrent',
+      'acc-concurrent',
+    ]);
+
+    expect((service as any).createBucket).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(policySpy).toHaveBeenCalledTimes(1);
+    expect(lifecycleSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('covers command types for lifecycle and policy operations', async () => {
     const { service, send } = makeService();
 
