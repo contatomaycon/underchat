@@ -31,6 +31,13 @@ import { isChatParticipant } from '@core/common/functions/chatParticipants';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { isUuidLike } from '@core/common/functions/isUuidLike';
 import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
+import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
+import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
+
+interface IActionMessageResult {
+  sent: boolean;
+  reactionTargetTypeUser?: ETypeUserChat | null;
+}
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -51,7 +58,9 @@ export class ChatMessageCreatorUseCase {
     @inject(ChatMessageService)
     private readonly chatMessageService: ChatMessageService,
     @inject(UserService)
-    private readonly userService: UserService
+    private readonly userService: UserService,
+    @inject(AttendanceInactivityService)
+    private readonly attendanceInactivityService: AttendanceInactivityService
   ) {}
 
   private normalizeChatUser(
@@ -573,15 +582,17 @@ export class ChatMessageCreatorUseCase {
     chatId: string,
     accountId: string,
     context: IMessageContext
-  ): Promise<boolean | null> {
+  ): Promise<IActionMessageResult | null> {
     if (type === EMessageType.delete_message && body.delete_message_id) {
-      return this.processDelete(
-        chat,
-        chatId,
-        accountId,
-        body.delete_message_id,
-        context
-      );
+      return {
+        sent: await this.processDelete(
+          chat,
+          chatId,
+          accountId,
+          body.delete_message_id,
+          context
+        ),
+      };
     }
 
     if (
@@ -598,6 +609,46 @@ export class ChatMessageCreatorUseCase {
     }
 
     return null;
+  }
+
+  private shouldResetOperatorInactivity(
+    typeUser: ETypeUserChat,
+    messageType: EMessageType,
+    reactionTargetTypeUser?: ETypeUserChat | null
+  ): boolean {
+    if (typeUser !== ETypeUserChat.operator) {
+      return false;
+    }
+
+    if (messageType === EMessageType.react) {
+      return reactionTargetTypeUser === ETypeUserChat.client;
+    }
+
+    return shouldResetAttendanceInactivityFromOperatorMessageType(messageType);
+  }
+
+  private async resetOperatorInactivityIfNeeded(
+    chat: IChat,
+    typeUser: ETypeUserChat,
+    messageType: EMessageType,
+    sent: boolean,
+    reactionTargetTypeUser?: ETypeUserChat | null
+  ): Promise<void> {
+    if (!sent || chat.status !== EChatStatus.in_chat) {
+      return;
+    }
+
+    if (
+      !this.shouldResetOperatorInactivity(
+        typeUser,
+        messageType,
+        reactionTargetTypeUser
+      )
+    ) {
+      return;
+    }
+
+    await this.attendanceInactivityService.resetOnOperatorMessage(chat);
   }
 
   private normalizeMessageFields(
@@ -980,7 +1031,14 @@ export class ChatMessageCreatorUseCase {
       messageContext
     );
     if (actionResult !== null) {
-      return actionResult;
+      await this.resetOperatorInactivityIfNeeded(
+        chat,
+        typeUser,
+        type,
+        actionResult.sent,
+        actionResult.reactionTargetTypeUser
+      );
+      return actionResult.sent;
     }
 
     let result = false;
@@ -1120,6 +1178,14 @@ export class ChatMessageCreatorUseCase {
       await this.chatService.clearChatSummary(params.chat_id, accountId);
     }
 
+    await this.resetOperatorInactivityIfNeeded(
+      chat,
+      typeUser,
+      type,
+      result,
+      null
+    );
+
     return result;
   }
 
@@ -1199,7 +1265,7 @@ export class ChatMessageCreatorUseCase {
     reactionMessageId: string,
     emoji: string,
     messageContext: IMessageContext
-  ): Promise<boolean> {
+  ): Promise<IActionMessageResult> {
     const targetMessage = await this.getMessage(
       chatContext.accountId,
       reactionMessageId
@@ -1234,7 +1300,10 @@ export class ChatMessageCreatorUseCase {
       !targetMessage.message_key?.remote_jid
     ) {
       await this.centrifugoChatPublish(updatedMessage);
-      return true;
+      return {
+        sent: true,
+        reactionTargetTypeUser: targetMessage.type_user,
+      };
     }
 
     const reactionMessage = this.createReactionMessage(
@@ -1259,7 +1328,10 @@ export class ChatMessageCreatorUseCase {
       this.centrifugoChatPublish(updatedMessage),
     ]);
 
-    return true;
+    return {
+      sent: true,
+      reactionTargetTypeUser: targetMessage.type_user,
+    };
   }
 
   private createReactionMessage(

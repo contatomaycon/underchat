@@ -91,6 +91,22 @@ import {
   incrementCounter,
   recordException,
 } from '@core/plugins/telemetry/observability';
+import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
+
+interface IReactionInactivityInteraction {
+  actorTypeUser: ETypeUserChat.operator | ETypeUserChat.client;
+  targetTypeUser: ETypeUserChat.operator | ETypeUserChat.client;
+}
+
+interface IReactionHandleResult {
+  handled: boolean;
+  inactivityInteraction: IReactionInactivityInteraction | null;
+}
+
+interface ICreateChatMessageResult {
+  handled: boolean;
+  reactionInactivityInteraction: IReactionInactivityInteraction | null;
+}
 
 @singleton()
 export class MessageUpsertConsume {
@@ -977,7 +993,7 @@ export class MessageUpsertConsume {
   private async handleReactionMessage(
     getChat: IChat,
     data: IUpsertMessage
-  ): Promise<boolean | null> {
+  ): Promise<IReactionHandleResult | null> {
     if (data.type !== EMessageType.react) {
       return null;
     }
@@ -1009,7 +1025,10 @@ export class MessageUpsertConsume {
     }
 
     if (!targetMessage) {
-      return true;
+      return {
+        handled: true,
+        inactivityInteraction: null,
+      };
     }
 
     const isFromMe = data.message?.key?.fromMe === true;
@@ -1047,6 +1066,10 @@ export class MessageUpsertConsume {
         canonicalUserIdNormalized !== chatContactJid &&
         (!chatContactJidAlt ||
           canonicalUserIdNormalized !== chatContactJidAlt));
+    const actorTypeUser = isEffectivelyOwn
+      ? ETypeUserChat.operator
+      : ETypeUserChat.client;
+    const targetTypeUser = targetMessage.type_user;
 
     const canonicalUserName = isEffectivelyOwn
       ? (this.toNonEmptyString(getChat.worker?.name) ??
@@ -1136,7 +1159,20 @@ export class MessageUpsertConsume {
       this.centrifugoChatPublish(updatedMessage),
     ]);
 
-    return true;
+    const inactivityInteraction =
+      (targetTypeUser === ETypeUserChat.operator ||
+        targetTypeUser === ETypeUserChat.client) &&
+      actorTypeUser !== targetTypeUser
+        ? {
+            actorTypeUser,
+            targetTypeUser,
+          }
+        : null;
+
+    return {
+      handled: true,
+      inactivityInteraction,
+    };
   }
 
   private async handleEditMessage(
@@ -1428,6 +1464,21 @@ export class MessageUpsertConsume {
         is_sent_to_internal: true,
       },
     };
+  }
+
+  private shouldResetOperatorAttendanceInactivity(
+    messageType: EMessageType,
+    shouldSkipMessageCreation: boolean
+  ): boolean {
+    if (shouldSkipMessageCreation) {
+      return false;
+    }
+
+    if (messageType === EMessageType.react) {
+      return false;
+    }
+
+    return shouldResetAttendanceInactivityFromOperatorMessageType(messageType);
   }
 
   private async updateChatPhotoIfNeeded(
@@ -2475,23 +2526,32 @@ export class MessageUpsertConsume {
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
-  ): Promise<boolean> {
+  ): Promise<ICreateChatMessageResult> {
     try {
       await this.updateChatPhotoIfNeeded(getChat, data);
 
       const reactionResult = await this.handleReactionMessage(getChat, data);
       if (reactionResult !== null) {
-        return reactionResult;
+        return {
+          handled: reactionResult.handled,
+          reactionInactivityInteraction: reactionResult.inactivityInteraction,
+        };
       }
 
       const editResult = await this.handleEditMessage(getChat, data);
       if (editResult !== null) {
-        return editResult;
+        return {
+          handled: editResult,
+          reactionInactivityInteraction: null,
+        };
       }
 
       const deleteResult = await this.handleDeleteMessage(getChat, data);
       if (deleteResult !== null) {
-        return deleteResult;
+        return {
+          handled: deleteResult,
+          reactionInactivityInteraction: null,
+        };
       }
 
       await this.handlePinMessage(getChat, data);
@@ -2501,7 +2561,10 @@ export class MessageUpsertConsume {
 
       const content = this.buildMessageContent(data);
       if (this.isEmptyTextContent(content)) {
-        return true;
+        return {
+          handled: true,
+          reactionInactivityInteraction: null,
+        };
       }
 
       const messageQuotedId = content.quoted?.key.id ?? null;
@@ -2562,7 +2625,10 @@ export class MessageUpsertConsume {
 
       const messageId = data.message?.key?.id;
       if (!messageId) {
-        return false;
+        return {
+          handled: false,
+          reactionInactivityInteraction: null,
+        };
       }
 
       const existingMessageByKey = await this.findMessageByKeyId(
@@ -2576,14 +2642,20 @@ export class MessageUpsertConsume {
           existingMessageByKey.message_id,
           inputChatMessage
         );
-        return true;
+        return {
+          handled: true,
+          reactionInactivityInteraction: null,
+        };
       }
 
       const createResult =
         await this.chatService.createMessageIdempotent(inputChatMessage);
 
       if (!createResult.created && !createResult.conflict) {
-        return false;
+        return {
+          handled: false,
+          reactionInactivityInteraction: null,
+        };
       }
 
       if (createResult.conflict) {
@@ -2592,7 +2664,10 @@ export class MessageUpsertConsume {
           inputChatMessage
         );
 
-        return true;
+        return {
+          handled: true,
+          reactionInactivityInteraction: null,
+        };
       }
 
       await this.centrifugoChatPublish(inputChatMessage);
@@ -2689,7 +2764,10 @@ export class MessageUpsertConsume {
         { ttlMs: 30000, retryMs: 50, maxWaitMs: 45000 }
       );
 
-      return true;
+      return {
+        handled: true,
+        reactionInactivityInteraction: null,
+      };
     } catch (error) {
       logger.error({
         type: 'message_upsert_create_chat_message_error',
@@ -3450,24 +3528,54 @@ export class MessageUpsertConsume {
       currentStatusAfterTransfer = currentChat?.status ?? null;
 
       if (currentStatusAfterTransfer !== EChatStatus.in_chat) {
-        await this.attendanceInactivityService.cancelInactivityTracking(getChat);
+        await this.attendanceInactivityService.cancelInactivityTracking(
+          getChat
+        );
       }
     }
 
+    let createMessageResult: ICreateChatMessageResult | null = null;
     if (!shouldSkipMessageCreation) {
-      await this.createChatMessage(getChat, data);
+      createMessageResult = await this.createChatMessage(getChat, data);
     }
+
+    const reactionInactivityInteraction =
+      data.type === EMessageType.react
+        ? (createMessageResult?.reactionInactivityInteraction ?? null)
+        : null;
+
+    const canResetByStatus =
+      !hasTransfer || currentStatusAfterTransfer === EChatStatus.in_chat;
 
     if (
       wasInChat &&
+      canResetByStatus &&
+      reactionInactivityInteraction?.actorTypeUser === ETypeUserChat.client &&
+      reactionInactivityInteraction.targetTypeUser === ETypeUserChat.operator
+    ) {
+      await this.attendanceInactivityService.resetOnContactMessage(getChat);
+    } else if (
+      wasInChat &&
+      canResetByStatus &&
+      reactionInactivityInteraction?.actorTypeUser === ETypeUserChat.operator &&
+      reactionInactivityInteraction.targetTypeUser === ETypeUserChat.client
+    ) {
+      await this.attendanceInactivityService.resetOnOperatorMessage(getChat);
+    } else if (
+      wasInChat &&
       typeUserForInactivity === ETypeUserChat.client &&
-      (!hasTransfer || currentStatusAfterTransfer === EChatStatus.in_chat)
+      data.type !== EMessageType.react &&
+      canResetByStatus
     ) {
       await this.attendanceInactivityService.resetOnContactMessage(getChat);
     } else if (
       wasInChat &&
       typeUserForInactivity === ETypeUserChat.operator &&
-      (!hasTransfer || currentStatusAfterTransfer === EChatStatus.in_chat)
+      this.shouldResetOperatorAttendanceInactivity(
+        data.type,
+        shouldSkipMessageCreation
+      ) &&
+      canResetByStatus
     ) {
       await this.attendanceInactivityService.resetOnOperatorMessage(getChat);
     }
