@@ -93,9 +93,11 @@ import {
 } from '@core/plugins/telemetry/observability';
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
 
+type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
+
 interface IReactionInactivityInteraction {
-  actorTypeUser: ETypeUserChat.operator | ETypeUserChat.client;
-  targetTypeUser: ETypeUserChat.operator | ETypeUserChat.client;
+  actorTypeUser: ReactionInactivityTypeUser;
+  targetTypeUser: ReactionInactivityTypeUser;
 }
 
 interface IReactionHandleResult {
@@ -106,6 +108,14 @@ interface IReactionHandleResult {
 interface ICreateChatMessageResult {
   handled: boolean;
   reactionInactivityInteraction: IReactionInactivityInteraction | null;
+}
+
+function isReactionInactivityTypeUser(
+  typeUser: ETypeUserChat
+): typeUser is ReactionInactivityTypeUser {
+  return (
+    typeUser === ETypeUserChat.operator || typeUser === ETypeUserChat.client
+  );
 }
 
 @singleton()
@@ -1066,7 +1076,7 @@ export class MessageUpsertConsume {
         canonicalUserIdNormalized !== chatContactJid &&
         (!chatContactJidAlt ||
           canonicalUserIdNormalized !== chatContactJidAlt));
-    const actorTypeUser = isEffectivelyOwn
+    const actorTypeUser: ReactionInactivityTypeUser = isEffectivelyOwn
       ? ETypeUserChat.operator
       : ETypeUserChat.client;
     const targetTypeUser = targetMessage.type_user;
@@ -1160,8 +1170,7 @@ export class MessageUpsertConsume {
     ]);
 
     const inactivityInteraction =
-      (targetTypeUser === ETypeUserChat.operator ||
-        targetTypeUser === ETypeUserChat.client) &&
+      isReactionInactivityTypeUser(targetTypeUser) &&
       actorTypeUser !== targetTypeUser
         ? {
             actorTypeUser,
