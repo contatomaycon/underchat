@@ -765,6 +765,64 @@ func TestIncomingProfilePhotoJIDsPreferRecipientAliasForOwnLIDMessage(t *testing
 	}
 }
 
+func TestProfilePhotoCandidatesFilterOwnAliasFromIncomingMessage(t *testing.T) {
+	selfPN := types.NewJID("5500000000000", types.DefaultUserServer)
+	selfLegacy := types.JID{User: "5500000000000", Server: types.LegacyUserServer, Device: 19}
+	peerPN := types.NewJID("5511999999999", types.DefaultUserServer)
+
+	incoming := incomingTextEvent(peerPN, false, "")
+	incoming.Info.SenderAlt = selfLegacy
+
+	got := profilePhotoCandidates(incomingProfilePhotoJIDs(incoming), profilePhotoAliasSet(selfPN))
+	assertJIDStrings(t, got, "5511999999999@s.whatsapp.net")
+}
+
+func TestProfilePhotoCandidatesFilterOwnAliasFromOwnMessage(t *testing.T) {
+	selfPN := types.NewJID("5500000000000", types.DefaultUserServer)
+	selfLID := types.NewJID("158733669765176", types.HiddenUserServer)
+	peerPN := types.NewJID("5511999999999", types.DefaultUserServer)
+	peerPNDevice := types.JID{User: "5511999999999", Server: types.DefaultUserServer, Device: 84}
+
+	outgoing := incomingTextEvent(peerPN, true, "")
+	outgoing.Info.Sender = selfPN
+	outgoing.Info.SenderAlt = selfLID
+	outgoing.Info.RecipientAlt = peerPNDevice
+
+	got := profilePhotoCandidates(incomingProfilePhotoJIDs(outgoing), profilePhotoAliasSet(selfPN, selfLID))
+	assertJIDStrings(t, got, "5511999999999@s.whatsapp.net")
+}
+
+func TestProfilePhotoCandidatesPreservePhoneAliasBeforeLID(t *testing.T) {
+	selfPN := types.NewJID("5500000000000", types.DefaultUserServer)
+	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)
+	pnChat := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}
+
+	incoming := incomingTextEvent(lidChat, false, "")
+	incoming.Info.SenderAlt = pnChat
+
+	got := profilePhotoCandidates(incomingProfilePhotoJIDs(incoming), profilePhotoAliasSet(selfPN))
+	assertJIDStrings(t, got, "556195999040@s.whatsapp.net", "158733669765176@lid")
+}
+
+func TestProfilePhotoCandidatesFilterOwnJIDFromCallCandidates(t *testing.T) {
+	selfPN := types.NewJID("5500000000000", types.DefaultUserServer)
+	peerPN := types.NewJID("5511999999999", types.DefaultUserServer)
+
+	got := profilePhotoCandidates([]types.JID{selfPN, peerPN}, profilePhotoAliasSet(selfPN))
+	assertJIDStrings(t, got, "5511999999999@s.whatsapp.net")
+}
+
+func TestProfilePhotoCandidatesReturnEmptyForOnlyOwnAliases(t *testing.T) {
+	selfPN := types.NewJID("5500000000000", types.DefaultUserServer)
+	selfLegacy := types.JID{User: "5500000000000", Server: types.LegacyUserServer, Device: 19}
+	selfLID := types.JID{User: "158733669765176", Server: types.HiddenUserServer, Device: 84}
+
+	got := profilePhotoCandidates([]types.JID{selfPN, selfLegacy, selfLID}, profilePhotoAliasSet(selfPN, selfLID))
+	if len(got) != 0 {
+		t.Fatalf("expected no candidates for own aliases, got %#v", got)
+	}
+}
+
 func TestIncomingProfilePhotoCacheKeyStripsDevice(t *testing.T) {
 	jid := types.JID{User: "556195999040", Server: types.DefaultUserServer, Device: 84}
 
@@ -814,6 +872,18 @@ func TestCallPhoneFromJIDsPrefersPhoneAliasOverLID(t *testing.T) {
 	}
 	if got := callAltJID(lid, pn); got != "556195999040@s.whatsapp.net" {
 		t.Fatalf("expected call alt jid, got %q", got)
+	}
+}
+
+func assertJIDStrings(t *testing.T, got []types.JID, want ...string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("unexpected candidates %#v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i].String() != want[i] {
+			t.Fatalf("unexpected candidate %d: got %q want %q", i, got[i].String(), want[i])
+		}
 	}
 }
 

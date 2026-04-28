@@ -1450,6 +1450,7 @@ func (m *WhatsAppManager) profilePhotoForJIDs(ctx context.Context, candidates []
 	if !m.isAuthenticated(client) {
 		return ""
 	}
+	candidates = profilePhotoCandidates(candidates, ownProfilePhotoAliases(client))
 	if len(candidates) == 0 {
 		return ""
 	}
@@ -1646,31 +1647,92 @@ func incomingProfilePhotoJIDs(evt *events.Message) []types.JID {
 	if evt == nil {
 		return nil
 	}
-	candidates := make([]types.JID, 0, 4)
+	if evt.Info.IsFromMe {
+		return profilePhotoCandidates([]types.JID{
+			evt.Info.RecipientAlt,
+			evt.Info.SenderAlt,
+			evt.Info.Chat,
+			evt.Info.Sender,
+		}, nil)
+	}
+	return profilePhotoCandidates([]types.JID{
+		evt.Info.SenderAlt,
+		evt.Info.RecipientAlt,
+		evt.Info.Chat,
+		evt.Info.Sender,
+	}, nil)
+}
+
+func ownProfilePhotoAliases(client *whatsmeow.Client) map[string]struct{} {
+	if client == nil || client.Store == nil {
+		return nil
+	}
+	return profilePhotoAliasSet(client.Store.GetJID(), client.Store.GetLID())
+}
+
+func profilePhotoCandidates(candidates []types.JID, selfAliases map[string]struct{}) []types.JID {
+	normalized := make([]types.JID, 0, len(candidates))
 	seen := map[string]struct{}{}
-	add := func(jid types.JID) {
+	for _, jid := range candidates {
 		jid = nonADJID(jid)
 		if !isWhatsmeowUserChat(jid) {
-			return
+			continue
+		}
+		if isSelfProfilePhotoJID(jid, selfAliases) {
+			continue
 		}
 		key := jid.String()
 		if _, ok := seen[key]; ok {
-			return
+			continue
 		}
 		seen[key] = struct{}{}
-		candidates = append(candidates, jid)
+		normalized = append(normalized, jid)
 	}
+	return normalized
+}
 
-	if evt.Info.IsFromMe {
-		add(evt.Info.RecipientAlt)
-		add(evt.Info.SenderAlt)
-	} else {
-		add(evt.Info.SenderAlt)
-		add(evt.Info.RecipientAlt)
+func profilePhotoAliasSet(jids ...types.JID) map[string]struct{} {
+	aliases := map[string]struct{}{}
+	for _, jid := range jids {
+		for _, alias := range profilePhotoJIDAliases(jid) {
+			aliases[alias] = struct{}{}
+		}
 	}
-	add(evt.Info.Chat)
-	add(evt.Info.Sender)
-	return candidates
+	if len(aliases) == 0 {
+		return nil
+	}
+	return aliases
+}
+
+func isSelfProfilePhotoJID(jid types.JID, selfAliases map[string]struct{}) bool {
+	if len(selfAliases) == 0 {
+		return false
+	}
+	for _, alias := range profilePhotoJIDAliases(jid) {
+		if _, ok := selfAliases[alias]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func profilePhotoJIDAliases(jid types.JID) []string {
+	jid = nonADJID(jid)
+	if !isWhatsmeowUserChat(jid) {
+		return nil
+	}
+	aliases := []string{jid.String()}
+	switch jid.Server {
+	case types.DefaultUserServer:
+		legacy := jid
+		legacy.Server = types.LegacyUserServer
+		aliases = append(aliases, legacy.String())
+	case types.LegacyUserServer:
+		current := jid
+		current.Server = types.DefaultUserServer
+		aliases = append(aliases, current.String())
+	}
+	return aliases
 }
 
 func incomingProfilePhotoCacheKey(jid types.JID) string {
