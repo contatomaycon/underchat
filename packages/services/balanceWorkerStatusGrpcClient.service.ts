@@ -12,6 +12,9 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
+import { IGetTypingSimulationConfigRequestProto } from '@core/common/interfaces/IGetTypingSimulationConfigRequestProto';
+import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces/IGetTypingSimulationConfigResponseProto';
+import { normalizeTypingSimulationConfig } from '@core/common/functions/typingSimulationConfig';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -169,6 +172,39 @@ export class BalanceWorkerStatusGrpcClientService {
               return;
             }
             resolve(response ?? {});
+          }
+        );
+      }
+    );
+  }
+
+  async getTypingSimulationConfig(
+    payload: IGetTypingSimulationConfigRequestProto
+  ): Promise<IGetTypingSimulationConfigResponseProto> {
+    const client = this.createClient();
+
+    const protoPayload = {
+      worker_id: payload.worker_id ?? '',
+      account_id: payload.account_id ?? '',
+    };
+
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+
+    return new Promise<IGetTypingSimulationConfigResponseProto>(
+      (resolve, reject) => {
+        (client as any).GetTypingSimulationConfig(
+          protoPayload,
+          { deadline },
+          (
+            err: ServiceError | null,
+            response?: IGetTypingSimulationConfigResponseProto
+          ) => {
+            client.close();
+            if (err) {
+              reject(err);
+              return;
+            }
+            resolve(normalizeTypingSimulationConfig(response));
           }
         );
       }

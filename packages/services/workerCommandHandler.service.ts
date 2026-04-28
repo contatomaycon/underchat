@@ -27,6 +27,8 @@ import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotify
 import { currentTime } from '@core/common/functions/currentTime';
 import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
+import { IGetTypingSimulationConfigRequestProto } from '@core/common/interfaces/IGetTypingSimulationConfigRequestProto';
+import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces/IGetTypingSimulationConfigResponseProto';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
@@ -42,6 +44,8 @@ import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { S3BackupUploadService } from '@core/services/s3BackupUpload.service';
+import { WorkerConfigService } from '@core/services/workerConfig.service';
+import { defaultTypingSimulationConfig } from '@core/common/functions/typingSimulationConfig';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -82,7 +86,9 @@ export class WorkerCommandHandlerService {
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
     @inject(S3BackupUploadService)
-    private readonly s3BackupUploadService: S3BackupUploadService
+    private readonly s3BackupUploadService: S3BackupUploadService,
+    @inject(WorkerConfigService)
+    private readonly workerConfigService: WorkerConfigService
   ) {}
 
   private isTopicOrPartitionMissing(err: unknown): boolean {
@@ -330,6 +336,28 @@ export class WorkerCommandHandlerService {
       show_message_on_call: showMessageText.trim().length > 0,
       show_message_text: showMessageText,
     };
+  }
+
+  async getTypingSimulationConfig(
+    input: IGetTypingSimulationConfigRequestProto
+  ): Promise<IGetTypingSimulationConfigResponseProto> {
+    const workerId = input.worker_id?.trim();
+    const accountId = input.account_id?.trim();
+
+    if (!workerId || !accountId) {
+      return defaultTypingSimulationConfig();
+    }
+
+    const worker = await this.workerService.viewWorker(accountId, workerId);
+    if (!worker) {
+      return defaultTypingSimulationConfig();
+    }
+
+    const config =
+      await this.workerConfigService.viewTypingSimulation(workerId);
+    await this.workerConfigService.refreshTypingSimulationCache(workerId);
+
+    return config;
   }
 
   async registerS3BackupFallbackUpload(

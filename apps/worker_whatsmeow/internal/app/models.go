@@ -216,6 +216,11 @@ type WorkerConfigUpdateEvent struct {
 	RejectCall *bool  `json:"reject_call"`
 }
 
+type TypingSimulationConfig struct {
+	Enabled bool `json:"enabled"`
+	Speed   int  `json:"speed"`
+}
+
 type MarkReadRequest struct {
 	AccountID string       `json:"account_id"`
 	WorkerID  string       `json:"worker_id"`

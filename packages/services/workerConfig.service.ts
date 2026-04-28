@@ -16,17 +16,22 @@ import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
 import { parseAttendanceHoursConfig } from '@core/common/functions/attendanceHoursConfig';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
-import {
-  IAttendanceInactivityAlertConfig,
-} from '@core/common/interfaces/IAttendanceInactivityAlert';
-import {
-  parseAttendanceInactivityAlertConfig,
-} from '@core/common/functions/attendanceInactivityAlertConfig';
+import { IAttendanceInactivityAlertConfig } from '@core/common/interfaces/IAttendanceInactivityAlert';
+import { parseAttendanceInactivityAlertConfig } from '@core/common/functions/attendanceInactivityAlertConfig';
 import {
   CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
   normalizeChatbotWorkingHoursTimezone,
 } from '@core/common/functions/chatbotWorkingHours';
 import { IChatbotWorkingHoursRule } from '@core/common/interfaces/IChatbotWorkingHours';
+import {
+  DEFAULT_TYPING_SIMULATION_SPEED,
+  TYPING_SIMULATION_CACHE_TTL_SECONDS,
+  defaultTypingSimulationConfig,
+  isValidTypingSimulationSpeed,
+  normalizeTypingSimulationSpeed,
+  typingSimulationCacheKey,
+} from '@core/common/functions/typingSimulationConfig';
+import { ITypingSimulationConfig } from '@core/common/interfaces/ITypingSimulationConfig';
 
 @injectable()
 export class WorkerConfigService {
@@ -487,6 +492,80 @@ export class WorkerConfigService {
     };
   }
 
+  async ensureTypingSimulationDefault(
+    workerId: string
+  ): Promise<ITypingSimulationConfig> {
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.typing_simulation
+      );
+
+    if (config.statusId) {
+      const current = await this.viewTypingSimulation(workerId);
+      await this.cacheTypingSimulationConfig(workerId, current);
+      return current;
+    }
+
+    return this.updateTypingSimulation(
+      workerId,
+      DEFAULT_TYPING_SIMULATION_SPEED,
+      true
+    );
+  }
+
+  async updateTypingSimulation(
+    workerId: string,
+    speed: number,
+    enabled: boolean
+  ): Promise<ITypingSimulationConfig> {
+    if (!isValidTypingSimulationSpeed(speed)) {
+      throw new Error('typing_simulation_invalid_speed');
+    }
+
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const result =
+      await this.workerConfigUpserterRepository.updateTypingSimulation(
+        workerId,
+        speed,
+        statusId
+      );
+
+    const response = {
+      enabled,
+      speed: normalizeTypingSimulationSpeed(result),
+    };
+
+    await Promise.all([
+      this.invalidateWorkerConfigCache(workerId),
+      this.cacheTypingSimulationConfig(workerId, response),
+    ]);
+
+    return response;
+  }
+
+  async viewTypingSimulation(
+    workerId: string
+  ): Promise<ITypingSimulationConfig> {
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.typing_simulation
+      );
+
+    if (!config.statusId) {
+      return defaultTypingSimulationConfig();
+    }
+
+    return {
+      enabled: config.statusId !== EWorkerConfigStatus.inactive,
+      speed: normalizeTypingSimulationSpeed(config.value),
+    };
+  }
+
   async viewSimultaneousAttendance(
     workerId: string
   ): Promise<{ simultaneous_attendance: number | null; enabled: boolean }> {
@@ -944,10 +1023,29 @@ export class WorkerConfigService {
     };
   }
 
+  async refreshTypingSimulationCache(workerId: string): Promise<void> {
+    const config = await this.viewTypingSimulation(workerId);
+    await this.cacheTypingSimulationConfig(workerId, config);
+  }
+
+  private async cacheTypingSimulationConfig(
+    workerId: string,
+    config: ITypingSimulationConfig
+  ): Promise<void> {
+    await this.redis.set(
+      typingSimulationCacheKey(workerId),
+      JSON.stringify(config),
+      'EX',
+      TYPING_SIMULATION_CACHE_TTL_SECONDS
+    );
+  }
+
   private async invalidateWorkerConfigCache(workerId: string): Promise<void> {
     await Promise.all([
       this.redis.del(`worker:${workerId}:config_fields`),
       this.redis.del(`worker:${workerId}:mark_as_read`),
     ]);
+
+    await this.refreshTypingSimulationCache(workerId);
   }
 }

@@ -27,6 +27,8 @@ import { updateStartProtocolText } from './methods/updateStartProtocolText';
 import { viewStartProtocolText } from './methods/viewStartProtocolText';
 import { updateSimultaneousAttendance } from './methods/updateSimultaneousAttendance';
 import { viewSimultaneousAttendance } from './methods/viewSimultaneousAttendance';
+import { updateTypingSimulation } from './methods/updateTypingSimulation';
+import { viewTypingSimulation } from './methods/viewTypingSimulation';
 import { updateShowMessageOnCall } from './methods/updateShowMessageOnCall';
 import { viewShowMessageOnCall } from './methods/viewShowMessageOnCall';
 import { updateSendMessageOnFinishAttendance } from './methods/updateSendMessageOnFinishAttendance';
@@ -76,6 +78,8 @@ class WorkerController {
   public viewStartProtocolText = viewStartProtocolText;
   public updateSimultaneousAttendance = updateSimultaneousAttendance;
   public viewSimultaneousAttendance = viewSimultaneousAttendance;
+  public updateTypingSimulation = updateTypingSimulation;
+  public viewTypingSimulation = viewTypingSimulation;
   public updateShowMessageOnCall = updateShowMessageOnCall;
   public viewShowMessageOnCall = viewShowMessageOnCall;
   public updateSendMessageOnFinishAttendance =

@@ -247,6 +247,26 @@ func (c *BalanceGRPCClient) ResolveIncomingCallAction(ctx context.Context, worke
 	return dynamicBool(resp, "reject_call"), dynamicBool(resp, "show_message_on_call"), dynamicString(resp, "show_message_text"), nil
 }
 
+func (c *BalanceGRPCClient) GetTypingSimulationConfig(ctx context.Context, workerID, accountID string) (TypingSimulationConfig, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return defaultTypingSimulationConfig(), err
+	}
+	req := newDynamicMessage(descs.commandTypingSimulationReq)
+	setDynamicString(req, "worker_id", workerID)
+	setDynamicString(req, "account_id", accountID)
+
+	resp := newDynamicMessage(descs.commandTypingSimulationResp)
+	if err := c.invoke(ctx, "/worker_command.WorkerCommand/GetTypingSimulationConfig", req, resp); err != nil {
+		return defaultTypingSimulationConfig(), err
+	}
+
+	return normalizeTypingSimulationConfig(TypingSimulationConfig{
+		Enabled: dynamicBool(resp, "enabled"),
+		Speed:   int(dynamicInt32(resp, "speed")),
+	}), nil
+}
+
 func (c *BalanceGRPCClient) invoke(ctx context.Context, method string, req *dynamicpb.Message, resp *dynamicpb.Message) error {
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

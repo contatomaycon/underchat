@@ -13,6 +13,7 @@ import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
+import { WorkerConfigService } from '@core/services/workerConfig.service';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -26,7 +27,9 @@ export class WorkerCreatorUseCase {
     @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
     @inject(WorkerGrpcClientService)
-    private readonly workerGrpcClientService: WorkerGrpcClientService
+    private readonly workerGrpcClientService: WorkerGrpcClientService,
+    @inject(WorkerConfigService)
+    private readonly workerConfigService: WorkerConfigService
   ) {}
 
   private async validate(
@@ -112,6 +115,8 @@ export class WorkerCreatorUseCase {
     if (!isCreated) {
       throw new Error(t('worker_creation_failed'));
     }
+
+    await this.workerConfigService.ensureTypingSimulationDefault(workerId);
 
     const payloadCreate: IWorkerPayload = {
       action: EWorkerAction.create,

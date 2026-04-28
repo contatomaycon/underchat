@@ -7,6 +7,13 @@ import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { webcrypto as nodeCrypto } from 'node:crypto';
 import { WwebjsDeliveryConfirmationService } from './deliveryConfirmation.service';
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
+import { TypingSimulationRuntimeService } from '@core/services/typingSimulationRuntime.service';
+import { wwebjsEnvironment } from '@core/config/environments';
+import { ITypingSimulationConfig } from '@core/common/interfaces/ITypingSimulationConfig';
+import {
+  defaultTypingSimulationConfig,
+  typingSimulationDelayMultiplier,
+} from '@core/common/functions/typingSimulationConfig';
 
 const { MessageMedia } = whatsappWeb;
 
@@ -19,7 +26,9 @@ export class WwebjsHelpersService {
     @inject(WwebjsConnectionService)
     private readonly connection: WwebjsConnectionService,
     @inject(WwebjsDeliveryConfirmationService)
-    private readonly deliveryConfirmation: WwebjsDeliveryConfirmationService
+    private readonly deliveryConfirmation: WwebjsDeliveryConfirmationService,
+    @inject(TypingSimulationRuntimeService)
+    private readonly typingSimulationRuntimeService: TypingSimulationRuntimeService
   ) {}
 
   getClient(): Client {
@@ -36,7 +45,15 @@ export class WwebjsHelpersService {
     options?: Parameters<Client['sendMessage']>[2]
   ): Promise<Awaited<ReturnType<Client['sendMessage']>>> {
     if (this.shouldSimulateTyping(content, options)) {
-      await this.simulateHumanTyping(jid, content, options);
+      const typingConfig = await this.getTypingSimulationConfig();
+      if (typingConfig.enabled) {
+        await this.simulateHumanTyping(
+          jid,
+          content,
+          options,
+          typingConfig.speed
+        );
+      }
     }
 
     return this.sendMessageWithConfirmation(jid, content, options);
@@ -554,7 +571,8 @@ export class WwebjsHelpersService {
   private async simulateHumanTyping(
     jid: string,
     content: Parameters<Client['sendMessage']>[1],
-    options?: Parameters<Client['sendMessage']>[2]
+    options?: Parameters<Client['sendMessage']>[2],
+    speed = 50
   ): Promise<void> {
     if (!jid) {
       return;
@@ -591,7 +609,8 @@ export class WwebjsHelpersService {
     }
 
     const text = this.extractText(content, options);
-    const durationMs = this.estimateTypingMs(text) * 0.5;
+    const durationMs =
+      this.estimateTypingMs(text) * typingSimulationDelayMultiplier(speed);
 
     const preThink = this.rand(100, 450);
     await this.sleep(preThink);
@@ -633,6 +652,19 @@ export class WwebjsHelpersService {
     try {
       await clearState();
     } catch {}
+  }
+
+  private async getTypingSimulationConfig(): Promise<ITypingSimulationConfig> {
+    try {
+      return await this.typingSimulationRuntimeService.getConfig(
+        wwebjsEnvironment.wwebjsWorkerId,
+        wwebjsEnvironment.wwebjsAccountId
+      );
+    } catch (error) {
+      console.error('[WwebjsTypingSimulation] config unavailable', { error });
+
+      return defaultTypingSimulationConfig();
+    }
   }
 
   private sleep(ms: number): Promise<void> {

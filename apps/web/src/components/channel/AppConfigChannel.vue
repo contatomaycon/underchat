@@ -209,6 +209,7 @@ type WorkerConfigForm = {
   reject_call: boolean;
   auto_save_contacts: boolean;
   mark_as_read: boolean;
+  typing_simulation: boolean;
   chatbot: boolean;
   ai_agent: boolean;
   attendance_hours: boolean;
@@ -244,6 +245,7 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   reject_call: false,
   auto_save_contacts: false,
   mark_as_read: false,
+  typing_simulation: true,
   chatbot: false,
   ai_agent: false,
   attendance_hours: false,
@@ -275,6 +277,7 @@ const ATTENDANCE_DEFAULT_END = '18:00';
 const ATTENDANCE_INACTIVITY_DEFAULT_QUANTITY = 1;
 const ATTENDANCE_INACTIVITY_DEFAULT_TIME = 180;
 const ATTENDANCE_INACTIVITY_DEFAULT_ACTION = 'finish';
+const TYPING_SIMULATION_DEFAULT_SPEED = 50;
 const CHATBOT_WORKING_HOURS_TIMEZONE = 'America/Sao_Paulo';
 const CHATBOT_WORKING_HOURS_DEFAULT_START = '09:00';
 const CHATBOT_WORKING_HOURS_DEFAULT_END = '18:00';
@@ -473,6 +476,71 @@ const simultaneousAttendanceModalOpen = ref(false);
 const isSavingSimultaneousAttendance = ref(false);
 const simultaneousAttendanceInput = ref<string>('');
 const simultaneousAttendanceEnabledInModal = ref<boolean>(false);
+const typingSimulationModalOpen = ref(false);
+const isSavingTypingSimulation = ref(false);
+const typingSimulationSpeedInModal = ref(TYPING_SIMULATION_DEFAULT_SPEED);
+const typingSimulationEnabledInModal = ref(true);
+const typingSimulationProfiles = computed(() => [
+  {
+    min: 0,
+    max: 15,
+    label: t('typing_simulation_speed_very_low'),
+    color: '#31a354',
+  },
+  {
+    min: 16,
+    max: 35,
+    label: t('typing_simulation_speed_low'),
+    color: '#74c476',
+  },
+  {
+    min: 36,
+    max: 55,
+    label: t('typing_simulation_speed_medium'),
+    color: '#fed976',
+  },
+  {
+    min: 56,
+    max: 75,
+    label: t('typing_simulation_speed_fast'),
+    color: '#fd8d3c',
+  },
+  {
+    min: 76,
+    max: 90,
+    label: t('typing_simulation_speed_high'),
+    color: '#f03b20',
+  },
+  {
+    min: 91,
+    max: 100,
+    label: t('typing_simulation_speed_very_high'),
+    color: '#bd0026',
+  },
+]);
+const typingSimulationCurrentProfile = computed(
+  () =>
+    typingSimulationProfiles.value.find(
+      (profile) =>
+        typingSimulationSpeedInModal.value >= profile.min &&
+        typingSimulationSpeedInModal.value <= profile.max
+    ) ?? {
+      min: 36,
+      max: 55,
+      label: t('typing_simulation_speed_medium'),
+      color: '#fed976',
+    }
+);
+const typingSimulationRiskAlertVisible = computed(
+  () =>
+    !typingSimulationEnabledInModal.value ||
+    typingSimulationSpeedInModal.value > 90
+);
+const typingSimulationRiskMessage = computed(() =>
+  !typingSimulationEnabledInModal.value
+    ? t('typing_simulation_disabled_warning')
+    : t('typing_simulation_high_risk_warning')
+);
 const showMessageOnCallText = ref<string>('');
 const showMessageOnCallModalOpen = ref(false);
 const isSavingShowMessageOnCall = ref(false);
@@ -1071,6 +1139,7 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     nextState.reject_call = config.reject_call ?? false;
     nextState.auto_save_contacts = config.auto_save_contacts;
     nextState.mark_as_read = config.mark_as_read ?? false;
+    nextState.typing_simulation = true;
     nextState.chatbot = config.chatbot_id !== null && config.chatbot_id !== '';
     proxyEnabled.value = config.proxy_enabled ?? false;
     proxyProtocol.value = normalizeProxyProtocol(config.proxy_protocol);
@@ -1087,7 +1156,17 @@ const resetWorkerConfigState = () => {
   applyWorkerConfig();
   applyAttendanceHoursState();
   applyAttendanceInactivityAlertState();
+  applyTypingSimulationState();
   workerConfigLoadedFor.value = null;
+};
+
+const applyTypingSimulationState = (
+  config?: { enabled: boolean; speed: number } | null
+): void => {
+  workerConfigForm.typing_simulation = config?.enabled ?? true;
+  typingSimulationEnabledInModal.value = config?.enabled ?? true;
+  typingSimulationSpeedInModal.value =
+    config?.speed ?? TYPING_SIMULATION_DEFAULT_SPEED;
 };
 
 function applyAttendanceHoursState(
@@ -1286,7 +1365,9 @@ const buildAttendanceInactivityAlertPayload = (
     return null;
   }
 
-  const time = normalizePositiveInteger(attendanceInactivityAlertTimeInModal.value);
+  const time = normalizePositiveInteger(
+    attendanceInactivityAlertTimeInModal.value
+  );
   if (!time) {
     channelStore.showSnackbar(
       t('attendance_inactivity_alert_invalid_time'),
@@ -1322,6 +1403,7 @@ const loadWorkerConfig = async (force = false) => {
       protocolTransferSectorAndUserData,
       protocolStartData,
       simultaneousAttendanceData,
+      typingSimulationData,
       showMessageOnCallData,
       sendMessageOnFinishAttendanceData,
       attendanceInactivityAlertData,
@@ -1334,6 +1416,7 @@ const loadWorkerConfig = async (force = false) => {
       channelStore.fetchTransferProtocolSectorAndUserText(channelId.value),
       channelStore.fetchStartProtocolText(channelId.value),
       channelStore.fetchSimultaneousAttendance(channelId.value),
+      channelStore.fetchTypingSimulation(channelId.value),
       channelStore.fetchShowMessageOnCall(channelId.value),
       channelStore.fetchSendMessageOnFinishAttendance(channelId.value),
       channelStore.fetchAttendanceInactivityAlert(channelId.value),
@@ -1394,6 +1477,8 @@ const loadWorkerConfig = async (force = false) => {
       simultaneousAttendanceInput.value = '';
     }
 
+    applyTypingSimulationState(typingSimulationData);
+
     if (showMessageOnCallData) {
       showMessageOnCallText.value =
         showMessageOnCallData.show_message_on_call || '';
@@ -1434,6 +1519,7 @@ const saveWorkerConfig = async () => {
     const {
       attendance_hours: _attendanceHours,
       attendance_inactivity_alert: _attendanceInactivityAlert,
+      typing_simulation: _typingSimulation,
       ...payload
     } = workerConfigForm;
     const result = await channelStore.updateWorkerConfig(
@@ -1918,6 +2004,79 @@ const saveSimultaneousAttendanceQuantity = async () => {
   }
 };
 
+const openTypingSimulationModal = async () => {
+  if (!channelId.value) return;
+
+  const data = await channelStore.fetchTypingSimulation(channelId.value);
+  applyTypingSimulationState(data);
+  typingSimulationModalOpen.value = true;
+};
+
+const closeTypingSimulationModal = () => {
+  typingSimulationModalOpen.value = false;
+};
+
+const toggleTypingSimulationStatus = async () => {
+  if (!channelId.value) return;
+
+  const newEnabled = !workerConfigForm.typing_simulation;
+
+  try {
+    isSavingTypingSimulation.value = true;
+
+    const result = await channelStore.updateTypingSimulation(channelId.value, {
+      enabled: newEnabled,
+      speed: typingSimulationSpeedInModal.value,
+    });
+
+    if (result) {
+      applyTypingSimulationState(result);
+
+      if (!result.enabled || result.speed > 90) {
+        channelStore.showSnackbar(
+          typingSimulationRiskMessage.value,
+          EColor.warning
+        );
+      }
+    }
+  } finally {
+    isSavingTypingSimulation.value = false;
+  }
+};
+
+const toggleTypingSimulationStatusInModal = () => {
+  typingSimulationEnabledInModal.value = !typingSimulationEnabledInModal.value;
+};
+
+const saveTypingSimulationConfiguration = async () => {
+  if (!channelId.value) return;
+
+  const speed = Number(typingSimulationSpeedInModal.value);
+  if (!Number.isInteger(speed) || speed < 0 || speed > 100) {
+    channelStore.showSnackbar(
+      t('typing_simulation_invalid_speed'),
+      EColor.warning
+    );
+    return;
+  }
+
+  try {
+    isSavingTypingSimulation.value = true;
+
+    const result = await channelStore.updateTypingSimulation(channelId.value, {
+      enabled: typingSimulationEnabledInModal.value,
+      speed,
+    });
+
+    if (result) {
+      applyTypingSimulationState(result);
+      closeTypingSimulationModal();
+    }
+  } finally {
+    isSavingTypingSimulation.value = false;
+  }
+};
+
 const openShowMessageOnCallModal = async () => {
   if (!channelId.value) return;
 
@@ -2116,7 +2275,9 @@ const saveSendMessageOnFinishAttendanceText = async () => {
 const openAttendanceInactivityAlertModal = async () => {
   if (!channelId.value) return;
 
-  const data = await channelStore.fetchAttendanceInactivityAlert(channelId.value);
+  const data = await channelStore.fetchAttendanceInactivityAlert(
+    channelId.value
+  );
 
   applyAttendanceInactivityAlertState(data);
   attendanceInactivityAlertModalOpen.value = true;
@@ -2542,6 +2703,11 @@ const workerConfigOptions = computed(() => [
     description: t('channel_general_config_mark_as_read_description'),
   },
   {
+    key: 'typing_simulation' as WorkerConfigField,
+    title: t('channel_general_config_typing_simulation_title'),
+    description: t('channel_general_config_typing_simulation_description'),
+  },
+  {
     key: 'attendance_inactivity_alert' as WorkerConfigField,
     title: t('channel_general_config_attendance_inactivity_alert_title'),
     description: t(
@@ -2572,6 +2738,7 @@ const hasModal = (key: WorkerConfigField): boolean => {
     key === 'simultaneous_attendance' ||
     key === 'show_message_on_call' ||
     key === 'send_message_on_finish_attendance' ||
+    key === 'typing_simulation' ||
     key === 'attendance_inactivity_alert' ||
     key === 'attendance_hours' ||
     key === 'chatbot' ||
@@ -2681,6 +2848,10 @@ const getToggleDisabled = (key: WorkerConfigField): boolean => {
     );
   }
 
+  if (key === 'typing_simulation') {
+    return isSavingWorkerConfig.value || isSavingTypingSimulation.value;
+  }
+
   if (key === 'chatbot') {
     return isSavingWorkerConfig.value || isSavingChatbot.value;
   }
@@ -2746,6 +2917,12 @@ const handleToggleClick = (key: WorkerConfigField): void => {
     return;
   }
 
+  if (key === 'typing_simulation') {
+    toggleTypingSimulationStatus();
+
+    return;
+  }
+
   if (key === 'chatbot') {
     toggleChatbotStatus();
 
@@ -2800,6 +2977,12 @@ const handleCardClick = (key: WorkerConfigField): void => {
 
   if (key === 'attendance_inactivity_alert') {
     openAttendanceInactivityAlertModal();
+
+    return;
+  }
+
+  if (key === 'typing_simulation') {
+    openTypingSimulationModal();
 
     return;
   }
@@ -5320,6 +5503,102 @@ onMounted(async () => {
     </VCard>
   </VDialog>
 
+  <VDialog v-model="typingSimulationModalOpen" max-width="560" persistent>
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{ $t('channel_general_config_typing_simulation_title') }}</span>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="typingSimulationEnabledInModal"
+            color="primary"
+            :disabled="isSavingTypingSimulation"
+            @click="toggleTypingSimulationStatusInModal"
+          />
+          <IconBtn @click="closeTypingSimulationModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
+      </VCardTitle>
+      <VCardText class="typing-simulation-content">
+        <div class="d-flex justify-space-between align-center mb-2 gap-3">
+          <VLabel class="text-body-2">
+            {{ $t('typing_simulation_speed_label') }}
+          </VLabel>
+          <VChip size="small" color="primary" variant="tonal">
+            {{ typingSimulationSpeedInModal }}% ·
+            {{ typingSimulationCurrentProfile.label }}
+          </VChip>
+        </div>
+
+        <VSlider
+          v-model="typingSimulationSpeedInModal"
+          :min="0"
+          :max="100"
+          :step="1"
+          color="primary"
+          track-color="surface-variant"
+          thumb-label
+          :disabled="
+            !typingSimulationEnabledInModal || isSavingTypingSimulation
+          "
+        />
+
+        <div class="typing-risk-meter" aria-hidden="true">
+          <div
+            v-for="profile in typingSimulationProfiles"
+            :key="profile.label"
+            class="typing-risk-segment"
+            :class="{
+              'typing-risk-segment--active':
+                typingSimulationSpeedInModal >= profile.min,
+            }"
+            :style="{ backgroundColor: profile.color }"
+          />
+        </div>
+
+        <div class="d-flex justify-space-between mt-2 text-caption">
+          <span class="text-success">
+            {{ $t('typing_simulation_risk_low') }}
+          </span>
+          <span class="font-weight-medium">
+            {{ typingSimulationCurrentProfile.label }}
+          </span>
+          <span class="text-error">
+            {{ $t('typing_simulation_risk_high') }}
+          </span>
+        </div>
+
+        <VAlert
+          v-if="typingSimulationRiskAlertVisible"
+          class="mt-4"
+          type="warning"
+          variant="tonal"
+          density="comfortable"
+        >
+          {{ typingSimulationRiskMessage }}
+        </VAlert>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingTypingSimulation"
+          @click="closeTypingSimulationModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingTypingSimulation"
+          :disabled="isSavingTypingSimulation"
+          @click="saveTypingSimulationConfiguration"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
   <VDialog v-model="showMessageOnCallModalOpen" max-width="600" persistent>
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">
@@ -5519,9 +5798,7 @@ onMounted(async () => {
       <VCardText>
         <p class="text-body-2 text-medium-emphasis mb-4">
           {{
-            $t(
-              'channel_general_config_attendance_inactivity_alert_description'
-            )
+            $t('channel_general_config_attendance_inactivity_alert_description')
           }}
         </p>
 
@@ -5579,9 +5856,7 @@ onMounted(async () => {
             </h6>
             <p class="text-body-2 text-medium-emphasis mb-0">
               {{
-                $t(
-                  'attendance_inactivity_alert_message_section_description'
-                )
+                $t('attendance_inactivity_alert_message_section_description')
               }}
             </p>
           </div>
@@ -6359,6 +6634,28 @@ onMounted(async () => {
 
 .general-config-grid {
   row-gap: 16px;
+}
+
+.typing-simulation-content {
+  min-width: 0;
+}
+
+.typing-risk-meter {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  height: 12px;
+  margin-top: 8px;
+}
+
+.typing-risk-segment {
+  border-radius: 6px;
+  opacity: 0.28;
+  transition: opacity 0.18s ease;
+}
+
+.typing-risk-segment--active {
+  opacity: 1;
 }
 
 .chatbot-working-hours-highlight {

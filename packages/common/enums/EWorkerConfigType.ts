@@ -27,4 +27,5 @@ export enum EWorkerConfigType {
   mark_as_read = '019e1f3a-1a2b-7c3d-8e4f-5a6b7c8d9e0f',
   ai_agent_id = '019ccf67-633d-7478-8aca-11720066346b',
   attendance_inactivity_alert = '01a0f0f1-1b2c-7d3e-8f90-1234567890ab',
+  typing_simulation = '01a12c40-5a6b-7c8d-9e0f-112233445566',
 }

@@ -10,6 +10,7 @@ service WorkerCommand {
   rpc ChangeConnectionStatus(ChangeConnectionStatusRequest) returns (WorkerCommandResponse);
   rpc NotifyWorkerStatus(NotifyWorkerStatusRequest) returns (WorkerCommandResponse);
   rpc ResolveIncomingCallAction(ResolveIncomingCallActionRequest) returns (ResolveIncomingCallActionResponse);
+  rpc GetTypingSimulationConfig(GetTypingSimulationConfigRequest) returns (GetTypingSimulationConfigResponse);
   rpc RegisterS3BackupFallbackUpload(RegisterS3BackupFallbackUploadRequest) returns (WorkerCommandResponse);
   rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
 }
@@ -56,6 +57,16 @@ message ResolveIncomingCallActionResponse {
   bool reject_call = 1;
   bool show_message_on_call = 2;
   string show_message_text = 3;
+}
+
+message GetTypingSimulationConfigRequest {
+  string worker_id = 1;
+  string account_id = 2;
+}
+
+message GetTypingSimulationConfigResponse {
+  bool enabled = 1;
+  int32 speed = 2;
 }
 
 message RegisterS3BackupFallbackUploadRequest {

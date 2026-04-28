@@ -46,6 +46,10 @@ jest.mock('@core/services/s3BackupUpload.service', () => ({
   S3BackupUploadService: class S3BackupUploadService {},
 }));
 
+jest.mock('@core/services/workerConfig.service', () => ({
+  WorkerConfigService: class WorkerConfigService {},
+}));
+
 jest.mock('uuid', () => ({
   v7: jest.fn(() => 'uuid-v7'),
 }));
@@ -102,6 +106,10 @@ function buildHandler(
     decrypt: jest.fn((value: string) => value),
   };
   const s3BackupUploadService = {};
+  const workerConfigService = {
+    viewTypingSimulation: jest.fn(async () => ({ enabled: true, speed: 50 })),
+    refreshTypingSimulationCache: jest.fn(async () => undefined),
+  };
 
   const handler = new WorkerCommandHandlerService(
     workerService as never,
@@ -113,7 +121,8 @@ function buildHandler(
     serverSshViewerRepository as never,
     workerConfigViewerRepository as never,
     passwordEncryptorService as never,
-    s3BackupUploadService as never
+    s3BackupUploadService as never,
+    workerConfigService as never
   );
 
   return {

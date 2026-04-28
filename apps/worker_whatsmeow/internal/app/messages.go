@@ -49,6 +49,9 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 	if err != nil {
 		return nil, err
 	}
+	if text, ok := typingSimulationText(data); ok {
+		m.simulateTypingBeforeSend(ctx, client, target, text)
+	}
 	sendCtx, cancel := context.WithTimeout(ctx, m.cfg.SendTimeout)
 	defer cancel()
 	resp, err := client.SendMessage(sendCtx, target, msg)

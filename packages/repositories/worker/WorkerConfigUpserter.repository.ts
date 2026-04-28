@@ -198,6 +198,29 @@ export class WorkerConfigUpserterRepository {
     return value !== null ? parseInt(value, 10) : null;
   };
 
+  updateTypingSimulation = async (
+    workerId: string,
+    speed: number,
+    statusId: string
+  ): Promise<number> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.typing_simulation,
+        speed.toString()
+      );
+    });
+
+    const value = await this.getConfigValue(
+      workerId,
+      EWorkerConfigType.typing_simulation
+    );
+
+    return value !== null ? parseInt(value, 10) : speed;
+  };
+
   updateShowMessageOnCall = async (
     workerId: string,
     text: string | null,

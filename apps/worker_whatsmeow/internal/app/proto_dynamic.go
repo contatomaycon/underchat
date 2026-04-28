@@ -22,6 +22,8 @@ type dynamicDescriptors struct {
 	commandResponse                 protoreflect.MessageDescriptor
 	commandResolveIncomingCallReq   protoreflect.MessageDescriptor
 	commandResolveIncomingCallResp  protoreflect.MessageDescriptor
+	commandTypingSimulationReq      protoreflect.MessageDescriptor
+	commandTypingSimulationResp     protoreflect.MessageDescriptor
 	commandRegisterS3BackupFallback protoreflect.MessageDescriptor
 }
 
@@ -106,6 +108,14 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				boolField("show_message_on_call", 2),
 				stringField("show_message_text", 3),
 			),
+			message("GetTypingSimulationConfigRequest",
+				stringField("worker_id", 1),
+				stringField("account_id", 2),
+			),
+			message("GetTypingSimulationConfigResponse",
+				boolField("enabled", 1),
+				int32Field("speed", 2),
+			),
 			message("RegisterS3BackupFallbackUploadRequest",
 				stringField("account_id", 1),
 				stringField("bucket", 2),
@@ -140,6 +150,7 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 			Method: []*descriptorpb.MethodDescriptorProto{
 				method("NotifyWorkerStatus", ".worker_command.NotifyWorkerStatusRequest", ".worker_command.WorkerCommandResponse"),
 				method("ResolveIncomingCallAction", ".worker_command.ResolveIncomingCallActionRequest", ".worker_command.ResolveIncomingCallActionResponse"),
+				method("GetTypingSimulationConfig", ".worker_command.GetTypingSimulationConfigRequest", ".worker_command.GetTypingSimulationConfigResponse"),
 				method("RegisterS3BackupFallbackUpload", ".worker_command.RegisterS3BackupFallbackUploadRequest", ".worker_command.WorkerCommandResponse"),
 			},
 		}},
@@ -158,6 +169,8 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 		commandResponse:                   commandFile.Messages().ByName("WorkerCommandResponse"),
 		commandResolveIncomingCallReq:     commandFile.Messages().ByName("ResolveIncomingCallActionRequest"),
 		commandResolveIncomingCallResp:    commandFile.Messages().ByName("ResolveIncomingCallActionResponse"),
+		commandTypingSimulationReq:        commandFile.Messages().ByName("GetTypingSimulationConfigRequest"),
+		commandTypingSimulationResp:       commandFile.Messages().ByName("GetTypingSimulationConfigResponse"),
 		commandRegisterS3BackupFallback:   commandFile.Messages().ByName("RegisterS3BackupFallbackUploadRequest"),
 	}, nil
 }
@@ -220,6 +233,14 @@ func dynamicBool(msg *dynamicpb.Message, name string) bool {
 		return false
 	}
 	return msg.Get(field).Bool()
+}
+
+func dynamicInt32(msg *dynamicpb.Message, name string) int32 {
+	field := msg.Descriptor().Fields().ByName(protoreflect.Name(name))
+	if field == nil {
+		return 0
+	}
+	return int32(msg.Get(field).Int())
 }
 
 func setDynamicString(msg *dynamicpb.Message, name, value string) {

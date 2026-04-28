@@ -17,6 +17,13 @@ import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { webcrypto as nodeCrypto } from 'node:crypto';
 import { BaileysDeliveryConfirmationService } from './deliveryConfirmation.service';
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
+import { TypingSimulationRuntimeService } from '@core/services/typingSimulationRuntime.service';
+import { baileysEnvironment } from '@core/config/environments';
+import { ITypingSimulationConfig } from '@core/common/interfaces/ITypingSimulationConfig';
+import {
+  defaultTypingSimulationConfig,
+  typingSimulationDelayMultiplier,
+} from '@core/common/functions/typingSimulationConfig';
 
 @injectable()
 export class BaileysHelpersService {
@@ -27,7 +34,9 @@ export class BaileysHelpersService {
     @inject(BaileysConnectionService)
     private readonly connection: BaileysConnectionService,
     @inject(BaileysDeliveryConfirmationService)
-    private readonly deliveryConfirmation: BaileysDeliveryConfirmationService
+    private readonly deliveryConfirmation: BaileysDeliveryConfirmationService,
+    @inject(TypingSimulationRuntimeService)
+    private readonly typingSimulationRuntimeService: TypingSimulationRuntimeService
   ) {}
 
   async send(
@@ -51,7 +60,10 @@ export class BaileysHelpersService {
     }
 
     if (shouldSimulateTyping) {
-      await this.simulateHumanTyping(jid, content);
+      const typingConfig = await this.getTypingSimulationConfig();
+      if (typingConfig.enabled) {
+        await this.simulateHumanTyping(jid, content, typingConfig.speed);
+      }
     }
 
     const result = await this.sendOnce(sock, jid, content, options);
@@ -119,14 +131,32 @@ export class BaileysHelpersService {
     return result;
   }
 
-  private async simulateHumanTyping(jid: string, content: AnyMessageContent) {
+  private async getTypingSimulationConfig(): Promise<ITypingSimulationConfig> {
+    try {
+      return await this.typingSimulationRuntimeService.getConfig(
+        baileysEnvironment.baileysWorkerId,
+        baileysEnvironment.baileysAccountId
+      );
+    } catch (error) {
+      console.error('[BaileysTypingSimulation] config unavailable', { error });
+
+      return defaultTypingSimulationConfig();
+    }
+  }
+
+  private async simulateHumanTyping(
+    jid: string,
+    content: AnyMessageContent,
+    speed = 50
+  ) {
     const sock = this.socket();
     if (!sock.user?.id) {
       return;
     }
 
     const text = this.extractText(content);
-    const durationMs = this.estimateTypingMs(text) * 0.5;
+    const durationMs =
+      this.estimateTypingMs(text) * typingSimulationDelayMultiplier(speed);
 
     const preThink = this.rand(100, 450);
     await this.sleep(preThink);

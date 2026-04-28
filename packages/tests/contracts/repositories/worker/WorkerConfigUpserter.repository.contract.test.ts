@@ -85,6 +85,24 @@ describe('WorkerConfigUpserterRepository', () => {
     ).resolves.toBeNull();
   });
 
+  it('updateTypingSimulation persists the typing simulation speed', async () => {
+    const { repository } = buildRepository();
+    (repository as any).upsertConfigValue = jest.fn(async () => undefined);
+    (repository as any).getConfigValue = jest.fn().mockResolvedValueOnce('80');
+
+    await expect(
+      repository.updateTypingSimulation('w-1', 80, EWorkerConfigStatus.active)
+    ).resolves.toBe(80);
+
+    expect((repository as any).upsertConfigValue).toHaveBeenCalledWith(
+      { tx: true },
+      'w-1',
+      EWorkerConfigStatus.active,
+      EWorkerConfigType.typing_simulation,
+      '80'
+    );
+  });
+
   it('updateShowMessage and updateSendMessage return persisted values', async () => {
     const { repository } = buildRepository();
     (repository as any).upsertConfigValue = jest.fn(async () => undefined);

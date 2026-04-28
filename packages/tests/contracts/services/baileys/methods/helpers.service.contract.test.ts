@@ -56,10 +56,17 @@ jest.mock(
   })
 );
 
+jest.mock('@core/services/typingSimulationRuntime.service', () => ({
+  TypingSimulationRuntimeService: class {},
+}));
+
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { BaileysHelpersService } from '@core/services/baileys/methods/helpers.service';
 
 describe('BaileysHelpersService', () => {
+  const originalWorkerId = process.env.WORKER_ID;
+  const originalAccountId = process.env.ACCOUNT_ID;
+
   const makeService = () => {
     const socket = {
       user: {
@@ -94,9 +101,14 @@ describe('BaileysHelpersService', () => {
       >(async () => 'sent'),
     };
 
+    const typingSimulationRuntime = {
+      getConfig: jest.fn(async () => ({ enabled: true, speed: 50 })),
+    };
+
     const service = new BaileysHelpersService(
       connection as never,
-      deliveryConfirmation as never
+      deliveryConfirmation as never,
+      typingSimulationRuntime as never
     );
 
     return {
@@ -104,11 +116,14 @@ describe('BaileysHelpersService', () => {
       socket,
       connection,
       deliveryConfirmation,
+      typingSimulationRuntime,
     };
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.WORKER_ID = 'worker-1';
+    process.env.ACCOUNT_ID = 'account-1';
 
     mockOnlyDigits.mockImplementation((value: string) =>
       value.replace(/\D/g, '')
@@ -127,6 +142,20 @@ describe('BaileysHelpersService', () => {
       key: { id: 'vo-msg-1' },
       message: { viewOnceMessage: { message: { audioMessage: { id: 'a1' } } } },
     });
+  });
+
+  afterAll(() => {
+    if (originalWorkerId === undefined) {
+      delete process.env.WORKER_ID;
+    } else {
+      process.env.WORKER_ID = originalWorkerId;
+    }
+
+    if (originalAccountId === undefined) {
+      delete process.env.ACCOUNT_ID;
+    } else {
+      process.env.ACCOUNT_ID = originalAccountId;
+    }
   });
 
   it('validates socket access and readiness guards', async () => {
@@ -149,7 +178,8 @@ describe('BaileysHelpersService', () => {
   });
 
   it('sends text message with jid resolution and delivery confirmation', async () => {
-    const { service, socket, deliveryConfirmation } = makeService();
+    const { service, socket, deliveryConfirmation, typingSimulationRuntime } =
+      makeService();
 
     const simulateTypingSpy = jest
       .spyOn(service as any, 'simulateHumanTyping')
@@ -164,9 +194,17 @@ describe('BaileysHelpersService', () => {
       service.send('5511999999999', { text: 'hello' })
     ).resolves.toEqual({ key: { id: 'message-1' } });
 
-    expect(simulateTypingSpy).toHaveBeenCalledWith('5511999999999@c.us', {
-      text: 'hello',
-    });
+    expect(simulateTypingSpy).toHaveBeenCalledWith(
+      '5511999999999@c.us',
+      {
+        text: 'hello',
+      },
+      50
+    );
+    expect(typingSimulationRuntime.getConfig).toHaveBeenCalledWith(
+      'worker-1',
+      'account-1'
+    );
     expect(socket.sendMessage).toHaveBeenCalledWith(
       '5511999999999@c.us',
       { text: 'hello' },
@@ -176,6 +214,26 @@ describe('BaileysHelpersService', () => {
       'message-1',
       20_000
     );
+  });
+
+  it('does not simulate typing when channel setting is disabled', async () => {
+    const { service, typingSimulationRuntime } = makeService();
+    const simulateTypingSpy = jest
+      .spyOn(service as any, 'simulateHumanTyping')
+      .mockResolvedValue(undefined);
+
+    typingSimulationRuntime.getConfig.mockResolvedValueOnce({
+      enabled: false,
+      speed: 95,
+    });
+
+    await expect(
+      service.send('55119999@c.us', { text: 'hello' })
+    ).resolves.toEqual({
+      key: { id: 'message-1' },
+    });
+
+    expect(simulateTypingSpy).not.toHaveBeenCalled();
   });
 
   it('handles send failures for unresolved number, missing id and failed/timeout confirmation', async () => {

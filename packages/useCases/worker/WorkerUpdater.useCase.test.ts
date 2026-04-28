@@ -21,6 +21,10 @@ jest.mock('@core/useCases/worker/WorkerRecreator.useCase', () => ({
   WorkerRecreatorUseCase: class WorkerRecreatorUseCase {},
 }));
 
+jest.mock('@core/services/workerConfig.service', () => ({
+  WorkerConfigService: class WorkerConfigService {},
+}));
+
 jest.mock('uuid', () => ({
   v7: jest.fn(() => 'uuid-v7'),
 }));
@@ -85,11 +89,16 @@ function buildUseCase(
     }),
   };
 
+  const workerConfigService = {
+    refreshTypingSimulationCache: jest.fn(async () => undefined),
+  };
+
   const useCase = new WorkerUpdaterUseCase(
     workerService as never,
     accountService as never,
     workerGrpcClientService as never,
-    workerRecreatorUseCase as never
+    workerRecreatorUseCase as never,
+    workerConfigService as never
   );
 
   return {
@@ -99,6 +108,7 @@ function buildUseCase(
     accountService,
     workerGrpcClientService,
     workerRecreatorUseCase,
+    workerConfigService,
     currentServerId,
     nextServerId,
   };

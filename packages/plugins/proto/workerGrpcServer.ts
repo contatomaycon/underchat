@@ -23,6 +23,8 @@ import { IChangeConnectionStatusRequestProto } from '@core/common/interfaces/ICh
 import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotifyWorkerStatusRequestProto';
 import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
+import { IGetTypingSimulationConfigRequestProto } from '@core/common/interfaces/IGetTypingSimulationConfigRequestProto';
+import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces/IGetTypingSimulationConfigResponseProto';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
@@ -200,6 +202,30 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleGetTypingSimulationConfig = (
+    call: ServerUnaryCall<
+      IGetTypingSimulationConfigRequestProto,
+      IGetTypingSimulationConfigResponseProto
+    >,
+    callback: sendUnaryData<IGetTypingSimulationConfigResponseProto>
+  ) => {
+    const req = call.request;
+
+    handler
+      .getTypingSimulationConfig(req)
+      .then((response) => {
+        callback(null, response);
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, workerId: req.worker_id },
+          'GetTypingSimulationConfig gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   const handleValidatePhone = (
     call: ServerUnaryCall<IPhoneValidationRequest, IPhoneValidationResponse>,
     callback: sendUnaryData<IPhoneValidationResponse>
@@ -255,6 +281,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     ChangeConnectionStatus: handleChangeConnectionStatus,
     NotifyWorkerStatus: handleNotifyWorkerStatus,
     ResolveIncomingCallAction: handleResolveIncomingCallAction,
+    GetTypingSimulationConfig: handleGetTypingSimulationConfig,
     RegisterS3BackupFallbackUpload: handleRegisterS3BackupFallbackUpload,
     ValidatePhone: handleValidatePhone,
   });

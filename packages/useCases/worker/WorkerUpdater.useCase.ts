@@ -14,6 +14,7 @@ import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { status as GrpcStatus } from '@grpc/grpc-js';
+import { WorkerConfigService } from '@core/services/workerConfig.service';
 
 @injectable()
 export class WorkerUpdaterUseCase {
@@ -31,7 +32,9 @@ export class WorkerUpdaterUseCase {
     @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService,
     @inject(WorkerRecreatorUseCase)
-    private readonly workerRecreatorUseCase: WorkerRecreatorUseCase
+    private readonly workerRecreatorUseCase: WorkerRecreatorUseCase,
+    @inject(WorkerConfigService)
+    private readonly workerConfigService: WorkerConfigService
   ) {}
 
   private async validate(
@@ -239,6 +242,10 @@ export class WorkerUpdaterUseCase {
     if (!updateWorkerById) {
       throw new Error(t('error_updating_worker'));
     }
+
+    await this.workerConfigService.refreshTypingSimulationCache(
+      input.worker_id
+    );
 
     const shouldRecreateWorker =
       shouldRecreateOnTypeChange || shouldRecreateOnServerChange;
