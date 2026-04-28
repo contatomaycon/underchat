@@ -903,6 +903,144 @@ func incomingTextEvent(chat types.JID, fromMe bool, category string) *events.Mes
 	}
 }
 
+func TestBuildChatReadStatePatchesForSentMessage(t *testing.T) {
+	fromMe := true
+	timestamp := time.Unix(1700000000, 0)
+	patches := buildChatReadStatePatches(MessageKey{
+		RemoteJID: "5511999999999@s.whatsapp.net",
+		FromMe:    &fromMe,
+		ID:        "sent-message-id",
+	}, types.EmptyJID, timestamp)
+
+	if len(patches) != 1 {
+		t.Fatalf("expected one patch, got %d", len(patches))
+	}
+	if got := patches[0].chat.String(); got != "5511999999999@s.whatsapp.net" {
+		t.Fatalf("unexpected chat %q", got)
+	}
+	if !patches[0].timestamp.Equal(timestamp) {
+		t.Fatalf("unexpected timestamp %s", patches[0].timestamp)
+	}
+
+	key := patches[0].lastMessageKey
+	if got := key.GetRemoteJID(); got != "5511999999999@s.whatsapp.net" {
+		t.Fatalf("unexpected remote jid %q", got)
+	}
+	if got := key.GetID(); got != "sent-message-id" {
+		t.Fatalf("unexpected id %q", got)
+	}
+	if !key.GetFromMe() {
+		t.Fatal("expected fromMe=true")
+	}
+	if got := key.GetParticipant(); got != "" {
+		t.Fatalf("expected no participant for direct chat, got %q", got)
+	}
+}
+
+func TestBuildChatReadStatePatchesForReceivedMessage(t *testing.T) {
+	fromMe := false
+	patches := buildChatReadStatePatches(MessageKey{
+		RemoteJID:   "5511999999999@s.whatsapp.net",
+		FromMe:      &fromMe,
+		ID:          "incoming-message-id",
+		Participant: "551188887777@s.whatsapp.net",
+	}, types.EmptyJID, time.Unix(1700000000, 0))
+
+	if len(patches) != 1 {
+		t.Fatalf("expected one patch, got %d", len(patches))
+	}
+	key := patches[0].lastMessageKey
+	if key.GetFromMe() {
+		t.Fatal("expected fromMe=false")
+	}
+	if got := key.GetRemoteJID(); got != "5511999999999@s.whatsapp.net" {
+		t.Fatalf("unexpected remote jid %q", got)
+	}
+	if got := key.GetParticipant(); got != "" {
+		t.Fatalf("expected participant to be omitted for direct chat, got %q", got)
+	}
+}
+
+func TestBuildChatReadStatePatchesUsesParticipantOnlyWhenApplicable(t *testing.T) {
+	fromMe := false
+	groupChat := types.NewJID("120363040000000000", types.GroupServer)
+
+	patches := buildChatReadStatePatches(MessageKey{
+		RemoteJID:   groupChat.String(),
+		FromMe:      &fromMe,
+		ID:          "group-message-id",
+		Participant: "551188887777@s.whatsapp.net",
+	}, types.EmptyJID, time.Unix(1700000000, 0))
+
+	if len(patches) != 1 {
+		t.Fatalf("expected one group patch, got %d", len(patches))
+	}
+	if got := patches[0].lastMessageKey.GetParticipant(); got != "551188887777@s.whatsapp.net" {
+		t.Fatalf("unexpected group participant %q", got)
+	}
+
+	directPatches := buildChatReadStatePatches(MessageKey{
+		RemoteJID:   "5511999999999@s.whatsapp.net",
+		FromMe:      &fromMe,
+		ID:          "direct-message-id",
+		Participant: "551188887777@s.whatsapp.net",
+	}, types.EmptyJID, time.Unix(1700000000, 0))
+
+	if len(directPatches) != 1 {
+		t.Fatalf("expected one direct patch, got %d", len(directPatches))
+	}
+	if got := directPatches[0].lastMessageKey.GetParticipant(); got != "" {
+		t.Fatalf("expected no direct participant, got %q", got)
+	}
+}
+
+func TestBuildChatReadStatePatchesDedupesRemoteJidCandidates(t *testing.T) {
+	fromMe := false
+	patches := buildChatReadStatePatches(MessageKey{
+		RemoteJID:     "12345@lid",
+		RemoteJIDC:    "12345@lid",
+		RemoteJIDAlt:  "5511999999999@s.whatsapp.net",
+		RemoteJIDAltC: "5511999999999@c.us",
+		FromMe:        &fromMe,
+		ID:            "incoming-message-id",
+	}, types.NewJID("5511999999999", types.DefaultUserServer), time.Unix(1700000000, 0))
+
+	if len(patches) != 2 {
+		t.Fatalf("expected two distinct pn/lid patches, got %d", len(patches))
+	}
+	if got := patches[0].chat.String(); got != "12345@lid" {
+		t.Fatalf("unexpected first chat %q", got)
+	}
+	if got := patches[1].chat.String(); got != "5511999999999@s.whatsapp.net" {
+		t.Fatalf("unexpected second chat %q", got)
+	}
+}
+
+func TestSentChatReadMessageKeyPreservesRemoteAliases(t *testing.T) {
+	fromMe := false
+	key := sentChatReadMessageKey(ChatMessage{
+		MessageKey: &MessageKey{
+			RemoteJID:    "12345@lid",
+			RemoteJIDAlt: "5511999999999@s.whatsapp.net",
+			FromMe:       &fromMe,
+			ID:           "incoming-message-id",
+		},
+	}, types.NewJID("12345", types.HiddenUserServer), "sent-message-id")
+
+	if got := key.ID; got != "sent-message-id" {
+		t.Fatalf("unexpected id %q", got)
+	}
+	if !key.FromMeValue() {
+		t.Fatal("expected sent key to be fromMe")
+	}
+	if got := key.RemoteJID; got != "12345@lid" {
+		t.Fatalf("unexpected remote jid %q", got)
+	}
+	if got := key.RemoteJIDAlt; got != "5511999999999@s.whatsapp.net" {
+		t.Fatalf("unexpected remote jid alt %q", got)
+	}
+}
+
 func TestMapToChatMessagePreservesRawPayload(t *testing.T) {
 	data, err := mapToChatMessage([]byte(`{"message_id":"m1","chat_id":"5511999999999@s.whatsapp.net","content":{"type":"text","message":"ok"}}`))
 	if err != nil {

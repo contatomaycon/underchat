@@ -58,6 +58,7 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 	if err != nil {
 		return nil, err
 	}
+	m.markChatAsReadAppState(ctx, client, sentChatReadMessageKey(data, target, string(resp.ID)), target, time.Now())
 	return map[string]any{
 		"key": map[string]any{
 			"id":        string(resp.ID),
@@ -1445,6 +1446,127 @@ func senderJIDFromKey(target types.JID, key *MessageKey) types.JID {
 	}
 	if !key.FromMeValue() {
 		return target
+	}
+	return types.EmptyJID
+}
+
+func sentChatReadMessageKey(data ChatMessage, target types.JID, messageID string) MessageKey {
+	fromMe := true
+	key := MessageKey{}
+	if data.MessageKey != nil {
+		key = *data.MessageKey
+	}
+	if key.RemoteJID == "" && key.RemoteJIDC == "" {
+		key.RemoteJID = target.String()
+	}
+	key.FromMe = &fromMe
+	key.ID = messageID
+	return key
+}
+
+type chatReadStatePatch struct {
+	chat           types.JID
+	lastMessageKey *waCommon.MessageKey
+	timestamp      time.Time
+}
+
+func (m *WhatsAppManager) markChatAsReadAppState(ctx context.Context, client *whatsmeow.Client, key MessageKey, fallbackChat types.JID, timestamp time.Time) {
+	if client == nil {
+		return
+	}
+	patches := buildChatReadStatePatches(key, fallbackChat, timestamp)
+	if len(patches) == 0 {
+		return
+	}
+	appStateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for _, patch := range patches {
+		if err := client.SendAppState(appStateCtx, appstate.BuildMarkChatAsRead(patch.chat, true, patch.timestamp, patch.lastMessageKey)); err != nil {
+			log.Printf("whatsmeow mark chat read app state failed worker_id=%s chat=%s id=%s error=%v", m.cfg.WorkerID, patch.chat.String(), patch.lastMessageKey.GetID(), err)
+		}
+	}
+}
+
+func buildChatReadStatePatches(key MessageKey, fallbackChat types.JID, timestamp time.Time) []chatReadStatePatch {
+	if strings.TrimSpace(key.ID) == "" {
+		return nil
+	}
+	chats := chatReadJIDCandidates(key, fallbackChat)
+	patches := make([]chatReadStatePatch, 0, len(chats))
+	for _, chat := range chats {
+		lastMessageKey := buildChatReadMessageKey(chat, key)
+		if lastMessageKey == nil {
+			continue
+		}
+		patches = append(patches, chatReadStatePatch{
+			chat:           chat,
+			lastMessageKey: lastMessageKey,
+			timestamp:      timestamp,
+		})
+	}
+	return patches
+}
+
+func chatReadJIDCandidates(key MessageKey, fallbackChat types.JID) []types.JID {
+	rawCandidates := []string{
+		key.RemoteJID,
+		key.RemoteJIDC,
+		key.RemoteJIDAlt,
+		key.RemoteJIDAltC,
+	}
+	if !fallbackChat.IsEmpty() {
+		rawCandidates = append(rawCandidates, fallbackChat.String())
+	}
+
+	seen := map[string]struct{}{}
+	candidates := make([]types.JID, 0, len(rawCandidates))
+	for _, rawCandidate := range rawCandidates {
+		if strings.TrimSpace(rawCandidate) == "" {
+			continue
+		}
+		jid, err := parseJID(rawCandidate)
+		if err != nil || jid.IsEmpty() {
+			continue
+		}
+		jid = nonADJID(jid)
+		key := jid.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		candidates = append(candidates, jid)
+	}
+	return candidates
+}
+
+func buildChatReadMessageKey(chat types.JID, key MessageKey) *waCommon.MessageKey {
+	id := strings.TrimSpace(key.ID)
+	if id == "" || chat.IsEmpty() {
+		return nil
+	}
+	messageKey := &waCommon.MessageKey{
+		RemoteJID: proto.String(chat.String()),
+		FromMe:    proto.Bool(key.FromMeValue()),
+		ID:        proto.String(id),
+	}
+	if participant := chatReadParticipant(chat, key); !participant.IsEmpty() {
+		messageKey.Participant = proto.String(participant.String())
+	}
+	return messageKey
+}
+
+func chatReadParticipant(chat types.JID, key MessageKey) types.JID {
+	if chat.Server == types.DefaultUserServer || chat.Server == types.HiddenUserServer || chat.Server == types.MessengerServer {
+		return types.EmptyJID
+	}
+	for _, rawParticipant := range []string{key.Participant, key.ParticipantAlt, key.ParticipantAltC} {
+		if strings.TrimSpace(rawParticipant) == "" {
+			continue
+		}
+		participant, err := parseJID(rawParticipant)
+		if err == nil && !participant.IsEmpty() {
+			return nonADJID(participant)
+		}
 	}
 	return types.EmptyJID
 }

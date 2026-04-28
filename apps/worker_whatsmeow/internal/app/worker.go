@@ -433,10 +433,12 @@ func (w *Worker) handleMarkRead(ctx context.Context, msg kafka.Message) error {
 			continue
 		}
 		sender := senderJIDFromKey(chat, &key)
-		if err := client.MarkRead(ctx, []types.MessageID{key.ID}, time.Now(), chat, sender); err != nil {
+		readAt := time.Now()
+		if err := client.MarkRead(ctx, []types.MessageID{key.ID}, readAt, chat, sender); err != nil {
 			log.Printf("mark read failed id=%s: %v", key.ID, err)
 			continue
 		}
+		w.whatsapp.markChatAsReadAppState(ctx, client, key, chat, readAt)
 		_ = w.kafka.SendJSON(ctx, topicUpdateMessageStatus, data.AccountID+":"+key.ID, MessageStatusUpdate{
 			AccountID: data.AccountID,
 			MessageID: key.ID,
