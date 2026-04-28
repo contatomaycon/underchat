@@ -45,7 +45,7 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 
 describe('MessageUpdateConsume', () => {
-  it('stores alias and requeues pending ACKs after message_key.id is applied', async () => {
+  it('stores alias and wakes pending ACKs after message_key.id is applied', async () => {
     const redis = {
       del: jest.fn().mockResolvedValue(1),
     };
@@ -59,7 +59,7 @@ describe('MessageUpdateConsume', () => {
     };
     const messageStatusPendingService = {
       setInternalMessageIdAlias: jest.fn().mockResolvedValue(undefined),
-      publishPendingStatus: jest.fn().mockResolvedValue(undefined),
+      wakePendingStatus: jest.fn().mockResolvedValue(true),
     };
     const consumer = new MessageUpdateConsume(
       redis as never,
@@ -98,8 +98,9 @@ describe('MessageUpdateConsume', () => {
     expect(
       messageStatusPendingService.setInternalMessageIdAlias
     ).toHaveBeenCalledWith('acc-1', '3EB123', 'internal-1');
-    expect(
-      messageStatusPendingService.publishPendingStatus
-    ).toHaveBeenCalledWith('acc-1', '3EB123');
+    expect(messageStatusPendingService.wakePendingStatus).toHaveBeenCalledWith(
+      'acc-1',
+      '3EB123'
+    );
   });
 });

@@ -367,20 +367,123 @@ export class MessageStatusUpdateConsume {
     }
 
     this.missingStatusRetryTimer = setInterval(() => {
-      void this.messageStatusPendingService
-        .publishDuePendingStatuses()
-        .catch((error) => {
-          logger.error(
-            {
-              err: error,
-              type: 'message_status_pending_retry_worker_error',
-            },
-            'Error while processing deferred message status updates'
-          );
-        });
+      void this.processDuePendingStatuses().catch((error) => {
+        logger.error(
+          {
+            err: error,
+            type: 'message_status_pending_retry_worker_error',
+          },
+          'Error while processing deferred message status updates'
+        );
+      });
     }, this.missingStatusRetryIntervalMs);
 
     this.missingStatusRetryTimer.unref?.();
+  }
+
+  private async processDuePendingStatuses(): Promise<void> {
+    const pendingStatuses =
+      await this.messageStatusPendingService.claimDuePendingStatuses();
+
+    await Promise.all(
+      pendingStatuses.map((data) => this.processPendingStatus(data))
+    );
+  }
+
+  private async processPendingStatus(
+    data: IMessageStatusUpdate
+  ): Promise<void> {
+    const normalizedPatch = this.messageStatusPendingService.mergePatches([
+      data.patch,
+    ]);
+    const statusUpdate: IMessageStatusUpdate = {
+      ...data,
+      patch: normalizedPatch,
+    };
+    const startTime = Date.now();
+
+    try {
+      const alreadyApplied =
+        await this.messageStatusPendingService.isApplied(statusUpdate);
+
+      if (alreadyApplied) {
+        await this.messageStatusPendingService.clearPendingStatus(
+          statusUpdate.account_id,
+          statusUpdate.message_id
+        );
+        await this.markAsProcessed(statusUpdate);
+        incrementCounter('message_status_update_duplicate', 1, {
+          account_id: statusUpdate.account_id,
+        });
+        return;
+      }
+
+      const updatedMessage =
+        await this.messageStatusService.updateSummaryByWhatsAppId(
+          statusUpdate.account_id,
+          statusUpdate.message_id,
+          normalizedPatch,
+          statusUpdate.key
+        );
+
+      const duration = Date.now() - startTime;
+      if (!updatedMessage?.message_id) {
+        await this.messageStatusPendingService.reschedulePendingStatus(
+          statusUpdate,
+          {
+            batchSize: 1,
+            duration,
+          }
+        );
+        recordHistogram('message_status_update_deferred_duration', duration, {
+          account_id: statusUpdate.account_id,
+          batch_size: '1',
+        });
+        return;
+      }
+
+      await this.messageStatusPendingService.markApplied(
+        statusUpdate,
+        updatedMessage.message_id
+      );
+      await this.markAsProcessed(statusUpdate);
+
+      incrementCounter('message_status_update_success', 1, {
+        account_id: statusUpdate.account_id,
+        batched: 'false',
+        retry: 'true',
+      });
+      recordHistogram('message_status_update_duration', duration, {
+        account_id: statusUpdate.account_id,
+        batch_size: '1',
+        retry: 'true',
+      });
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      logger.error(
+        {
+          err: error,
+          account_id: statusUpdate.account_id,
+          message_id: statusUpdate.message_id,
+          patch: normalizedPatch,
+          duration,
+          type: 'message_status_pending_retry_error',
+        },
+        'Erro ao reconciliar atualização de status pendente'
+      );
+
+      await this.messageStatusPendingService.reschedulePendingStatus(
+        statusUpdate,
+        {
+          batchSize: 1,
+          duration,
+        },
+        {
+          incrementRetry: false,
+        }
+      );
+    }
   }
 
   private getIdempotencyKey(data: IMessageStatusUpdate): string {
@@ -461,12 +564,43 @@ export class MessageStatusUpdateConsume {
     const startTime = Date.now();
 
     try {
+      const statusUpdate: IMessageStatusUpdate = {
+        ...firstUpdate,
+        patch: mergedPatch,
+      };
+
+      const alreadyApplied =
+        await this.messageStatusPendingService.isApplied(statusUpdate);
+
+      if (alreadyApplied) {
+        await this.messageStatusPendingService.clearPendingStatus(
+          statusUpdate.account_id,
+          statusUpdate.message_id
+        );
+        await this.markAsProcessed(statusUpdate);
+        incrementCounter('message_status_update_duplicate', buffered.length, {
+          account_id: firstUpdate.account_id,
+        });
+
+        await Promise.all(
+          buffered.map((item) =>
+            this.commitNext(item.topic, item.partition, item.offset)
+          )
+        );
+
+        return;
+      }
+
       const isAlreadyProcessed = await this.isAlreadyProcessed({
         ...firstUpdate,
         patch: mergedPatch,
       });
 
       if (isAlreadyProcessed) {
+        await this.messageStatusPendingService.clearPendingStatus(
+          firstUpdate.account_id,
+          firstUpdate.message_id
+        );
         incrementCounter('message_status_update_duplicate', buffered.length, {
           account_id: firstUpdate.account_id,
         });
@@ -513,6 +647,11 @@ export class MessageStatusUpdateConsume {
 
         return;
       }
+
+      await this.messageStatusPendingService.markApplied(
+        statusUpdate,
+        updatedMessage.message_id
+      );
 
       for (const item of buffered) {
         this.resetPartitionFailureCount(item.partition);

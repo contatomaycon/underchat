@@ -284,7 +284,7 @@ export class MessageUpdateConsume {
     );
     await Promise.all(
       whatsAppMessageIds.map((whatsAppMessageId) =>
-        this.messageStatusPendingService.publishPendingStatus(
+        this.messageStatusPendingService.wakePendingStatus(
           accountId,
           whatsAppMessageId
         )
