@@ -282,12 +282,21 @@ export class MessageUpsertConsume {
       }
     }
 
-    const dlqSent = await this.sendToDlq(data, lastError, this.MAX_RETRIES);
-    if (!dlqSent) {
-      throw new Error(
-        `Failed to process message and failed to send to DLQ: ${data.message?.key?.id}`
-      );
-    }
+    logger.error({
+      type: 'message_upsert_retry_exhausted_no_commit',
+      message:
+        'Message upsert retries exhausted. Offset will not be committed; message remains eligible for retry.',
+      account_id: data.account_id,
+      worker_id: data.worker_id,
+      message_key_id: data.message?.key?.id,
+      retry_count: this.MAX_RETRIES,
+      error: lastError instanceof Error ? lastError.message : lastError,
+    });
+    incrementCounter('message_upsert_retry_exhausted_no_commit');
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Failed to process message: ${data.message?.key?.id}`);
   }
 
   private centrifugoChatPublish(
@@ -4273,127 +4282,85 @@ export class MessageUpsertConsume {
             return true;
           };
 
-          const timeoutPromise = new Promise<'timeout'>((resolve) =>
-            setTimeout(
-              () => resolve('timeout'),
-              this.MESSAGE_PROCESSING_TIMEOUT_MS
-            )
-          );
-
-          const result = await Promise.race([
-            processMessage()
-              .then(() => 'success' as const)
-              .catch((error) => ({ error })),
-            timeoutPromise,
-          ]);
-
-          if (result === 'timeout') {
-            logger.error({
-              type: 'message_upsert_timeout',
-              message: `Message processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms`,
-              partition,
-              offset,
-              account_id: data.account_id,
-              worker_id: data.worker_id,
-              message_key_id: data.message?.key?.id,
-            });
-            incrementCounter('message_upsert_timeout');
-
-            const dlqSent = await this.sendToDlq(
-              data,
-              new Error(
-                `Processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms`
-              ),
-              this.MAX_RETRIES
-            );
-
-            if (!dlqSent) {
-              this.incrementPartitionFailure(partition);
-              const failureCount =
-                this.partitionFailureCounts.get(partition) ?? 0;
-
-              if (failureCount >= this.MAX_CONSECUTIVE_FAILURES) {
-                logger.error({
-                  type: 'message_upsert_partition_force_commit',
-                  message: `${failureCount} consecutive failures on partition ${partition}. Force committing to unblock.`,
-                  partition,
-                  failureCount,
-                });
-                incrementCounter('message_upsert_partition_force_commit');
-                this.partitionFailureCounts.set(partition, 0);
-                await this.commitNext(topic, partition, offset);
-              }
-              return;
-            }
-
-            this.partitionFailureCounts.set(partition, 0);
-            await this.commitNext(topic, partition, offset);
-            return;
-          }
-
-          if (typeof result === 'object' && 'error' in result) {
-            if (
-              this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(
-                result.error
-              )
-            ) {
+          while (true) {
+            let timeoutLogged = false;
+            const timeout = setTimeout(() => {
+              timeoutLogged = true;
               logger.error({
-                type: 'message_upsert_elastic_read_only_allow_delete',
-                message:
-                  'Elasticsearch flood-stage read-only block detected. Offset not committed; waiting before next processing attempt.',
+                type: 'message_upsert_timeout',
+                message: `Message processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms. Offset will not be committed.`,
                 partition,
                 offset,
                 account_id: data.account_id,
                 worker_id: data.worker_id,
                 message_key_id: data.message?.key?.id,
               });
-              incrementCounter('message_upsert_elastic_read_only_allow_delete');
-              await delay(3000);
+              incrementCounter('message_upsert_timeout');
+            }, this.MESSAGE_PROCESSING_TIMEOUT_MS);
+            timeout.unref?.();
+
+            try {
+              const processed = await processMessage();
+              clearTimeout(timeout);
+
+              if (!processed) {
+                throw new Error('Message processing returned false');
+              }
+
+              this.partitionFailureCounts.set(partition, 0);
+              await this.commitNext(topic, partition, offset);
               return;
-            }
+            } catch (error) {
+              clearTimeout(timeout);
 
-            logger.error({
-              type: 'message_upsert_processing_error',
-              message: 'Error processing message',
-              error:
-                result.error instanceof Error
-                  ? result.error.message
-                  : result.error,
-              partition,
-              offset,
-              account_id: data.account_id,
-              worker_id: data.worker_id,
-            });
-            recordException(result.error, {
-              type: 'message_upsert_processing_error',
-              partition: String(partition),
-            });
-            incrementCounter('message_upsert_processing_error');
+              if (
+                this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(
+                  error
+                )
+              ) {
+                logger.error({
+                  type: 'message_upsert_elastic_read_only_allow_delete',
+                  message:
+                    'Elasticsearch flood-stage read-only block detected. Offset not committed; retrying after backoff.',
+                  partition,
+                  offset,
+                  account_id: data.account_id,
+                  worker_id: data.worker_id,
+                  message_key_id: data.message?.key?.id,
+                });
+                incrementCounter(
+                  'message_upsert_elastic_read_only_allow_delete'
+                );
+                await delay(3000);
+                continue;
+              }
 
-            this.incrementPartitionFailure(partition);
-            const failureCount =
-              this.partitionFailureCounts.get(partition) ?? 0;
-
-            if (failureCount >= this.MAX_CONSECUTIVE_FAILURES) {
               logger.error({
-                type: 'message_upsert_partition_force_commit',
-                message: `${failureCount} consecutive failures on partition ${partition}. Force committing. Message lost.`,
+                type: timeoutLogged
+                  ? 'message_upsert_timeout_retry'
+                  : 'message_upsert_processing_error',
+                message:
+                  'Error processing message. Offset will not be committed; retrying after backoff.',
+                error: error instanceof Error ? error.message : error,
                 partition,
-                failureCount,
+                offset,
                 account_id: data.account_id,
                 worker_id: data.worker_id,
                 message_key_id: data.message?.key?.id,
               });
-              incrementCounter('message_upsert_message_lost');
-              this.partitionFailureCounts.set(partition, 0);
-              await this.commitNext(topic, partition, offset);
-            }
-            return;
-          }
+              recordException(error, {
+                type: 'message_upsert_processing_error',
+                partition: String(partition),
+              });
+              incrementCounter(
+                timeoutLogged
+                  ? 'message_upsert_timeout_retry'
+                  : 'message_upsert_processing_error'
+              );
 
-          if (result === 'success') {
-            this.partitionFailureCounts.set(partition, 0);
-            await this.commitNext(topic, partition, offset);
+              this.incrementPartitionFailure(partition);
+              await delay(timeoutLogged ? 5000 : 3000);
+            }
           }
         })
         .catch((error) => {

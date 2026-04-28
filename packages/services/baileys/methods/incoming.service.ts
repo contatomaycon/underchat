@@ -1439,7 +1439,10 @@ export class BaileysIncomingMessageService {
         key,
       };
 
-      const kafkaKey = `${baileysEnvironment.baileysAccountId}:${key.id}:${MessageStatusService.hashPatch(patch)}`;
+      const kafkaKey = MessageStatusService.statusKafkaKey(
+        baileysEnvironment.baileysAccountId,
+        key.id
+      );
       const topic = this.kafkaServiceQueueService.updateMessageStatus();
 
       let lastError: unknown = null;

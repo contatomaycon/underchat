@@ -393,8 +393,12 @@ export class ChatMessageService {
     const messageType = message.content?.type;
     const isAnnotation = messageType === EMessageType.annotation;
 
-    const promises: Promise<any>[] = [
-      this.chatService.saveMessageChat(message),
+    const elasticSaved = await this.chatService.saveMessageChat(message);
+    if (!elasticSaved) {
+      return false;
+    }
+
+    const postPersistPromises: Promise<any>[] = [
       this.centrifugoChatPublish(message),
     ];
 
@@ -405,27 +409,16 @@ export class ChatMessageService {
       const kafkaTopic = this.kafkaBaileysQueueService.workerSendMessage(
         message.worker.id
       );
-      promises.push(
+      postPersistPromises.push(
         this.streamProducerService.send(kafkaTopic, message, message.chat_id)
       );
     }
 
-    const results = await Promise.allSettled(promises);
+    const results = await Promise.allSettled(postPersistPromises);
+    const kafkaResult = results[1];
 
-    const elasticResult = results[0];
-    const centrifugoResult = results[1];
-    const kafkaResult = results[2];
-
-    if (elasticResult.status === 'rejected') {
-      throw elasticResult.reason;
-    }
-
-    if (!elasticResult.value) {
-      return false;
-    }
-
-    if (centrifugoResult.status === 'rejected') {
-      const error = centrifugoResult.reason;
+    if (results[0].status === 'rejected') {
+      const error = results[0].reason;
       if (error instanceof Error) {
         console.error('Erro ao publicar no Centrifugo:', error.message);
       }

@@ -126,7 +126,10 @@ export class MessageMarkReadWwebjsConsume {
                 key,
               };
 
-              const kafkaKey = `${data.account_id}:${key.id}:${MessageStatusService.hashPatch(statusUpdate.patch)}`;
+              const kafkaKey = MessageStatusService.statusKafkaKey(
+                data.account_id,
+                key.id
+              );
 
               await this.streamProducerService.send(
                 this.kafkaServiceQueueService.updateMessageStatus(),

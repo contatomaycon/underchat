@@ -2801,7 +2801,10 @@ export class WwebjsIncomingMessageService {
     };
 
     const topic = this.kafkaServiceQueueService.updateMessageStatus();
-    const kafkaKey = `${wwebjsEnvironment.wwebjsAccountId}:${messageId}:${MessageStatusService.hashPatch(patch)}`;
+    const kafkaKey = MessageStatusService.statusKafkaKey(
+      wwebjsEnvironment.wwebjsAccountId,
+      messageId
+    );
     await this.streamProducerService.send(topic, statusUpdate, kafkaKey);
   }
 

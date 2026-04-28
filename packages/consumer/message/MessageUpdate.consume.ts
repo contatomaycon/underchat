@@ -21,6 +21,7 @@ import { commitOffset } from '@core/common/functions/commitOffset';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 import { MessageKeyUpdateScriptParams } from '@core/common/interfaces/IMessageKeyUpdateScript';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
+import { MessageStatusPendingService } from '@core/services/messageStatusPending.service';
 
 type MessageKeyPatch = Pick<
   IMessageKey,
@@ -39,7 +40,9 @@ export class MessageUpdateConsume {
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(ElasticDatabaseService)
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(MessageStatusPendingService)
+    private readonly messageStatusPendingService: MessageStatusPendingService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -254,9 +257,45 @@ export class MessageUpdateConsume {
     );
   }
 
+  private async publishPendingStatusForPatchedKey(
+    data: IUpdateMessage
+  ): Promise<void> {
+    const accountId = data.data?.account?.id;
+    const internalMessageId = data.data?.message_id;
+    const patch = this.buildMessageKeyPatch(data);
+    const rawMessageKeyId = data.message?.key?.id?.trim();
+
+    if (!accountId || !internalMessageId || !patch.id) {
+      return;
+    }
+
+    const whatsAppMessageIds = Array.from(
+      new Set([patch.id, rawMessageKeyId].filter(Boolean) as string[])
+    );
+
+    await Promise.all(
+      whatsAppMessageIds.map((whatsAppMessageId) =>
+        this.messageStatusPendingService.setInternalMessageIdAlias(
+          accountId,
+          whatsAppMessageId,
+          internalMessageId
+        )
+      )
+    );
+    await Promise.all(
+      whatsAppMessageIds.map((whatsAppMessageId) =>
+        this.messageStatusPendingService.publishPendingStatus(
+          accountId,
+          whatsAppMessageId
+        )
+      )
+    );
+  }
+
   private async handleMessage(data: IUpdateMessage): Promise<void> {
     await this.updateChatIfMissingRemoteJid(data);
     await this.updateMessageIfMissingKey(data);
+    await this.publishPendingStatusForPatchedKey(data);
   }
 
   public async execute(): Promise<void> {

@@ -2,12 +2,9 @@ import { singleton, inject } from 'tsyringe';
 import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
-import {
-  MessageStatusService,
-  MessageSummaryPatch,
-} from '@core/services/messageStatus.service';
+import { MessageStatusService } from '@core/services/messageStatus.service';
+import { MessageStatusPendingService } from '@core/services/messageStatusPending.service';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
@@ -41,15 +38,7 @@ export class MessageStatusUpdateConsume {
   private readonly batchMaxSize = 20;
   private readonly maxConsecutiveFailures = 10;
   private readonly partitionRecoveryIntervalMs = 60_000;
-  private readonly missingStatusRetrySetKey =
-    'message-status:update:missing:retry';
-  private readonly missingStatusRetryPayloadHashKey =
-    'message-status:update:missing:retry:payloads';
   private readonly missingStatusRetryIntervalMs = 1_000;
-  private readonly missingStatusRetryBatchSize = 100;
-  private readonly missingStatusRetryDelaysMs = [
-    2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 120_000, 300_000,
-  ];
   private partitionRecoveryTimer: ReturnType<typeof setInterval> | null = null;
   private missingStatusRetryTimer: ReturnType<typeof setInterval> | null = null;
   private currentTopic: string | null = null;
@@ -61,10 +50,10 @@ export class MessageStatusUpdateConsume {
     @inject('Kafka') private readonly kafka: KafkaClient,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService,
     @inject(MessageStatusService)
     private readonly messageStatusService: MessageStatusService,
+    @inject(MessageStatusPendingService)
+    private readonly messageStatusPendingService: MessageStatusPendingService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -115,7 +104,7 @@ export class MessageStatusUpdateConsume {
     );
 
     this.startPartitionRecovery();
-    this.startMissingStatusRetryWorker(topic);
+    this.startMissingStatusRetryWorker();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
@@ -372,239 +361,26 @@ export class MessageStatusUpdateConsume {
     }
   }
 
-  private startMissingStatusRetryWorker(topic: string): void {
+  private startMissingStatusRetryWorker(): void {
     if (this.missingStatusRetryTimer) {
       clearInterval(this.missingStatusRetryTimer);
     }
 
     this.missingStatusRetryTimer = setInterval(() => {
-      void this.processDueMissingStatusRetries(topic).catch((error) => {
-        logger.error(
-          {
-            err: error,
-            topic,
-            type: 'message_status_missing_retry_worker_error',
-          },
-          'Error while processing deferred message status updates'
-        );
-      });
+      void this.messageStatusPendingService
+        .publishDuePendingStatuses()
+        .catch((error) => {
+          logger.error(
+            {
+              err: error,
+              type: 'message_status_pending_retry_worker_error',
+            },
+            'Error while processing deferred message status updates'
+          );
+        });
     }, this.missingStatusRetryIntervalMs);
 
     this.missingStatusRetryTimer.unref?.();
-  }
-
-  private getRetryCount(data: IMessageStatusUpdate): number {
-    const retryCount = data.retry_count ?? 0;
-    if (!Number.isFinite(retryCount)) {
-      return 0;
-    }
-
-    return Math.max(0, Math.floor(retryCount));
-  }
-
-  private getFirstSeenAt(data: IMessageStatusUpdate): number {
-    const firstSeenAt = data.first_seen_at ?? Date.now();
-    if (!Number.isFinite(firstSeenAt)) {
-      return Date.now();
-    }
-
-    return firstSeenAt;
-  }
-
-  private getStatusUpdateKafkaKey(data: IMessageStatusUpdate): string {
-    return `${data.account_id}:${data.message_id}:${MessageStatusService.hashPatch(data.patch)}`;
-  }
-
-  private getMissingStatusRetryMember(data: IMessageStatusUpdate): string {
-    return this.getStatusUpdateKafkaKey(data);
-  }
-
-  private parseRetryPayload(raw: string | null): IMessageStatusUpdate | null {
-    if (!raw) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(raw) as IMessageStatusUpdate;
-    } catch {
-      return null;
-    }
-  }
-
-  private async deferMissingStatusUpdate(
-    data: IMessageStatusUpdate,
-    patch: MessageSummaryPatch,
-    batchSize: number,
-    duration: number
-  ): Promise<void> {
-    const retryCount = this.getRetryCount(data);
-    const maxRetries = this.missingStatusRetryDelaysMs.length;
-
-    if (retryCount >= maxRetries) {
-      logger.warn(
-        {
-          account_id: data.account_id,
-          message_id: data.message_id,
-          retry_count: retryCount,
-          max_retries: maxRetries,
-          batch_size: batchSize,
-          duration,
-          type: 'message_status_missing_retry_exhausted',
-        },
-        'Message status update exhausted retries because target message was not found'
-      );
-
-      incrementCounter('message_status_update_missing_retry_exhausted', 1, {
-        account_id: data.account_id,
-      });
-      return;
-    }
-
-    const delayMs = this.missingStatusRetryDelaysMs[retryCount];
-    const retryPayload: IMessageStatusUpdate = {
-      ...data,
-      patch,
-      retry_count: retryCount + 1,
-      first_seen_at: this.getFirstSeenAt(data),
-    };
-    const member = this.getMissingStatusRetryMember(retryPayload);
-
-    const existingPayload = this.parseRetryPayload(
-      await this.redis.hget(this.missingStatusRetryPayloadHashKey, member)
-    );
-    if (existingPayload) {
-      retryPayload.retry_count = Math.max(
-        this.getRetryCount(existingPayload),
-        retryPayload.retry_count ?? 0
-      );
-      retryPayload.first_seen_at = Math.min(
-        this.getFirstSeenAt(existingPayload),
-        retryPayload.first_seen_at ?? Date.now()
-      );
-    }
-
-    await this.redis.hset(
-      this.missingStatusRetryPayloadHashKey,
-      member,
-      JSON.stringify(retryPayload)
-    );
-
-    const existingScore = await this.redis.zscore(
-      this.missingStatusRetrySetKey,
-      member
-    );
-    if (existingScore === null) {
-      await this.redis.zadd(
-        this.missingStatusRetrySetKey,
-        Date.now() + delayMs,
-        member
-      );
-    }
-
-    logger.warn(
-      {
-        account_id: data.account_id,
-        message_id: data.message_id,
-        retry_count: retryPayload.retry_count,
-        delay_ms: delayMs,
-        batch_size: batchSize,
-        duration,
-        type: 'message_status_update_deferred_missing_message',
-      },
-      'Message status update deferred because target message was not indexed yet'
-    );
-
-    incrementCounter('message_status_update_deferred_missing_message', 1, {
-      account_id: data.account_id,
-      retry_count: String(retryPayload.retry_count ?? 0),
-    });
-  }
-
-  private async processDueMissingStatusRetries(topic: string): Promise<void> {
-    const dueMembers = await this.redis.zrangebyscore(
-      this.missingStatusRetrySetKey,
-      '-inf',
-      Date.now(),
-      'LIMIT',
-      0,
-      this.missingStatusRetryBatchSize
-    );
-
-    if (!dueMembers.length) {
-      return;
-    }
-
-    await Promise.all(
-      dueMembers.map((member) => this.publishMissingStatusRetry(topic, member))
-    );
-  }
-
-  private async publishMissingStatusRetry(
-    topic: string,
-    member: string
-  ): Promise<void> {
-    const removed = await this.redis.zrem(
-      this.missingStatusRetrySetKey,
-      member
-    );
-    if (removed !== 1) {
-      return;
-    }
-
-    const rawPayload = await this.redis.hget(
-      this.missingStatusRetryPayloadHashKey,
-      member
-    );
-    const payload = this.parseRetryPayload(rawPayload);
-    if (!payload || !rawPayload) {
-      await this.redis.hdel(this.missingStatusRetryPayloadHashKey, member);
-      return;
-    }
-
-    try {
-      await this.streamProducerService.send(
-        topic,
-        payload,
-        this.getStatusUpdateKafkaKey(payload)
-      );
-      await this.redis.hdel(this.missingStatusRetryPayloadHashKey, member);
-
-      logger.info(
-        {
-          account_id: payload.account_id,
-          message_id: payload.message_id,
-          retry_count: payload.retry_count ?? 0,
-          type: 'message_status_missing_retry_requeued',
-        },
-        'Deferred message status update requeued'
-      );
-
-      incrementCounter('message_status_missing_retry_requeued', 1, {
-        account_id: payload.account_id,
-      });
-    } catch (error) {
-      await this.redis.hset(
-        this.missingStatusRetryPayloadHashKey,
-        member,
-        rawPayload
-      );
-      await this.redis.zadd(
-        this.missingStatusRetrySetKey,
-        Date.now() + this.missingStatusRetryIntervalMs * 5,
-        member
-      );
-
-      logger.error(
-        {
-          err: error,
-          account_id: payload.account_id,
-          message_id: payload.message_id,
-          retry_count: payload.retry_count ?? 0,
-          type: 'message_status_missing_retry_publish_error',
-        },
-        'Failed to requeue deferred message status update'
-      );
-    }
   }
 
   private getIdempotencyKey(data: IMessageStatusUpdate): string {
@@ -678,7 +454,9 @@ export class MessageStatusUpdateConsume {
     }
 
     const firstUpdate = buffered[0].data;
-    const mergedPatch = this.mergePatches(buffered.map((b) => b.data.patch));
+    const mergedPatch = this.messageStatusPendingService.mergePatches(
+      buffered.map((b) => b.data.patch)
+    );
 
     const startTime = Date.now();
 
@@ -713,11 +491,13 @@ export class MessageStatusUpdateConsume {
       if (!updatedMessage) {
         const duration = Date.now() - startTime;
 
-        await this.deferMissingStatusUpdate(
+        await this.messageStatusPendingService.deferMissingStatusUpdate(
           firstUpdate,
           mergedPatch,
-          buffered.length,
-          duration
+          {
+            batchSize: buffered.length,
+            duration,
+          }
         );
 
         recordHistogram('message_status_update_deferred_duration', duration, {
@@ -797,35 +577,5 @@ export class MessageStatusUpdateConsume {
   private async flushAllBatches(): Promise<void> {
     const messageKeys = Array.from(this.messagePatchBuffer.keys());
     await Promise.all(messageKeys.map((key) => this.flushBatch(key)));
-  }
-
-  private mergePatches(patches: MessageSummaryPatch[]): MessageSummaryPatch {
-    const merged: MessageSummaryPatch = {};
-
-    for (const patch of patches) {
-      if (patch.is_seen) {
-        merged.is_seen = true;
-        merged.is_delivered = true;
-        merged.is_sent = true;
-        continue;
-      }
-
-      if (patch.is_sent) {
-        merged.is_sent = true;
-      }
-      if (patch.is_delivered) {
-        merged.is_delivered = true;
-        merged.is_sent = true;
-      }
-    }
-
-    if (merged.is_seen) {
-      merged.is_delivered = true;
-      merged.is_sent = true;
-    } else if (merged.is_delivered) {
-      merged.is_sent = true;
-    }
-
-    return merged;
   }
 }

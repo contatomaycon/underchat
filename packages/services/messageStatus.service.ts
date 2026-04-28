@@ -18,6 +18,7 @@ import {
 import type { WAMessageKey } from '@whiskeysockets/baileys';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { MessageStatusPendingService } from './messageStatusPending.service';
 
 export type MessageSummaryPatch = Partial<
   Pick<IChatMessage['summary'], 'is_sent' | 'is_delivered' | 'is_seen'>
@@ -49,8 +50,14 @@ export class MessageStatusService {
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(MessageStatusPendingService)
+    private readonly messageStatusPendingService: MessageStatusPendingService,
     @inject('Redis') private readonly redis: Redis
   ) {}
+
+  static statusKafkaKey(accountId: string, messageId: string): string {
+    return MessageStatusPendingService.statusKey(accountId, messageId);
+  }
 
   async updateSummaryByWhatsAppId(
     accountId: string,
@@ -63,12 +70,49 @@ export class MessageStatusService {
       return null;
     }
 
-    const message = await this.findMessageByWhatsAppIdCached(
+    const aliasedMessageId =
+      await this.messageStatusPendingService.getInternalMessageIdAlias(
+        accountId,
+        messageId
+      );
+
+    let message = aliasedMessageId
+      ? await this.findMessageByMessageIdWithRetry(aliasedMessageId, 2)
+      : null;
+
+    if (!message?.message_id) {
+      message = await this.findMessageByWhatsAppIdCached(
+        accountId,
+        messageId,
+        key
+      );
+    }
+
+    if (!message?.message_id) {
+      return null;
+    }
+
+    await this.messageStatusPendingService.setInternalMessageIdAlias(
       accountId,
       messageId,
-      key
+      message.message_id
     );
-    if (!message?.message_id) {
+
+    return this.applySummaryPatchToMessage(
+      accountId,
+      messageId,
+      message,
+      normalizedPatch
+    );
+  }
+
+  private async applySummaryPatchToMessage(
+    accountId: string,
+    whatsappMessageId: string,
+    message: IChatMessage,
+    normalizedPatch: MessageSummaryPatch
+  ): Promise<IChatMessage | null> {
+    if (!message.message_id) {
       return null;
     }
 
@@ -81,13 +125,16 @@ export class MessageStatusService {
 
     const channelAccountId = message.account?.id ?? accountId;
 
-    await this.updateSummaryAtomicallyWithLock(
+    const updated = await this.updateSummaryAtomicallyWithLock(
       message.message_id,
       message.summary,
       normalizedPatch
     );
+    if (!updated) {
+      return null;
+    }
 
-    await this.invalidateMessageCache(accountId, messageId);
+    await this.invalidateMessageCache(accountId, whatsappMessageId);
 
     const canonicalMessage = await this.findMessageByMessageIdWithRetry(
       message.message_id
@@ -546,6 +593,13 @@ export class MessageStatusService {
 
     if (message) {
       try {
+        if (message.message_id) {
+          await this.messageStatusPendingService.setInternalMessageIdAlias(
+            accountId,
+            messageId,
+            message.message_id
+          );
+        }
         await this.redis.setex(
           cacheKey,
           this.cacheTtlSeconds,
@@ -736,23 +790,12 @@ export class MessageStatusService {
     }
 
     try {
-      const queryElastic = {
-        size: 1,
-        query: {
-          term: { message_id: messageId },
-        },
-      };
-
-      const result = await this.elasticDatabaseService.select<IChatMessage>(
+      const message = (await this.elasticDatabaseService.view(
         EElasticIndex.message,
-        queryElastic
-      );
-
-      const hit = result?.hits?.hits?.[0] as
-        | ElasticHit<IChatMessage>
-        | undefined;
+        messageId
+      )) as IChatMessage | null;
       this.recordCircuitSuccess();
-      return hit?._source ?? null;
+      return message;
     } catch (error) {
       this.recordCircuitFailure();
       throw error;
@@ -937,18 +980,14 @@ export class MessageStatusService {
         {
           source: scriptSource,
           params: scriptParams,
-          upsert: {
-            summary: baseline,
-          },
         },
         {
-          upsert: true,
           maxRetries: 5,
         }
       );
 
       this.recordCircuitSuccess();
-      return result === 'updated' || result === 'created' || result === 'noop';
+      return result === 'updated' || result === 'noop';
     } catch {
       this.recordCircuitFailure();
       return false;

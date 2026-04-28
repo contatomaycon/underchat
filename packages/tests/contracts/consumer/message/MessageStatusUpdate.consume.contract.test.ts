@@ -34,6 +34,10 @@ jest.mock('@core/services/streamProducer.service', () => ({
   StreamProducerService: class StreamProducerService {},
 }));
 
+jest.mock('@core/services/messageStatusPending.service', () => ({
+  MessageStatusPendingService: class MessageStatusPendingService {},
+}));
+
 jest.mock('@core/services/messageStatus.service', () => ({
   MessageStatusService: class MessageStatusService {
     static hashPatch(): string {
@@ -74,11 +78,28 @@ describe('MessageStatusUpdateConsume', () => {
       zadd: jest.fn().mockResolvedValue(1),
       zscore: jest.fn().mockResolvedValue(null),
     };
-    const streamProducerService = {
-      send: jest.fn().mockResolvedValue(undefined),
-    };
     const messageStatusService = {
       updateSummaryByWhatsAppId: jest.fn(),
+    };
+    const messageStatusPendingService = {
+      deferMissingStatusUpdate: jest.fn().mockResolvedValue(undefined),
+      publishDuePendingStatuses: jest.fn().mockResolvedValue(undefined),
+      mergePatches: jest.fn((patches: IMessageStatusUpdate['patch'][]) => {
+        const merged: IMessageStatusUpdate['patch'] = {};
+        for (const patch of patches) {
+          if (patch.is_seen) {
+            merged.is_seen = true;
+            merged.is_delivered = true;
+            merged.is_sent = true;
+          } else if (patch.is_delivered) {
+            merged.is_delivered = true;
+            merged.is_sent = true;
+          } else if (patch.is_sent) {
+            merged.is_sent = true;
+          }
+        }
+        return merged;
+      }),
     };
     const kafkaServiceQueueService = {
       updateMessageStatus: jest.fn().mockReturnValue('update.message.status'),
@@ -87,16 +108,16 @@ describe('MessageStatusUpdateConsume', () => {
     const consumer = new MessageStatusUpdateConsume(
       {} as never,
       kafkaServiceQueueService as never,
-      streamProducerService as never,
       messageStatusService as never,
+      messageStatusPendingService as never,
       redis as never
     );
 
     return {
       consumer,
       redis,
-      streamProducerService,
       messageStatusService,
+      messageStatusPendingService,
     };
   };
 
@@ -114,7 +135,12 @@ describe('MessageStatusUpdateConsume', () => {
   });
 
   it('defers and commits a status update when the target message is not indexed yet', async () => {
-    const { consumer, redis, messageStatusService } = makeConsumer();
+    const {
+      consumer,
+      redis,
+      messageStatusPendingService,
+      messageStatusService,
+    } = makeConsumer();
     const data = makeStatusUpdate();
     const commitSpy = jest
       .spyOn(consumer as any, 'commitNext')
@@ -132,17 +158,18 @@ describe('MessageStatusUpdateConsume', () => {
 
     await (consumer as any).flushBatch('acc-1:msg-1');
 
-    const retryMember = 'acc-1:msg-1:status-hash';
-    expect(redis.hset).toHaveBeenCalledWith(
-      'message-status:update:missing:retry:payloads',
-      retryMember,
-      expect.stringContaining('"retry_count":1')
+    expect(
+      messageStatusPendingService.deferMissingStatusUpdate
+    ).toHaveBeenCalledWith(
+      data,
+      { is_delivered: true, is_sent: true },
+      {
+        batchSize: 1,
+        duration: expect.any(Number),
+      }
     );
-    expect(redis.zadd).toHaveBeenCalledWith(
-      'message-status:update:missing:retry',
-      expect.any(Number),
-      retryMember
-    );
+    expect(redis.hset).not.toHaveBeenCalled();
+    expect(redis.zadd).not.toHaveBeenCalled();
     expect(redis.setex).not.toHaveBeenCalled();
     expect(commitSpy).toHaveBeenCalledWith('update.message.status', 3, 41);
   });
