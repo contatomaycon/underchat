@@ -1238,6 +1238,27 @@ func buildContextInfo(data ChatMessage) *waE2E.ContextInfo {
 		}
 		contextInfo.MentionedJID = mentions
 	}
+	contextInfo = applyForwardContextInfo(data, contextInfo)
+	return contextInfo
+}
+
+func applyForwardContextInfo(data ChatMessage, contextInfo *waE2E.ContextInfo) *waE2E.ContextInfo {
+	context := asMap(data.Content["context_info"])
+	score := uint32Value(firstNonEmptyAny(context["forwarding_score"], context["forwardingScore"]))
+	isForwarded := len(asMap(data.Content["forward"])) > 0 ||
+		boolValue(firstNonEmptyAny(context["is_forwarded"], context["isForwarded"])) ||
+		score > 0
+	if !isForwarded {
+		return contextInfo
+	}
+	if contextInfo == nil {
+		contextInfo = &waE2E.ContextInfo{}
+	}
+	if score == 0 {
+		score = 1
+	}
+	contextInfo.IsForwarded = proto.Bool(true)
+	contextInfo.ForwardingScore = proto.Uint32(score)
 	return contextInfo
 }
 
@@ -1598,9 +1619,6 @@ func firstUnsupportedContent(content map[string]any) string {
 		if value, ok := content[key]; ok && value != nil {
 			return key
 		}
-	}
-	if forward := asMap(content["forward"]); len(forward) > 0 {
-		return "forward"
 	}
 	return ""
 }

@@ -165,6 +165,73 @@ func TestBuildOutgoingQuotedImageContext(t *testing.T) {
 	}
 }
 
+func TestBuildOutgoingForwardedTextContext(t *testing.T) {
+	tests := []struct {
+		name      string
+		content   map[string]any
+		wantScore uint32
+	}{
+		{
+			name: "forward payload uses provided forwarding score",
+			content: map[string]any{
+				"type":    MessageTypeText,
+				"message": "encaminhada",
+				"forward": map[string]any{
+					"source_message_id": "source-1",
+				},
+				"context_info": map[string]any{
+					"forwarding_score": 3,
+				},
+			},
+			wantScore: 3,
+		},
+		{
+			name: "context forwarded flag defaults score",
+			content: map[string]any{
+				"type":    MessageTypeText,
+				"message": "encaminhada",
+				"context_info": map[string]any{
+					"is_forwarded": true,
+				},
+			},
+			wantScore: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := &WhatsAppManager{}
+			target := types.NewJID("5511999999999", types.DefaultUserServer)
+
+			msg, err := manager.buildOutgoingMessage(context.Background(), nil, target, ChatMessage{
+				Content: tt.content,
+			})
+			if err != nil {
+				t.Fatalf("build forwarded text: %v", err)
+			}
+
+			extended := msg.GetExtendedTextMessage()
+			if extended == nil {
+				t.Fatal("expected extended text message")
+			}
+			if got := extended.GetText(); got != "encaminhada" {
+				t.Fatalf("unexpected text %q", got)
+			}
+
+			contextInfo := extended.GetContextInfo()
+			if contextInfo == nil {
+				t.Fatal("expected context info")
+			}
+			if !contextInfo.GetIsForwarded() {
+				t.Fatal("expected forwarded context")
+			}
+			if got := contextInfo.GetForwardingScore(); got != tt.wantScore {
+				t.Fatalf("unexpected forwarding score %d", got)
+			}
+		})
+	}
+}
+
 func TestOutgoingAudioPTTDefaultsLikeBaileys(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -832,7 +832,7 @@ const submitForward = async () => {
 
   isForwardSubmitting.value = true;
 
-  const workerId = chatStore.user?.user_id;
+  const workerId = selectedForwardChannel.value ?? undefined;
   const payload = isForwardStatusAll.value
     ? {
         target_contact_ids: [...forwardTargetContactIds.value],
