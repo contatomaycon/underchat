@@ -28,6 +28,11 @@ type ElasticHit<T> = {
   _source?: T;
 };
 
+interface WhatsAppMessageLookupResult {
+  message: IChatMessage | null;
+  candidateCount: number;
+}
+
 type MessageKeyLike = WAMessageKey & {
   remoteJidAlt?: string | null;
   participantAlt?: string | null;
@@ -499,7 +504,7 @@ export class MessageStatusService {
     accountId: string,
     messageId: string,
     key?: MessageKeyLike
-  ): Promise<IChatMessage | null> {
+  ): Promise<WhatsAppMessageLookupResult> {
     if (this.isCircuitOpen()) {
       throw new Error('Elasticsearch circuit breaker is open');
     }
@@ -507,7 +512,10 @@ export class MessageStatusService {
     try {
       const idCandidates = this.buildMessageIdCandidates(messageId, key);
       if (!idCandidates.length) {
-        return null;
+        return {
+          candidateCount: 0,
+          message: null,
+        };
       }
 
       const queryElastic = {
@@ -549,22 +557,12 @@ export class MessageStatusService {
       const hit = result?.hits?.hits?.[0] as
         | ElasticHit<IChatMessage>
         | undefined;
-      const resolvedMessage = hit?._source ?? null;
-
-      if (!resolvedMessage) {
-        logger.warn(
-          {
-            type: 'ack_match_miss',
-            account_id: accountId,
-            message_id: messageId,
-            candidate_count: idCandidates.length,
-          },
-          'No message found for WhatsApp status update'
-        );
-      }
-
+      const message = hit?._source ?? null;
       this.recordCircuitSuccess();
-      return resolvedMessage;
+      return {
+        candidateCount: idCandidates.length,
+        message,
+      };
     } catch (error) {
       this.recordCircuitFailure();
       throw error;
@@ -690,14 +688,17 @@ export class MessageStatusService {
     key?: MessageKeyLike,
     maxRetries = 5
   ): Promise<IChatMessage | null> {
+    let lastCandidateCount = 0;
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const message = await this.findMessageByWhatsAppId(
+      const result = await this.findMessageByWhatsAppId(
         accountId,
         messageId,
         key
       );
-      if (message?.message_id) {
-        return message;
+      lastCandidateCount = result.candidateCount;
+      if (result.message?.message_id) {
+        return result.message;
       }
 
       if (attempt < maxRetries - 1) {
@@ -705,6 +706,17 @@ export class MessageStatusService {
         await new Promise((resolve) => setTimeout(resolve, backoffMs));
       }
     }
+
+    logger.warn(
+      {
+        type: 'ack_match_miss',
+        account_id: accountId,
+        message_id: messageId,
+        candidate_count: lastCandidateCount,
+        attempts: maxRetries,
+      },
+      'No message found for WhatsApp status update after immediate lookup retries'
+    );
 
     return null;
   }
