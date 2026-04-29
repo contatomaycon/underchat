@@ -5935,7 +5935,7 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
               </div>
-              <div class="d-flex align-center gap-2">
+              <div class="d-flex align-center gap-2 active-chat-phone-row">
                 <p class="text-truncate mb-0 text-body-2">
                   {{ activeChatHeaderPhone }}
                 </p>
@@ -5979,7 +5979,7 @@ onBeforeUnmount(() => {
           <!-- Protocol badge (desktop/tablet) -->
           <ChatProtocolBadgeDialog
             v-if="showProtocolInChat"
-            class="d-none d-sm-flex"
+            class="d-none d-sm-flex active-chat-protocol-desktop"
             :chat="chatStore.activeChat"
             :contact-name="
               chatStore.activeChat.contact?.name ??
@@ -6000,7 +6000,9 @@ onBeforeUnmount(() => {
 
           <VSpacer />
 
-          <div class="d-sm-flex align-center d-none text-medium-emphasis">
+          <div
+            class="d-sm-flex align-center d-none text-medium-emphasis active-chat-header-actions"
+          >
             <div
               v-if="isInChatStatus && activeChatLabelTemplate"
               :key="activeChatLabelTemplate.label"
@@ -7755,6 +7757,66 @@ $chat-app-header-height: 76px;
       display: flex;
       flex-direction: column;
     }
+  }
+}
+
+.active-chat-header {
+  overflow: hidden;
+}
+
+.active-chat-contact-info {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.active-chat-details {
+  min-width: 0;
+}
+
+.active-chat-phone-row {
+  min-width: 0;
+}
+
+.active-chat-header-actions {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.active-chat-protocol-desktop {
+  flex: 0 1 clamp(140px, 24vw, 220px);
+  min-width: 0;
+  max-width: clamp(140px, 24vw, 220px);
+}
+
+.active-chat-protocol-desktop .chat-protocol__trigger {
+  width: 100%;
+  max-width: 100% !important;
+}
+
+@media (max-width: 1264px) {
+  .active-chat-protocol-desktop {
+    flex-basis: 190px;
+    max-width: 190px;
+  }
+
+  .active-chat-protocol-desktop .chat-protocol__trigger .chat-protocol__prefix {
+    display: none;
+  }
+
+  .active-chat-protocol-desktop .chat-protocol__trigger {
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 960px) {
+  .active-chat-protocol-desktop {
+    flex-basis: 150px;
+    max-width: 150px;
+  }
+
+  .active-chat-protocol-desktop .chat-protocol__trigger {
+    max-width: 100% !important;
   }
 }
 
