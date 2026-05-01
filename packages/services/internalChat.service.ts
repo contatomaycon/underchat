@@ -22,6 +22,7 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { StorageService } from '@core/services/storage.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
+import { ChatContactService } from '@core/services/chatContact.service';
 import { ListConversationsQuery } from '@core/schema/internalChat/listConversations/request.schema';
 import { ListUsersQuery } from '@core/schema/internalChat/listUsers/request.schema';
 import { ListMessagesQuery } from '@core/schema/internalChat/listMessages/request.schema';
@@ -75,7 +76,9 @@ export class InternalChatService {
     @inject(StorageService)
     private readonly storageService: StorageService,
     @inject(CentrifugoService)
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    @inject(ChatContactService)
+    private readonly chatContactService: ChatContactService
   ) {}
 
   private normalizePaging(
@@ -269,6 +272,32 @@ export class InternalChatService {
     return null;
   }
 
+  private normalizeLinkPreview(value: unknown): Record<string, unknown> | null {
+    if (!value) return null;
+
+    if (typeof value === 'object' && 'value' in value) {
+      return this.normalizeLinkPreview((value as { value?: unknown }).value);
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        return this.normalizeLinkPreview(parsed);
+      } catch {
+        return null;
+      }
+    }
+
+    if (typeof value === 'object') {
+      return value as Record<string, unknown>;
+    }
+
+    return null;
+  }
+
   private async loadActorUser(userId: string): Promise<{
     id: string;
     name: string;
@@ -327,6 +356,9 @@ export class InternalChatService {
     const messageText = extractFieldValue(input.body.message as any) || null;
     const messageQuotedId =
       extractFieldValue(input.body.message_quoted_id as any) || null;
+    const linkPreview = this.normalizeLinkPreview(
+      (input.body as { link_preview?: unknown }).link_preview
+    );
     const contacts = this.normalizeStringArray(input.body.contacts as any);
     const locationLatitude = this.normalizeNumberField(
       input.body.location_latitude as any
@@ -361,6 +393,9 @@ export class InternalChatService {
       }
       if (messageQuotedId) {
         base.content.message_quoted_id = messageQuotedId;
+      }
+      if (messageType === EMessageType.text && linkPreview) {
+        base.content.link_preview = linkPreview as any;
       }
       return base;
     };
@@ -468,10 +503,40 @@ export class InternalChatService {
         throw new Error('message_content_required');
       }
 
-      const normalizedContacts = contacts.map((contactId) => ({
-        contact_id: contactId,
-        name: contactId,
-      }));
+      const contactUuidPattern =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const contactIds = contacts.filter((contactId) =>
+        contactUuidPattern.test(contactId)
+      );
+      const contactRows = contactIds.length
+        ? await this.chatContactService.viewChatContactsByIds(
+            contactIds,
+            input.accountId
+          )
+        : [];
+      const contactsById = new Map(
+        contactRows.map((contact) => [contact.contact_id, contact])
+      );
+      const normalizedContacts = contacts.map((contactId) => {
+        const contact = contactsById.get(contactId);
+        if (!contact) {
+          return {
+            contact_id: null,
+            name: contactId,
+          };
+        }
+
+        return {
+          contact_id: contact.contact_id,
+          name: contact.name,
+          last_name: contact.last_name ?? null,
+          phone: contact.phone_partial ?? null,
+          phone_partial: contact.phone_partial ?? null,
+          phone_ddi: contact.phone_ddi ?? null,
+          email_partial: contact.email_partial ?? null,
+          photo: contact.photo ?? null,
+        };
+      });
 
       if (type === EMessageType.contact_card) {
         const msg = appendBaseMessage(EMessageType.contact_card);

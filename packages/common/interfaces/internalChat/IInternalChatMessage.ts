@@ -4,6 +4,7 @@ import {
   AudioMessageChat,
   DocumentMessageChat,
   ImageMessageChat,
+  LinkPreview,
   LocationMessageChat,
   MessageVersion,
   VideoMessageChat,
@@ -18,6 +19,7 @@ export interface IInternalChatMessageContent {
   type: EMessageType;
   message?: string | null;
   message_quoted_id?: string | null;
+  link_preview?: LinkPreview | null;
   quoted?: IQuotedMessage | null;
   image?: ImageMessageChat | null;
   video?: VideoMessageChat | null;

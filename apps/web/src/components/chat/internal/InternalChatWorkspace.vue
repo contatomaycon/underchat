@@ -15,9 +15,14 @@ import axios from '@webcore/axios';
 import { useInternalChatStore } from '@/@webcore/stores/internalChat';
 import { useInternalChatSocket } from '@/composables/useInternalChatSocket';
 import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
+import AppContactPicker from '@/components/chat/AppContactPicker.vue';
+import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
+import ChatLocationPicker from '@/components/chat/ChatLocationPicker.vue';
+import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
+import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { can } from '@layouts/plugins/casl';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EInternalChatPermissions } from '@core/common/enums/EPermissions/internalChat';
@@ -31,6 +36,14 @@ import type { ListConversationsResponse } from '@core/schema/internalChat/listCo
 import type { ListUsersResponse } from '@core/schema/internalChat/listUsers/response.schema';
 import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
 import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
+import type { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
+import type {
+  ISelectedAudioPreview,
+  ISelectedContactPreview,
+  ISelectedDocumentPreview,
+  ISelectedPhotoPreview,
+  ISelectedVideoPreview,
+} from '@core/common/interfaces/IChatFilePreview';
 
 type InternalConversation =
   ListConversationsResponse['data']['results'][number];
@@ -96,6 +109,7 @@ const searchQueryDebounced = refDebounced(searchQuery, 350);
 const activeSidebarTab = ref<InternalSidebarTab>('all');
 const loadingSidebarAppend = ref(false);
 const composerText = ref('');
+const composerTextDebounced = refDebounced(composerText, 350);
 const replyMessage = ref<InternalMessage | null>(null);
 const hoveredMessageId = ref<string | null>(null);
 const showReactionPicker = ref<string | null>(null);
@@ -105,10 +119,21 @@ const ignoreReactionOutsideOnce = ref(false);
 const showScrollToBottom = ref(false);
 const shouldAutoScrollMessages = ref(true);
 
-const selectedImages = ref<File[]>([]);
-const selectedVideos = ref<File[]>([]);
-const selectedDocuments = ref<File[]>([]);
-const selectedAudios = ref<File[]>([]);
+const selectedImages = ref<ISelectedPhotoPreview[]>([]);
+const selectedVideos = ref<ISelectedVideoPreview[]>([]);
+const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
+const selectedAudios = ref<ISelectedAudioPreview[]>([]);
+const selectedContacts = ref<ISelectedContactPreview[]>([]);
+const selectedLocation = ref<{
+  latitude: number;
+  longitude: number;
+  name?: string | null;
+  address?: string | null;
+} | null>(null);
+const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
+const isLoadingLinkPreview = ref(false);
+const isContactPickerOpen = ref(false);
+const isLocationPickerOpen = ref(false);
 
 const imageInputRef = ref<HTMLInputElement | null>(null);
 const videoInputRef = ref<HTMLInputElement | null>(null);
@@ -180,16 +205,6 @@ const addingGroupMemberUserIds = ref<string[]>([]);
 const removingGroupMemberUserIds = ref<string[]>([]);
 const transferringLeaderUserIds = ref<string[]>([]);
 
-const isLocationDialogOpen = ref(false);
-const locationLatitude = ref<string>('');
-const locationLongitude = ref<string>('');
-const locationName = ref<string>('');
-const locationAddress = ref<string>('');
-
-const isContactDialogOpen = ref(false);
-const contactName = ref('');
-const contactPhone = ref('');
-
 const isRecordingAudio = ref(false);
 const recordingStarting = ref(false);
 const mediaRecorderRef = ref<MediaRecorder | null>(null);
@@ -210,6 +225,11 @@ const allowedGroupPhotoTypes = [
 const allowedGroupPhotoExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 const maxGroupPhotoBytes = 16 * 1024 * 1024;
 const groupNameMaxLength = 255;
+const maxComposerFiles = 10;
+const maxDocumentSizeBytes = 100 * 1024 * 1024;
+const maxImageSizeBytes = 16 * 1024 * 1024;
+const maxVideoSizeBytes = 100 * 1024 * 1024;
+const maxAudioSizeBytes = 16 * 1024 * 1024;
 const sidebarInitialSkeletonItems = [1, 2, 3, 4];
 const sidebarAppendSkeletonItems = [1, 2];
 const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -512,7 +532,9 @@ const hasAnyAttachment = computed(() => {
     selectedImages.value.length > 0 ||
     selectedVideos.value.length > 0 ||
     selectedDocuments.value.length > 0 ||
-    selectedAudios.value.length > 0
+    selectedAudios.value.length > 0 ||
+    selectedContacts.value.length > 0 ||
+    selectedLocation.value !== null
   );
 });
 
@@ -737,6 +759,41 @@ const shouldShowDownload = (message: InternalMessage): boolean => {
   return !isDeletedMessage(message) && Boolean(resolveDownloadTarget(message));
 };
 
+const resolveMessageLocalState = (message: InternalMessage) => {
+  return message.hash
+    ? internalChatStore.localMessageState[message.hash]
+    : null;
+};
+
+const resolveMessageUploadProgress = (message: InternalMessage): number => {
+  return resolveMessageLocalState(message)?.progress ?? 0;
+};
+
+const hasMessageUploadError = (message: InternalMessage): boolean => {
+  return resolveMessageLocalState(message)?.status === 'error';
+};
+
+const resolveLocationHref = (
+  location?: InternalMessage['content']['location'] | null
+): string => {
+  if (!location) return '#';
+  return `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
+};
+
+const resolveLocationTitle = (
+  location?: InternalMessage['content']['location'] | null
+): string => {
+  return (
+    location?.name || location?.address || t('internal_chat_location_fallback')
+  );
+};
+
+const resolveMessageContacts = (message: InternalMessage) => {
+  if (message.content?.contacts?.length) return message.content.contacts;
+  if (message.content?.contact) return [message.content.contact];
+  return [];
+};
+
 const resolveQuotedText = (message: InternalMessage): string => {
   const quoted = message.content?.quoted;
   if (quoted?.message) return String(quoted.message);
@@ -804,14 +861,26 @@ const getReactionsSummary = (
   });
 };
 
-const clearComposer = () => {
+const clearComposer = (revokeObjectUrls = true) => {
   composerText.value = '';
   replyMessage.value = null;
   isComposerEmojiOpen.value = false;
+  linkPreview.value = null;
+  isLoadingLinkPreview.value = false;
+  if (revokeObjectUrls) {
+    for (const video of selectedVideos.value) {
+      if (video.preview.startsWith('blob:')) URL.revokeObjectURL(video.preview);
+    }
+    for (const audio of selectedAudios.value) {
+      if (audio.preview.startsWith('blob:')) URL.revokeObjectURL(audio.preview);
+    }
+  }
   selectedImages.value = [];
   selectedVideos.value = [];
   selectedDocuments.value = [];
   selectedAudios.value = [];
+  selectedContacts.value = [];
+  selectedLocation.value = null;
 };
 
 const revokeGroupPhotoPreview = () => {
@@ -1322,7 +1391,7 @@ const getMessageScrollElement = (): HTMLElement | null => {
   if (!root) return null;
   if (root.classList.contains('ps')) return root;
 
-  return root.querySelector<HTMLElement>('.ps') ?? root;
+  return (root.querySelector('.ps') as HTMLElement | null) ?? root;
 };
 
 const updateMessageScrollbar = async () => {
@@ -1743,12 +1812,98 @@ const confirmCloseActiveConversation = async () => {
   }
 };
 
+const createMessageHash = () => crypto.randomUUID();
+
+const cloneLinkPreview = (): ViewLinkPreviewResponse | null => {
+  return linkPreview.value ? structuredClone(linkPreview.value) : null;
+};
+
+const getQuotedLocalPayload = (
+  message?: InternalMessage | null
+): Record<string, unknown> | undefined => {
+  if (!message) return undefined;
+
+  return {
+    message: resolveMessageText(message),
+    user_name: message.user?.name ?? t('internal_chat_system_user'),
+    type: message.content?.type,
+    image: message.content?.image ?? null,
+    video: message.content?.video ?? null,
+    document: message.content?.document ?? null,
+    audio: message.content?.audio ?? null,
+    location: message.content?.location ?? null,
+    contact: message.content?.contact ?? null,
+    contacts: message.content?.contacts ?? null,
+  };
+};
+
+const createLocalMessageEntry = (
+  content: InternalMessage['content'],
+  hash: string
+): InternalMessage => {
+  const userInfo = user.value?.info;
+
+  return {
+    message_id: hash,
+    conversation_id: activeConversation.value?.conversation_id ?? '',
+    account_id: activeConversation.value?.account_id ?? '',
+    type_user: 'operator',
+    user: userInfo
+      ? {
+          id: user.value?.user_id ?? userInfo.user_info_id,
+          name: userInfo.name,
+          photo: userInfo.photo ?? null,
+        }
+      : null,
+    content,
+    hash,
+    date: new Date().toISOString(),
+    deleted: false,
+  } as InternalMessage;
+};
+
+const registerLocalMessage = async (
+  content: InternalMessage['content'],
+  hash: string
+) => {
+  internalChatStore.initializeLocalMessageState(hash);
+  internalChatStore.upsertMessage(createLocalMessageEntry(content, hash));
+  await nextTick();
+  scrollMessagesToBottom();
+};
+
+const markUploadProgress = (hash: string, progress: number) => {
+  internalChatStore.updateLocalMessageProgress(hash, progress);
+};
+
+const markUploadError = (hash: string) => {
+  internalChatStore.markLocalMessageError(
+    hash,
+    t('internal_chat_send_message_error')
+  );
+};
+
+const buildMessageBaseContent = (
+  type: EMessageType,
+  message: string | null,
+  messageQuotedId: string | null,
+  quoted: Record<string, unknown> | undefined
+): InternalMessage['content'] => {
+  return {
+    type,
+    message: message || null,
+    message_quoted_id: messageQuotedId || null,
+    quoted: (quoted as any) ?? null,
+  };
+};
+
 const createMultipartPayload = (input: {
   type: EMessageType;
   field: 'images' | 'videos' | 'documents' | 'audios';
-  files: File[];
+  file: File;
   message?: string | null;
   messageQuotedId?: string | null;
+  hash: string;
 }): FormData => {
   const formData = new FormData();
   formData.append('type', input.type);
@@ -1761,9 +1916,8 @@ const createMultipartPayload = (input: {
     formData.append('message_quoted_id', input.messageQuotedId);
   }
 
-  for (const file of input.files) {
-    formData.append(input.field, file);
-  }
+  formData.append(input.field, input.file);
+  formData.append('hash', input.hash);
 
   return formData;
 };
@@ -1776,172 +1930,924 @@ const sendMessage = async () => {
   const conversationId = activeConversation.value.conversation_id;
   const message = composerText.value.trim();
   const messageQuotedId = replyMessage.value?.message_id ?? null;
-  let hasSendFailure = false;
+  const quoted = getQuotedLocalPayload(replyMessage.value);
+  const savedImages = [...selectedImages.value];
+  const savedVideos = [...selectedVideos.value];
+  const savedDocuments = [...selectedDocuments.value];
+  const savedAudios = [...selectedAudios.value];
+  const savedContacts = [...selectedContacts.value];
+  const savedLocation = selectedLocation.value;
+  const savedLinkPreview = cloneLinkPreview();
 
-  const sendPayload = async (payload: FormData | Record<string, unknown>) => {
+  clearComposer(false);
+
+  const sendPayload = async (
+    payload: FormData | Record<string, unknown>,
+    hash: string,
+    withProgress = false
+  ) => {
     const success = await internalChatStore.createMessage(
       conversationId,
-      payload as any
+      payload as any,
+      {
+        skipLoading: true,
+        onUploadProgress: withProgress
+          ? (progress) => markUploadProgress(hash, progress)
+          : undefined,
+      }
     );
     if (!success) {
-      hasSendFailure = true;
+      markUploadError(hash);
+      return;
     }
+    internalChatStore.clearLocalMessageState(hash);
   };
 
-  if (selectedImages.value.length > 0) {
+  for (const image of savedImages) {
+    const hash = createMessageHash();
+    await registerLocalMessage(
+      {
+        ...buildMessageBaseContent(
+          EMessageType.image,
+          message || null,
+          messageQuotedId,
+          quoted
+        ),
+        image: {
+          url: image.preview,
+          caption: message || null,
+          mimetype: image.file.type,
+          extension: image.file.name.split('.').pop()?.toLowerCase() || null,
+          size: image.file.size,
+        } as any,
+      },
+      hash
+    );
     await sendPayload(
       createMultipartPayload({
         type: EMessageType.image,
         field: 'images',
-        files: selectedImages.value,
+        file: image.file,
         message,
         messageQuotedId,
-      })
+        hash,
+      }),
+      hash,
+      true
     );
   }
 
-  if (selectedVideos.value.length > 0) {
+  for (const video of savedVideos) {
+    const hash = createMessageHash();
+    await registerLocalMessage(
+      {
+        ...buildMessageBaseContent(
+          EMessageType.video,
+          message || null,
+          messageQuotedId,
+          quoted
+        ),
+        video: {
+          url: video.preview,
+          caption: message || null,
+          name: video.name,
+          mimetype: video.type,
+          extension: video.name.split('.').pop()?.toLowerCase() || null,
+          size: video.size,
+          duration: video.duration ?? null,
+        } as any,
+      },
+      hash
+    );
     await sendPayload(
       createMultipartPayload({
         type: EMessageType.video,
         field: 'videos',
-        files: selectedVideos.value,
+        file: video.file,
         message,
         messageQuotedId,
-      })
+        hash,
+      }),
+      hash,
+      true
     );
   }
 
-  if (selectedDocuments.value.length > 0) {
+  for (const document of savedDocuments) {
+    const hash = createMessageHash();
+    const localUrl = URL.createObjectURL(document.file);
+    await registerLocalMessage(
+      {
+        ...buildMessageBaseContent(
+          EMessageType.document,
+          message || null,
+          messageQuotedId,
+          quoted
+        ),
+        document: {
+          url: localUrl,
+          name: document.name,
+          mimetype: document.type,
+          extension: document.extension,
+          size: document.size,
+        } as any,
+      },
+      hash
+    );
     await sendPayload(
       createMultipartPayload({
         type: EMessageType.document,
         field: 'documents',
-        files: selectedDocuments.value,
+        file: document.file,
         message,
         messageQuotedId,
-      })
+        hash,
+      }),
+      hash,
+      true
     );
   }
 
-  if (selectedAudios.value.length > 0) {
+  for (const audio of savedAudios) {
+    const hash = createMessageHash();
+    await registerLocalMessage(
+      {
+        ...buildMessageBaseContent(
+          EMessageType.audio,
+          null,
+          messageQuotedId,
+          quoted
+        ),
+        audio: {
+          url: audio.preview,
+          name: audio.name,
+          mimetype: audio.type,
+          extension: audio.name.split('.').pop()?.toLowerCase() || null,
+          size: audio.size,
+          duration: audio.duration ?? null,
+        } as any,
+      },
+      hash
+    );
     await sendPayload(
       createMultipartPayload({
         type: EMessageType.audio,
         field: 'audios',
-        files: selectedAudios.value,
-        message,
+        file: audio.file,
         messageQuotedId,
-      })
+        hash,
+      }),
+      hash,
+      true
     );
   }
 
-  if (!hasAnyAttachment.value && message.length > 0) {
+  for (const contact of savedContacts) {
+    const hash = createMessageHash();
+    await registerLocalMessage(
+      {
+        ...buildMessageBaseContent(
+          EMessageType.contact_card,
+          message || null,
+          messageQuotedId,
+          quoted
+        ),
+        contact: {
+          contact_id: contact.contact_id,
+          name: contact.name,
+          last_name: contact.last_name ?? null,
+          phone: contact.phone_partial ?? null,
+          phone_partial: contact.phone_partial ?? null,
+          email_partial: contact.email_partial ?? null,
+          photo: contact.photo ?? null,
+        },
+      },
+      hash
+    );
+    await sendPayload(
+      {
+        type: EMessageType.contact_card,
+        message: message || undefined,
+        contacts: [contact.contact_id],
+        message_quoted_id: messageQuotedId,
+        hash,
+      },
+      hash
+    );
+  }
+
+  if (savedLocation) {
+    const hash = createMessageHash();
+    await registerLocalMessage(
+      {
+        ...buildMessageBaseContent(
+          EMessageType.location,
+          message || null,
+          messageQuotedId,
+          quoted
+        ),
+        location: savedLocation as any,
+      },
+      hash
+    );
+    await sendPayload(
+      {
+        type: EMessageType.location,
+        message: message || undefined,
+        location_latitude: savedLocation.latitude,
+        location_longitude: savedLocation.longitude,
+        location_name: savedLocation.name ?? null,
+        location_address: savedLocation.address ?? null,
+        message_quoted_id: messageQuotedId,
+        hash,
+      },
+      hash
+    );
+  }
+
+  if (
+    savedImages.length === 0 &&
+    savedVideos.length === 0 &&
+    savedDocuments.length === 0 &&
+    savedAudios.length === 0 &&
+    savedContacts.length === 0 &&
+    !savedLocation &&
+    message.length > 0
+  ) {
+    const hash = createMessageHash();
+    await registerLocalMessage(
+      {
+        ...buildMessageBaseContent(
+          EMessageType.text,
+          message,
+          messageQuotedId,
+          quoted
+        ),
+        link_preview: savedLinkPreview,
+      },
+      hash
+    );
+    await sendPayload(
+      {
+        type: EMessageType.text,
+        message,
+        message_quoted_id: messageQuotedId,
+        link_preview: savedLinkPreview?.title ? savedLinkPreview : undefined,
+        hash,
+      },
+      hash
+    );
+  }
+
+  void internalChatStore.publishActivity(
+    conversationId,
+    EInternalChatActivityState.available
+  );
+};
+
+const retryLocalMessage = async (message: InternalMessage) => {
+  if (!activeConversation.value?.conversation_id || !message.hash) return;
+  if (!hasMessageUploadError(message)) return;
+
+  const conversationId = activeConversation.value.conversation_id;
+  const hash = message.hash;
+  const content = message.content;
+  const retryMessageType = content.type as EMessageType;
+  const messageText = content.message ?? null;
+  const quotedId = content.message_quoted_id ?? null;
+
+  internalChatStore.initializeLocalMessageState(hash);
+
+  const sendPayload = async (
+    payload: FormData | Record<string, unknown>,
+    withProgress = false
+  ) => {
+    const success = await internalChatStore.createMessage(
+      conversationId,
+      payload as any,
+      {
+        skipLoading: true,
+        onUploadProgress: withProgress
+          ? (progress) => markUploadProgress(hash, progress)
+          : undefined,
+      }
+    );
+    if (!success) {
+      markUploadError(hash);
+      return;
+    }
+    internalChatStore.clearLocalMessageState(hash);
+  };
+
+  if (content.type === EMessageType.text) {
     await sendPayload({
       type: EMessageType.text,
-      message,
-      message_quoted_id: messageQuotedId,
+      message: messageText,
+      message_quoted_id: quotedId,
+      link_preview: content.link_preview ?? undefined,
+      hash,
+    });
+    return;
+  }
+
+  if (content.type === EMessageType.location && content.location) {
+    await sendPayload({
+      type: EMessageType.location,
+      message: messageText ?? undefined,
+      message_quoted_id: quotedId,
+      location_latitude: content.location.latitude,
+      location_longitude: content.location.longitude,
+      location_name: content.location.name ?? null,
+      location_address: content.location.address ?? null,
+      hash,
+    });
+    return;
+  }
+
+  if (
+    content.type === EMessageType.contact_card &&
+    content.contact?.contact_id
+  ) {
+    await sendPayload({
+      type: EMessageType.contact_card,
+      message: messageText ?? undefined,
+      message_quoted_id: quotedId,
+      contacts: [content.contact.contact_id],
+      hash,
+    });
+    return;
+  }
+
+  const media =
+    content.image || content.video || content.audio || content.document || null;
+  if (!media?.url) {
+    markUploadError(hash);
+    return;
+  }
+
+  try {
+    const response = await fetch(media.url);
+    const blob = await response.blob();
+    const fileName =
+      'name' in media && media.name
+        ? media.name
+        : `${retryMessageType}.${'extension' in media && media.extension ? media.extension : 'bin'}`;
+    const file = new File([blob], fileName, {
+      type: 'mimetype' in media && media.mimetype ? media.mimetype : blob.type,
+    });
+
+    const fieldByType: Partial<
+      Record<EMessageType, 'images' | 'videos' | 'documents' | 'audios'>
+    > = {
+      [EMessageType.image]: 'images',
+      [EMessageType.video]: 'videos',
+      [EMessageType.document]: 'documents',
+      [EMessageType.audio]: 'audios',
+    };
+    const field = fieldByType[retryMessageType];
+    if (!field) {
+      markUploadError(hash);
+      return;
+    }
+
+    await sendPayload(
+      createMultipartPayload({
+        type: retryMessageType,
+        field,
+        file,
+        message: messageText,
+        messageQuotedId: quotedId,
+        hash,
+      }),
+      true
+    );
+  } catch {
+    markUploadError(hash);
+  }
+};
+
+const removeImage = (index: number) => {
+  selectedImages.value.splice(index, 1);
+};
+
+const removeVideo = (index: number) => {
+  const video = selectedVideos.value[index];
+  if (video?.preview.startsWith('blob:')) {
+    URL.revokeObjectURL(video.preview);
+  }
+  selectedVideos.value.splice(index, 1);
+};
+
+const removeDocument = (index: number) => {
+  selectedDocuments.value.splice(index, 1);
+};
+
+const removeAudio = (index: number) => {
+  const audio = selectedAudios.value[index];
+  if (audio?.preview.startsWith('blob:')) {
+    URL.revokeObjectURL(audio.preview);
+  }
+  selectedAudios.value.splice(index, 1);
+};
+
+const removeContact = (index: number) => {
+  selectedContacts.value.splice(index, 1);
+};
+
+const clearSelectedImages = () => {
+  selectedImages.value = [];
+};
+
+const clearSelectedVideos = () => {
+  for (const video of selectedVideos.value) {
+    if (video.preview.startsWith('blob:')) URL.revokeObjectURL(video.preview);
+  }
+  selectedVideos.value = [];
+};
+
+const clearSelectedDocuments = () => {
+  selectedDocuments.value = [];
+};
+
+const clearSelectedAudios = () => {
+  for (const audio of selectedAudios.value) {
+    if (audio.preview.startsWith('blob:')) URL.revokeObjectURL(audio.preview);
+  }
+  selectedAudios.value = [];
+};
+
+const clearSelectedContacts = () => {
+  selectedContacts.value = [];
+};
+
+const validateAttachmentMix = (
+  kind: 'image' | 'video' | 'document' | 'audio'
+): boolean => {
+  if (kind === 'image' && selectedVideos.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_videos_before_images'),
+      EColor.warning
+    );
+    return false;
+  }
+  if (kind === 'image' && selectedDocuments.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_documents_before_images'),
+      EColor.warning
+    );
+    return false;
+  }
+  if (kind === 'video' && selectedImages.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_images_before_videos'),
+      EColor.warning
+    );
+    return false;
+  }
+  if (kind === 'video' && selectedDocuments.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_documents_before_videos'),
+      EColor.warning
+    );
+    return false;
+  }
+  if (kind === 'document' && selectedImages.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_images_before_documents'),
+      EColor.warning
+    );
+    return false;
+  }
+  if (kind === 'document' && selectedVideos.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_videos_before_documents'),
+      EColor.warning
+    );
+    return false;
+  }
+  if (kind === 'audio' && selectedImages.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_images_before_audios'),
+      EColor.warning
+    );
+    return false;
+  }
+  if (kind === 'audio' && selectedVideos.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_videos_before_audios'),
+      EColor.warning
+    );
+    return false;
+  }
+  if (kind === 'audio' && selectedDocuments.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_documents_before_audios'),
+      EColor.warning
+    );
+    return false;
+  }
+  if (kind !== 'audio' && selectedAudios.value.length > 0) {
+    internalChatStore.showSnackbar(
+      t('clear_audios_before_attachments'),
+      EColor.warning
+    );
+    return false;
+  }
+  return true;
+};
+
+const getVideoDuration = (src: string): Promise<number | null> =>
+  new Promise((resolve) => {
+    const videoEl = document.createElement('video');
+    const clean = () => {
+      videoEl.removeAttribute('src');
+      videoEl.load();
+      videoEl.remove();
+    };
+    videoEl.preload = 'metadata';
+    videoEl.muted = true;
+    videoEl.onloadedmetadata = () => {
+      const duration = Number.isFinite(videoEl.duration)
+        ? videoEl.duration
+        : null;
+      clean();
+      resolve(duration);
+    };
+    videoEl.onerror = () => {
+      clean();
+      resolve(null);
+    };
+    videoEl.src = src;
+  });
+
+const getAudioDuration = (src: string): Promise<number | null> =>
+  new Promise((resolve) => {
+    const audioEl = document.createElement('audio');
+    const clean = () => {
+      audioEl.removeAttribute('src');
+      audioEl.load();
+      audioEl.remove();
+    };
+    audioEl.preload = 'metadata';
+    audioEl.onloadedmetadata = () => {
+      const duration = Number.isFinite(audioEl.duration)
+        ? audioEl.duration
+        : null;
+      clean();
+      resolve(duration);
+    };
+    audioEl.onerror = () => {
+      clean();
+      resolve(null);
+    };
+    audioEl.src = src;
+  });
+
+const formatAttachmentDuration = (seconds: number | null): string => {
+  if (!seconds) return '00:00';
+  const totalSeconds = Math.floor(seconds);
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, '0');
+  const remainingSeconds = (totalSeconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${remainingSeconds}`;
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const exponent = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1
+  );
+  const value = bytes / Math.pow(1024, exponent);
+  return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${units[exponent]}`;
+};
+
+const truncateFileName = (name: string, max = 32): string => {
+  if (name.length <= max) return name;
+  const extensionIndex = name.lastIndexOf('.');
+  if (extensionIndex === -1) return `${name.slice(0, max - 3)}...`;
+  const extension = name.slice(extensionIndex);
+  return `${name.slice(0, max - extension.length - 3)}...${extension}`;
+};
+
+const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
+  const existingIds = new Set(
+    selectedContacts.value.map((item) => item.contact_id)
+  );
+  selectedContacts.value = [
+    ...selectedContacts.value,
+    ...contacts.filter((contact) => !existingIds.has(contact.contact_id)),
+  ].slice(0, maxComposerFiles);
+};
+
+const onLocationSelected = (location: {
+  latitude: number;
+  longitude: number;
+  name?: string | null;
+  address?: string | null;
+}) => {
+  selectedLocation.value = location;
+};
+
+const onImagesSelected = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const files = Array.from(target.files ?? []);
+  if (!files.length || !validateAttachmentMix('image')) {
+    target.value = '';
+    return;
+  }
+
+  const allowedTypes = new Set([
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+  ]);
+  const allowedExtensions = new Set(['jpg', 'jpeg', 'png', 'gif']);
+  const validImages = files.filter((file) => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      (allowedTypes.has(file.type) ||
+        Boolean(extension && allowedExtensions.has(extension))) &&
+      file.size <= maxImageSizeBytes
+    );
+  });
+  if (validImages.length !== files.length) {
+    internalChatStore.showSnackbar(t('invalid_image_format'), EColor.error);
+  }
+  for (const file of validImages.slice(
+    0,
+    maxComposerFiles - selectedImages.value.length
+  )) {
+    await new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          selectedImages.value.push({
+            file,
+            preview: event.target.result as string,
+          });
+        }
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
     });
   }
-
-  if (!hasSendFailure) {
-    clearComposer();
-    void internalChatStore.publishActivity(
-      conversationId,
-      EInternalChatActivityState.available
-    );
-  }
-};
-
-const sendLocationMessage = async () => {
-  if (!activeConversation.value?.conversation_id) return;
-  if (!locationLatitude.value || !locationLongitude.value) return;
-
-  const success = await internalChatStore.createMessage(
-    activeConversation.value.conversation_id,
-    {
-      type: EMessageType.location,
-      location_latitude: locationLatitude.value,
-      location_longitude: locationLongitude.value,
-      location_name: locationName.value || null,
-      location_address: locationAddress.value || null,
-      message_quoted_id: replyMessage.value?.message_id ?? null,
-    }
-  );
-
-  if (!success) return;
-
-  isLocationDialogOpen.value = false;
-  locationLatitude.value = '';
-  locationLongitude.value = '';
-  locationName.value = '';
-  locationAddress.value = '';
-  replyMessage.value = null;
-};
-
-const sendContactMessage = async () => {
-  if (!activeConversation.value?.conversation_id) return;
-  if (!contactPhone.value.trim()) return;
-
-  const normalized = `${contactName.value.trim() || t('internal_chat_contact')} (${contactPhone.value.trim()})`;
-  const success = await internalChatStore.createMessage(
-    activeConversation.value.conversation_id,
-    {
-      type: EMessageType.contact_card,
-      contacts: [normalized],
-      message_quoted_id: replyMessage.value?.message_id ?? null,
-    }
-  );
-
-  if (!success) return;
-
-  isContactDialogOpen.value = false;
-  contactName.value = '';
-  contactPhone.value = '';
-  replyMessage.value = null;
-};
-
-const removeFileAtIndex = (files: File[], index: number) => {
-  if (index < 0 || index >= files.length) return;
-  files.splice(index, 1);
-};
-
-const appendSelectedFiles = (
-  filesRef: typeof selectedImages,
-  files: FileList | null
-) => {
-  if (!files || files.length === 0) return;
-
-  const next = [...filesRef.value];
-  for (const file of Array.from(files)) {
-    if (next.length >= 10) break;
-    next.push(file);
-  }
-  filesRef.value = next;
-};
-
-const onImagesSelected = (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  appendSelectedFiles(selectedImages, target.files);
   target.value = '';
 };
 
-const onVideosSelected = (event: Event) => {
+const onVideosSelected = async (event: Event) => {
   const target = event.target as HTMLInputElement;
-  appendSelectedFiles(selectedVideos, target.files);
+  const files = Array.from(target.files ?? []);
+  if (!files.length || !validateAttachmentMix('video')) {
+    target.value = '';
+    return;
+  }
+
+  const allowedTypes = new Set([
+    'video/mp4',
+    'video/avi',
+    'video/x-flv',
+    'video/x-matroska',
+    'video/quicktime',
+    'video/3gpp',
+  ]);
+  const allowedExtensions = new Set(['mp4', 'avi', 'flv', 'mkv', 'mov', '3gp']);
+  const validVideos = files.filter((file) => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      (allowedTypes.has(file.type) ||
+        Boolean(extension && allowedExtensions.has(extension))) &&
+      file.size <= maxVideoSizeBytes
+    );
+  });
+  if (validVideos.length !== files.length) {
+    internalChatStore.showSnackbar(t('invalid_video_format'), EColor.error);
+  }
+  for (const file of validVideos.slice(
+    0,
+    maxComposerFiles - selectedVideos.value.length
+  )) {
+    const preview = URL.createObjectURL(file);
+    selectedVideos.value.push({
+      file,
+      preview,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      duration: await getVideoDuration(preview),
+    });
+  }
   target.value = '';
 };
 
 const onDocumentsSelected = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  appendSelectedFiles(selectedDocuments, target.files);
+  const files = Array.from(target.files ?? []);
+  if (!files.length || !validateAttachmentMix('document')) {
+    target.value = '';
+    return;
+  }
+
+  const validDocuments = files.filter(
+    (file) => file.size <= maxDocumentSizeBytes
+  );
+  if (validDocuments.length !== files.length) {
+    internalChatStore.showSnackbar(t('document_size_exceeded'), EColor.error);
+  }
+  for (const file of validDocuments.slice(
+    0,
+    maxComposerFiles - selectedDocuments.value.length
+  )) {
+    selectedDocuments.value.push({
+      file,
+      name: file.name,
+      size: file.size,
+      extension: file.name.split('.').pop()?.toLowerCase() || '',
+      type: file.type,
+    });
+  }
   target.value = '';
 };
 
-const onAudiosSelected = (event: Event) => {
+const onAudiosSelected = async (event: Event) => {
   const target = event.target as HTMLInputElement;
-  appendSelectedFiles(selectedAudios, target.files);
+  const files = Array.from(target.files ?? []);
+  if (!files.length || !validateAttachmentMix('audio')) {
+    target.value = '';
+    return;
+  }
+
+  const allowedTypes = new Set([
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/aac',
+    'audio/m4a',
+    'audio/x-m4a',
+    'audio/amr',
+    'audio/amr-wb',
+    'audio/ogg',
+    'audio/opus',
+  ]);
+  const allowedExtensions = new Set([
+    'mp3',
+    'aac',
+    'm4a',
+    'amr',
+    'ogg',
+    'opus',
+    'webm',
+  ]);
+  const validAudios = files.filter((file) => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    return (
+      (allowedTypes.has(file.type) ||
+        Boolean(extension && allowedExtensions.has(extension))) &&
+      file.size <= maxAudioSizeBytes
+    );
+  });
+  if (validAudios.length !== files.length) {
+    internalChatStore.showSnackbar(t('invalid_audio_format'), EColor.error);
+  }
+  for (const file of validAudios.slice(
+    0,
+    maxComposerFiles - selectedAudios.value.length
+  )) {
+    const preview = URL.createObjectURL(file);
+    selectedAudios.value.push({
+      file,
+      preview,
+      name: file.name,
+      size: file.size,
+      type: file.type || 'audio/webm',
+      duration: await getAudioDuration(preview),
+    });
+  }
   target.value = '';
+};
+
+const processPastedFile = async (file: File) => {
+  const extension = file.name.split('.').pop()?.toLowerCase() || '';
+
+  if (
+    file.type.startsWith('image/') ||
+    ['jpg', 'jpeg', 'png', 'gif'].includes(extension)
+  ) {
+    if (!validateAttachmentMix('image')) return;
+    if (file.size > maxImageSizeBytes) {
+      internalChatStore.showSnackbar(t('image_size_exceeded'), EColor.error);
+      return;
+    }
+    if (selectedImages.value.length >= maxComposerFiles) {
+      internalChatStore.showSnackbar(t('max_images_selected'), EColor.warning);
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          selectedImages.value.push({
+            file,
+            preview: event.target.result as string,
+          });
+        }
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+    return;
+  }
+
+  if (
+    file.type.startsWith('video/') ||
+    ['mp4', 'avi', 'flv', 'mkv', 'mov', '3gp'].includes(extension)
+  ) {
+    if (!validateAttachmentMix('video')) return;
+    if (file.size > maxVideoSizeBytes) {
+      internalChatStore.showSnackbar(t('video_size_exceeded'), EColor.error);
+      return;
+    }
+    if (selectedVideos.value.length >= maxComposerFiles) {
+      internalChatStore.showSnackbar(t('max_videos_selected'), EColor.warning);
+      return;
+    }
+    const preview = URL.createObjectURL(file);
+    selectedVideos.value.push({
+      file,
+      preview,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      duration: await getVideoDuration(preview),
+    });
+    return;
+  }
+
+  if (
+    file.type.startsWith('audio/') ||
+    ['mp3', 'aac', 'm4a', 'amr', 'ogg', 'opus', 'webm'].includes(extension)
+  ) {
+    if (!validateAttachmentMix('audio')) return;
+    if (file.size > maxAudioSizeBytes) {
+      internalChatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
+      return;
+    }
+    if (selectedAudios.value.length >= maxComposerFiles) {
+      internalChatStore.showSnackbar(t('max_audios_selected'), EColor.warning);
+      return;
+    }
+    const preview = URL.createObjectURL(file);
+    selectedAudios.value.push({
+      file,
+      preview,
+      name: file.name,
+      size: file.size,
+      type: file.type || 'audio/webm',
+      duration: await getAudioDuration(preview),
+    });
+    return;
+  }
+
+  if (!validateAttachmentMix('document')) return;
+  if (file.size > maxDocumentSizeBytes) {
+    internalChatStore.showSnackbar(t('document_size_exceeded'), EColor.error);
+    return;
+  }
+  if (selectedDocuments.value.length >= maxComposerFiles) {
+    internalChatStore.showSnackbar(t('max_documents_selected'), EColor.warning);
+    return;
+  }
+  selectedDocuments.value.push({
+    file,
+    name: file.name,
+    size: file.size,
+    extension,
+    type: file.type,
+  });
+};
+
+const handlePaste = async (event: ClipboardEvent) => {
+  const items = event.clipboardData?.items;
+  if (!items) return;
+
+  const files: File[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (item.kind !== 'file') continue;
+    const file = item.getAsFile();
+    if (file) files.push(file);
+  }
+
+  if (files.length === 0) return;
+  event.preventDefault();
+
+  for (const file of files) {
+    await processPastedFile(file);
+  }
 };
 
 const startAudioRecording = async () => {
@@ -1978,7 +2884,15 @@ const startAudioRecording = async () => {
         const file = new File([blob], `audio-${Date.now()}.webm`, {
           type: 'audio/webm',
         });
-        selectedAudios.value.push(file);
+        const preview = URL.createObjectURL(file);
+        selectedAudios.value.push({
+          file,
+          preview,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          duration: Math.floor(recordingDurationMs.value / 1000),
+        });
       }
 
       audioChunksRef.value = [];
@@ -2181,7 +3095,10 @@ const onEdit = async (message: InternalMessage) => {
   if (!canEditInternalMessage(message)) return;
 
   const nextText = window
-    .prompt(t('internal_chat_edit_message_prompt'), message.content.message ?? '')
+    .prompt(
+      t('internal_chat_edit_message_prompt'),
+      message.content.message ?? ''
+    )
     ?.trim();
 
   if (!nextText) return;
@@ -2301,6 +3218,37 @@ watch(
     }, 1400);
   }
 );
+
+watch(composerTextDebounced, async (value) => {
+  if (hasAnyAttachment.value) {
+    linkPreview.value = null;
+    isLoadingLinkPreview.value = false;
+    return;
+  }
+
+  const firstUrl = extractFirstUrl(value || '');
+  if (!firstUrl) {
+    linkPreview.value = null;
+    isLoadingLinkPreview.value = false;
+    return;
+  }
+
+  isLoadingLinkPreview.value = true;
+  try {
+    const preview = await internalChatStore.generateLinkPreview({
+      url: firstUrl,
+    });
+    linkPreview.value = preview && preview.title !== 'Error' ? preview : null;
+  } finally {
+    isLoadingLinkPreview.value = false;
+  }
+});
+
+watch(hasAnyAttachment, (hasAttachment) => {
+  if (!hasAttachment) return;
+  linkPreview.value = null;
+  isLoadingLinkPreview.value = false;
+});
 
 watch([searchQueryDebounced, activeSidebarTab], async () => {
   sidebarBodyRef.value?.scrollTo({ top: 0 });
@@ -2829,8 +3777,7 @@ onBeforeUnmount(async () => {
                 <div
                   class="internal-chat-message-bubble"
                   :class="{
-                    'internal-chat-message-bubble--mine':
-                      isOwnMessage(message),
+                    'internal-chat-message-bubble--mine': isOwnMessage(message),
                     'internal-chat-message-bubble--deleted':
                       isDeletedMessage(message),
                     'internal-chat-message-bubble--with-reactions':
@@ -2956,26 +3903,49 @@ onBeforeUnmount(async () => {
                     {{ resolveMessageText(message) }}
                   </div>
 
-                  <img
+                  <div
+                    v-if="message.content?.link_preview"
+                    class="internal-chat-link-preview"
+                  >
+                    <ChatLinkPreview
+                      :preview="message.content.link_preview as any"
+                    />
+                  </div>
+
+                  <div
                     v-if="message.content?.image?.url"
-                    :src="message.content.image.url"
-                    class="internal-chat-media"
-                    :alt="t('internal_chat_image_alt')"
-                  />
+                    class="internal-chat-media-frame"
+                  >
+                    <img
+                      :src="message.content.image.url"
+                      class="internal-chat-media"
+                      :alt="t('internal_chat_image_alt')"
+                    />
+                  </div>
 
-                  <video
+                  <div
                     v-if="message.content?.video?.url"
-                    :src="message.content.video.url"
-                    class="internal-chat-media"
-                    controls
-                  />
+                    class="internal-chat-media-frame"
+                  >
+                    <video
+                      :src="message.content.video.url"
+                      class="internal-chat-media"
+                      controls
+                      playsinline
+                    />
+                  </div>
 
-                  <audio
+                  <div
                     v-if="message.content?.audio?.url"
-                    :src="message.content.audio.url"
-                    controls
-                    class="w-100"
-                  />
+                    class="internal-chat-audio-bubble"
+                  >
+                    <VIcon size="22" color="primary">tabler-headphones</VIcon>
+                    <audio
+                      :src="message.content.audio.url"
+                      controls
+                      class="internal-chat-audio-player"
+                    />
+                  </div>
 
                   <a
                     v-if="message.content?.document?.url"
@@ -2984,40 +3954,95 @@ onBeforeUnmount(async () => {
                     rel="noopener"
                     class="internal-chat-document-link"
                   >
-                    <VIcon size="18">tabler-file</VIcon>
-                    <span class="text-truncate">
-                      {{
-                        message.content.document.name ||
-                        t('internal_chat_document_fallback')
-                      }}
+                    <span class="internal-chat-document-icon">
+                      <VIcon size="22">tabler-file-description</VIcon>
                     </span>
+                    <span class="internal-chat-document-meta">
+                      <span class="internal-chat-document-name">
+                        {{
+                          message.content.document.name ||
+                          t('internal_chat_document_fallback')
+                        }}
+                      </span>
+                      <span class="internal-chat-document-size">
+                        {{
+                          formatFileSize(
+                            Number(message.content.document.size || 0)
+                          )
+                        }}
+                      </span>
+                    </span>
+                    <VIcon size="18">tabler-download</VIcon>
                   </a>
 
                   <a
                     v-if="message.content?.location"
-                    class="d-inline-flex align-center text-decoration-none mt-1"
+                    class="internal-chat-location-card"
                     target="_blank"
                     rel="noopener"
-                    :href="`https://www.google.com/maps?q=${message.content.location.latitude},${message.content.location.longitude}`"
+                    :href="resolveLocationHref(message.content.location)"
                   >
-                    <VIcon size="16" class="me-1">tabler-map-pin</VIcon>
-                    {{
-                      message.content.location.name ||
-                      message.content.location.address ||
-                      t('internal_chat_location_fallback')
-                    }}
+                    <div class="internal-chat-location-map">
+                      <VIcon size="28">tabler-map-pin</VIcon>
+                    </div>
+                    <div class="internal-chat-location-info">
+                      <span class="internal-chat-location-title">
+                        {{ resolveLocationTitle(message.content.location) }}
+                      </span>
+                      <span
+                        v-if="message.content.location.address"
+                        class="internal-chat-location-address"
+                      >
+                        {{ message.content.location.address }}
+                      </span>
+                    </div>
                   </a>
 
                   <div
-                    v-if="message.content?.contact || message.content?.contacts"
-                    class="text-body-2 mt-1"
+                    v-if="resolveMessageContacts(message).length > 0"
+                    class="internal-chat-contact-cards"
                   >
-                    {{
-                      message.content.contact?.name ||
-                      message.content.contacts
-                        ?.map((item) => item.name)
-                        .join(', ')
-                    }}
+                    <GroupContactMessageCard
+                      v-for="contact in resolveMessageContacts(message)"
+                      :key="`${message.message_id}-${contact.contact_id || contact.name}`"
+                      :title="
+                        `${contact.name || t('internal_chat_contact')} ${contact.last_name || ''}`.trim()
+                      "
+                      :time="formatMessageDate(message.date)"
+                      :align="isOwnMessage(message) ? 'right' : 'left'"
+                      :seen="isOwnMessage(message)"
+                      :photo="contact.photo"
+                    />
+                  </div>
+
+                  <div
+                    v-if="resolveMessageLocalState(message)"
+                    class="internal-chat-upload-state"
+                    :class="{
+                      'internal-chat-upload-state--error':
+                        hasMessageUploadError(message),
+                    }"
+                  >
+                    <VProgressLinear
+                      v-if="!hasMessageUploadError(message)"
+                      :model-value="resolveMessageUploadProgress(message)"
+                      height="3"
+                      color="primary"
+                      rounded
+                    />
+                    <span v-else>
+                      {{ t('internal_chat_send_message_error') }}
+                    </span>
+                    <VBtn
+                      v-if="hasMessageUploadError(message)"
+                      size="x-small"
+                      variant="text"
+                      color="error"
+                      class="ms-1"
+                      @click="retryLocalMessage(message)"
+                    >
+                      {{ t('internal_chat_retry_send') }}
+                    </VBtn>
                   </div>
 
                   <div
@@ -3140,7 +4165,9 @@ onBeforeUnmount(async () => {
             <div class="d-flex align-center justify-space-between gap-2">
               <div class="text-truncate">
                 {{ t('internal_chat_replying_to') }}
-                {{ resolveMessageText(replyMessage) || t('internal_chat_message') }}
+                {{
+                  resolveMessageText(replyMessage) || t('internal_chat_message')
+                }}
               </div>
               <IconBtn @click="replyMessage = null">
                 <VIcon size="16">tabler-x</VIcon>
@@ -3148,63 +4175,296 @@ onBeforeUnmount(async () => {
             </div>
           </VAlert>
 
-          <div v-if="hasAnyAttachment" class="d-flex flex-column gap-2 mb-3">
-            <div
+          <ChatLinkPreview
+            v-if="linkPreview || isLoadingLinkPreview"
+            :preview="linkPreview"
+            :loading="isLoadingLinkPreview"
+            class="internal-chat-composer-link-preview"
+            @close="linkPreview = null"
+          />
+
+          <Transition name="fade">
+            <VCard
               v-if="selectedImages.length > 0"
-              class="d-flex align-center flex-wrap gap-2"
+              class="internal-chat-attachment-card mb-3"
             >
-              <VChip
-                v-for="(file, index) in selectedImages"
-                :key="`img-${file.name}-${index}`"
-                closable
-                @click:close="removeFileAtIndex(selectedImages, index)"
-              >
-                {{ file.name }}
-              </VChip>
-            </div>
+              <VCardTitle class="internal-chat-attachment-title">
+                <span
+                  >{{ t('images_selected') }} ({{
+                    selectedImages.length
+                  }}/10)</span
+                >
+                <IconBtn size="small" @click="clearSelectedImages">
+                  <VIcon size="18">tabler-x</VIcon>
+                </IconBtn>
+              </VCardTitle>
+              <VCardText>
+                <div class="internal-chat-attachment-grid">
+                  <div
+                    v-for="(photo, index) in selectedImages"
+                    :key="`${photo.file.name}-${index}`"
+                    class="internal-chat-photo-preview"
+                  >
+                    <VImg
+                      :src="photo.preview"
+                      cover
+                      class="internal-chat-photo-preview-image"
+                    />
+                    <VBtn
+                      icon
+                      size="20"
+                      variant="flat"
+                      color="error"
+                      class="internal-chat-preview-remove"
+                      @click.stop="removeImage(index)"
+                    >
+                      <VIcon size="14">tabler-x</VIcon>
+                    </VBtn>
+                  </div>
+                </div>
+              </VCardText>
+            </VCard>
+          </Transition>
 
-            <div
+          <Transition name="fade">
+            <VCard
               v-if="selectedVideos.length > 0"
-              class="d-flex align-center flex-wrap gap-2"
+              class="internal-chat-attachment-card mb-3"
             >
-              <VChip
-                v-for="(file, index) in selectedVideos"
-                :key="`video-${file.name}-${index}`"
-                closable
-                @click:close="removeFileAtIndex(selectedVideos, index)"
-              >
-                {{ file.name }}
-              </VChip>
-            </div>
+              <VCardTitle class="internal-chat-attachment-title">
+                <span
+                  >{{ t('videos_selected') }} ({{
+                    selectedVideos.length
+                  }}/10)</span
+                >
+                <IconBtn size="small" @click="clearSelectedVideos">
+                  <VIcon size="18">tabler-x</VIcon>
+                </IconBtn>
+              </VCardTitle>
+              <VCardText>
+                <div
+                  class="internal-chat-attachment-grid internal-chat-attachment-grid--wide"
+                >
+                  <div
+                    v-for="(video, index) in selectedVideos"
+                    :key="`${video.name}-${index}`"
+                    class="internal-chat-file-preview"
+                  >
+                    <div class="internal-chat-file-preview-media">
+                      <video
+                        :src="video.preview"
+                        muted
+                        playsinline
+                        preload="metadata"
+                      />
+                      <VIcon size="24">tabler-player-play</VIcon>
+                    </div>
+                    <div class="internal-chat-file-preview-meta">
+                      <span>{{ truncateFileName(video.name) }}</span>
+                      <small>
+                        {{ formatFileSize(video.size) }}
+                        <template v-if="video.duration">
+                          • {{ formatAttachmentDuration(video.duration) }}
+                        </template>
+                      </small>
+                    </div>
+                    <VBtn
+                      icon
+                      size="20"
+                      variant="flat"
+                      color="error"
+                      class="internal-chat-preview-remove"
+                      @click.stop="removeVideo(index)"
+                    >
+                      <VIcon size="14">tabler-x</VIcon>
+                    </VBtn>
+                  </div>
+                </div>
+              </VCardText>
+            </VCard>
+          </Transition>
 
-            <div
+          <Transition name="fade">
+            <VCard
               v-if="selectedDocuments.length > 0"
-              class="d-flex align-center flex-wrap gap-2"
+              class="internal-chat-attachment-card mb-3"
             >
-              <VChip
-                v-for="(file, index) in selectedDocuments"
-                :key="`doc-${file.name}-${index}`"
-                closable
-                @click:close="removeFileAtIndex(selectedDocuments, index)"
-              >
-                {{ file.name }}
-              </VChip>
-            </div>
+              <VCardTitle class="internal-chat-attachment-title">
+                <span
+                  >{{ t('documents_selected') }} ({{
+                    selectedDocuments.length
+                  }}/10)</span
+                >
+                <IconBtn size="small" @click="clearSelectedDocuments">
+                  <VIcon size="18">tabler-x</VIcon>
+                </IconBtn>
+              </VCardTitle>
+              <VCardText>
+                <div
+                  class="internal-chat-attachment-grid internal-chat-attachment-grid--wide"
+                >
+                  <div
+                    v-for="(doc, index) in selectedDocuments"
+                    :key="`${doc.name}-${index}`"
+                    class="internal-chat-file-preview"
+                  >
+                    <div class="internal-chat-file-preview-icon">
+                      <VIcon size="30">tabler-file-description</VIcon>
+                    </div>
+                    <div class="internal-chat-file-preview-meta">
+                      <span>{{ truncateFileName(doc.name) }}</span>
+                      <small
+                        >{{ doc.extension.toUpperCase() }} •
+                        {{ formatFileSize(doc.size) }}</small
+                      >
+                    </div>
+                    <VBtn
+                      icon
+                      size="20"
+                      variant="flat"
+                      color="error"
+                      class="internal-chat-preview-remove"
+                      @click.stop="removeDocument(index)"
+                    >
+                      <VIcon size="14">tabler-x</VIcon>
+                    </VBtn>
+                  </div>
+                </div>
+              </VCardText>
+            </VCard>
+          </Transition>
 
-            <div
+          <Transition name="fade">
+            <VCard
               v-if="selectedAudios.length > 0"
-              class="d-flex align-center flex-wrap gap-2"
+              class="internal-chat-attachment-card mb-3"
             >
-              <VChip
-                v-for="(file, index) in selectedAudios"
-                :key="`audio-${file.name}-${index}`"
-                closable
-                @click:close="removeFileAtIndex(selectedAudios, index)"
-              >
-                {{ file.name }}
-              </VChip>
-            </div>
-          </div>
+              <VCardTitle class="internal-chat-attachment-title">
+                <span
+                  >{{ t('audios_selected') }} ({{
+                    selectedAudios.length
+                  }}/10)</span
+                >
+                <IconBtn size="small" @click="clearSelectedAudios">
+                  <VIcon size="18">tabler-x</VIcon>
+                </IconBtn>
+              </VCardTitle>
+              <VCardText>
+                <div
+                  class="internal-chat-attachment-grid internal-chat-attachment-grid--wide"
+                >
+                  <div
+                    v-for="(audio, index) in selectedAudios"
+                    :key="`${audio.name}-${index}`"
+                    class="internal-chat-file-preview"
+                  >
+                    <div class="internal-chat-file-preview-icon">
+                      <VIcon size="30">tabler-headphones</VIcon>
+                    </div>
+                    <div class="internal-chat-file-preview-meta">
+                      <span>{{ truncateFileName(audio.name) }}</span>
+                      <small>
+                        {{ formatFileSize(audio.size) }}
+                        <template v-if="audio.duration">
+                          • {{ formatAttachmentDuration(audio.duration) }}
+                        </template>
+                      </small>
+                    </div>
+                    <VBtn
+                      icon
+                      size="20"
+                      variant="flat"
+                      color="error"
+                      class="internal-chat-preview-remove"
+                      @click.stop="removeAudio(index)"
+                    >
+                      <VIcon size="14">tabler-x</VIcon>
+                    </VBtn>
+                  </div>
+                </div>
+              </VCardText>
+            </VCard>
+          </Transition>
+
+          <Transition name="fade">
+            <VCard
+              v-if="selectedContacts.length > 0"
+              class="internal-chat-attachment-card mb-3"
+            >
+              <VCardTitle class="internal-chat-attachment-title">
+                <span
+                  >{{ t('contacts_selected') }} ({{
+                    selectedContacts.length
+                  }}/10)</span
+                >
+                <IconBtn size="small" @click="clearSelectedContacts">
+                  <VIcon size="18">tabler-x</VIcon>
+                </IconBtn>
+              </VCardTitle>
+              <VCardText>
+                <div class="internal-chat-attachment-grid">
+                  <div
+                    v-for="(contact, index) in selectedContacts"
+                    :key="`${contact.contact_id}-${index}`"
+                    class="internal-chat-contact-preview"
+                  >
+                    <VAvatar
+                      size="44"
+                      :variant="contact.photo ? undefined : 'tonal'"
+                    >
+                      <VImg v-if="contact.photo" :src="contact.photo" />
+                      <VIcon v-else size="24">tabler-user</VIcon>
+                    </VAvatar>
+                    <div class="internal-chat-file-preview-meta">
+                      <span
+                        >{{ contact.name }} {{ contact.last_name || '' }}</span
+                      >
+                      <small>{{
+                        contact.phone_partial || contact.email_partial || ''
+                      }}</small>
+                    </div>
+                    <VBtn
+                      icon
+                      size="20"
+                      variant="flat"
+                      color="error"
+                      class="internal-chat-preview-remove"
+                      @click.stop="removeContact(index)"
+                    >
+                      <VIcon size="14">tabler-x</VIcon>
+                    </VBtn>
+                  </div>
+                </div>
+              </VCardText>
+            </VCard>
+          </Transition>
+
+          <Transition name="fade">
+            <VCard
+              v-if="selectedLocation"
+              class="internal-chat-attachment-card internal-chat-location-preview mb-3"
+            >
+              <VCardText class="d-flex align-center gap-3">
+                <VAvatar size="44" variant="tonal" color="primary">
+                  <VIcon size="24">tabler-map-pin</VIcon>
+                </VAvatar>
+                <div class="min-w-0 flex-grow-1">
+                  <div class="text-body-2 font-weight-medium text-truncate">
+                    {{ selectedLocation.name || t('internal_chat_location') }}
+                  </div>
+                  <div class="text-caption text-medium-emphasis text-truncate">
+                    {{
+                      selectedLocation.address ||
+                      `${selectedLocation.latitude}, ${selectedLocation.longitude}`
+                    }}
+                  </div>
+                </div>
+                <IconBtn size="small" @click="selectedLocation = null">
+                  <VIcon size="18">tabler-x</VIcon>
+                </IconBtn>
+              </VCardText>
+            </VCard>
+          </Transition>
 
           <div
             v-if="isRecordingAudio"
@@ -3250,6 +4510,7 @@ onBeforeUnmount(async () => {
             :placeholder="t('internal_chat_type_message')"
             class="internal-chat-textarea internal-chat-whats-composer"
             @keydown.enter.exact.prevent="sendMessage"
+            @paste="handlePaste"
           >
             <template #prepend-inner>
               <VMenu
@@ -3304,7 +4565,7 @@ onBeforeUnmount(async () => {
                       {{ t('internal_chat_audio') }}
                     </VListItemTitle>
                   </VListItem>
-                  <VListItem @click="isContactDialogOpen = true">
+                  <VListItem @click="isContactPickerOpen = true">
                     <template #prepend>
                       <VIcon size="20">tabler-user</VIcon>
                     </template>
@@ -3312,7 +4573,7 @@ onBeforeUnmount(async () => {
                       {{ t('internal_chat_contact') }}
                     </VListItemTitle>
                   </VListItem>
-                  <VListItem @click="isLocationDialogOpen = true">
+                  <VListItem @click="isLocationPickerOpen = true">
                     <template #prepend>
                       <VIcon size="20">tabler-map-pin</VIcon>
                     </template>
@@ -3333,7 +4594,7 @@ onBeforeUnmount(async () => {
                   <IconBtn
                     v-bind="props"
                     class="internal-chat-composer-btn"
-                  :aria-label="t('internal_chat_emoji')"
+                    :aria-label="t('internal_chat_emoji')"
                   >
                     <VIcon size="22">tabler-mood-smile</VIcon>
                   </IconBtn>
@@ -4146,7 +5407,9 @@ onBeforeUnmount(async () => {
             :value="conversation.conversation_id"
             density="comfortable"
             hide-details
-            :label="conversation.name || t('internal_chat_default_conversation')"
+            :label="
+              conversation.name || t('internal_chat_default_conversation')
+            "
             :disabled="
               conversation.conversation_id ===
               activeConversation?.conversation_id
@@ -4155,9 +5418,9 @@ onBeforeUnmount(async () => {
         </VCardText>
         <VCardActions class="px-4 pb-4 pt-0">
           <VSpacer />
-          <VBtn variant="text" @click="isForwardDialogOpen = false"
-            >{{ t('internal_chat_cancel') }}</VBtn
-          >
+          <VBtn variant="text" @click="isForwardDialogOpen = false">{{
+            t('internal_chat_cancel')
+          }}</VBtn>
           <VBtn
             color="primary"
             :loading="forwardingMessage"
@@ -4170,69 +5433,16 @@ onBeforeUnmount(async () => {
       </VCard>
     </VDialog>
 
-    <VDialog v-model="isLocationDialogOpen" max-width="520">
-      <VCard :title="t('internal_chat_send_location_title')">
-        <VCardText>
-          <AppTextField
-            v-model="locationLatitude"
-            :label="t('internal_chat_latitude')"
-            placeholder="-23.5505"
-            class="mb-3"
-          />
-          <AppTextField
-            v-model="locationLongitude"
-            :label="t('internal_chat_longitude')"
-            placeholder="-46.6333"
-            class="mb-3"
-          />
-          <AppTextField
-            v-model="locationName"
-            :label="t('internal_chat_optional_name')"
-            class="mb-3"
-          />
-          <AppTextField
-            v-model="locationAddress"
-            :label="t('internal_chat_optional_address')"
-          />
-        </VCardText>
-        <VCardActions class="px-4 pb-4 pt-0">
-          <VSpacer />
-          <VBtn variant="text" @click="isLocationDialogOpen = false">
-            {{ t('internal_chat_cancel') }}
-          </VBtn>
-          <VBtn color="primary" @click="sendLocationMessage">
-            {{ t('internal_chat_send_location') }}
-          </VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
+    <ChatLocationPicker
+      v-model="isLocationPickerOpen"
+      @confirm="onLocationSelected"
+    />
 
-    <VDialog v-model="isContactDialogOpen" max-width="520">
-      <VCard :title="t('internal_chat_send_contact_title')">
-        <VCardText>
-          <AppTextField
-            v-model="contactName"
-            :label="t('internal_chat_contact_name')"
-            :placeholder="t('internal_chat_name')"
-            class="mb-3"
-          />
-          <AppTextField
-            v-model="contactPhone"
-            :label="t('internal_chat_phone')"
-            placeholder="+55 11 99999-0000"
-          />
-        </VCardText>
-        <VCardActions class="px-4 pb-4 pt-0">
-          <VSpacer />
-          <VBtn variant="text" @click="isContactDialogOpen = false">
-            {{ t('internal_chat_cancel') }}
-          </VBtn>
-          <VBtn color="primary" @click="sendContactMessage">
-            {{ t('internal_chat_send_contact') }}
-          </VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
+    <AppContactPicker
+      v-model="isContactPickerOpen"
+      :existing-contacts="selectedContacts"
+      @select="onContactsSelected"
+    />
   </div>
 </template>
 
@@ -4943,6 +6153,280 @@ onBeforeUnmount(async () => {
   background: rgba(var(--v-theme-on-surface), 0.05);
   color: inherit;
   text-decoration: none;
+}
+
+.internal-chat-link-preview {
+  display: block;
+  max-width: 320px;
+
+  :deep(> .mx-5) {
+    margin: 4px 0 8px !important;
+  }
+
+  :deep(.link-preview-card) {
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+    border-radius: 7px;
+    padding: 10px;
+    background: rgba(var(--v-theme-on-surface), 0.035);
+    box-shadow: none;
+  }
+
+  :deep(.link-preview-close) {
+    display: none;
+  }
+}
+
+.internal-chat-media-frame {
+  overflow: hidden;
+  max-width: 360px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+.internal-chat-audio-bubble {
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.045);
+}
+
+.internal-chat-audio-player {
+  width: 100%;
+  height: 34px;
+}
+
+.internal-chat-document-link {
+  min-width: 260px;
+  max-width: 340px;
+  gap: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.045);
+}
+
+.internal-chat-document-icon {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-primary), 0.11);
+  color: rgb(var(--v-theme-primary));
+}
+
+.internal-chat-document-meta {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.internal-chat-document-name {
+  overflow: hidden;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.internal-chat-document-size {
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  font-size: 0.74rem;
+}
+
+.internal-chat-location-card {
+  min-width: 260px;
+  max-width: 340px;
+  display: block;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+  border-radius: 8px;
+  background: rgb(var(--v-theme-surface));
+  color: inherit;
+  text-decoration: none;
+}
+
+.internal-chat-location-map {
+  height: 112px;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(var(--v-theme-primary), 0.13),
+      rgba(var(--v-theme-success), 0.08)
+    ),
+    repeating-linear-gradient(
+      45deg,
+      rgba(var(--v-theme-on-surface), 0.04) 0,
+      rgba(var(--v-theme-on-surface), 0.04) 8px,
+      transparent 8px,
+      transparent 16px
+    );
+  color: rgb(var(--v-theme-primary));
+}
+
+.internal-chat-location-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.internal-chat-location-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.internal-chat-location-address {
+  overflow: hidden;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.internal-chat-contact-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  :deep(.group-contact-card) {
+    width: 300px;
+    max-width: 100%;
+    box-shadow: none;
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+  }
+}
+
+.internal-chat-upload-state {
+  margin-top: 8px;
+}
+
+.internal-chat-upload-state--error {
+  color: rgb(var(--v-theme-error));
+  font-size: 0.76rem;
+}
+
+.internal-chat-attachment-card {
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.internal-chat-attachment-title {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.internal-chat-attachment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 10px;
+}
+
+.internal-chat-attachment-grid--wide {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.internal-chat-photo-preview,
+.internal-chat-file-preview,
+.internal-chat-contact-preview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+}
+
+.internal-chat-photo-preview {
+  aspect-ratio: 1;
+}
+
+.internal-chat-photo-preview-image {
+  width: 100%;
+  height: 100%;
+}
+
+.internal-chat-file-preview,
+.internal-chat-contact-preview {
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 32px 10px 10px;
+}
+
+.internal-chat-file-preview-media,
+.internal-chat-file-preview-icon {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-primary), 0.1);
+  color: rgb(var(--v-theme-primary));
+  flex: 0 0 auto;
+}
+
+.internal-chat-file-preview-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  grid-area: 1 / 1;
+}
+
+.internal-chat-file-preview-media .v-icon {
+  grid-area: 1 / 1;
+  color: white;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+}
+
+.internal-chat-file-preview-meta {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.internal-chat-file-preview-meta span {
+  overflow: hidden;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.internal-chat-file-preview-meta small {
+  overflow: hidden;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.internal-chat-preview-remove {
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 6px;
+}
+
+.internal-chat-composer-link-preview {
+  :deep(> .mx-5) {
+    margin: 0 0 10px !important;
+  }
 }
 
 .internal-chat-reaction-trigger {

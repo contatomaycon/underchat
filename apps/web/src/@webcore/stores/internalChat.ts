@@ -15,6 +15,8 @@ import type { ListMessagesQuery } from '@core/schema/internalChat/listMessages/r
 import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
 import type { CreateMessageBody } from '@core/schema/internalChat/createMessage/request.schema';
 import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
+import type { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
+import type { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
 import { EInternalChatActivityState } from '@core/common/enums/internalChat/EInternalChatActivityState';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
@@ -31,6 +33,11 @@ type InternalConversation =
 type InternalUser = ListUsersResponse['data']['results'][number];
 type InternalMessage = ListMessagesResponse['data']['results'][number];
 type InternalParticipant = ListGroupMembersResponse['data'][number];
+type LocalMessageState = {
+  status: 'uploading' | 'error';
+  progress: number;
+  errorMessage?: string;
+};
 type InternalReaction = {
   emoji: string;
   user_id?: string | null;
@@ -116,6 +123,7 @@ export const useInternalChatStore = defineStore('internalChat', {
     usersPaging: makePaging(20),
     messagesPaging: makePaging(30),
     remoteActivities: {} as Record<string, RemoteActivity>,
+    localMessageState: {} as Record<string, LocalMessageState>,
     refreshConversationsTimer: null as ReturnType<typeof setTimeout> | null,
   }),
   getters: {
@@ -161,6 +169,41 @@ export const useInternalChatStore = defineStore('internalChat', {
       });
     },
 
+    initializeLocalMessageState(hash: string) {
+      if (!hash) return;
+      this.localMessageState[hash] = {
+        status: 'uploading',
+        progress: 0,
+      };
+    },
+
+    updateLocalMessageProgress(hash: string, progress: number) {
+      if (!hash) return;
+      const target = this.localMessageState[hash];
+      if (!target) return;
+      target.progress = Math.max(0, Math.min(progress, 100));
+    },
+
+    markLocalMessageError(hash: string, errorMessage?: string) {
+      if (!hash) return;
+      const target = this.localMessageState[hash];
+      if (!target) {
+        this.localMessageState[hash] = {
+          status: 'error',
+          progress: 0,
+          errorMessage,
+        };
+        return;
+      }
+      target.status = 'error';
+      target.errorMessage = errorMessage;
+    },
+
+    clearLocalMessageState(hash?: string | null) {
+      if (!hash) return;
+      delete this.localMessageState[hash];
+    },
+
     upsertConversation(conversation: InternalConversation) {
       const index = this.conversations.findIndex(
         (item) => item.conversation_id === conversation.conversation_id
@@ -183,14 +226,25 @@ export const useInternalChatStore = defineStore('internalChat', {
     },
 
     upsertMessage(message: InternalMessage) {
-      const index = this.messages.findIndex(
-        (item) => item.message_id === message.message_id
-      );
+      let index = -1;
+      if (message.hash) {
+        index = this.messages.findIndex((item) => item.hash === message.hash);
+      }
+
+      if (index === -1) {
+        index = this.messages.findIndex(
+          (item) => item.message_id === message.message_id
+        );
+      }
 
       if (index >= 0) {
         this.messages[index] = message;
       } else {
         this.messages.push(message);
+      }
+
+      if (message.hash) {
+        this.clearLocalMessageState(message.hash);
       }
 
       this.messages.sort((a, b) => parseDate(a.date) - parseDate(b.date));
@@ -668,15 +722,32 @@ export const useInternalChatStore = defineStore('internalChat', {
 
     async createMessage(
       conversationId: string,
-      payload: FormData | CreateMessageBody
+      payload: FormData | CreateMessageBody,
+      options: {
+        skipLoading?: boolean;
+        onUploadProgress?: (progress: number) => void;
+      } = {}
     ): Promise<boolean> {
-      this.sendingMessage = true;
+      if (!options.skipLoading) {
+        this.sendingMessage = true;
+      }
 
       try {
         const config: AxiosRequestConfig = {};
         if (payload instanceof FormData) {
           config.headers = {
             'Content-Type': 'multipart/form-data',
+          };
+        }
+        if (options.onUploadProgress) {
+          config.onUploadProgress = (event) => {
+            if (!event.total) {
+              options.onUploadProgress?.(0);
+              return;
+            }
+
+            const progress = Math.round((event.loaded * 100) / event.total);
+            options.onUploadProgress?.(progress);
           };
         }
 
@@ -707,7 +778,22 @@ export const useInternalChatStore = defineStore('internalChat', {
         );
         return false;
       } finally {
-        this.sendingMessage = false;
+        if (!options.skipLoading) {
+          this.sendingMessage = false;
+        }
+      }
+    },
+
+    async generateLinkPreview(
+      input: ViewLinkPreviewBody
+    ): Promise<ViewLinkPreviewResponse | null> {
+      try {
+        const response = await axios.post<
+          IApiResponse<ViewLinkPreviewResponse>
+        >('/chat/link-preview', input);
+        return response.data?.data ?? null;
+      } catch {
+        return null;
       }
     },
 
