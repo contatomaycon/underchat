@@ -1,5 +1,5 @@
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { viewLinkPreviewResponseSchema } from '@core/schema/chat/viewLinkPreview/response.schema';
+import { viewInternalChatLinkPreviewDataSchema } from '@core/schema/internalChat/viewLinkPreview/response.schema';
 import { uploadFileRequestSchema } from '@core/schema/upload/request.schema';
 import { Static, Type } from '@sinclair/typebox';
 
@@ -46,7 +46,7 @@ export const createMessageBodySchema = Type.Object({
   message_quoted_id: Type.Optional(optionalStringFieldSchema),
   link_preview: Type.Optional(
     Type.Union([
-      viewLinkPreviewResponseSchema,
+      viewInternalChatLinkPreviewDataSchema,
       Type.String(),
       multipartStringFieldSchema,
       Type.Null(),

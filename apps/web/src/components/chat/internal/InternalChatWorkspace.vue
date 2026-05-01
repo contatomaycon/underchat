@@ -40,7 +40,7 @@ import type { ListConversationsResponse } from '@core/schema/internalChat/listCo
 import type { ListUsersResponse } from '@core/schema/internalChat/listUsers/response.schema';
 import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
 import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
-import type { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
+import type { ViewInternalChatLinkPreviewResponse } from '@core/schema/internalChat/viewLinkPreview/response.schema';
 import type {
   ISelectedAudioPreview,
   ISelectedContactPreview,
@@ -55,6 +55,7 @@ type InternalConversationParticipant =
   InternalConversation['participants'][number];
 type InternalUser = ListUsersResponse['data']['results'][number];
 type InternalMessage = ListMessagesResponse['data']['results'][number];
+type InternalLinkPreview = ViewInternalChatLinkPreviewResponse['data'];
 type InternalContact = NonNullable<
   InternalMessage['content']['contacts']
 >[number];
@@ -159,7 +160,7 @@ const selectedLocation = ref<{
   name?: string | null;
   address?: string | null;
 } | null>(null);
-const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
+const linkPreview = ref<InternalLinkPreview | null>(null);
 const isLoadingLinkPreview = ref(false);
 const isContactPickerOpen = ref(false);
 const isLocationPickerOpen = ref(false);
@@ -178,6 +179,9 @@ const webGLSupported = ref(true);
 const mapErrors = reactive<Record<string, boolean>>({});
 const contactViewerOpen = ref(false);
 const contactViewerContacts = ref<InternalContact[]>([]);
+const contactViewerPhoneCache = reactive<Record<string, string>>({});
+const contactViewerVisiblePhones = reactive<Record<string, boolean>>({});
+const contactViewerPhoneLoading = reactive<Record<string, boolean>>({});
 
 const audioPlayers = ref<Map<string, HTMLAudioElement>>(new Map());
 const audioPlayStates = reactive<Record<string, boolean>>({});
@@ -1128,6 +1132,111 @@ const resolveContactFullName = (contact: InternalContact): string => {
   }`.trim();
 };
 
+const resolveContactViewerKey = (
+  contact: InternalContact,
+  index: number
+): string => {
+  return (
+    contact.contact_id ||
+    `${contact.name}-${contact.phone || contact.phone_partial || contact.email || index}`
+  );
+};
+
+const formatFullContactPhone = (
+  phone: string | null | undefined,
+  phoneDdi?: string | null
+): string => {
+  const normalizedPhone = phone?.trim() ?? '';
+  if (!normalizedPhone) return '';
+
+  const normalizedDdi = phoneDdi?.replace(/\D/g, '') ?? '';
+  if (!normalizedDdi || normalizedPhone.startsWith('+')) {
+    return normalizedPhone;
+  }
+
+  const phoneDigits = normalizedPhone.replace(/\D/g, '');
+  if (phoneDigits.startsWith(normalizedDdi)) {
+    return normalizedPhone === phoneDigits
+      ? `+${normalizedPhone}`
+      : normalizedPhone;
+  }
+
+  return `+${normalizedDdi} ${normalizedPhone}`;
+};
+
+const isContactPhoneVisible = (contact: InternalContact): boolean => {
+  return Boolean(
+    contact.contact_id && contactViewerVisiblePhones[contact.contact_id]
+  );
+};
+
+const isContactPhoneLoading = (contact: InternalContact): boolean => {
+  return Boolean(
+    contact.contact_id && contactViewerPhoneLoading[contact.contact_id]
+  );
+};
+
+const canViewFullContactPhone = (contact: InternalContact): boolean => {
+  return Boolean(
+    contact.contact_id && (contact.phone_partial || contact.phone)
+  );
+};
+
+const resolveContactViewerMeta = (contact: InternalContact): string => {
+  if (
+    contact.contact_id &&
+    contactViewerVisiblePhones[contact.contact_id] &&
+    contactViewerPhoneCache[contact.contact_id]
+  ) {
+    return formatFullContactPhone(
+      contactViewerPhoneCache[contact.contact_id],
+      contact.phone_ddi
+    );
+  }
+
+  return (
+    contact.phone_partial ||
+    contact.phone ||
+    contact.email_partial ||
+    contact.email ||
+    ''
+  );
+};
+
+const clearVisibleContactPhones = () => {
+  for (const key of Object.keys(contactViewerVisiblePhones)) {
+    delete contactViewerVisiblePhones[key];
+  }
+};
+
+const toggleContactPhoneVisibility = async (contact: InternalContact) => {
+  if (!contact.contact_id || !canViewFullContactPhone(contact)) return;
+
+  if (contactViewerVisiblePhones[contact.contact_id]) {
+    delete contactViewerVisiblePhones[contact.contact_id];
+    return;
+  }
+
+  if (contactViewerPhoneCache[contact.contact_id]) {
+    contactViewerVisiblePhones[contact.contact_id] = true;
+    return;
+  }
+
+  contactViewerPhoneLoading[contact.contact_id] = true;
+  try {
+    const response = await internalChatStore.viewContactPhone(
+      contact.contact_id
+    );
+    const phone = response?.phone?.trim();
+    if (!phone) return;
+
+    contactViewerPhoneCache[contact.contact_id] = phone;
+    contactViewerVisiblePhones[contact.contact_id] = true;
+  } finally {
+    delete contactViewerPhoneLoading[contact.contact_id];
+  }
+};
+
 const resolveMessageContactCardTitle = (message: InternalMessage): string => {
   const contacts = resolveMessageContacts(message);
   const firstContact = contacts[0];
@@ -1152,6 +1261,7 @@ const openMessageContacts = (message: InternalMessage) => {
   const contacts = resolveMessageContacts(message);
   if (!contacts.length) return;
 
+  clearVisibleContactPhones();
   contactViewerContacts.value = contacts;
   contactViewerOpen.value = true;
 };
@@ -2434,7 +2544,7 @@ const confirmCloseActiveConversation = async () => {
 
 const createMessageHash = () => crypto.randomUUID();
 
-const cloneLinkPreview = (): ViewLinkPreviewResponse | null => {
+const cloneLinkPreview = (): InternalLinkPreview | null => {
   return linkPreview.value ? structuredClone(linkPreview.value) : null;
 };
 
@@ -4909,15 +5019,14 @@ onBeforeUnmount(async () => {
                       >
                         <GroupContactMessageCard
                           :title="resolveMessageContactCardTitle(message)"
-                          :time="formatMessageDate(message.date)"
                           :align="isOwnMessage(message) ? 'right' : 'left'"
-                          :seen="isOwnMessage(message)"
                           :is-group="resolveMessageContacts(message).length > 1"
                           :photo="
                             resolveMessageContacts(message).length === 1
                               ? resolveMessageContacts(message)[0]?.photo
                               : null
                           "
+                          :show-meta="false"
                           @toggle="openMessageContacts(message)"
                           @view-all="openMessageContacts(message)"
                         />
@@ -6561,11 +6670,8 @@ onBeforeUnmount(async () => {
         <VCardText>
           <div class="internal-chat-contact-viewer-list">
             <div
-              v-for="contact in contactViewerContacts"
-              :key="
-                contact.contact_id ||
-                `${contact.name}-${contact.phone || contact.email}`
-              "
+              v-for="(contact, index) in contactViewerContacts"
+              :key="resolveContactViewerKey(contact, index)"
               class="internal-chat-contact-viewer-row"
             >
               <VAvatar size="42" variant="tonal" color="primary">
@@ -6581,22 +6687,41 @@ onBeforeUnmount(async () => {
                   {{ resolveContactFullName(contact) }}
                 </div>
                 <div
-                  v-if="
-                    contact.phone_partial ||
-                    contact.phone ||
-                    contact.email_partial ||
-                    contact.email
-                  "
+                  v-if="resolveContactViewerMeta(contact)"
                   class="internal-chat-contact-viewer-meta"
                 >
-                  {{
-                    contact.phone_partial ||
-                    contact.phone ||
-                    contact.email_partial ||
-                    contact.email
-                  }}
+                  {{ resolveContactViewerMeta(contact) }}
                 </div>
               </div>
+              <VTooltip v-if="canViewFullContactPhone(contact)" location="top">
+                <template #activator="{ props: tooltipProps }">
+                  <VBtn
+                    v-bind="tooltipProps"
+                    icon
+                    variant="text"
+                    size="small"
+                    color="primary"
+                    class="internal-chat-contact-viewer-eye"
+                    :loading="isContactPhoneLoading(contact)"
+                    @click.stop="toggleContactPhoneVisibility(contact)"
+                  >
+                    <VIcon size="18">
+                      {{
+                        isContactPhoneVisible(contact)
+                          ? 'tabler-eye-off'
+                          : 'tabler-eye'
+                      }}
+                    </VIcon>
+                  </VBtn>
+                </template>
+                <span>
+                  {{
+                    isContactPhoneVisible(contact)
+                      ? t('internal_chat_hide_full_phone')
+                      : t('internal_chat_view_full_phone')
+                  }}
+                </span>
+              </VTooltip>
             </div>
           </div>
         </VCardText>
@@ -6610,6 +6735,7 @@ onBeforeUnmount(async () => {
 
     <AppContactPicker
       v-model="isContactPickerOpen"
+      source="internal-chat"
       :existing-contacts="selectedContacts"
       @select="onContactsSelected"
     />
@@ -7820,6 +7946,10 @@ onBeforeUnmount(async () => {
   font-size: 0.8rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.internal-chat-contact-viewer-eye {
+  flex: 0 0 auto;
 }
 
 .internal-chat-location-map-wrapper {

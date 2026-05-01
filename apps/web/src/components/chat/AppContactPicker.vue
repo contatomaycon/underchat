@@ -1,20 +1,31 @@
 <script lang="ts" setup>
 import { ref, computed, watch } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useInternalChatStore } from '@/@webcore/stores/internalChat';
 import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { EColor } from '@core/common/enums/EColor';
-import { ISelectedContactPreview } from '@core/common/interfaces/IChatFilePreview';
-import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
+import type { ISelectedContactPreview } from '@core/common/interfaces/IChatFilePreview';
+import type { SortRequest } from '@core/schema/common/sortRequestSchema';
+import type { ListInternalChatContactsResponse } from '@core/schema/internalChat/listContacts/response.schema';
+
+type ContactPickerContact =
+  ListInternalChatContactsResponse['data']['results'][number];
 
 const { t } = useI18n();
 const chatStore = useChatStore();
+const internalChatStore = useInternalChatStore();
 
-const props = defineProps<{
-  modelValue: boolean;
-  existingContacts?: ISelectedContactPreview[];
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean;
+    existingContacts?: ISelectedContactPreview[];
+    source?: 'chat' | 'internal-chat';
+  }>(),
+  {
+    source: 'chat',
+  }
+);
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void;
@@ -29,7 +40,7 @@ const isVisible = computed({
 const selectedContacts = ref<Set<string>>(new Set());
 const searchQuery = ref('');
 const debouncedSearch = refDebounced(searchQuery, 500);
-const contactsList = ref<ListChatContactsResponse[]>([]);
+const contactsList = ref<ContactPickerContact[]>([]);
 const contactsPagings = ref({
   current_page: 1,
   total_pages: 1,
@@ -61,6 +72,15 @@ const query = computed(() => ({
   search: debouncedSearch.value || null,
 }));
 
+const showPickerSnackbar = (message: string, color: EColor) => {
+  if (props.source === 'internal-chat') {
+    internalChatStore.showSnackbar(message, color);
+    return;
+  }
+
+  chatStore.showSnackbar(message, color);
+};
+
 watch(debouncedSearch, () => {
   options.value.page = 1;
   loadContacts();
@@ -84,11 +104,18 @@ const loadContacts = async () => {
   isLoadingContacts.value = true;
 
   try {
-    const result = await chatStore.listChatContacts(
-      options.value.page,
-      options.value.itemsPerPage,
-      debouncedSearch.value || undefined
-    );
+    const result =
+      props.source === 'internal-chat'
+        ? await internalChatStore.listChatContacts(
+            options.value.page,
+            options.value.itemsPerPage,
+            debouncedSearch.value || undefined
+          )
+        : await chatStore.listChatContacts(
+            options.value.page,
+            options.value.itemsPerPage,
+            debouncedSearch.value || undefined
+          );
 
     if (result) {
       contactsList.value = result.results;
@@ -121,7 +148,7 @@ const toggleContact = (contactId: string) => {
   }
 
   if (totalSelectedCount.value >= 10) {
-    chatStore.showSnackbar(
+    showPickerSnackbar(
       t('max_contacts_selected', { count: 10 }),
       EColor.warning
     );
@@ -157,7 +184,7 @@ const getSelectedContactsData = (): ISelectedContactPreview[] => {
 const handleSend = () => {
   const contacts = getSelectedContactsData();
   if (contacts.length === 0) {
-    chatStore.showSnackbar(t('select_at_least_one_contact'), EColor.warning);
+    showPickerSnackbar(t('select_at_least_one_contact'), EColor.warning);
     return;
   }
   emit('select', contacts);

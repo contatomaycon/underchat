@@ -25,6 +25,9 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ChatContactService } from '@core/services/chatContact.service';
 import { ListConversationsQuery } from '@core/schema/internalChat/listConversations/request.schema';
 import { ListUsersQuery } from '@core/schema/internalChat/listUsers/request.schema';
+import { ListInternalChatContactsRequest } from '@core/schema/internalChat/listContacts/request.schema';
+import { ListInternalChatContactsResponse } from '@core/schema/internalChat/listContacts/response.schema';
+import { ViewInternalChatContactPhoneResponse } from '@core/schema/internalChat/viewContactPhone/response.schema';
 import { ListMessagesQuery } from '@core/schema/internalChat/listMessages/request.schema';
 import { CreateMessageBody } from '@core/schema/internalChat/createMessage/request.schema';
 import { EditMessageBody } from '@core/schema/internalChat/editMessage/request.schema';
@@ -690,6 +693,55 @@ export class InternalChatService {
       pagings: setPaginationData(rows.length, total, perPage, currentPage),
       results: rows,
     };
+  }
+
+  async listContacts(
+    accountId: string,
+    query: ListInternalChatContactsRequest,
+    allowedChannelIds: string[] = []
+  ): Promise<ListInternalChatContactsResponse['data']> {
+    const { currentPage, perPage } = this.normalizePaging({
+      current_page: query.current_page,
+      per_page: query.per_page,
+    });
+
+    const [results, total] = await this.chatContactService.listChatContacts(
+      perPage,
+      currentPage,
+      accountId,
+      query,
+      allowedChannelIds
+    );
+
+    return {
+      pagings: setPaginationData(results.length, total, perPage, currentPage),
+      results,
+    };
+  }
+
+  async viewContactPhone(
+    accountId: string,
+    contactId: string,
+    allowedChannelIds: string[] = []
+  ): Promise<ViewInternalChatContactPhoneResponse['data']> {
+    const contact = await this.chatContactService.viewChatContactById(
+      contactId,
+      accountId,
+      allowedChannelIds
+    );
+
+    if (!contact) {
+      throw new Error('contact_not_found');
+    }
+
+    const phone =
+      await this.chatContactService.getChatContactPhoneDecrypted(contactId);
+
+    if (phone === null) {
+      throw new Error('contact_not_found');
+    }
+
+    return { phone };
   }
 
   async openDirectConversation(

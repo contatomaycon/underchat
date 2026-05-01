@@ -11,12 +11,14 @@ import type { ListConversationsQuery } from '@core/schema/internalChat/listConve
 import type { ListConversationsResponse } from '@core/schema/internalChat/listConversations/response.schema';
 import type { ListUsersQuery } from '@core/schema/internalChat/listUsers/request.schema';
 import type { ListUsersResponse } from '@core/schema/internalChat/listUsers/response.schema';
+import type { ListInternalChatContactsResponse } from '@core/schema/internalChat/listContacts/response.schema';
+import type { ViewInternalChatContactPhoneResponse } from '@core/schema/internalChat/viewContactPhone/response.schema';
 import type { ListMessagesQuery } from '@core/schema/internalChat/listMessages/request.schema';
 import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
 import type { CreateMessageBody } from '@core/schema/internalChat/createMessage/request.schema';
 import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
-import type { ViewLinkPreviewBody } from '@core/schema/chat/viewLinkPreview/request.schema';
-import type { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
+import type { ViewInternalChatLinkPreviewBody } from '@core/schema/internalChat/viewLinkPreview/request.schema';
+import type { ViewInternalChatLinkPreviewResponse } from '@core/schema/internalChat/viewLinkPreview/response.schema';
 import { EInternalChatActivityState } from '@core/common/enums/internalChat/EInternalChatActivityState';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
@@ -784,13 +786,63 @@ export const useInternalChatStore = defineStore('internalChat', {
       }
     },
 
+    async listChatContacts(
+      currentPage = 1,
+      perPage = 10,
+      search?: string
+    ): Promise<ListInternalChatContactsResponse['data'] | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListInternalChatContactsResponse['data']>
+        >('/internal-chat/contacts', {
+          params: {
+            current_page: currentPage,
+            per_page: perPage,
+            search: search?.trim() || undefined,
+          },
+        });
+
+        return response.data?.data ?? null;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t('internal_chat_list_contacts_error')
+          ),
+          EColor.error
+        );
+        return null;
+      }
+    },
+
+    async viewContactPhone(
+      contactId: string
+    ): Promise<ViewInternalChatContactPhoneResponse['data'] | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewInternalChatContactPhoneResponse['data']>
+        >(`/internal-chat/contacts/${contactId}/phone`);
+
+        return response.data?.data ?? null;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t('internal_chat_view_contact_phone_error')
+          ),
+          EColor.error
+        );
+        return null;
+      }
+    },
+
     async generateLinkPreview(
-      input: ViewLinkPreviewBody
-    ): Promise<ViewLinkPreviewResponse | null> {
+      input: ViewInternalChatLinkPreviewBody
+    ): Promise<ViewInternalChatLinkPreviewResponse['data'] | null> {
       try {
         const response = await axios.post<
-          IApiResponse<ViewLinkPreviewResponse>
-        >('/chat/link-preview', input);
+          IApiResponse<ViewInternalChatLinkPreviewResponse['data']>
+        >('/internal-chat/link-preview', input);
         return response.data?.data ?? null;
       } catch {
         return null;

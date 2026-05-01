@@ -17,7 +17,8 @@ export function handleInternalChatError(
   if (
     error.message === 'chat_not_found' ||
     error.message === 'message_not_found' ||
-    error.message === 'user_not_found'
+    error.message === 'user_not_found' ||
+    error.message === 'contact_not_found'
   ) {
     sendResponse(reply, {
       message: t(error.message),
@@ -41,6 +42,7 @@ export function handleInternalChatError(
     error.message === 'chat_invalid_target_user' ||
     error.message === 'chat_create_error' ||
     error.message === 'chat_update_error' ||
+    error.message === 'chat_link_preview_not_found' ||
     error.message === 'INVALID_IMAGE_FORMAT' ||
     error.message === 'IMAGE_SIZE_LIMIT_EXCEEDED'
   ) {

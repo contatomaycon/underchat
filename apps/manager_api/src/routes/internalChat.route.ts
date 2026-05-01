@@ -4,6 +4,7 @@ import InternalChatController from '@/controllers/internalChat';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 import {
+  contactViewPhonePermissions,
   internalChatGroupCreatePermissions,
   internalChatGroupMembersPermissions,
   internalChatGroupTransferLeaderPermissions,
@@ -13,8 +14,10 @@ import {
 } from '@/permissions';
 import { listConversationsSchema } from '@core/schema/internalChat/listConversations';
 import { listUsersSchema } from '@core/schema/internalChat/listUsers';
+import { listInternalChatContactsSchema } from '@core/schema/internalChat/listContacts';
 import { openDirectSchema } from '@core/schema/internalChat/openDirect';
 import { viewConversationSchema } from '@core/schema/internalChat/viewConversation';
+import { viewInternalChatContactPhoneSchema } from '@core/schema/internalChat/viewContactPhone';
 import { closeConversationSchema } from '@core/schema/internalChat/closeConversation';
 import { markReadSchema } from '@core/schema/internalChat/markRead';
 import { listMessagesSchema } from '@core/schema/internalChat/listMessages';
@@ -31,6 +34,7 @@ import { listGroupMembersSchema } from '@core/schema/internalChat/listGroupMembe
 import { removeGroupMemberSchema } from '@core/schema/internalChat/removeGroupMember';
 import { transferLeaderSchema } from '@core/schema/internalChat/transferLeader';
 import { realtimeTokenSchema } from '@core/schema/internalChat/realtimeToken';
+import { viewInternalChatLinkPreviewSchema } from '@core/schema/internalChat/viewLinkPreview';
 
 export default function internalChatRoutes(server: FastifyInstance) {
   const controller = container.resolve(InternalChatController);
@@ -52,6 +56,41 @@ export default function internalChatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/internal-chat/contacts', {
+    schema: listInternalChatContactsSchema,
+    handler: controller.listContacts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, internalChatWritePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/internal-chat/contacts/:contact_id/phone', {
+    schema: viewInternalChatContactPhoneSchema,
+    handler: controller.viewContactPhone,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, internalChatReadPermissions),
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPhonePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/internal-chat/link-preview', {
+    schema: viewInternalChatLinkPreviewSchema,
+    handler: controller.viewLinkPreview,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
       planStatus,
     ],
