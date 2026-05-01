@@ -80,7 +80,17 @@ type InternalViewerMediaItem = {
   downloadName?: string;
   kind: InternalMediaKind;
 };
+type InternalReplyPreviewContent = Partial<InternalMessage['content']> & {
+  type?: EMessageType | string | null;
+  user_name?: string | null;
+};
 type InternalMessageDisplayItem =
+  | {
+      kind: 'date-separator';
+      id: string;
+      separatorDate: string;
+      separatorLabel: string;
+    }
   | {
       kind: 'message';
       id: string;
@@ -148,6 +158,13 @@ const isComposerEmojiOpen = ref(false);
 const ignoreReactionOutsideOnce = ref(false);
 const showScrollToBottom = ref(false);
 const shouldAutoScrollMessages = ref(true);
+const fixedMessageDateLabel = ref('');
+const fixedMessageDateIndicatorTop = ref(0);
+const fixedMessageDateIndicatorLeft = ref(0);
+const fixedMessageDateIndicatorWidth = ref(0);
+const shouldShowFixedMessageDate = computed(
+  () => showScrollToBottom.value && !!fixedMessageDateLabel.value
+);
 
 const selectedImages = ref<ISelectedPhotoPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
@@ -718,6 +735,69 @@ const formatMessageDate = (value?: string | null): string => {
   });
 };
 
+const formatMessageDateSeparator = (value?: string | null): string => {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const messageDate = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+
+  if (messageDate.getTime() === today.getTime()) return t('today');
+
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (messageDate.getTime() === yesterday.getTime()) return t('yesterday');
+
+  const diffMs = today.getTime() - messageDate.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays > 0 && diffDays < 7) {
+    const weekdays = [
+      t('sunday'),
+      t('monday'),
+      t('tuesday'),
+      t('wednesday'),
+      t('thursday'),
+      t('friday'),
+      t('saturday'),
+    ];
+    return weekdays[date.getDay()];
+  }
+
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+
+  return `${day}/${month}/${year}`;
+};
+
+const isSameMessageDay = (
+  dateA?: string | null,
+  dateB?: string | null
+): boolean => {
+  if (!dateA || !dateB) return false;
+
+  const firstDate = new Date(dateA);
+  const secondDate = new Date(dateB);
+
+  if (Number.isNaN(firstDate.getTime()) || Number.isNaN(secondDate.getTime())) {
+    return false;
+  }
+
+  return (
+    firstDate.getDate() === secondDate.getDate() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getFullYear() === secondDate.getFullYear()
+  );
+};
+
 const resolveConversationTitle = (
   conversation?: InternalConversation | null
 ): string => {
@@ -973,10 +1053,22 @@ const buildMediaViewerItem = (
 const messageDisplayItems = computed<InternalMessageDisplayItem[]>(() => {
   const displayItems: InternalMessageDisplayItem[] = [];
   let index = 0;
+  let lastDate: string | null = null;
 
   while (index < messages.value.length) {
     const firstMessage = messages.value[index];
     const mediaKind = resolveMessageMediaKind(firstMessage);
+    const messageDate = firstMessage.date;
+
+    if (!lastDate || !isSameMessageDay(messageDate, lastDate)) {
+      displayItems.push({
+        kind: 'date-separator',
+        id: `date-separator:${messageDate}`,
+        separatorDate: messageDate,
+        separatorLabel: formatMessageDateSeparator(messageDate),
+      });
+      lastDate = messageDate;
+    }
 
     if (!mediaKind || !canGroupMessageMedia(firstMessage)) {
       displayItems.push({
@@ -999,7 +1091,8 @@ const messageDisplayItems = computed<InternalMessageDisplayItem[]>(() => {
       if (
         !canGroupMessageMedia(nextMessage) ||
         nextMediaKind !== mediaKind ||
-        nextMessage.user?.id !== userId
+        nextMessage.user?.id !== userId ||
+        !isSameMessageDay(nextMessage.date, firstMessage.date)
       ) {
         break;
       }
@@ -1598,19 +1691,229 @@ const getDisplayAudioTime = (
   return formatAudioTime(duration);
 };
 
-const resolveQuotedText = (message: InternalMessage): string => {
-  const quoted = message.content?.quoted;
-  if (quoted?.message) return String(quoted.message);
+const resolveReplyPreviewContent = (
+  message?: InternalMessage | null
+): InternalReplyPreviewContent | null => {
+  return (message?.content as InternalReplyPreviewContent | null) ?? null;
+};
+
+const resolveQuotedPreviewContent = (
+  message: InternalMessage
+): InternalReplyPreviewContent | null => {
+  if (message.content?.quoted) {
+    return message.content.quoted as InternalReplyPreviewContent;
+  }
 
   const quotedMessageId = message.content?.message_quoted_id;
-  if (!quotedMessageId) return '';
+  if (!quotedMessageId) return null;
 
   const quotedMessage = messages.value.find(
     (item) => item.message_id === quotedMessageId
   );
 
-  if (!quotedMessage) return t('internal_chat_message');
-  return resolveMessageText(quotedMessage) || t('internal_chat_message');
+  return resolveReplyPreviewContent(quotedMessage);
+};
+
+const resolveReplyPreviewContacts = (
+  content?: InternalReplyPreviewContent | null
+): InternalContact[] => {
+  if (content?.contacts?.length) {
+    return content.contacts as InternalContact[];
+  }
+
+  if (content?.contact) {
+    return [content.contact as InternalContact];
+  }
+
+  return [];
+};
+
+const resolveReplyPreviewContactTitle = (
+  content?: InternalReplyPreviewContent | null
+): string => {
+  const contacts = resolveReplyPreviewContacts(content);
+  const firstContact = contacts[0];
+  if (!firstContact) return t('contact_label');
+
+  const firstName = resolveContactFullName(firstContact);
+  if (contacts.length === 1) return firstName;
+
+  const remainingCount = contacts.length - 1;
+  return t(
+    remainingCount === 1
+      ? 'internal_chat_contacts_summary_one'
+      : 'internal_chat_contacts_summary_many',
+    {
+      name: firstName,
+      count: remainingCount,
+    }
+  );
+};
+
+const resolveReplyPreviewText = (
+  content?: InternalReplyPreviewContent | null
+): string => {
+  if (!content) return t('internal_chat_message');
+
+  if (content.type === EMessageType.image) {
+    return content.image?.caption || content.message || t('photo_label');
+  }
+
+  if (content.type === EMessageType.document) {
+    return content.document?.name || content.message || t('document_label');
+  }
+
+  if (content.type === EMessageType.video) {
+    return content.video?.caption || content.message || t('video_label');
+  }
+
+  if (content.type === EMessageType.audio) {
+    return content.message || t('audio_label');
+  }
+
+  if (content.type === EMessageType.location) {
+    return (
+      content.location?.name ||
+      content.location?.address ||
+      content.message ||
+      t('location_label')
+    );
+  }
+
+  if (
+    content.type === EMessageType.contact_card ||
+    content.type === EMessageType.contacts
+  ) {
+    const contactTitle = resolveReplyPreviewContactTitle(content);
+    return content.message
+      ? `${contactTitle} - ${content.message}`
+      : contactTitle;
+  }
+
+  if (content.message) return content.message;
+
+  const linkPreview = content.link_preview as
+    | Record<string, string | null | undefined>
+    | null
+    | undefined;
+  return (
+    linkPreview?.['matched-text'] ||
+    linkPreview?.['canonical-url'] ||
+    t('internal_chat_message')
+  );
+};
+
+const resolveReplyPreviewMeta = (
+  content?: InternalReplyPreviewContent | null
+): string => {
+  if (!content) return '';
+
+  if (content.type === EMessageType.document) {
+    return resolveInternalDocumentMeta(content.document);
+  }
+
+  if (content.type === EMessageType.video) {
+    const items: string[] = [];
+    const extension = content.video?.extension
+      ?.replace(/^\./, '')
+      .toUpperCase();
+    if (extension) items.push(extension);
+    if (content.video?.size) items.push(formatFileSize(content.video.size));
+    return items.join(' • ');
+  }
+
+  if (content.type === EMessageType.audio) {
+    const items: string[] = [];
+    if (content.audio?.size) items.push(formatFileSize(content.audio.size));
+    if (content.audio?.duration) {
+      items.push(formatAudioTime(content.audio.duration));
+    }
+    return items.join(' • ');
+  }
+
+  return '';
+};
+
+const resolveReplyPreviewDocumentIcon = (
+  content?: InternalReplyPreviewContent | null
+): string => {
+  return resolveInternalDocumentIcon(content?.document);
+};
+
+const resolveReplyPreviewImageSrc = (
+  content?: InternalReplyPreviewContent | null
+): string | null => {
+  if (content?.type !== EMessageType.image) return null;
+  return content.image?.url || content.image?.thumbnail || null;
+};
+
+const resolveReplyPreviewContactPhoto = (
+  content?: InternalReplyPreviewContent | null
+): string | null => {
+  const contacts = resolveReplyPreviewContacts(content);
+  if (contacts.length !== 1) return null;
+  return contacts[0]?.photo || null;
+};
+
+const isReplyPreviewDocument = (
+  content?: InternalReplyPreviewContent | null
+): boolean => content?.type === EMessageType.document;
+
+const isReplyPreviewVideo = (
+  content?: InternalReplyPreviewContent | null
+): boolean => content?.type === EMessageType.video;
+
+const isReplyPreviewAudio = (
+  content?: InternalReplyPreviewContent | null
+): boolean => content?.type === EMessageType.audio;
+
+const isReplyPreviewLocation = (
+  content?: InternalReplyPreviewContent | null
+): boolean => content?.type === EMessageType.location;
+
+const isReplyPreviewContact = (
+  content?: InternalReplyPreviewContent | null
+): boolean =>
+  content?.type === EMessageType.contact_card ||
+  content?.type === EMessageType.contacts;
+
+const isReplyPreviewContactGroup = (
+  content?: InternalReplyPreviewContent | null
+): boolean => content?.type === EMessageType.contacts;
+
+const resolveReplyPreviewName = (message?: InternalMessage | null): string => {
+  return (
+    message?.user?.name || user.value?.info?.name || t('internal_chat_reply')
+  );
+};
+
+const activeReplyPreviewContent = computed(() =>
+  resolveReplyPreviewContent(replyMessage.value)
+);
+
+const resolveQuotedPreviewMeta = (message: InternalMessage): string => {
+  return resolveReplyPreviewMeta(resolveQuotedPreviewContent(message));
+};
+
+const resolveQuotedPreviewImageSrc = (
+  message: InternalMessage
+): string | null => {
+  return resolveReplyPreviewImageSrc(resolveQuotedPreviewContent(message));
+};
+
+const resolveQuotedPreviewDocumentIcon = (message: InternalMessage): string => {
+  return resolveReplyPreviewDocumentIcon(resolveQuotedPreviewContent(message));
+};
+
+const resolveQuotedPreviewContactPhoto = (
+  message: InternalMessage
+): string | null => {
+  return resolveReplyPreviewContactPhoto(resolveQuotedPreviewContent(message));
+};
+
+const resolveQuotedText = (message: InternalMessage): string => {
+  const quotedContent = resolveQuotedPreviewContent(message);
+  return quotedContent ? resolveReplyPreviewText(quotedContent) : '';
 };
 
 const resolveQuotedName = (message: InternalMessage): string => {
@@ -1628,9 +1931,7 @@ const resolveQuotedName = (message: InternalMessage): string => {
 };
 
 const showQuotedMessage = (message: InternalMessage): boolean => {
-  return Boolean(
-    message.content?.quoted?.message || message.content?.message_quoted_id
-  );
+  return Boolean(message.content?.quoted || message.content?.message_quoted_id);
 };
 
 const cloneReactions = (
@@ -2231,14 +2532,70 @@ const isMessageListNearBottom = (target?: HTMLElement | null): boolean => {
   return distanceFromBottom <= messageAutoScrollThreshold;
 };
 
+const updateFixedMessageDatePosition = (element: HTMLElement) => {
+  const rect = element.getBoundingClientRect();
+  fixedMessageDateIndicatorTop.value = rect.top;
+  fixedMessageDateIndicatorLeft.value = rect.left;
+  fixedMessageDateIndicatorWidth.value = rect.width;
+};
+
+const updateFixedMessageDateLabel = (element: HTMLElement) => {
+  const separators = element.querySelectorAll(
+    '.internal-chat-date-separator-wrapper[data-separator-date]'
+  );
+
+  if (!separators.length) {
+    fixedMessageDateLabel.value = '';
+    return;
+  }
+
+  const scrollRect = element.getBoundingClientRect();
+  const viewportTop = scrollRect.top + 80;
+  const floatingZoneBottom = scrollRect.top + 60;
+  let activeLabel = '';
+  let activeSeparatorRect: DOMRect | null = null;
+
+  for (let index = 0; index < separators.length; index += 1) {
+    const separatorElement = separators[index] as HTMLElement;
+    const rect = separatorElement.getBoundingClientRect();
+    const label = separatorElement.getAttribute('data-separator-label') ?? '';
+
+    if (rect.top <= viewportTop && label) {
+      activeLabel = label;
+      activeSeparatorRect = rect;
+    }
+  }
+
+  const separatorStillVisible =
+    activeSeparatorRect &&
+    activeSeparatorRect.bottom >= scrollRect.top &&
+    activeSeparatorRect.top <= floatingZoneBottom;
+
+  fixedMessageDateLabel.value =
+    activeLabel && !separatorStillVisible ? activeLabel : '';
+};
+
 const updateMessageScrollState = (target?: HTMLElement | null) => {
-  const isNearBottom = isMessageListNearBottom(target);
+  const element = target ?? getMessageScrollElement();
+  if (!element) return;
+
+  updateFixedMessageDatePosition(element);
+
+  const isNearBottom = isMessageListNearBottom(element);
   shouldAutoScrollMessages.value = isNearBottom;
   showScrollToBottom.value = !isNearBottom;
+
+  if (isNearBottom) {
+    fixedMessageDateLabel.value = '';
+    return;
+  }
+
+  updateFixedMessageDateLabel(element);
 };
 
 const scrollMessagesToBottom = async (smooth = false) => {
   shouldAutoScrollMessages.value = true;
+  fixedMessageDateLabel.value = '';
 
   await updateMessageScrollbar();
 
@@ -2256,6 +2613,7 @@ const scrollMessagesToBottom = async (smooth = false) => {
   requestAnimationFrame(() => {
     element.scrollTop = element.scrollHeight;
     showScrollToBottom.value = false;
+    fixedMessageDateLabel.value = '';
   });
 };
 
@@ -4082,6 +4440,7 @@ watch(
   async () => {
     shouldAutoScrollMessages.value = true;
     showScrollToBottom.value = false;
+    fixedMessageDateLabel.value = '';
     showReactionPicker.value = null;
     showEmojiPicker.value = null;
 
@@ -4573,7 +4932,20 @@ onBeforeUnmount(async () => {
               v-for="displayItem in messageDisplayItems"
               :key="displayItem.id"
             >
-              <template v-if="displayItem.kind === 'message'">
+              <div
+                v-if="displayItem.kind === 'date-separator'"
+                class="internal-chat-date-separator-wrapper"
+                :data-separator-date="displayItem.separatorDate"
+                :data-separator-label="displayItem.separatorLabel"
+              >
+                <div class="internal-chat-date-separator-line"></div>
+                <div class="internal-chat-date-separator">
+                  {{ displayItem.separatorLabel }}
+                </div>
+                <div class="internal-chat-date-separator-line"></div>
+              </div>
+
+              <template v-else-if="displayItem.kind === 'message'">
                 <div
                   v-for="message in [displayItem.message]"
                   :key="message.message_id"
@@ -4741,13 +5113,116 @@ onBeforeUnmount(async () => {
                       <button
                         v-if="showQuotedMessage(message)"
                         type="button"
-                        class="internal-chat-quoted mb-2 px-2 py-1"
+                        class="internal-chat-quoted"
                       >
-                        <span class="text-caption text-primary">
-                          {{ resolveQuotedName(message) }}
-                        </span>
-                        <div class="text-body-2 text-truncate">
-                          {{ resolveQuotedText(message) }}
+                        <div
+                          v-if="resolveQuotedPreviewImageSrc(message)"
+                          class="internal-chat-reply-preview-media"
+                        >
+                          <img
+                            :src="resolveQuotedPreviewImageSrc(message) || ''"
+                            :alt="t('photo_label')"
+                          />
+                        </div>
+                        <div
+                          v-else-if="
+                            isReplyPreviewDocument(
+                              resolveQuotedPreviewContent(message)
+                            )
+                          "
+                          class="internal-chat-reply-preview-icon"
+                        >
+                          <VIcon
+                            :icon="resolveQuotedPreviewDocumentIcon(message)"
+                            size="26"
+                            color="primary"
+                          />
+                        </div>
+                        <div
+                          v-else-if="
+                            isReplyPreviewVideo(
+                              resolveQuotedPreviewContent(message)
+                            )
+                          "
+                          class="internal-chat-reply-preview-icon"
+                        >
+                          <VIcon size="26" color="primary">
+                            tabler-player-play
+                          </VIcon>
+                        </div>
+                        <div
+                          v-else-if="
+                            isReplyPreviewAudio(
+                              resolveQuotedPreviewContent(message)
+                            )
+                          "
+                          class="internal-chat-reply-preview-icon"
+                        >
+                          <VIcon size="26" color="primary">
+                            tabler-microphone
+                          </VIcon>
+                        </div>
+                        <div
+                          v-else-if="
+                            isReplyPreviewLocation(
+                              resolveQuotedPreviewContent(message)
+                            )
+                          "
+                          class="internal-chat-reply-preview-icon"
+                        >
+                          <VIcon size="26" color="primary">
+                            tabler-map-pin
+                          </VIcon>
+                        </div>
+                        <div
+                          v-else-if="
+                            isReplyPreviewContact(
+                              resolveQuotedPreviewContent(message)
+                            )
+                          "
+                          class="internal-chat-reply-preview-icon"
+                        >
+                          <VAvatar
+                            v-if="resolveQuotedPreviewContactPhoto(message)"
+                            size="26"
+                          >
+                            <VImg
+                              :src="
+                                resolveQuotedPreviewContactPhoto(message) || ''
+                              "
+                              :alt="resolveQuotedText(message)"
+                            />
+                          </VAvatar>
+                          <VIcon
+                            v-else
+                            size="26"
+                            color="primary"
+                            :icon="
+                              isReplyPreviewContactGroup(
+                                resolveQuotedPreviewContent(message)
+                              )
+                                ? 'tabler-users'
+                                : 'tabler-user'
+                            "
+                          />
+                        </div>
+
+                        <div class="internal-chat-reply-preview-content">
+                          <div class="internal-chat-reply-preview-name">
+                            {{ resolveQuotedName(message) }}
+                          </div>
+                          <div class="internal-chat-reply-preview-text">
+                            {{
+                              resolveQuotedText(message) ||
+                              t('internal_chat_message')
+                            }}
+                          </div>
+                          <div
+                            v-if="resolveQuotedPreviewMeta(message)"
+                            class="internal-chat-reply-preview-meta"
+                          >
+                            {{ resolveQuotedPreviewMeta(message) }}
+                          </div>
                         </div>
                       </button>
 
@@ -5232,7 +5707,7 @@ onBeforeUnmount(async () => {
                 </div>
               </template>
 
-              <template v-else>
+              <template v-else-if="displayItem.kind === 'media-group'">
                 <div
                   class="internal-chat-message-row"
                   :class="{
@@ -5374,30 +5849,129 @@ onBeforeUnmount(async () => {
               </VTooltip>
             </VBtn>
           </Transition>
+
+          <Teleport to="body">
+            <Transition name="fade">
+              <div
+                v-if="shouldShowFixedMessageDate"
+                class="internal-chat-fixed-date-indicator"
+                :style="{
+                  top: `${fixedMessageDateIndicatorTop + 8}px`,
+                  left: `${fixedMessageDateIndicatorLeft}px`,
+                  width: `${fixedMessageDateIndicatorWidth}px`,
+                }"
+              >
+                <div class="internal-chat-fixed-date-indicator-badge">
+                  {{ fixedMessageDateLabel }}
+                </div>
+              </div>
+            </Transition>
+          </Teleport>
         </div>
 
         <VDivider />
 
         <div class="internal-chat-composer px-4 py-3">
-          <VAlert
-            v-if="replyMessage"
-            density="comfortable"
-            type="info"
-            variant="tonal"
-            class="mb-3"
-          >
-            <div class="d-flex align-center justify-space-between gap-2">
-              <div class="text-truncate">
-                {{ t('internal_chat_replying_to') }}
-                {{
-                  resolveMessageText(replyMessage) || t('internal_chat_message')
-                }}
-              </div>
-              <IconBtn @click="replyMessage = null">
-                <VIcon size="16">tabler-x</VIcon>
-              </IconBtn>
+          <div v-if="replyMessage" class="internal-chat-reply-preview">
+            <div
+              v-if="resolveReplyPreviewImageSrc(activeReplyPreviewContent)"
+              class="internal-chat-reply-preview-media"
+            >
+              <img
+                :src="
+                  resolveReplyPreviewImageSrc(activeReplyPreviewContent) || ''
+                "
+                :alt="t('photo_label')"
+              />
             </div>
-          </VAlert>
+            <div
+              v-else-if="isReplyPreviewDocument(activeReplyPreviewContent)"
+              class="internal-chat-reply-preview-icon"
+            >
+              <VIcon
+                :icon="
+                  resolveReplyPreviewDocumentIcon(activeReplyPreviewContent)
+                "
+                size="26"
+                color="primary"
+              />
+            </div>
+            <div
+              v-else-if="isReplyPreviewVideo(activeReplyPreviewContent)"
+              class="internal-chat-reply-preview-icon"
+            >
+              <VIcon size="26" color="primary">tabler-player-play</VIcon>
+            </div>
+            <div
+              v-else-if="isReplyPreviewAudio(activeReplyPreviewContent)"
+              class="internal-chat-reply-preview-icon"
+            >
+              <VIcon size="26" color="primary">tabler-microphone</VIcon>
+            </div>
+            <div
+              v-else-if="isReplyPreviewLocation(activeReplyPreviewContent)"
+              class="internal-chat-reply-preview-icon"
+            >
+              <VIcon size="26" color="primary">tabler-map-pin</VIcon>
+            </div>
+            <div
+              v-else-if="isReplyPreviewContact(activeReplyPreviewContent)"
+              class="internal-chat-reply-preview-icon"
+            >
+              <VAvatar
+                v-if="
+                  resolveReplyPreviewContactPhoto(activeReplyPreviewContent)
+                "
+                size="26"
+              >
+                <VImg
+                  :src="
+                    resolveReplyPreviewContactPhoto(
+                      activeReplyPreviewContent
+                    ) || ''
+                  "
+                  :alt="resolveReplyPreviewText(activeReplyPreviewContent)"
+                />
+              </VAvatar>
+              <VIcon
+                v-else
+                size="26"
+                color="primary"
+                :icon="
+                  isReplyPreviewContactGroup(activeReplyPreviewContent)
+                    ? 'tabler-users'
+                    : 'tabler-user'
+                "
+              />
+            </div>
+
+            <div class="internal-chat-reply-preview-content">
+              <div class="internal-chat-reply-preview-name">
+                {{ resolveReplyPreviewName(replyMessage) }}
+              </div>
+              <div class="internal-chat-reply-preview-text">
+                {{ resolveReplyPreviewText(activeReplyPreviewContent) }}
+              </div>
+              <div
+                v-if="resolveReplyPreviewMeta(activeReplyPreviewContent)"
+                class="internal-chat-reply-preview-meta"
+              >
+                {{ resolveReplyPreviewMeta(activeReplyPreviewContent) }}
+              </div>
+            </div>
+
+            <VBtn
+              class="internal-chat-reply-preview-close"
+              icon
+              size="22"
+              density="comfortable"
+              variant="text"
+              :aria-label="t('close')"
+              @click="replyMessage = null"
+            >
+              <VIcon size="18">tabler-x</VIcon>
+            </VBtn>
+          </div>
 
           <ChatLinkPreview
             v-if="linkPreview || isLoadingLinkPreview"
@@ -7247,6 +7821,57 @@ onBeforeUnmount(async () => {
   background: rgba(var(--v-theme-on-surface), 0.28);
 }
 
+.internal-chat-date-separator-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 100%;
+  gap: 8px;
+  margin-block: 16px;
+}
+
+.internal-chat-date-separator-line {
+  flex: 0.25 1 0;
+  block-size: 1px;
+  background: rgba(var(--v-theme-on-surface), 0.12);
+}
+
+.internal-chat-date-separator {
+  display: inline-block;
+  min-inline-size: fit-content;
+  border-radius: 7.5px;
+  padding: 4px 12px;
+  background: rgba(var(--v-theme-on-surface), 0.12);
+  color: rgba(var(--v-theme-on-surface), 0.65);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.internal-chat-fixed-date-indicator {
+  position: fixed;
+  z-index: 2400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.internal-chat-fixed-date-indicator-badge {
+  display: inline-block;
+  min-inline-size: fit-content;
+  border-radius: 7.5px;
+  padding: 4px 12px;
+  background: rgba(var(--v-theme-on-surface), 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  color: rgba(var(--v-theme-on-surface), 0.65);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .internal-chat-message-row {
   display: flex;
   align-items: flex-end;
@@ -7399,15 +8024,106 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-quoted {
-  display: block;
-  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
   border: 0;
-  border-left: 3px solid rgb(var(--v-theme-primary));
-  border-radius: 6px;
+  border-inline-start: 3px solid rgb(var(--v-theme-primary));
+  border-radius: 8px;
+  margin-block-end: 6px;
+  padding: 8px 10px;
   background: rgba(var(--v-theme-primary), 0.08);
   color: inherit;
   text-align: start;
   cursor: default;
+}
+
+.internal-chat-reply-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-inline-start: 3px solid rgb(var(--v-theme-primary));
+  border-radius: 10px;
+  margin-block-end: 8px;
+  padding: 10px 36px 10px 12px;
+  background: rgb(var(--v-theme-surface));
+}
+
+.internal-chat-reply-preview-media,
+.internal-chat-reply-preview-icon {
+  inline-size: 40px;
+  block-size: 40px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.internal-chat-reply-preview-media img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.internal-chat-reply-preview-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+
+.internal-chat-reply-preview-content {
+  min-inline-size: 0;
+  flex: 1 1 auto;
+}
+
+.internal-chat-reply-preview-name {
+  color: rgb(var(--v-theme-primary));
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.1;
+  margin-block-end: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.internal-chat-reply-preview-text {
+  overflow: hidden;
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.internal-chat-reply-preview-meta {
+  margin-block-start: 2px;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.internal-chat-reply-preview-close {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+}
+
+.internal-chat-quoted .internal-chat-reply-preview-media,
+.internal-chat-quoted .internal-chat-reply-preview-icon {
+  inline-size: 36px;
+  block-size: 36px;
+}
+
+.internal-chat-quoted .internal-chat-reply-preview-name {
+  font-size: 0.85rem;
+}
+
+.internal-chat-quoted .internal-chat-reply-preview-text {
+  font-size: 0.9rem;
 }
 
 .internal-chat-media {
