@@ -3012,6 +3012,8 @@
   "internal_chat_videos": "Videos",
   "internal_chat_audio": "Audio",
   "internal_chat_contact": "Contact",
+  "internal_chat_contacts_summary_one": "{name} and {count} other contact",
+  "internal_chat_contacts_summary_many": "{name} and {count} other contacts",
   "internal_chat_location": "Location",
   "internal_chat_emoji": "Emoji",
   "internal_chat_record_audio": "Record audio",

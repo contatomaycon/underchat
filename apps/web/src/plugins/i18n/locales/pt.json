@@ -3019,6 +3019,8 @@
   "internal_chat_videos": "Vídeos",
   "internal_chat_audio": "Áudio",
   "internal_chat_contact": "Contato",
+  "internal_chat_contacts_summary_one": "{name} e {count} outro contato",
+  "internal_chat_contacts_summary_many": "{name} e {count} outros contatos",
   "internal_chat_location": "Localização",
   "internal_chat_emoji": "Emoji",
   "internal_chat_record_audio": "Gravar áudio",

@@ -2,8 +2,10 @@
 import {
   computed,
   nextTick,
+  onErrorCaptured,
   onBeforeUnmount,
   onMounted,
+  reactive,
   ref,
   watch,
 } from 'vue';
@@ -11,6 +13,7 @@ import { storeToRefs } from 'pinia';
 import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
+import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import axios from '@webcore/axios';
 import { useInternalChatStore } from '@/@webcore/stores/internalChat';
 import { useInternalChatSocket } from '@/composables/useInternalChatSocket';
@@ -18,6 +21,7 @@ import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
 import ChatLocationPicker from '@/components/chat/ChatLocationPicker.vue';
+import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
@@ -51,6 +55,9 @@ type InternalConversationParticipant =
   InternalConversation['participants'][number];
 type InternalUser = ListUsersResponse['data']['results'][number];
 type InternalMessage = ListMessagesResponse['data']['results'][number];
+type InternalContact = NonNullable<
+  InternalMessage['content']['contacts']
+>[number];
 type InternalParticipant = ListGroupMembersResponse['data'][number];
 type InternalSidebarTab = 'users' | 'all' | 'direct' | 'group';
 type InternalSidebarTabInfo = {
@@ -65,6 +72,28 @@ type InternalReaction = {
   user_id?: string | null;
   user_name?: string | null;
 };
+type InternalMediaKind = 'image' | 'video';
+type InternalViewerMediaItem = {
+  src: string;
+  caption?: string;
+  downloadName?: string;
+  kind: InternalMediaKind;
+};
+type InternalMessageDisplayItem =
+  | {
+      kind: 'message';
+      id: string;
+      message: InternalMessage;
+    }
+  | {
+      kind: 'media-group';
+      id: string;
+      mediaKind: InternalMediaKind;
+      messages: InternalMessage[];
+      firstMessage: InternalMessage;
+      lastMessage: InternalMessage;
+      isMine: boolean;
+    };
 type EmojiSelection = {
   native?: string;
   id?: string;
@@ -134,6 +163,28 @@ const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
 const isLoadingLinkPreview = ref(false);
 const isContactPickerOpen = ref(false);
 const isLocationPickerOpen = ref(false);
+const mediaViewerOpen = ref(false);
+const mediaViewerItems = ref<InternalViewerMediaItem[]>([]);
+const mediaViewerInitialIndex = ref(0);
+const locationModalOpen = ref(false);
+const locationData = ref<{
+  latitude: number;
+  longitude: number;
+  name?: string | null;
+  address?: string | null;
+} | null>(null);
+const locationMapRef = ref<any>(null);
+const webGLSupported = ref(true);
+const mapErrors = reactive<Record<string, boolean>>({});
+const contactViewerOpen = ref(false);
+const contactViewerContacts = ref<InternalContact[]>([]);
+
+const audioPlayers = ref<Map<string, HTMLAudioElement>>(new Map());
+const audioPlayStates = reactive<Record<string, boolean>>({});
+const audioCurrentTimes = reactive<Record<string, number>>({});
+const audioDurations = reactive<Record<string, number>>({});
+const audioWaveforms = reactive<Record<string, number[]>>({});
+const audioPlaybackRates = reactive<Record<string, number>>({});
 
 const imageInputRef = ref<HTMLInputElement | null>(null);
 const videoInputRef = ref<HTMLInputElement | null>(null);
@@ -234,6 +285,22 @@ const sidebarInitialSkeletonItems = [1, 2, 3, 4];
 const sidebarAppendSkeletonItems = [1, 2];
 const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const reactionEmojiIndex = new EmojiIndex(data);
+const internalDocumentIconMap: Record<string, string> = {
+  pdf: 'tabler-file-type-pdf',
+  doc: 'tabler-file-type-doc',
+  docx: 'tabler-file-type-doc',
+  xls: 'tabler-file-type-xls',
+  xlsx: 'tabler-file-type-xls',
+  csv: 'tabler-file-type-xls',
+  ppt: 'tabler-file-type-ppt',
+  pptx: 'tabler-file-type-ppt',
+  txt: 'tabler-file-type-txt',
+  zip: 'tabler-file-type-zip',
+  rar: 'tabler-file-type-zip',
+  '7z': 'tabler-file-type-zip',
+  json: 'tabler-file-code',
+  xml: 'tabler-file-code',
+};
 let groupPhotoPreviewUrl: string | null = null;
 
 const resolveAvatarSource = (photo?: string | null): string => {
@@ -575,6 +642,65 @@ const formattedRecordingDuration = computed(() => {
   return `${minutes}:${seconds}`;
 });
 
+const mapStyle = computed(() => ({
+  version: 8,
+  sources: {
+    'osm-tiles': {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    },
+  },
+  layers: [
+    {
+      id: 'osm-tiles-layer',
+      type: 'raster',
+      source: 'osm-tiles',
+      minzoom: 0,
+      maxzoom: 22,
+    },
+  ],
+}));
+
+const mapCenter = computed<[number, number]>(() => {
+  if (!locationData.value) return [0, 0];
+  return [locationData.value.longitude, locationData.value.latitude];
+});
+
+const mapZoom = computed(() => 15);
+
+const markerPosition = computed<[number, number]>(() => {
+  if (!locationData.value) return [0, 0];
+  return [locationData.value.longitude, locationData.value.latitude];
+});
+
+const isWebGLSupported = (): boolean => {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl =
+      canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    return !!gl;
+  } catch {
+    return false;
+  }
+};
+
+onErrorCaptured((err) => {
+  const message = err instanceof Error ? err.message : String(err);
+  if (
+    message.includes('WebGL') ||
+    message.includes('webglcontextcreationerror') ||
+    message.includes('Failed to initialize WebGL')
+  ) {
+    webGLSupported.value = false;
+    return false;
+  }
+
+  return true;
+});
+
 const formatMessageDate = (value?: string | null): string => {
   if (!value) return '';
 
@@ -717,6 +843,20 @@ const resolveMessageText = (message: InternalMessage): string | null => {
   return message.content.message ?? null;
 };
 
+const shouldRenderMessageTextBeforeMedia = (
+  message: InternalMessage
+): boolean => {
+  const mediaWithOwnCaption = [
+    EMessageType.audio,
+    EMessageType.document,
+    EMessageType.location,
+    EMessageType.contact_card,
+    EMessageType.contacts,
+  ];
+
+  return !mediaWithOwnCaption.includes(message.content?.type as EMessageType);
+};
+
 const shouldShowCopy = (message: InternalMessage): boolean => {
   return !isDeletedMessage(message) && Boolean(resolveMessageText(message));
 };
@@ -727,7 +867,9 @@ const resolveDownloadTarget = (
   if (message.content?.image?.url) {
     return {
       url: message.content.image.url,
-      name: message.content.image.name || 'imagem',
+      name: message.content.image.extension
+        ? `image.${String(message.content.image.extension).replace(/^\./, '')}`
+        : 'image.jpg',
     };
   }
 
@@ -759,6 +901,207 @@ const shouldShowDownload = (message: InternalMessage): boolean => {
   return !isDeletedMessage(message) && Boolean(resolveDownloadTarget(message));
 };
 
+const resolveMessageMediaKind = (
+  message: InternalMessage
+): InternalMediaKind | null => {
+  if (
+    message.content?.type === EMessageType.image &&
+    Boolean(message.content.image?.url)
+  ) {
+    return 'image';
+  }
+
+  if (
+    message.content?.type === EMessageType.video &&
+    Boolean(message.content.video?.url)
+  ) {
+    return 'video';
+  }
+
+  return null;
+};
+
+const canGroupMessageMedia = (message: InternalMessage): boolean => {
+  return Boolean(
+    resolveMessageMediaKind(message) &&
+    message.user?.id &&
+    !isDeletedMessage(message) &&
+    !resolveMessageText(message) &&
+    !showQuotedMessage(message) &&
+    !message.content?.reactions?.length &&
+    !resolveMessageLocalState(message)
+  );
+};
+
+const buildMediaViewerItem = (
+  message: InternalMessage
+): InternalViewerMediaItem | null => {
+  const image = message.content?.image;
+  if (message.content?.type === EMessageType.image && image?.url) {
+    return {
+      src: image.url,
+      caption: image.caption || message.content.message || '',
+      downloadName: image.extension
+        ? `image.${String(image.extension).replace(/^\./, '')}`
+        : 'image.jpg',
+      kind: 'image',
+    };
+  }
+
+  const video = message.content?.video;
+  if (message.content?.type === EMessageType.video && video?.url) {
+    return {
+      src: video.url,
+      caption: video.caption || message.content.message || '',
+      downloadName:
+        video.name ||
+        (video.extension
+          ? `video.${String(video.extension).replace(/^\./, '')}`
+          : 'video.mp4'),
+      kind: 'video',
+    };
+  }
+
+  return null;
+};
+
+const messageDisplayItems = computed<InternalMessageDisplayItem[]>(() => {
+  const displayItems: InternalMessageDisplayItem[] = [];
+  let index = 0;
+
+  while (index < messages.value.length) {
+    const firstMessage = messages.value[index];
+    const mediaKind = resolveMessageMediaKind(firstMessage);
+
+    if (!mediaKind || !canGroupMessageMedia(firstMessage)) {
+      displayItems.push({
+        kind: 'message',
+        id: `message:${firstMessage.message_id}`,
+        message: firstMessage,
+      });
+      index += 1;
+      continue;
+    }
+
+    const userId = firstMessage.user?.id;
+    const groupedMessages: InternalMessage[] = [firstMessage];
+    let nextIndex = index + 1;
+
+    while (nextIndex < messages.value.length) {
+      const nextMessage = messages.value[nextIndex];
+      const nextMediaKind = resolveMessageMediaKind(nextMessage);
+
+      if (
+        !canGroupMessageMedia(nextMessage) ||
+        nextMediaKind !== mediaKind ||
+        nextMessage.user?.id !== userId
+      ) {
+        break;
+      }
+
+      groupedMessages.push(nextMessage);
+      nextIndex += 1;
+    }
+
+    if (groupedMessages.length === 1) {
+      displayItems.push({
+        kind: 'message',
+        id: `message:${firstMessage.message_id}`,
+        message: firstMessage,
+      });
+      index += 1;
+      continue;
+    }
+
+    const lastMessage = groupedMessages[groupedMessages.length - 1];
+    displayItems.push({
+      kind: 'media-group',
+      id: `media-group:${mediaKind}:${firstMessage.message_id}:${lastMessage.message_id}`,
+      mediaKind,
+      messages: groupedMessages,
+      firstMessage,
+      lastMessage,
+      isMine: isOwnMessage(firstMessage),
+    });
+    index = nextIndex;
+  }
+
+  return displayItems;
+});
+
+const getMediaGroupPreviewItems = (
+  displayItem: Extract<InternalMessageDisplayItem, { kind: 'media-group' }>
+): InternalMessage[] => {
+  return displayItem.messages.slice(0, 4);
+};
+
+const getMediaGroupRemainingCount = (
+  displayItem: Extract<InternalMessageDisplayItem, { kind: 'media-group' }>
+): number => {
+  return Math.max(0, displayItem.messages.length - 4);
+};
+
+const getMediaGroupGridClass = (
+  displayItem: Extract<InternalMessageDisplayItem, { kind: 'media-group' }>
+): string => {
+  const previewCount = getMediaGroupPreviewItems(displayItem).length;
+  return `internal-chat-media-group-grid--${Math.max(
+    1,
+    Math.min(previewCount, 4)
+  )}`;
+};
+
+const openMediaViewerWithItems = (
+  items: InternalViewerMediaItem[],
+  initialIndex = 0
+) => {
+  if (!items.length) return;
+
+  mediaViewerItems.value = items;
+  mediaViewerInitialIndex.value = Math.max(
+    0,
+    Math.min(initialIndex, items.length - 1)
+  );
+  mediaViewerOpen.value = true;
+};
+
+const openMessageMediaViewer = (message: InternalMessage) => {
+  const item = buildMediaViewerItem(message);
+  if (!item) return;
+
+  openMediaViewerWithItems([item]);
+};
+
+const openMediaGroupViewer = (
+  displayItem: Extract<InternalMessageDisplayItem, { kind: 'media-group' }>,
+  initialIndex = 0
+) => {
+  const items = displayItem.messages
+    .map((message) => buildMediaViewerItem(message))
+    .filter((item): item is InternalViewerMediaItem => Boolean(item));
+
+  openMediaViewerWithItems(items, initialIndex);
+};
+
+const downloadMediaViewerItem = (payload?: {
+  item?: InternalViewerMediaItem;
+  index?: number;
+}) => {
+  const item =
+    payload?.item ?? mediaViewerItems.value[mediaViewerInitialIndex.value];
+  if (!item?.src) return;
+
+  const link = document.createElement('a');
+  link.href = item.src;
+  link.download =
+    item.downloadName || (item.kind === 'video' ? 'video.mp4' : 'image.jpg');
+  link.target = '_blank';
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
 const resolveMessageLocalState = (message: InternalMessage) => {
   return message.hash
     ? internalChatStore.localMessageState[message.hash]
@@ -773,25 +1116,302 @@ const hasMessageUploadError = (message: InternalMessage): boolean => {
   return resolveMessageLocalState(message)?.status === 'error';
 };
 
-const resolveLocationHref = (
-  location?: InternalMessage['content']['location'] | null
-): string => {
-  if (!location) return '#';
-  return `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
-};
-
-const resolveLocationTitle = (
-  location?: InternalMessage['content']['location'] | null
-): string => {
-  return (
-    location?.name || location?.address || t('internal_chat_location_fallback')
-  );
-};
-
 const resolveMessageContacts = (message: InternalMessage) => {
   if (message.content?.contacts?.length) return message.content.contacts;
   if (message.content?.contact) return [message.content.contact];
   return [];
+};
+
+const resolveContactFullName = (contact: InternalContact): string => {
+  return `${contact.name || t('internal_chat_contact')} ${
+    contact.last_name || ''
+  }`.trim();
+};
+
+const resolveMessageContactCardTitle = (message: InternalMessage): string => {
+  const contacts = resolveMessageContacts(message);
+  const firstContact = contacts[0];
+  if (!firstContact) return t('internal_chat_contact');
+
+  const firstName = resolveContactFullName(firstContact);
+  if (contacts.length === 1) return firstName;
+
+  const remainingCount = contacts.length - 1;
+  return t(
+    remainingCount === 1
+      ? 'internal_chat_contacts_summary_one'
+      : 'internal_chat_contacts_summary_many',
+    {
+      name: firstName,
+      count: remainingCount,
+    }
+  );
+};
+
+const openMessageContacts = (message: InternalMessage) => {
+  const contacts = resolveMessageContacts(message);
+  if (!contacts.length) return;
+
+  contactViewerContacts.value = contacts;
+  contactViewerOpen.value = true;
+};
+
+const resolveInternalDocumentIcon = (
+  doc?: InternalMessage['content']['document'] | null
+): string => {
+  if (!doc) return 'tabler-file-description';
+
+  const extension = doc.extension?.toLowerCase().replace(/^\./, '');
+  if (extension && internalDocumentIconMap[extension]) {
+    return internalDocumentIconMap[extension];
+  }
+
+  const mimetype = doc.mimetype ?? '';
+  if (mimetype.includes('pdf')) return 'tabler-file-type-pdf';
+  if (mimetype.includes('word')) return 'tabler-file-type-doc';
+  if (mimetype.includes('sheet') || mimetype.includes('excel')) {
+    return 'tabler-file-type-xls';
+  }
+  if (mimetype.includes('presentation')) return 'tabler-file-type-ppt';
+  if (mimetype.includes('zip') || mimetype.includes('compressed')) {
+    return 'tabler-file-type-zip';
+  }
+
+  return 'tabler-file-description';
+};
+
+const resolveInternalDocumentName = (
+  doc?: InternalMessage['content']['document'] | null
+): string => {
+  return doc?.name || t('internal_chat_document_fallback');
+};
+
+const resolveInternalDocumentDownloadName = (
+  doc?: InternalMessage['content']['document'] | null
+): string => {
+  return resolveInternalDocumentName(doc);
+};
+
+const resolveInternalDocumentMeta = (
+  doc?: InternalMessage['content']['document'] | null
+): string => {
+  if (!doc) return '';
+
+  const extension =
+    (doc.extension || '').replace(/^\./, '').toUpperCase() || 'FILE';
+  const size = doc.size ? formatFileSize(doc.size) : '—';
+  return `${extension} • ${size}`;
+};
+
+const hasValidLocation = (message: InternalMessage): boolean => {
+  const location = message.content?.location;
+  return (
+    typeof location?.latitude === 'number' &&
+    typeof location.longitude === 'number'
+  );
+};
+
+const resolveLocationCoordinates = (
+  location?: InternalMessage['content']['location'] | null
+): [number, number] => {
+  return [Number(location?.longitude ?? 0), Number(location?.latitude ?? 0)];
+};
+
+const openMessageLocation = (message: InternalMessage) => {
+  const location = message.content?.location;
+  if (!hasValidLocation(message) || !location) return;
+
+  locationData.value = {
+    latitude: location.latitude as number,
+    longitude: location.longitude as number,
+    name: location.name ?? null,
+    address: location.address ?? null,
+  };
+  locationModalOpen.value = true;
+};
+
+const onInternalLocationMapLoad = () => {
+  if (locationMapRef.value?.map) {
+    locationMapRef.value.map.resize();
+  }
+};
+
+const normalizeAudioTimeValue = (value?: number | null): number | null => {
+  if (typeof value !== 'number') return null;
+  if (!Number.isFinite(value)) return null;
+  if (value < 0) return null;
+  return value;
+};
+
+const formatAudioTime = (seconds?: number | null): string => {
+  const totalSeconds = Math.floor(normalizeAudioTimeValue(seconds) ?? 0);
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+const getOrCreateAudioPlayer = (
+  messageId: string,
+  url: string
+): HTMLAudioElement => {
+  const existingPlayer = audioPlayers.value.get(messageId);
+  if (existingPlayer) return existingPlayer;
+
+  const audio = new Audio(url);
+  audio.preload = 'metadata';
+  audioPlayers.value.set(messageId, audio);
+
+  audio.addEventListener('loadedmetadata', () => {
+    const duration = normalizeAudioTimeValue(audio.duration);
+    if (duration !== null) {
+      audioDurations[messageId] = duration;
+    }
+  });
+
+  audio.addEventListener('timeupdate', () => {
+    const currentTime = normalizeAudioTimeValue(audio.currentTime);
+    if (currentTime !== null) {
+      audioCurrentTimes[messageId] = currentTime;
+    }
+  });
+
+  audio.addEventListener('play', () => {
+    audioPlayStates[messageId] = true;
+  });
+
+  audio.addEventListener('pause', () => {
+    audioPlayStates[messageId] = false;
+  });
+
+  audio.addEventListener('ended', () => {
+    audioPlayStates[messageId] = false;
+    audioCurrentTimes[messageId] = 0;
+  });
+
+  return audio;
+};
+
+const toggleAudioPlay = (messageId: string, url: string) => {
+  const audio = getOrCreateAudioPlayer(messageId, url);
+  const isPlaying = audioPlayStates[messageId] || false;
+
+  if (isPlaying) {
+    audio.pause();
+    return;
+  }
+
+  audio.playbackRate = audioPlaybackRates[messageId] || 1;
+  audio.play().catch(() => {
+    audioPlayStates[messageId] = false;
+  });
+};
+
+const getAudioSpeed = (messageId: string): number => {
+  return audioPlaybackRates[messageId] || 1;
+};
+
+const getAudioSpeedLabel = (messageId: string): string => {
+  const speed = getAudioSpeed(messageId);
+  if (speed === 1.5) return '1.5x';
+  if (speed === 2) return '2x';
+  return '1x';
+};
+
+const toggleAudioSpeed = (messageId: string) => {
+  const currentSpeed = getAudioSpeed(messageId);
+  const newSpeed = currentSpeed === 1 ? 1.5 : currentSpeed === 1.5 ? 2 : 1;
+  audioPlaybackRates[messageId] = newSpeed;
+
+  const audio = audioPlayers.value.get(messageId);
+  if (audio) audio.playbackRate = newSpeed;
+};
+
+const seekAudio = (messageId: string, url: string, event: MouseEvent) => {
+  const container = event.currentTarget as HTMLElement | null;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  const clickX = event.clientX - rect.left;
+  const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+  const audio = getOrCreateAudioPlayer(messageId, url);
+  const duration = normalizeAudioTimeValue(audio.duration);
+
+  if (duration === null) return;
+
+  audio.currentTime = percentage * duration;
+  audioCurrentTimes[messageId] = audio.currentTime;
+};
+
+const decodeBase64Waveform = (base64String: string): number[] | null => {
+  try {
+    const binaryString = atob(base64String);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let index = 0; index < binaryString.length; index += 1) {
+      const codePoint = binaryString.codePointAt(index);
+      bytes[index] = codePoint ?? 0;
+    }
+    return Array.from(bytes);
+  } catch {
+    return null;
+  }
+};
+
+const normalizeWaveformValues = (waveformArray: number[]): number[] => {
+  return waveformArray.map((value) => {
+    const normalized = value / 100;
+    return Math.max(0.15, Math.min(1, normalized));
+  });
+};
+
+const createDefaultWaveform = (): number[] => new Array(64).fill(0.3);
+
+const parseWaveform = (
+  waveform: string | number[] | null | undefined
+): number[] | null => {
+  if (!waveform) return null;
+  if (typeof waveform === 'string') return decodeBase64Waveform(waveform);
+  if (Array.isArray(waveform) && waveform.length > 0) return waveform;
+  return null;
+};
+
+const loadAudioWaveform = (
+  messageId: string,
+  waveform: string | number[] | null | undefined
+) => {
+  if (audioWaveforms[messageId]) return;
+
+  const waveformArray = parseWaveform(waveform);
+  audioWaveforms[messageId] = waveformArray?.length
+    ? normalizeWaveformValues(waveformArray)
+    : createDefaultWaveform();
+};
+
+const getAudioProgress = (messageId: string): number => {
+  const currentTime =
+    normalizeAudioTimeValue(audioCurrentTimes[messageId]) ?? 0;
+  const duration = normalizeAudioTimeValue(audioDurations[messageId]) ?? 0;
+  if (duration === 0) return 0;
+  return (currentTime / duration) * 100;
+};
+
+const isAudioPlaying = (messageId: string): boolean => {
+  return !!audioPlayStates[messageId];
+};
+
+const getDisplayAudioTime = (
+  messageId: string,
+  fallbackDuration?: number | null
+): string => {
+  const currentTime = normalizeAudioTimeValue(audioCurrentTimes[messageId]);
+  const duration =
+    normalizeAudioTimeValue(audioDurations[messageId]) ??
+    normalizeAudioTimeValue(fallbackDuration);
+
+  if (isAudioPlaying(messageId) && currentTime !== null) {
+    return formatAudioTime(currentTime);
+  }
+
+  return formatAudioTime(duration);
 };
 
 const resolveQuotedText = (message: InternalMessage): string => {
@@ -3314,7 +3934,24 @@ watch(
   }
 );
 
+watch(
+  () => messages.value,
+  (messageList) => {
+    for (const message of messageList) {
+      if (
+        message.content?.type === EMessageType.audio &&
+        message.content.audio?.url &&
+        !audioWaveforms[message.message_id]
+      ) {
+        loadAudioWaveform(message.message_id, message.content.audio.waveform);
+      }
+    }
+  },
+  { deep: true, immediate: true }
+);
+
 onMounted(async () => {
+  webGLSupported.value = isWebGLSupported();
   await loadSidebar(false);
   await internalChatSocket.initializeSocket();
   await updateMessageScrollbar();
@@ -3350,6 +3987,27 @@ onBeforeUnmount(async () => {
   if (mediaStreamRef.value) {
     mediaStreamRef.value.getTracks().forEach((track) => track.stop());
     mediaStreamRef.value = null;
+  }
+
+  for (const audio of audioPlayers.value.values()) {
+    audio.pause();
+    audio.src = '';
+  }
+  audioPlayers.value.clear();
+  for (const key of Object.keys(audioPlayStates)) {
+    delete audioPlayStates[key];
+  }
+  for (const key of Object.keys(audioCurrentTimes)) {
+    delete audioCurrentTimes[key];
+  }
+  for (const key of Object.keys(audioDurations)) {
+    delete audioDurations[key];
+  }
+  for (const key of Object.keys(audioWaveforms)) {
+    delete audioWaveforms[key];
+  }
+  for (const key of Object.keys(audioPlaybackRates)) {
+    delete audioPlaybackRates[key];
   }
 
   endGroupPhotoCropDrag();
@@ -3726,410 +4384,791 @@ onBeforeUnmount(async () => {
               </VBtn>
             </div>
 
-            <div
-              v-for="message in messages"
-              :key="message.message_id"
-              class="internal-chat-message-row"
-              :class="{
-                'internal-chat-message-row--mine': isOwnMessage(message),
-              }"
-              @mouseenter="onMessageMouseEnter(message)"
-              @mouseleave="onMessageMouseLeave"
+            <template
+              v-for="displayItem in messageDisplayItems"
+              :key="displayItem.id"
             >
-              <VAvatar
-                size="32"
-                class="internal-chat-message-avatar"
-                :class="{
-                  'internal-chat-message-avatar--mine': isOwnMessage(message),
-                }"
-              >
-                <VImg
-                  :src="resolveMessageAvatarSource(message)"
-                  :alt="message.user?.name || t('internal_chat_system_user')"
-                  cover
-                />
-              </VAvatar>
-
-              <div
-                class="internal-chat-message-shell"
-                :class="{
-                  'internal-chat-message-shell--mine': isOwnMessage(message),
-                }"
-              >
-                <button
-                  v-if="
-                    hoveredMessageId === message.message_id &&
-                    canInteractWithMessage(message) &&
-                    showReactionPicker !== message.message_id
-                  "
-                  type="button"
-                  class="internal-chat-reaction-trigger"
-                  :class="{
-                    'internal-chat-reaction-trigger--mine':
-                      isOwnMessage(message),
-                  }"
-                  :aria-label="t('internal_chat_react_to_message')"
-                  @click.stop="toggleReactionPicker(message)"
-                >
-                  <VIcon size="20">tabler-mood-smile</VIcon>
-                </button>
-
+              <template v-if="displayItem.kind === 'message'">
                 <div
-                  class="internal-chat-message-bubble"
+                  v-for="message in [displayItem.message]"
+                  :key="message.message_id"
+                  class="internal-chat-message-row"
                   :class="{
-                    'internal-chat-message-bubble--mine': isOwnMessage(message),
-                    'internal-chat-message-bubble--deleted':
-                      isDeletedMessage(message),
-                    'internal-chat-message-bubble--with-reactions':
-                      message.content?.reactions?.length,
+                    'internal-chat-message-row--mine': isOwnMessage(message),
                   }"
+                  @mouseenter="onMessageMouseEnter(message)"
+                  @mouseleave="onMessageMouseLeave"
                 >
-                  <div class="internal-chat-message-header">
-                    <span class="text-caption text-medium-emphasis">
-                      {{ message.user?.name || t('internal_chat_system_user') }}
-                    </span>
-
-                    <VMenu
-                      v-if="canInteractWithMessage(message)"
-                      location="bottom end"
-                      offset="6"
-                    >
-                      <template #activator="{ props }">
-                        <IconBtn
-                          class="internal-chat-message-action-btn"
-                          size="x-small"
-                          v-bind="props"
-                        >
-                          <VIcon size="16">tabler-chevron-down</VIcon>
-                        </IconBtn>
-                      </template>
-
-                      <VList density="compact" min-width="180">
-                        <VListItem @click="onReply(message)">
-                          <template #prepend>
-                            <VIcon size="18">tabler-corner-up-left</VIcon>
-                          </template>
-                          <VListItemTitle>
-                            {{ t('internal_chat_reply_action') }}
-                          </VListItemTitle>
-                        </VListItem>
-
-                        <VListItem
-                          v-if="shouldShowCopy(message)"
-                          @click="copyMessage(message)"
-                        >
-                          <template #prepend>
-                            <VIcon size="18">tabler-copy</VIcon>
-                          </template>
-                          <VListItemTitle>
-                            {{ t('internal_chat_copy_action') }}
-                          </VListItemTitle>
-                        </VListItem>
-
-                        <VListItem
-                          v-if="shouldShowDownload(message)"
-                          @click="downloadMessage(message)"
-                        >
-                          <template #prepend>
-                            <VIcon size="18">tabler-download</VIcon>
-                          </template>
-                          <VListItemTitle>
-                            {{ t('internal_chat_download_action') }}
-                          </VListItemTitle>
-                        </VListItem>
-
-                        <VListItem @click="openForwardDialog(message)">
-                          <template #prepend>
-                            <VIcon size="18">tabler-arrow-forward-up</VIcon>
-                          </template>
-                          <VListItemTitle>
-                            {{ t('internal_chat_forward_action') }}
-                          </VListItemTitle>
-                        </VListItem>
-
-                        <VListItem @click="toggleReactionPicker(message)">
-                          <template #prepend>
-                            <VIcon size="18">tabler-mood-smile</VIcon>
-                          </template>
-                          <VListItemTitle>
-                            {{ t('internal_chat_react_action') }}
-                          </VListItemTitle>
-                        </VListItem>
-
-                        <VListItem
-                          v-if="canEditInternalMessage(message)"
-                          @click="onEdit(message)"
-                        >
-                          <template #prepend>
-                            <VIcon size="18">tabler-edit</VIcon>
-                          </template>
-                          <VListItemTitle>
-                            {{ t('internal_chat_edit_action') }}
-                          </VListItemTitle>
-                        </VListItem>
-
-                        <VListItem
-                          v-if="isOwnMessage(message)"
-                          @click="onDelete(message)"
-                        >
-                          <template #prepend>
-                            <VIcon size="18">tabler-trash</VIcon>
-                          </template>
-                          <VListItemTitle>
-                            {{ t('internal_chat_delete_action') }}
-                          </VListItemTitle>
-                        </VListItem>
-                      </VList>
-                    </VMenu>
-                  </div>
-
-                  <button
-                    v-if="showQuotedMessage(message)"
-                    type="button"
-                    class="internal-chat-quoted mb-2 px-2 py-1"
-                  >
-                    <span class="text-caption text-primary">
-                      {{ resolveQuotedName(message) }}
-                    </span>
-                    <div class="text-body-2 text-truncate">
-                      {{ resolveQuotedText(message) }}
-                    </div>
-                  </button>
-
-                  <div
-                    v-if="resolveMessageText(message)"
-                    class="internal-chat-message-text mb-2"
-                  >
-                    {{ resolveMessageText(message) }}
-                  </div>
-
-                  <div
-                    v-if="message.content?.link_preview"
-                    class="internal-chat-link-preview"
-                  >
-                    <ChatLinkPreview
-                      :preview="message.content.link_preview as any"
-                    />
-                  </div>
-
-                  <div
-                    v-if="message.content?.image?.url"
-                    class="internal-chat-media-frame"
-                  >
-                    <img
-                      :src="message.content.image.url"
-                      class="internal-chat-media"
-                      :alt="t('internal_chat_image_alt')"
-                    />
-                  </div>
-
-                  <div
-                    v-if="message.content?.video?.url"
-                    class="internal-chat-media-frame"
-                  >
-                    <video
-                      :src="message.content.video.url"
-                      class="internal-chat-media"
-                      controls
-                      playsinline
-                    />
-                  </div>
-
-                  <div
-                    v-if="message.content?.audio?.url"
-                    class="internal-chat-audio-bubble"
-                  >
-                    <VIcon size="22" color="primary">tabler-headphones</VIcon>
-                    <audio
-                      :src="message.content.audio.url"
-                      controls
-                      class="internal-chat-audio-player"
-                    />
-                  </div>
-
-                  <a
-                    v-if="message.content?.document?.url"
-                    :href="message.content.document.url"
-                    target="_blank"
-                    rel="noopener"
-                    class="internal-chat-document-link"
-                  >
-                    <span class="internal-chat-document-icon">
-                      <VIcon size="22">tabler-file-description</VIcon>
-                    </span>
-                    <span class="internal-chat-document-meta">
-                      <span class="internal-chat-document-name">
-                        {{
-                          message.content.document.name ||
-                          t('internal_chat_document_fallback')
-                        }}
-                      </span>
-                      <span class="internal-chat-document-size">
-                        {{
-                          formatFileSize(
-                            Number(message.content.document.size || 0)
-                          )
-                        }}
-                      </span>
-                    </span>
-                    <VIcon size="18">tabler-download</VIcon>
-                  </a>
-
-                  <a
-                    v-if="message.content?.location"
-                    class="internal-chat-location-card"
-                    target="_blank"
-                    rel="noopener"
-                    :href="resolveLocationHref(message.content.location)"
-                  >
-                    <div class="internal-chat-location-map">
-                      <VIcon size="28">tabler-map-pin</VIcon>
-                    </div>
-                    <div class="internal-chat-location-info">
-                      <span class="internal-chat-location-title">
-                        {{ resolveLocationTitle(message.content.location) }}
-                      </span>
-                      <span
-                        v-if="message.content.location.address"
-                        class="internal-chat-location-address"
-                      >
-                        {{ message.content.location.address }}
-                      </span>
-                    </div>
-                  </a>
-
-                  <div
-                    v-if="resolveMessageContacts(message).length > 0"
-                    class="internal-chat-contact-cards"
-                  >
-                    <GroupContactMessageCard
-                      v-for="contact in resolveMessageContacts(message)"
-                      :key="`${message.message_id}-${contact.contact_id || contact.name}`"
-                      :title="
-                        `${contact.name || t('internal_chat_contact')} ${contact.last_name || ''}`.trim()
-                      "
-                      :time="formatMessageDate(message.date)"
-                      :align="isOwnMessage(message) ? 'right' : 'left'"
-                      :seen="isOwnMessage(message)"
-                      :photo="contact.photo"
-                    />
-                  </div>
-
-                  <div
-                    v-if="resolveMessageLocalState(message)"
-                    class="internal-chat-upload-state"
+                  <VAvatar
+                    size="32"
+                    class="internal-chat-message-avatar"
                     :class="{
-                      'internal-chat-upload-state--error':
-                        hasMessageUploadError(message),
-                    }"
-                  >
-                    <VProgressLinear
-                      v-if="!hasMessageUploadError(message)"
-                      :model-value="resolveMessageUploadProgress(message)"
-                      height="3"
-                      color="primary"
-                      rounded
-                    />
-                    <span v-else>
-                      {{ t('internal_chat_send_message_error') }}
-                    </span>
-                    <VBtn
-                      v-if="hasMessageUploadError(message)"
-                      size="x-small"
-                      variant="text"
-                      color="error"
-                      class="ms-1"
-                      @click="retryLocalMessage(message)"
-                    >
-                      {{ t('internal_chat_retry_send') }}
-                    </VBtn>
-                  </div>
-
-                  <div
-                    v-if="message.content?.reactions?.length"
-                    class="internal-chat-reactions-summary"
-                    :class="{
-                      'internal-chat-reactions-summary--mine':
+                      'internal-chat-message-avatar--mine':
                         isOwnMessage(message),
                     }"
                   >
-                    <span
-                      v-for="reaction in getReactionsSummary(
-                        message.content.reactions
-                      )"
-                      :key="`${message.message_id}-reaction-${reaction.emoji}`"
-                      class="internal-chat-reaction-summary-item"
-                    >
-                      <span>{{ reaction.emoji }}</span>
-                      <span>{{ reaction.count }}</span>
-                    </span>
-                  </div>
+                    <VImg
+                      :src="resolveMessageAvatarSource(message)"
+                      :alt="
+                        message.user?.name || t('internal_chat_system_user')
+                      "
+                      cover
+                    />
+                  </VAvatar>
 
-                  <div class="internal-chat-message-footer">
-                    <div class="internal-chat-message-meta-content">
-                      <div class="internal-chat-message-meta-row">
-                        <span class="internal-chat-message-time">
-                          {{ formatMessageDate(message.date) }}
+                  <div
+                    class="internal-chat-message-shell"
+                    :class="{
+                      'internal-chat-message-shell--mine':
+                        isOwnMessage(message),
+                    }"
+                  >
+                    <button
+                      v-if="
+                        hoveredMessageId === message.message_id &&
+                        canInteractWithMessage(message) &&
+                        showReactionPicker !== message.message_id
+                      "
+                      type="button"
+                      class="internal-chat-reaction-trigger"
+                      :class="{
+                        'internal-chat-reaction-trigger--mine':
+                          isOwnMessage(message),
+                      }"
+                      :aria-label="t('internal_chat_react_to_message')"
+                      @click.stop="toggleReactionPicker(message)"
+                    >
+                      <VIcon size="20">tabler-mood-smile</VIcon>
+                    </button>
+
+                    <div
+                      class="internal-chat-message-bubble"
+                      :class="{
+                        'internal-chat-message-bubble--mine':
+                          isOwnMessage(message),
+                        'internal-chat-message-bubble--deleted':
+                          isDeletedMessage(message),
+                        'internal-chat-message-bubble--with-reactions':
+                          message.content?.reactions?.length,
+                      }"
+                    >
+                      <div class="internal-chat-message-header">
+                        <span class="text-caption text-medium-emphasis">
+                          {{
+                            message.user?.name || t('internal_chat_system_user')
+                          }}
                         </span>
+
+                        <VMenu
+                          v-if="canInteractWithMessage(message)"
+                          location="bottom end"
+                          offset="6"
+                        >
+                          <template #activator="{ props }">
+                            <IconBtn
+                              class="internal-chat-message-action-btn"
+                              size="x-small"
+                              v-bind="props"
+                            >
+                              <VIcon size="16">tabler-chevron-down</VIcon>
+                            </IconBtn>
+                          </template>
+
+                          <VList density="compact" min-width="180">
+                            <VListItem @click="onReply(message)">
+                              <template #prepend>
+                                <VIcon size="18">tabler-corner-up-left</VIcon>
+                              </template>
+                              <VListItemTitle>
+                                {{ t('internal_chat_reply_action') }}
+                              </VListItemTitle>
+                            </VListItem>
+
+                            <VListItem
+                              v-if="shouldShowCopy(message)"
+                              @click="copyMessage(message)"
+                            >
+                              <template #prepend>
+                                <VIcon size="18">tabler-copy</VIcon>
+                              </template>
+                              <VListItemTitle>
+                                {{ t('internal_chat_copy_action') }}
+                              </VListItemTitle>
+                            </VListItem>
+
+                            <VListItem
+                              v-if="shouldShowDownload(message)"
+                              @click="downloadMessage(message)"
+                            >
+                              <template #prepend>
+                                <VIcon size="18">tabler-download</VIcon>
+                              </template>
+                              <VListItemTitle>
+                                {{ t('internal_chat_download_action') }}
+                              </VListItemTitle>
+                            </VListItem>
+
+                            <VListItem @click="openForwardDialog(message)">
+                              <template #prepend>
+                                <VIcon size="18">tabler-arrow-forward-up</VIcon>
+                              </template>
+                              <VListItemTitle>
+                                {{ t('internal_chat_forward_action') }}
+                              </VListItemTitle>
+                            </VListItem>
+
+                            <VListItem @click="toggleReactionPicker(message)">
+                              <template #prepend>
+                                <VIcon size="18">tabler-mood-smile</VIcon>
+                              </template>
+                              <VListItemTitle>
+                                {{ t('internal_chat_react_action') }}
+                              </VListItemTitle>
+                            </VListItem>
+
+                            <VListItem
+                              v-if="canEditInternalMessage(message)"
+                              @click="onEdit(message)"
+                            >
+                              <template #prepend>
+                                <VIcon size="18">tabler-edit</VIcon>
+                              </template>
+                              <VListItemTitle>
+                                {{ t('internal_chat_edit_action') }}
+                              </VListItemTitle>
+                            </VListItem>
+
+                            <VListItem
+                              v-if="isOwnMessage(message)"
+                              @click="onDelete(message)"
+                            >
+                              <template #prepend>
+                                <VIcon size="18">tabler-trash</VIcon>
+                              </template>
+                              <VListItemTitle>
+                                {{ t('internal_chat_delete_action') }}
+                              </VListItemTitle>
+                            </VListItem>
+                          </VList>
+                        </VMenu>
+                      </div>
+
+                      <button
+                        v-if="showQuotedMessage(message)"
+                        type="button"
+                        class="internal-chat-quoted mb-2 px-2 py-1"
+                      >
+                        <span class="text-caption text-primary">
+                          {{ resolveQuotedName(message) }}
+                        </span>
+                        <div class="text-body-2 text-truncate">
+                          {{ resolveQuotedText(message) }}
+                        </div>
+                      </button>
+
+                      <div
+                        v-if="
+                          resolveMessageText(message) &&
+                          shouldRenderMessageTextBeforeMedia(message)
+                        "
+                        class="internal-chat-message-text mb-2"
+                      >
+                        {{ resolveMessageText(message) }}
+                      </div>
+
+                      <div
+                        v-if="message.content?.link_preview"
+                        class="internal-chat-link-preview"
+                      >
+                        <ChatLinkPreview
+                          :preview="message.content.link_preview as any"
+                        />
+                      </div>
+
+                      <button
+                        v-if="message.content?.image?.url"
+                        type="button"
+                        class="internal-chat-media-frame"
+                        :aria-label="t('internal_chat_image_alt')"
+                        @click="openMessageMediaViewer(message)"
+                      >
+                        <img
+                          :src="message.content.image.url"
+                          class="internal-chat-media"
+                          :alt="t('internal_chat_image_alt')"
+                        />
+                      </button>
+
+                      <button
+                        v-if="message.content?.video?.url"
+                        type="button"
+                        class="internal-chat-media-frame"
+                        :aria-label="t('internal_chat_videos')"
+                        @click="openMessageMediaViewer(message)"
+                      >
+                        <video
+                          :src="message.content.video.url"
+                          class="internal-chat-media"
+                          preload="metadata"
+                          muted
+                          playsinline
+                        >
+                          <track kind="captions" />
+                        </video>
+                        <span class="internal-chat-video-overlay">
+                          <VIcon size="26">tabler-player-play</VIcon>
+                        </span>
+                      </button>
+
+                      <div
+                        v-if="message.content?.audio?.url"
+                        class="internal-chat-audio-bubble"
+                        :class="{
+                          'internal-chat-audio-bubble--right':
+                            isOwnMessage(message),
+                          'internal-chat-audio-bubble--left':
+                            !isOwnMessage(message),
+                          'is-deleted': isDeletedMessage(message),
+                        }"
+                      >
+                        <div class="internal-chat-audio-player-container">
+                          <button
+                            type="button"
+                            class="internal-chat-audio-speed-btn"
+                            @click.stop="toggleAudioSpeed(message.message_id)"
+                          >
+                            {{ getAudioSpeedLabel(message.message_id) }}
+                          </button>
+                          <VBtn
+                            icon
+                            size="36"
+                            variant="text"
+                            class="internal-chat-audio-play-btn"
+                            @click="
+                              toggleAudioPlay(
+                                message.message_id,
+                                message.content.audio.url || ''
+                              )
+                            "
+                          >
+                            <VIcon size="18">
+                              {{
+                                isAudioPlaying(message.message_id)
+                                  ? 'tabler-player-pause'
+                                  : 'tabler-player-play'
+                              }}
+                            </VIcon>
+                          </VBtn>
+
+                          <div
+                            class="internal-chat-audio-waveform-container"
+                            @click="
+                              seekAudio(
+                                message.message_id,
+                                message.content.audio.url || '',
+                                $event
+                              )
+                            "
+                          >
+                            <template
+                              v-if="
+                                (audioWaveforms[message.message_id]?.length ||
+                                  0) > 0
+                              "
+                            >
+                              <div class="internal-chat-audio-waveform">
+                                <div
+                                  v-for="(barValue, index) in audioWaveforms[
+                                    message.message_id
+                                  ]"
+                                  :key="`${message.message_id}-audio-wave-${index}`"
+                                  class="internal-chat-audio-waveform-bar"
+                                  :class="{
+                                    'internal-chat-audio-waveform-bar--active':
+                                      getAudioProgress(message.message_id) >
+                                      (index /
+                                        (audioWaveforms[message.message_id]
+                                          ?.length || 64)) *
+                                        100,
+                                  }"
+                                  :style="{
+                                    height: `${Math.max(2, barValue * 100)}%`,
+                                  }"
+                                ></div>
+                              </div>
+                              <div
+                                class="internal-chat-audio-progress-indicator"
+                                :style="{
+                                  left: `${getAudioProgress(
+                                    message.message_id
+                                  )}%`,
+                                }"
+                              ></div>
+                            </template>
+                            <div
+                              v-else
+                              class="internal-chat-audio-waveform-placeholder"
+                            >
+                              <div
+                                v-for="index in 64"
+                                :key="`${message.message_id}-audio-placeholder-${index}`"
+                                class="internal-chat-audio-waveform-bar-placeholder"
+                              ></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="internal-chat-audio-meta">
+                          {{
+                            getDisplayAudioTime(
+                              message.message_id,
+                              message.content.audio.duration
+                            )
+                          }}
+                        </div>
+
+                        <p
+                          v-if="message.content?.message"
+                          class="internal-chat-media-caption"
+                        >
+                          {{ message.content.message }}
+                        </p>
+                      </div>
+
+                      <div
+                        v-if="message.content?.document?.url"
+                        class="internal-chat-document-content"
+                      >
+                        <div
+                          class="internal-chat-document-bubble"
+                          :class="{
+                            'internal-chat-document-bubble--right':
+                              isOwnMessage(message),
+                            'internal-chat-document-bubble--left':
+                              !isOwnMessage(message),
+                            'is-deleted': isDeletedMessage(message),
+                          }"
+                        >
+                          <div class="internal-chat-document-icon">
+                            <VIcon
+                              :icon="
+                                resolveInternalDocumentIcon(
+                                  message.content.document
+                                )
+                              "
+                              size="30"
+                              color="primary"
+                            />
+                          </div>
+                          <div class="internal-chat-document-details">
+                            <VTooltip location="bottom">
+                              <template #activator="{ props }">
+                                <a
+                                  v-bind="props"
+                                  class="internal-chat-document-name"
+                                  :href="message.content.document.url"
+                                  :download="
+                                    resolveInternalDocumentDownloadName(
+                                      message.content.document
+                                    )
+                                  "
+                                  target="_blank"
+                                  rel="noopener"
+                                >
+                                  {{
+                                    truncateFileName(
+                                      resolveInternalDocumentName(
+                                        message.content.document
+                                      ),
+                                      36
+                                    )
+                                  }}
+                                </a>
+                              </template>
+                              <span>
+                                {{
+                                  resolveInternalDocumentName(
+                                    message.content.document
+                                  )
+                                }}
+                              </span>
+                            </VTooltip>
+
+                            <span
+                              class="internal-chat-document-meta text-caption text-disabled"
+                            >
+                              {{
+                                resolveInternalDocumentMeta(
+                                  message.content.document
+                                )
+                              }}
+                            </span>
+                          </div>
+                          <a
+                            class="internal-chat-document-download"
+                            :href="message.content.document.url"
+                            :download="
+                              resolveInternalDocumentDownloadName(
+                                message.content.document
+                              )
+                            "
+                            target="_blank"
+                            rel="noopener"
+                          >
+                            <VIcon size="22">tabler-download</VIcon>
+                          </a>
+                        </div>
+
+                        <p
+                          v-if="message.content?.message"
+                          class="internal-chat-media-caption"
+                        >
+                          {{ message.content.message }}
+                        </p>
+                      </div>
+
+                      <button
+                        v-if="hasValidLocation(message)"
+                        type="button"
+                        class="internal-chat-location-bubble"
+                        :class="{
+                          'internal-chat-location-bubble--right':
+                            isOwnMessage(message),
+                          'internal-chat-location-bubble--left':
+                            !isOwnMessage(message),
+                          'is-deleted': isDeletedMessage(message),
+                        }"
+                        @click="openMessageLocation(message)"
+                      >
+                        <div class="internal-chat-location-map-preview">
+                          <div
+                            v-if="
+                              !webGLSupported || mapErrors[message.message_id]
+                            "
+                            class="internal-chat-location-map-fallback"
+                          >
+                            <VIcon size="32" color="primary">
+                              tabler-map-pin
+                            </VIcon>
+                            <span class="text-caption mt-2">
+                              {{ t('location_map_unavailable') }}
+                            </span>
+                          </div>
+                          <MglMap
+                            v-else
+                            :key="`internal-map-${message.message_id}`"
+                            :map-style="mapStyle"
+                            :center="
+                              resolveLocationCoordinates(
+                                message.content.location
+                              )
+                            "
+                            :zoom="15"
+                            :interactive="false"
+                            :attribution-control="false"
+                            :navigation-control="false"
+                            class="internal-chat-location-map-preview-map"
+                            :style="{ width: '100%', height: '112px' }"
+                          >
+                            <MglMarker
+                              :coordinates="
+                                resolveLocationCoordinates(
+                                  message.content.location
+                                )
+                              "
+                              color="#ef4444"
+                            />
+                          </MglMap>
+                        </div>
+                        <div class="internal-chat-location-info">
+                          <div
+                            v-if="message.content.location?.name"
+                            class="internal-chat-location-title"
+                          >
+                            {{ message.content.location.name }}
+                          </div>
+                          <div
+                            v-if="message.content.location?.address"
+                            class="internal-chat-location-address text-caption"
+                          >
+                            {{ message.content.location.address }}
+                          </div>
+                        </div>
+                      </button>
+
+                      <div
+                        v-if="resolveMessageContacts(message).length > 0"
+                        class="internal-chat-contact-bubble"
+                        :class="{
+                          'internal-chat-contact-bubble--right':
+                            isOwnMessage(message),
+                          'internal-chat-contact-bubble--left':
+                            !isOwnMessage(message),
+                          'is-deleted': isDeletedMessage(message),
+                        }"
+                      >
+                        <GroupContactMessageCard
+                          :title="resolveMessageContactCardTitle(message)"
+                          :time="formatMessageDate(message.date)"
+                          :align="isOwnMessage(message) ? 'right' : 'left'"
+                          :seen="isOwnMessage(message)"
+                          :is-group="resolveMessageContacts(message).length > 1"
+                          :photo="
+                            resolveMessageContacts(message).length === 1
+                              ? resolveMessageContacts(message)[0]?.photo
+                              : null
+                          "
+                          @toggle="openMessageContacts(message)"
+                          @view-all="openMessageContacts(message)"
+                        />
+
+                        <p
+                          v-if="message.content?.message"
+                          class="internal-chat-media-caption"
+                        >
+                          {{ message.content.message }}
+                        </p>
+                      </div>
+
+                      <div
+                        v-if="resolveMessageLocalState(message)"
+                        class="internal-chat-upload-state"
+                        :class="{
+                          'internal-chat-upload-state--error':
+                            hasMessageUploadError(message),
+                        }"
+                      >
+                        <VProgressLinear
+                          v-if="!hasMessageUploadError(message)"
+                          :model-value="resolveMessageUploadProgress(message)"
+                          height="3"
+                          color="primary"
+                          rounded
+                        />
+                        <span v-else>
+                          {{ t('internal_chat_send_message_error') }}
+                        </span>
+                        <VBtn
+                          v-if="hasMessageUploadError(message)"
+                          size="x-small"
+                          variant="text"
+                          color="error"
+                          class="ms-1"
+                          @click="retryLocalMessage(message)"
+                        >
+                          {{ t('internal_chat_retry_send') }}
+                        </VBtn>
+                      </div>
+
+                      <div
+                        v-if="message.content?.reactions?.length"
+                        class="internal-chat-reactions-summary"
+                        :class="{
+                          'internal-chat-reactions-summary--mine':
+                            isOwnMessage(message),
+                        }"
+                      >
+                        <span
+                          v-for="reaction in getReactionsSummary(
+                            message.content.reactions
+                          )"
+                          :key="`${message.message_id}-reaction-${reaction.emoji}`"
+                          class="internal-chat-reaction-summary-item"
+                        >
+                          <span>{{ reaction.emoji }}</span>
+                          <span>{{ reaction.count }}</span>
+                        </span>
+                      </div>
+
+                      <div class="internal-chat-message-footer">
+                        <div class="internal-chat-message-meta-content">
+                          <div class="internal-chat-message-meta-row">
+                            <span class="internal-chat-message-time">
+                              {{ formatMessageDate(message.date) }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        v-if="
+                          showReactionPicker === message.message_id &&
+                          canInteractWithMessage(message)
+                        "
+                        class="internal-chat-reaction-picker"
+                        :class="{
+                          'internal-chat-reaction-picker--mine':
+                            isOwnMessage(message),
+                        }"
+                        @click.stop
+                      >
+                        <div class="internal-chat-reaction-picker-row">
+                          <VBtn
+                            v-for="emoji in quickReactions"
+                            :key="emoji"
+                            icon
+                            size="32"
+                            variant="text"
+                            class="internal-chat-reaction-option"
+                            @click="onReact(message, emoji)"
+                          >
+                            <span class="text-h6">{{ emoji }}</span>
+                          </VBtn>
+
+                          <VDivider vertical class="mx-1" />
+
+                          <VBtn
+                            icon
+                            size="32"
+                            variant="text"
+                            class="internal-chat-reaction-option"
+                            @click.stop="toggleEmojiPicker(message.message_id)"
+                          >
+                            <VIcon size="20">tabler-plus</VIcon>
+                          </VBtn>
+                        </div>
+
+                        <div
+                          v-if="showEmojiPicker === message.message_id"
+                          class="internal-chat-emoji-picker"
+                        >
+                          <Picker
+                            :data="reactionEmojiIndex"
+                            :per-line="8"
+                            :show-preview="false"
+                            :show-skin-tones="false"
+                            :show-search="true"
+                            @select="onSelectReactionEmoji(message, $event)"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
+                </div>
+              </template>
+
+              <template v-else>
+                <div
+                  class="internal-chat-message-row"
+                  :class="{
+                    'internal-chat-message-row--mine': displayItem.isMine,
+                  }"
+                >
+                  <VAvatar
+                    size="32"
+                    class="internal-chat-message-avatar"
+                    :class="{
+                      'internal-chat-message-avatar--mine': displayItem.isMine,
+                    }"
+                  >
+                    <VImg
+                      :src="
+                        resolveMessageAvatarSource(displayItem.firstMessage)
+                      "
+                      :alt="
+                        displayItem.firstMessage.user?.name ||
+                        t('internal_chat_system_user')
+                      "
+                      cover
+                    />
+                  </VAvatar>
 
                   <div
-                    v-if="
-                      showReactionPicker === message.message_id &&
-                      canInteractWithMessage(message)
-                    "
-                    class="internal-chat-reaction-picker"
+                    class="internal-chat-message-shell"
                     :class="{
-                      'internal-chat-reaction-picker--mine':
-                        isOwnMessage(message),
+                      'internal-chat-message-shell--mine': displayItem.isMine,
                     }"
-                    @click.stop
                   >
-                    <div class="internal-chat-reaction-picker-row">
-                      <VBtn
-                        v-for="emoji in quickReactions"
-                        :key="emoji"
-                        icon
-                        size="32"
-                        variant="text"
-                        class="internal-chat-reaction-option"
-                        @click="onReact(message, emoji)"
-                      >
-                        <span class="text-h6">{{ emoji }}</span>
-                      </VBtn>
-
-                      <VDivider vertical class="mx-1" />
-
-                      <VBtn
-                        icon
-                        size="32"
-                        variant="text"
-                        class="internal-chat-reaction-option"
-                        @click.stop="toggleEmojiPicker(message.message_id)"
-                      >
-                        <VIcon size="20">tabler-plus</VIcon>
-                      </VBtn>
-                    </div>
-
                     <div
-                      v-if="showEmojiPicker === message.message_id"
-                      class="internal-chat-emoji-picker"
+                      class="internal-chat-message-bubble internal-chat-message-bubble--media-group"
+                      :class="{
+                        'internal-chat-message-bubble--mine':
+                          displayItem.isMine,
+                      }"
                     >
-                      <Picker
-                        :data="reactionEmojiIndex"
-                        :per-line="8"
-                        :show-preview="false"
-                        :show-skin-tones="false"
-                        :show-search="true"
-                        @select="onSelectReactionEmoji(message, $event)"
-                      />
+                      <div class="internal-chat-message-header">
+                        <span class="text-caption text-medium-emphasis">
+                          {{
+                            displayItem.firstMessage.user?.name ||
+                            t('internal_chat_system_user')
+                          }}
+                        </span>
+                      </div>
+
+                      <div
+                        class="internal-chat-media-group-grid"
+                        :class="getMediaGroupGridClass(displayItem)"
+                      >
+                        <button
+                          v-for="(
+                            mediaMessage, mediaIndex
+                          ) in getMediaGroupPreviewItems(displayItem)"
+                          :key="mediaMessage.message_id"
+                          type="button"
+                          class="internal-chat-media-group-tile"
+                          :aria-label="
+                            displayItem.mediaKind === 'video'
+                              ? t('internal_chat_videos')
+                              : t('internal_chat_image_alt')
+                          "
+                          @click="openMediaGroupViewer(displayItem, mediaIndex)"
+                        >
+                          <img
+                            v-if="
+                              resolveMessageMediaKind(mediaMessage) === 'image'
+                            "
+                            :src="mediaMessage.content?.image?.url"
+                            class="internal-chat-media-group-thumb"
+                            :alt="t('internal_chat_image_alt')"
+                          />
+                          <video
+                            v-else
+                            :src="mediaMessage.content?.video?.url"
+                            class="internal-chat-media-group-thumb"
+                            preload="metadata"
+                            muted
+                            playsinline
+                          >
+                            <track kind="captions" />
+                          </video>
+
+                          <span
+                            v-if="
+                              resolveMessageMediaKind(mediaMessage) === 'video'
+                            "
+                            class="internal-chat-video-overlay"
+                          >
+                            <VIcon size="24">tabler-player-play</VIcon>
+                          </span>
+
+                          <span
+                            v-if="
+                              mediaIndex === 3 &&
+                              getMediaGroupRemainingCount(displayItem) > 0
+                            "
+                            class="internal-chat-media-group-more"
+                          >
+                            +{{ getMediaGroupRemainingCount(displayItem) }}
+                          </span>
+                        </button>
+                      </div>
+
+                      <div class="internal-chat-message-footer">
+                        <div class="internal-chat-message-meta-content">
+                          <div class="internal-chat-message-meta-row">
+                            <span class="internal-chat-message-time">
+                              {{
+                                formatMessageDate(displayItem.lastMessage.date)
+                              }}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </template>
+            </template>
           </PerfectScrollbar>
 
           <Transition name="fade">
@@ -5433,6 +6472,137 @@ onBeforeUnmount(async () => {
       </VCard>
     </VDialog>
 
+    <VDialog v-model="locationModalOpen" max-width="800" :scrollable="false">
+      <VCard v-if="locationData">
+        <VCardTitle class="d-flex align-center justify-space-between">
+          <div>
+            <div class="text-h6">
+              {{ locationData.name || t('location_label') }}
+            </div>
+            <div
+              v-if="locationData.address"
+              class="text-caption text-disabled mt-1"
+            >
+              {{ locationData.address }}
+            </div>
+          </div>
+          <VBtn
+            icon
+            variant="text"
+            size="small"
+            @click="locationModalOpen = false"
+          >
+            <VIcon>tabler-x</VIcon>
+          </VBtn>
+        </VCardTitle>
+        <VCardText class="pa-0">
+          <div
+            v-if="locationModalOpen && locationData"
+            class="internal-chat-location-map-wrapper"
+          >
+            <div
+              v-if="!webGLSupported"
+              class="internal-chat-location-map-fallback-modal"
+            >
+              <VIcon size="48" color="primary">tabler-map-pin</VIcon>
+              <span class="text-body-1 mt-4">
+                {{ t('location_map_unavailable') }}
+              </span>
+            </div>
+            <MglMap
+              v-else
+              ref="locationMapRef"
+              :map-style="mapStyle"
+              :center="mapCenter"
+              :zoom="mapZoom"
+              width="100%"
+              height="500px"
+              @map:load="onInternalLocationMapLoad"
+            >
+              <MglMarker :coordinates="markerPosition" color="#ef4444">
+                <template v-if="locationData.name || locationData.address">
+                  <div class="maplibregl-popup-content text-body-2 pa-2">
+                    {{ locationData.name || locationData.address }}
+                  </div>
+                </template>
+              </MglMarker>
+            </MglMap>
+          </div>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn
+            variant="text"
+            :href="`https://www.google.com/maps?q=${locationData.latitude},${locationData.longitude}`"
+            target="_blank"
+            rel="noopener"
+          >
+            <VIcon start>tabler-external-link</VIcon>
+            {{ t('open_in_google_maps') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="contactViewerOpen" max-width="420" :scrollable="false">
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between">
+          <span>{{ t('contacts') }}</span>
+          <VBtn
+            icon
+            variant="text"
+            size="small"
+            @click="contactViewerOpen = false"
+          >
+            <VIcon>tabler-x</VIcon>
+          </VBtn>
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <div class="internal-chat-contact-viewer-list">
+            <div
+              v-for="contact in contactViewerContacts"
+              :key="
+                contact.contact_id ||
+                `${contact.name}-${contact.phone || contact.email}`
+              "
+              class="internal-chat-contact-viewer-row"
+            >
+              <VAvatar size="42" variant="tonal" color="primary">
+                <VImg
+                  v-if="contact.photo"
+                  :src="contact.photo"
+                  :alt="resolveContactFullName(contact)"
+                />
+                <VIcon v-else size="20">tabler-user</VIcon>
+              </VAvatar>
+              <div class="internal-chat-contact-viewer-info">
+                <div class="internal-chat-contact-viewer-name">
+                  {{ resolveContactFullName(contact) }}
+                </div>
+                <div
+                  v-if="
+                    contact.phone_partial ||
+                    contact.phone ||
+                    contact.email_partial ||
+                    contact.email
+                  "
+                  class="internal-chat-contact-viewer-meta"
+                >
+                  {{
+                    contact.phone_partial ||
+                    contact.phone ||
+                    contact.email_partial ||
+                    contact.email
+                  }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
+
     <ChatLocationPicker
       v-model="isLocationPickerOpen"
       @confirm="onLocationSelected"
@@ -5442,6 +6612,13 @@ onBeforeUnmount(async () => {
       v-model="isContactPickerOpen"
       :existing-contacts="selectedContacts"
       @select="onContactsSelected"
+    />
+
+    <ChatMediaViewer
+      v-model="mediaViewerOpen"
+      :items="mediaViewerItems"
+      :initial-index="mediaViewerInitialIndex"
+      @download="downloadMediaViewerItem"
     />
   </div>
 </template>
@@ -6024,10 +7201,11 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-media {
-  max-width: 100%;
+  width: 100%;
   border-radius: 8px;
-  max-height: 320px;
+  max-height: 360px;
   display: block;
+  object-fit: cover;
 }
 
 .internal-chat-composer {
@@ -6142,19 +7320,6 @@ onBeforeUnmount(async () => {
   }
 }
 
-.internal-chat-document-link {
-  min-width: 220px;
-  max-width: 320px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 8px;
-  padding: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.05);
-  color: inherit;
-  text-decoration: none;
-}
-
 .internal-chat-link-preview {
   display: block;
   max-width: 320px;
@@ -6177,129 +7342,497 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-media-frame {
+  position: relative;
+  display: block;
   overflow: hidden;
-  max-width: 360px;
+  inline-size: min(260px, 72vw);
+  max-inline-size: 260px;
+  border: 0;
   border-radius: 8px;
+  padding: 0;
   background: rgba(var(--v-theme-on-surface), 0.04);
+  color: inherit;
+  cursor: zoom-in;
+  line-height: 0;
+  text-align: start;
+}
+
+.internal-chat-video-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: rgba(0, 0, 0, 0.16);
+  pointer-events: none;
+
+  .v-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  }
+}
+
+.internal-chat-message-bubble--media-group {
+  width: auto;
+  padding: 7px 7px 22px;
+}
+
+.internal-chat-media-group-grid {
+  display: grid;
+  gap: 2px;
+  inline-size: min(180px, 72vw);
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.internal-chat-media-group-grid--1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.internal-chat-media-group-grid--2 {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: 1fr;
+}
+
+.internal-chat-media-group-grid--3 {
+  grid-template-columns: 1.3fr 1fr;
+  grid-template-rows: repeat(2, 1fr);
+
+  .internal-chat-media-group-tile:first-child {
+    grid-row: span 2;
+  }
+}
+
+.internal-chat-media-group-grid--4 {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+}
+
+.internal-chat-media-group-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: zoom-in;
+}
+
+.internal-chat-media-group-thumb {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.internal-chat-media-group-more {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.48);
+  color: white;
+  font-size: 1.35rem;
+  font-weight: 700;
 }
 
 .internal-chat-audio-bubble {
-  min-width: 260px;
+  max-inline-size: 380px;
+  inline-size: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.internal-chat-audio-bubble.is-deleted {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.internal-chat-audio-player-container {
+  inline-size: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  border-radius: 8px;
-  padding: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.045);
+  gap: 12px;
+  border-radius: 20px;
+  padding: 8px 14px;
 }
 
-.internal-chat-audio-player {
-  width: 100%;
-  height: 34px;
+.internal-chat-audio-play-btn {
+  flex-shrink: 0;
+  min-width: 36px !important;
+  width: 36px !important;
+  height: 36px !important;
+  border: 2px solid rgb(var(--v-theme-primary));
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.95);
+  color: rgb(var(--v-theme-primary));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  :deep(.v-icon) {
+    color: rgb(var(--v-theme-primary));
+  }
 }
 
-.internal-chat-document-link {
-  min-width: 260px;
-  max-width: 340px;
-  gap: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.045);
+.internal-chat-audio-bubble--right .internal-chat-audio-play-btn {
+  border-color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.internal-chat-audio-speed-btn {
+  min-width: 36px;
+  height: 24px;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(var(--v-theme-on-surface), 0.3);
+  border-radius: 12px;
+  padding: 0 6px;
+  background: transparent;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 600;
+  user-select: none;
+}
+
+.internal-chat-audio-speed-btn:hover {
+  background: rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.internal-chat-audio-bubble--right .internal-chat-audio-speed-btn {
+  border-color: rgba(17, 27, 33, 0.35);
+  color: rgba(17, 27, 33, 0.7);
+}
+
+.internal-chat-audio-waveform-container {
+  min-width: 100px;
+  height: 36px;
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.internal-chat-audio-waveform,
+.internal-chat-audio-waveform-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 3px;
+  height: 100%;
+  padding: 6px 0;
+}
+
+.internal-chat-audio-waveform-bar,
+.internal-chat-audio-waveform-bar-placeholder {
+  flex: 1 1 0;
+  min-width: 3px;
+  max-width: 4px;
+  border-radius: 2px;
+}
+
+.internal-chat-audio-waveform-bar {
+  min-height: 4px;
+  background: rgba(var(--v-theme-on-surface), 0.4);
+  transition:
+    background 0.2s ease,
+    height 0.1s ease;
+}
+
+.internal-chat-audio-waveform-bar--active {
+  background: rgb(var(--v-theme-primary));
+}
+
+.internal-chat-audio-waveform-bar-placeholder {
+  height: 20%;
+  background: rgba(var(--v-theme-on-surface), 0.2);
+  animation: internal-chat-audio-pulse 1.5s ease-in-out infinite;
+}
+
+.internal-chat-audio-bubble--right .internal-chat-audio-waveform-bar {
+  background: rgba(17, 27, 33, 0.45);
+}
+
+.internal-chat-audio-bubble--right .internal-chat-audio-waveform-bar--active {
+  background: rgba(17, 27, 33, 0.9);
+}
+
+.internal-chat-audio-bubble--right
+  .internal-chat-audio-waveform-bar-placeholder {
+  background: rgba(17, 27, 33, 0.35);
+}
+
+.internal-chat-audio-progress-indicator {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: rgb(var(--v-theme-primary));
+  transform: translateX(-50%);
+}
+
+.internal-chat-audio-bubble--right .internal-chat-audio-progress-indicator {
+  background: rgba(17, 27, 33, 0.85);
+}
+
+.internal-chat-audio-meta {
+  padding-inline: 14px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+@keyframes internal-chat-audio-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.internal-chat-media-caption {
+  margin: 8px 4px 0;
+  font-size: 0.95rem;
+  line-height: 1.25rem;
+  white-space: pre-line;
+}
+
+.internal-chat-document-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.internal-chat-document-bubble {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 10px;
+  margin-bottom: 6px;
+  padding: 12px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+.internal-chat-document-bubble--left {
+  border-start-end-radius: 6px;
+}
+
+.internal-chat-document-bubble--right {
+  border-start-start-radius: 6px;
+}
+
+.internal-chat-document-bubble.is-deleted {
+  pointer-events: none;
+  opacity: 0.7;
 }
 
 .internal-chat-document-icon {
-  width: 42px;
-  height: 42px;
-  display: inline-flex;
+  inline-size: 40px;
+  block-size: 40px;
+  flex-shrink: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-primary), 0.11);
-  color: rgb(var(--v-theme-primary));
+  border-radius: 50%;
+  background: rgba(var(--v-theme-primary), 0.12);
 }
 
-.internal-chat-document-meta {
-  min-width: 0;
-  flex: 1 1 auto;
+.internal-chat-document-details {
+  min-inline-size: 0;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .internal-chat-document-name {
   overflow: hidden;
-  font-size: 0.88rem;
+  color: rgb(var(--v-theme-primary));
   font-weight: 600;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.internal-chat-document-size {
-  color: rgba(var(--v-theme-on-surface), 0.56);
-  font-size: 0.74rem;
+.internal-chat-document-meta {
+  white-space: nowrap;
 }
 
-.internal-chat-location-card {
-  min-width: 260px;
-  max-width: 340px;
+.internal-chat-document-download {
+  inline-size: 34px;
+  block-size: 34px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(var(--v-theme-primary), 0.1);
+  color: rgb(var(--v-theme-primary));
+  text-decoration: none;
+  transition: background-color 0.2s ease;
+}
+
+.internal-chat-document-download:hover {
+  background: rgba(var(--v-theme-primary), 0.18);
+}
+
+.internal-chat-location-bubble {
+  width: 200px;
+  min-width: 175px;
+  max-width: 100%;
   display: block;
   overflow: hidden;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+  border: 0;
   border-radius: 8px;
-  background: rgb(var(--v-theme-surface));
+  padding: 0;
+  background: transparent;
   color: inherit;
-  text-decoration: none;
+  cursor: pointer;
+  text-align: start;
+  transition: opacity 0.2s;
 }
 
-.internal-chat-location-map {
+.internal-chat-location-bubble:hover {
+  opacity: 0.9;
+}
+
+.internal-chat-location-bubble.is-deleted {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.internal-chat-location-map-preview {
+  width: 100%;
   height: 112px;
-  display: grid;
-  place-items: center;
-  background:
-    linear-gradient(
-      135deg,
-      rgba(var(--v-theme-primary), 0.13),
-      rgba(var(--v-theme-success), 0.08)
-    ),
-    repeating-linear-gradient(
-      45deg,
-      rgba(var(--v-theme-on-surface), 0.04) 0,
-      rgba(var(--v-theme-on-surface), 0.04) 8px,
-      transparent 8px,
-      transparent 16px
-    );
-  color: rgb(var(--v-theme-primary));
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px 8px 0 0;
+}
+
+.internal-chat-location-map-preview-map {
+  width: 100% !important;
+  height: 112px !important;
+  pointer-events: none;
+}
+
+.internal-chat-location-map-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--v-theme-on-surface), 0.05);
+  color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
 .internal-chat-location-info {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
+  gap: 4px;
+  padding: 12px;
 }
 
 .internal-chat-location-title {
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .internal-chat-location-address {
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  word-break: break-word;
+}
+
+.internal-chat-contact-bubble {
+  inline-size: min(300px, 72vw);
+  display: flex;
+  flex-direction: column;
+}
+
+.internal-chat-contact-bubble--right {
+  align-items: flex-end;
+  margin-left: auto;
+}
+
+.internal-chat-contact-bubble--left :deep(.group-contact-card),
+.internal-chat-contact-bubble--right :deep(.group-contact-card) {
+  width: 100%;
+  max-width: 300px;
+  margin: 0;
+}
+
+.internal-chat-contact-bubble :deep(.group-contact-card) {
+  box-shadow: none;
+}
+
+.internal-chat-contact-viewer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.internal-chat-contact-viewer-row {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+.internal-chat-contact-viewer-info {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.internal-chat-contact-viewer-name {
   overflow: hidden;
-  color: rgba(var(--v-theme-on-surface), 0.56);
-  font-size: 0.76rem;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.internal-chat-contact-cards {
+.internal-chat-contact-viewer-meta {
+  overflow: hidden;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.internal-chat-location-map-wrapper {
+  min-height: 500px;
+}
+
+.internal-chat-location-map-fallback-modal {
+  min-height: 500px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-
-  :deep(.group-contact-card) {
-    width: 300px;
-    max-width: 100%;
-    box-shadow: none;
-    border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
-  }
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 
 .internal-chat-upload-state {
