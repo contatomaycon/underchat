@@ -72,6 +72,9 @@ export const chatbotFlowMappings = () => {
             finish_triggers: {
               type: 'keyword',
             },
+            trigger_events: {
+              type: 'keyword',
+            },
             messages: {
               type: 'nested',
               properties: {

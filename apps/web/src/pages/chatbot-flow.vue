@@ -120,8 +120,20 @@ const redirectFailedAttemptsSelectedUser = ref<string | null>(null);
 const redirectFailedAttemptsSelectedSector = ref<string | null>(null);
 const redirectFailedAttemptsSelectedSectorUser = ref<string | null>(null);
 
+type TriggerEventKey = 'text' | 'audio' | 'attachments' | 'reactions' | 'gifs';
+
+const DEFAULT_TRIGGER_EVENTS: TriggerEventKey[] = [
+  'text',
+  'audio',
+  'attachments',
+  'reactions',
+  'gifs',
+];
+const VALID_TRIGGER_EVENTS = new Set<TriggerEventKey>(DEFAULT_TRIGGER_EVENTS);
+
 const finishTriggers = ref<string[]>([]);
 const finishTriggerInput = ref('');
+const triggerEvents = ref<TriggerEventKey[]>([...DEFAULT_TRIGGER_EVENTS]);
 
 const inactivityUsers = ref<any[]>([]);
 const inactivitySectors = ref<any[]>([]);
@@ -318,6 +330,37 @@ const showRedirectFailedAttemptsSectorUserField = computed(
     showRedirectFailedAttemptsSectorField.value &&
     redirectFailedAttemptsSelectedSector.value !== null
 );
+
+const triggerEventOptions = computed(() => [
+  { value: 'text' as const, label: t('chatbot_trigger_event_text') },
+  { value: 'audio' as const, label: t('chatbot_trigger_event_audio') },
+  {
+    value: 'attachments' as const,
+    label: t('chatbot_trigger_event_attachments'),
+  },
+  { value: 'reactions' as const, label: t('chatbot_trigger_event_reactions') },
+  { value: 'gifs' as const, label: t('chatbot_trigger_event_gifs') },
+]);
+
+const normalizeTriggerEvents = (value: unknown): TriggerEventKey[] => {
+  if (value === undefined || value === null) {
+    return [...DEFAULT_TRIGGER_EVENTS];
+  }
+
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_TRIGGER_EVENTS];
+  }
+
+  if (value.length === 0) {
+    return [];
+  }
+
+  return value.filter(
+    (event): event is TriggerEventKey =>
+      typeof event === 'string' &&
+      VALID_TRIGGER_EVENTS.has(event as TriggerEventKey)
+  );
+};
 
 const onKeyPress = (event: KeyboardEvent) => {
   const char = event.key;
@@ -1888,6 +1931,8 @@ const processConfigurations = async (configs: any): Promise<void> => {
     finishTriggers.value = [];
   }
 
+  triggerEvents.value = normalizeTriggerEvents(configs.trigger_events);
+
   if (configs.messages) {
     inactivityMessage.value = configs.messages.inactivity_message || '';
     invalidMenuOptionMessage.value =
@@ -2046,6 +2091,7 @@ const handleSaveConfigurations = async () => {
           : undefined,
       finish_triggers:
         finishTriggers.value.length > 0 ? finishTriggers.value : undefined,
+      trigger_events: [...triggerEvents.value],
       messages: {
         inactivity_message: inactivityMessage.value || undefined,
         invalid_menu_option_message:
@@ -3023,6 +3069,35 @@ onUnmounted(() => {
                           </template>
                         </AppSelectSearch>
                       </div>
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined" class="mb-4">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_trigger_events') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_trigger_events_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <div class="d-flex flex-column gap-2 mb-3">
+                      <VCheckbox
+                        v-for="option in triggerEventOptions"
+                        :key="option.value"
+                        v-model="triggerEvents"
+                        :label="option.label"
+                        :value="option.value"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </div>
+                    <div class="text-caption text-medium-emphasis">
+                      {{ t('chatbot_trigger_events_hint') }}
                     </div>
                   </VCardText>
                 </VCard>

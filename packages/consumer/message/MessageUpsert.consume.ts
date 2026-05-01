@@ -1,6 +1,6 @@
 import { singleton, inject } from 'tsyringe';
 import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
-import { KafkaClient } from '@core/plugins/kafkaStreams';
+import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import {
@@ -3396,6 +3396,16 @@ export class MessageUpsertConsume {
       beforeExecute?: (chat: IChat) => Promise<void>;
     }
   ) {
+    const canTrigger =
+      await this.chatbotFlowRunnerService.canTriggerChatbotEvent(
+        data,
+        data.account_id,
+        chatbotId
+      );
+    if (!canTrigger) {
+      return;
+    }
+
     const jid = remoteJid(data.message?.key);
     const jidAlt = remoteJidAlt(data.message?.key);
 

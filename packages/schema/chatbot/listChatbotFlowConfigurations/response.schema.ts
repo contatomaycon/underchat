@@ -1,5 +1,15 @@
 import { Static, Type } from '@sinclair/typebox';
 
+const triggerEventsSchema = Type.Array(
+  Type.Union([
+    Type.Literal('text'),
+    Type.Literal('audio'),
+    Type.Literal('attachments'),
+    Type.Literal('reactions'),
+    Type.Literal('gifs'),
+  ])
+);
+
 const configurationsSchema = Type.Object({
   inactivity_alert: Type.Optional(
     Type.Object({
@@ -24,6 +34,7 @@ const configurationsSchema = Type.Object({
     })
   ),
   finish_triggers: Type.Optional(Type.Array(Type.String())),
+  trigger_events: Type.Optional(triggerEventsSchema),
   messages: Type.Optional(
     Type.Object({
       inactivity_message: Type.Optional(Type.String()),

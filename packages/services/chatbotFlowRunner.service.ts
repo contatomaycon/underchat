@@ -61,6 +61,10 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
 import { SendMessageOptions } from '@core/common/interfaces/ISendMessageOptions';
 import {
+  classifyChatbotTriggerEvent,
+  isChatbotTriggerEventEnabled,
+} from '@core/common/functions/chatbotTriggerEvents';
+import {
   HumanTransferMode,
   IPromptTransferDecision,
   ITransferSectorOption,
@@ -9649,6 +9653,41 @@ Retorne APENAS JSON válido (sem markdown):
     return false;
   }
 
+  public async canTriggerChatbotEvent(
+    data: IUpsertMessage,
+    accountId: string,
+    chatbotId: string,
+    configurations?: Awaited<
+      ReturnType<ChatbotService['findChatbotFlowConfigurationsByChatbotId']>
+    >
+  ): Promise<boolean> {
+    if (this.isNonTriggerableSystemEvent(data)) {
+      return false;
+    }
+
+    const isFromMe = data.message?.key?.fromMe === true;
+    if (isFromMe) {
+      return true;
+    }
+
+    const triggerEvent = classifyChatbotTriggerEvent(data);
+    if (!triggerEvent) {
+      return false;
+    }
+
+    const effectiveConfigurations =
+      configurations ??
+      (await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+        accountId,
+        chatbotId
+      ));
+
+    return isChatbotTriggerEventEnabled(
+      triggerEvent,
+      effectiveConfigurations?.configurations?.trigger_events
+    );
+  }
+
   execute = async (
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -9664,15 +9703,21 @@ Retorne APENAS JSON válido (sem markdown):
       return null;
     }
 
-    if (this.isNonTriggerableSystemEvent(data)) {
-      return null;
-    }
-
     const configurations =
       await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
         activeChat.account.id,
         chatbotId
       );
+
+    const canTrigger = await this.canTriggerChatbotEvent(
+      data,
+      activeChat.account.id,
+      chatbotId,
+      configurations
+    );
+    if (!canTrigger) {
+      return null;
+    }
 
     const userText = this.getTextFromUpsertMessage(data)?.trim();
 
