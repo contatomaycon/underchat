@@ -1067,6 +1067,12 @@ export const useInternalChatStore = defineStore('internalChat', {
       const data = payload as Record<string, unknown>;
 
       if (data.type === 'internal_chat_conversation_sync') {
+        const isMessageSync = data.reason === 'message';
+
+        if (isMessageSync) {
+          return;
+        }
+
         this.scheduleRefreshConversations();
         return;
       }

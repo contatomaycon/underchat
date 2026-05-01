@@ -1296,18 +1296,24 @@ export class InternalChatService {
     await this.publishMessageRealtime(message);
     await this.publishConversationSync(
       message.account_id,
-      message.conversation_id
+      message.conversation_id,
+      'message',
+      message.message_id
     );
   }
 
   async publishConversationSync(
     accountId: string,
-    conversationId: string
+    conversationId: string,
+    reason: 'conversation' | 'message' = 'conversation',
+    messageId?: string
   ): Promise<void> {
     const payload = {
       type: 'internal_chat_conversation_sync',
       account_id: accountId,
       conversation_id: conversationId,
+      reason,
+      message_id: messageId,
       date: new Date().toISOString(),
     };
 

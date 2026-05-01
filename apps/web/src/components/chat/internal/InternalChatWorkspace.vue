@@ -69,7 +69,7 @@ const emit = defineEmits<{
 
 const internalChatStore = useInternalChatStore();
 const internalChatSocket = useInternalChatSocket();
-const { t } = useI18n();
+const { t, getLocaleMessage } = useI18n();
 
 const {
   user,
@@ -486,7 +486,11 @@ const hasSidebarItems = computed(() => {
 });
 
 const hasInitialSidebarLoading = computed(() => {
-  return isSidebarLoading.value && !loadingSidebarAppend.value;
+  return (
+    isSidebarLoading.value &&
+    !loadingSidebarAppend.value &&
+    !hasSidebarItems.value
+  );
 });
 
 const canShowSidebarEmpty = computed(() => {
@@ -557,25 +561,40 @@ const resolveConversationTitle = (
   return conversation?.name?.trim() || t('internal_chat_default_conversation');
 };
 
-const internalChatPreviewTranslationKeys: Record<string, string> = {
-  '[Imagem]': 'internal_chat_preview_image',
-  '[Vídeo]': 'internal_chat_preview_video',
-  '[Áudio]': 'internal_chat_preview_audio',
-  '[Documento]': 'internal_chat_preview_document',
-  '[Localização]': 'internal_chat_preview_location',
-  '[Contato]': 'internal_chat_preview_contact',
-  '[Contatos]': 'internal_chat_preview_contacts',
-  internal_chat_preview_image: 'internal_chat_preview_image',
-  internal_chat_preview_video: 'internal_chat_preview_video',
-  internal_chat_preview_audio: 'internal_chat_preview_audio',
-  internal_chat_preview_document: 'internal_chat_preview_document',
-  internal_chat_preview_location: 'internal_chat_preview_location',
-  internal_chat_preview_contact: 'internal_chat_preview_contact',
-  internal_chat_preview_contacts: 'internal_chat_preview_contacts',
-};
+const internalChatPreviewTranslationKeys = [
+  'internal_chat_preview_image',
+  'internal_chat_preview_video',
+  'internal_chat_preview_audio',
+  'internal_chat_preview_document',
+  'internal_chat_preview_location',
+  'internal_chat_preview_contact',
+  'internal_chat_preview_contacts',
+] as const;
+type InternalChatPreviewTranslationKey =
+  (typeof internalChatPreviewTranslationKeys)[number];
+const internalChatPreviewTranslationKeySet = new Set<string>(
+  internalChatPreviewTranslationKeys
+);
+const legacyInternalChatPreviewTranslationKeys = computed(() => {
+  const ptMessages = getLocaleMessage('pt') as Record<string, unknown>;
+
+  return internalChatPreviewTranslationKeys.reduce<
+    Record<string, InternalChatPreviewTranslationKey>
+  >((acc, key) => {
+    const legacyPreview = ptMessages[key];
+    if (typeof legacyPreview === 'string') {
+      acc[legacyPreview] = key;
+    }
+
+    return acc;
+  }, {});
+});
 
 const translateInternalChatPreview = (preview: string): string => {
-  const translationKey = internalChatPreviewTranslationKeys[preview];
+  const translationKey = internalChatPreviewTranslationKeySet.has(preview)
+    ? (preview as InternalChatPreviewTranslationKey)
+    : legacyInternalChatPreviewTranslationKeys.value[preview];
+
   return translationKey ? t(translationKey) : preview;
 };
 

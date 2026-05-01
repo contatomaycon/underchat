@@ -54,6 +54,18 @@
         "allow_history_for_subscriber": true
       },
       {
+        "name": "internal.chat",
+        "allow_user_limited_channels": true,
+        "allow_subscribe_for_client": true,
+        "allow_publish_for_client": true,
+        "presence": true,
+        "history_size": 500,
+        "history_ttl": "300s",
+        "force_recovery": true,
+        "allow_recover_for_client": true,
+        "allow_history_for_subscriber": true
+      },
+      {
         "name": "presence",
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
