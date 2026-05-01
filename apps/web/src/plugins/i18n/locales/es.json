@@ -3004,6 +3004,8 @@
   "internal_chat_replying_to": "Respondiendo:",
   "internal_chat_cancel_recording": "Cancelar grabación",
   "internal_chat_send_audio": "Enviar audio",
+  "internal_chat_pause_recording": "Pausar grabación",
+  "internal_chat_resume_recording": "Reanudar grabación",
   "internal_chat_recording_audio": "Grabando audio",
   "internal_chat_type_message": "Escribe un mensaje",
   "internal_chat_attach": "Adjuntar",

@@ -279,13 +279,22 @@ const removingGroupMemberUserIds = ref<string[]>([]);
 const transferringLeaderUserIds = ref<string[]>([]);
 
 const isRecordingAudio = ref(false);
+const isRecordingPaused = ref(false);
 const recordingStarting = ref(false);
+const recordingSending = ref(false);
 const mediaRecorderRef = ref<MediaRecorder | null>(null);
 const mediaStreamRef = ref<MediaStream | null>(null);
+const audioContextRef = ref<AudioContext | null>(null);
+const audioAnalyserRef = ref<AnalyserNode | null>(null);
+const audioDataArrayRef = ref<Uint8Array | null>(null);
+const audioCanvasRef = ref<HTMLCanvasElement | null>(null);
 const audioChunksRef = ref<Blob[]>([]);
 const recordingStartAt = ref<number | null>(null);
+const recordingAccumulatedMs = ref(0);
 const recordingDurationMs = ref(0);
 const recordingTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const recordingAnimationFrame = ref<number | null>(null);
+const shouldSendRecording = ref(false);
 const activityCleanupTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const avatarFallback = '/images/svg/avatar-default.svg';
 const allowedGroupPhotoTypes = [
@@ -4013,69 +4022,345 @@ const handlePaste = async (event: ClipboardEvent) => {
   }
 };
 
+const updateRecordingDuration = () => {
+  if (recordingStartAt.value === null) {
+    recordingDurationMs.value = recordingAccumulatedMs.value;
+    return;
+  }
+
+  recordingDurationMs.value =
+    recordingAccumulatedMs.value + (performance.now() - recordingStartAt.value);
+};
+
+const setupRecordingCanvas = () => {
+  const canvas = audioCanvasRef.value;
+  if (!canvas) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const width = Math.max(1, canvas.offsetWidth || 220) * dpr;
+  const height = Math.max(1, canvas.offsetHeight || 28) * dpr;
+
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+};
+
+const drawRecordingWaveform = () => {
+  if (
+    !isRecordingAudio.value ||
+    isRecordingPaused.value ||
+    !audioAnalyserRef.value
+  ) {
+    return;
+  }
+
+  const canvas = audioCanvasRef.value;
+  const context = canvas?.getContext('2d');
+  if (!canvas || !context) return;
+
+  const analyser = audioAnalyserRef.value;
+  const bufferLength = analyser.fftSize;
+  if (
+    !audioDataArrayRef.value ||
+    audioDataArrayRef.value.length !== bufferLength
+  ) {
+    audioDataArrayRef.value = new Uint8Array(bufferLength);
+  }
+
+  analyser.getByteTimeDomainData(
+    audioDataArrayRef.value as unknown as Uint8Array<ArrayBuffer>
+  );
+  setupRecordingCanvas();
+
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.width / dpr;
+  const height = canvas.height / dpr;
+  const centerY = height / 2;
+  const sliceWidth = width / bufferLength;
+
+  context.save();
+  context.scale(dpr, dpr);
+  context.clearRect(0, 0, width, height);
+  context.lineWidth = 2;
+  context.lineCap = 'round';
+  context.strokeStyle = 'rgba(34, 197, 94, 0.35)';
+  context.beginPath();
+  context.moveTo(0, centerY);
+  context.lineTo(width, centerY);
+  context.stroke();
+
+  context.strokeStyle = 'rgba(34, 197, 94, 0.95)';
+  context.beginPath();
+
+  let x = 0;
+  for (let index = 0; index < bufferLength; index += 4) {
+    const value = audioDataArrayRef.value[index] / 128;
+    const y = (value * height) / 2;
+
+    if (index === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+
+    x += sliceWidth * 4;
+  }
+
+  context.stroke();
+  context.restore();
+
+  recordingAnimationFrame.value = requestAnimationFrame(drawRecordingWaveform);
+};
+
+const clearRecordingTimers = () => {
+  if (recordingTimer.value) {
+    clearInterval(recordingTimer.value);
+    recordingTimer.value = null;
+  }
+
+  if (recordingAnimationFrame.value) {
+    cancelAnimationFrame(recordingAnimationFrame.value);
+    recordingAnimationFrame.value = null;
+  }
+};
+
+const publishRecordingAvailable = () => {
+  if (!activeConversation.value?.conversation_id) return;
+
+  void internalChatStore.publishActivity(
+    activeConversation.value.conversation_id,
+    EInternalChatActivityState.available
+  );
+};
+
+const releaseRecordingResources = () => {
+  clearRecordingTimers();
+
+  if (mediaStreamRef.value) {
+    mediaStreamRef.value.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.value = null;
+  }
+
+  if (audioContextRef.value) {
+    audioContextRef.value.close().catch(() => null);
+    audioContextRef.value = null;
+  }
+
+  audioAnalyserRef.value = null;
+  audioDataArrayRef.value = null;
+  mediaRecorderRef.value = null;
+};
+
+const resetAudioRecordingState = () => {
+  isRecordingAudio.value = false;
+  isRecordingPaused.value = false;
+  shouldSendRecording.value = false;
+  recordingStartAt.value = null;
+  recordingAccumulatedMs.value = 0;
+  recordingDurationMs.value = 0;
+  audioChunksRef.value = [];
+};
+
+const resolveRecordingMimeType = (mimeType?: string | null): string => {
+  const normalizedMimeType = mimeType?.trim();
+  if (normalizedMimeType) return normalizedMimeType;
+
+  return 'audio/webm';
+};
+
+const resolveRecordingExtension = (mimeType: string): string => {
+  const normalizedMimeType = mimeType.toLowerCase();
+  if (normalizedMimeType.includes('ogg')) return 'ogg';
+  if (normalizedMimeType.includes('opus')) return 'opus';
+  if (normalizedMimeType.includes('mpeg')) return 'mp3';
+  if (
+    normalizedMimeType.includes('mp4') ||
+    normalizedMimeType.includes('m4a')
+  ) {
+    return 'm4a';
+  }
+  if (normalizedMimeType.includes('webm')) return 'webm';
+
+  return 'webm';
+};
+
+const createAudioRecorder = (stream: MediaStream): MediaRecorder => {
+  const preferredMimeTypes = [
+    'audio/ogg;codecs=opus',
+    'audio/opus',
+    'audio/ogg',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+  ];
+
+  for (const mimeType of preferredMimeTypes) {
+    if (!MediaRecorder.isTypeSupported(mimeType)) continue;
+
+    try {
+      return new MediaRecorder(stream, { mimeType });
+    } catch {}
+  }
+
+  return new MediaRecorder(stream);
+};
+
+const sendRecordedAudioFile = async (file: File, duration: number | null) => {
+  if (!activeConversation.value?.conversation_id) return false;
+  if (file.size > maxAudioSizeBytes) {
+    internalChatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
+    return false;
+  }
+
+  const conversationId = activeConversation.value.conversation_id;
+  const messageQuotedId = replyMessage.value?.message_id ?? null;
+  const quoted = getQuotedLocalPayload(replyMessage.value);
+  const preview = URL.createObjectURL(file);
+  const hash = createMessageHash();
+
+  replyMessage.value = null;
+  composerText.value = '';
+  linkPreview.value = null;
+
+  await registerLocalMessage(
+    {
+      ...buildMessageBaseContent(
+        EMessageType.audio,
+        null,
+        messageQuotedId,
+        quoted
+      ),
+      audio: {
+        url: preview,
+        name: file.name,
+        mimetype: file.type || 'audio/webm',
+        extension: file.name.split('.').pop()?.toLowerCase() || null,
+        size: file.size,
+        duration,
+      } as any,
+    },
+    hash
+  );
+
+  const success = await internalChatStore.createMessage(
+    conversationId,
+    createMultipartPayload({
+      type: EMessageType.audio,
+      field: 'audios',
+      file,
+      messageQuotedId,
+      hash,
+    }) as any,
+    {
+      skipLoading: true,
+      onUploadProgress: (progress) => markUploadProgress(hash, progress),
+    }
+  );
+
+  if (!success) {
+    markUploadError(hash);
+    return false;
+  }
+
+  internalChatStore.clearLocalMessageState(hash);
+  return true;
+};
+
+const handleAudioRecordingStop = async (recorder: MediaRecorder) => {
+  updateRecordingDuration();
+
+  const shouldSend = shouldSendRecording.value;
+  const chunks = [...audioChunksRef.value];
+  const duration = Math.max(0, Math.round(recordingDurationMs.value / 1000));
+  const mimeType = resolveRecordingMimeType(recorder.mimeType);
+  const extension = resolveRecordingExtension(mimeType);
+
+  releaseRecordingResources();
+  resetAudioRecordingState();
+  publishRecordingAvailable();
+
+  if (!shouldSend || chunks.length === 0) {
+    recordingSending.value = false;
+    return;
+  }
+
+  recordingSending.value = true;
+
+  try {
+    const blob = new Blob(chunks, { type: mimeType });
+    if (blob.size <= 0) return;
+
+    const file = new File([blob], `audio-${Date.now()}.${extension}`, {
+      type: mimeType,
+    });
+
+    await sendRecordedAudioFile(file, duration);
+  } finally {
+    recordingSending.value = false;
+  }
+};
+
 const startAudioRecording = async () => {
-  if (recordingStarting.value || isRecordingAudio.value) return;
+  if (
+    recordingStarting.value ||
+    recordingSending.value ||
+    isRecordingAudio.value
+  ) {
+    return;
+  }
 
   recordingStarting.value = true;
+  releaseRecordingResources();
+  resetAudioRecordingState();
+
   try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      internalChatStore.showSnackbar(
+        t('internal_chat_microphone_error'),
+        EColor.error
+      );
+      return;
+    }
+
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaStreamRef.value = stream;
 
-    const recorder = new MediaRecorder(stream);
+    const recorder = createAudioRecorder(stream);
     mediaRecorderRef.value = recorder;
     audioChunksRef.value = [];
-    recordingDurationMs.value = 0;
-    recordingStartAt.value = Date.now();
 
     recorder.addEventListener('dataavailable', (event) => {
-      if (event.data.size > 0) {
+      if (event.data?.size > 0) {
         audioChunksRef.value.push(event.data);
       }
     });
 
     recorder.addEventListener('stop', () => {
-      if (recordingTimer.value) {
-        clearInterval(recordingTimer.value);
-        recordingTimer.value = null;
-      }
-
-      stream.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.value = null;
-
-      const blob = new Blob(audioChunksRef.value, { type: 'audio/webm' });
-      if (blob.size > 0) {
-        const file = new File([blob], `audio-${Date.now()}.webm`, {
-          type: 'audio/webm',
-        });
-        const preview = URL.createObjectURL(file);
-        selectedAudios.value.push({
-          file,
-          preview,
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          duration: Math.floor(recordingDurationMs.value / 1000),
-        });
-      }
-
-      audioChunksRef.value = [];
-      isRecordingAudio.value = false;
-
-      if (activeConversation.value?.conversation_id) {
-        void internalChatStore.publishActivity(
-          activeConversation.value.conversation_id,
-          EInternalChatActivityState.available
-        );
-      }
+      void handleAudioRecordingStop(recorder);
     });
 
-    recorder.start();
-    isRecordingAudio.value = true;
+    const AudioContextCtor = window.AudioContext;
+    const audioContext = new AudioContextCtor();
+    audioContextRef.value = audioContext;
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    audioAnalyserRef.value = analyser;
 
-    recordingTimer.value = setInterval(() => {
-      if (!recordingStartAt.value) return;
-      recordingDurationMs.value = Date.now() - recordingStartAt.value;
-    }, 250);
+    recorder.start(250);
+    isRecordingAudio.value = true;
+    isRecordingPaused.value = false;
+    shouldSendRecording.value = false;
+    recordingAccumulatedMs.value = 0;
+    recordingDurationMs.value = 0;
+    recordingStartAt.value = performance.now();
+
+    recordingTimer.value = setInterval(updateRecordingDuration, 200);
+
+    await nextTick();
+    setupRecordingCanvas();
+    drawRecordingWaveform();
 
     if (activeConversation.value?.conversation_id) {
       void internalChatStore.publishActivity(
@@ -4084,6 +4369,8 @@ const startAudioRecording = async () => {
       );
     }
   } catch {
+    releaseRecordingResources();
+    resetAudioRecordingState();
     internalChatStore.showSnackbar(
       t('internal_chat_microphone_error'),
       EColor.error
@@ -4093,28 +4380,76 @@ const startAudioRecording = async () => {
   }
 };
 
-const stopAudioRecording = () => {
-  if (!mediaRecorderRef.value || mediaRecorderRef.value.state === 'inactive') {
+const stopActiveAudioRecorder = () => {
+  const recorder = mediaRecorderRef.value;
+  if (!recorder || recorder.state === 'inactive') {
+    releaseRecordingResources();
+    resetAudioRecordingState();
+    publishRecordingAvailable();
     return;
   }
-  mediaRecorderRef.value.stop();
+
+  recorder.stop();
 };
 
 const cancelAudioRecording = () => {
-  if (!mediaRecorderRef.value || mediaRecorderRef.value.state === 'inactive') {
-    return;
-  }
-  audioChunksRef.value = [];
-  mediaRecorderRef.value.stop();
+  if (!isRecordingAudio.value && !mediaRecorderRef.value) return;
+
+  shouldSendRecording.value = false;
+  isRecordingAudio.value = false;
+  isRecordingPaused.value = false;
+  stopActiveAudioRecorder();
 };
 
-const toggleAudioRecording = async () => {
-  if (isRecordingAudio.value) {
-    stopAudioRecording();
+const finalizeAudioRecording = () => {
+  if (!isRecordingAudio.value && !mediaRecorderRef.value) return;
+
+  updateRecordingDuration();
+  shouldSendRecording.value = true;
+  isRecordingAudio.value = false;
+  isRecordingPaused.value = false;
+  stopActiveAudioRecorder();
+};
+
+const togglePauseAudioRecording = async () => {
+  const recorder = mediaRecorderRef.value;
+  if (!isRecordingAudio.value || !recorder) return;
+
+  if (!isRecordingPaused.value) {
+    if (recorder.state === 'recording') {
+      recorder.pause();
+    }
+
+    if (recordingStartAt.value !== null) {
+      recordingAccumulatedMs.value +=
+        performance.now() - recordingStartAt.value;
+      recordingStartAt.value = null;
+    }
+    updateRecordingDuration();
+
+    if (audioContextRef.value?.state === 'running') {
+      await audioContextRef.value.suspend().catch(() => null);
+    }
+    if (recordingAnimationFrame.value) {
+      cancelAnimationFrame(recordingAnimationFrame.value);
+      recordingAnimationFrame.value = null;
+    }
+
+    isRecordingPaused.value = true;
     return;
   }
 
-  await startAudioRecording();
+  if (recorder.state === 'paused') {
+    recorder.resume();
+  }
+  if (audioContextRef.value?.state === 'suspended') {
+    await audioContextRef.value.resume().catch(() => null);
+  }
+
+  recordingStartAt.value = performance.now();
+  updateRecordingDuration();
+  isRecordingPaused.value = false;
+  drawRecordingWaveform();
 };
 
 const onComposerEmojiSelect = (emoji: EmojiSelection) => {
@@ -4514,24 +4849,17 @@ onBeforeUnmount(async () => {
     typingResetTimer = null;
   }
 
-  if (recordingTimer.value) {
-    clearInterval(recordingTimer.value);
-    recordingTimer.value = null;
-  }
-
   if (activityCleanupTimer.value) {
     clearInterval(activityCleanupTimer.value);
     activityCleanupTimer.value = null;
   }
 
+  shouldSendRecording.value = false;
   if (mediaRecorderRef.value && mediaRecorderRef.value.state !== 'inactive') {
     mediaRecorderRef.value.stop();
   }
-
-  if (mediaStreamRef.value) {
-    mediaStreamRef.value.getTracks().forEach((track) => track.stop());
-    mediaStreamRef.value = null;
-  }
+  releaseRecordingResources();
+  resetAudioRecordingState();
 
   for (const audio of audioPlayers.value.values()) {
     audio.pause();
@@ -6269,20 +6597,56 @@ onBeforeUnmount(async () => {
             class="internal-chat-recording-bar d-flex align-center gap-3 px-4"
           >
             <IconBtn
-              class="internal-chat-composer-btn"
+              class="internal-chat-recording-action"
               :aria-label="t('internal_chat_cancel_recording')"
               @click="cancelAudioRecording"
             >
               <VIcon size="20">tabler-trash</VIcon>
+              <VTooltip activator="parent" location="top">
+                {{ t('internal_chat_cancel_recording') }}
+              </VTooltip>
             </IconBtn>
 
-            <span class="internal-chat-recording-dot"></span>
+            <span
+              class="internal-chat-recording-dot"
+              :class="{ 'is-paused': isRecordingPaused }"
+            ></span>
             <span class="internal-chat-recording-clock">
               {{ formattedRecordingDuration }}
             </span>
-            <span class="text-body-2 text-medium-emphasis flex-grow-1">
-              {{ t('internal_chat_recording_audio') }}
-            </span>
+
+            <div class="internal-chat-recording-wave flex-grow-1">
+              <canvas
+                ref="audioCanvasRef"
+                class="internal-chat-recording-wave-canvas"
+                height="32"
+              ></canvas>
+            </div>
+
+            <IconBtn
+              class="internal-chat-recording-action flex-shrink-0"
+              :aria-label="
+                isRecordingPaused
+                  ? t('internal_chat_resume_recording')
+                  : t('internal_chat_pause_recording')
+              "
+              @click="togglePauseAudioRecording"
+            >
+              <VIcon size="20">
+                {{
+                  isRecordingPaused
+                    ? 'tabler-player-play'
+                    : 'tabler-player-pause'
+                }}
+              </VIcon>
+              <VTooltip activator="parent" location="top">
+                {{
+                  isRecordingPaused
+                    ? t('internal_chat_resume_recording')
+                    : t('internal_chat_pause_recording')
+                }}
+              </VTooltip>
+            </IconBtn>
 
             <VBtn
               class="internal-chat-send-btn"
@@ -6291,9 +6655,13 @@ onBeforeUnmount(async () => {
               icon
               rounded="pill"
               :aria-label="t('internal_chat_send_audio')"
-              @click="stopAudioRecording"
+              :loading="recordingSending"
+              @click="finalizeAudioRecording"
             >
               <VIcon size="20">tabler-send</VIcon>
+              <VTooltip activator="parent" location="top">
+                {{ t('internal_chat_send_audio') }}
+              </VTooltip>
             </VBtn>
           </div>
 
@@ -6417,7 +6785,7 @@ onBeforeUnmount(async () => {
                   v-if="!hasComposerContent"
                   class="internal-chat-composer-btn internal-chat-mic-btn"
                   :aria-label="t('internal_chat_record_audio')"
-                  :disabled="recordingStarting"
+                  :disabled="recordingStarting || recordingSending"
                   @click="startAudioRecording"
                 >
                   <VIcon size="22">tabler-microphone</VIcon>
@@ -8213,9 +8581,27 @@ onBeforeUnmount(async () => {
 
 .internal-chat-recording-bar {
   min-height: 56px;
-  border-radius: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 12px;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 2px 8px rgba(var(--v-theme-on-surface), 0.1);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.internal-chat-recording-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.internal-chat-recording-action {
+  flex-shrink: 0;
+  color: rgba(var(--v-theme-on-surface), 0.7) !important;
+
+  &:hover {
+    background: rgba(var(--v-theme-on-surface), 0.08) !important;
+    color: rgb(var(--v-theme-primary)) !important;
+  }
 }
 
 .internal-chat-recording-dot {
@@ -8227,22 +8613,75 @@ onBeforeUnmount(async () => {
   animation: internal-chat-recording-pulse 1.4s ease-in-out infinite;
 }
 
+.internal-chat-recording-dot.is-paused {
+  background: rgba(var(--v-theme-on-surface), 0.4);
+  animation: none;
+}
+
 .internal-chat-recording-clock {
   min-width: 52px;
+  flex-shrink: 0;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.internal-chat-recording-wave {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.internal-chat-recording-wave-canvas {
+  width: min(220px, 35vw);
+  height: 28px;
+  background: transparent;
+}
+
+@media (max-width: 600px) {
+  .internal-chat-recording-bar {
+    gap: 8px !important;
+    padding-inline: 8px !important;
+  }
+
+  .internal-chat-recording-action {
+    min-width: 36px !important;
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .internal-chat-recording-clock {
+    min-width: 42px;
+    font-size: 0.875rem;
+  }
+
+  .internal-chat-recording-wave-canvas {
+    width: min(80px, 20vw);
+    height: 20px;
+  }
+
+  .internal-chat-recording-dot {
+    width: 8px;
+    height: 8px;
+  }
+
+  .internal-chat-recording-bar .internal-chat-send-btn {
+    min-width: 36px !important;
+    width: 36px !important;
+    height: 36px !important;
+  }
 }
 
 @keyframes internal-chat-recording-pulse {
   0%,
   100% {
-    opacity: 0.5;
-    transform: scale(0.78);
+    opacity: 1;
+    transform: scale(1);
   }
 
   50% {
-    opacity: 1;
-    transform: scale(1);
+    opacity: 0.65;
+    transform: scale(1.3);
   }
 }
 
@@ -8987,7 +9426,7 @@ onBeforeUnmount(async () => {
 
 .internal-chat-reactions-summary {
   position: absolute;
-  left: 12px;
+  right: 12px;
   bottom: -14px;
   display: inline-flex;
   align-items: center;
@@ -9001,8 +9440,8 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-reactions-summary--mine {
-  right: 12px;
-  left: auto;
+  right: auto;
+  left: 12px;
 }
 
 .internal-chat-reaction-summary-item {
