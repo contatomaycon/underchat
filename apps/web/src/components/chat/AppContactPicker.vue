@@ -175,6 +175,7 @@ const getSelectedContactsData = (): ISelectedContactPreview[] => {
       last_name: contact.last_name ?? null,
       phone: null,
       phone_partial: contact.phone_partial ?? null,
+      phone_ddi: contact.phone_ddi ?? null,
       email: null,
       email_partial: contact.email_partial ?? null,
       photo: contact.photo ?? null,

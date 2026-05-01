@@ -2,6 +2,7 @@ import { Static, Type } from '@sinclair/typebox';
 
 export const viewInternalChatContactPhoneDataSchema = Type.Object({
   phone: Type.Union([Type.String(), Type.Null()]),
+  phone_ddi: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const viewInternalChatContactPhoneResponseSchema = Type.Object({

@@ -741,7 +741,10 @@ export class InternalChatService {
       throw new Error('contact_not_found');
     }
 
-    return { phone };
+    return {
+      phone,
+      phone_ddi: contact.phone_ddi ?? null,
+    };
   }
 
   async openDirectConversation(

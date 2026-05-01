@@ -13,6 +13,7 @@ export const listChatContactsResponseSchema = Type.Object({
   last_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   email_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   phone_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  phone_ddi: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   label_templates: Type.Array(labelTemplateSchema),

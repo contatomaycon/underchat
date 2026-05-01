@@ -44,6 +44,9 @@
             {{ title }}
           </div>
         </div>
+        <div v-if="subtitle" class="group-contact-card__subtitle">
+          {{ subtitle }}
+        </div>
 
         <div v-if="showMeta && time" class="group-contact-card__meta">
           <div class="group-contact-card__time">{{ time }}</div>
@@ -74,6 +77,7 @@
 withDefaults(
   defineProps<{
     title: string;
+    subtitle?: string | null;
     time?: string | null;
     seen?: boolean;
     align?: 'left' | 'right';
@@ -82,6 +86,7 @@ withDefaults(
     showMeta?: boolean;
   }>(),
   {
+    subtitle: null,
     time: null,
     seen: false,
     align: 'left',
@@ -185,6 +190,17 @@ defineEmits<{
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.group-contact-card__subtitle {
+  margin-top: 3px;
+  overflow: hidden;
+  color: rgba(107, 114, 128, 0.9);
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .group-contact-card__meta {

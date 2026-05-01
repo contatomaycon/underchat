@@ -180,6 +180,7 @@ const mapErrors = reactive<Record<string, boolean>>({});
 const contactViewerOpen = ref(false);
 const contactViewerContacts = ref<InternalContact[]>([]);
 const contactViewerPhoneCache = reactive<Record<string, string>>({});
+const contactViewerPhoneDdiCache = reactive<Record<string, string | null>>({});
 const contactViewerVisiblePhones = reactive<Record<string, boolean>>({});
 const contactViewerPhoneLoading = reactive<Record<string, boolean>>({});
 
@@ -1142,26 +1143,75 @@ const resolveContactViewerKey = (
   );
 };
 
-const formatFullContactPhone = (
+const onlyPhoneDigits = (value?: string | null): string => {
+  return value?.replace(/\D/g, '') ?? '';
+};
+
+const formatNationalPhone = (
   phone: string | null | undefined,
   phoneDdi?: string | null
 ): string => {
   const normalizedPhone = phone?.trim() ?? '';
   if (!normalizedPhone) return '';
 
-  const normalizedDdi = phoneDdi?.replace(/\D/g, '') ?? '';
-  if (!normalizedDdi || normalizedPhone.startsWith('+')) {
+  if (normalizedPhone.startsWith('+')) {
     return normalizedPhone;
   }
 
-  const phoneDigits = normalizedPhone.replace(/\D/g, '');
-  if (phoneDigits.startsWith(normalizedDdi)) {
-    return normalizedPhone === phoneDigits
-      ? `+${normalizedPhone}`
-      : normalizedPhone;
+  if (normalizedPhone.includes('*')) {
+    return normalizedPhone;
   }
 
-  return `+${normalizedDdi} ${normalizedPhone}`;
+  const phoneDdiDigits = onlyPhoneDigits(phoneDdi);
+  const phoneDigits = onlyPhoneDigits(normalizedPhone);
+  const nationalDigits =
+    phoneDdiDigits && phoneDigits.startsWith(phoneDdiDigits)
+      ? phoneDigits.slice(phoneDdiDigits.length)
+      : phoneDigits;
+
+  if (nationalDigits.length === 11) {
+    return `(${nationalDigits.slice(0, 2)}) ${nationalDigits.slice(
+      2,
+      7
+    )}-${nationalDigits.slice(7)}`;
+  }
+
+  if (nationalDigits.length === 10) {
+    return `(${nationalDigits.slice(0, 2)}) ${nationalDigits.slice(
+      2,
+      6
+    )}-${nationalDigits.slice(6)}`;
+  }
+
+  if (nationalDigits.length === 9) {
+    return `${nationalDigits.slice(0, 5)}-${nationalDigits.slice(5)}`;
+  }
+
+  if (nationalDigits.length === 8) {
+    return `${nationalDigits.slice(0, 4)}-${nationalDigits.slice(4)}`;
+  }
+
+  return normalizedPhone;
+};
+
+const formatContactPhone = (
+  phone: string | null | undefined,
+  phoneDdi?: string | null
+): string => {
+  const normalizedPhone = phone?.trim() ?? '';
+  if (!normalizedPhone) return '';
+  if (normalizedPhone.startsWith('+')) return normalizedPhone;
+
+  const phoneDdiDigits = onlyPhoneDigits(phoneDdi);
+  const phoneDigits = onlyPhoneDigits(normalizedPhone);
+  const prefix =
+    phoneDdiDigits && !phoneDigits.startsWith(phoneDdiDigits)
+      ? `+${phoneDdiDigits} `
+      : phoneDdiDigits
+        ? `+${phoneDdiDigits} `
+        : '';
+
+  return `${prefix}${formatNationalPhone(normalizedPhone, phoneDdiDigits)}`;
 };
 
 const isContactPhoneVisible = (contact: InternalContact): boolean => {
@@ -1182,25 +1232,32 @@ const canViewFullContactPhone = (contact: InternalContact): boolean => {
   );
 };
 
+const resolveContactViewerDdi = (contact: InternalContact): string | null => {
+  if (contact.contact_id && contactViewerPhoneDdiCache[contact.contact_id]) {
+    return contactViewerPhoneDdiCache[contact.contact_id];
+  }
+
+  return contact.phone_ddi ?? null;
+};
+
 const resolveContactViewerMeta = (contact: InternalContact): string => {
   if (
     contact.contact_id &&
     contactViewerVisiblePhones[contact.contact_id] &&
     contactViewerPhoneCache[contact.contact_id]
   ) {
-    return formatFullContactPhone(
+    return formatContactPhone(
       contactViewerPhoneCache[contact.contact_id],
-      contact.phone_ddi
+      resolveContactViewerDdi(contact)
     );
   }
 
-  return (
-    contact.phone_partial ||
-    contact.phone ||
-    contact.email_partial ||
-    contact.email ||
-    ''
-  );
+  const phone = contact.phone_partial || contact.phone;
+  if (phone) {
+    return formatContactPhone(phone, resolveContactViewerDdi(contact));
+  }
+
+  return contact.email_partial || contact.email || '';
 };
 
 const clearVisibleContactPhones = () => {
@@ -1231,6 +1288,8 @@ const toggleContactPhoneVisibility = async (contact: InternalContact) => {
     if (!phone) return;
 
     contactViewerPhoneCache[contact.contact_id] = phone;
+    contactViewerPhoneDdiCache[contact.contact_id] =
+      response?.phone_ddi ?? contact.phone_ddi ?? null;
     contactViewerVisiblePhones[contact.contact_id] = true;
   } finally {
     delete contactViewerPhoneLoading[contact.contact_id];
@@ -1255,6 +1314,21 @@ const resolveMessageContactCardTitle = (message: InternalMessage): string => {
       count: remainingCount,
     }
   );
+};
+
+const resolveMessageContactCardSubtitle = (
+  message: InternalMessage
+): string | null => {
+  const contacts = resolveMessageContacts(message);
+  if (contacts.length !== 1) return null;
+
+  const contact = contacts[0];
+  const phone = contact.phone_partial || contact.phone;
+  if (phone) {
+    return formatContactPhone(phone, contact.phone_ddi ?? '55');
+  }
+
+  return contact.email_partial || contact.email || null;
 };
 
 const openMessageContacts = (message: InternalMessage) => {
@@ -2848,6 +2922,7 @@ const sendMessage = async () => {
           last_name: contact.last_name ?? null,
           phone: contact.phone_partial ?? null,
           phone_partial: contact.phone_partial ?? null,
+          phone_ddi: contact.phone_ddi ?? null,
           email_partial: contact.email_partial ?? null,
           photo: contact.photo ?? null,
         },
@@ -4866,7 +4941,7 @@ onBeforeUnmount(async () => {
                                   message.content.document
                                 )
                               "
-                              size="30"
+                              size="26"
                               color="primary"
                             />
                           </div>
@@ -4890,7 +4965,7 @@ onBeforeUnmount(async () => {
                                       resolveInternalDocumentName(
                                         message.content.document
                                       ),
-                                      36
+                                      30
                                     )
                                   }}
                                 </a>
@@ -4925,7 +5000,7 @@ onBeforeUnmount(async () => {
                             target="_blank"
                             rel="noopener"
                           >
-                            <VIcon size="22">tabler-download</VIcon>
+                            <VIcon size="20">tabler-download</VIcon>
                           </a>
                         </div>
 
@@ -5019,6 +5094,7 @@ onBeforeUnmount(async () => {
                       >
                         <GroupContactMessageCard
                           :title="resolveMessageContactCardTitle(message)"
+                          :subtitle="resolveMessageContactCardSubtitle(message)"
                           :align="isOwnMessage(message) ? 'right' : 'left'"
                           :is-group="resolveMessageContacts(message).length > 1"
                           :photo="
@@ -6687,7 +6763,14 @@ onBeforeUnmount(async () => {
                   {{ resolveContactFullName(contact) }}
                 </div>
                 <div
-                  v-if="resolveContactViewerMeta(contact)"
+                  v-if="isContactPhoneLoading(contact)"
+                  class="internal-chat-contact-viewer-meta internal-chat-contact-viewer-meta--loading"
+                  aria-hidden="true"
+                >
+                  <span class="internal-chat-contact-viewer-meta-skeleton" />
+                </div>
+                <div
+                  v-else-if="resolveContactViewerMeta(contact)"
                   class="internal-chat-contact-viewer-meta"
                 >
                   {{ resolveContactViewerMeta(contact) }}
@@ -6702,6 +6785,7 @@ onBeforeUnmount(async () => {
                     size="small"
                     color="primary"
                     class="internal-chat-contact-viewer-eye"
+                    :disabled="isContactPhoneLoading(contact)"
                     :loading="isContactPhoneLoading(contact)"
                     @click.stop="toggleContactPhoneVisibility(contact)"
                   >
@@ -7746,6 +7830,8 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-document-content {
+  inline-size: min(320px, 72vw);
+  max-inline-size: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -7753,10 +7839,10 @@ onBeforeUnmount(async () => {
 .internal-chat-document-bubble {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border-radius: 10px;
   margin-bottom: 6px;
-  padding: 12px;
+  padding: 10px;
   background: rgba(var(--v-theme-on-surface), 0.04);
 }
 
@@ -7774,8 +7860,8 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-document-icon {
-  inline-size: 40px;
-  block-size: 40px;
+  inline-size: 36px;
+  block-size: 36px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -7795,6 +7881,7 @@ onBeforeUnmount(async () => {
 .internal-chat-document-name {
   overflow: hidden;
   color: rgb(var(--v-theme-primary));
+  font-size: 0.875rem;
   font-weight: 600;
   text-decoration: none;
   text-overflow: ellipsis;
@@ -7802,12 +7889,13 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-document-meta {
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 
 .internal-chat-document-download {
-  inline-size: 34px;
-  block-size: 34px;
+  inline-size: 30px;
+  block-size: 30px;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -7891,7 +7979,7 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-contact-bubble {
-  inline-size: min(300px, 72vw);
+  inline-size: min(260px, 72vw);
   display: flex;
   flex-direction: column;
 }
@@ -7904,12 +7992,36 @@ onBeforeUnmount(async () => {
 .internal-chat-contact-bubble--left :deep(.group-contact-card),
 .internal-chat-contact-bubble--right :deep(.group-contact-card) {
   width: 100%;
-  max-width: 300px;
+  max-width: 260px;
   margin: 0;
 }
 
 .internal-chat-contact-bubble :deep(.group-contact-card) {
   box-shadow: none;
+}
+
+.internal-chat-contact-bubble :deep(.group-contact-card__body) {
+  min-height: 64px;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.internal-chat-contact-bubble :deep(.group-contact-card__photo),
+.internal-chat-contact-bubble :deep(.group-contact-card__icon) {
+  inline-size: 38px !important;
+  block-size: 38px !important;
+}
+
+.internal-chat-contact-bubble :deep(.group-contact-card__left) {
+  padding-top: 0;
+}
+
+.internal-chat-contact-bubble :deep(.group-contact-card__title) {
+  font-size: 0.9rem;
+}
+
+.internal-chat-contact-bubble :deep(.group-contact-card__subtitle) {
+  font-size: 0.78rem;
 }
 
 .internal-chat-contact-viewer-list {
@@ -7946,6 +8058,37 @@ onBeforeUnmount(async () => {
   font-size: 0.8rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.internal-chat-contact-viewer-meta--loading {
+  display: flex;
+  align-items: center;
+  min-block-size: 18px;
+}
+
+.internal-chat-contact-viewer-meta-skeleton {
+  display: block;
+  block-size: 11px;
+  inline-size: 138px;
+  border-radius: 999px;
+  animation: internal-chat-contact-viewer-skeleton 1.2s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--v-theme-on-surface), 0.08) 25%,
+    rgba(var(--v-theme-on-surface), 0.16) 37%,
+    rgba(var(--v-theme-on-surface), 0.08) 63%
+  );
+  background-size: 400% 100%;
+}
+
+@keyframes internal-chat-contact-viewer-skeleton {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: 0 0;
+  }
 }
 
 .internal-chat-contact-viewer-eye {

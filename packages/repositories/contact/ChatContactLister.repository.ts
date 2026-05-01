@@ -265,6 +265,7 @@ export class ChatContactListerRepository {
         last_name: contact.last_name,
         email_partial: contact.email_partial,
         phone_partial: contact.phone_partial,
+        phone_ddi: contact.phone_ddi,
         photo: contact.photo,
         is_valided: contact.is_valided,
       })
@@ -481,6 +482,7 @@ export class ChatContactListerRepository {
       last_name: string | null;
       email_partial: string | null;
       phone_partial: string | null;
+      phone_ddi: string | null;
       photo: string | null;
       is_valided: boolean | null;
     }>,
@@ -495,6 +497,7 @@ export class ChatContactListerRepository {
       last_name: contactItem.last_name ?? null,
       email_partial: contactItem.email_partial ?? null,
       phone_partial: contactItem.phone_partial ?? null,
+      phone_ddi: contactItem.phone_ddi ?? null,
       photo: contactItem.photo ?? null,
       is_valided: contactItem.is_valided ?? null,
       label_templates: labelsByContactId.get(contactItem.contact_id) ?? [],
