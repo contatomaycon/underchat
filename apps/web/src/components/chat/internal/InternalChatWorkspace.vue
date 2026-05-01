@@ -10,6 +10,7 @@ import {
 import { storeToRefs } from 'pinia';
 import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
+import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import axios from '@webcore/axios';
 import { useInternalChatStore } from '@/@webcore/stores/internalChat';
 import { useInternalChatSocket } from '@/composables/useInternalChatSocket';
@@ -101,6 +102,8 @@ const showReactionPicker = ref<string | null>(null);
 const showEmojiPicker = ref<string | null>(null);
 const isComposerEmojiOpen = ref(false);
 const ignoreReactionOutsideOnce = ref(false);
+const showScrollToBottom = ref(false);
+const shouldAutoScrollMessages = ref(true);
 
 const selectedImages = ref<File[]>([]);
 const selectedVideos = ref<File[]>([]);
@@ -112,6 +115,9 @@ const videoInputRef = ref<HTMLInputElement | null>(null);
 const documentInputRef = ref<HTMLInputElement | null>(null);
 const audioInputRef = ref<HTMLInputElement | null>(null);
 const sidebarBodyRef = ref<HTMLElement | null>(null);
+const messageListScrollRef = ref<InstanceType<typeof PerfectScrollbar> | null>(
+  null
+);
 const groupPhotoInputRef = ref<HTMLInputElement | null>(null);
 const groupInfoPhotoInputRef = ref<HTMLInputElement | null>(null);
 
@@ -212,6 +218,10 @@ let groupPhotoPreviewUrl: string | null = null;
 
 const resolveAvatarSource = (photo?: string | null): string => {
   return photo?.trim() || avatarFallback;
+};
+
+const resolveMessageAvatarSource = (message: InternalMessage): string => {
+  return resolveAvatarSource(message.user?.photo);
 };
 
 const groupCreatePermissions = [
@@ -1298,6 +1308,88 @@ const handleSidebarScroll = async (event: Event) => {
   await loadMoreSidebar();
 };
 
+const messageAutoScrollThreshold = 80;
+
+const getMessageScrollElement = (): HTMLElement | null => {
+  const scrollRef = messageListScrollRef.value as
+    | (InstanceType<typeof PerfectScrollbar> & {
+        $el?: HTMLElement;
+        ps?: { update?: () => void };
+      })
+    | null;
+  const root = scrollRef?.$el ?? null;
+
+  if (!root) return null;
+  if (root.classList.contains('ps')) return root;
+
+  return root.querySelector<HTMLElement>('.ps') ?? root;
+};
+
+const updateMessageScrollbar = async () => {
+  await nextTick();
+
+  const scrollRef = messageListScrollRef.value as
+    | (InstanceType<typeof PerfectScrollbar> & {
+        ps?: { update?: () => void };
+        update?: () => void;
+      })
+    | null;
+
+  if (typeof scrollRef?.ps?.update === 'function') {
+    scrollRef.ps.update();
+    return;
+  }
+
+  if (typeof scrollRef?.update === 'function') {
+    scrollRef.update();
+    return;
+  }
+
+  getMessageScrollElement()?.dispatchEvent(new Event('scroll'));
+};
+
+const isMessageListNearBottom = (target?: HTMLElement | null): boolean => {
+  const element = target ?? getMessageScrollElement();
+  if (!element) return true;
+
+  const distanceFromBottom =
+    element.scrollHeight - element.scrollTop - element.clientHeight;
+
+  return distanceFromBottom <= messageAutoScrollThreshold;
+};
+
+const updateMessageScrollState = (target?: HTMLElement | null) => {
+  const isNearBottom = isMessageListNearBottom(target);
+  shouldAutoScrollMessages.value = isNearBottom;
+  showScrollToBottom.value = !isNearBottom;
+};
+
+const scrollMessagesToBottom = async (smooth = false) => {
+  shouldAutoScrollMessages.value = true;
+
+  await updateMessageScrollbar();
+
+  const element = getMessageScrollElement();
+  if (!element) return;
+
+  const top = element.scrollHeight;
+  element.scrollTo({
+    top,
+    behavior: smooth ? 'smooth' : 'auto',
+  });
+
+  await nextTick();
+
+  requestAnimationFrame(() => {
+    element.scrollTop = element.scrollHeight;
+    showScrollToBottom.value = false;
+  });
+};
+
+const handleMessageListScroll = (event: Event) => {
+  updateMessageScrollState(event.currentTarget as HTMLElement | null);
+};
+
 const switchSidebarTab = async (tab: InternalSidebarTab) => {
   if (activeSidebarTab.value === tab) return;
 
@@ -1306,26 +1398,32 @@ const switchSidebarTab = async (tab: InternalSidebarTab) => {
 };
 
 const openConversation = async (conversationId: string) => {
+  shouldAutoScrollMessages.value = true;
   await internalChatStore.openConversation(conversationId);
+  await scrollMessagesToBottom();
 };
 
 const openConversationFromUser = async (userId: string) => {
+  shouldAutoScrollMessages.value = true;
   const conversation = await internalChatStore.openDirect(userId);
   if (!conversation) return;
 
   activeSidebarTab.value = 'all';
   sidebarBodyRef.value?.scrollTo({ top: 0 });
+  await scrollMessagesToBottom();
 };
 
 const openConversationFromGroupMember = async (member: InternalParticipant) => {
   if (member.user_id === internalChatStore.currentUserId) return;
 
+  shouldAutoScrollMessages.value = true;
   const conversation = await internalChatStore.openDirect(member.user_id);
   if (!conversation) return;
 
   activeSidebarTab.value = 'all';
   closeGroupInfoDrawer();
   sidebarBodyRef.value?.scrollTo({ top: 0 });
+  await scrollMessagesToBottom();
 };
 
 const openCreateGroupDialog = async () => {
@@ -1580,6 +1678,11 @@ const loadMoreMessages = async () => {
     return;
   }
 
+  const scrollElement = getMessageScrollElement();
+  const previousScrollHeight = scrollElement?.scrollHeight ?? 0;
+  const previousScrollTop = scrollElement?.scrollTop ?? 0;
+  shouldAutoScrollMessages.value = false;
+
   await internalChatStore.listMessages(
     activeConversation.value.conversation_id,
     {
@@ -1588,6 +1691,14 @@ const loadMoreMessages = async () => {
     },
     true
   );
+
+  await updateMessageScrollbar();
+
+  if (!scrollElement) return;
+
+  const scrollDifference = scrollElement.scrollHeight - previousScrollHeight;
+  scrollElement.scrollTop = previousScrollTop + scrollDifference;
+  updateMessageScrollState(scrollElement);
 };
 
 const openCloseConversationDialog = () => {
@@ -2216,6 +2327,8 @@ watch(isUserInfoDrawerOpen, (isOpen) => {
 watch(
   () => activeConversation.value?.conversation_id,
   async () => {
+    shouldAutoScrollMessages.value = true;
+    showScrollToBottom.value = false;
     showReactionPicker.value = null;
     showEmojiPicker.value = null;
 
@@ -2239,9 +2352,27 @@ watch(
   }
 );
 
+watch(
+  () => messages.value[messages.value.length - 1]?.message_id,
+  async () => {
+    await updateMessageScrollbar();
+
+    if (shouldAutoScrollMessages.value) {
+      await scrollMessagesToBottom();
+      return;
+    }
+
+    updateMessageScrollState();
+  }
+);
+
 onMounted(async () => {
   await loadSidebar(false);
   await internalChatSocket.initializeSocket();
+  await updateMessageScrollbar();
+  if (activeConversation.value) {
+    await scrollMessagesToBottom();
+  }
   document.addEventListener('click', onReactionOutsideClick);
   activityCleanupTimer.value = setInterval(() => {
     internalChatStore.clearExpiredActivities();
@@ -2628,70 +2759,87 @@ onBeforeUnmount(async () => {
 
         <VDivider />
 
-        <div class="internal-chat-message-list px-4 py-3">
-          <div class="d-flex justify-center mb-3">
-            <VBtn
-              v-if="messagesPaging.current_page < messagesPaging.total_pages"
-              size="small"
-              variant="tonal"
-              :loading="loadingMessages"
-              @click="loadMoreMessages"
-            >
-              {{ t('internal_chat_load_previous_messages') }}
-            </VBtn>
-          </div>
-
-          <div
-            v-for="message in messages"
-            :key="message.message_id"
-            class="internal-chat-message-row"
-            :class="{
-              'internal-chat-message-row--mine': isOwnMessage(message),
-            }"
-            @mouseenter="onMessageMouseEnter(message)"
-            @mouseleave="onMessageMouseLeave"
+        <div class="internal-chat-message-scroll">
+          <PerfectScrollbar
+            ref="messageListScrollRef"
+            :options="{ wheelPropagation: false }"
+            class="internal-chat-message-list px-4 py-3"
+            @ps-scroll-y="handleMessageListScroll"
           >
-            <div
-              class="internal-chat-message-shell"
-              :class="{
-                'internal-chat-message-shell--mine': isOwnMessage(message),
-              }"
-            >
-              <button
-                v-if="
-                  hoveredMessageId === message.message_id &&
-                  canInteractWithMessage(message) &&
-                  showReactionPicker !== message.message_id
-                "
-                type="button"
-                class="internal-chat-reaction-trigger"
-                :class="{
-                  'internal-chat-reaction-trigger--mine': isOwnMessage(message),
-                }"
-                :aria-label="t('internal_chat_react_to_message')"
-                @click.stop="toggleReactionPicker(message)"
+            <div class="d-flex justify-center mb-3">
+              <VBtn
+                v-if="messagesPaging.current_page < messagesPaging.total_pages"
+                size="small"
+                variant="tonal"
+                :loading="loadingMessages"
+                @click="loadMoreMessages"
               >
-                <VIcon size="20">tabler-mood-smile</VIcon>
-              </button>
+                {{ t('internal_chat_load_previous_messages') }}
+              </VBtn>
+            </div>
+
+            <div
+              v-for="message in messages"
+              :key="message.message_id"
+              class="internal-chat-message-row"
+              :class="{
+                'internal-chat-message-row--mine': isOwnMessage(message),
+              }"
+              @mouseenter="onMessageMouseEnter(message)"
+              @mouseleave="onMessageMouseLeave"
+            >
+              <VAvatar
+                size="32"
+                class="internal-chat-message-avatar"
+                :class="{
+                  'internal-chat-message-avatar--mine': isOwnMessage(message),
+                }"
+              >
+                <VImg
+                  :src="resolveMessageAvatarSource(message)"
+                  :alt="message.user?.name || t('internal_chat_system_user')"
+                  cover
+                />
+              </VAvatar>
 
               <div
-                class="internal-chat-message-bubble"
+                class="internal-chat-message-shell"
                 :class="{
-                  'internal-chat-message-bubble--mine': isOwnMessage(message),
-                  'internal-chat-message-bubble--deleted':
-                    isDeletedMessage(message),
-                  'internal-chat-message-bubble--with-reactions':
-                    message.content?.reactions?.length,
+                  'internal-chat-message-shell--mine': isOwnMessage(message),
                 }"
               >
-                <div class="d-flex align-center justify-space-between mb-1">
-                  <span class="text-caption text-medium-emphasis">
-                    {{ message.user?.name || t('internal_chat_system_user') }}
-                  </span>
+                <button
+                  v-if="
+                    hoveredMessageId === message.message_id &&
+                    canInteractWithMessage(message) &&
+                    showReactionPicker !== message.message_id
+                  "
+                  type="button"
+                  class="internal-chat-reaction-trigger"
+                  :class="{
+                    'internal-chat-reaction-trigger--mine':
+                      isOwnMessage(message),
+                  }"
+                  :aria-label="t('internal_chat_react_to_message')"
+                  @click.stop="toggleReactionPicker(message)"
+                >
+                  <VIcon size="20">tabler-mood-smile</VIcon>
+                </button>
 
-                  <div class="d-flex align-center gap-1">
+                <div
+                  class="internal-chat-message-bubble"
+                  :class="{
+                    'internal-chat-message-bubble--mine':
+                      isOwnMessage(message),
+                    'internal-chat-message-bubble--deleted':
+                      isDeletedMessage(message),
+                    'internal-chat-message-bubble--with-reactions':
+                      message.content?.reactions?.length,
+                  }"
+                >
+                  <div class="internal-chat-message-header">
                     <span class="text-caption text-medium-emphasis">
-                      {{ formatMessageDate(message.date) }}
+                      {{ message.user?.name || t('internal_chat_system_user') }}
                     </span>
 
                     <VMenu
@@ -2700,7 +2848,11 @@ onBeforeUnmount(async () => {
                       offset="6"
                     >
                       <template #activator="{ props }">
-                        <IconBtn size="x-small" v-bind="props">
+                        <IconBtn
+                          class="internal-chat-message-action-btn"
+                          size="x-small"
+                          v-bind="props"
+                        >
                           <VIcon size="16">tabler-chevron-down</VIcon>
                         </IconBtn>
                       </template>
@@ -2783,167 +2935,196 @@ onBeforeUnmount(async () => {
                       </VList>
                     </VMenu>
                   </div>
-                </div>
 
-                <button
-                  v-if="showQuotedMessage(message)"
-                  type="button"
-                  class="internal-chat-quoted mb-2 px-2 py-1"
-                >
-                  <span class="text-caption text-primary">
-                    {{ resolveQuotedName(message) }}
-                  </span>
-                  <div class="text-body-2 text-truncate">
-                    {{ resolveQuotedText(message) }}
-                  </div>
-                </button>
-
-                <div
-                  v-if="resolveMessageText(message)"
-                  class="internal-chat-message-text mb-2"
-                >
-                  {{ resolveMessageText(message) }}
-                </div>
-
-                <img
-                  v-if="message.content?.image?.url"
-                  :src="message.content.image.url"
-                  class="internal-chat-media"
-                  :alt="t('internal_chat_image_alt')"
-                />
-
-                <video
-                  v-if="message.content?.video?.url"
-                  :src="message.content.video.url"
-                  class="internal-chat-media"
-                  controls
-                />
-
-                <audio
-                  v-if="message.content?.audio?.url"
-                  :src="message.content.audio.url"
-                  controls
-                  class="w-100"
-                />
-
-                <a
-                  v-if="message.content?.document?.url"
-                  :href="message.content.document.url"
-                  target="_blank"
-                  rel="noopener"
-                  class="internal-chat-document-link"
-                >
-                  <VIcon size="18">tabler-file</VIcon>
-                  <span class="text-truncate">
-                    {{
-                      message.content.document.name ||
-                      t('internal_chat_document_fallback')
-                    }}
-                  </span>
-                </a>
-
-                <a
-                  v-if="message.content?.location"
-                  class="d-inline-flex align-center text-decoration-none mt-1"
-                  target="_blank"
-                  rel="noopener"
-                  :href="`https://www.google.com/maps?q=${message.content.location.latitude},${message.content.location.longitude}`"
-                >
-                  <VIcon size="16" class="me-1">tabler-map-pin</VIcon>
-                  {{
-                    message.content.location.name ||
-                    message.content.location.address ||
-                    t('internal_chat_location_fallback')
-                  }}
-                </a>
-
-                <div
-                  v-if="message.content?.contact || message.content?.contacts"
-                  class="text-body-2 mt-1"
-                >
-                  {{
-                    message.content.contact?.name ||
-                    message.content.contacts
-                      ?.map((item) => item.name)
-                      .join(', ')
-                  }}
-                </div>
-
-                <div
-                  v-if="message.content?.reactions?.length"
-                  class="internal-chat-reactions-summary"
-                  :class="{
-                    'internal-chat-reactions-summary--mine':
-                      isOwnMessage(message),
-                  }"
-                >
-                  <span
-                    v-for="reaction in getReactionsSummary(
-                      message.content.reactions
-                    )"
-                    :key="`${message.message_id}-reaction-${reaction.emoji}`"
-                    class="internal-chat-reaction-summary-item"
+                  <button
+                    v-if="showQuotedMessage(message)"
+                    type="button"
+                    class="internal-chat-quoted mb-2 px-2 py-1"
                   >
-                    <span>{{ reaction.emoji }}</span>
-                    <span>{{ reaction.count }}</span>
-                  </span>
-                </div>
+                    <span class="text-caption text-primary">
+                      {{ resolveQuotedName(message) }}
+                    </span>
+                    <div class="text-body-2 text-truncate">
+                      {{ resolveQuotedText(message) }}
+                    </div>
+                  </button>
 
-                <div
-                  v-if="
-                    showReactionPicker === message.message_id &&
-                    canInteractWithMessage(message)
-                  "
-                  class="internal-chat-reaction-picker"
-                  :class="{
-                    'internal-chat-reaction-picker--mine':
-                      isOwnMessage(message),
-                  }"
-                  @click.stop
-                >
-                  <div class="internal-chat-reaction-picker-row">
-                    <VBtn
-                      v-for="emoji in quickReactions"
-                      :key="emoji"
-                      icon
-                      size="32"
-                      variant="text"
-                      class="internal-chat-reaction-option"
-                      @click="onReact(message, emoji)"
-                    >
-                      <span class="text-h6">{{ emoji }}</span>
-                    </VBtn>
+                  <div
+                    v-if="resolveMessageText(message)"
+                    class="internal-chat-message-text mb-2"
+                  >
+                    {{ resolveMessageText(message) }}
+                  </div>
 
-                    <VDivider vertical class="mx-1" />
+                  <img
+                    v-if="message.content?.image?.url"
+                    :src="message.content.image.url"
+                    class="internal-chat-media"
+                    :alt="t('internal_chat_image_alt')"
+                  />
 
-                    <VBtn
-                      icon
-                      size="32"
-                      variant="text"
-                      class="internal-chat-reaction-option"
-                      @click.stop="toggleEmojiPicker(message.message_id)"
-                    >
-                      <VIcon size="20">tabler-plus</VIcon>
-                    </VBtn>
+                  <video
+                    v-if="message.content?.video?.url"
+                    :src="message.content.video.url"
+                    class="internal-chat-media"
+                    controls
+                  />
+
+                  <audio
+                    v-if="message.content?.audio?.url"
+                    :src="message.content.audio.url"
+                    controls
+                    class="w-100"
+                  />
+
+                  <a
+                    v-if="message.content?.document?.url"
+                    :href="message.content.document.url"
+                    target="_blank"
+                    rel="noopener"
+                    class="internal-chat-document-link"
+                  >
+                    <VIcon size="18">tabler-file</VIcon>
+                    <span class="text-truncate">
+                      {{
+                        message.content.document.name ||
+                        t('internal_chat_document_fallback')
+                      }}
+                    </span>
+                  </a>
+
+                  <a
+                    v-if="message.content?.location"
+                    class="d-inline-flex align-center text-decoration-none mt-1"
+                    target="_blank"
+                    rel="noopener"
+                    :href="`https://www.google.com/maps?q=${message.content.location.latitude},${message.content.location.longitude}`"
+                  >
+                    <VIcon size="16" class="me-1">tabler-map-pin</VIcon>
+                    {{
+                      message.content.location.name ||
+                      message.content.location.address ||
+                      t('internal_chat_location_fallback')
+                    }}
+                  </a>
+
+                  <div
+                    v-if="message.content?.contact || message.content?.contacts"
+                    class="text-body-2 mt-1"
+                  >
+                    {{
+                      message.content.contact?.name ||
+                      message.content.contacts
+                        ?.map((item) => item.name)
+                        .join(', ')
+                    }}
                   </div>
 
                   <div
-                    v-if="showEmojiPicker === message.message_id"
-                    class="internal-chat-emoji-picker"
+                    v-if="message.content?.reactions?.length"
+                    class="internal-chat-reactions-summary"
+                    :class="{
+                      'internal-chat-reactions-summary--mine':
+                        isOwnMessage(message),
+                    }"
                   >
-                    <Picker
-                      :data="reactionEmojiIndex"
-                      :per-line="8"
-                      :show-preview="false"
-                      :show-skin-tones="false"
-                      :show-search="true"
-                      @select="onSelectReactionEmoji(message, $event)"
-                    />
+                    <span
+                      v-for="reaction in getReactionsSummary(
+                        message.content.reactions
+                      )"
+                      :key="`${message.message_id}-reaction-${reaction.emoji}`"
+                      class="internal-chat-reaction-summary-item"
+                    >
+                      <span>{{ reaction.emoji }}</span>
+                      <span>{{ reaction.count }}</span>
+                    </span>
+                  </div>
+
+                  <div class="internal-chat-message-footer">
+                    <div class="internal-chat-message-meta-content">
+                      <div class="internal-chat-message-meta-row">
+                        <span class="internal-chat-message-time">
+                          {{ formatMessageDate(message.date) }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="
+                      showReactionPicker === message.message_id &&
+                      canInteractWithMessage(message)
+                    "
+                    class="internal-chat-reaction-picker"
+                    :class="{
+                      'internal-chat-reaction-picker--mine':
+                        isOwnMessage(message),
+                    }"
+                    @click.stop
+                  >
+                    <div class="internal-chat-reaction-picker-row">
+                      <VBtn
+                        v-for="emoji in quickReactions"
+                        :key="emoji"
+                        icon
+                        size="32"
+                        variant="text"
+                        class="internal-chat-reaction-option"
+                        @click="onReact(message, emoji)"
+                      >
+                        <span class="text-h6">{{ emoji }}</span>
+                      </VBtn>
+
+                      <VDivider vertical class="mx-1" />
+
+                      <VBtn
+                        icon
+                        size="32"
+                        variant="text"
+                        class="internal-chat-reaction-option"
+                        @click.stop="toggleEmojiPicker(message.message_id)"
+                      >
+                        <VIcon size="20">tabler-plus</VIcon>
+                      </VBtn>
+                    </div>
+
+                    <div
+                      v-if="showEmojiPicker === message.message_id"
+                      class="internal-chat-emoji-picker"
+                    >
+                      <Picker
+                        :data="reactionEmojiIndex"
+                        :per-line="8"
+                        :show-preview="false"
+                        :show-skin-tones="false"
+                        :show-search="true"
+                        @select="onSelectReactionEmoji(message, $event)"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </PerfectScrollbar>
+
+          <Transition name="fade">
+            <VBtn
+              v-if="showScrollToBottom"
+              class="internal-chat-scroll-to-bottom"
+              icon
+              size="small"
+              variant="flat"
+              color="white"
+              elevation="2"
+              :aria-label="t('internal_chat_scroll_to_bottom')"
+              @click="scrollMessagesToBottom(true)"
+            >
+              <VIcon size="18" color="primary">tabler-arrow-down</VIcon>
+              <VTooltip activator="parent" location="top">
+                {{ t('internal_chat_scroll_to_bottom') }}
+              </VTooltip>
+            </VBtn>
+          </Transition>
         </div>
 
         <VDivider />
@@ -4426,19 +4607,67 @@ onBeforeUnmount(async () => {
   font-size: 0.7rem;
 }
 
-.internal-chat-message-list {
+.internal-chat-message-scroll {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  position: relative;
+}
+
+.internal-chat-message-list {
+  height: 100%;
+  scrollbar-color: rgba(var(--v-theme-on-surface), 0.28) transparent;
+  scrollbar-width: thin;
+
+  :deep(.ps__rail-y) {
+    width: 10px;
+    opacity: 1;
+    background: transparent !important;
+  }
+
+  :deep(.ps__thumb-y) {
+    right: 2px;
+    width: 6px;
+    border-radius: 999px;
+    background: rgba(var(--v-theme-on-surface), 0.28) !important;
+  }
+
+  :deep(.ps__rail-y:hover .ps__thumb-y) {
+    width: 7px;
+    background: rgba(var(--v-theme-on-surface), 0.38) !important;
+  }
+}
+
+.internal-chat-message-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.internal-chat-message-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.internal-chat-message-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(var(--v-theme-on-surface), 0.28);
 }
 
 .internal-chat-message-row {
   display: flex;
+  align-items: flex-end;
+  gap: 10px;
   margin-bottom: 14px;
   padding-inline: 6px;
 }
 
 .internal-chat-message-row--mine {
-  justify-content: flex-end;
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+}
+
+.internal-chat-message-avatar {
+  flex: 0 0 auto;
+  margin-block-end: 2px;
+  background: rgba(var(--v-theme-primary), 0.08);
+  box-shadow: 0 1px 2px rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .internal-chat-message-shell {
@@ -4458,9 +4687,84 @@ onBeforeUnmount(async () => {
   max-width: 100%;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.07);
   border-radius: 8px;
-  padding: 8px 10px 12px;
+  padding: 8px 42px 22px 10px;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 1px 2px rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.internal-chat-message-header {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+  margin-block-end: 4px;
+  padding-inline-end: 22px;
+}
+
+.internal-chat-message-action-btn {
+  position: absolute !important;
+  z-index: 4;
+  inset-block-start: 2px;
+  inset-inline-end: 4px;
+  min-width: 28px !important;
+  width: 28px !important;
+  height: 28px !important;
+  opacity: 0;
+  visibility: hidden;
+  color: rgba(var(--v-theme-on-surface), 0.7) !important;
+  transition:
+    opacity 0.15s ease,
+    visibility 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.internal-chat-message-bubble:hover .internal-chat-message-action-btn,
+.internal-chat-message-action-btn[aria-expanded='true'] {
+  opacity: 1;
+  visibility: visible;
+}
+
+.internal-chat-message-bubble--mine .internal-chat-message-action-btn {
+  color: rgba(17, 27, 33, 0.68) !important;
+}
+
+.internal-chat-message-footer {
+  position: absolute;
+  right: 0;
+  bottom: 6px;
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  justify-content: flex-end;
+  padding-inline: 16px 12px;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+
+.internal-chat-message-meta-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.internal-chat-message-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.internal-chat-message-time {
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.internal-chat-message-bubble--mine .internal-chat-message-footer {
+  color: rgba(17, 27, 33, 0.6);
 }
 
 .internal-chat-message-bubble--mine {
@@ -4475,6 +4779,21 @@ onBeforeUnmount(async () => {
 
 .internal-chat-message-bubble--with-reactions {
   margin-bottom: 10px;
+}
+
+.internal-chat-scroll-to-bottom {
+  position: absolute;
+  z-index: 12;
+  right: 26px;
+  bottom: 18px;
+  min-width: 36px !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 50% !important;
+  background: rgb(var(--v-theme-surface)) !important;
+  box-shadow:
+    0 8px 18px rgba(var(--v-theme-on-surface), 0.14),
+    0 2px 6px rgba(var(--v-theme-on-surface), 0.1) !important;
 }
 
 .internal-chat-message-text {

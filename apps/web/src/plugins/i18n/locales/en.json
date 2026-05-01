@@ -3015,6 +3015,7 @@
   "internal_chat_emoji": "Emoji",
   "internal_chat_record_audio": "Record audio",
   "internal_chat_send_message": "Send message",
+  "internal_chat_scroll_to_bottom": "Move to bottom",
   "internal_chat_group_data": "Group data",
   "internal_chat_edit_group_photo": "Edit group photo",
   "internal_chat_group_name_placeholder": "Group name",
