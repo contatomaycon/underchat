@@ -26,6 +26,7 @@ import { EReleasePermissions } from './release';
 import { EIntegrationPermissions } from './integration';
 import { EWebhookPermissions } from './webhook';
 import { ERandomMessagePermissions } from './randomMessage';
+import { EInternalChatPermissions } from './internalChat';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -55,4 +56,5 @@ export type EPermissionsRoles =
   | EReleasePermissions
   | EIntegrationPermissions
   | EWebhookPermissions
-  | ERandomMessagePermissions;
+  | ERandomMessagePermissions
+  | EInternalChatPermissions;

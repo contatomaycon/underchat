@@ -20,6 +20,8 @@ import { startContactValidationUpdateConsume } from './contactValidationUpdate.c
 import { startConfigChannelsRecreateAllConsume } from './configChannelsRecreateAll.consume';
 import { startBuildVersionGenerateConsume } from './buildVersionGenerate.consume';
 import { startBuildVersionCancelConsume } from './buildVersionCancel.consume';
+import { startInternalChatDirectMessageConsume } from './internalChatDirectMessage.consume';
+import { startInternalChatGroupMessageConsume } from './internalChatGroupMessage.consume';
 import fp from 'fastify-plugin';
 import { buildEnvironment } from '@core/config/environments';
 import { selectServiceApiConsumerStarters } from '@core/common/functions/selectServiceApiConsumerStarters';
@@ -57,6 +59,8 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
     () => startChatHistoryEmbeddingConsume(server),
     () => startContactValidationUpdateConsume(server),
     () => startConfigChannelsRecreateAllConsume(server),
+    () => startInternalChatDirectMessageConsume(server),
+    () => startInternalChatGroupMessageConsume(server),
   ];
   const buildConsumerStarters = [
     () => startBuildVersionGenerateConsume(server),

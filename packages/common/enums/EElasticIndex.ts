@@ -11,4 +11,5 @@ export enum EElasticIndex {
   chat_history_embedding = 'chat-history-embedding',
   webhook = 'webhook',
   webhook_mapping = 'webhook-mapping',
+  internal_chat_message = 'internal-chat-message',
 }

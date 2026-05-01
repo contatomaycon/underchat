@@ -7,6 +7,7 @@ import centrifugoRoutes from '@/routes/centrifugo.route';
 import roleRoutes from './role.route';
 import workerRoutes from '@/routes/worker.route';
 import chatRoutes from '@/routes/chat.route';
+import internalChatRoutes from '@/routes/internalChat.route';
 import chatbotRoutes from '@/routes/chatbot.route';
 import sectorRoutes from './sector.route';
 import userRoutes from './user.route';
@@ -47,6 +48,7 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(roleRoutes);
   server.register(workerRoutes);
   server.register(chatRoutes);
+  server.register(internalChatRoutes);
   server.register(chatbotRoutes);
   server.register(sectorRoutes);
   server.register(userRoutes);

@@ -64,3 +64,15 @@ export function reportConversationHistoryPdfAccountCentrifugo(
   validateChannelId(accountId, 'reportConversationHistoryPdfAccountCentrifugo');
   return `reports:account#${accountId}`;
 }
+
+export function internalChatAccountCentrifugo(accountId: string): string {
+  validateChannelId(accountId, 'internalChatAccountCentrifugo');
+  return `internal.chat:account#${accountId}`;
+}
+
+export function internalChatConversationCentrifugo(
+  conversationId: string
+): string {
+  validateChannelId(conversationId, 'internalChatConversationCentrifugo');
+  return `internal.chat:conversation#${conversationId}`;
+}

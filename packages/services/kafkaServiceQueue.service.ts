@@ -43,6 +43,8 @@ export class KafkaServiceQueueService {
     const configChannelsRecreateAll = this.configChannelsRecreateAll();
     const buildVersionGenerateRequest = this.buildVersionGenerateRequest();
     const buildVersionCancelRequest = this.buildVersionCancelRequest();
+    const internalChatDirectMessage = this.internalChatDirectMessage();
+    const internalChatGroupMessage = this.internalChatGroupMessage();
 
     return [
       createServer,
@@ -67,6 +69,8 @@ export class KafkaServiceQueueService {
       configChannelsRecreateAll,
       buildVersionGenerateRequest,
       buildVersionCancelRequest,
+      internalChatDirectMessage,
+      internalChatGroupMessage,
     ];
   };
 
@@ -166,5 +170,13 @@ export class KafkaServiceQueueService {
 
   buildVersionCancelRequest = () => {
     return 'build.version.cancel.request';
+  };
+
+  internalChatDirectMessage = () => {
+    return 'internal.chat.direct.message';
+  };
+
+  internalChatGroupMessage = () => {
+    return 'internal.chat.group.message';
   };
 }

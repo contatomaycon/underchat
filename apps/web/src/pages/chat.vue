@@ -19,6 +19,7 @@ import ChatQuickMessagePreview from '@/components/chat/ChatQuickMessagePreview.v
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent.vue';
 import ChatAttendanceHistorySidebarContent from '@/components/chat/ChatAttendanceHistorySidebarContent.vue';
+import InternalChatWorkspace from '@/components/chat/internal/InternalChatWorkspace.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
@@ -35,6 +36,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
+import { EInternalChatPermissions } from '@core/common/enums/EPermissions/internalChat';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
@@ -109,6 +111,8 @@ definePage({
       EChatPermissions.view_chatbot_messages,
       EChatbotPermissions.chatbot_group,
       EChatbotPermissions.chatbot_access,
+      EInternalChatPermissions.internal_chat_group,
+      EInternalChatPermissions.internal_chat_access,
     ],
   },
 });
@@ -131,6 +135,8 @@ const perPage = ref(10);
 const chatLogPS = ref();
 const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
+type ChatMode = 'whatsapp' | 'internal';
+const chatMode = ref<ChatMode>('whatsapp');
 const msg = ref('');
 const messageDraftByChatId = ref<Record<string, string>>({});
 const quickMessageTemplates = ref<
@@ -179,6 +185,18 @@ const isViewEmailDecrypted = ref(false);
 const isViewPhoneDecrypted = ref(false);
 const isLoadingViewEmail = ref(false);
 const isLoadingViewPhone = ref(false);
+
+const switchToInternalMode = () => {
+  chatMode.value = 'internal';
+  isUserProfileSidebarOpen.value = false;
+  isSearchSidebarOpen.value = false;
+  isAttendanceHistorySidebarOpen.value = false;
+  isActiveChatUserProfileSidebarOpen.value = false;
+};
+
+const switchToWhatsappMode = () => {
+  chatMode.value = 'whatsapp';
+};
 const headerPhoneDecrypted = ref<string | null>(null);
 const isHeaderPhoneDecrypted = ref(false);
 const isHeaderPhoneLoading = ref(false);
@@ -621,8 +639,7 @@ const handleCloseService = () => {
   }
 
   closeServiceSendMessageOnFinishAttendance.value = true;
-  closeServiceInformClosureReason.value =
-    !canToggleOptionalClosureReason.value;
+  closeServiceInformClosureReason.value = !canToggleOptionalClosureReason.value;
   closeServiceComment.value = '';
   isCloseServiceDialogOpen.value = true;
 };
@@ -5729,6 +5746,7 @@ onBeforeUnmount(() => {
 <template>
   <VLayout class="chat-app-layout" style="z-index: 0">
     <VNavigationDrawer
+      v-if="chatMode === 'whatsapp'"
       v-model="isUserProfileSidebarOpen"
       data-allow-mismatch
       temporary
@@ -5746,6 +5764,7 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
+      v-if="chatMode === 'whatsapp'"
       v-model="isActiveChatUserProfileSidebarOpen"
       data-allow-mismatch
       width="374"
@@ -5762,6 +5781,7 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
+      v-if="chatMode === 'whatsapp'"
       v-model="isSearchSidebarOpen"
       data-allow-mismatch
       width="374"
@@ -5775,6 +5795,7 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
+      v-if="chatMode === 'whatsapp'"
       v-model="isAttendanceHistorySidebarOpen"
       data-allow-mismatch
       width="374"
@@ -5791,6 +5812,7 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
+      v-if="chatMode === 'whatsapp'"
       v-model="isLeftSidebarOpen"
       data-allow-mismatch
       absolute
@@ -5806,1153 +5828,1173 @@ onBeforeUnmount(() => {
         v-model:is-drawer-open="isLeftSidebarOpen"
         v-model:search="q"
         @open-chat="openChat"
+        @open-internal-chat="switchToInternalMode"
         @show-user-profile="isUserProfileSidebarOpen = true"
         @close="isLeftSidebarOpen = false"
       />
     </VNavigationDrawer>
 
     <VMain class="chat-content-container">
-      <div v-if="chatStore.activeChat" class="d-flex flex-column h-100">
-        <div
-          class="active-chat-header d-flex align-center text-medium-emphasis bg-surface"
-        >
-          <IconBtn class="d-md-none me-1" @click="isLeftSidebarOpen = true">
-            <VIcon icon="tabler-menu-2" />
-          </IconBtn>
+      <InternalChatWorkspace
+        v-if="chatMode === 'internal'"
+        @switch-whatsapp-mode="switchToWhatsappMode"
+      />
 
-          <IconBtn
-            v-if="canShowCloseButton"
-            class="me-2"
-            color="error"
-            variant="text"
-            :title="t('close_service')"
-            @click="handleCloseService"
-          >
-            <VIcon icon="tabler-x" />
-          </IconBtn>
-
+      <template v-else>
+        <div v-if="chatStore.activeChat" class="d-flex flex-column h-100">
           <div
-            class="d-flex align-center cursor-pointer active-chat-contact-info"
-            @click="handleActiveChatHeaderClick"
+            class="active-chat-header d-flex align-center text-medium-emphasis bg-surface"
           >
-            <VAvatar
-              size="40"
-              :variant="
-                !(
-                  chatStore.activeChat.contact?.photo ??
-                  chatStore.activeChat.photo
-                )
-                  ? 'tonal'
-                  : undefined
-              "
-              class="cursor-pointer"
-            >
-              <VImg
-                v-if="
-                  chatStore.activeChat.contact?.photo ??
-                  chatStore.activeChat.photo
-                "
-                :src="
-                  chatStore.activeChat.contact?.photo ??
-                  chatStore.activeChat.photo ??
-                  ''
-                "
-                :alt="
-                  chatStore.activeChat.contact?.name ??
-                  chatStore.activeChat.name ??
-                  ''
-                "
-              />
-              <VImg
-                v-else
-                :src="'/images/svg/avatar-default.svg'"
-                :alt="
-                  chatStore.activeChat.contact?.name ??
-                  chatStore.activeChat.name ??
-                  ''
-                "
-              />
-            </VAvatar>
+            <IconBtn class="d-md-none me-1" @click="isLeftSidebarOpen = true">
+              <VIcon icon="tabler-menu-2" />
+            </IconBtn>
 
-            <div class="flex-grow-1 ms-4 overflow-hidden active-chat-details">
-              <div class="d-flex align-center gap-2 mb-0 active-chat-name-row">
-                <div class="text-h6 mb-0 font-weight-regular text-truncate">
-                  {{
+            <IconBtn
+              v-if="canShowCloseButton"
+              class="me-2"
+              color="error"
+              variant="text"
+              :title="t('close_service')"
+              @click="handleCloseService"
+            >
+              <VIcon icon="tabler-x" />
+            </IconBtn>
+
+            <div
+              class="d-flex align-center cursor-pointer active-chat-contact-info"
+              @click="handleActiveChatHeaderClick"
+            >
+              <VAvatar
+                size="40"
+                :variant="
+                  !(
+                    chatStore.activeChat.contact?.photo ??
+                    chatStore.activeChat.photo
+                  )
+                    ? 'tonal'
+                    : undefined
+                "
+                class="cursor-pointer"
+              >
+                <VImg
+                  v-if="
+                    chatStore.activeChat.contact?.photo ??
+                    chatStore.activeChat.photo
+                  "
+                  :src="
+                    chatStore.activeChat.contact?.photo ??
+                    chatStore.activeChat.photo ??
+                    ''
+                  "
+                  :alt="
                     chatStore.activeChat.contact?.name ??
-                    chatStore.activeChat.name
-                  }}
-                </div>
-                <VChip
-                  v-if="chatStore.activeChat.contact?.name"
-                  size="x-small"
-                  variant="tonal"
-                  color="primary"
-                  class="contact-label d-none d-sm-inline-flex"
-                >
-                  {{ $t('contact_label') }}
-                </VChip>
+                    chatStore.activeChat.name ??
+                    ''
+                  "
+                />
+                <VImg
+                  v-else
+                  :src="'/images/svg/avatar-default.svg'"
+                  :alt="
+                    chatStore.activeChat.contact?.name ??
+                    chatStore.activeChat.name ??
+                    ''
+                  "
+                />
+              </VAvatar>
+
+              <div class="flex-grow-1 ms-4 overflow-hidden active-chat-details">
                 <div
-                  v-if="activeContactLabelTemplate"
-                  class="d-none d-sm-flex align-center contact-labels-group"
+                  class="d-flex align-center gap-2 mb-0 active-chat-name-row"
                 >
-                  <VChip
-                    size="x-small"
-                    variant="outlined"
-                    :color="activeContactLabelTemplate.color"
-                    class="contact-label"
-                    :class="{
-                      'contact-label--with-count':
-                        activeContactLabelTemplates.length > 1,
-                    }"
-                    :title="activeContactLabelTemplate.label"
-                  >
+                  <div class="text-h6 mb-0 font-weight-regular text-truncate">
                     {{
-                      activeContactLabelTemplate.label.length > 15
-                        ? `${activeContactLabelTemplate.label.slice(0, 15)}…`
-                        : activeContactLabelTemplate.label
+                      chatStore.activeChat.contact?.name ??
+                      chatStore.activeChat.name
                     }}
-                  </VChip>
-                  <span
-                    v-if="activeContactLabelTemplates.length > 1"
-                    class="contact-label-count-wrapper"
+                  </div>
+                  <VChip
+                    v-if="chatStore.activeChat.contact?.name"
+                    size="x-small"
+                    variant="tonal"
+                    color="primary"
+                    class="contact-label d-none d-sm-inline-flex"
                   >
-                    <VTooltip
-                      v-if="remainingContactLabelsText"
-                      location="top"
-                      transition="scale-transition"
-                      activator="parent"
-                    >
-                      <span>{{ remainingContactLabelsText }}</span>
-                    </VTooltip>
+                    {{ $t('contact_label') }}
+                  </VChip>
+                  <div
+                    v-if="activeContactLabelTemplate"
+                    class="d-none d-sm-flex align-center contact-labels-group"
+                  >
                     <VChip
-                      class="contact-label-count"
                       size="x-small"
                       variant="outlined"
                       :color="activeContactLabelTemplate.color"
+                      class="contact-label"
+                      :class="{
+                        'contact-label--with-count':
+                          activeContactLabelTemplates.length > 1,
+                      }"
+                      :title="activeContactLabelTemplate.label"
                     >
-                      +{{ activeContactLabelTemplates.length - 1 }}
+                      {{
+                        activeContactLabelTemplate.label.length > 15
+                          ? `${activeContactLabelTemplate.label.slice(0, 15)}…`
+                          : activeContactLabelTemplate.label
+                      }}
                     </VChip>
-                  </span>
+                    <span
+                      v-if="activeContactLabelTemplates.length > 1"
+                      class="contact-label-count-wrapper"
+                    >
+                      <VTooltip
+                        v-if="remainingContactLabelsText"
+                        location="top"
+                        transition="scale-transition"
+                        activator="parent"
+                      >
+                        <span>{{ remainingContactLabelsText }}</span>
+                      </VTooltip>
+                      <VChip
+                        class="contact-label-count"
+                        size="x-small"
+                        variant="outlined"
+                        :color="activeContactLabelTemplate.color"
+                      >
+                        +{{ activeContactLabelTemplates.length - 1 }}
+                      </VChip>
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div class="d-flex align-center gap-2 active-chat-phone-row">
-                <p class="text-truncate mb-0 text-body-2">
-                  {{ activeChatHeaderPhone }}
-                </p>
-                <VIcon
-                  v-if="
-                    chatStore.activeChat.contact?.id && canViewContactPhone
+                <div class="d-flex align-center gap-2 active-chat-phone-row">
+                  <p class="text-truncate mb-0 text-body-2">
+                    {{ activeChatHeaderPhone }}
+                  </p>
+                  <VIcon
+                    v-if="
+                      chatStore.activeChat.contact?.id && canViewContactPhone
+                    "
+                    :icon="
+                      isHeaderPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                    "
+                    class="cursor-pointer flex-shrink-0"
+                    :class="{ 'opacity-50': isHeaderPhoneLoading }"
+                    @click.stop="toggleHeaderPhoneVisibility"
+                  />
+                </div>
+                <!-- Protocol badge inline (mobile only) -->
+                <ChatProtocolBadgeDialog
+                  v-if="showProtocolInChat"
+                  class="d-sm-none active-chat-protocol-mobile"
+                  @click.stop
+                  :chat="chatStore.activeChat"
+                  :contact-name="
+                    chatStore.activeChat.contact?.name ??
+                    chatStore.activeChat.name ??
+                    ''
                   "
-                  :icon="
-                    isHeaderPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                  @copied="
+                    chatStore.showSnackbar(t('protocol_copied'), EColor.success)
                   "
-                  class="cursor-pointer flex-shrink-0"
-                  :class="{ 'opacity-50': isHeaderPhoneLoading }"
-                  @click.stop="toggleHeaderPhoneVisibility"
+                  @copy-error="
+                    (msg) =>
+                      chatStore.showSnackbar(
+                        msg || t('error_copying_protocol'),
+                        EColor.error
+                      )
+                  "
                 />
               </div>
-              <!-- Protocol badge inline (mobile only) -->
-              <ChatProtocolBadgeDialog
-                v-if="showProtocolInChat"
-                class="d-sm-none active-chat-protocol-mobile"
-                @click.stop
-                :chat="chatStore.activeChat"
-                :contact-name="
-                  chatStore.activeChat.contact?.name ??
-                  chatStore.activeChat.name ??
-                  ''
-                "
-                @copied="
-                  chatStore.showSnackbar(t('protocol_copied'), EColor.success)
-                "
-                @copy-error="
-                  (msg) =>
-                    chatStore.showSnackbar(
-                      msg || t('error_copying_protocol'),
-                      EColor.error
-                    )
-                "
-              />
             </div>
-          </div>
 
-          <!-- Protocol badge (desktop/tablet) -->
-          <ChatProtocolBadgeDialog
-            v-if="showProtocolInChat"
-            class="d-none d-sm-flex active-chat-protocol-desktop"
-            :chat="chatStore.activeChat"
-            :contact-name="
-              chatStore.activeChat.contact?.name ??
-              chatStore.activeChat.name ??
-              ''
-            "
-            @copied="
-              chatStore.showSnackbar(t('protocol_copied'), EColor.success)
-            "
-            @copy-error="
-              (msg) =>
-                chatStore.showSnackbar(
-                  msg || t('error_copying_protocol'),
-                  EColor.error
-                )
-            "
-          />
+            <!-- Protocol badge (desktop/tablet) -->
+            <ChatProtocolBadgeDialog
+              v-if="showProtocolInChat"
+              class="d-none d-sm-flex active-chat-protocol-desktop"
+              :chat="chatStore.activeChat"
+              :contact-name="
+                chatStore.activeChat.contact?.name ??
+                chatStore.activeChat.name ??
+                ''
+              "
+              @copied="
+                chatStore.showSnackbar(t('protocol_copied'), EColor.success)
+              "
+              @copy-error="
+                (msg) =>
+                  chatStore.showSnackbar(
+                    msg || t('error_copying_protocol'),
+                    EColor.error
+                  )
+              "
+            />
 
-          <VSpacer />
+            <VSpacer />
 
-          <div
-            class="d-sm-flex align-center d-none text-medium-emphasis active-chat-header-actions"
-          >
             <div
-              v-if="isInChatStatus && activeChatLabelTemplate"
-              :key="activeChatLabelTemplate.label"
-              class="d-flex align-center me-2 chat-labels-group"
+              class="d-sm-flex align-center d-none text-medium-emphasis active-chat-header-actions"
             >
-              <VChip
-                class="chat-label-chip"
-                :class="{
-                  'chat-label-chip--with-count':
-                    activeChatLabelTemplates.length > 1,
-                }"
-                size="small"
-                variant="flat"
-                :color="activeChatLabelTemplate.color"
-                text-color="white"
-                closable
-                @click="openLabelModal"
-                @click:close.stop="removeLabel"
-                :title="activeChatLabelTemplate.label"
+              <div
+                v-if="isInChatStatus && activeChatLabelTemplate"
+                :key="activeChatLabelTemplate.label"
+                class="d-flex align-center me-2 chat-labels-group"
               >
-                <VIcon icon="tabler-tag" start size="16" />
-                {{
-                  activeChatLabelTemplate.label.length > 15
-                    ? `${activeChatLabelTemplate.label.slice(0, 15)}…`
-                    : activeChatLabelTemplate.label
-                }}
-              </VChip>
-              <span
-                v-if="activeChatLabelTemplates.length > 1"
-                class="chat-label-count-wrapper"
-              >
-                <VTooltip
-                  v-if="remainingChatLabelsText"
-                  location="top"
-                  transition="scale-transition"
-                  activator="parent"
-                >
-                  <span>{{ remainingChatLabelsText }}</span>
-                </VTooltip>
                 <VChip
-                  class="chat-label-count"
+                  class="chat-label-chip"
+                  :class="{
+                    'chat-label-chip--with-count':
+                      activeChatLabelTemplates.length > 1,
+                  }"
                   size="small"
                   variant="flat"
                   :color="activeChatLabelTemplate.color"
                   text-color="white"
+                  closable
+                  @click="openLabelModal"
+                  @click:close.stop="removeLabel"
+                  :title="activeChatLabelTemplate.label"
                 >
-                  +{{ activeChatLabelTemplates.length - 1 }}
+                  <VIcon icon="tabler-tag" start size="16" />
+                  {{
+                    activeChatLabelTemplate.label.length > 15
+                      ? `${activeChatLabelTemplate.label.slice(0, 15)}…`
+                      : activeChatLabelTemplate.label
+                  }}
                 </VChip>
-              </span>
-            </div>
-            <IconBtn
-              v-else-if="isInChatStatus"
-              class="me-1"
-              @click="openLabelModal"
-              :title="t('label')"
-            >
-              <VIcon icon="tabler-tag" />
-            </IconBtn>
-            <IconBtn
-              v-if="
-                (isInChatStatus || isQueueOrUraStatus) &&
-                workerConfigForChat?.has_ura_output === true &&
-                canToggleForwardToOutputChatbot
-              "
-              @click="handleToggleForwardToOutputChatbot"
-              :title="t('forward_to_output_chatbot')"
-            >
-              <VIcon
-                :icon="
-                  isForwardToOutputChatbotActive
-                    ? 'tabler-robot'
-                    : 'tabler-robot-off'
-                "
-              />
-            </IconBtn>
-            <IconBtn
-              v-if="canViewAttendanceHistory"
-              @click="isAttendanceHistorySidebarOpen = true"
-              :title="t('attendance_history')"
-            >
-              <VIcon icon="tabler-history" />
-            </IconBtn>
-            <IconBtn
-              v-if="isInChatStatus && canTransfer"
-              @click="isTransferModalOpen = true"
-              :title="t('transfer')"
-            >
-              <VIcon icon="tabler-arrows-right-left" />
-            </IconBtn>
-            <IconBtn @click="isSearchSidebarOpen = true">
-              <VIcon icon="tabler-search" />
-            </IconBtn>
-            <VMenu
-              v-if="canShowHeaderActionsMenu"
-              offset="8"
-              :close-on-content-click="true"
-              location="bottom end"
-            >
-              <template #activator="{ props }">
-                <IconBtn v-bind="props">
-                  <VIcon icon="tabler-dots-vertical" />
-                </IconBtn>
-              </template>
-
-              <VList density="comfortable" min-width="200">
-                <VListItem
-                  v-if="canShowAttendantsInfoAction"
-                  @click="openAttendantsInfoDialog"
+                <span
+                  v-if="activeChatLabelTemplates.length > 1"
+                  class="chat-label-count-wrapper"
                 >
-                  <template #prepend>
-                    <VIcon size="20" color="primary">tabler-users</VIcon>
-                  </template>
-                  <VListItemTitle class="font-weight-medium">
-                    {{ t('attendants_info') }}
-                  </VListItemTitle>
-                </VListItem>
-
-                <VDivider
-                  v-if="
-                    canShowAttendantsInfoAction &&
-                    (canShowLeaveConversationAction || canShowCloseButton)
+                  <VTooltip
+                    v-if="remainingChatLabelsText"
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ remainingChatLabelsText }}</span>
+                  </VTooltip>
+                  <VChip
+                    class="chat-label-count"
+                    size="small"
+                    variant="flat"
+                    :color="activeChatLabelTemplate.color"
+                    text-color="white"
+                  >
+                    +{{ activeChatLabelTemplates.length - 1 }}
+                  </VChip>
+                </span>
+              </div>
+              <IconBtn
+                v-else-if="isInChatStatus"
+                class="me-1"
+                @click="openLabelModal"
+                :title="t('label')"
+              >
+                <VIcon icon="tabler-tag" />
+              </IconBtn>
+              <IconBtn
+                v-if="
+                  (isInChatStatus || isQueueOrUraStatus) &&
+                  workerConfigForChat?.has_ura_output === true &&
+                  canToggleForwardToOutputChatbot
+                "
+                @click="handleToggleForwardToOutputChatbot"
+                :title="t('forward_to_output_chatbot')"
+              >
+                <VIcon
+                  :icon="
+                    isForwardToOutputChatbotActive
+                      ? 'tabler-robot'
+                      : 'tabler-robot-off'
                   "
                 />
-
-                <VListItem
-                  v-if="canShowLeaveConversationAction"
-                  @click="handleLeaveConversation"
-                >
-                  <template #prepend>
-                    <VIcon size="20" color="error">tabler-logout</VIcon>
-                  </template>
-                  <VListItemTitle>{{ t('leave_conversation') }}</VListItemTitle>
-                </VListItem>
-
-                <VListItem
-                  v-if="canShowCloseButton"
-                  @click="handleCloseService"
-                >
-                  <template #prepend>
-                    <VIcon size="20" color="error">tabler-x</VIcon>
-                  </template>
-                  <VListItemTitle>{{ t('close_service') }}</VListItemTitle>
-                </VListItem>
-              </VList>
-            </VMenu>
-          </div>
-        </div>
-
-        <VDivider />
-
-        <PerfectScrollbar
-          ref="chatLogPS"
-          tag="ul"
-          :options="{ wheelPropagation: false }"
-          class="flex-grow-1"
-        >
-          <ChatLog :key="chatStore.activeChat?.chat_id || 'no-chat'" />
-        </PerfectScrollbar>
-
-        <ChatLinkPreview
-          :preview="linkPreview"
-          :loading="isLoadingLinkPreview && hasUrlInMessage"
-          @close="
-            linkPreview = null;
-            isLoadingLinkPreview = false;
-          "
-        />
-
-        <VForm
-          class="chat-log-message-form mb-5 mx-5"
-          @submit.prevent="sendMessage"
-        >
-          <Transition name="fade">
-            <div
-              v-if="isTyping && chatStore.activeChat"
-              class="typing-indicator d-flex align-center gap-2 mb-2"
-            >
-              <VIcon size="20" color="primary" :icon="typingIndicatorIcon" />
-              <span
-                class="text-primary"
-                style="font-style: italic; font-size: 0.8rem; font-weight: 400"
+              </IconBtn>
+              <IconBtn
+                v-if="canViewAttendanceHistory"
+                @click="isAttendanceHistorySidebarOpen = true"
+                :title="t('attendance_history')"
               >
-                {{
-                  chatStore.activeChat.contact?.name ??
-                  chatStore.activeChat.name ??
-                  (chatStore.activeChat.contact?.phone_ddi &&
-                  chatStore.activeChat.contact?.phone
-                    ? `+${chatStore.activeChat.contact.phone_ddi} ${chatStore.activeChat.contact.phone}`
-                    : chatStore.activeChat.contact?.phone) ??
-                  chatStore.activeChat.phone
-                }}
-                {{ typingIndicatorText }}
-              </span>
+                <VIcon icon="tabler-history" />
+              </IconBtn>
+              <IconBtn
+                v-if="isInChatStatus && canTransfer"
+                @click="isTransferModalOpen = true"
+                :title="t('transfer')"
+              >
+                <VIcon icon="tabler-arrows-right-left" />
+              </IconBtn>
+              <IconBtn @click="isSearchSidebarOpen = true">
+                <VIcon icon="tabler-search" />
+              </IconBtn>
+              <VMenu
+                v-if="canShowHeaderActionsMenu"
+                offset="8"
+                :close-on-content-click="true"
+                location="bottom end"
+              >
+                <template #activator="{ props }">
+                  <IconBtn v-bind="props">
+                    <VIcon icon="tabler-dots-vertical" />
+                  </IconBtn>
+                </template>
+
+                <VList density="comfortable" min-width="200">
+                  <VListItem
+                    v-if="canShowAttendantsInfoAction"
+                    @click="openAttendantsInfoDialog"
+                  >
+                    <template #prepend>
+                      <VIcon size="20" color="primary">tabler-users</VIcon>
+                    </template>
+                    <VListItemTitle class="font-weight-medium">
+                      {{ t('attendants_info') }}
+                    </VListItemTitle>
+                  </VListItem>
+
+                  <VDivider
+                    v-if="
+                      canShowAttendantsInfoAction &&
+                      (canShowLeaveConversationAction || canShowCloseButton)
+                    "
+                  />
+
+                  <VListItem
+                    v-if="canShowLeaveConversationAction"
+                    @click="handleLeaveConversation"
+                  >
+                    <template #prepend>
+                      <VIcon size="20" color="error">tabler-logout</VIcon>
+                    </template>
+                    <VListItemTitle>{{
+                      t('leave_conversation')
+                    }}</VListItemTitle>
+                  </VListItem>
+
+                  <VListItem
+                    v-if="canShowCloseButton"
+                    @click="handleCloseService"
+                  >
+                    <template #prepend>
+                      <VIcon size="20" color="error">tabler-x</VIcon>
+                    </template>
+                    <VListItemTitle>{{ t('close_service') }}</VListItemTitle>
+                  </VListItem>
+                </VList>
+              </VMenu>
             </div>
-          </Transition>
+          </div>
 
-          <ReplyPreview v-if="chatStore.messageReply" />
+          <VDivider />
 
-          <Transition name="fade">
-            <div
-              v-if="selectedDocuments.length > 0"
-              class="composer-attachment mt-3"
-            >
-              <VCard class="composer-attachment-card">
-                <VCardTitle class="d-flex align-center justify-space-between">
-                  <span
-                    >{{ t('documents_selected') }} (
-                    {{ selectedDocuments.length }}/10 )</span
-                  >
-                  <VBtn
-                    icon
-                    size="24"
-                    variant="text"
-                    @click="selectedDocuments = []"
-                  >
-                    <VIcon size="18" icon="tabler-x" />
-                  </VBtn>
-                </VCardTitle>
-                <VCardText>
-                  <div class="document-preview-list">
-                    <div
-                      v-for="(doc, index) in selectedDocuments"
-                      :key="`${doc.name}-${index}`"
-                      class="document-preview-item d-flex align-center justify-space-between px-3 py-2"
+          <PerfectScrollbar
+            ref="chatLogPS"
+            tag="ul"
+            :options="{ wheelPropagation: false }"
+            class="flex-grow-1"
+          >
+            <ChatLog :key="chatStore.activeChat?.chat_id || 'no-chat'" />
+          </PerfectScrollbar>
+
+          <ChatLinkPreview
+            :preview="linkPreview"
+            :loading="isLoadingLinkPreview && hasUrlInMessage"
+            @close="
+              linkPreview = null;
+              isLoadingLinkPreview = false;
+            "
+          />
+
+          <VForm
+            class="chat-log-message-form mb-5 mx-5"
+            @submit.prevent="sendMessage"
+          >
+            <Transition name="fade">
+              <div
+                v-if="isTyping && chatStore.activeChat"
+                class="typing-indicator d-flex align-center gap-2 mb-2"
+              >
+                <VIcon size="20" color="primary" :icon="typingIndicatorIcon" />
+                <span
+                  class="text-primary"
+                  style="
+                    font-style: italic;
+                    font-size: 0.8rem;
+                    font-weight: 400;
+                  "
+                >
+                  {{
+                    chatStore.activeChat.contact?.name ??
+                    chatStore.activeChat.name ??
+                    (chatStore.activeChat.contact?.phone_ddi &&
+                    chatStore.activeChat.contact?.phone
+                      ? `+${chatStore.activeChat.contact.phone_ddi} ${chatStore.activeChat.contact.phone}`
+                      : chatStore.activeChat.contact?.phone) ??
+                    chatStore.activeChat.phone
+                  }}
+                  {{ typingIndicatorText }}
+                </span>
+              </div>
+            </Transition>
+
+            <ReplyPreview v-if="chatStore.messageReply" />
+
+            <Transition name="fade">
+              <div
+                v-if="selectedDocuments.length > 0"
+                class="composer-attachment mt-3"
+              >
+                <VCard class="composer-attachment-card">
+                  <VCardTitle class="d-flex align-center justify-space-between">
+                    <span
+                      >{{ t('documents_selected') }} (
+                      {{ selectedDocuments.length }}/10 )</span
                     >
-                      <div class="d-flex align-center gap-3 overflow-hidden">
-                        <VIcon
-                          :icon="resolveDocumentIcon(doc.extension, doc.type)"
-                          size="28"
-                          color="primary"
-                        />
-                        <div class="d-flex flex-column overflow-hidden">
+                    <VBtn
+                      icon
+                      size="24"
+                      variant="text"
+                      @click="selectedDocuments = []"
+                    >
+                      <VIcon size="18" icon="tabler-x" />
+                    </VBtn>
+                  </VCardTitle>
+                  <VCardText>
+                    <div class="document-preview-list">
+                      <div
+                        v-for="(doc, index) in selectedDocuments"
+                        :key="`${doc.name}-${index}`"
+                        class="document-preview-item d-flex align-center justify-space-between px-3 py-2"
+                      >
+                        <div class="d-flex align-center gap-3 overflow-hidden">
+                          <VIcon
+                            :icon="resolveDocumentIcon(doc.extension, doc.type)"
+                            size="28"
+                            color="primary"
+                          />
+                          <div class="d-flex flex-column overflow-hidden">
+                            <VTooltip location="bottom">
+                              <template #activator="{ props }">
+                                <span
+                                  v-bind="props"
+                                  class="text-body-2 fw-medium document-preview-name"
+                                >
+                                  {{ truncateFileName(doc.name) }}
+                                </span>
+                              </template>
+                              <span>{{ doc.name }}</span>
+                            </VTooltip>
+                            <span class="text-caption text-disabled">
+                              {{ formatFileSize(doc.size) }}
+                            </span>
+                          </div>
+                        </div>
+                        <VBtn
+                          icon
+                          size="20"
+                          variant="flat"
+                          color="error"
+                          @click="removeDocument(index)"
+                        >
+                          <VIcon size="14" icon="tabler-x" />
+                        </VBtn>
+                      </div>
+                    </div>
+                  </VCardText>
+                </VCard>
+              </div>
+            </Transition>
+
+            <Transition name="fade">
+              <div
+                v-if="selectedVideos.length > 0"
+                class="composer-attachment mt-3"
+              >
+                <VCard class="composer-attachment-card">
+                  <VCardTitle class="d-flex align-center justify-space-between">
+                    <span
+                      >{{ t('videos_selected') }} ({{
+                        selectedVideos.length
+                      }}/10)</span
+                    >
+                    <VBtn
+                      icon
+                      size="24"
+                      variant="text"
+                      @click="clearSelectedVideos()"
+                    >
+                      <VIcon size="18" icon="tabler-x" />
+                    </VBtn>
+                  </VCardTitle>
+                  <VCardText>
+                    <div class="attachment-grid attachment-grid--videos">
+                      <div
+                        v-for="(video, index) in selectedVideos"
+                        :key="`${video.name}-${index}`"
+                        class="video-preview-wrapper"
+                      >
+                        <div class="video-preview-container">
+                          <video
+                            :src="video.preview"
+                            class="video-preview"
+                            preload="metadata"
+                            muted
+                            playsinline
+                            @click="openPreviewVideo(video)"
+                          >
+                            <track kind="captions" />
+                          </video>
+                          <div
+                            class="video-preview-play-overlay"
+                            @click="openPreviewVideo(video)"
+                          >
+                            <VIcon size="24">tabler-player-play</VIcon>
+                          </div>
+                        </div>
+                        <div class="video-preview-meta">
                           <VTooltip location="bottom">
                             <template #activator="{ props }">
-                              <span
-                                v-bind="props"
-                                class="text-body-2 fw-medium document-preview-name"
-                              >
-                                {{ truncateFileName(doc.name) }}
+                              <span v-bind="props" class="video-preview-name">
+                                {{ truncateFileName(video.name) }}
                               </span>
                             </template>
-                            <span>{{ doc.name }}</span>
+                            <span>{{ video.name }}</span>
                           </VTooltip>
-                          <span class="text-caption text-disabled">
-                            {{ formatFileSize(doc.size) }}
-                          </span>
-                        </div>
-                      </div>
-                      <VBtn
-                        icon
-                        size="20"
-                        variant="flat"
-                        color="error"
-                        @click="removeDocument(index)"
-                      >
-                        <VIcon size="14" icon="tabler-x" />
-                      </VBtn>
-                    </div>
-                  </div>
-                </VCardText>
-              </VCard>
-            </div>
-          </Transition>
-
-          <Transition name="fade">
-            <div
-              v-if="selectedVideos.length > 0"
-              class="composer-attachment mt-3"
-            >
-              <VCard class="composer-attachment-card">
-                <VCardTitle class="d-flex align-center justify-space-between">
-                  <span
-                    >{{ t('videos_selected') }} ({{
-                      selectedVideos.length
-                    }}/10)</span
-                  >
-                  <VBtn
-                    icon
-                    size="24"
-                    variant="text"
-                    @click="clearSelectedVideos()"
-                  >
-                    <VIcon size="18" icon="tabler-x" />
-                  </VBtn>
-                </VCardTitle>
-                <VCardText>
-                  <div class="attachment-grid attachment-grid--videos">
-                    <div
-                      v-for="(video, index) in selectedVideos"
-                      :key="`${video.name}-${index}`"
-                      class="video-preview-wrapper"
-                    >
-                      <div class="video-preview-container">
-                        <video
-                          :src="video.preview"
-                          class="video-preview"
-                          preload="metadata"
-                          muted
-                          playsinline
-                          @click="openPreviewVideo(video)"
-                        >
-                          <track kind="captions" />
-                        </video>
-                        <div
-                          class="video-preview-play-overlay"
-                          @click="openPreviewVideo(video)"
-                        >
-                          <VIcon size="24">tabler-player-play</VIcon>
-                        </div>
-                      </div>
-                      <div class="video-preview-meta">
-                        <VTooltip location="bottom">
-                          <template #activator="{ props }">
-                            <span v-bind="props" class="video-preview-name">
-                              {{ truncateFileName(video.name) }}
-                            </span>
-                          </template>
-                          <span>{{ video.name }}</span>
-                        </VTooltip>
-                        <span
-                          class="video-preview-info text-caption text-disabled"
-                        >
-                          {{
-                            (video.name.split('.').pop() || '').toUpperCase()
-                          }}
-                          •
-                          {{ formatFileSize(video.size) }}
-                        </span>
-                      </div>
-                      <VBtn
-                        icon
-                        size="20"
-                        variant="flat"
-                        color="error"
-                        class="video-preview-remove"
-                        @click.stop="removeVideo(index)"
-                      >
-                        <VIcon size="14" icon="tabler-x" />
-                      </VBtn>
-                    </div>
-                  </div>
-                </VCardText>
-              </VCard>
-            </div>
-          </Transition>
-
-          <Transition name="fade">
-            <div
-              v-if="selectedAudios.length > 0"
-              class="composer-attachment mt-3"
-            >
-              <VCard class="composer-attachment-card">
-                <VCardTitle class="d-flex align-center justify-space-between">
-                  <span
-                    >{{ t('audios_selected') }} ({{
-                      selectedAudios.length
-                    }}/10)</span
-                  >
-                  <VBtn
-                    icon
-                    size="24"
-                    variant="text"
-                    @click="clearSelectedAudios()"
-                  >
-                    <VIcon size="18" icon="tabler-x" />
-                  </VBtn>
-                </VCardTitle>
-                <VCardText>
-                  <div class="attachment-grid attachment-grid--audios">
-                    <div
-                      v-for="(audio, index) in selectedAudios"
-                      :key="`${audio.name}-${index}`"
-                      class="audio-preview-wrapper"
-                    >
-                      <div class="audio-preview-container">
-                        <div
-                          class="audio-preview-icon-wrapper"
-                          @click="openPreviewAudio(audio)"
-                        >
-                          <VIcon size="32" color="primary"
-                            >tabler-headphones</VIcon
-                          >
-                        </div>
-                        <div
-                          class="audio-preview-play-overlay"
-                          @click="openPreviewAudio(audio)"
-                        >
-                          <VIcon size="24">tabler-player-play</VIcon>
-                        </div>
-                      </div>
-                      <div class="audio-preview-meta">
-                        <VTooltip location="bottom">
-                          <template #activator="{ props }">
-                            <span v-bind="props" class="audio-preview-name">
-                              {{ truncateFileName(audio.name) }}
-                            </span>
-                          </template>
-                          <span>{{ audio.name }}</span>
-                        </VTooltip>
-                        <span
-                          class="audio-preview-info text-caption text-disabled"
-                        >
-                          {{
-                            (audio.name.split('.').pop() || '').toUpperCase()
-                          }}
-                          •
-                          {{ formatFileSize(audio.size) }}
-                          <span v-if="audio.duration">
-                            • {{ formatAudioModalTime(audio.duration) }}
-                          </span>
-                        </span>
-                      </div>
-                      <VBtn
-                        icon
-                        size="20"
-                        variant="flat"
-                        color="error"
-                        class="audio-preview-remove"
-                        @click.stop="removeAudio(index)"
-                      >
-                        <VIcon size="14" icon="tabler-x" />
-                      </VBtn>
-                    </div>
-                  </div>
-                </VCardText>
-              </VCard>
-            </div>
-          </Transition>
-
-          <Transition name="fade">
-            <div
-              v-if="selectedContacts.length > 0"
-              class="composer-attachment mt-3"
-            >
-              <VCard class="composer-attachment-card">
-                <VCardTitle class="d-flex align-center justify-space-between">
-                  <span
-                    >{{ t('contacts_selected') }} ({{
-                      selectedContacts.length
-                    }}/10)</span
-                  >
-                  <VBtn
-                    icon
-                    size="24"
-                    variant="text"
-                    @click="clearSelectedContacts()"
-                  >
-                    <VIcon size="18" icon="tabler-x" />
-                  </VBtn>
-                </VCardTitle>
-                <VCardText>
-                  <div class="attachment-grid">
-                    <div
-                      v-for="(contact, index) in selectedContacts"
-                      :key="`${contact.contact_id}-${index}`"
-                      class="contact-preview-wrapper"
-                      @click="viewContact(contact.contact_id)"
-                      style="cursor: pointer"
-                    >
-                      <div class="contact-preview-container">
-                        <VAvatar
-                          size="48"
-                          :rounded="8"
-                          :variant="contact.photo ? undefined : 'tonal'"
-                        >
-                          <VImg
-                            v-if="contact.photo"
-                            :src="contact.photo"
-                            :alt="contact.name"
-                          />
-                          <VIcon
-                            v-else
-                            size="32"
-                            color="primary"
-                            icon="tabler-user"
-                          />
-                        </VAvatar>
-                      </div>
-                      <div class="contact-preview-meta">
-                        <VTooltip location="bottom">
-                          <template #activator="{ props }">
-                            <span v-bind="props" class="contact-preview-name">
-                              {{ contact.name }}
-                              {{ contact.last_name || '' }}
-                            </span>
-                          </template>
                           <span
-                            >{{ contact.name }}
-                            {{ contact.last_name || '' }}</span
+                            class="video-preview-info text-caption text-disabled"
                           >
-                        </VTooltip>
-                        <span
-                          class="contact-preview-info text-caption text-disabled"
-                        >
-                          <span v-if="contact.phone_partial">
-                            {{ contact.phone_partial }}
+                            {{
+                              (video.name.split('.').pop() || '').toUpperCase()
+                            }}
+                            •
+                            {{ formatFileSize(video.size) }}
                           </span>
-                        </span>
+                        </div>
+                        <VBtn
+                          icon
+                          size="20"
+                          variant="flat"
+                          color="error"
+                          class="video-preview-remove"
+                          @click.stop="removeVideo(index)"
+                        >
+                          <VIcon size="14" icon="tabler-x" />
+                        </VBtn>
                       </div>
-                      <VBtn
-                        icon
-                        size="20"
-                        variant="flat"
-                        color="error"
-                        class="contact-preview-remove"
-                        @click.stop="removeContact(index)"
-                      >
-                        <VIcon size="14" icon="tabler-x" />
-                      </VBtn>
                     </div>
-                  </div>
-                </VCardText>
-              </VCard>
-            </div>
-          </Transition>
+                  </VCardText>
+                </VCard>
+              </div>
+            </Transition>
 
-          <Transition name="fade">
+            <Transition name="fade">
+              <div
+                v-if="selectedAudios.length > 0"
+                class="composer-attachment mt-3"
+              >
+                <VCard class="composer-attachment-card">
+                  <VCardTitle class="d-flex align-center justify-space-between">
+                    <span
+                      >{{ t('audios_selected') }} ({{
+                        selectedAudios.length
+                      }}/10)</span
+                    >
+                    <VBtn
+                      icon
+                      size="24"
+                      variant="text"
+                      @click="clearSelectedAudios()"
+                    >
+                      <VIcon size="18" icon="tabler-x" />
+                    </VBtn>
+                  </VCardTitle>
+                  <VCardText>
+                    <div class="attachment-grid attachment-grid--audios">
+                      <div
+                        v-for="(audio, index) in selectedAudios"
+                        :key="`${audio.name}-${index}`"
+                        class="audio-preview-wrapper"
+                      >
+                        <div class="audio-preview-container">
+                          <div
+                            class="audio-preview-icon-wrapper"
+                            @click="openPreviewAudio(audio)"
+                          >
+                            <VIcon size="32" color="primary"
+                              >tabler-headphones</VIcon
+                            >
+                          </div>
+                          <div
+                            class="audio-preview-play-overlay"
+                            @click="openPreviewAudio(audio)"
+                          >
+                            <VIcon size="24">tabler-player-play</VIcon>
+                          </div>
+                        </div>
+                        <div class="audio-preview-meta">
+                          <VTooltip location="bottom">
+                            <template #activator="{ props }">
+                              <span v-bind="props" class="audio-preview-name">
+                                {{ truncateFileName(audio.name) }}
+                              </span>
+                            </template>
+                            <span>{{ audio.name }}</span>
+                          </VTooltip>
+                          <span
+                            class="audio-preview-info text-caption text-disabled"
+                          >
+                            {{
+                              (audio.name.split('.').pop() || '').toUpperCase()
+                            }}
+                            •
+                            {{ formatFileSize(audio.size) }}
+                            <span v-if="audio.duration">
+                              • {{ formatAudioModalTime(audio.duration) }}
+                            </span>
+                          </span>
+                        </div>
+                        <VBtn
+                          icon
+                          size="20"
+                          variant="flat"
+                          color="error"
+                          class="audio-preview-remove"
+                          @click.stop="removeAudio(index)"
+                        >
+                          <VIcon size="14" icon="tabler-x" />
+                        </VBtn>
+                      </div>
+                    </div>
+                  </VCardText>
+                </VCard>
+              </div>
+            </Transition>
+
+            <Transition name="fade">
+              <div
+                v-if="selectedContacts.length > 0"
+                class="composer-attachment mt-3"
+              >
+                <VCard class="composer-attachment-card">
+                  <VCardTitle class="d-flex align-center justify-space-between">
+                    <span
+                      >{{ t('contacts_selected') }} ({{
+                        selectedContacts.length
+                      }}/10)</span
+                    >
+                    <VBtn
+                      icon
+                      size="24"
+                      variant="text"
+                      @click="clearSelectedContacts()"
+                    >
+                      <VIcon size="18" icon="tabler-x" />
+                    </VBtn>
+                  </VCardTitle>
+                  <VCardText>
+                    <div class="attachment-grid">
+                      <div
+                        v-for="(contact, index) in selectedContacts"
+                        :key="`${contact.contact_id}-${index}`"
+                        class="contact-preview-wrapper"
+                        @click="viewContact(contact.contact_id)"
+                        style="cursor: pointer"
+                      >
+                        <div class="contact-preview-container">
+                          <VAvatar
+                            size="48"
+                            :rounded="8"
+                            :variant="contact.photo ? undefined : 'tonal'"
+                          >
+                            <VImg
+                              v-if="contact.photo"
+                              :src="contact.photo"
+                              :alt="contact.name"
+                            />
+                            <VIcon
+                              v-else
+                              size="32"
+                              color="primary"
+                              icon="tabler-user"
+                            />
+                          </VAvatar>
+                        </div>
+                        <div class="contact-preview-meta">
+                          <VTooltip location="bottom">
+                            <template #activator="{ props }">
+                              <span v-bind="props" class="contact-preview-name">
+                                {{ contact.name }}
+                                {{ contact.last_name || '' }}
+                              </span>
+                            </template>
+                            <span
+                              >{{ contact.name }}
+                              {{ contact.last_name || '' }}</span
+                            >
+                          </VTooltip>
+                          <span
+                            class="contact-preview-info text-caption text-disabled"
+                          >
+                            <span v-if="contact.phone_partial">
+                              {{ contact.phone_partial }}
+                            </span>
+                          </span>
+                        </div>
+                        <VBtn
+                          icon
+                          size="20"
+                          variant="flat"
+                          color="error"
+                          class="contact-preview-remove"
+                          @click.stop="removeContact(index)"
+                        >
+                          <VIcon size="14" icon="tabler-x" />
+                        </VBtn>
+                      </div>
+                    </div>
+                  </VCardText>
+                </VCard>
+              </div>
+            </Transition>
+
+            <Transition name="fade">
+              <div
+                v-if="selectedPhotos.length > 0"
+                class="composer-attachment mt-3"
+              >
+                <VCard class="composer-attachment-card">
+                  <VCardTitle class="d-flex align-center justify-space-between">
+                    <span
+                      >{{ t('images_selected') }} ({{
+                        selectedPhotos.length
+                      }}/10)</span
+                    >
+                    <VBtn
+                      icon
+                      size="24"
+                      variant="text"
+                      @click="selectedPhotos = []"
+                    >
+                      <VIcon size="18" icon="tabler-x" />
+                    </VBtn>
+                  </VCardTitle>
+                  <VCardText>
+                    <div class="attachment-grid">
+                      <div
+                        v-for="(photo, index) in selectedPhotos"
+                        :key="index"
+                        class="photo-preview-wrapper"
+                      >
+                        <VImg
+                          :src="photo.preview"
+                          cover
+                          class="photo-preview-image"
+                          @click="openPreviewImage(photo)"
+                        />
+                        <VBtn
+                          icon
+                          size="20"
+                          variant="flat"
+                          color="error"
+                          class="photo-preview-remove"
+                          @click.stop="selectedPhotos.splice(index, 1)"
+                        >
+                          <VIcon size="14" icon="tabler-x" />
+                        </VBtn>
+                      </div>
+                    </div>
+                  </VCardText>
+                </VCard>
+              </div>
+            </Transition>
+
             <div
-              v-if="selectedPhotos.length > 0"
-              class="composer-attachment mt-3"
+              v-if="isRecordingAudio"
+              class="audio-recording-inline whats-composer d-flex align-center gap-3 px-4"
             >
-              <VCard class="composer-attachment-card">
-                <VCardTitle class="d-flex align-center justify-space-between">
-                  <span
-                    >{{ t('images_selected') }} ({{
-                      selectedPhotos.length
-                    }}/10)</span
-                  >
-                  <VBtn
-                    icon
-                    size="24"
-                    variant="text"
-                    @click="selectedPhotos = []"
-                  >
-                    <VIcon size="18" icon="tabler-x" />
-                  </VBtn>
-                </VCardTitle>
-                <VCardText>
-                  <div class="attachment-grid">
-                    <div
-                      v-for="(photo, index) in selectedPhotos"
-                      :key="index"
-                      class="photo-preview-wrapper"
+              <IconBtn
+                class="record-action"
+                aria-label="Cancelar gravação"
+                @click="cancelAudioRecording"
+              >
+                <VIcon size="20">tabler-trash</VIcon>
+              </IconBtn>
+
+              <span
+                class="recording-dot flex-shrink-0"
+                :class="{ 'is-paused': isRecordingPaused }"
+              ></span>
+
+              <span class="audio-recording-clock flex-shrink-0">{{
+                formattedRecordingTime
+              }}</span>
+
+              <div class="audio-recording-info flex-grow-1">
+                <canvas
+                  ref="audioCanvasRef"
+                  class="audio-wave-canvas"
+                  height="32"
+                ></canvas>
+              </div>
+
+              <IconBtn
+                class="record-action flex-shrink-0"
+                aria-label="Pausar ou retomar gravação"
+                @click="togglePauseAudioRecording"
+              >
+                <VIcon size="20">
+                  {{
+                    isRecordingPaused
+                      ? 'tabler-player-play'
+                      : 'tabler-player-pause'
+                  }}
+                </VIcon>
+              </IconBtn>
+
+              <IconBtn
+                class="record-action view-once-toggle flex-shrink-0"
+                :class="{ 'is-active': audioViewOnce }"
+                aria-label="Visualização única"
+                @click="toggleViewOnceAudio"
+              >
+                <VIcon size="20">
+                  {{ audioViewOnce ? 'tabler-eye-off' : 'tabler-eye' }}
+                </VIcon>
+              </IconBtn>
+
+              <VBtn
+                class="record-send-btn flex-shrink-0"
+                color="success"
+                variant="flat"
+                icon
+                rounded="pill"
+                aria-label="Enviar áudio gravado"
+                @click="finalizeAudioRecording"
+              >
+                <VIcon size="20">tabler-send</VIcon>
+              </VBtn>
+            </div>
+
+            <ChatQueueStatusBanner
+              :is-queue-status="isQueueOrUraStatus"
+              :is-closed-status="isClosedStatus"
+              :show-join-button="canJoinConversation"
+              :can-attend-chat="canAttendChat"
+              :can-reopen-chat="canReopenChat"
+              :can-reopen-chat-permission="canReopenChatPermission"
+              :cannot-attend-due-to-status="cannotAttendDueToStatus"
+              :cannot-attend-due-to-limit="cannotAttendDueToLimit"
+              :worker-config-for-chat="workerConfigForChat"
+              :loading="isLoadingWorkerConfig"
+              :action-loading="queueBannerActionLoading"
+              @attend="handleAttendChat"
+              @reopen="handleReopenChat"
+              @join="handleJoinConversation"
+            />
+
+            <VCard
+              v-if="
+                showQuickMessageList &&
+                quickMessageTemplates.length > 0 &&
+                !selectedQuickMessage
+              "
+              class="quick-message-list mb-2"
+              style="max-height: 300px; overflow-y: auto"
+            >
+              <VList density="compact">
+                <VListItem
+                  v-for="template in quickMessageTemplates"
+                  :key="template.message_template_id"
+                  @click="selectQuickMessage(template)"
+                  class="cursor-pointer"
+                >
+                  <VListItemTitle>
+                    <span class="font-weight-bold"
+                      >/{{ template.command }}</span
                     >
-                      <VImg
-                        :src="photo.preview"
-                        cover
-                        class="photo-preview-image"
-                        @click="openPreviewImage(photo)"
-                      />
-                      <VBtn
-                        icon
-                        size="20"
-                        variant="flat"
-                        color="error"
-                        class="photo-preview-remove"
-                        @click.stop="selectedPhotos.splice(index, 1)"
-                      >
-                        <VIcon size="14" icon="tabler-x" />
-                      </VBtn>
-                    </div>
-                  </div>
+                    <span class="text-caption text-medium-emphasis ml-2">
+                      {{ template.message.substring(0, 50)
+                      }}{{ template.message.length > 50 ? '...' : '' }}
+                    </span>
+                  </VListItemTitle>
+                </VListItem>
+              </VList>
+            </VCard>
+
+            <div
+              v-if="selectedQuickMessage"
+              class="quick-message-preview mb-2 position-relative"
+              @click.self="cancelQuickMessage"
+            >
+              <VCard class="position-relative">
+                <VBtn
+                  icon
+                  size="small"
+                  variant="text"
+                  class="position-absolute"
+                  style="top: 8px; right: 8px; z-index: 10"
+                  @click.stop="cancelQuickMessage"
+                >
+                  <VIcon size="20">tabler-x</VIcon>
+                </VBtn>
+                <VCardText>
+                  <ChatQuickMessagePreview
+                    :template="selectedQuickMessage"
+                    :message-override="msg"
+                  />
                 </VCardText>
               </VCard>
             </div>
-          </Transition>
 
-          <div
-            v-if="isRecordingAudio"
-            class="audio-recording-inline whats-composer d-flex align-center gap-3 px-4"
-          >
-            <IconBtn
-              class="record-action"
-              aria-label="Cancelar gravação"
-              @click="cancelAudioRecording"
-            >
-              <VIcon size="20">tabler-trash</VIcon>
-            </IconBtn>
+            <div class="position-relative">
+              <VTextarea
+                v-if="!isRecordingAudio"
+                ref="composerRef"
+                :key="contact_id"
+                v-model="msg"
+                variant="solo"
+                density="comfortable"
+                class="chat-message-input whats-composer"
+                :placeholder="$t('write_your_message')"
+                :auto-grow="true"
+                rows="1"
+                :max-rows="8"
+                :disabled="!canComposeInActiveChat"
+                :readonly="hasSelectedAudios"
+                @keydown.enter.exact.prevent="onSendText"
+                @paste="handlePaste"
+              >
+                <template #prepend-inner>
+                  <VMenu
+                    offset="8"
+                    :close-on-content-click="true"
+                    location="top start"
+                    :disabled="
+                      !!selectedQuickMessage || !canComposeInActiveChat
+                    "
+                  >
+                    <template #activator="{ props }">
+                      <IconBtn
+                        v-bind="props"
+                        class="composer-btn"
+                        aria-label="Anexar"
+                        :disabled="
+                          !!selectedQuickMessage || !canComposeInActiveChat
+                        "
+                      >
+                        <VIcon size="22">tabler-plus</VIcon>
+                      </IconBtn>
+                    </template>
 
-            <span
-              class="recording-dot flex-shrink-0"
-              :class="{ 'is-paused': isRecordingPaused }"
-            ></span>
+                    <VList
+                      density="comfortable"
+                      min-width="220"
+                      class="attach-menu"
+                    >
+                      <VListItem
+                        :disabled="!canComposeInActiveChat"
+                        @click="openAttach('document')"
+                      >
+                        <template #prepend
+                          ><VIcon size="20">tabler-file</VIcon></template
+                        >
+                        <VListItemTitle>Documentos</VListItemTitle>
+                      </VListItem>
+                      <VListItem
+                        :disabled="!canComposeInActiveChat"
+                        @click="openAttach('photo')"
+                      >
+                        <template #prepend
+                          ><VIcon size="20">tabler-photo</VIcon></template
+                        >
+                        <VListItemTitle>Fotos</VListItemTitle>
+                      </VListItem>
+                      <VListItem
+                        :disabled="!canComposeInActiveChat"
+                        @click="openAttach('video')"
+                      >
+                        <template #prepend
+                          ><VIcon size="20">tabler-video</VIcon></template
+                        >
+                        <VListItemTitle>Vídeos</VListItemTitle>
+                      </VListItem>
+                      <VListItem
+                        :disabled="!canComposeInActiveChat"
+                        @click="openAttach('audio')"
+                      >
+                        <template #prepend
+                          ><VIcon size="20">tabler-headphones</VIcon></template
+                        >
+                        <VListItemTitle>Áudio</VListItemTitle>
+                      </VListItem>
+                      <VListItem
+                        :disabled="!canComposeInActiveChat"
+                        @click="openAttach('contact')"
+                      >
+                        <template #prepend
+                          ><VIcon size="20">tabler-user</VIcon></template
+                        >
+                        <VListItemTitle>Contato</VListItemTitle>
+                      </VListItem>
+                      <VListItem
+                        :disabled="!canComposeInActiveChat"
+                        @click="openAttach('location')"
+                      >
+                        <template #prepend
+                          ><VIcon size="20">tabler-map-pin</VIcon></template
+                        >
+                        <VListItemTitle>Localização</VListItemTitle>
+                      </VListItem>
+                      <VListItem
+                        :disabled="!canComposeInActiveChat"
+                        @click="openAttach('annotation')"
+                      >
+                        <template #prepend
+                          ><VIcon size="20">tabler-note</VIcon></template
+                        >
+                        <VListItemTitle>{{ t('annotation') }}</VListItemTitle>
+                      </VListItem>
+                    </VList>
+                  </VMenu>
 
-            <span class="audio-recording-clock flex-shrink-0">{{
-              formattedRecordingTime
-            }}</span>
+                  <VMenu
+                    v-model="isEmojiOpen"
+                    location="top start"
+                    :close-on-content-click="false"
+                    offset="8"
+                    :disabled="!!selectedQuickMessage || hasSelectedAudios"
+                  >
+                    <template #activator="{ props }">
+                      <IconBtn
+                        v-bind="props"
+                        class="composer-btn"
+                        aria-label="Emoji"
+                        :disabled="!!selectedQuickMessage || hasSelectedAudios"
+                      >
+                        <VIcon size="22">tabler-mood-smile</VIcon>
+                      </IconBtn>
+                    </template>
 
-            <div class="audio-recording-info flex-grow-1">
-              <canvas
-                ref="audioCanvasRef"
-                class="audio-wave-canvas"
-                height="32"
-              ></canvas>
+                    <div class="emoji-picker-wrap">
+                      <Picker
+                        :data="emojiIndex"
+                        :per-line="8"
+                        :show-preview="false"
+                        :show-search="true"
+                        :show-skin-tones="false"
+                        @select="onEmojiSelect"
+                      />
+                    </div>
+                  </VMenu>
+                </template>
+
+                <template #append-inner>
+                  <div class="d-flex align-center gap-1">
+                    <IconBtn
+                      v-if="!hasAttachmentsOrContent && !selectedQuickMessage"
+                      class="composer-btn mic-btn"
+                      aria-label="Gravar áudio"
+                      :disabled="!canComposeInActiveChat"
+                      @click="onRecordAudio"
+                    >
+                      <VIcon size="22">tabler-microphone</VIcon>
+                    </IconBtn>
+
+                    <VBtn
+                      v-if="hasAttachmentsOrContent && !selectedQuickMessage"
+                      class="send-btn"
+                      icon
+                      color="success"
+                      variant="flat"
+                      rounded="pill"
+                      aria-label="Enviar mensagem"
+                      :disabled="!hasActiveChat() || !canComposeInActiveChat"
+                      @click="onSendText"
+                    >
+                      <VIcon size="22">tabler-send</VIcon>
+                    </VBtn>
+                  </div>
+                </template>
+              </VTextarea>
+
+              <VBtn
+                v-if="selectedQuickMessage"
+                class="send-btn"
+                icon
+                color="success"
+                variant="flat"
+                rounded="pill"
+                aria-label="Enviar mensagem"
+                style="
+                  position: absolute;
+                  right: 8px;
+                  top: 50%;
+                  transform: translateY(-50%);
+                  z-index: 10;
+                "
+                :disabled="!canSendSelectedQuickMessage"
+                @click="sendQuickMessage"
+              >
+                <VIcon size="22">tabler-send</VIcon>
+              </VBtn>
             </div>
 
-            <IconBtn
-              class="record-action flex-shrink-0"
-              aria-label="Pausar ou retomar gravação"
-              @click="togglePauseAudioRecording"
-            >
-              <VIcon size="20">
-                {{
-                  isRecordingPaused
-                    ? 'tabler-player-play'
-                    : 'tabler-player-pause'
-                }}
-              </VIcon>
-            </IconBtn>
+            <input
+              ref="fileDocRef"
+              type="file"
+              hidden
+              multiple
+              @change="onPickDoc"
+            />
+            <input
+              ref="filePhotoRef"
+              type="file"
+              hidden
+              accept="image/jpeg,image/jpg,image/png,image/gif,.jpg,.jpeg,.png,.gif"
+              multiple
+              @change="onPickPhoto"
+            />
+            <input
+              ref="fileVideoRef"
+              type="file"
+              hidden
+              accept="video/mp4,video/avi,video/x-flv,video/x-matroska,video/quicktime,video/3gpp,.mp4,.avi,.flv,.mkv,.mov,.3gp"
+              @change="onPickVideo"
+            />
+            <input
+              ref="fileAudioRef"
+              type="file"
+              hidden
+              accept="audio/mpeg,audio/mp3,audio/aac,audio/m4a,audio/x-m4a,audio/amr,audio/amr-wb,audio/ogg,audio/opus,.mp3,.aac,.m4a,.amr,.ogg,.opus"
+              multiple
+              @change="onPickAudio"
+            />
+          </VForm>
+        </div>
 
-            <IconBtn
-              class="record-action view-once-toggle flex-shrink-0"
-              :class="{ 'is-active': audioViewOnce }"
-              aria-label="Visualização única"
-              @click="toggleViewOnceAudio"
-            >
-              <VIcon size="20">
-                {{ audioViewOnce ? 'tabler-eye-off' : 'tabler-eye' }}
-              </VIcon>
-            </IconBtn>
-
-            <VBtn
-              class="record-send-btn flex-shrink-0"
-              color="success"
-              variant="flat"
-              icon
-              rounded="pill"
-              aria-label="Enviar áudio gravado"
-              @click="finalizeAudioRecording"
-            >
-              <VIcon size="20">tabler-send</VIcon>
-            </VBtn>
-          </div>
-
-          <ChatQueueStatusBanner
-            :is-queue-status="isQueueOrUraStatus"
-            :is-closed-status="isClosedStatus"
-            :show-join-button="canJoinConversation"
-            :can-attend-chat="canAttendChat"
-            :can-reopen-chat="canReopenChat"
-            :can-reopen-chat-permission="canReopenChatPermission"
-            :cannot-attend-due-to-status="cannotAttendDueToStatus"
-            :cannot-attend-due-to-limit="cannotAttendDueToLimit"
-            :worker-config-for-chat="workerConfigForChat"
-            :loading="isLoadingWorkerConfig"
-            :action-loading="queueBannerActionLoading"
-            @attend="handleAttendChat"
-            @reopen="handleReopenChat"
-            @join="handleJoinConversation"
-          />
-
-          <VCard
-            v-if="
-              showQuickMessageList &&
-              quickMessageTemplates.length > 0 &&
-              !selectedQuickMessage
-            "
-            class="quick-message-list mb-2"
-            style="max-height: 300px; overflow-y: auto"
-          >
-            <VList density="compact">
-              <VListItem
-                v-for="template in quickMessageTemplates"
-                :key="template.message_template_id"
-                @click="selectQuickMessage(template)"
-                class="cursor-pointer"
-              >
-                <VListItemTitle>
-                  <span class="font-weight-bold">/{{ template.command }}</span>
-                  <span class="text-caption text-medium-emphasis ml-2">
-                    {{ template.message.substring(0, 50)
-                    }}{{ template.message.length > 50 ? '...' : '' }}
-                  </span>
-                </VListItemTitle>
-              </VListItem>
-            </VList>
-          </VCard>
-
-          <div
-            v-if="selectedQuickMessage"
-            class="quick-message-preview mb-2 position-relative"
-            @click.self="cancelQuickMessage"
-          >
-            <VCard class="position-relative">
-              <VBtn
-                icon
-                size="small"
-                variant="text"
-                class="position-absolute"
-                style="top: 8px; right: 8px; z-index: 10"
-                @click.stop="cancelQuickMessage"
-              >
-                <VIcon size="20">tabler-x</VIcon>
-              </VBtn>
-              <VCardText>
-                <ChatQuickMessagePreview
-                  :template="selectedQuickMessage"
-                  :message-override="msg"
-                />
-              </VCardText>
-            </VCard>
-          </div>
-
-          <div class="position-relative">
-            <VTextarea
-              v-if="!isRecordingAudio"
-              ref="composerRef"
-              :key="contact_id"
-              v-model="msg"
-              variant="solo"
-              density="comfortable"
-              class="chat-message-input whats-composer"
-              :placeholder="$t('write_your_message')"
-              :auto-grow="true"
-              rows="1"
-              :max-rows="8"
-              :disabled="!canComposeInActiveChat"
-              :readonly="hasSelectedAudios"
-              @keydown.enter.exact.prevent="onSendText"
-              @paste="handlePaste"
-            >
-              <template #prepend-inner>
-                <VMenu
-                  offset="8"
-                  :close-on-content-click="true"
-                  location="top start"
-                  :disabled="!!selectedQuickMessage || !canComposeInActiveChat"
-                >
-                  <template #activator="{ props }">
-                    <IconBtn
-                      v-bind="props"
-                      class="composer-btn"
-                      aria-label="Anexar"
-                      :disabled="
-                        !!selectedQuickMessage || !canComposeInActiveChat
-                      "
-                    >
-                      <VIcon size="22">tabler-plus</VIcon>
-                    </IconBtn>
-                  </template>
-
-                  <VList
-                    density="comfortable"
-                    min-width="220"
-                    class="attach-menu"
-                  >
-                    <VListItem
-                      :disabled="!canComposeInActiveChat"
-                      @click="openAttach('document')"
-                    >
-                      <template #prepend
-                        ><VIcon size="20">tabler-file</VIcon></template
-                      >
-                      <VListItemTitle>Documentos</VListItemTitle>
-                    </VListItem>
-                    <VListItem
-                      :disabled="!canComposeInActiveChat"
-                      @click="openAttach('photo')"
-                    >
-                      <template #prepend
-                        ><VIcon size="20">tabler-photo</VIcon></template
-                      >
-                      <VListItemTitle>Fotos</VListItemTitle>
-                    </VListItem>
-                    <VListItem
-                      :disabled="!canComposeInActiveChat"
-                      @click="openAttach('video')"
-                    >
-                      <template #prepend
-                        ><VIcon size="20">tabler-video</VIcon></template
-                      >
-                      <VListItemTitle>Vídeos</VListItemTitle>
-                    </VListItem>
-                    <VListItem
-                      :disabled="!canComposeInActiveChat"
-                      @click="openAttach('audio')"
-                    >
-                      <template #prepend
-                        ><VIcon size="20">tabler-headphones</VIcon></template
-                      >
-                      <VListItemTitle>Áudio</VListItemTitle>
-                    </VListItem>
-                    <VListItem
-                      :disabled="!canComposeInActiveChat"
-                      @click="openAttach('contact')"
-                    >
-                      <template #prepend
-                        ><VIcon size="20">tabler-user</VIcon></template
-                      >
-                      <VListItemTitle>Contato</VListItemTitle>
-                    </VListItem>
-                    <VListItem
-                      :disabled="!canComposeInActiveChat"
-                      @click="openAttach('location')"
-                    >
-                      <template #prepend
-                        ><VIcon size="20">tabler-map-pin</VIcon></template
-                      >
-                      <VListItemTitle>Localização</VListItemTitle>
-                    </VListItem>
-                    <VListItem
-                      :disabled="!canComposeInActiveChat"
-                      @click="openAttach('annotation')"
-                    >
-                      <template #prepend
-                        ><VIcon size="20">tabler-note</VIcon></template
-                      >
-                      <VListItemTitle>{{ t('annotation') }}</VListItemTitle>
-                    </VListItem>
-                  </VList>
-                </VMenu>
-
-                <VMenu
-                  v-model="isEmojiOpen"
-                  location="top start"
-                  :close-on-content-click="false"
-                  offset="8"
-                  :disabled="!!selectedQuickMessage || hasSelectedAudios"
-                >
-                  <template #activator="{ props }">
-                    <IconBtn
-                      v-bind="props"
-                      class="composer-btn"
-                      aria-label="Emoji"
-                      :disabled="!!selectedQuickMessage || hasSelectedAudios"
-                    >
-                      <VIcon size="22">tabler-mood-smile</VIcon>
-                    </IconBtn>
-                  </template>
-
-                  <div class="emoji-picker-wrap">
-                    <Picker
-                      :data="emojiIndex"
-                      :per-line="8"
-                      :show-preview="false"
-                      :show-search="true"
-                      :show-skin-tones="false"
-                      @select="onEmojiSelect"
-                    />
-                  </div>
-                </VMenu>
-              </template>
-
-              <template #append-inner>
-                <div class="d-flex align-center gap-1">
-                  <IconBtn
-                    v-if="!hasAttachmentsOrContent && !selectedQuickMessage"
-                    class="composer-btn mic-btn"
-                    aria-label="Gravar áudio"
-                    :disabled="!canComposeInActiveChat"
-                    @click="onRecordAudio"
-                  >
-                    <VIcon size="22">tabler-microphone</VIcon>
-                  </IconBtn>
-
-                  <VBtn
-                    v-if="hasAttachmentsOrContent && !selectedQuickMessage"
-                    class="send-btn"
-                    icon
-                    color="success"
-                    variant="flat"
-                    rounded="pill"
-                    aria-label="Enviar mensagem"
-                    :disabled="!hasActiveChat() || !canComposeInActiveChat"
-                    @click="onSendText"
-                  >
-                    <VIcon size="22">tabler-send</VIcon>
-                  </VBtn>
-                </div>
-              </template>
-            </VTextarea>
-
-            <VBtn
-              v-if="selectedQuickMessage"
-              class="send-btn"
-              icon
-              color="success"
-              variant="flat"
-              rounded="pill"
-              aria-label="Enviar mensagem"
-              style="
-                position: absolute;
-                right: 8px;
-                top: 50%;
-                transform: translateY(-50%);
-                z-index: 10;
-              "
-              :disabled="!canSendSelectedQuickMessage"
-              @click="sendQuickMessage"
-            >
-              <VIcon size="22">tabler-send</VIcon>
-            </VBtn>
-          </div>
-
-          <input
-            ref="fileDocRef"
-            type="file"
-            hidden
-            multiple
-            @change="onPickDoc"
-          />
-          <input
-            ref="filePhotoRef"
-            type="file"
-            hidden
-            accept="image/jpeg,image/jpg,image/png,image/gif,.jpg,.jpeg,.png,.gif"
-            multiple
-            @change="onPickPhoto"
-          />
-          <input
-            ref="fileVideoRef"
-            type="file"
-            hidden
-            accept="video/mp4,video/avi,video/x-flv,video/x-matroska,video/quicktime,video/3gpp,.mp4,.avi,.flv,.mkv,.mov,.3gp"
-            @change="onPickVideo"
-          />
-          <input
-            ref="fileAudioRef"
-            type="file"
-            hidden
-            accept="audio/mpeg,audio/mp3,audio/aac,audio/m4a,audio/x-m4a,audio/amr,audio/amr-wb,audio/ogg,audio/opus,.mp3,.aac,.m4a,.amr,.ogg,.opus"
-            multiple
-            @change="onPickAudio"
-          />
-        </VForm>
-      </div>
-
-      <div
-        v-if="!chatStore.activeChat"
-        class="d-flex h-100 align-center justify-center flex-column"
-      >
-        <VAvatar size="98" variant="tonal" color="primary" class="mb-4">
-          <VIcon size="50" class="rounded-0" icon="tabler-message-2" />
-        </VAvatar>
-        <VBtn
-          v-if="$vuetify.display.smAndDown"
-          rounded="pill"
-          @click="startConversation"
+        <div
+          v-if="!chatStore.activeChat"
+          class="d-flex h-100 align-center justify-center flex-column"
         >
-          {{ $t('start_conversation') }}
-        </VBtn>
+          <VAvatar size="98" variant="tonal" color="primary" class="mb-4">
+            <VIcon size="50" class="rounded-0" icon="tabler-message-2" />
+          </VAvatar>
+          <VBtn
+            v-if="$vuetify.display.smAndDown"
+            rounded="pill"
+            @click="startConversation"
+          >
+            {{ $t('start_conversation') }}
+          </VBtn>
 
-        <p
-          v-if="!$vuetify.display.smAndDown"
-          style="max-inline-size: 40ch; text-wrap: balance"
-          class="text-center text-disabled"
-        >
-          {{ $t('select_a_contact') }}
-        </p>
-      </div>
+          <p
+            v-if="!$vuetify.display.smAndDown"
+            style="max-inline-size: 40ch; text-wrap: balance"
+            class="text-center text-disabled"
+          >
+            {{ $t('select_a_contact') }}
+          </p>
+        </div>
+      </template>
     </VMain>
   </VLayout>
 

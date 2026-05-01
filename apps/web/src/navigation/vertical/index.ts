@@ -16,6 +16,7 @@ import { EAiAgentPermissions } from '@core/common/enums/EPermissions/aiAgent';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EInternalChatPermissions } from '@core/common/enums/EPermissions/internalChat';
 import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
 import { EReportAttendancePermissions } from '@core/common/enums/EPermissions/reportAttendance';
 import { EReleasePermissions } from '@core/common/enums/EPermissions/release';
@@ -41,6 +42,8 @@ export default [
       EChatPermissions.view_chatbot_messages,
       EChatbotPermissions.chatbot_group,
       EChatbotPermissions.chatbot_access,
+      EInternalChatPermissions.internal_chat_group,
+      EInternalChatPermissions.internal_chat_access,
     ],
   },
   {
