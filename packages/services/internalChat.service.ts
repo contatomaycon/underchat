@@ -148,13 +148,27 @@ export class InternalChatService {
       return message.content.message ?? null;
     }
 
-    if (message.content.type === EMessageType.image) return '[Imagem]';
-    if (message.content.type === EMessageType.video) return '[Vídeo]';
-    if (message.content.type === EMessageType.audio) return '[Áudio]';
-    if (message.content.type === EMessageType.document) return '[Documento]';
-    if (message.content.type === EMessageType.location) return '[Localização]';
-    if (message.content.type === EMessageType.contact_card) return '[Contato]';
-    if (message.content.type === EMessageType.contacts) return '[Contatos]';
+    if (message.content.type === EMessageType.image) {
+      return 'internal_chat_preview_image';
+    }
+    if (message.content.type === EMessageType.video) {
+      return 'internal_chat_preview_video';
+    }
+    if (message.content.type === EMessageType.audio) {
+      return 'internal_chat_preview_audio';
+    }
+    if (message.content.type === EMessageType.document) {
+      return 'internal_chat_preview_document';
+    }
+    if (message.content.type === EMessageType.location) {
+      return 'internal_chat_preview_location';
+    }
+    if (message.content.type === EMessageType.contact_card) {
+      return 'internal_chat_preview_contact';
+    }
+    if (message.content.type === EMessageType.contacts) {
+      return 'internal_chat_preview_contacts';
+    }
 
     return message.content.message ?? message.content.type;
   }
@@ -722,10 +736,28 @@ export class InternalChatService {
     conversationId: string
   ): Promise<boolean> {
     await this.assertParticipant(accountId, conversationId, userId);
-    return this.conversationRepository.closeConversationForUser(
-      conversationId,
-      userId
+    const conversation = await this.getConversationOrThrow(
+      accountId,
+      conversationId
     );
+
+    const closed =
+      conversation.type === EInternalChatConversationType.group
+        ? await this.conversationRepository.leaveGroupConversation(
+            conversationId,
+            userId
+          )
+        : await this.conversationRepository.closeConversationForUser(
+            conversationId,
+            userId
+          );
+
+    if (!closed) {
+      throw new Error('chat_update_error');
+    }
+
+    await this.publishConversationSync(accountId, conversationId);
+    return true;
   }
 
   async markConversationRead(

@@ -520,6 +520,207 @@ export class InternalChatConversationRepository {
     return (result.rowCount ?? 0) > 0;
   }
 
+  async leaveGroupConversation(
+    conversationId: string,
+    userId: string
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
+
+    return this.dbRw.transaction(async (tx) => {
+      const [participant] = await tx
+        .select({
+          role: internalChatConversationParticipant.role,
+          leader_user_id: internalChatConversation.leader_user_id,
+        })
+        .from(internalChatConversationParticipant)
+        .innerJoin(
+          internalChatConversation,
+          eq(
+            internalChatConversation.internal_chat_conversation_id,
+            internalChatConversationParticipant.internal_chat_conversation_id
+          )
+        )
+        .where(
+          and(
+            eq(
+              internalChatConversationParticipant.internal_chat_conversation_id,
+              conversationId
+            ),
+            eq(internalChatConversationParticipant.user_id, userId),
+            eq(internalChatConversationParticipant.is_active, true),
+            isNull(internalChatConversationParticipant.deleted_at),
+            eq(
+              internalChatConversation.type,
+              EInternalChatConversationType.group
+            ),
+            isNull(internalChatConversation.deleted_at)
+          )
+        )
+        .limit(1)
+        .execute();
+
+      if (!participant) {
+        return false;
+      }
+
+      const leftGroupResult = await tx
+        .update(internalChatConversationParticipant)
+        .set({
+          is_active: false,
+          deleted_at: now,
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(
+              internalChatConversationParticipant.internal_chat_conversation_id,
+              conversationId
+            ),
+            eq(internalChatConversationParticipant.user_id, userId),
+            eq(internalChatConversationParticipant.is_active, true),
+            isNull(internalChatConversationParticipant.deleted_at)
+          )
+        )
+        .execute();
+
+      if ((leftGroupResult.rowCount ?? 0) === 0) {
+        return false;
+      }
+
+      const isLeavingLeader =
+        participant.role === EInternalChatConversationParticipantRole.leader ||
+        participant.leader_user_id === userId;
+
+      if (!isLeavingLeader) {
+        return true;
+      }
+
+      const [nextLeader] = await tx
+        .select({
+          user_id: internalChatConversationParticipant.user_id,
+        })
+        .from(internalChatConversationParticipant)
+        .where(
+          and(
+            eq(
+              internalChatConversationParticipant.internal_chat_conversation_id,
+              conversationId
+            ),
+            ne(internalChatConversationParticipant.user_id, userId),
+            eq(internalChatConversationParticipant.is_active, true),
+            isNull(internalChatConversationParticipant.deleted_at)
+          )
+        )
+        .orderBy(
+          asc(internalChatConversationParticipant.joined_at),
+          asc(internalChatConversationParticipant.created_at),
+          asc(
+            internalChatConversationParticipant.internal_chat_conversation_participant_id
+          )
+        )
+        .limit(1)
+        .execute();
+
+      if (!nextLeader) {
+        const deletedGroupResult = await tx
+          .update(internalChatConversation)
+          .set({
+            leader_user_id: null,
+            deleted_at: now,
+            updated_at: now,
+          })
+          .where(
+            and(
+              eq(
+                internalChatConversation.internal_chat_conversation_id,
+                conversationId
+              ),
+              eq(
+                internalChatConversation.type,
+                EInternalChatConversationType.group
+              ),
+              isNull(internalChatConversation.deleted_at)
+            )
+          )
+          .execute();
+
+        if ((deletedGroupResult.rowCount ?? 0) === 0) {
+          throw new Error('chat_update_error');
+        }
+
+        return true;
+      }
+
+      await tx
+        .update(internalChatConversationParticipant)
+        .set({
+          role: EInternalChatConversationParticipantRole.member,
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(
+              internalChatConversationParticipant.internal_chat_conversation_id,
+              conversationId
+            ),
+            eq(internalChatConversationParticipant.is_active, true),
+            isNull(internalChatConversationParticipant.deleted_at)
+          )
+        )
+        .execute();
+
+      const nextLeaderResult = await tx
+        .update(internalChatConversationParticipant)
+        .set({
+          role: EInternalChatConversationParticipantRole.leader,
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(
+              internalChatConversationParticipant.internal_chat_conversation_id,
+              conversationId
+            ),
+            eq(internalChatConversationParticipant.user_id, nextLeader.user_id),
+            eq(internalChatConversationParticipant.is_active, true),
+            isNull(internalChatConversationParticipant.deleted_at)
+          )
+        )
+        .execute();
+
+      if ((nextLeaderResult.rowCount ?? 0) === 0) {
+        throw new Error('chat_update_error');
+      }
+
+      const transferResult = await tx
+        .update(internalChatConversation)
+        .set({
+          leader_user_id: nextLeader.user_id,
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(
+              internalChatConversation.internal_chat_conversation_id,
+              conversationId
+            ),
+            eq(
+              internalChatConversation.type,
+              EInternalChatConversationType.group
+            ),
+            isNull(internalChatConversation.deleted_at)
+          )
+        )
+        .execute();
+
+      if ((transferResult.rowCount ?? 0) === 0) {
+        throw new Error('chat_update_error');
+      }
+
+      return true;
+    });
+  }
+
   async reopenConversationForUser(
     conversationId: string,
     userId: string

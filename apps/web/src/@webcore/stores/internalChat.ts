@@ -59,13 +59,27 @@ const normalizeMessagePreview = (message: InternalMessage): string | null => {
     return message.content.message ?? null;
   }
 
-  if (message.content?.type === EMessageType.image) return '[Imagem]';
-  if (message.content?.type === EMessageType.video) return '[Vídeo]';
-  if (message.content?.type === EMessageType.audio) return '[Áudio]';
-  if (message.content?.type === EMessageType.document) return '[Documento]';
-  if (message.content?.type === EMessageType.location) return '[Localização]';
-  if (message.content?.type === EMessageType.contact_card) return '[Contato]';
-  if (message.content?.type === EMessageType.contacts) return '[Contatos]';
+  if (message.content?.type === EMessageType.image) {
+    return 'internal_chat_preview_image';
+  }
+  if (message.content?.type === EMessageType.video) {
+    return 'internal_chat_preview_video';
+  }
+  if (message.content?.type === EMessageType.audio) {
+    return 'internal_chat_preview_audio';
+  }
+  if (message.content?.type === EMessageType.document) {
+    return 'internal_chat_preview_document';
+  }
+  if (message.content?.type === EMessageType.location) {
+    return 'internal_chat_preview_location';
+  }
+  if (message.content?.type === EMessageType.contact_card) {
+    return 'internal_chat_preview_contact';
+  }
+  if (message.content?.type === EMessageType.contacts) {
+    return 'internal_chat_preview_contacts';
+  }
 
   return message.content?.message ?? null;
 };
@@ -339,7 +353,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t('chat_list_error', 'Erro ao listar conversas')
+            this.i18n.global.t('internal_chat_list_conversations_error')
           ),
           EColor.error
         );
@@ -427,7 +441,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t('user_list_error', 'Erro ao listar usuários')
+            this.i18n.global.t('internal_chat_list_users_error')
           ),
           EColor.error
         );
@@ -458,10 +472,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (!data?.status || !data.data) {
           this.showSnackbar(
             data?.message ||
-              this.i18n.global.t(
-                'chat_create_error',
-                'Erro ao abrir conversa interna'
-              ),
+              this.i18n.global.t('internal_chat_open_conversation_error'),
             EColor.error
           );
           return null;
@@ -479,10 +490,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t(
-              'chat_create_error',
-              'Erro ao abrir conversa interna'
-            )
+            this.i18n.global.t('internal_chat_open_conversation_error')
           ),
           EColor.error
         );
@@ -534,10 +542,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (!data?.status) {
           this.showSnackbar(
             data?.message ||
-              this.i18n.global.t(
-                'chat_update_error',
-                'Erro ao fechar conversa interna'
-              ),
+              this.i18n.global.t('internal_chat_close_conversation_error'),
             EColor.error
           );
           return false;
@@ -557,10 +562,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t(
-              'chat_update_error',
-              'Erro ao fechar conversa interna'
-            )
+            this.i18n.global.t('internal_chat_close_conversation_error')
           ),
           EColor.error
         );
@@ -654,10 +656,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t(
-              'chat_message_list_error',
-              'Erro ao listar mensagens'
-            )
+            this.i18n.global.t('internal_chat_list_messages_error')
           ),
           EColor.error
         );
@@ -691,10 +690,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (!data?.status) {
           this.showSnackbar(
             data?.message ||
-              this.i18n.global.t(
-                'chat_create_error',
-                'Erro ao enviar mensagem interna'
-              ),
+              this.i18n.global.t('internal_chat_send_message_error'),
             EColor.error
           );
           return false;
@@ -705,10 +701,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t(
-              'chat_create_error',
-              'Erro ao enviar mensagem interna'
-            )
+            this.i18n.global.t('internal_chat_send_message_error')
           ),
           EColor.error
         );
@@ -808,10 +801,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t(
-              'chat_list_error',
-              'Erro ao listar participantes do grupo'
-            )
+            this.i18n.global.t('internal_chat_list_group_members_error')
           ),
           EColor.error
         );
@@ -857,10 +847,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (!data?.status || !data.data) {
           this.showSnackbar(
             data?.message ||
-              this.i18n.global.t(
-                'chat_update_error',
-                'Erro ao atualizar grupo'
-              ),
+              this.i18n.global.t('internal_chat_update_group_error'),
             EColor.error
           );
           return null;
@@ -872,7 +859,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t('chat_update_error', 'Erro ao atualizar grupo')
+            this.i18n.global.t('internal_chat_update_group_error')
           ),
           EColor.error
         );
@@ -895,10 +882,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (!data?.status || !data.data) {
           this.showSnackbar(
             data?.message ||
-              this.i18n.global.t(
-                'chat_update_error',
-                'Erro ao adicionar membro'
-              ),
+              this.i18n.global.t('internal_chat_add_group_member_error'),
             EColor.error
           );
           return null;
@@ -911,7 +895,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t('chat_update_error', 'Erro ao adicionar membro')
+            this.i18n.global.t('internal_chat_add_group_member_error')
           ),
           EColor.error
         );
@@ -932,7 +916,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (!data?.status) {
           this.showSnackbar(
             data?.message ||
-              this.i18n.global.t('chat_update_error', 'Erro ao remover membro'),
+              this.i18n.global.t('internal_chat_remove_group_member_error'),
             EColor.error
           );
           return false;
@@ -950,7 +934,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t('chat_update_error', 'Erro ao remover membro')
+            this.i18n.global.t('internal_chat_remove_group_member_error')
           ),
           EColor.error
         );
@@ -973,10 +957,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (!data?.status || !data.data) {
           this.showSnackbar(
             data?.message ||
-              this.i18n.global.t(
-                'chat_update_error',
-                'Erro ao transferir liderança'
-              ),
+              this.i18n.global.t('internal_chat_transfer_leader_error'),
             EColor.error
           );
           return null;
@@ -989,10 +970,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t(
-              'chat_update_error',
-              'Erro ao transferir liderança'
-            )
+            this.i18n.global.t('internal_chat_transfer_leader_error')
           ),
           EColor.error
         );
@@ -1010,7 +988,7 @@ export const useInternalChatStore = defineStore('internalChat', {
           state,
         });
       } catch {
-        // Silencioso para não degradar UX do realtime.
+        // Keep realtime activity failures silent so the chat remains usable.
       }
     },
 
@@ -1059,7 +1037,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (!data?.status || !data.data) {
           this.showSnackbar(
             data?.message ||
-              this.i18n.global.t('chat_create_error', 'Erro ao criar grupo'),
+              this.i18n.global.t('internal_chat_create_group_error'),
             EColor.error
           );
           return null;
@@ -1076,7 +1054,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.showSnackbar(
           this.resolveErrorMessage(
             error,
-            this.i18n.global.t('chat_create_error', 'Erro ao criar grupo')
+            this.i18n.global.t('internal_chat_create_group_error')
           ),
           EColor.error
         );

@@ -153,9 +153,11 @@ const forwardingMessage = ref(false);
 
 const isGroupInfoDrawerOpen = ref(false);
 const isUserInfoDrawerOpen = ref(false);
+const isCloseConversationDialogOpen = ref(false);
 const groupInfoName = ref('');
 const isEditingGroupInfoName = ref(false);
 const updatingGroupInfo = ref(false);
+const closingConversation = ref(false);
 const isAddGroupMembersDialogOpen = ref(false);
 const groupCandidateSearch = ref('');
 const groupCandidateSearchDebounced = refDebounced(groupCandidateSearch, 350);
@@ -248,31 +250,43 @@ const makeLocalPaging = (perPage = groupCandidatePageSize): LocalPaging => ({
 const canCreateInternalGroup = computed(() => can(groupCreatePermissions));
 const groupNameRules = [
   (value?: string) =>
-    Boolean(value?.trim()) || 'Informe o nome do grupo',
+    Boolean(value?.trim()) || t('internal_chat_group_name_required'),
   (value?: string) =>
     (value?.length ?? 0) <= groupNameMaxLength ||
-    `Máximo de ${groupNameMaxLength} caracteres`,
+    t('internal_chat_max_characters', { count: groupNameMaxLength }),
 ];
 
-const defaultSidebarTab: InternalSidebarTabInfo = {
+const defaultSidebarTab = computed<InternalSidebarTabInfo>(() => ({
   value: 'all',
-  label: 'Todos',
+  label: t('internal_chat_tab_all'),
   icon: 'tabler-list',
-};
+}));
 
-const sidebarTabs: InternalSidebarTabInfo[] = [
-  { value: 'users', label: 'Nova conversa', icon: 'tabler-plus' },
-  { value: 'all', label: 'Todos', icon: 'tabler-list' },
-  { value: 'direct', label: 'Diretas', icon: 'tabler-message-circle' },
-  { value: 'group', label: 'Grupos', icon: 'tabler-users-group' },
-];
+const sidebarTabs = computed<InternalSidebarTabInfo[]>(() => [
+  {
+    value: 'users',
+    label: t('internal_chat_tab_new_conversation'),
+    icon: 'tabler-plus',
+  },
+  { value: 'all', label: t('internal_chat_tab_all'), icon: 'tabler-list' },
+  {
+    value: 'direct',
+    label: t('internal_chat_tab_direct'),
+    icon: 'tabler-message-circle',
+  },
+  {
+    value: 'group',
+    label: t('internal_chat_tab_groups'),
+    icon: 'tabler-users-group',
+  },
+]);
 
 const isUsersTab = computed(() => activeSidebarTab.value === 'users');
 
 const activeSidebarTabInfo = computed(() => {
   return (
-    sidebarTabs.find((tab) => tab.value === activeSidebarTab.value) ??
-    defaultSidebarTab
+    sidebarTabs.value.find((tab) => tab.value === activeSidebarTab.value) ??
+    defaultSidebarTab.value
   );
 });
 
@@ -310,7 +324,9 @@ const isSidebarLoading = computed(() => {
 });
 
 const searchPlaceholder = computed(() => {
-  return isUsersTab.value ? 'Pesquisar usuários' : 'Pesquisar conversas';
+  return isUsersTab.value
+    ? t('internal_chat_search_users')
+    : t('internal_chat_search_conversations');
 });
 
 const currentUserAvatar = computed(() => {
@@ -318,7 +334,7 @@ const currentUserAvatar = computed(() => {
 });
 
 const currentUserName = computed(() => {
-  return user.value?.info.name?.trim() || 'Usuário';
+  return user.value?.info.name?.trim() || t('internal_chat_unknown_user');
 });
 
 const displayedConversations = computed(() => conversations.value);
@@ -332,6 +348,33 @@ const canSubmitCreateGroup = computed(() => {
 });
 const isActiveGroupConversation = computed(() => {
   return activeConversation.value?.type === EInternalChatConversationType.group;
+});
+const isActiveConversationLeader = computed(() => {
+  return (
+    isActiveGroupConversation.value &&
+    activeConversation.value?.leader_user_id === internalChatStore.currentUserId
+  );
+});
+const closeConversationActionLabel = computed(() => {
+  return isActiveGroupConversation.value
+    ? t('internal_chat_leave_group')
+    : t('internal_chat_close_conversation');
+});
+const closeConversationDialogTitle = computed(() => {
+  return isActiveGroupConversation.value
+    ? t('internal_chat_leave_group_title')
+    : t('internal_chat_close_conversation_title');
+});
+const closeConversationDialogDescription = computed(() => {
+  if (!isActiveGroupConversation.value) {
+    return t('internal_chat_close_conversation_description');
+  }
+
+  if (isActiveConversationLeader.value) {
+    return t('internal_chat_leave_group_leader_description');
+  }
+
+  return t('internal_chat_leave_group_description');
 });
 const isActiveDirectConversation = computed(() => {
   return (
@@ -415,19 +458,19 @@ const canLoadMoreGroupCandidates = computed(() => {
 const sidebarEmptyText = computed(() => {
   if (isUsersTab.value) {
     return searchQueryDebounced.value.trim()
-      ? 'Nenhum usuário encontrado'
-      : 'Nenhum usuário disponível';
+      ? t('internal_chat_empty_user_search')
+      : t('internal_chat_empty_users');
   }
 
   if (activeSidebarTab.value === 'direct') {
-    return 'Nenhuma conversa direta';
+    return t('internal_chat_empty_direct_conversations');
   }
 
   if (activeSidebarTab.value === 'group') {
-    return 'Nenhum grupo interno';
+    return t('internal_chat_empty_groups');
   }
 
-  return 'Nenhuma conversa interna';
+  return t('internal_chat_empty_conversations');
 });
 
 const sidebarEmptyIcon = computed(() => {
@@ -477,10 +520,14 @@ const activityLabel = computed(() => {
   if (!activity) return '';
 
   if (activity.state === EInternalChatActivityState.recording) {
-    return `${activity.user_name ?? 'Usuário'} está gravando áudio...`;
+    return t('internal_chat_activity_recording', {
+      name: activity.user_name ?? t('internal_chat_unknown_user'),
+    });
   }
 
-  return `${activity.user_name ?? 'Usuário'} está digitando...`;
+  return t('internal_chat_activity_typing', {
+    name: activity.user_name ?? t('internal_chat_unknown_user'),
+  });
 });
 
 const formattedRecordingDuration = computed(() => {
@@ -507,13 +554,36 @@ const formatMessageDate = (value?: string | null): string => {
 const resolveConversationTitle = (
   conversation?: InternalConversation | null
 ): string => {
-  return conversation?.name?.trim() || 'Conversa interna';
+  return conversation?.name?.trim() || t('internal_chat_default_conversation');
+};
+
+const internalChatPreviewTranslationKeys: Record<string, string> = {
+  '[Imagem]': 'internal_chat_preview_image',
+  '[Vídeo]': 'internal_chat_preview_video',
+  '[Áudio]': 'internal_chat_preview_audio',
+  '[Documento]': 'internal_chat_preview_document',
+  '[Localização]': 'internal_chat_preview_location',
+  '[Contato]': 'internal_chat_preview_contact',
+  '[Contatos]': 'internal_chat_preview_contacts',
+  internal_chat_preview_image: 'internal_chat_preview_image',
+  internal_chat_preview_video: 'internal_chat_preview_video',
+  internal_chat_preview_audio: 'internal_chat_preview_audio',
+  internal_chat_preview_document: 'internal_chat_preview_document',
+  internal_chat_preview_location: 'internal_chat_preview_location',
+  internal_chat_preview_contact: 'internal_chat_preview_contact',
+  internal_chat_preview_contacts: 'internal_chat_preview_contacts',
+};
+
+const translateInternalChatPreview = (preview: string): string => {
+  const translationKey = internalChatPreviewTranslationKeys[preview];
+  return translationKey ? t(translationKey) : preview;
 };
 
 const resolveConversationPreview = (
   conversation?: InternalConversation | null
 ): string => {
-  return conversation?.last_message_preview?.trim() || '';
+  const preview = conversation?.last_message_preview?.trim();
+  return preview ? translateInternalChatPreview(preview) : '';
 };
 
 const isGroupConversation = (
@@ -537,21 +607,21 @@ const resolveUnreadCount = (count: number): string => {
 };
 
 const resolveUserName = (user: InternalUser): string => {
-  return user.name?.trim() || 'Usuário';
+  return user.name?.trim() || t('internal_chat_unknown_user');
 };
 
 const resolveParticipantName = (member: InternalParticipant): string => {
-  return member.name?.trim() || 'Usuário';
+  return member.name?.trim() || t('internal_chat_unknown_user');
 };
 
 const resolveConversationParticipantName = (
   participant?: InternalConversationParticipant | null
 ): string => {
-  return participant?.name?.trim() || 'Usuário';
+  return participant?.name?.trim() || t('internal_chat_unknown_user');
 };
 
 const resolveInfoValue = (value?: string | null): string => {
-  return value?.trim() || 'Não informado';
+  return value?.trim() || t('internal_chat_not_informed');
 };
 
 const isOwnMessage = (message: InternalMessage): boolean => {
@@ -579,7 +649,7 @@ const canEditInternalMessage = (message: InternalMessage): boolean => {
 
 const resolveMessageText = (message: InternalMessage): string | null => {
   if (!message.content) return null;
-  if (message.deleted) return 'Mensagem removida';
+  if (message.deleted) return t('internal_chat_deleted_message');
 
   if (
     message.content.type === EMessageType.image ||
@@ -649,8 +719,8 @@ const resolveQuotedText = (message: InternalMessage): string => {
     (item) => item.message_id === quotedMessageId
   );
 
-  if (!quotedMessage) return 'Mensagem';
-  return resolveMessageText(quotedMessage) || 'Mensagem';
+  if (!quotedMessage) return t('internal_chat_message');
+  return resolveMessageText(quotedMessage) || t('internal_chat_message');
 };
 
 const resolveQuotedName = (message: InternalMessage): string => {
@@ -658,13 +728,13 @@ const resolveQuotedName = (message: InternalMessage): string => {
   if (quoted?.user_name) return String(quoted.user_name);
 
   const quotedMessageId = message.content?.message_quoted_id;
-  if (!quotedMessageId) return 'Resposta';
+  if (!quotedMessageId) return t('internal_chat_reply');
 
   const quotedMessage = messages.value.find(
     (item) => item.message_id === quotedMessageId
   );
 
-  return quotedMessage?.user?.name || 'Resposta';
+  return quotedMessage?.user?.name || t('internal_chat_reply');
 };
 
 const showQuotedMessage = (message: InternalMessage): boolean => {
@@ -781,7 +851,7 @@ const handleGroupPhotoSelected = (
   if (!isAllowedGroupPhotoFile(file)) {
     if (targetKind === 'create') clearGroupPhoto();
     internalChatStore.showSnackbar(
-      'Formato de imagem inválido. Use JPG, PNG, GIF ou WEBP.',
+      t('internal_chat_invalid_image_format'),
       EColor.error
     );
     return;
@@ -790,7 +860,7 @@ const handleGroupPhotoSelected = (
   if (file.size > maxGroupPhotoBytes) {
     if (targetKind === 'create') clearGroupPhoto();
     internalChatStore.showSnackbar(
-      'A imagem do grupo deve ter até 16 MB.',
+      t('internal_chat_group_photo_size_exceeded'),
       EColor.error
     );
     return;
@@ -1075,7 +1145,7 @@ const updateGroupPhoto = async (file: File) => {
     if (!updated) return;
 
     internalChatStore.showSnackbar(
-      'Foto do grupo atualizada com sucesso.',
+      t('internal_chat_group_photo_update_success'),
       EColor.success
     );
   } finally {
@@ -1093,7 +1163,7 @@ const cropGroupPhoto = () => {
 
   if (!ctx || !img.complete) {
     internalChatStore.showSnackbar(
-      'Aguarde o carregamento da imagem.',
+      t('internal_chat_wait_image_load'),
       EColor.warning
     );
     return;
@@ -1130,7 +1200,7 @@ const cropGroupPhoto = () => {
       try {
         if (!blob) {
           internalChatStore.showSnackbar(
-            'Não foi possível recortar a imagem.',
+            t('internal_chat_crop_image_error'),
             EColor.error
           );
           return;
@@ -1228,6 +1298,17 @@ const openConversationFromUser = async (userId: string) => {
   sidebarBodyRef.value?.scrollTo({ top: 0 });
 };
 
+const openConversationFromGroupMember = async (member: InternalParticipant) => {
+  if (member.user_id === internalChatStore.currentUserId) return;
+
+  const conversation = await internalChatStore.openDirect(member.user_id);
+  if (!conversation) return;
+
+  activeSidebarTab.value = 'all';
+  closeGroupInfoDrawer();
+  sidebarBodyRef.value?.scrollTo({ top: 0 });
+};
+
 const openCreateGroupDialog = async () => {
   await internalChatStore.listUsers({ current_page: 1, per_page: 100 }, false);
   isGroupDialogOpen.value = true;
@@ -1291,7 +1372,7 @@ const fetchGroupCandidateUsers = async (append = false) => {
     internalChatStore.showSnackbar(
       internalChatStore.resolveErrorMessage(
         error,
-        'Erro ao listar usuários para o grupo'
+        t('internal_chat_list_group_candidates_error')
       ),
       EColor.error
     );
@@ -1391,7 +1472,7 @@ const submitGroupNameUpdate = async () => {
     if (!updated) return;
 
     internalChatStore.showSnackbar(
-      'Nome do grupo atualizado com sucesso.',
+      t('internal_chat_group_name_update_success'),
       EColor.success
     );
     isEditingGroupInfoName.value = false;
@@ -1430,7 +1511,9 @@ const removeGroupMember = async (member: InternalParticipant) => {
   if (member.user_id === internalChatStore.currentUserId) return;
 
   const confirmed = window.confirm(
-    `Remover ${resolveParticipantName(member)} do grupo?`
+    t('internal_chat_remove_member_confirmation', {
+      name: resolveParticipantName(member),
+    })
   );
   if (!confirmed) return;
 
@@ -1453,7 +1536,9 @@ const transferGroupLeader = async (member: InternalParticipant) => {
   if (member.role === EInternalChatConversationParticipantRole.leader) return;
 
   const confirmed = window.confirm(
-    `Transferir a liderança para ${resolveParticipantName(member)}?`
+    t('internal_chat_transfer_leader_confirmation', {
+      name: resolveParticipantName(member),
+    })
   );
   if (!confirmed) return;
 
@@ -1486,24 +1571,45 @@ const loadMoreMessages = async () => {
   );
 };
 
-const closeActiveConversation = async () => {
+const openCloseConversationDialog = () => {
   if (!activeConversation.value?.conversation_id) return;
+  isCloseConversationDialogOpen.value = true;
+};
 
-  const closed = await internalChatStore.closeConversation(
-    activeConversation.value.conversation_id
-  );
+const closeCloseConversationDialog = () => {
+  if (closingConversation.value) return;
+  isCloseConversationDialogOpen.value = false;
+};
 
-  if (closed) {
-    clearComposer();
-    await internalChatStore.listConversations(
-      {
-        current_page: 1,
-        per_page: conversationsPaging.value.per_page,
-        search: searchQueryDebounced.value.trim() || undefined,
-        type: activeConversationType.value,
-      },
-      false
+const confirmCloseActiveConversation = async () => {
+  if (!activeConversation.value?.conversation_id) return;
+  if (closingConversation.value) return;
+
+  closingConversation.value = true;
+
+  try {
+    const closed = await internalChatStore.closeConversation(
+      activeConversation.value.conversation_id
     );
+
+    if (closed) {
+      isCloseConversationDialogOpen.value = false;
+      closeGroupInfoDrawer();
+      closeUserInfoDrawer();
+      resetGroupPhotoCropDialog();
+      clearComposer();
+      await internalChatStore.listConversations(
+        {
+          current_page: 1,
+          per_page: conversationsPaging.value.per_page,
+          search: searchQueryDebounced.value.trim() || undefined,
+          type: activeConversationType.value,
+        },
+        false
+      );
+    }
+  } finally {
+    closingConversation.value = false;
   }
 };
 
@@ -1647,7 +1753,7 @@ const sendContactMessage = async () => {
   if (!activeConversation.value?.conversation_id) return;
   if (!contactPhone.value.trim()) return;
 
-  const normalized = `${contactName.value.trim() || 'Contato'} (${contactPhone.value.trim()})`;
+  const normalized = `${contactName.value.trim() || t('internal_chat_contact')} (${contactPhone.value.trim()})`;
   const success = await internalChatStore.createMessage(
     activeConversation.value.conversation_id,
     {
@@ -1772,7 +1878,7 @@ const startAudioRecording = async () => {
     }
   } catch {
     internalChatStore.showSnackbar(
-      'Não foi possível acessar o microfone',
+      t('internal_chat_microphone_error'),
       EColor.error
     );
   } finally {
@@ -1914,10 +2020,13 @@ const copyMessage = async (message: InternalMessage) => {
     }
 
     await navigator.clipboard.writeText(text);
-    internalChatStore.showSnackbar('Mensagem copiada.', EColor.success);
+    internalChatStore.showSnackbar(
+      t('internal_chat_message_copied'),
+      EColor.success
+    );
   } catch {
     internalChatStore.showSnackbar(
-      'Não foi possível copiar a mensagem.',
+      t('internal_chat_copy_message_error'),
       EColor.error
     );
   }
@@ -1942,7 +2051,7 @@ const onEdit = async (message: InternalMessage) => {
   if (!canEditInternalMessage(message)) return;
 
   const nextText = window
-    .prompt('Editar mensagem:', message.content.message ?? '')
+    .prompt(t('internal_chat_edit_message_prompt'), message.content.message ?? '')
     ?.trim();
 
   if (!nextText) return;
@@ -1956,7 +2065,9 @@ const onEdit = async (message: InternalMessage) => {
 
 const onDelete = async (message: InternalMessage) => {
   if (!activeConversation.value?.conversation_id) return;
-  const confirmed = window.confirm('Deseja remover esta mensagem?');
+  const confirmed = window.confirm(
+    t('internal_chat_delete_message_confirmation')
+  );
   if (!confirmed) return;
 
   await internalChatStore.deleteMessage(
@@ -2159,7 +2270,7 @@ onBeforeUnmount(async () => {
         <div class="internal-chat-mode-banner">
           <div class="internal-chat-mode-chip">
             <VIcon size="18">tabler-users-group</VIcon>
-            <span>Chat Interno</span>
+            <span>{{ t('internal_chat_title') }}</span>
           </div>
 
           <VBtn
@@ -2169,7 +2280,7 @@ onBeforeUnmount(async () => {
             @click="emit('switch-whatsapp-mode')"
           >
             <VIcon size="18" class="me-1">tabler-brand-whatsapp</VIcon>
-            Voltar ao Chat
+            {{ t('internal_chat_back_to_chat') }}
           </VBtn>
         </div>
 
@@ -2197,7 +2308,7 @@ onBeforeUnmount(async () => {
           >
             <VIcon size="18">tabler-users-plus</VIcon>
             <VTooltip activator="parent" location="bottom">
-              Novo Grupo
+              {{ t('internal_chat_new_group') }}
             </VTooltip>
           </VBtn>
         </div>
@@ -2351,7 +2462,7 @@ onBeforeUnmount(async () => {
                     class="internal-chat-group-indicator"
                   >
                     <VIcon size="13">tabler-users-group</VIcon>
-                    Grupo
+                    {{ t('internal_chat_group_badge') }}
                   </span>
                 </div>
                 <p
@@ -2446,7 +2557,7 @@ onBeforeUnmount(async () => {
                   class="internal-chat-group-indicator internal-chat-group-indicator--header"
                 >
                   <VIcon size="13">tabler-users-group</VIcon>
-                  Grupo
+                  {{ t('internal_chat_group_badge') }}
                 </span>
               </div>
               <div v-if="firstActivity" class="text-caption text-primary">
@@ -2460,21 +2571,24 @@ onBeforeUnmount(async () => {
           <div class="internal-chat-main-actions">
             <IconBtn
               color="error"
-              aria-label="Fechar conversa"
-              @click="closeActiveConversation"
+              :aria-label="closeConversationActionLabel"
+              @click="openCloseConversationDialog"
             >
               <VIcon size="20">tabler-x</VIcon>
               <VTooltip activator="parent" location="bottom">
-                Fechar conversa
+                {{ closeConversationActionLabel }}
               </VTooltip>
             </IconBtn>
 
             <VMenu location="bottom end">
               <template #activator="{ props }">
-                <IconBtn v-bind="props" aria-label="Mais opções">
+                <IconBtn
+                  v-bind="props"
+                  :aria-label="t('internal_chat_more_options')"
+                >
                   <VIcon size="20">tabler-dots-vertical</VIcon>
                   <VTooltip activator="parent" location="bottom">
-                    Mais opções
+                    {{ t('internal_chat_more_options') }}
                   </VTooltip>
                 </IconBtn>
               </template>
@@ -2484,7 +2598,9 @@ onBeforeUnmount(async () => {
                   <template #prepend>
                     <VIcon size="18">tabler-info-circle</VIcon>
                   </template>
-                  <VListItemTitle>Informações</VListItemTitle>
+                  <VListItemTitle>
+                    {{ t('internal_chat_information') }}
+                  </VListItemTitle>
                 </VListItem>
               </VList>
             </VMenu>
@@ -2502,7 +2618,7 @@ onBeforeUnmount(async () => {
               :loading="loadingMessages"
               @click="loadMoreMessages"
             >
-              Carregar mensagens anteriores
+              {{ t('internal_chat_load_previous_messages') }}
             </VBtn>
           </div>
 
@@ -2533,7 +2649,7 @@ onBeforeUnmount(async () => {
                 :class="{
                   'internal-chat-reaction-trigger--mine': isOwnMessage(message),
                 }"
-                aria-label="Reagir à mensagem"
+                :aria-label="t('internal_chat_react_to_message')"
                 @click.stop="toggleReactionPicker(message)"
               >
                 <VIcon size="20">tabler-mood-smile</VIcon>
@@ -2551,7 +2667,7 @@ onBeforeUnmount(async () => {
               >
                 <div class="d-flex align-center justify-space-between mb-1">
                   <span class="text-caption text-medium-emphasis">
-                    {{ message.user?.name || 'Sistema' }}
+                    {{ message.user?.name || t('internal_chat_system_user') }}
                   </span>
 
                   <div class="d-flex align-center gap-1">
@@ -2575,7 +2691,9 @@ onBeforeUnmount(async () => {
                           <template #prepend>
                             <VIcon size="18">tabler-corner-up-left</VIcon>
                           </template>
-                          <VListItemTitle>Responder</VListItemTitle>
+                          <VListItemTitle>
+                            {{ t('internal_chat_reply_action') }}
+                          </VListItemTitle>
                         </VListItem>
 
                         <VListItem
@@ -2585,7 +2703,9 @@ onBeforeUnmount(async () => {
                           <template #prepend>
                             <VIcon size="18">tabler-copy</VIcon>
                           </template>
-                          <VListItemTitle>Copiar</VListItemTitle>
+                          <VListItemTitle>
+                            {{ t('internal_chat_copy_action') }}
+                          </VListItemTitle>
                         </VListItem>
 
                         <VListItem
@@ -2595,21 +2715,27 @@ onBeforeUnmount(async () => {
                           <template #prepend>
                             <VIcon size="18">tabler-download</VIcon>
                           </template>
-                          <VListItemTitle>Baixar</VListItemTitle>
+                          <VListItemTitle>
+                            {{ t('internal_chat_download_action') }}
+                          </VListItemTitle>
                         </VListItem>
 
                         <VListItem @click="openForwardDialog(message)">
                           <template #prepend>
                             <VIcon size="18">tabler-arrow-forward-up</VIcon>
                           </template>
-                          <VListItemTitle>Encaminhar</VListItemTitle>
+                          <VListItemTitle>
+                            {{ t('internal_chat_forward_action') }}
+                          </VListItemTitle>
                         </VListItem>
 
                         <VListItem @click="toggleReactionPicker(message)">
                           <template #prepend>
                             <VIcon size="18">tabler-mood-smile</VIcon>
                           </template>
-                          <VListItemTitle>Reagir</VListItemTitle>
+                          <VListItemTitle>
+                            {{ t('internal_chat_react_action') }}
+                          </VListItemTitle>
                         </VListItem>
 
                         <VListItem
@@ -2619,7 +2745,9 @@ onBeforeUnmount(async () => {
                           <template #prepend>
                             <VIcon size="18">tabler-edit</VIcon>
                           </template>
-                          <VListItemTitle>Editar</VListItemTitle>
+                          <VListItemTitle>
+                            {{ t('internal_chat_edit_action') }}
+                          </VListItemTitle>
                         </VListItem>
 
                         <VListItem
@@ -2629,7 +2757,9 @@ onBeforeUnmount(async () => {
                           <template #prepend>
                             <VIcon size="18">tabler-trash</VIcon>
                           </template>
-                          <VListItemTitle>Apagar</VListItemTitle>
+                          <VListItemTitle>
+                            {{ t('internal_chat_delete_action') }}
+                          </VListItemTitle>
                         </VListItem>
                       </VList>
                     </VMenu>
@@ -2660,7 +2790,7 @@ onBeforeUnmount(async () => {
                   v-if="message.content?.image?.url"
                   :src="message.content.image.url"
                   class="internal-chat-media"
-                  alt="Imagem"
+                  :alt="t('internal_chat_image_alt')"
                 />
 
                 <video
@@ -2686,7 +2816,10 @@ onBeforeUnmount(async () => {
                 >
                   <VIcon size="18">tabler-file</VIcon>
                   <span class="text-truncate">
-                    {{ message.content.document.name || 'Documento' }}
+                    {{
+                      message.content.document.name ||
+                      t('internal_chat_document_fallback')
+                    }}
                   </span>
                 </a>
 
@@ -2701,7 +2834,7 @@ onBeforeUnmount(async () => {
                   {{
                     message.content.location.name ||
                     message.content.location.address ||
-                    'Localização'
+                    t('internal_chat_location_fallback')
                   }}
                 </a>
 
@@ -2806,8 +2939,8 @@ onBeforeUnmount(async () => {
           >
             <div class="d-flex align-center justify-space-between gap-2">
               <div class="text-truncate">
-                Respondendo:
-                {{ resolveMessageText(replyMessage) || 'Mensagem' }}
+                {{ t('internal_chat_replying_to') }}
+                {{ resolveMessageText(replyMessage) || t('internal_chat_message') }}
               </div>
               <IconBtn @click="replyMessage = null">
                 <VIcon size="16">tabler-x</VIcon>
@@ -2879,7 +3012,7 @@ onBeforeUnmount(async () => {
           >
             <IconBtn
               class="internal-chat-composer-btn"
-              aria-label="Cancelar gravação"
+              :aria-label="t('internal_chat_cancel_recording')"
               @click="cancelAudioRecording"
             >
               <VIcon size="20">tabler-trash</VIcon>
@@ -2890,7 +3023,7 @@ onBeforeUnmount(async () => {
               {{ formattedRecordingDuration }}
             </span>
             <span class="text-body-2 text-medium-emphasis flex-grow-1">
-              Gravando áudio
+              {{ t('internal_chat_recording_audio') }}
             </span>
 
             <VBtn
@@ -2899,7 +3032,7 @@ onBeforeUnmount(async () => {
               variant="flat"
               icon
               rounded="pill"
-              aria-label="Enviar áudio"
+              :aria-label="t('internal_chat_send_audio')"
               @click="stopAudioRecording"
             >
               <VIcon size="20">tabler-send</VIcon>
@@ -2914,7 +3047,7 @@ onBeforeUnmount(async () => {
             auto-grow
             variant="solo"
             density="comfortable"
-            placeholder="Digite uma mensagem"
+            :placeholder="t('internal_chat_type_message')"
             class="internal-chat-textarea internal-chat-whats-composer"
             @keydown.enter.exact.prevent="sendMessage"
           >
@@ -2928,7 +3061,7 @@ onBeforeUnmount(async () => {
                   <IconBtn
                     v-bind="props"
                     class="internal-chat-composer-btn"
-                    aria-label="Anexar"
+                    :aria-label="t('internal_chat_attach')"
                   >
                     <VIcon size="22">tabler-plus</VIcon>
                   </IconBtn>
@@ -2943,37 +3076,49 @@ onBeforeUnmount(async () => {
                     <template #prepend>
                       <VIcon size="20">tabler-file</VIcon>
                     </template>
-                    <VListItemTitle>Documentos</VListItemTitle>
+                    <VListItemTitle>
+                      {{ t('internal_chat_documents') }}
+                    </VListItemTitle>
                   </VListItem>
                   <VListItem @click="imageInputRef?.click()">
                     <template #prepend>
                       <VIcon size="20">tabler-photo</VIcon>
                     </template>
-                    <VListItemTitle>Fotos</VListItemTitle>
+                    <VListItemTitle>
+                      {{ t('internal_chat_photos') }}
+                    </VListItemTitle>
                   </VListItem>
                   <VListItem @click="videoInputRef?.click()">
                     <template #prepend>
                       <VIcon size="20">tabler-video</VIcon>
                     </template>
-                    <VListItemTitle>Vídeos</VListItemTitle>
+                    <VListItemTitle>
+                      {{ t('internal_chat_videos') }}
+                    </VListItemTitle>
                   </VListItem>
                   <VListItem @click="audioInputRef?.click()">
                     <template #prepend>
                       <VIcon size="20">tabler-headphones</VIcon>
                     </template>
-                    <VListItemTitle>Áudio</VListItemTitle>
+                    <VListItemTitle>
+                      {{ t('internal_chat_audio') }}
+                    </VListItemTitle>
                   </VListItem>
                   <VListItem @click="isContactDialogOpen = true">
                     <template #prepend>
                       <VIcon size="20">tabler-user</VIcon>
                     </template>
-                    <VListItemTitle>Contato</VListItemTitle>
+                    <VListItemTitle>
+                      {{ t('internal_chat_contact') }}
+                    </VListItemTitle>
                   </VListItem>
                   <VListItem @click="isLocationDialogOpen = true">
                     <template #prepend>
                       <VIcon size="20">tabler-map-pin</VIcon>
                     </template>
-                    <VListItemTitle>Localização</VListItemTitle>
+                    <VListItemTitle>
+                      {{ t('internal_chat_location') }}
+                    </VListItemTitle>
                   </VListItem>
                 </VList>
               </VMenu>
@@ -2988,7 +3133,7 @@ onBeforeUnmount(async () => {
                   <IconBtn
                     v-bind="props"
                     class="internal-chat-composer-btn"
-                    aria-label="Emoji"
+                  :aria-label="t('internal_chat_emoji')"
                   >
                     <VIcon size="22">tabler-mood-smile</VIcon>
                   </IconBtn>
@@ -3012,7 +3157,7 @@ onBeforeUnmount(async () => {
                 <IconBtn
                   v-if="!hasComposerContent"
                   class="internal-chat-composer-btn internal-chat-mic-btn"
-                  aria-label="Gravar áudio"
+                  :aria-label="t('internal_chat_record_audio')"
                   :disabled="recordingStarting"
                   @click="startAudioRecording"
                 >
@@ -3026,7 +3171,7 @@ onBeforeUnmount(async () => {
                   variant="flat"
                   icon
                   rounded="pill"
-                  aria-label="Enviar mensagem"
+                  :aria-label="t('internal_chat_send_message')"
                   :loading="sendingMessage"
                   @click="sendMessage"
                 >
@@ -3077,12 +3222,12 @@ onBeforeUnmount(async () => {
         <VAvatar size="92" variant="tonal" color="primary" class="mb-3">
           <VIcon size="44">tabler-users-group</VIcon>
         </VAvatar>
-        <div class="text-subtitle-1 mb-1">Chat Interno</div>
+        <div class="text-subtitle-1 mb-1">{{ t('internal_chat_title') }}</div>
         <div class="text-body-2">
           {{
             isUsersTab
-              ? 'Escolha um usuário para iniciar uma conversa.'
-              : 'Selecione uma conversa interna.'
+              ? t('internal_chat_empty_pick_user')
+              : t('internal_chat_empty_pick_conversation')
           }}
         </div>
       </div>
@@ -3100,7 +3245,9 @@ onBeforeUnmount(async () => {
           <IconBtn @click="closeGroupInfoDrawer">
             <VIcon size="20">tabler-x</VIcon>
           </IconBtn>
-          <div class="text-subtitle-1 font-weight-medium">Dados do grupo</div>
+          <div class="text-subtitle-1 font-weight-medium">
+            {{ t('internal_chat_group_data') }}
+          </div>
         </div>
 
         <VDivider />
@@ -3123,7 +3270,7 @@ onBeforeUnmount(async () => {
               variant="flat"
               class="internal-chat-group-hero-photo-btn"
               :loading="updatingGroupInfo"
-              aria-label="Editar foto do grupo"
+              :aria-label="t('internal_chat_edit_group_photo')"
               @click="openGroupInfoPhotoPicker"
             >
               <VIcon size="18">tabler-camera</VIcon>
@@ -3143,7 +3290,7 @@ onBeforeUnmount(async () => {
               <AppTextField
                 v-model="groupInfoName"
                 class="internal-chat-group-name-edit-field"
-                placeholder="Nome do grupo"
+                :placeholder="t('internal_chat_group_name_placeholder')"
                 density="compact"
                 hide-details="auto"
                 autofocus
@@ -3162,7 +3309,7 @@ onBeforeUnmount(async () => {
                   class="internal-chat-group-name-edit-btn"
                   :loading="updatingGroupInfo"
                   :disabled="!canSubmitGroupNameUpdate"
-                  aria-label="Salvar nome do grupo"
+                  :aria-label="t('internal_chat_save_group_name')"
                   @click="submitGroupNameUpdate"
                 >
                   <VIcon size="16">tabler-check</VIcon>
@@ -3171,7 +3318,7 @@ onBeforeUnmount(async () => {
                   size="x-small"
                   class="internal-chat-group-name-edit-btn"
                   :disabled="updatingGroupInfo"
-                  aria-label="Cancelar edição do nome"
+                  :aria-label="t('internal_chat_cancel_group_name_edit')"
                   @click="cancelGroupNameEdit"
                 >
                   <VIcon size="16">tabler-x</VIcon>
@@ -3189,19 +3336,23 @@ onBeforeUnmount(async () => {
                 v-if="canEditActiveGroup"
                 size="x-small"
                 class="internal-chat-group-title-edit-btn"
-                aria-label="Editar nome do grupo"
+                :aria-label="t('internal_chat_edit_group_name')"
                 @click="startGroupNameEdit"
               >
                 <VIcon size="16">tabler-pencil</VIcon>
                 <VTooltip activator="parent" location="bottom">
-                  Editar nome
+                  {{ t('internal_chat_edit_group_name') }}
                 </VTooltip>
               </IconBtn>
             </div>
           </template>
 
           <div class="text-body-2 text-medium-emphasis">
-            {{ groupMembers.length }} participantes
+            {{
+              t('internal_chat_participants_count', {
+                count: groupMembers.length,
+              })
+            }}
           </div>
         </div>
 
@@ -3209,7 +3360,7 @@ onBeforeUnmount(async () => {
 
         <div class="internal-chat-group-info-section">
           <div class="internal-chat-group-info-section-title">
-            Participantes
+            {{ t('internal_chat_participants') }}
           </div>
 
           <VBtn
@@ -3221,7 +3372,7 @@ onBeforeUnmount(async () => {
             @click="openAddGroupMembersDialog"
           >
             <VIcon size="18" class="me-2">tabler-user-plus</VIcon>
-            Adicionar membro
+            {{ t('internal_chat_add_member') }}
           </VBtn>
 
           <div
@@ -3270,16 +3421,13 @@ onBeforeUnmount(async () => {
                     class="internal-chat-leader-chip"
                   >
                     <VIcon size="14">tabler-crown</VIcon>
-                    Líder
+                    {{ t('internal_chat_leader') }}
                   </span>
                 </div>
               </div>
 
               <VMenu
-                v-if="
-                  canManageActiveGroupMembers &&
-                  member.user_id !== internalChatStore.currentUserId
-                "
+                v-if="member.user_id !== internalChatStore.currentUserId"
                 location="bottom end"
               >
                 <template #activator="{ props }">
@@ -3289,8 +3437,20 @@ onBeforeUnmount(async () => {
                 </template>
 
                 <VList density="compact" min-width="210">
+                  <VListItem @click="openConversationFromGroupMember(member)">
+                    <template #prepend>
+                      <VIcon size="18">tabler-message-circle</VIcon>
+                    </template>
+                    <VListItemTitle>
+                      {{ t('internal_chat_talk') }}
+                    </VListItemTitle>
+                  </VListItem>
+
+                  <VDivider v-if="canManageActiveGroupMembers" />
+
                   <VListItem
                     v-if="
+                      canManageActiveGroupMembers &&
                       canTransferActiveGroupLeader &&
                       member.role !==
                         EInternalChatConversationParticipantRole.leader
@@ -3303,10 +3463,13 @@ onBeforeUnmount(async () => {
                     <template #prepend>
                       <VIcon size="18">tabler-crown</VIcon>
                     </template>
-                    <VListItemTitle>Alterar líder</VListItemTitle>
+                    <VListItemTitle>
+                      {{ t('internal_chat_change_leader') }}
+                    </VListItemTitle>
                   </VListItem>
 
                   <VListItem
+                    v-if="canManageActiveGroupMembers"
                     color="error"
                     :disabled="
                       removingGroupMemberUserIds.includes(member.user_id)
@@ -3316,7 +3479,9 @@ onBeforeUnmount(async () => {
                     <template #prepend>
                       <VIcon size="18">tabler-user-minus</VIcon>
                     </template>
-                    <VListItemTitle>Remover membro</VListItemTitle>
+                    <VListItemTitle>
+                      {{ t('internal_chat_remove_member') }}
+                    </VListItemTitle>
                   </VListItem>
                 </VList>
               </VMenu>
@@ -3339,7 +3504,7 @@ onBeforeUnmount(async () => {
             <VIcon size="20">tabler-x</VIcon>
           </IconBtn>
           <div class="text-subtitle-1 font-weight-medium">
-            Informações do usuário
+            {{ t('internal_chat_user_information') }}
           </div>
         </div>
 
@@ -3365,7 +3530,9 @@ onBeforeUnmount(async () => {
           <div class="internal-chat-info-row">
             <VIcon size="19">tabler-user</VIcon>
             <div class="internal-chat-info-content">
-              <span class="internal-chat-info-label">Nome</span>
+              <span class="internal-chat-info-label">
+                {{ t('internal_chat_name') }}
+              </span>
               <span class="internal-chat-info-value">
                 {{
                   resolveConversationParticipantName(activeDirectParticipant)
@@ -3377,7 +3544,9 @@ onBeforeUnmount(async () => {
           <div class="internal-chat-info-row">
             <VIcon size="19">tabler-mail</VIcon>
             <div class="internal-chat-info-content">
-              <span class="internal-chat-info-label">Email</span>
+              <span class="internal-chat-info-label">
+                {{ t('internal_chat_email') }}
+              </span>
               <span class="internal-chat-info-value">
                 {{ resolveInfoValue(activeDirectParticipant.email) }}
               </span>
@@ -3387,7 +3556,9 @@ onBeforeUnmount(async () => {
           <div class="internal-chat-info-row">
             <VIcon size="19">tabler-building</VIcon>
             <div class="internal-chat-info-content">
-              <span class="internal-chat-info-label">Setor</span>
+              <span class="internal-chat-info-label">
+                {{ t('internal_chat_sector') }}
+              </span>
               <span class="internal-chat-info-value">
                 {{ resolveInfoValue(activeDirectParticipant.sector) }}
               </span>
@@ -3397,7 +3568,9 @@ onBeforeUnmount(async () => {
           <div class="internal-chat-info-row">
             <VIcon size="19">tabler-id-badge-2</VIcon>
             <div class="internal-chat-info-content">
-              <span class="internal-chat-info-label">Cargo</span>
+              <span class="internal-chat-info-label">
+                {{ t('internal_chat_position') }}
+              </span>
               <span class="internal-chat-info-value">
                 {{ resolveInfoValue(activeDirectParticipant.position) }}
               </span>
@@ -3407,10 +3580,54 @@ onBeforeUnmount(async () => {
       </div>
     </VNavigationDrawer>
 
+    <VDialog
+      v-model="isCloseConversationDialogOpen"
+      max-width="460"
+      :persistent="closingConversation"
+    >
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between pa-4">
+          <span>{{ closeConversationDialogTitle }}</span>
+          <IconBtn
+            :disabled="closingConversation"
+            @click="closeCloseConversationDialog"
+          >
+            <VIcon size="20">tabler-x</VIcon>
+          </IconBtn>
+        </VCardTitle>
+
+        <VDivider />
+
+        <VCardText class="pa-4 text-body-2 text-medium-emphasis">
+          {{ closeConversationDialogDescription }}
+        </VCardText>
+
+        <VCardActions class="pa-4 pt-0">
+          <VSpacer />
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            :disabled="closingConversation"
+            @click="closeCloseConversationDialog"
+          >
+            {{ t('internal_chat_cancel') }}
+          </VBtn>
+          <VBtn
+            color="error"
+            variant="flat"
+            :loading="closingConversation"
+            @click="confirmCloseActiveConversation"
+          >
+            {{ closeConversationActionLabel }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
     <VDialog v-model="isAddGroupMembersDialogOpen" max-width="520">
       <VCard>
         <VCardTitle class="d-flex align-center justify-space-between pa-4">
-          <span>Adicionar membros</span>
+          <span>{{ t('internal_chat_add_members') }}</span>
           <IconBtn @click="isAddGroupMembersDialogOpen = false">
             <VIcon size="20">tabler-x</VIcon>
           </IconBtn>
@@ -3422,7 +3639,7 @@ onBeforeUnmount(async () => {
           <AppTextField
             v-model="groupCandidateSearch"
             prepend-inner-icon="tabler-search"
-            placeholder="Pesquisar usuários"
+            :placeholder="t('internal_chat_search_users')"
             density="compact"
             hide-details
             class="mb-3"
@@ -3477,7 +3694,7 @@ onBeforeUnmount(async () => {
                   "
                   @click="addGroupMember(candidate.user_id)"
                 >
-                  Adicionar
+                  {{ t('internal_chat_add') }}
                 </VBtn>
               </div>
 
@@ -3496,7 +3713,7 @@ onBeforeUnmount(async () => {
               <VAvatar size="42" variant="tonal" color="primary" class="mb-2">
                 <VIcon size="22">tabler-users-off</VIcon>
               </VAvatar>
-              <span>Nenhum usuário disponível para adicionar.</span>
+              <span>{{ t('internal_chat_no_users_to_add') }}</span>
             </div>
           </div>
         </VCardText>
@@ -3510,7 +3727,9 @@ onBeforeUnmount(async () => {
       />
 
       <VCard>
-        <VCardTitle class="pa-4 pb-3 text-h6"> Novo Grupo Interno </VCardTitle>
+        <VCardTitle class="pa-4 pb-3 text-h6">
+          {{ t('internal_chat_new_internal_group') }}
+        </VCardTitle>
 
         <VDivider />
 
@@ -3521,7 +3740,7 @@ onBeforeUnmount(async () => {
                 type="button"
                 variant="text"
                 class="internal-chat-group-photo-picker"
-                aria-label="Selecionar foto do grupo"
+                :aria-label="t('internal_chat_select_group_photo')"
                 :disabled="creatingGroup"
                 @click="openGroupPhotoPicker"
               >
@@ -3534,7 +3753,7 @@ onBeforeUnmount(async () => {
                   <VImg
                     v-if="groupPhotoPreview"
                     :src="groupPhotoPreview"
-                    alt="Foto do grupo"
+                    :alt="t('internal_chat_group_photo_alt')"
                     cover
                   />
                   <VIcon v-else size="30">tabler-users-group</VIcon>
@@ -3551,7 +3770,7 @@ onBeforeUnmount(async () => {
                 variant="flat"
                 color="secondary"
                 class="internal-chat-group-photo-remove"
-                aria-label="Remover foto do grupo"
+                :aria-label="t('internal_chat_remove_group_photo')"
                 :disabled="creatingGroup"
                 @click.stop="clearGroupPhoto"
               >
@@ -3570,8 +3789,8 @@ onBeforeUnmount(async () => {
 
           <AppTextField
             v-model="groupName"
-            label="Nome do grupo"
-            placeholder="Ex: Suporte Interno"
+            :label="t('internal_chat_group_name_label')"
+            :placeholder="t('internal_chat_group_name_example')"
             class="mb-4"
             :maxlength="groupNameMaxLength"
             :counter="groupNameMaxLength"
@@ -3580,7 +3799,7 @@ onBeforeUnmount(async () => {
           />
 
           <div class="text-body-2 text-medium-emphasis mb-2">
-            Membros do grupo
+            {{ t('internal_chat_group_members') }}
           </div>
 
           <div class="internal-chat-members-list">
@@ -3601,7 +3820,7 @@ onBeforeUnmount(async () => {
               <VAvatar size="42" variant="tonal" color="primary" class="mb-2">
                 <VIcon size="22">tabler-users-off</VIcon>
               </VAvatar>
-              <span>Nenhum usuário disponível para adicionar ao grupo.</span>
+              <span>{{ t('internal_chat_no_users_to_add_group') }}</span>
             </div>
           </div>
         </VCardText>
@@ -3614,7 +3833,7 @@ onBeforeUnmount(async () => {
             :disabled="creatingGroup"
             @click="closeCreateGroupDialog"
           >
-            Cancelar
+            {{ t('internal_chat_cancel') }}
           </VBtn>
           <VBtn
             color="primary"
@@ -3623,7 +3842,7 @@ onBeforeUnmount(async () => {
             :disabled="!canSubmitCreateGroup"
             @click="submitCreateGroup"
           >
-            Criar Grupo
+            {{ t('internal_chat_create_group') }}
           </VBtn>
         </VCardActions>
       </VCard>
@@ -3632,7 +3851,7 @@ onBeforeUnmount(async () => {
     <VDialog v-model="isGroupPhotoCropDialogOpen" max-width="500" persistent>
       <VCard>
         <VCardTitle class="d-flex justify-space-between align-center">
-          <span>Recortar imagem</span>
+          <span>{{ t('internal_chat_crop_image_title') }}</span>
           <IconBtn
             :disabled="savingGroupPhotoCrop"
             @click="cancelGroupPhotoCrop"
@@ -3646,7 +3865,7 @@ onBeforeUnmount(async () => {
             <img
               ref="groupPhotoCropImageRef"
               :src="groupPhotoCropDialog.imageSrc"
-              alt="Recorte"
+              :alt="t('internal_chat_crop_image_alt')"
               class="internal-chat-group-photo-crop-image"
               @load="initializeGroupPhotoCrop"
             />
@@ -3698,7 +3917,7 @@ onBeforeUnmount(async () => {
             :disabled="savingGroupPhotoCrop"
             @click="cancelGroupPhotoCrop"
           >
-            Cancelar
+            {{ t('internal_chat_cancel') }}
           </VBtn>
           <VBtn
             color="primary"
@@ -3707,17 +3926,17 @@ onBeforeUnmount(async () => {
             :disabled="savingGroupPhotoCrop"
             @click="cropGroupPhoto"
           >
-            Salvar
+            {{ t('internal_chat_save') }}
           </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
     <VDialog v-model="isForwardDialogOpen" max-width="560">
-      <VCard title="Encaminhar mensagem">
+      <VCard :title="t('internal_chat_forward_message_title')">
         <VCardText>
           <div class="text-body-2 text-medium-emphasis mb-2">
-            Selecione as conversas de destino
+            {{ t('internal_chat_forward_destination_conversations') }}
           </div>
 
           <VCheckbox
@@ -3727,7 +3946,7 @@ onBeforeUnmount(async () => {
             :value="conversation.conversation_id"
             density="comfortable"
             hide-details
-            :label="conversation.name || 'Conversa interna'"
+            :label="conversation.name || t('internal_chat_default_conversation')"
             :disabled="
               conversation.conversation_id ===
               activeConversation?.conversation_id
@@ -3737,7 +3956,7 @@ onBeforeUnmount(async () => {
         <VCardActions class="px-4 pb-4 pt-0">
           <VSpacer />
           <VBtn variant="text" @click="isForwardDialogOpen = false"
-            >Cancelar</VBtn
+            >{{ t('internal_chat_cancel') }}</VBtn
           >
           <VBtn
             color="primary"
@@ -3745,68 +3964,71 @@ onBeforeUnmount(async () => {
             :disabled="forwardConversationIds.length === 0"
             @click="submitForward"
           >
-            Encaminhar
+            {{ t('internal_chat_forward_action') }}
           </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
     <VDialog v-model="isLocationDialogOpen" max-width="520">
-      <VCard title="Enviar localização">
+      <VCard :title="t('internal_chat_send_location_title')">
         <VCardText>
           <AppTextField
             v-model="locationLatitude"
-            label="Latitude"
+            :label="t('internal_chat_latitude')"
             placeholder="-23.5505"
             class="mb-3"
           />
           <AppTextField
             v-model="locationLongitude"
-            label="Longitude"
+            :label="t('internal_chat_longitude')"
             placeholder="-46.6333"
             class="mb-3"
           />
           <AppTextField
             v-model="locationName"
-            label="Nome (opcional)"
+            :label="t('internal_chat_optional_name')"
             class="mb-3"
           />
-          <AppTextField v-model="locationAddress" label="Endereço (opcional)" />
+          <AppTextField
+            v-model="locationAddress"
+            :label="t('internal_chat_optional_address')"
+          />
         </VCardText>
         <VCardActions class="px-4 pb-4 pt-0">
           <VSpacer />
           <VBtn variant="text" @click="isLocationDialogOpen = false">
-            Cancelar
+            {{ t('internal_chat_cancel') }}
           </VBtn>
           <VBtn color="primary" @click="sendLocationMessage">
-            Enviar localização
+            {{ t('internal_chat_send_location') }}
           </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
     <VDialog v-model="isContactDialogOpen" max-width="520">
-      <VCard title="Enviar contato">
+      <VCard :title="t('internal_chat_send_contact_title')">
         <VCardText>
           <AppTextField
             v-model="contactName"
-            label="Nome do contato"
-            placeholder="Nome"
+            :label="t('internal_chat_contact_name')"
+            :placeholder="t('internal_chat_name')"
             class="mb-3"
           />
           <AppTextField
             v-model="contactPhone"
-            label="Telefone"
+            :label="t('internal_chat_phone')"
             placeholder="+55 11 99999-0000"
           />
         </VCardText>
         <VCardActions class="px-4 pb-4 pt-0">
           <VSpacer />
           <VBtn variant="text" @click="isContactDialogOpen = false">
-            Cancelar
+            {{ t('internal_chat_cancel') }}
           </VBtn>
           <VBtn color="primary" @click="sendContactMessage">
-            Enviar contato
+            {{ t('internal_chat_send_contact') }}
           </VBtn>
         </VCardActions>
       </VCard>
