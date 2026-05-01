@@ -7,6 +7,7 @@ import { createGroupResponseSchema } from './response.schema';
 export const createGroupSchema = {
   description: 'Cria grupo de conversa interna',
   tags: [ETagSwagger.internalChat],
+  consumes: ['multipart/form-data'],
   produces: ['application/json'],
   security: [
     {

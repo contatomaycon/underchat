@@ -2,6 +2,10 @@ import * as schema from '@core/models';
 import {
   internalChatConversation,
   internalChatConversationParticipant,
+  permissionAssignment,
+  permissionRole,
+  sector,
+  sectorUser,
   user,
   userInfo,
 } from '@core/models';
@@ -373,8 +377,13 @@ export class InternalChatConversationRepository {
         closed_at: internalChatConversationParticipant.closed_at,
         name: userInfo.name,
         photo: userInfo.photo,
+        email: user.email_partial,
       })
       .from(internalChatConversationParticipant)
+      .innerJoin(
+        user,
+        eq(user.user_id, internalChatConversationParticipant.user_id)
+      )
       .innerJoin(
         userInfo,
         eq(userInfo.user_id, internalChatConversationParticipant.user_id)
@@ -387,16 +396,77 @@ export class InternalChatConversationRepository {
           ),
           eq(internalChatConversationParticipant.is_active, true),
           isNull(internalChatConversationParticipant.deleted_at),
+          isNull(user.deleted_at),
           isNull(userInfo.deleted_at)
         )
       )
       .orderBy(asc(userInfo.name))
       .execute();
 
+    const userIds = rows.map((row) => row.user_id);
+    const [sectorRows, roleRows] =
+      userIds.length > 0
+        ? await Promise.all([
+            this.dbRo
+              .select({
+                user_id: sectorUser.user_id,
+                sector_name: sector.name,
+              })
+              .from(sectorUser)
+              .innerJoin(sector, eq(sector.sector_id, sectorUser.sector_id))
+              .where(
+                and(
+                  inArray(sectorUser.user_id, userIds),
+                  isNull(sectorUser.deleted_at),
+                  isNull(sector.deleted_at)
+                )
+              )
+              .orderBy(asc(sector.name))
+              .execute(),
+            this.dbRo
+              .select({
+                user_id: permissionAssignment.user_id,
+                role_name: permissionRole.name,
+              })
+              .from(permissionAssignment)
+              .innerJoin(
+                permissionRole,
+                eq(
+                  permissionRole.permission_role_id,
+                  permissionAssignment.permission_role_id
+                )
+              )
+              .where(
+                and(
+                  inArray(permissionAssignment.user_id, userIds),
+                  isNull(permissionRole.deleted_at)
+                )
+              )
+              .orderBy(asc(permissionRole.name))
+              .execute(),
+          ])
+        : [[], []];
+
+    const sectorByUserId = new Map<string, string[]>();
+    for (const row of sectorRows) {
+      const current = sectorByUserId.get(row.user_id) ?? [];
+      current.push(row.sector_name);
+      sectorByUserId.set(row.user_id, current);
+    }
+
+    const positionByUserId = new Map<string, string>();
+    for (const row of roleRows) {
+      if (!row.user_id || positionByUserId.has(row.user_id)) continue;
+      positionByUserId.set(row.user_id, row.role_name);
+    }
+
     return rows.map((row) => ({
       user_id: row.user_id,
       name: row.name,
       photo: row.photo ?? null,
+      email: row.email ?? null,
+      sector: sectorByUserId.get(row.user_id)?.join(', ') ?? null,
+      position: positionByUserId.get(row.user_id) ?? null,
       role:
         (row.role as EInternalChatConversationParticipantRole) ??
         EInternalChatConversationParticipantRole.member,
@@ -708,6 +778,10 @@ export class InternalChatConversationRepository {
       isNull(internalChatConversation.deleted_at),
     ];
 
+    if (input.type) {
+      filters.push(eq(internalChatConversation.type, input.type));
+    }
+
     const search = input.search?.trim();
     if (search) {
       const searchPattern = `%${search}%`;
@@ -742,6 +816,8 @@ export class InternalChatConversationRepository {
     return this.dbRo
       .selectDistinct({
         conversation_id: internalChatConversation.internal_chat_conversation_id,
+        last_message_at: internalChatConversation.last_message_at,
+        updated_at: internalChatConversation.updated_at,
       })
       .from(internalChatConversationParticipant)
       .innerJoin(
@@ -753,7 +829,7 @@ export class InternalChatConversationRepository {
       )
       .where(where)
       .orderBy(
-        desc(internalChatConversation.last_message_at),
+        sql`${internalChatConversation.last_message_at} DESC NULLS LAST`,
         desc(internalChatConversation.updated_at)
       )
       .limit(input.perPage)

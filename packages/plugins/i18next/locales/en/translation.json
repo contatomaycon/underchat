@@ -236,7 +236,7 @@
   "audio_required": "Select at least one audio!",
   "document_size_exceeded": "File exceeds the maximum allowed size of 100 MB!",
   "image_size_exceeded": "Image exceeds the maximum allowed size of 16 MB!",
-  "invalid_image_format": "Invalid image format! Only JPEG, PNG and GIF are allowed.",
+  "invalid_image_format": "Invalid image format! Only JPEG, PNG, GIF and WEBP are allowed.",
   "videos_required": "Select at least one video!",
   "video_size_exceeded": "Video exceeds the maximum allowed size of 100 MB!",
   "invalid_video_format": "Invalid video format! Only MP4, AVI, FLV, MKV, MOV and 3GP are allowed.",

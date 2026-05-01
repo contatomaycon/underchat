@@ -10,6 +10,7 @@ import { updateGroupResponseSchema } from './response.schema';
 export const updateGroupSchema = {
   description: 'Atualiza grupo de conversa interna',
   tags: [ETagSwagger.internalChat],
+  consumes: ['multipart/form-data'],
   produces: ['application/json'],
   security: [
     {

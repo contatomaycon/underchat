@@ -5,6 +5,9 @@ export interface IInternalChatConversationParticipant {
   user_id: string;
   name: string;
   photo?: string | null;
+  email?: string | null;
+  sector?: string | null;
+  position?: string | null;
   role: EInternalChatConversationParticipantRole;
   unread_count: number;
   closed_at?: string | null;

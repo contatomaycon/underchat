@@ -40,10 +40,18 @@ export function handleInternalChatError(
     error.message === 'only_text_messages_can_be_edited' ||
     error.message === 'chat_invalid_target_user' ||
     error.message === 'chat_create_error' ||
-    error.message === 'chat_update_error'
+    error.message === 'chat_update_error' ||
+    error.message === 'INVALID_IMAGE_FORMAT' ||
+    error.message === 'IMAGE_SIZE_LIMIT_EXCEEDED'
   ) {
+    const messageByError: Record<string, string> = {
+      INVALID_IMAGE_FORMAT: 'invalid_image_format',
+      IMAGE_SIZE_LIMIT_EXCEEDED: 'image_size_exceeded',
+    };
+    const messageKey = messageByError[error.message] ?? error.message;
+
     sendResponse(reply, {
-      message: t(error.message),
+      message: t(messageKey),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
     return;

@@ -236,7 +236,7 @@
   "audio_required": "¡Seleccione al menos un audio!",
   "document_size_exceeded": "El archivo supera el tamaño máximo permitido de 100 MB!",
   "image_size_exceeded": "La imagen supera el tamaño máximo permitido de 16 MB!",
-  "invalid_image_format": "¡Formato de imagen inválido! Solo se permiten JPEG, PNG y GIF.",
+  "invalid_image_format": "¡Formato de imagen inválido! Solo se permiten JPEG, PNG, GIF y WEBP.",
   "videos_required": "¡Seleccione al menos un video!",
   "video_size_exceeded": "El video supera el tamaño máximo permitido de 100 MB!",
   "invalid_video_format": "¡Formato de video inválido! Solo se permiten MP4, AVI, FLV, MKV, MOV y 3GP.",

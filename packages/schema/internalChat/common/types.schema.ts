@@ -10,12 +10,18 @@ export const internalChatUserSchema = Type.Object({
   user_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
   photo: Type.Union([Type.String(), Type.Null()]),
+  email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  sector: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  position: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const internalChatParticipantSchema = Type.Object({
   user_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
   photo: Type.Union([Type.String(), Type.Null()]),
+  email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  sector: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  position: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   role: Type.String({
     enum: Object.values(EInternalChatConversationParticipantRole),
   }),

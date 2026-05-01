@@ -167,6 +167,31 @@ export class InternalChatService {
     return [files];
   }
 
+  private isUploadFile(value: unknown): value is UploadFileRequest {
+    return Boolean(
+      value &&
+      typeof value === 'object' &&
+      'toBuffer' in value &&
+      typeof (value as UploadFileRequest).toBuffer === 'function'
+    );
+  }
+
+  private async resolveGroupPhoto(
+    accountId: string,
+    photo: unknown
+  ): Promise<string | null> {
+    if (this.isUploadFile(photo)) {
+      const uploaded = await this.storageService.uploadImage(photo, accountId);
+      if (!uploaded?.url) {
+        throw new Error('INVALID_IMAGE_FORMAT');
+      }
+      return uploaded.url;
+    }
+
+    const normalizedPhoto = extractFieldValue(photo as any).trim();
+    return normalizedPhoto.length > 0 ? normalizedPhoto : null;
+  }
+
   private normalizeStringArray(
     field:
       | string[]
@@ -179,6 +204,21 @@ export class InternalChatService {
       | null
       | undefined
   ): string[] {
+    if (Array.isArray(field)) {
+      return field
+        .flatMap((item) =>
+          typeof item === 'object' && item !== null && 'value' in item
+            ? this.normalizeStringArray(item.value)
+            : this.normalizeStringArray(item as string)
+        )
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    }
+
+    if (field && typeof field === 'object' && 'value' in field) {
+      return this.normalizeStringArray(field.value as any);
+    }
+
     if (typeof field === 'string') {
       const value = field.trim();
       if (!value) return [];
@@ -514,11 +554,7 @@ export class InternalChatService {
     userId: string,
     query: ListConversationsQuery
   ): Promise<{
-    current_page: number;
-    total_pages: number;
-    per_page: number;
-    count: number;
-    total: number;
+    pagings: ReturnType<typeof setPaginationData>;
     results: InternalConversationResponse[];
   }> {
     const { currentPage, perPage } = this.normalizePaging(query);
@@ -529,6 +565,7 @@ export class InternalChatService {
         currentPage,
         perPage,
         search: query.search,
+        type: query.type as EInternalChatConversationType | undefined,
       });
 
     const resultsMap = new Map<string, InternalConversationResponse>();
@@ -548,7 +585,7 @@ export class InternalChatService {
       .filter((item): item is InternalConversationResponse => Boolean(item));
 
     return {
-      ...setPaginationData(results.length, total, perPage, currentPage),
+      pagings: setPaginationData(results.length, total, perPage, currentPage),
       results,
     };
   }
@@ -558,11 +595,7 @@ export class InternalChatService {
     userId: string,
     query: ListUsersQuery
   ): Promise<{
-    current_page: number;
-    total_pages: number;
-    per_page: number;
-    count: number;
-    total: number;
+    pagings: ReturnType<typeof setPaginationData>;
     results: Array<{ user_id: string; name: string; photo: string | null }>;
   }> {
     const { currentPage, perPage } = this.normalizePaging(query);
@@ -575,7 +608,7 @@ export class InternalChatService {
     });
 
     return {
-      ...setPaginationData(rows.length, total, perPage, currentPage),
+      pagings: setPaginationData(rows.length, total, perPage, currentPage),
       results: rows,
     };
   }
@@ -715,11 +748,7 @@ export class InternalChatService {
     conversationId: string,
     query: ListMessagesQuery
   ): Promise<{
-    current_page: number;
-    total_pages: number;
-    per_page: number;
-    count: number;
-    total: number;
+    pagings: ReturnType<typeof setPaginationData>;
     results: IInternalChatMessage[];
   }> {
     await this.assertParticipant(accountId, conversationId, userId);
@@ -732,7 +761,7 @@ export class InternalChatService {
     });
 
     return {
-      ...setPaginationData(results.length, total, perPage, currentPage),
+      pagings: setPaginationData(results.length, total, perPage, currentPage),
       results,
     };
   }
@@ -1010,7 +1039,14 @@ export class InternalChatService {
     userId: string,
     body: CreateGroupBody
   ): Promise<InternalConversationResponse> {
-    const normalizedMembers = Array.from(new Set(body.member_user_ids ?? []));
+    const name = extractFieldValue(body.name as any).trim();
+    const normalizedMembers = Array.from(
+      new Set(this.normalizeStringArray(body.member_user_ids as any))
+    );
+
+    if (!name || normalizedMembers.length === 0) {
+      throw new Error('chat_create_error');
+    }
 
     for (const memberUserId of normalizedMembers) {
       const belongs = await this.conversationRepository.userBelongsToAccount(
@@ -1026,8 +1062,8 @@ export class InternalChatService {
       await this.conversationRepository.createGroupConversation({
         accountId,
         createdByUserId: userId,
-        name: body.name,
-        photo: body.photo ?? null,
+        name,
+        photo: await this.resolveGroupPhoto(accountId, body.photo),
         memberUserIds: normalizedMembers,
       });
 
@@ -1057,11 +1093,25 @@ export class InternalChatService {
       throw new Error('chat_not_found');
     }
 
+    const name =
+      body.name === undefined
+        ? undefined
+        : extractFieldValue(body.name as any).trim();
+
+    if (body.name !== undefined && !name) {
+      throw new Error('chat_update_error');
+    }
+
+    const photo =
+      body.photo === undefined
+        ? undefined
+        : await this.resolveGroupPhoto(accountId, body.photo);
+
     const updated = await this.conversationRepository.updateGroupConversation({
       accountId,
       conversationId,
-      name: body.name,
-      photo: body.photo,
+      name,
+      photo,
     });
 
     if (!updated) {

@@ -125,11 +125,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
     handler: controller.listGroupMembers,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(
-          request,
-          reply,
-          internalChatGroupMembersPermissions
-        ),
+        server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
       planStatus,
     ],

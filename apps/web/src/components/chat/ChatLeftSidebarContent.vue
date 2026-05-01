@@ -3311,7 +3311,7 @@ defineExpose({
     <div class="d-flex gap-2 flex-wrap">
       <div class="chat-filter-item flex-grow-1">
         <VBtn
-          color="primary"
+          color="error"
           variant="flat"
           class="chat-filter-btn chat-filter-btn-internal w-100"
           @click="emit('open-internal-chat')"

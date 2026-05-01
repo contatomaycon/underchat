@@ -1,4 +1,5 @@
 import { EInternalChatConversationParticipantRole } from '@core/common/enums/internalChat/EInternalChatConversationParticipantRole';
+import { EInternalChatConversationType } from '@core/common/enums/internalChat/EInternalChatConversationType';
 import { IInternalChatUserNamePhoto } from './IInternalChatUserNamePhoto';
 
 export interface IInternalChatCreateDirectConversationInput {
@@ -29,6 +30,7 @@ export interface IInternalChatListOpenConversationsForUserInput {
   currentPage: number;
   perPage: number;
   search?: string;
+  type?: EInternalChatConversationType;
 }
 
 export interface IInternalChatListOpenConversationsForUserResult {

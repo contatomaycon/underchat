@@ -14,6 +14,7 @@ import type { ListUsersResponse } from '@core/schema/internalChat/listUsers/resp
 import type { ListMessagesQuery } from '@core/schema/internalChat/listMessages/request.schema';
 import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
 import type { CreateMessageBody } from '@core/schema/internalChat/createMessage/request.schema';
+import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
 import { EInternalChatActivityState } from '@core/common/enums/internalChat/EInternalChatActivityState';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
@@ -29,6 +30,12 @@ type InternalConversation =
   ListConversationsResponse['data']['results'][number];
 type InternalUser = ListUsersResponse['data']['results'][number];
 type InternalMessage = ListMessagesResponse['data']['results'][number];
+type InternalParticipant = ListGroupMembersResponse['data'][number];
+type InternalReaction = {
+  emoji: string;
+  user_id?: string | null;
+  user_name?: string | null;
+};
 
 type RemoteActivity = {
   conversation_id: string;
@@ -81,13 +88,15 @@ export const useInternalChatStore = defineStore('internalChat', {
     loadingConversations: false,
     loadingUsers: false,
     loadingMessages: false,
+    loadingGroupMembers: false,
     sendingMessage: false,
     conversationSearch: '',
+    conversationType: undefined as ListConversationsQuery['type'] | undefined,
     userSearch: '',
-    showUsersFallback: false,
     conversations: [] as InternalConversation[],
     users: [] as InternalUser[],
     messages: [] as InternalMessage[],
+    groupMembers: [] as InternalParticipant[],
     activeConversation: null as InternalConversation | null,
     conversationsPaging: makePaging(20),
     usersPaging: makePaging(20),
@@ -126,9 +135,16 @@ export const useInternalChatStore = defineStore('internalChat', {
     },
 
     sortConversations() {
-      this.conversations.sort(
-        (a, b) => parseDate(b.last_message_at) - parseDate(a.last_message_at)
-      );
+      this.conversations.sort((a, b) => {
+        const lastMessageDiff =
+          parseDate(b.last_message_at) - parseDate(a.last_message_at);
+
+        if (lastMessageDiff !== 0) {
+          return lastMessageDiff;
+        }
+
+        return parseDate(b.updated_at) - parseDate(a.updated_at);
+      });
     },
 
     upsertConversation(conversation: InternalConversation) {
@@ -150,7 +166,6 @@ export const useInternalChatStore = defineStore('internalChat', {
       }
 
       this.sortConversations();
-      this.showUsersFallback = false;
     },
 
     upsertMessage(message: InternalMessage) {
@@ -165,6 +180,59 @@ export const useInternalChatStore = defineStore('internalChat', {
       }
 
       this.messages.sort((a, b) => parseDate(a.date) - parseDate(b.date));
+    },
+
+    setActiveConversation(conversation: InternalConversation) {
+      this.upsertConversation(conversation);
+
+      if (
+        this.activeConversation?.conversation_id ===
+        conversation.conversation_id
+      ) {
+        this.activeConversation = conversation;
+      }
+    },
+
+    updateMessageReaction(messageId: string, emoji: string | null) {
+      const message = this.messages.find(
+        (item) => item.message_id === messageId
+      );
+      if (!message?.content) return;
+
+      const content = message.content as {
+        reactions?: InternalReaction[] | null;
+      };
+      const currentReactions = Array.isArray(content.reactions)
+        ? [...content.reactions]
+        : [];
+      const withoutMine = currentReactions.filter(
+        (reaction) => reaction.user_id !== this.currentUserId
+      );
+      const normalizedEmoji = emoji?.trim() ?? '';
+
+      if (normalizedEmoji) {
+        withoutMine.push({
+          emoji: normalizedEmoji,
+          user_id: this.currentUserId,
+          user_name: this.user?.info.name ?? null,
+        });
+      }
+
+      content.reactions = withoutMine.length > 0 ? withoutMine : null;
+    },
+
+    revertMessageReactions(
+      messageId: string,
+      reactions?: InternalReaction[] | null
+    ) {
+      const message = this.messages.find(
+        (item) => item.message_id === messageId
+      );
+      if (!message?.content) return;
+      const content = message.content as {
+        reactions?: InternalReaction[] | null;
+      };
+      content.reactions = reactions ?? null;
     },
 
     clearExpiredActivities(maxAgeMs = 6000) {
@@ -219,9 +287,11 @@ export const useInternalChatStore = defineStore('internalChat', {
           current_page: query.current_page ?? 1,
           per_page: query.per_page ?? this.conversationsPaging.per_page,
           search: query.search?.trim() || undefined,
+          type: query.type,
         };
 
         this.conversationSearch = params.search ?? '';
+        this.conversationType = params.type;
 
         const response = await axios.get<
           IApiResponse<ListConversationsResponse['data']>
@@ -264,7 +334,6 @@ export const useInternalChatStore = defineStore('internalChat', {
         };
 
         this.sortConversations();
-        this.showUsersFallback = this.conversations.length === 0;
         return this.conversations;
       } catch (error) {
         this.showSnackbar(
@@ -286,20 +355,10 @@ export const useInternalChatStore = defineStore('internalChat', {
           current_page: 1,
           per_page: this.conversationsPaging.per_page,
           search: this.conversationSearch || undefined,
+          type: this.conversationType,
         },
         false
       );
-
-      if (this.conversations.length === 0) {
-        await this.listUsers(
-          {
-            current_page: 1,
-            per_page: this.usersPaging.per_page,
-            search: this.userSearch || undefined,
-          },
-          false
-        );
-      }
     },
 
     scheduleRefreshConversations(delayMs = 250): void {
@@ -383,13 +442,6 @@ export const useInternalChatStore = defineStore('internalChat', {
         { current_page: 1, per_page: this.conversationsPaging.per_page },
         false
       );
-
-      if (this.conversations.length === 0) {
-        await this.listUsers(
-          { current_page: 1, per_page: this.usersPaging.per_page },
-          false
-        );
-      }
     },
 
     async openDirect(
@@ -498,14 +550,6 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (this.activeConversation?.conversation_id === conversationId) {
           this.activeConversation = null;
           this.messages = [];
-        }
-
-        if (this.conversations.length === 0) {
-          this.showUsersFallback = true;
-          await this.listUsers(
-            { current_page: 1, per_page: this.usersPaging.per_page },
-            false
-          );
         }
 
         return true;
@@ -742,6 +786,220 @@ export const useInternalChatStore = defineStore('internalChat', {
       }
     },
 
+    async listGroupMembers(
+      conversationId: string
+    ): Promise<InternalParticipant[]> {
+      this.loadingGroupMembers = true;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<ListGroupMembersResponse['data']>
+        >(`/internal-chat/groups/${conversationId}/members`);
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          this.groupMembers = [];
+          return [];
+        }
+
+        this.groupMembers = data.data;
+        return this.groupMembers;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t(
+              'chat_list_error',
+              'Erro ao listar participantes do grupo'
+            )
+          ),
+          EColor.error
+        );
+        return [];
+      } finally {
+        this.loadingGroupMembers = false;
+      }
+    },
+
+    async updateGroup(
+      conversationId: string,
+      input: {
+        name?: string;
+        photo?: string | null;
+        photoFile?: File | null;
+      }
+    ): Promise<InternalConversation | null> {
+      try {
+        let payload: FormData | { name?: string; photo?: string | null };
+        const config: AxiosRequestConfig = {};
+
+        if (typeof File !== 'undefined' && input.photoFile instanceof File) {
+          const formData = new FormData();
+          if (input.name !== undefined) {
+            formData.append('name', input.name);
+          }
+          formData.append('photo', input.photoFile);
+          payload = formData;
+          config.headers = {
+            'Content-Type': 'multipart/form-data',
+          };
+        } else {
+          payload = {};
+          if (input.name !== undefined) payload.name = input.name;
+          if (input.photo !== undefined) payload.photo = input.photo;
+        }
+
+        const response = await axios.patch<
+          IApiResponse<ListConversationsResponse['data']['results'][number]>
+        >(`/internal-chat/groups/${conversationId}`, payload, config);
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          this.showSnackbar(
+            data?.message ||
+              this.i18n.global.t(
+                'chat_update_error',
+                'Erro ao atualizar grupo'
+              ),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.setActiveConversation(data.data);
+        return data.data;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t('chat_update_error', 'Erro ao atualizar grupo')
+          ),
+          EColor.error
+        );
+        return null;
+      }
+    },
+
+    async addGroupMember(
+      conversationId: string,
+      userId: string
+    ): Promise<InternalConversation | null> {
+      try {
+        const response = await axios.post<
+          IApiResponse<ListConversationsResponse['data']['results'][number]>
+        >(`/internal-chat/groups/${conversationId}/members`, {
+          user_id: userId,
+        });
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          this.showSnackbar(
+            data?.message ||
+              this.i18n.global.t(
+                'chat_update_error',
+                'Erro ao adicionar membro'
+              ),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.setActiveConversation(data.data);
+        await this.listGroupMembers(conversationId);
+        return data.data;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t('chat_update_error', 'Erro ao adicionar membro')
+          ),
+          EColor.error
+        );
+        return null;
+      }
+    },
+
+    async removeGroupMember(
+      conversationId: string,
+      userId: string
+    ): Promise<boolean> {
+      try {
+        const response = await axios.delete<IApiResponse<null>>(
+          `/internal-chat/groups/${conversationId}/members/${userId}`
+        );
+
+        const data = response?.data;
+        if (!data?.status) {
+          this.showSnackbar(
+            data?.message ||
+              this.i18n.global.t('chat_update_error', 'Erro ao remover membro'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.groupMembers = this.groupMembers.filter(
+          (item) => item.user_id !== userId
+        );
+        const conversation = await this.viewConversation(conversationId);
+        if (conversation) {
+          this.setActiveConversation(conversation);
+        }
+        return true;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t('chat_update_error', 'Erro ao remover membro')
+          ),
+          EColor.error
+        );
+        return false;
+      }
+    },
+
+    async transferGroupLeader(
+      conversationId: string,
+      userId: string
+    ): Promise<InternalConversation | null> {
+      try {
+        const response = await axios.patch<
+          IApiResponse<ListConversationsResponse['data']['results'][number]>
+        >(`/internal-chat/groups/${conversationId}/leader`, {
+          user_id: userId,
+        });
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          this.showSnackbar(
+            data?.message ||
+              this.i18n.global.t(
+                'chat_update_error',
+                'Erro ao transferir liderança'
+              ),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.setActiveConversation(data.data);
+        await this.listGroupMembers(conversationId);
+        return data.data;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t(
+              'chat_update_error',
+              'Erro ao transferir liderança'
+            )
+          ),
+          EColor.error
+        );
+        return null;
+      }
+    },
+
     async publishActivity(
       conversationId: string,
       state: EInternalChatActivityState
@@ -760,15 +1018,42 @@ export const useInternalChatStore = defineStore('internalChat', {
       name: string;
       member_user_ids: string[];
       photo?: string | null;
+      photoFile?: File | null;
     }): Promise<InternalConversation | null> {
       try {
+        let payload:
+          | FormData
+          | {
+              name: string;
+              member_user_ids: string[];
+              photo: string | null;
+            };
+        const config: AxiosRequestConfig = {};
+
+        if (typeof File !== 'undefined' && input.photoFile instanceof File) {
+          const formData = new FormData();
+          formData.append('name', input.name);
+          formData.append(
+            'member_user_ids',
+            JSON.stringify(input.member_user_ids)
+          );
+          formData.append('photo', input.photoFile);
+
+          payload = formData;
+          config.headers = {
+            'Content-Type': 'multipart/form-data',
+          };
+        } else {
+          payload = {
+            name: input.name,
+            member_user_ids: input.member_user_ids,
+            photo: input.photo ?? null,
+          };
+        }
+
         const response = await axios.post<
           IApiResponse<ListConversationsResponse['data']['results'][number]>
-        >('/internal-chat/groups', {
-          name: input.name,
-          member_user_ids: input.member_user_ids,
-          photo: input.photo ?? null,
-        });
+        >('/internal-chat/groups', payload, config);
 
         const data = response?.data;
         if (!data?.status || !data.data) {
