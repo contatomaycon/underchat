@@ -283,10 +283,6 @@ const isOperatorReplyPendingAlertTriggered = computed(() => {
   return operatorReplyPendingElapsedMs.value >= operatorReplyPendingThresholdMs.value;
 });
 
-const operatorReplyPendingAlertLabel = computed(() => {
-  return t('chat_operator_reply_pending_alert_chip');
-});
-
 const loadWorkerConfig = async (workerId?: string | null) => {
   if (!workerId) {
     workerConfigForChat.value = null;
@@ -465,15 +461,6 @@ onBeforeUnmount(() => {
           >
             {{ $t('contact_label') }}
           </VChip>
-          <VChip
-            v-if="isOperatorReplyPendingAlertTriggered"
-            size="x-small"
-            color="error"
-            variant="flat"
-            class="operator-reply-pending-chip"
-          >
-            {{ operatorReplyPendingAlertLabel }}
-          </VChip>
         </div>
         <p class="mb-0 text-truncate text-body-2">
           {{
@@ -582,18 +569,25 @@ onBeforeUnmount(() => {
   }
 
   &.chat-pending-reply-alert:not(.chat-active) {
-    border-color: rgba(var(--v-theme-error), 0.55);
-    box-shadow: inset 0 0 0 1px rgba(var(--v-theme-error), 0.2);
-    background: linear-gradient(
-      180deg,
-      rgba(var(--v-theme-error), 0.05) 0%,
-      rgba(var(--v-theme-surface), 1) 58%
-    );
+    border-color: rgba(var(--v-theme-error), 0.9);
+    box-shadow: inset 0 0 0 1px rgba(var(--v-theme-error), 0.45);
   }
 }
 
 .chat.chat-active.chat-pending-reply-alert {
   box-shadow: 0 0 0 2px rgba(var(--v-theme-error), 0.65);
+}
+
+.chat.chat-pending-reply-alert .chat-attendant-label {
+  background-color: rgb(var(--v-theme-error));
+  color: #fff;
+  border-left: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.chat.chat-active.chat-pending-reply-alert .chat-attendant-label {
+  background-color: rgb(var(--v-theme-error));
+  color: #fff;
+  border-left: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 .chat-checkbox-wrapper {
@@ -728,12 +722,6 @@ onBeforeUnmount(() => {
 .chat-name {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.operator-reply-pending-chip {
-  letter-spacing: 0;
-  font-weight: 700;
-  flex-shrink: 0;
 }
 
 .chatbot-type-footer {
