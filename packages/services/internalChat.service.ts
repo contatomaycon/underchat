@@ -149,6 +149,28 @@ export class InternalChatService {
     }
   }
 
+  private async assertCanMutateMessage(
+    accountId: string,
+    conversationId: string,
+    userId: string,
+    message: IInternalChatMessage
+  ): Promise<void> {
+    const isAuthor = message.user?.id === userId;
+    if (isAuthor) return;
+
+    const conversation = await this.getConversationOrThrow(
+      accountId,
+      conversationId
+    );
+    const isGroupLeader =
+      conversation.type === EInternalChatConversationType.group &&
+      conversation.leader_user_id === userId;
+
+    if (!isGroupLeader) {
+      throw new Error('chat_access_denied');
+    }
+  }
+
   private buildMessagePreview(message: IInternalChatMessage): string | null {
     if (message.content.type === EMessageType.text) {
       return message.content.message ?? null;
@@ -1020,6 +1042,13 @@ export class InternalChatService {
       throw new Error('message_not_found');
     }
 
+    await this.assertCanMutateMessage(
+      accountId,
+      conversationId,
+      userId,
+      message
+    );
+
     if (message.content.type !== EMessageType.text) {
       throw new Error('only_text_messages_can_be_edited');
     }
@@ -1068,12 +1097,33 @@ export class InternalChatService {
       throw new Error('message_not_found');
     }
 
+    await this.assertCanMutateMessage(
+      accountId,
+      conversationId,
+      userId,
+      message
+    );
+
+    const currentContent = message.content ?? { type: EMessageType.text };
+    const versions = Array.isArray(currentContent.version)
+      ? [...currentContent.version]
+      : [];
+
+    if (currentContent.type !== EMessageType.delete_message) {
+      versions.push({
+        type: currentContent.type,
+        message: currentContent.message ?? null,
+        date: new Date().toISOString(),
+      });
+    }
+
     message.deleted = true;
     message.hash = uuidv7();
     message.content = {
-      ...(message.content ?? { type: EMessageType.text }),
+      ...currentContent,
       type: EMessageType.delete_message,
       message: null,
+      version: versions,
     };
 
     const updated = await this.messageRepository.updateMessage(message);

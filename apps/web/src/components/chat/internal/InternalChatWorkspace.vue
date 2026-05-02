@@ -60,6 +60,14 @@ type InternalContact = NonNullable<
   InternalMessage['content']['contacts']
 >[number];
 type InternalParticipant = ListGroupMembersResponse['data'][number];
+type InternalUserInfo = {
+  user_id: string;
+  name: string;
+  photo?: string | null;
+  email?: string | null;
+  sector?: string | null;
+  position?: string | null;
+};
 type InternalSidebarTab = 'users' | 'all' | 'direct' | 'group';
 type InternalSidebarTabInfo = {
   value: InternalSidebarTab;
@@ -83,6 +91,13 @@ type InternalViewerMediaItem = {
 type InternalReplyPreviewContent = Partial<InternalMessage['content']> & {
   type?: EMessageType | string | null;
   user_name?: string | null;
+};
+type InternalMessageHistoryItem = {
+  text: string;
+  date: string;
+  label: string;
+  isCurrent: boolean;
+  isDeletedSnapshot: boolean;
 };
 type InternalMessageDisplayItem =
   | {
@@ -257,11 +272,22 @@ const forwardingMessage = ref(false);
 
 const isGroupInfoDrawerOpen = ref(false);
 const isUserInfoDrawerOpen = ref(false);
+const selectedUserInfo = ref<InternalUserInfo | null>(null);
+const selectedUserInfoConversationUserId = ref<string | null>(null);
 const isCloseConversationDialogOpen = ref(false);
+const isEditMessageDialogOpen = ref(false);
+const editMessageTarget = ref<InternalMessage | null>(null);
+const editMessageText = ref('');
+const isDeleteMessageDialogOpen = ref(false);
+const deleteMessageTarget = ref<InternalMessage | null>(null);
+const isMessageHistoryDialogOpen = ref(false);
+const messageHistoryTarget = ref<InternalMessage | null>(null);
 const groupInfoName = ref('');
 const isEditingGroupInfoName = ref(false);
 const updatingGroupInfo = ref(false);
 const closingConversation = ref(false);
+const editingMessage = ref(false);
+const deletingMessage = ref(false);
 const isAddGroupMembersDialogOpen = ref(false);
 const groupCandidateSearch = ref('');
 const groupCandidateSearchDebounced = refDebounced(groupCandidateSearch, 350);
@@ -520,6 +546,26 @@ const activeDirectParticipant = computed(() => {
     ) ??
     activeConversation.value.participants[0] ??
     null
+  );
+});
+const canStartConversationFromSelectedUserInfo = computed(() => {
+  const userId = selectedUserInfoConversationUserId.value;
+
+  return (
+    isActiveGroupConversation.value &&
+    Boolean(userId) &&
+    userId !== internalChatStore.currentUserId
+  );
+});
+const canSubmitEditMessage = computed(() => {
+  const nextText = editMessageText.value.trim();
+  const currentText = editMessageTarget.value?.content?.message?.trim() ?? '';
+
+  return (
+    Boolean(editMessageTarget.value) &&
+    nextText.length > 0 &&
+    nextText !== currentText &&
+    !editingMessage.value
   );
 });
 const currentGroupParticipant = computed(() => {
@@ -891,6 +937,76 @@ const resolveConversationParticipantName = (
   return participant?.name?.trim() || t('internal_chat_unknown_user');
 };
 
+const resolveUserInfoName = (info?: InternalUserInfo | null): string => {
+  return info?.name?.trim() || t('internal_chat_unknown_user');
+};
+
+const buildUserInfo = (source: {
+  user_id: string;
+  name?: string | null;
+  photo?: string | null;
+  email?: string | null;
+  sector?: string | null;
+  position?: string | null;
+}): InternalUserInfo => {
+  return {
+    user_id: source.user_id,
+    name: source.name?.trim() || t('internal_chat_unknown_user'),
+    photo: source.photo ?? null,
+    email: source.email ?? null,
+    sector: source.sector ?? null,
+    position: source.position ?? null,
+  };
+};
+
+const findKnownUserInfoByUserId = (userId: string): InternalUserInfo | null => {
+  const conversationParticipant = activeConversation.value?.participants.find(
+    (participant) => participant.user_id === userId
+  );
+
+  if (conversationParticipant) {
+    return buildUserInfo(conversationParticipant);
+  }
+
+  const groupMember = groupMembers.value.find(
+    (member) => member.user_id === userId
+  );
+
+  if (groupMember) {
+    return buildUserInfo(groupMember);
+  }
+
+  if (userId === internalChatStore.currentUserId && user.value?.info) {
+    const currentUserInfo = user.value.info as Partial<InternalUserInfo>;
+
+    return buildUserInfo({
+      user_id: userId,
+      name: currentUserInfo.name,
+      photo: currentUserInfo.photo,
+      email: currentUserInfo.email,
+      sector: currentUserInfo.sector,
+      position: currentUserInfo.position,
+    });
+  }
+
+  return null;
+};
+
+const resolveMessageUserInfo = (
+  message: InternalMessage
+): InternalUserInfo | null => {
+  if (!message.user?.id) return null;
+
+  return (
+    findKnownUserInfoByUserId(message.user.id) ??
+    buildUserInfo({
+      user_id: message.user.id,
+      name: message.user.name,
+      photo: message.user.photo,
+    })
+  );
+};
+
 const resolveInfoValue = (value?: string | null): string => {
   return value?.trim() || t('internal_chat_not_informed');
 };
@@ -906,16 +1022,108 @@ const isDeletedMessage = (message: InternalMessage): boolean => {
   return Boolean(message.deleted);
 };
 
+const canManageInternalMessage = (message: InternalMessage): boolean => {
+  return isOwnMessage(message) || isActiveConversationLeader.value;
+};
+
 const canInteractWithMessage = (message: InternalMessage): boolean => {
   return !isDeletedMessage(message) && Boolean(message.content);
 };
 
 const canEditInternalMessage = (message: InternalMessage): boolean => {
   return (
-    isOwnMessage(message) &&
+    canManageInternalMessage(message) &&
     !isDeletedMessage(message) &&
     message.content?.type === EMessageType.text
   );
+};
+
+const canDeleteInternalMessage = (message: InternalMessage): boolean => {
+  return canManageInternalMessage(message) && !isDeletedMessage(message);
+};
+
+const hasMessageVersions = (message: InternalMessage): boolean => {
+  return Array.isArray(message.content?.version)
+    ? message.content.version.length > 0
+    : false;
+};
+
+const canViewMessageHistory = (message: InternalMessage): boolean => {
+  return canManageInternalMessage(message) && hasMessageVersions(message);
+};
+
+const canShowMessageActions = (message: InternalMessage): boolean => {
+  return canInteractWithMessage(message) || canViewMessageHistory(message);
+};
+
+const resolveHistoryFallbackText = (
+  type?: EMessageType | string | null
+): string => {
+  if (type === EMessageType.image) return t('internal_chat_image_alt');
+  if (type === EMessageType.video) return t('internal_chat_preview_video');
+  if (type === EMessageType.audio) return t('internal_chat_preview_audio');
+  if (type === EMessageType.document) {
+    return t('internal_chat_document_fallback');
+  }
+  if (type === EMessageType.location) {
+    return t('internal_chat_location_fallback');
+  }
+  if (type === EMessageType.contact_card || type === EMessageType.contacts) {
+    return t('internal_chat_preview_contact');
+  }
+
+  return t('internal_chat_deleted_message');
+};
+
+const getMessageHistoryItems = (
+  message?: InternalMessage | null
+): InternalMessageHistoryItem[] => {
+  if (!message?.content) return [];
+
+  const versions = Array.isArray(message.content.version)
+    ? [...message.content.version]
+    : [];
+
+  const sortedVersions = versions.sort(
+    (a, b) =>
+      new Date(b?.date ?? 0).getTime() - new Date(a?.date ?? 0).getTime()
+  );
+
+  const history: InternalMessageHistoryItem[] = [];
+  const latestVersionDate = sortedVersions[0]?.date;
+
+  if (!isDeletedMessage(message) && message.content.message?.trim()) {
+    history.push({
+      text: message.content.message,
+      date: latestVersionDate || message.date,
+      label: t('internal_chat_current_message'),
+      isCurrent: true,
+      isDeletedSnapshot: false,
+    });
+  }
+
+  sortedVersions.forEach((version, index) => {
+    const isFirstDeletedSnapshot = isDeletedMessage(message) && index === 0;
+    const isOriginal = index === sortedVersions.length - 1;
+    const versionMessage =
+      typeof version?.message === 'string' ? version.message.trim() : '';
+
+    history.push({
+      text:
+        versionMessage ||
+        resolveHistoryFallbackText(version?.type as EMessageType | string),
+      date: version?.date || message.date,
+      label: isFirstDeletedSnapshot
+        ? t('internal_chat_deleted_message_content')
+        : isOriginal
+          ? t('internal_chat_original_message')
+          : t('internal_chat_previous_version'),
+      isCurrent: false,
+      isDeletedSnapshot: isFirstDeletedSnapshot,
+    });
+  });
+
+  return history;
 };
 
 const resolveMessageText = (message: InternalMessage): string | null => {
@@ -2666,6 +2874,21 @@ const openConversationFromGroupMember = async (member: InternalParticipant) => {
   await scrollMessagesToBottom();
 };
 
+const openConversationFromSelectedUserInfo = async () => {
+  const userId = selectedUserInfoConversationUserId.value;
+  if (!userId || userId === internalChatStore.currentUserId) return;
+
+  shouldAutoScrollMessages.value = true;
+  const conversation = await internalChatStore.openDirect(userId);
+  if (!conversation) return;
+
+  activeSidebarTab.value = 'all';
+  closeUserInfoDrawer();
+  closeGroupInfoDrawer();
+  sidebarBodyRef.value?.scrollTo({ top: 0 });
+  await scrollMessagesToBottom();
+};
+
 const openCreateGroupDialog = async () => {
   await internalChatStore.listUsers({ current_page: 1, per_page: 100 }, false);
   isGroupDialogOpen.value = true;
@@ -2780,6 +3003,20 @@ const closeGroupInfoDrawer = () => {
   isAddGroupMembersDialogOpen.value = false;
 };
 
+const openSelectedUserInfoDrawer = (
+  info: InternalUserInfo,
+  options: { allowConversationAction?: boolean } = {}
+) => {
+  selectedUserInfo.value = info;
+  selectedUserInfoConversationUserId.value =
+    options.allowConversationAction &&
+    info.user_id !== internalChatStore.currentUserId
+      ? info.user_id
+      : null;
+  closeGroupInfoDrawer();
+  isUserInfoDrawerOpen.value = true;
+};
+
 const startGroupNameEdit = () => {
   if (!canEditActiveGroup.value || updatingGroupInfo.value) return;
 
@@ -2797,12 +3034,27 @@ const openUserInfoDrawer = () => {
     return;
   }
 
-  isGroupInfoDrawerOpen.value = false;
-  isUserInfoDrawerOpen.value = true;
+  openSelectedUserInfoDrawer(buildUserInfo(activeDirectParticipant.value));
+};
+
+const openMessageUserInfoDrawer = (message: InternalMessage) => {
+  if (isActiveDirectConversation.value && activeDirectParticipant.value) {
+    openUserInfoDrawer();
+    return;
+  }
+
+  const info = resolveMessageUserInfo(message);
+  if (!info) return;
+
+  openSelectedUserInfoDrawer(info, {
+    allowConversationAction: isActiveGroupConversation.value,
+  });
 };
 
 const closeUserInfoDrawer = () => {
   isUserInfoDrawerOpen.value = false;
+  selectedUserInfo.value = null;
+  selectedUserInfoConversationUserId.value = null;
 };
 
 const openConversationInfo = async () => {
@@ -4588,37 +4840,94 @@ const downloadMessage = (message: InternalMessage) => {
   link.remove();
 };
 
-const onEdit = async (message: InternalMessage) => {
+const onEdit = (message: InternalMessage) => {
   if (!activeConversation.value?.conversation_id) return;
   if (!canEditInternalMessage(message)) return;
 
-  const nextText = window
-    .prompt(
-      t('internal_chat_edit_message_prompt'),
-      message.content.message ?? ''
-    )
-    ?.trim();
+  editMessageTarget.value = message;
+  editMessageText.value = message.content.message ?? '';
+  isEditMessageDialogOpen.value = true;
+};
 
-  if (!nextText) return;
+const closeEditMessageDialog = () => {
+  if (editingMessage.value) return;
 
-  await internalChatStore.editMessage(
-    activeConversation.value.conversation_id,
-    message.message_id,
-    nextText
-  );
+  isEditMessageDialogOpen.value = false;
+  editMessageTarget.value = null;
+  editMessageText.value = '';
+};
+
+const confirmEditMessage = async () => {
+  if (!activeConversation.value?.conversation_id) return;
+  if (!editMessageTarget.value) return;
+  if (!canSubmitEditMessage.value) return;
+
+  editingMessage.value = true;
+
+  try {
+    const success = await internalChatStore.editMessage(
+      activeConversation.value.conversation_id,
+      editMessageTarget.value.message_id,
+      editMessageText.value.trim()
+    );
+
+    if (!success) return;
+
+    isEditMessageDialogOpen.value = false;
+    editMessageTarget.value = null;
+    editMessageText.value = '';
+  } finally {
+    editingMessage.value = false;
+  }
+};
+
+const openMessageHistoryDialog = (message: InternalMessage) => {
+  if (!canViewMessageHistory(message)) return;
+
+  messageHistoryTarget.value = message;
+  isMessageHistoryDialogOpen.value = true;
+};
+
+const closeMessageHistoryDialog = () => {
+  isMessageHistoryDialogOpen.value = false;
+  messageHistoryTarget.value = null;
 };
 
 const onDelete = async (message: InternalMessage) => {
   if (!activeConversation.value?.conversation_id) return;
-  const confirmed = window.confirm(
-    t('internal_chat_delete_message_confirmation')
-  );
-  if (!confirmed) return;
+  if (!canDeleteInternalMessage(message)) return;
 
-  await internalChatStore.deleteMessage(
-    activeConversation.value.conversation_id,
-    message.message_id
-  );
+  deleteMessageTarget.value = message;
+  isDeleteMessageDialogOpen.value = true;
+};
+
+const closeDeleteMessageDialog = () => {
+  if (deletingMessage.value) return;
+
+  isDeleteMessageDialogOpen.value = false;
+  deleteMessageTarget.value = null;
+};
+
+const confirmDeleteMessage = async () => {
+  if (!activeConversation.value?.conversation_id) return;
+  if (!deleteMessageTarget.value) return;
+  if (deletingMessage.value) return;
+
+  deletingMessage.value = true;
+
+  try {
+    const success = await internalChatStore.deleteMessage(
+      activeConversation.value.conversation_id,
+      deleteMessageTarget.value.message_id
+    );
+
+    if (!success) return;
+
+    isDeleteMessageDialogOpen.value = false;
+    deleteMessageTarget.value = null;
+  } finally {
+    deletingMessage.value = false;
+  }
 };
 
 const openForwardDialog = (message: InternalMessage) => {
@@ -4766,8 +5075,29 @@ watch(isGroupInfoDrawerOpen, (isOpen) => {
 });
 
 watch(isUserInfoDrawerOpen, (isOpen) => {
-  if (!isOpen) return;
+  if (!isOpen) {
+    selectedUserInfo.value = null;
+    selectedUserInfoConversationUserId.value = null;
+    return;
+  }
+
   isGroupInfoDrawerOpen.value = false;
+});
+
+watch(isDeleteMessageDialogOpen, (isOpen) => {
+  if (isOpen || deletingMessage.value) return;
+  deleteMessageTarget.value = null;
+});
+
+watch(isEditMessageDialogOpen, (isOpen) => {
+  if (isOpen || editingMessage.value) return;
+  editMessageTarget.value = null;
+  editMessageText.value = '';
+});
+
+watch(isMessageHistoryDialogOpen, (isOpen) => {
+  if (isOpen) return;
+  messageHistoryTarget.value = null;
 });
 
 watch(
@@ -4778,6 +5108,17 @@ watch(
     fixedMessageDateLabel.value = '';
     showReactionPicker.value = null;
     showEmojiPicker.value = null;
+    if (!deletingMessage.value) {
+      isDeleteMessageDialogOpen.value = false;
+      deleteMessageTarget.value = null;
+    }
+    if (!editingMessage.value) {
+      isEditMessageDialogOpen.value = false;
+      editMessageTarget.value = null;
+      editMessageText.value = '';
+    }
+    isMessageHistoryDialogOpen.value = false;
+    messageHistoryTarget.value = null;
 
     if (isUserInfoDrawerOpen.value && !isActiveDirectConversation.value) {
       closeUserInfoDrawer();
@@ -5284,22 +5625,30 @@ onBeforeUnmount(async () => {
                   @mouseenter="onMessageMouseEnter(message)"
                   @mouseleave="onMessageMouseLeave"
                 >
-                  <VAvatar
-                    size="32"
-                    class="internal-chat-message-avatar"
-                    :class="{
-                      'internal-chat-message-avatar--mine':
-                        isOwnMessage(message),
-                    }"
+                  <button
+                    type="button"
+                    class="internal-chat-message-avatar-button"
+                    :disabled="!message.user?.id"
+                    :aria-label="t('internal_chat_user_information')"
+                    @click.stop="openMessageUserInfoDrawer(message)"
                   >
-                    <VImg
-                      :src="resolveMessageAvatarSource(message)"
-                      :alt="
-                        message.user?.name || t('internal_chat_system_user')
-                      "
-                      cover
-                    />
-                  </VAvatar>
+                    <VAvatar
+                      size="32"
+                      class="internal-chat-message-avatar"
+                      :class="{
+                        'internal-chat-message-avatar--mine':
+                          isOwnMessage(message),
+                      }"
+                    >
+                      <VImg
+                        :src="resolveMessageAvatarSource(message)"
+                        :alt="
+                          message.user?.name || t('internal_chat_system_user')
+                        "
+                        cover
+                      />
+                    </VAvatar>
+                  </button>
 
                   <div
                     class="internal-chat-message-shell"
@@ -5345,7 +5694,7 @@ onBeforeUnmount(async () => {
                         </span>
 
                         <VMenu
-                          v-if="canInteractWithMessage(message)"
+                          v-if="canShowMessageActions(message)"
                           location="bottom end"
                           offset="6"
                         >
@@ -5359,81 +5708,113 @@ onBeforeUnmount(async () => {
                             </IconBtn>
                           </template>
 
-                          <VList density="compact" min-width="180">
-                            <VListItem @click="onReply(message)">
-                              <template #prepend>
-                                <VIcon size="18">tabler-corner-up-left</VIcon>
-                              </template>
-                              <VListItemTitle>
-                                {{ t('internal_chat_reply_action') }}
-                              </VListItemTitle>
-                            </VListItem>
+                          <VList density="compact" min-width="190">
+                            <template v-if="isDeletedMessage(message)">
+                              <VListItem
+                                v-if="canViewMessageHistory(message)"
+                                @click="openMessageHistoryDialog(message)"
+                              >
+                                <template #prepend>
+                                  <VIcon size="18">tabler-history</VIcon>
+                                </template>
+                                <VListItemTitle>
+                                  {{ t('internal_chat_view_message_history') }}
+                                </VListItemTitle>
+                              </VListItem>
+                            </template>
 
-                            <VListItem
-                              v-if="shouldShowCopy(message)"
-                              @click="copyMessage(message)"
-                            >
-                              <template #prepend>
-                                <VIcon size="18">tabler-copy</VIcon>
-                              </template>
-                              <VListItemTitle>
-                                {{ t('internal_chat_copy_action') }}
-                              </VListItemTitle>
-                            </VListItem>
+                            <template v-else>
+                              <VListItem @click="onReply(message)">
+                                <template #prepend>
+                                  <VIcon size="18">
+                                    tabler-corner-up-left
+                                  </VIcon>
+                                </template>
+                                <VListItemTitle>
+                                  {{ t('internal_chat_reply_action') }}
+                                </VListItemTitle>
+                              </VListItem>
 
-                            <VListItem
-                              v-if="shouldShowDownload(message)"
-                              @click="downloadMessage(message)"
-                            >
-                              <template #prepend>
-                                <VIcon size="18">tabler-download</VIcon>
-                              </template>
-                              <VListItemTitle>
-                                {{ t('internal_chat_download_action') }}
-                              </VListItemTitle>
-                            </VListItem>
+                              <VListItem
+                                v-if="shouldShowCopy(message)"
+                                @click="copyMessage(message)"
+                              >
+                                <template #prepend>
+                                  <VIcon size="18">tabler-copy</VIcon>
+                                </template>
+                                <VListItemTitle>
+                                  {{ t('internal_chat_copy_action') }}
+                                </VListItemTitle>
+                              </VListItem>
 
-                            <VListItem @click="openForwardDialog(message)">
-                              <template #prepend>
-                                <VIcon size="18">tabler-arrow-forward-up</VIcon>
-                              </template>
-                              <VListItemTitle>
-                                {{ t('internal_chat_forward_action') }}
-                              </VListItemTitle>
-                            </VListItem>
+                              <VListItem
+                                v-if="shouldShowDownload(message)"
+                                @click="downloadMessage(message)"
+                              >
+                                <template #prepend>
+                                  <VIcon size="18">tabler-download</VIcon>
+                                </template>
+                                <VListItemTitle>
+                                  {{ t('internal_chat_download_action') }}
+                                </VListItemTitle>
+                              </VListItem>
 
-                            <VListItem @click="toggleReactionPicker(message)">
-                              <template #prepend>
-                                <VIcon size="18">tabler-mood-smile</VIcon>
-                              </template>
-                              <VListItemTitle>
-                                {{ t('internal_chat_react_action') }}
-                              </VListItemTitle>
-                            </VListItem>
+                              <VListItem @click="openForwardDialog(message)">
+                                <template #prepend>
+                                  <VIcon size="18">
+                                    tabler-arrow-forward-up
+                                  </VIcon>
+                                </template>
+                                <VListItemTitle>
+                                  {{ t('internal_chat_forward_action') }}
+                                </VListItemTitle>
+                              </VListItem>
 
-                            <VListItem
-                              v-if="canEditInternalMessage(message)"
-                              @click="onEdit(message)"
-                            >
-                              <template #prepend>
-                                <VIcon size="18">tabler-edit</VIcon>
-                              </template>
-                              <VListItemTitle>
-                                {{ t('internal_chat_edit_action') }}
-                              </VListItemTitle>
-                            </VListItem>
+                              <VListItem @click="toggleReactionPicker(message)">
+                                <template #prepend>
+                                  <VIcon size="18">tabler-mood-smile</VIcon>
+                                </template>
+                                <VListItemTitle>
+                                  {{ t('internal_chat_react_action') }}
+                                </VListItemTitle>
+                              </VListItem>
 
-                            <VListItem
-                              v-if="isOwnMessage(message)"
-                              @click="onDelete(message)"
-                            >
-                              <template #prepend>
-                                <VIcon size="18">tabler-trash</VIcon>
-                              </template>
-                              <VListItemTitle>
-                                {{ t('internal_chat_delete_action') }}
-                              </VListItemTitle>
-                            </VListItem>
+                              <VListItem
+                                v-if="canEditInternalMessage(message)"
+                                @click="onEdit(message)"
+                              >
+                                <template #prepend>
+                                  <VIcon size="18">tabler-edit</VIcon>
+                                </template>
+                                <VListItemTitle>
+                                  {{ t('internal_chat_edit_action') }}
+                                </VListItemTitle>
+                              </VListItem>
+
+                              <VListItem
+                                v-if="canViewMessageHistory(message)"
+                                @click="openMessageHistoryDialog(message)"
+                              >
+                                <template #prepend>
+                                  <VIcon size="18">tabler-history</VIcon>
+                                </template>
+                                <VListItemTitle>
+                                  {{ t('internal_chat_view_message_history') }}
+                                </VListItemTitle>
+                              </VListItem>
+
+                              <VListItem
+                                v-if="canDeleteInternalMessage(message)"
+                                @click="onDelete(message)"
+                              >
+                                <template #prepend>
+                                  <VIcon size="18">tabler-trash</VIcon>
+                                </template>
+                                <VListItemTitle>
+                                  {{ t('internal_chat_delete_action') }}
+                                </VListItemTitle>
+                              </VListItem>
+                            </template>
                           </VList>
                         </VMenu>
                       </div>
@@ -5970,6 +6351,18 @@ onBeforeUnmount(async () => {
 
                       <div class="internal-chat-message-footer">
                         <div class="internal-chat-message-meta-content">
+                          <span
+                            v-if="isDeletedMessage(message)"
+                            class="internal-chat-message-status-badge"
+                          >
+                            {{ t('internal_chat_deleted_badge') }}
+                          </span>
+                          <span
+                            v-else-if="hasMessageVersions(message)"
+                            class="internal-chat-message-status-badge"
+                          >
+                            {{ t('internal_chat_edited') }}
+                          </span>
                           <div class="internal-chat-message-meta-row">
                             <span class="internal-chat-message-time">
                               {{ formatMessageDate(message.date) }}
@@ -6042,24 +6435,35 @@ onBeforeUnmount(async () => {
                     'internal-chat-message-row--mine': displayItem.isMine,
                   }"
                 >
-                  <VAvatar
-                    size="32"
-                    class="internal-chat-message-avatar"
-                    :class="{
-                      'internal-chat-message-avatar--mine': displayItem.isMine,
-                    }"
+                  <button
+                    type="button"
+                    class="internal-chat-message-avatar-button"
+                    :disabled="!displayItem.firstMessage.user?.id"
+                    :aria-label="t('internal_chat_user_information')"
+                    @click.stop="
+                      openMessageUserInfoDrawer(displayItem.firstMessage)
+                    "
                   >
-                    <VImg
-                      :src="
-                        resolveMessageAvatarSource(displayItem.firstMessage)
-                      "
-                      :alt="
-                        displayItem.firstMessage.user?.name ||
-                        t('internal_chat_system_user')
-                      "
-                      cover
-                    />
-                  </VAvatar>
+                    <VAvatar
+                      size="32"
+                      class="internal-chat-message-avatar"
+                      :class="{
+                        'internal-chat-message-avatar--mine':
+                          displayItem.isMine,
+                      }"
+                    >
+                      <VImg
+                        :src="
+                          resolveMessageAvatarSource(displayItem.firstMessage)
+                        "
+                        :alt="
+                          displayItem.firstMessage.user?.name ||
+                          t('internal_chat_system_user')
+                        "
+                        cover
+                      />
+                    </VAvatar>
+                  </button>
 
                   <div
                     class="internal-chat-message-shell"
@@ -7125,7 +7529,7 @@ onBeforeUnmount(async () => {
       width="390"
       class="internal-chat-info-drawer"
     >
-      <div v-if="activeDirectParticipant" class="internal-chat-user-info">
+      <div v-if="selectedUserInfo" class="internal-chat-user-info">
         <div class="internal-chat-group-info-header">
           <IconBtn @click="closeUserInfoDrawer">
             <VIcon size="20">tabler-x</VIcon>
@@ -7140,15 +7544,27 @@ onBeforeUnmount(async () => {
         <div class="internal-chat-user-hero">
           <VAvatar size="104" class="internal-chat-group-hero-avatar">
             <VImg
-              :src="resolveAvatarSource(activeDirectParticipant.photo)"
-              :alt="resolveConversationParticipantName(activeDirectParticipant)"
+              :src="resolveAvatarSource(selectedUserInfo.photo)"
+              :alt="resolveUserInfoName(selectedUserInfo)"
               cover
             />
           </VAvatar>
 
           <div class="internal-chat-user-title">
-            {{ resolveConversationParticipantName(activeDirectParticipant) }}
+            {{ resolveUserInfoName(selectedUserInfo) }}
           </div>
+
+          <VBtn
+            v-if="canStartConversationFromSelectedUserInfo"
+            size="small"
+            variant="tonal"
+            color="primary"
+            class="mt-3"
+            @click="openConversationFromSelectedUserInfo"
+          >
+            <VIcon start size="18">tabler-message-circle</VIcon>
+            {{ t('internal_chat_talk') }}
+          </VBtn>
         </div>
 
         <VDivider />
@@ -7161,9 +7577,7 @@ onBeforeUnmount(async () => {
                 {{ t('internal_chat_name') }}
               </span>
               <span class="internal-chat-info-value">
-                {{
-                  resolveConversationParticipantName(activeDirectParticipant)
-                }}
+                {{ resolveUserInfoName(selectedUserInfo) }}
               </span>
             </div>
           </div>
@@ -7175,7 +7589,7 @@ onBeforeUnmount(async () => {
                 {{ t('internal_chat_email') }}
               </span>
               <span class="internal-chat-info-value">
-                {{ resolveInfoValue(activeDirectParticipant.email) }}
+                {{ resolveInfoValue(selectedUserInfo.email) }}
               </span>
             </div>
           </div>
@@ -7187,7 +7601,7 @@ onBeforeUnmount(async () => {
                 {{ t('internal_chat_sector') }}
               </span>
               <span class="internal-chat-info-value">
-                {{ resolveInfoValue(activeDirectParticipant.sector) }}
+                {{ resolveInfoValue(selectedUserInfo.sector) }}
               </span>
             </div>
           </div>
@@ -7199,7 +7613,7 @@ onBeforeUnmount(async () => {
                 {{ t('internal_chat_position') }}
               </span>
               <span class="internal-chat-info-value">
-                {{ resolveInfoValue(activeDirectParticipant.position) }}
+                {{ resolveInfoValue(selectedUserInfo.position) }}
               </span>
             </div>
           </div>
@@ -7246,6 +7660,165 @@ onBeforeUnmount(async () => {
             @click="confirmCloseActiveConversation"
           >
             {{ closeConversationActionLabel }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog
+      v-model="isEditMessageDialogOpen"
+      max-width="600"
+      :persistent="editingMessage"
+    >
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between pa-4">
+          <span>{{ t('internal_chat_edit_message_title') }}</span>
+          <IconBtn :disabled="editingMessage" @click="closeEditMessageDialog">
+            <VIcon size="20">tabler-x</VIcon>
+          </IconBtn>
+        </VCardTitle>
+
+        <VDivider />
+
+        <VCardText class="pa-4">
+          <VTextarea
+            v-model="editMessageText"
+            :label="t('internal_chat_message_label')"
+            rows="4"
+            auto-grow
+            variant="outlined"
+            counter
+            :disabled="editingMessage"
+            @keydown.enter.ctrl="confirmEditMessage"
+            @keydown.enter.meta="confirmEditMessage"
+          />
+        </VCardText>
+
+        <VCardActions class="pa-4 pt-0">
+          <VSpacer />
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            :disabled="editingMessage"
+            @click="closeEditMessageDialog"
+          >
+            {{ t('internal_chat_cancel') }}
+          </VBtn>
+          <VBtn
+            color="primary"
+            variant="flat"
+            :loading="editingMessage"
+            :disabled="!canSubmitEditMessage"
+            @click="confirmEditMessage"
+          >
+            {{ t('internal_chat_save') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog
+      v-model="isDeleteMessageDialogOpen"
+      max-width="430"
+      :persistent="deletingMessage"
+    >
+      <VCard>
+        <VCardTitle class="d-flex align-center justify-space-between pa-4">
+          <span>{{ t('internal_chat_delete_message_title') }}</span>
+          <IconBtn
+            :disabled="deletingMessage"
+            @click="closeDeleteMessageDialog"
+          >
+            <VIcon size="20">tabler-x</VIcon>
+          </IconBtn>
+        </VCardTitle>
+
+        <VDivider />
+
+        <VCardText class="pa-4 text-body-2 text-medium-emphasis">
+          {{ t('internal_chat_delete_message_confirmation') }}
+        </VCardText>
+
+        <VCardActions class="pa-4 pt-0">
+          <VSpacer />
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            :disabled="deletingMessage"
+            @click="closeDeleteMessageDialog"
+          >
+            {{ t('internal_chat_cancel') }}
+          </VBtn>
+          <VBtn
+            color="error"
+            variant="flat"
+            :loading="deletingMessage"
+            @click="confirmDeleteMessage"
+          >
+            {{ t('internal_chat_delete_action') }}
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog
+      v-model="isMessageHistoryDialogOpen"
+      max-width="600"
+      :scrollable="false"
+    >
+      <VCard v-if="messageHistoryTarget">
+        <VCardTitle class="d-flex align-center justify-space-between pa-4">
+          <span>{{ t('internal_chat_message_history_title') }}</span>
+          <IconBtn @click="closeMessageHistoryDialog">
+            <VIcon size="20">tabler-x</VIcon>
+          </IconBtn>
+        </VCardTitle>
+
+        <VDivider />
+
+        <VCardText class="pa-4">
+          <div
+            v-if="getMessageHistoryItems(messageHistoryTarget).length > 0"
+            class="internal-chat-history-list"
+          >
+            <div
+              v-for="(item, index) in getMessageHistoryItems(
+                messageHistoryTarget
+              )"
+              :key="`${messageHistoryTarget.message_id}-history-${index}`"
+              class="internal-chat-history-item"
+              :class="{
+                'internal-chat-history-item--current': item.isCurrent,
+                'internal-chat-history-item--deleted': item.isDeletedSnapshot,
+              }"
+            >
+              <div class="internal-chat-history-header">
+                <span class="internal-chat-history-label">
+                  {{ item.label }}
+                </span>
+                <span class="internal-chat-history-date">
+                  {{ formatMessageDate(item.date) }}
+                </span>
+              </div>
+              <div class="internal-chat-history-text">
+                {{ item.text }}
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="text-body-2 text-medium-emphasis">
+            {{ t('internal_chat_no_message_history') }}
+          </div>
+        </VCardText>
+
+        <VCardActions class="pa-4 pt-0">
+          <VSpacer />
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            @click="closeMessageHistoryDialog"
+          >
+            {{ t('close') }}
           </VBtn>
         </VCardActions>
       </VCard>
@@ -8253,11 +8826,35 @@ onBeforeUnmount(async () => {
   justify-content: flex-start;
 }
 
+.internal-chat-message-avatar-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-block-end: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.internal-chat-message-avatar-button:disabled {
+  cursor: default;
+}
+
+.internal-chat-message-avatar-button:focus-visible {
+  outline: 2px solid rgba(var(--v-theme-primary), 0.45);
+  outline-offset: 2px;
+}
+
 .internal-chat-message-avatar {
   flex: 0 0 auto;
   margin-block-end: 2px;
   background: rgba(var(--v-theme-primary), 0.08);
   box-shadow: 0 1px 2px rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.internal-chat-message-avatar-button .internal-chat-message-avatar {
+  margin-block-end: 0;
 }
 
 .internal-chat-message-shell {
@@ -8353,6 +8950,16 @@ onBeforeUnmount(async () => {
   white-space: nowrap;
 }
 
+.internal-chat-message-status-badge {
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: rgba(var(--v-theme-on-surface), 0.08);
+  color: inherit;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
 .internal-chat-message-bubble--mine .internal-chat-message-footer {
   color: rgba(17, 27, 33, 0.6);
 }
@@ -8365,6 +8972,60 @@ onBeforeUnmount(async () => {
 .internal-chat-message-bubble--deleted {
   opacity: 0.74;
   font-style: italic;
+}
+
+.internal-chat-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(420px, 64vh);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.internal-chat-history-item {
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+  padding: 12px;
+  background: rgb(var(--v-theme-surface));
+}
+
+.internal-chat-history-item--current {
+  border-color: rgba(var(--v-theme-primary), 0.35);
+  background: rgba(var(--v-theme-primary), 0.06);
+}
+
+.internal-chat-history-item--deleted {
+  border-color: rgba(var(--v-theme-error), 0.26);
+  background: rgba(var(--v-theme-error), 0.05);
+}
+
+.internal-chat-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.internal-chat-history-label {
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.internal-chat-history-date {
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.internal-chat-history-text {
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 0.9rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .internal-chat-message-bubble--with-reactions {
