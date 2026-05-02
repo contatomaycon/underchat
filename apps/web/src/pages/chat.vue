@@ -295,6 +295,59 @@ const isQueueOrUraStatus = computed(() => {
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
 const isLoadingWorkerConfig = ref(false);
 const lastLoadedWorkerConfigId = ref<string | null>(null);
+const operatorReplyPendingNow = ref(Date.now());
+let operatorReplyPendingTicker: ReturnType<typeof setInterval> | null = null;
+const OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES = 15;
+
+const operatorReplyPendingSince = computed(() => {
+  return chatStore.activeChat?.summary?.operator_reply_pending_since ?? null;
+});
+
+const operatorReplyPendingThresholdMinutes = computed(() => {
+  const configured =
+    workerConfigForChat.value?.operator_reply_pending_alert_time_minutes;
+  if (!configured || configured < 1) {
+    return OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES;
+  }
+  return configured;
+});
+
+const operatorReplyPendingElapsedMs = computed(() => {
+  const pendingSince = operatorReplyPendingSince.value;
+  if (!pendingSince) {
+    return 0;
+  }
+
+  const pendingSinceMs = new Date(pendingSince).getTime();
+  if (!Number.isFinite(pendingSinceMs)) {
+    return 0;
+  }
+
+  return Math.max(operatorReplyPendingNow.value - pendingSinceMs, 0);
+});
+
+const operatorReplyPendingElapsedMinutes = computed(() => {
+  return Math.max(Math.floor(operatorReplyPendingElapsedMs.value / 60000), 1);
+});
+
+const showOperatorReplyPendingBanner = computed(() => {
+  if (chatStore.activeChat?.status !== EChatStatus.in_chat) {
+    return false;
+  }
+
+  if (!workerConfigForChat.value?.operator_reply_pending_alert_enabled) {
+    return false;
+  }
+
+  if (!operatorReplyPendingSince.value) {
+    return false;
+  }
+
+  return (
+    operatorReplyPendingElapsedMs.value >=
+    operatorReplyPendingThresholdMinutes.value * 60 * 1000
+  );
+});
 
 const getStatusColor = (status: EChatUserStatus): string => {
   const isDark = global.name.value === 'dark';
@@ -2107,10 +2160,10 @@ const sendImageMessage = async (
   photosToSend?: ISelectedPhotoPreview[],
   messageText?: string | null,
   replyMessage?: ListMessageResult | null
-): Promise<void> => {
-  if (!chatStore.activeChat?.chat_id) return;
+): Promise<boolean> => {
+  if (!chatStore.activeChat?.chat_id) return false;
   const photos = photosToSend ?? [...selectedPhotos.value];
-  if (photos.length === 0) return;
+  if (photos.length === 0) return false;
 
   const replyId =
     replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
@@ -2142,7 +2195,7 @@ const sendImageMessage = async (
     })
   );
 
-  await Promise.all(
+  const results = await Promise.all(
     messagesWithHashes.map(async ({ photo, hash }) => {
       const formData = createImageFormData(photo, messageValue, replyId, hash);
 
@@ -2156,18 +2209,22 @@ const sendImageMessage = async (
       if (!success) {
         markUploadError(hash);
       }
+
+      return success;
     })
   );
+
+  return results.some(Boolean);
 };
 
 const sendVideoMessage = async (
   videosToSend?: ISelectedVideoPreview[],
   messageText?: string | null,
   replyMessage?: ListMessageResult | null
-): Promise<void> => {
-  if (!chatStore.activeChat?.chat_id) return;
+): Promise<boolean> => {
+  if (!chatStore.activeChat?.chat_id) return false;
   const videos = videosToSend ?? [...selectedVideos.value];
-  if (videos.length === 0) return;
+  if (videos.length === 0) return false;
 
   const replyId =
     replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
@@ -2201,7 +2258,7 @@ const sendVideoMessage = async (
     })
   );
 
-  await Promise.all(
+  const results = await Promise.all(
     messagesWithHashes.map(async ({ video, hash }) => {
       const formData = createVideoFormData(video, messageValue, replyId, hash);
 
@@ -2215,8 +2272,12 @@ const sendVideoMessage = async (
       if (!success) {
         markUploadError(hash);
       }
+
+      return success;
     })
   );
+
+  return results.some(Boolean);
 };
 
 const sendAudioMessage = async (
@@ -2226,12 +2287,12 @@ const sendAudioMessage = async (
   viewOnce: boolean,
   _messageText?: string | null,
   replyMessage?: ListMessageResult | null
-): Promise<void> => {
-  if (!chatStore.activeChat?.chat_id) return;
+): Promise<boolean> => {
+  if (!chatStore.activeChat?.chat_id) return false;
 
   if (blob.size > MAX_AUDIO_SIZE_BYTES) {
     chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
-    return;
+    return false;
   }
 
   const hash = createMessageHash();
@@ -2294,19 +2355,20 @@ const sendAudioMessage = async (
 
   if (!success) {
     markUploadError(hash);
-    return;
+    return false;
   }
   chatStore.clearMessageReply();
+  return true;
 };
 
 const sendAudioFilesMessage = async (
   audiosToSend?: ISelectedAudioPreview[],
   _messageText?: string | null,
   _replyMessage?: ListMessageResult | null
-): Promise<void> => {
-  if (!chatStore.activeChat?.chat_id) return;
+): Promise<boolean> => {
+  if (!chatStore.activeChat?.chat_id) return false;
   const audios = audiosToSend ?? [...selectedAudios.value];
-  if (audios.length === 0) return;
+  if (audios.length === 0) return false;
 
   const messagesWithHashes = await Promise.all(
     audios.map(async (audio) => {
@@ -2330,7 +2392,7 @@ const sendAudioFilesMessage = async (
     })
   );
 
-  await Promise.all(
+  const results = await Promise.all(
     messagesWithHashes.map(async ({ audio, hash }) => {
       const formData = createAudioFormData(
         {
@@ -2354,18 +2416,22 @@ const sendAudioFilesMessage = async (
       if (!success) {
         markUploadError(hash);
       }
+
+      return success;
     })
   );
+
+  return results.some(Boolean);
 };
 
 const sendDocumentMessage = async (
   documentsToSend?: ISelectedDocumentPreview[],
   messageText?: string | null,
   replyMessage?: ListMessageResult | null
-): Promise<void> => {
-  if (!chatStore.activeChat?.chat_id) return;
+): Promise<boolean> => {
+  if (!chatStore.activeChat?.chat_id) return false;
   const docs = documentsToSend ?? [...selectedDocuments.value];
-  if (docs.length === 0) return;
+  if (docs.length === 0) return false;
 
   const replyId =
     replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
@@ -2396,7 +2462,7 @@ const sendDocumentMessage = async (
     })
   );
 
-  await Promise.all(
+  const results = await Promise.all(
     messagesWithHashes.map(async ({ doc, hash }) => {
       const formData = createDocumentFormData(doc, messageValue, replyId, hash);
 
@@ -2410,18 +2476,22 @@ const sendDocumentMessage = async (
       if (!success) {
         markUploadError(hash);
       }
+
+      return success;
     })
   );
+
+  return results.some(Boolean);
 };
 
 const sendContactsMessage = async (
   contactsToSend?: ISelectedContactPreview[],
   messageText?: string | null,
   replyMessage?: ListMessageResult | null
-): Promise<void> => {
-  if (!chatStore.activeChat?.chat_id) return;
+): Promise<boolean> => {
+  if (!chatStore.activeChat?.chat_id) return false;
   const contacts = contactsToSend ?? [...selectedContacts.value];
-  if (contacts.length === 0) return;
+  if (contacts.length === 0) return false;
 
   const replyId =
     replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
@@ -2451,7 +2521,7 @@ const sendContactsMessage = async (
     })
   );
 
-  await Promise.all(
+  const results = await Promise.all(
     messagesWithHashes.map(async ({ contact, hash }) => {
       const formData = new FormData();
       formData.append('type', EMessageType.contact_card);
@@ -2471,6 +2541,8 @@ const sendContactsMessage = async (
       if (!success) {
         markUploadError(hash);
       }
+
+      return success;
     })
   );
 
@@ -2478,16 +2550,18 @@ const sendContactsMessage = async (
     chatStore.clearMessageReply();
     clearSelectedContacts();
   }
+
+  return results.some(Boolean);
 };
 
 const sendLocationMessage = async (
   locationToSend?: typeof selectedLocation.value,
   messageText?: string | null,
   replyMessage?: ListMessageResult | null
-): Promise<void> => {
-  if (!chatStore.activeChat?.chat_id) return;
+): Promise<boolean> => {
+  if (!chatStore.activeChat?.chat_id) return false;
   const location = locationToSend ?? selectedLocation.value;
-  if (!location) return;
+  if (!location) return false;
 
   const hash = createMessageHash();
   const replyId =
@@ -2540,6 +2614,19 @@ const sendLocationMessage = async (
     chatStore.clearMessageReply();
     selectedLocation.value = null;
   }
+
+  return success;
+};
+
+const handleLocationPickerConfirm = async (
+  location: NonNullable<typeof selectedLocation.value>
+) => {
+  selectedLocation.value = location;
+  const sent = await sendLocationMessage();
+  if (sent) {
+    clearOperatorReplyPendingAlertLocally();
+  }
+  finalizeSend();
 };
 
 const onContactsSelected = (contacts: ISelectedContactPreview[]) => {
@@ -2553,8 +2640,8 @@ const sendTextMessage = async (
   linkPreviewData?: ViewLinkPreviewResponse | null,
   replyMessage?: ListMessageResult | null,
   quickMessageTemplateId?: string | null
-): Promise<void> => {
-  if (!chatStore.activeChat?.chat_id) return;
+): Promise<boolean> => {
+  if (!chatStore.activeChat?.chat_id) return false;
   const hash = createMessageHash();
   const messageValue = messageText ?? msg.value;
   const replyId =
@@ -2585,6 +2672,8 @@ const sendTextMessage = async (
   if (!success) {
     markUploadError(hash);
   }
+
+  return success;
 };
 
 const sendAnnotationMessage = async (): Promise<void> => {
@@ -2690,6 +2779,36 @@ const finalizeSend = async () => {
   });
 };
 
+const clearOperatorReplyPendingAlertLocally = (): void => {
+  const chatId = chatStore.activeChat?.chat_id;
+  if (!chatId) {
+    return;
+  }
+
+  if (chatStore.activeChat?.summary?.operator_reply_pending_since) {
+    chatStore.activeChat.summary = {
+      ...chatStore.activeChat.summary,
+      operator_reply_pending_since: null,
+    };
+  }
+
+  const chatInQueue = chatStore.listQueue.find((c) => c.chat_id === chatId);
+  if (chatInQueue?.summary?.operator_reply_pending_since) {
+    chatInQueue.summary = {
+      ...chatInQueue.summary,
+      operator_reply_pending_since: null,
+    };
+  }
+
+  const chatInInChat = chatStore.listInChat.find((c) => c.chat_id === chatId);
+  if (chatInInChat?.summary?.operator_reply_pending_since) {
+    chatInInChat.summary = {
+      ...chatInInChat.summary,
+      operator_reply_pending_since: null,
+    };
+  }
+};
+
 const sendMessage = async () => {
   if (!canSendMessage()) return;
   if (!hasActiveChat()) return;
@@ -2723,46 +2842,91 @@ const sendMessage = async () => {
   selectedLocation.value = null;
 
   if (savedDocuments.length > 0) {
-    await sendDocumentMessage(
+    const sent = await sendDocumentMessage(
       savedDocuments,
       savedMsg,
       savedReply || undefined
     );
+    if (sent) {
+      clearOperatorReplyPendingAlertLocally();
+    }
     finalizeSend();
     return;
   }
 
   if (savedVideos.length > 0) {
-    await sendVideoMessage(savedVideos, savedMsg, savedReply || undefined);
+    const sent = await sendVideoMessage(
+      savedVideos,
+      savedMsg,
+      savedReply || undefined
+    );
+    if (sent) {
+      clearOperatorReplyPendingAlertLocally();
+    }
     finalizeSend();
     return;
   }
 
   if (savedAudios.length > 0) {
-    await sendAudioFilesMessage(savedAudios, savedMsg, savedReply || undefined);
+    const sent = await sendAudioFilesMessage(
+      savedAudios,
+      savedMsg,
+      savedReply || undefined
+    );
+    if (sent) {
+      clearOperatorReplyPendingAlertLocally();
+    }
     finalizeSend();
     return;
   }
 
   if (savedContacts.length > 0) {
-    await sendContactsMessage(savedContacts, savedMsg, savedReply || undefined);
+    const sent = await sendContactsMessage(
+      savedContacts,
+      savedMsg,
+      savedReply || undefined
+    );
+    if (sent) {
+      clearOperatorReplyPendingAlertLocally();
+    }
     finalizeSend();
     return;
   }
 
   if (savedLocation) {
-    await sendLocationMessage(savedLocation, savedMsg, savedReply || undefined);
+    const sent = await sendLocationMessage(
+      savedLocation,
+      savedMsg,
+      savedReply || undefined
+    );
+    if (sent) {
+      clearOperatorReplyPendingAlertLocally();
+    }
     finalizeSend();
     return;
   }
 
   if (savedPhotos.length > 0) {
-    await sendImageMessage(savedPhotos, savedMsg, savedReply || undefined);
+    const sent = await sendImageMessage(
+      savedPhotos,
+      savedMsg,
+      savedReply || undefined
+    );
+    if (sent) {
+      clearOperatorReplyPendingAlertLocally();
+    }
     finalizeSend();
     return;
   }
 
-  await sendTextMessage(savedMsg, savedLinkPreview, savedReply || undefined);
+  const sent = await sendTextMessage(
+    savedMsg,
+    savedLinkPreview,
+    savedReply || undefined
+  );
+  if (sent) {
+    clearOperatorReplyPendingAlertLocally();
+  }
 
   finalizeSend();
 };
@@ -4770,7 +4934,7 @@ const sendQuickMessage = async () => {
     selectedDocuments.value = [];
     selectedLocation.value = null;
 
-    await sendTextMessage(
+    const sent = await sendTextMessage(
       messageValue,
       savedLinkPreview,
       savedReply || undefined,
@@ -4778,6 +4942,9 @@ const sendQuickMessage = async () => {
         ? (template.message_template_id ?? null)
         : null
     );
+    if (sent) {
+      clearOperatorReplyPendingAlertLocally();
+    }
     finalizeSend();
     return;
   }
@@ -4875,6 +5042,7 @@ const sendQuickMessage = async () => {
   }
 
   if (success) {
+    clearOperatorReplyPendingAlertLocally();
     finalizeSend();
   } else {
     markUploadError(hash);
@@ -4980,7 +5148,10 @@ const onSendTemplateButton = async (e: Event) => {
   if (!text || !hasActiveChat()) return;
   if (isQueueOrUraStatus.value) return;
 
-  await sendTextMessage(text);
+  const sent = await sendTextMessage(text);
+  if (sent) {
+    clearOperatorReplyPendingAlertLocally();
+  }
 };
 
 const onOpenEditContactModal = (e: Event) => {
@@ -5027,7 +5198,7 @@ const onAiReplySend = async (
       if (!response.ok) throw new Error('Failed to fetch audio');
       const blob = await response.blob();
       const mimeType = blob.type || 'audio/mpeg';
-      await sendAudioMessage(
+      const sent = await sendAudioMessage(
         blob,
         mimeType,
         audioDuration ?? null,
@@ -5035,11 +5206,17 @@ const onAiReplySend = async (
         null,
         replyMessage
       );
+      if (sent) {
+        clearOperatorReplyPendingAlertLocally();
+      }
     } catch {
       chatStore.showSnackbar(t('chat_ai_reply_send_audio_error'), EColor.error);
     }
   } else {
-    await sendTextMessage(text, null, replyMessage);
+    const sent = await sendTextMessage(text, null, replyMessage);
+    if (sent) {
+      clearOperatorReplyPendingAlertLocally();
+    }
   }
 };
 
@@ -5623,6 +5800,10 @@ const handleGlobalChatUpdate = async (e: Event) => {
 };
 
 onMounted(async () => {
+  operatorReplyPendingTicker = setInterval(() => {
+    operatorReplyPendingNow.value = Date.now();
+  }, 30000);
+
   const routeChatId = resolveRouteChatId();
   if (routeChatId) {
     await openChat(routeChatId, {
@@ -5674,6 +5855,11 @@ onMounted(async () => {
 });
 
 onUnmounted(async () => {
+  if (operatorReplyPendingTicker) {
+    clearInterval(operatorReplyPendingTicker);
+    operatorReplyPendingTicker = null;
+  }
+
   clearTypingTimeout();
 
   globalThis.removeEventListener('chat-message', handleGlobalMessage);
@@ -6691,6 +6877,20 @@ onBeforeUnmount(() => {
               @join="handleJoinConversation"
             />
 
+            <VAlert
+              v-if="showOperatorReplyPendingBanner"
+              type="warning"
+              variant="tonal"
+              border="start"
+              class="operator-reply-pending-banner mb-2"
+            >
+              {{
+                $t('chat_operator_reply_pending_alert_banner', {
+                  minutes: operatorReplyPendingElapsedMinutes,
+                })
+              }}
+            </VAlert>
+
             <VCard
               v-if="
                 showQuickMessageList &&
@@ -7006,13 +7206,7 @@ onBeforeUnmount(() => {
 
   <ChatLocationPicker
     v-model="isLocationPickerOpen"
-    @confirm="
-      (location) => {
-        selectedLocation = location;
-        sendLocationMessage();
-        finalizeSend();
-      }
-    "
+    @confirm="handleLocationPickerConfirm"
   />
 
   <ChatContactViewModal
@@ -8614,6 +8808,11 @@ $chat-app-header-height: 76px;
   border-top-right-radius: 4px !important;
   border-bottom-right-radius: 4px !important;
   margin-left: 0 !important;
+}
+
+.operator-reply-pending-banner {
+  border-color: rgba(var(--v-theme-error), 0.45) !important;
+  background: rgba(var(--v-theme-error), 0.08) !important;
 }
 
 .attendants-info-loading {

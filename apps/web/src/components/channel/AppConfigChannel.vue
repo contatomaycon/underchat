@@ -19,6 +19,8 @@ import { ViewAttendanceHoursResponse } from '@core/schema/worker/viewAttendanceH
 import { UpdateAttendanceHoursRequest } from '@core/schema/worker/updateAttendanceHours/request.schema';
 import { ViewAttendanceInactivityAlertResponse } from '@core/schema/worker/viewAttendanceInactivityAlert/response.schema';
 import { UpdateAttendanceInactivityAlertRequest } from '@core/schema/worker/updateAttendanceInactivityAlert/request.schema';
+import { ViewOperatorReplyPendingAlertResponse } from '@core/schema/worker/viewOperatorReplyPendingAlert/response.schema';
+import { UpdateOperatorReplyPendingAlertRequest } from '@core/schema/worker/updateOperatorReplyPendingAlert/request.schema';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 import AppSelectSearch from '@/components/AppSelectSearch.vue';
 
@@ -214,6 +216,7 @@ type WorkerConfigForm = {
   ai_agent: boolean;
   attendance_hours: boolean;
   attendance_inactivity_alert: boolean;
+  operator_reply_pending_alert: boolean;
 };
 
 type ChatbotWorkingHoursRulePayload = {
@@ -250,6 +253,7 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   ai_agent: false,
   attendance_hours: false,
   attendance_inactivity_alert: false,
+  operator_reply_pending_alert: false,
 });
 
 type AttendanceRulePayload = UpdateAttendanceHoursRequest['rules'][number];
@@ -277,6 +281,7 @@ const ATTENDANCE_DEFAULT_END = '18:00';
 const ATTENDANCE_INACTIVITY_DEFAULT_QUANTITY = 1;
 const ATTENDANCE_INACTIVITY_DEFAULT_TIME = 180;
 const ATTENDANCE_INACTIVITY_DEFAULT_ACTION = 'finish';
+const OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES = 15;
 const TYPING_SIMULATION_DEFAULT_SPEED = 50;
 const CHATBOT_WORKING_HOURS_TIMEZONE = 'America/Sao_Paulo';
 const CHATBOT_WORKING_HOURS_DEFAULT_START = '09:00';
@@ -564,6 +569,12 @@ const attendanceInactivityAlertActionInModal = ref<
 >(ATTENDANCE_INACTIVITY_DEFAULT_ACTION);
 const attendanceInactivityMessageEnabledInModal = ref(true);
 const attendanceInactivityMessageTextInModal = ref('');
+const operatorReplyPendingAlertModalOpen = ref(false);
+const isSavingOperatorReplyPendingAlert = ref(false);
+const operatorReplyPendingAlertEnabledInModal = ref(false);
+const operatorReplyPendingAlertTimeMinutesInModal = ref(
+  OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES
+);
 const chatbotId = ref<string | null>(null);
 const chatbotModalOpen = ref(false);
 const isSavingChatbot = ref(false);
@@ -1156,6 +1167,7 @@ const resetWorkerConfigState = () => {
   applyWorkerConfig();
   applyAttendanceHoursState();
   applyAttendanceInactivityAlertState();
+  applyOperatorReplyPendingAlertState();
   applyTypingSimulationState();
   workerConfigLoadedFor.value = null;
 };
@@ -1386,6 +1398,35 @@ const buildAttendanceInactivityAlertPayload = (
   };
 };
 
+const applyOperatorReplyPendingAlertState = (
+  config?: ViewOperatorReplyPendingAlertResponse | null
+): void => {
+  workerConfigForm.operator_reply_pending_alert = config?.enabled ?? false;
+  operatorReplyPendingAlertEnabledInModal.value = config?.enabled ?? false;
+  operatorReplyPendingAlertTimeMinutesInModal.value =
+    config?.time_minutes ?? OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES;
+};
+
+const buildOperatorReplyPendingAlertPayload = (
+  enabled: boolean
+): UpdateOperatorReplyPendingAlertRequest | null => {
+  const timeMinutes = normalizePositiveInteger(
+    operatorReplyPendingAlertTimeMinutesInModal.value
+  );
+  if (!timeMinutes) {
+    channelStore.showSnackbar(
+      t('operator_reply_pending_alert_invalid_time'),
+      EColor.warning
+    );
+    return null;
+  }
+
+  return {
+    enabled,
+    time_minutes: timeMinutes,
+  };
+};
+
 const loadWorkerConfig = async (force = false) => {
   if (!channelId.value) return;
   if (!force && workerConfigLoadedFor.value === channelId.value) return;
@@ -1407,6 +1448,7 @@ const loadWorkerConfig = async (force = false) => {
       showMessageOnCallData,
       sendMessageOnFinishAttendanceData,
       attendanceInactivityAlertData,
+      operatorReplyPendingAlertData,
       chatbotData,
       attendanceHoursData,
       aiAgentData,
@@ -1420,6 +1462,7 @@ const loadWorkerConfig = async (force = false) => {
       channelStore.fetchShowMessageOnCall(channelId.value),
       channelStore.fetchSendMessageOnFinishAttendance(channelId.value),
       channelStore.fetchAttendanceInactivityAlert(channelId.value),
+      channelStore.fetchOperatorReplyPendingAlert(channelId.value),
       channelStore.fetchChatbot(channelId.value),
       channelStore.fetchAttendanceHours(channelId.value),
       channelStore.fetchAiAgentConfig(channelId.value),
@@ -1500,6 +1543,7 @@ const loadWorkerConfig = async (force = false) => {
     }
 
     applyAttendanceInactivityAlertState(attendanceInactivityAlertData);
+    applyOperatorReplyPendingAlertState(operatorReplyPendingAlertData);
 
     applyChatbotState(chatbotData as ChatbotConfigResponse | null);
 
@@ -1519,6 +1563,7 @@ const saveWorkerConfig = async () => {
     const {
       attendance_hours: _attendanceHours,
       attendance_inactivity_alert: _attendanceInactivityAlert,
+      operator_reply_pending_alert: _operatorReplyPendingAlert,
       typing_simulation: _typingSimulation,
       ...payload
     } = workerConfigForm;
@@ -2344,6 +2389,90 @@ const saveAttendanceInactivityAlertConfiguration = async () => {
   }
 };
 
+const openOperatorReplyPendingAlertModal = async (
+  forceEnable = false
+) => {
+  if (!channelId.value) return;
+
+  const data = await channelStore.fetchOperatorReplyPendingAlert(
+    channelId.value
+  );
+
+  applyOperatorReplyPendingAlertState(data);
+
+  if (forceEnable && !workerConfigForm.operator_reply_pending_alert) {
+    operatorReplyPendingAlertEnabledInModal.value = true;
+  }
+
+  operatorReplyPendingAlertModalOpen.value = true;
+};
+
+const closeOperatorReplyPendingAlertModal = () => {
+  operatorReplyPendingAlertModalOpen.value = false;
+};
+
+const toggleOperatorReplyPendingAlertStatus = async () => {
+  if (!channelId.value) return;
+
+  const isEnabled = workerConfigForm.operator_reply_pending_alert;
+  if (!isEnabled) {
+    await openOperatorReplyPendingAlertModal(true);
+    return;
+  }
+
+  const body = buildOperatorReplyPendingAlertPayload(false);
+  if (!body) {
+    return;
+  }
+
+  try {
+    isSavingOperatorReplyPendingAlert.value = true;
+
+    const result = await channelStore.updateOperatorReplyPendingAlert(
+      channelId.value,
+      body
+    );
+
+    if (result) {
+      applyOperatorReplyPendingAlertState(result);
+    }
+  } finally {
+    isSavingOperatorReplyPendingAlert.value = false;
+  }
+};
+
+const toggleOperatorReplyPendingAlertStatusInModal = () => {
+  operatorReplyPendingAlertEnabledInModal.value =
+    !operatorReplyPendingAlertEnabledInModal.value;
+};
+
+const saveOperatorReplyPendingAlertConfiguration = async () => {
+  if (!channelId.value) return;
+
+  const body = buildOperatorReplyPendingAlertPayload(
+    operatorReplyPendingAlertEnabledInModal.value
+  );
+  if (!body) {
+    return;
+  }
+
+  try {
+    isSavingOperatorReplyPendingAlert.value = true;
+
+    const result = await channelStore.updateOperatorReplyPendingAlert(
+      channelId.value,
+      body
+    );
+
+    if (result) {
+      applyOperatorReplyPendingAlertState(result);
+      closeOperatorReplyPendingAlertModal();
+    }
+  } finally {
+    isSavingOperatorReplyPendingAlert.value = false;
+  }
+};
+
 const openChatbotModal = async () => {
   if (!channelId.value) return;
 
@@ -2715,6 +2844,13 @@ const workerConfigOptions = computed(() => [
     ),
   },
   {
+    key: 'operator_reply_pending_alert' as WorkerConfigField,
+    title: t('channel_general_config_operator_reply_pending_alert_title'),
+    description: t(
+      'channel_general_config_operator_reply_pending_alert_description'
+    ),
+  },
+  {
     key: 'attendance_hours' as WorkerConfigField,
     title: t('channel_general_config_attendance_hours_title'),
     description: t('channel_general_config_attendance_hours_description'),
@@ -2740,6 +2876,7 @@ const hasModal = (key: WorkerConfigField): boolean => {
     key === 'send_message_on_finish_attendance' ||
     key === 'typing_simulation' ||
     key === 'attendance_inactivity_alert' ||
+    key === 'operator_reply_pending_alert' ||
     key === 'attendance_hours' ||
     key === 'chatbot' ||
     key === 'ai_agent'
@@ -2848,6 +2985,12 @@ const getToggleDisabled = (key: WorkerConfigField): boolean => {
     );
   }
 
+  if (key === 'operator_reply_pending_alert') {
+    return (
+      isSavingWorkerConfig.value || isSavingOperatorReplyPendingAlert.value
+    );
+  }
+
   if (key === 'typing_simulation') {
     return isSavingWorkerConfig.value || isSavingTypingSimulation.value;
   }
@@ -2917,6 +3060,12 @@ const handleToggleClick = (key: WorkerConfigField): void => {
     return;
   }
 
+  if (key === 'operator_reply_pending_alert') {
+    void toggleOperatorReplyPendingAlertStatus();
+
+    return;
+  }
+
   if (key === 'typing_simulation') {
     toggleTypingSimulationStatus();
 
@@ -2977,6 +3126,12 @@ const handleCardClick = (key: WorkerConfigField): void => {
 
   if (key === 'attendance_inactivity_alert') {
     openAttendanceInactivityAlertModal();
+
+    return;
+  }
+
+  if (key === 'operator_reply_pending_alert') {
+    void openOperatorReplyPendingAlertModal();
 
     return;
   }
@@ -5908,6 +6063,75 @@ onMounted(async () => {
           :loading="isSavingAttendanceInactivityAlert"
           :disabled="isSavingAttendanceInactivityAlert"
           @click="saveAttendanceInactivityAlertConfiguration"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog
+    v-model="operatorReplyPendingAlertModalOpen"
+    max-width="560"
+    persistent
+  >
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_operator_reply_pending_alert_title')
+        }}</span>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="operatorReplyPendingAlertEnabledInModal"
+            color="primary"
+            :disabled="isSavingOperatorReplyPendingAlert"
+            @click="toggleOperatorReplyPendingAlertStatusInModal"
+          />
+          <IconBtn @click="closeOperatorReplyPendingAlertModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
+      </VCardTitle>
+
+      <VCardText>
+        <p class="text-body-2 text-medium-emphasis mb-4">
+          {{
+            $t('channel_general_config_operator_reply_pending_alert_description')
+          }}
+        </p>
+
+        <VLabel class="text-body-2 mb-1">
+          {{ $t('operator_reply_pending_alert_time_label') }}:
+        </VLabel>
+        <AppTextField
+          v-model.number="operatorReplyPendingAlertTimeMinutesInModal"
+          type="number"
+          min="1"
+          :disabled="
+            isSavingOperatorReplyPendingAlert ||
+            !operatorReplyPendingAlertEnabledInModal
+          "
+        />
+
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('operator_reply_pending_alert_time_hint') }}
+        </div>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingOperatorReplyPendingAlert"
+          @click="closeOperatorReplyPendingAlertModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingOperatorReplyPendingAlert"
+          :disabled="isSavingOperatorReplyPendingAlert"
+          @click="saveOperatorReplyPendingAlertConfiguration"
         >
           {{ $t('save') }}
         </VBtn>

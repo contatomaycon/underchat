@@ -41,6 +41,8 @@ import { viewAttendanceHours } from './methods/viewAttendanceHours';
 import { updateAttendanceHours } from './methods/updateAttendanceHours';
 import { viewAttendanceInactivityAlert } from './methods/viewAttendanceInactivityAlert';
 import { updateAttendanceInactivityAlert } from './methods/updateAttendanceInactivityAlert';
+import { viewOperatorReplyPendingAlert } from './methods/viewOperatorReplyPendingAlert';
+import { updateOperatorReplyPendingAlert } from './methods/updateOperatorReplyPendingAlert';
 import { checkWorkerOpenConversations } from './methods/checkWorkerOpenConversations';
 import { createExternalConnectionLink } from './methods/createExternalConnectionLink';
 import { viewExternalConnection } from './methods/viewExternalConnection';
@@ -93,6 +95,8 @@ class WorkerController {
   public updateAttendanceHours = updateAttendanceHours;
   public viewAttendanceInactivityAlert = viewAttendanceInactivityAlert;
   public updateAttendanceInactivityAlert = updateAttendanceInactivityAlert;
+  public viewOperatorReplyPendingAlert = viewOperatorReplyPendingAlert;
+  public updateOperatorReplyPendingAlert = updateOperatorReplyPendingAlert;
   public checkWorkerOpenConversations = checkWorkerOpenConversations;
   public createExternalConnectionLink = createExternalConnectionLink;
   public viewExternalConnection = viewExternalConnection;

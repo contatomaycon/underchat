@@ -322,6 +322,27 @@ export class WorkerConfigUpserterRepository {
     );
   };
 
+  updateOperatorReplyPendingAlert = async (
+    workerId: string,
+    value: string | null,
+    statusId: string
+  ): Promise<string | null> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.operator_reply_pending_alert,
+        value
+      );
+    });
+
+    return this.getConfigValue(
+      workerId,
+      EWorkerConfigType.operator_reply_pending_alert
+    );
+  };
+
   updateChatbot = async (
     workerId: string,
     chatbotId: string | null,

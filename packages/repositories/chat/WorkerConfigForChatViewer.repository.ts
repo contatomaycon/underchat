@@ -6,6 +6,10 @@ import { eq, and } from 'drizzle-orm';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
+import {
+  OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES,
+  parseOperatorReplyPendingAlertConfig,
+} from '@core/common/functions/operatorReplyPendingAlertConfig';
 
 @injectable()
 export class WorkerConfigForChatViewerRepository {
@@ -16,10 +20,16 @@ export class WorkerConfigForChatViewerRepository {
   viewWorkerConfigForChatByWorkerId = async (
     workerId: string
   ): Promise<ViewWorkerConfigForChatResponse> => {
-    const [configMap, chatbotOutputConfig, aiAgentConfig] = await Promise.all([
+    const [
+      configMap,
+      chatbotOutputConfig,
+      aiAgentConfig,
+      operatorReplyPendingAlertConfig,
+    ] = await Promise.all([
       this.fetchActiveConfigs(workerId),
       this.fetchChatbotOutputConfig(workerId),
       this.fetchAiAgentConfig(workerId),
+      this.fetchOperatorReplyPendingAlertConfig(workerId),
     ]);
 
     if (configMap.size === 0) {
@@ -29,7 +39,8 @@ export class WorkerConfigForChatViewerRepository {
     return this.buildConfigForChat(
       configMap,
       chatbotOutputConfig,
-      aiAgentConfig
+      aiAgentConfig,
+      operatorReplyPendingAlertConfig
     );
   };
 
@@ -91,7 +102,11 @@ export class WorkerConfigForChatViewerRepository {
   private buildConfigForChat(
     configMap: Map<EWorkerConfigType, string | null>,
     chatbotOutputConfig: { chatbotId: string | null; statusId: string } | null,
-    aiAgentConfig: { aiAgentId: string | null; enabled: boolean }
+    aiAgentConfig: { aiAgentId: string | null; enabled: boolean },
+    operatorReplyPendingAlertConfig: {
+      value: string | null;
+      enabled: boolean;
+    }
   ): ViewWorkerConfigForChatResponse {
     const simultaneousAttendance = this.parseNumber(
       configMap.get(EWorkerConfigType.simultaneous_attendance)
@@ -102,6 +117,12 @@ export class WorkerConfigForChatViewerRepository {
       chatbotOutputConfig.chatbotId &&
       String(chatbotOutputConfig.chatbotId).trim().length > 0
     );
+
+    const parsedOperatorReplyPendingAlertConfig =
+      parseOperatorReplyPendingAlertConfig(
+        operatorReplyPendingAlertConfig.value,
+        operatorReplyPendingAlertConfig.enabled
+      );
 
     return {
       show_worker_name: configMap.has(EWorkerConfigType.show_worker_name)
@@ -134,9 +155,53 @@ export class WorkerConfigForChatViewerRepository {
       simultaneous_attendance: simultaneousAttendance,
       simultaneous_attendance_enabled:
         simultaneousAttendance !== null && simultaneousAttendance > 0,
+      operator_reply_pending_alert_enabled:
+        parsedOperatorReplyPendingAlertConfig.enabled,
+      operator_reply_pending_alert_time_minutes:
+        parsedOperatorReplyPendingAlertConfig.time_minutes,
       has_ura_output: hasUraOutput,
       ai_agent_enabled: aiAgentConfig.enabled,
       ai_agent_id: aiAgentConfig.aiAgentId,
+    };
+  }
+
+  private async fetchOperatorReplyPendingAlertConfig(
+    workerId: string
+  ): Promise<{
+    value: string | null;
+    enabled: boolean;
+  }> {
+    const result = await this.dbRo
+      .select({
+        value: workerConfig.value,
+        worker_config_status_id: workerConfig.worker_config_status_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(
+            workerConfig.worker_config_type_id,
+            EWorkerConfigType.operator_reply_pending_alert
+          )
+        )
+      )
+      .limit(1)
+      .execute();
+
+    const row = result[0];
+    if (!row) {
+      return {
+        value: JSON.stringify({
+          time_minutes: OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES,
+        }),
+        enabled: false,
+      };
+    }
+
+    return {
+      value: row.value ?? null,
+      enabled: row.worker_config_status_id === EWorkerConfigStatus.active,
     };
   }
 

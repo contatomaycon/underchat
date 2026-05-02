@@ -2515,6 +2515,8 @@ export class MessageUpsertConsume {
     lastMessageId: string | null,
     processedMessageId: string | null,
     incrementUnreadCount: boolean,
+    messageAuthorTypeUser: ETypeUserChat | null,
+    updateOperatorReplyPending: boolean,
     maxRetries = 3
   ): Promise<boolean> {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -2525,7 +2527,9 @@ export class MessageUpsertConsume {
         lastDateEpochMillis,
         lastMessageId,
         processedMessageId,
-        incrementUnreadCount
+        incrementUnreadCount,
+        messageAuthorTypeUser,
+        updateOperatorReplyPending
       );
 
       if (success) {
@@ -2705,6 +2709,9 @@ export class MessageUpsertConsume {
       const messageText = extractMessageTextFromContent(content);
       const incrementUnreadCount = !isFromMe;
       const lastDateEpochMillis = new Date(inputChatMessage.date).getTime();
+      const updateOperatorReplyPending =
+        getChat.status === EChatStatus.in_chat &&
+        data.type !== EMessageType.react;
 
       const lockKey = `chat-summary:${getChat.chat_id}`;
       await withLock(
@@ -2718,7 +2725,9 @@ export class MessageUpsertConsume {
             lastDateEpochMillis,
             inputChatMessage.message_id,
             inputChatMessage.message_id,
-            incrementUnreadCount
+            incrementUnreadCount,
+            typeUser,
+            updateOperatorReplyPending
           );
 
           const updatedChat = await this.chatService.findChatByChatId(

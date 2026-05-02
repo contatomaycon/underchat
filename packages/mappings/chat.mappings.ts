@@ -25,6 +25,9 @@ export const chatMappings = () => {
             last_date: {
               type: 'date',
             },
+            operator_reply_pending_since: {
+              type: 'date',
+            },
             unread_count: {
               type: 'integer',
             },

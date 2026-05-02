@@ -10,6 +10,9 @@ export const accountSchema = Type.Object({
 export const summarySchema = Type.Object({
   last_message: Type.Union([Type.String(), Type.Null()]),
   last_date: Type.Union([Type.String(), Type.Null()]),
+  operator_reply_pending_since: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
   unread_count: Type.Integer(),
 });
 

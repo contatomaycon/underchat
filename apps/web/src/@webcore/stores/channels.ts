@@ -37,6 +37,9 @@ import { UpdateAttendanceHoursResponse } from '@core/schema/worker/updateAttenda
 import { ViewAttendanceInactivityAlertResponse } from '@core/schema/worker/viewAttendanceInactivityAlert/response.schema';
 import { UpdateAttendanceInactivityAlertRequest } from '@core/schema/worker/updateAttendanceInactivityAlert/request.schema';
 import { UpdateAttendanceInactivityAlertResponse } from '@core/schema/worker/updateAttendanceInactivityAlert/response.schema';
+import { ViewOperatorReplyPendingAlertResponse } from '@core/schema/worker/viewOperatorReplyPendingAlert/response.schema';
+import { UpdateOperatorReplyPendingAlertRequest } from '@core/schema/worker/updateOperatorReplyPendingAlert/request.schema';
+import { UpdateOperatorReplyPendingAlertResponse } from '@core/schema/worker/updateOperatorReplyPendingAlert/response.schema';
 import { ViewTypingSimulationResponse } from '@core/schema/worker/viewTypingSimulation/response.schema';
 import { UpdateTypingSimulationRequest } from '@core/schema/worker/updateTypingSimulation/request.schema';
 import { UpdateTypingSimulationResponse } from '@core/schema/worker/updateTypingSimulation/response.schema';
@@ -2036,10 +2039,80 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
+        delete this.workerConfigCache[workerId];
+        delete this.workerConfigForChatCache[workerId];
+
         return data.data;
       } catch (error) {
         let message = this.i18n.global.t(
           'attendance_inactivity_alert_update_error'
+        );
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
+    async fetchOperatorReplyPendingAlert(
+      workerId: string
+    ): Promise<ViewOperatorReplyPendingAlertResponse | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewOperatorReplyPendingAlertResponse>
+        >(`/worker/${workerId}/config/operator-reply-pending-alert`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateOperatorReplyPendingAlert(
+      workerId: string,
+      body: UpdateOperatorReplyPendingAlertRequest
+    ): Promise<UpdateOperatorReplyPendingAlertResponse | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.patch<
+          IApiResponse<UpdateOperatorReplyPendingAlertResponse>
+        >(`/worker/${workerId}/config/operator-reply-pending-alert`, body);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('operator_reply_pending_alert_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('operator_reply_pending_alert_update_success'),
+          EColor.success
+        );
+
+        delete this.workerConfigCache[workerId];
+        delete this.workerConfigForChatCache[workerId];
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t(
+          'operator_reply_pending_alert_update_error'
         );
         if (error instanceof AxiosError) {
           message = error?.response?.data?.message ?? message;

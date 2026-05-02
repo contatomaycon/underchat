@@ -7,6 +7,7 @@ import { mensageMappings } from '@core/mappings/mensage.mappings';
 import { IChat } from '@core/common/interfaces/IChat';
 import { chatMappings } from '@core/mappings/chat.mappings';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { WorkerConfigForChatViewerRepository } from '@core/repositories/chat/WorkerConfigForChatViewer.repository';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
@@ -1439,6 +1440,8 @@ export class ChatService {
     const baseline: IChatSummary = {
       last_message: summary.last_message,
       last_date: summary.last_date,
+      operator_reply_pending_since:
+        summary.operator_reply_pending_since ?? null,
       unread_count: summary.unread_count,
     };
 
@@ -1446,6 +1449,8 @@ export class ChatService {
       baseline,
       last_message: summary.last_message,
       last_date: summary.last_date,
+      operator_reply_pending_since:
+        summary.operator_reply_pending_since ?? null,
       unread_count_absolute: summary.unread_count,
     };
   }
@@ -1458,6 +1463,8 @@ export class ChatService {
         {
           last_message: summary.last_message,
           last_date: summary.last_date,
+          operator_reply_pending_since:
+            summary.operator_reply_pending_since ?? null,
           unread_count: summary.unread_count,
         },
       ],
@@ -1471,14 +1478,23 @@ export class ChatService {
     lastDateEpochMillis: number,
     lastMessageId: string | null,
     processedMessageId: string | null,
-    incrementUnreadCount: boolean
+    incrementUnreadCount: boolean,
+    messageAuthorTypeUser: ETypeUserChat | null,
+    updateOperatorReplyPending: boolean
   ): Promise<boolean> => {
+    const operatorReplyPendingSince =
+      updateOperatorReplyPending &&
+      messageAuthorTypeUser === ETypeUserChat.client
+        ? lastDate
+        : null;
+
     const baseline = this.createChatSummaryBaseline(
       lastMessage,
       lastDate,
       lastDateEpochMillis,
       lastMessageId,
-      processedMessageId
+      processedMessageId,
+      operatorReplyPendingSince
     );
     const scriptParams = this.buildChatSummaryAtomicScriptParams(
       baseline,
@@ -1487,7 +1503,9 @@ export class ChatService {
       lastDateEpochMillis,
       lastMessageId,
       processedMessageId,
-      incrementUnreadCount
+      incrementUnreadCount,
+      messageAuthorTypeUser,
+      updateOperatorReplyPending
     );
     const upsert = this.buildChatSummaryAtomicUpsert(baseline);
     const scriptSource = this.buildChatSummaryAtomicUpdateScript();
@@ -1536,7 +1554,12 @@ export class ChatService {
         summary.last_processed_message_id = null;
       }
 
+      if (summary.operator_reply_pending_since == null) {
+        summary.operator_reply_pending_since = null;
+      }
+
       def changed = false;
+      def messageUpdated = false;
 
       def currentEpoch = summary.last_date_epoch_millis;
       def newEpoch = params.last_date_epoch_millis;
@@ -1560,6 +1583,23 @@ export class ChatService {
           summary.last_message_id = params.last_message_id;
         }
         changed = true;
+        messageUpdated = true;
+      }
+
+      if (params.update_operator_reply_pending == true) {
+        if (messageUpdated && params.message_author_type_user == 'client') {
+          summary.operator_reply_pending_since = params.last_date;
+          changed = true;
+        } else if (params.message_author_type_user == 'operator') {
+          if (
+            summary.operator_reply_pending_since != null &&
+            params.last_date != null &&
+            params.last_date.compareTo(summary.operator_reply_pending_since) >= 0
+          ) {
+            summary.operator_reply_pending_since = null;
+            changed = true;
+          }
+        }
       }
 
       if (params.processed_message_id != null && params.increment_unread_count) {
@@ -1582,7 +1622,8 @@ export class ChatService {
     lastDate: string,
     lastDateEpochMillis: number,
     lastMessageId: string | null,
-    processedMessageId: string | null
+    processedMessageId: string | null,
+    operatorReplyPendingSince: string | null
   ): ChatSummaryBaseline {
     return {
       last_message: lastMessage,
@@ -1590,6 +1631,7 @@ export class ChatService {
       last_date_epoch_millis: lastDateEpochMillis,
       last_message_id: lastMessageId,
       last_processed_message_id: processedMessageId,
+      operator_reply_pending_since: operatorReplyPendingSince,
       unread_count: 0,
     };
   }
@@ -1601,7 +1643,9 @@ export class ChatService {
     lastDateEpochMillis: number,
     lastMessageId: string | null,
     processedMessageId: string | null,
-    incrementUnreadCount: boolean
+    incrementUnreadCount: boolean,
+    messageAuthorTypeUser: ETypeUserChat | null,
+    updateOperatorReplyPending: boolean
   ): ChatSummaryAtomicUpdateParams {
     return {
       baseline,
@@ -1611,6 +1655,8 @@ export class ChatService {
       last_message_id: lastMessageId,
       processed_message_id: processedMessageId,
       increment_unread_count: incrementUnreadCount,
+      message_author_type_user: messageAuthorTypeUser,
+      update_operator_reply_pending: updateOperatorReplyPending,
     };
   }
 

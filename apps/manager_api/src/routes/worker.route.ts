@@ -54,6 +54,8 @@ import { viewAttendanceHoursSchema } from '@core/schema/worker/viewAttendanceHou
 import { updateAttendanceHoursSchema } from '@core/schema/worker/updateAttendanceHours';
 import { viewAttendanceInactivityAlertSchema } from '@core/schema/worker/viewAttendanceInactivityAlert';
 import { updateAttendanceInactivityAlertSchema } from '@core/schema/worker/updateAttendanceInactivityAlert';
+import { viewOperatorReplyPendingAlertSchema } from '@core/schema/worker/viewOperatorReplyPendingAlert';
+import { updateOperatorReplyPendingAlertSchema } from '@core/schema/worker/updateOperatorReplyPendingAlert';
 import { checkWorkerOpenConversationsSchema } from '@core/schema/worker/checkWorkerOpenConversations';
 import { workerExternalConnectionLinkSchema } from '@core/schema/worker/externalConnectionLink';
 import {
@@ -508,6 +510,28 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/attendance-inactivity-alert', {
     schema: updateAttendanceInactivityAlertSchema,
     handler: workerController.updateAttendanceInactivityAlert,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/operator-reply-pending-alert', {
+    schema: viewOperatorReplyPendingAlertSchema,
+    handler: workerController.viewOperatorReplyPendingAlert,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/operator-reply-pending-alert', {
+    schema: updateOperatorReplyPendingAlertSchema,
+    handler: workerController.updateOperatorReplyPendingAlert,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

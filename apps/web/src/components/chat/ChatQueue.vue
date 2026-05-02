@@ -2,6 +2,7 @@
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
+import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { limitCharacters } from '@core/common/functions/limitCharacters';
 import { formatWhatsAppPreviewToHtml } from '@core/common/functions/whatsAppTextFormat';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
@@ -42,7 +43,10 @@ const isChatContactActive = computed(() => {
 });
 
 const workerName = computed(() => props.user?.worker?.name ?? '');
-const showWorkerNameLabel = ref(false);
+const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
+const OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES = 15;
+const operatorReplyPendingNow = ref(Date.now());
+let operatorReplyPendingTicker: ReturnType<typeof setInterval> | null = null;
 
 const getAttendantFirstName = (fullName: string | null | undefined): string => {
   if (!fullName?.trim()) {
@@ -228,17 +232,75 @@ const textColor = (s: string | null): string => {
   return yiq >= 128 ? '#4A4A4A' : '#FFFFFF';
 };
 
+const showWorkerNameLabel = computed(() => {
+  return Boolean(workerConfigForChat.value?.show_worker_name);
+});
+
+const operatorReplyPendingSince = computed(() => {
+  return props.user?.summary?.operator_reply_pending_since ?? null;
+});
+
+const operatorReplyPendingThresholdMinutes = computed(() => {
+  const configured =
+    workerConfigForChat.value?.operator_reply_pending_alert_time_minutes;
+  if (!configured || configured < 1) {
+    return OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES;
+  }
+  return configured;
+});
+
+const operatorReplyPendingThresholdMs = computed(() => {
+  return operatorReplyPendingThresholdMinutes.value * 60 * 1000;
+});
+
+const operatorReplyPendingElapsedMs = computed(() => {
+  const pendingSince = operatorReplyPendingSince.value;
+  if (!pendingSince) {
+    return 0;
+  }
+
+  const pendingSinceMs = new Date(pendingSince).getTime();
+  if (!Number.isFinite(pendingSinceMs)) {
+    return 0;
+  }
+
+  return Math.max(operatorReplyPendingNow.value - pendingSinceMs, 0);
+});
+
+const isOperatorReplyPendingAlertTriggered = computed(() => {
+  if (props.user?.status !== EChatStatus.in_chat) {
+    return false;
+  }
+
+  if (!workerConfigForChat.value?.operator_reply_pending_alert_enabled) {
+    return false;
+  }
+
+  if (!operatorReplyPendingSince.value) {
+    return false;
+  }
+
+  return operatorReplyPendingElapsedMs.value >= operatorReplyPendingThresholdMs.value;
+});
+
+const operatorReplyPendingAlertLabel = computed(() => {
+  return t('chat_operator_reply_pending_alert_chip');
+});
+
 const loadWorkerConfig = async (workerId?: string | null) => {
   if (!workerId) {
-    showWorkerNameLabel.value = false;
+    workerConfigForChat.value = null;
     return;
   }
 
   const config = await channelsStore.fetchWorkerConfigForChat(workerId);
-  showWorkerNameLabel.value = Boolean(config?.show_worker_name);
+  workerConfigForChat.value = config;
 };
 
 onMounted(() => {
+  operatorReplyPendingTicker = setInterval(() => {
+    operatorReplyPendingNow.value = Date.now();
+  }, 30000);
   void loadWorkerConfig(props.user?.worker?.id);
 });
 
@@ -248,6 +310,13 @@ watch(
     void loadWorkerConfig(newId);
   }
 );
+
+onBeforeUnmount(() => {
+  if (operatorReplyPendingTicker) {
+    clearInterval(operatorReplyPendingTicker);
+    operatorReplyPendingTicker = null;
+  }
+});
 </script>
 
 <template>
@@ -263,6 +332,7 @@ watch(
           (showWorkerNameLabel && workerName) || chatLabelForList,
         'chat-has-sector': sectorName,
         'chat-has-attendant': attendantFirstName && hasAttendant,
+        'chat-pending-reply-alert': isOperatorReplyPendingAlertTriggered,
       }"
       :aria-disabled="props.disabled ? 'true' : undefined"
     >
@@ -380,8 +450,8 @@ watch(
         />
       </VAvatar>
       <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
-        <div class="d-flex align-center gap-1 mb-0">
-          <p class="text-base text-high-emphasis mb-0 text-truncate">
+        <div class="chat-name-row d-flex align-center gap-1 mb-0">
+          <p class="chat-name text-base text-high-emphasis mb-0 text-truncate">
             {{
               limitCharacters(20, props.user?.contact?.name ?? props.user?.name)
             }}
@@ -394,6 +464,15 @@ watch(
             class="contact-label"
           >
             {{ $t('contact_label') }}
+          </VChip>
+          <VChip
+            v-if="isOperatorReplyPendingAlertTriggered"
+            size="x-small"
+            color="error"
+            variant="flat"
+            class="operator-reply-pending-chip"
+          >
+            {{ operatorReplyPendingAlertLabel }}
           </VChip>
         </div>
         <p class="mb-0 text-truncate text-body-2">
@@ -501,6 +580,20 @@ watch(
   &.chat-with-checkbox {
     padding-inline-start: 44px;
   }
+
+  &.chat-pending-reply-alert:not(.chat-active) {
+    border-color: rgba(var(--v-theme-error), 0.55);
+    box-shadow: inset 0 0 0 1px rgba(var(--v-theme-error), 0.2);
+    background: linear-gradient(
+      180deg,
+      rgba(var(--v-theme-error), 0.05) 0%,
+      rgba(var(--v-theme-surface), 1) 58%
+    );
+  }
+}
+
+.chat.chat-active.chat-pending-reply-alert {
+  box-shadow: 0 0 0 2px rgba(var(--v-theme-error), 0.65);
 }
 
 .chat-checkbox-wrapper {
@@ -625,6 +718,21 @@ watch(
   font-size: 0.625rem !important;
   height: 16px !important;
   opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.chat-name-row {
+  min-width: 0;
+}
+
+.chat-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.operator-reply-pending-chip {
+  letter-spacing: 0;
+  font-weight: 700;
   flex-shrink: 0;
 }
 

@@ -400,8 +400,8 @@ export const useChatStore = defineStore('chat', {
     hasActiveKanbanFilters(): boolean {
       return Boolean(
         this.kanbanFilters.filter_worker_id ||
-          this.kanbanFilters.filter_name ||
-          this.kanbanFilters.filter_phone
+        this.kanbanFilters.filter_name ||
+        this.kanbanFilters.filter_phone
       );
     },
     applyKanbanFiltersToQuery(
@@ -1229,6 +1229,10 @@ export const useChatStore = defineStore('chat', {
         ...this.activeChat.summary,
         last_date: chat.summary.last_date,
         last_message: chat.summary.last_message,
+        operator_reply_pending_since:
+          chat.summary.operator_reply_pending_since ??
+          this.activeChat.summary.operator_reply_pending_since ??
+          null,
         unread_count: chat.summary.unread_count,
       };
     },
@@ -1246,6 +1250,10 @@ export const useChatStore = defineStore('chat', {
         last_date: input.summary?.last_date ?? existingSummary.last_date,
         last_message:
           input.summary?.last_message ?? existingSummary.last_message,
+        operator_reply_pending_since:
+          input.summary?.operator_reply_pending_since ??
+          existingSummary.operator_reply_pending_since ??
+          null,
         unread_count:
           input.summary?.unread_count ?? existingSummary.unread_count,
       };

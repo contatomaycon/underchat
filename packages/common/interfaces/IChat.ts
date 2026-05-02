@@ -6,6 +6,7 @@ interface ISummary {
   last_date_epoch_millis?: number | null;
   last_message_id?: string | null;
   last_processed_message_id?: string | null;
+  operator_reply_pending_since?: string | null;
   unread_count: number;
 }
 

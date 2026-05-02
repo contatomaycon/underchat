@@ -28,4 +28,5 @@ export enum EWorkerConfigType {
   ai_agent_id = '019ccf67-633d-7478-8aca-11720066346b',
   attendance_inactivity_alert = '01a0f0f1-1b2c-7d3e-8f90-1234567890ab',
   typing_simulation = '01a12c40-5a6b-7c8d-9e0f-112233445566',
+  operator_reply_pending_alert = '01a34b50-6c7d-8e9f-a021-334455667788',
 }

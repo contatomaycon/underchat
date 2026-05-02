@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { ChatService } from './chat.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -435,6 +436,14 @@ export class ChatMessageService {
     const messageText = extractMessageTextFromContent(message.content);
     const lastDateEpochMillis = new Date(message.date).getTime();
     const incrementUnreadCount = false;
+    const chatBeforeSummary = await this.chatService.findChatByChatId(
+      message.account.id,
+      message.chat_id
+    );
+    const updateOperatorReplyPending =
+      chatBeforeSummary?.status === EChatStatus.in_chat &&
+      message.type_user === ETypeUserChat.operator &&
+      message.content.type !== EMessageType.react;
 
     await this.chatService.updateChatSummaryAtomically(
       message.chat_id,
@@ -443,7 +452,9 @@ export class ChatMessageService {
       lastDateEpochMillis,
       message.message_id,
       message.message_id,
-      incrementUnreadCount
+      incrementUnreadCount,
+      message.type_user,
+      updateOperatorReplyPending
     );
 
     const updatedChat = await this.chatService.findChatByChatId(

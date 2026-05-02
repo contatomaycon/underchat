@@ -32,6 +32,8 @@ import {
   typingSimulationCacheKey,
 } from '@core/common/functions/typingSimulationConfig';
 import { ITypingSimulationConfig } from '@core/common/interfaces/ITypingSimulationConfig';
+import { IOperatorReplyPendingAlertConfig } from '@core/common/interfaces/IOperatorReplyPendingAlertConfig';
+import { parseOperatorReplyPendingAlertConfig } from '@core/common/functions/operatorReplyPendingAlertConfig';
 
 @injectable()
 export class WorkerConfigService {
@@ -1002,6 +1004,42 @@ export class WorkerConfigService {
       inactivity_message: parsed.inactivity_message,
       enabled,
     };
+  }
+
+  async updateOperatorReplyPendingAlert(
+    workerId: string,
+    config: IOperatorReplyPendingAlertConfig
+  ): Promise<IOperatorReplyPendingAlertConfig> {
+    const statusId = config.enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+    const valueToSave = JSON.stringify({
+      time_minutes: config.time_minutes,
+    });
+
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateOperatorReplyPendingAlert(
+        workerId,
+        valueToSave,
+        statusId
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return parseOperatorReplyPendingAlertConfig(result, config.enabled);
+  }
+
+  async viewOperatorReplyPendingAlert(
+    workerId: string
+  ): Promise<IOperatorReplyPendingAlertConfig> {
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.operator_reply_pending_alert
+      );
+
+    const enabled = config.statusId === EWorkerConfigStatus.active;
+    return parseOperatorReplyPendingAlertConfig(config.value, enabled);
   }
 
   async viewChatbotConfigByAccountId(accountId: string): Promise<{
