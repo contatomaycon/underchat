@@ -28,6 +28,7 @@ export const internalChatMessageMappings = () => {
               },
             },
             message_quoted_id: { type: 'keyword' },
+            system: { type: 'object', enabled: true },
             quoted: { type: 'object', enabled: true },
             image: { type: 'object', enabled: true },
             video: { type: 'object', enabled: true },

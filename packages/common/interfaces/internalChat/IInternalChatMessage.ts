@@ -18,6 +18,15 @@ import {
 export interface IInternalChatMessageContent {
   type: EMessageType;
   message?: string | null;
+  system?: {
+    action?: string | null;
+    key?: string | null;
+    params?: Record<string, string | number | null | undefined> | null;
+    actor_user_id?: string | null;
+    actor_name?: string | null;
+    target_user_id?: string | null;
+    target_name?: string | null;
+  } | null;
   message_quoted_id?: string | null;
   link_preview?: LinkPreview | null;
   quoted?: IQuotedMessage | null;

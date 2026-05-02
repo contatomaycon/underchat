@@ -34,6 +34,7 @@ import { EInternalChatConversationType } from '@core/common/enums/internalChat/E
 import { EInternalChatConversationParticipantRole } from '@core/common/enums/internalChat/EInternalChatConversationParticipantRole';
 import { EInternalChatActivityState } from '@core/common/enums/internalChat/EInternalChatActivityState';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
 import type { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import type { ListConversationsResponse } from '@core/schema/internalChat/listConversations/response.schema';
@@ -89,8 +90,11 @@ type InternalViewerMediaItem = {
   kind: InternalMediaKind;
 };
 type InternalReplyPreviewContent = Partial<InternalMessage['content']> & {
+  message_id?: string | null;
+  id?: string | null;
   type?: EMessageType | string | null;
   user_name?: string | null;
+  key?: { id?: string | null } | null;
 };
 type InternalMessageHistoryItem = {
   text: string;
@@ -173,6 +177,7 @@ const isComposerEmojiOpen = ref(false);
 const ignoreReactionOutsideOnce = ref(false);
 const showScrollToBottom = ref(false);
 const shouldAutoScrollMessages = ref(true);
+const highlightedMessageId = ref<string | null>(null);
 const fixedMessageDateLabel = ref('');
 const fixedMessageDateIndicatorTop = ref(0);
 const fixedMessageDateIndicatorLeft = ref(0);
@@ -322,6 +327,7 @@ const recordingTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const recordingAnimationFrame = ref<number | null>(null);
 const shouldSendRecording = ref(false);
 const activityCleanupTimer = ref<ReturnType<typeof setInterval> | null>(null);
+let highlightedMessageTimer: ReturnType<typeof setTimeout> | null = null;
 const avatarFallback = '/images/svg/avatar-default.svg';
 const allowedGroupPhotoTypes = [
   'image/jpeg',
@@ -867,6 +873,7 @@ const internalChatPreviewTranslationKeys = [
   'internal_chat_preview_location',
   'internal_chat_preview_contact',
   'internal_chat_preview_contacts',
+  'internal_chat_preview_group_event',
 ] as const;
 type InternalChatPreviewTranslationKey =
   (typeof internalChatPreviewTranslationKeys)[number];
@@ -1022,12 +1029,40 @@ const isDeletedMessage = (message: InternalMessage): boolean => {
   return Boolean(message.deleted);
 };
 
+const isSystemMessage = (message: InternalMessage): boolean => {
+  return (
+    message.type_user === ETypeUserChat.system ||
+    message.content?.type === EMessageType.system
+  );
+};
+
+const resolveSystemMessageText = (message: InternalMessage): string => {
+  const system = message.content?.system as
+    | {
+        key?: string | null;
+        params?: Record<string, string | number | null | undefined> | null;
+      }
+    | null
+    | undefined;
+  const key = system?.key || message.content?.message || '';
+
+  if (key) {
+    return String(t(key, system?.params ?? {}));
+  }
+
+  return String(t('internal_chat_preview_group_event'));
+};
+
 const canManageInternalMessage = (message: InternalMessage): boolean => {
   return isOwnMessage(message) || isActiveConversationLeader.value;
 };
 
 const canInteractWithMessage = (message: InternalMessage): boolean => {
-  return !isDeletedMessage(message) && Boolean(message.content);
+  return (
+    !isSystemMessage(message) &&
+    !isDeletedMessage(message) &&
+    Boolean(message.content)
+  );
 };
 
 const canEditInternalMessage = (message: InternalMessage): boolean => {
@@ -1128,6 +1163,7 @@ const getMessageHistoryItems = (
 
 const resolveMessageText = (message: InternalMessage): string | null => {
   if (!message.content) return null;
+  if (isSystemMessage(message)) return resolveSystemMessageText(message);
   if (message.deleted) return t('internal_chat_deleted_message');
 
   if (
@@ -2704,10 +2740,13 @@ const messageAutoScrollThreshold = 80;
 const getMessageScrollElement = (): HTMLElement | null => {
   const scrollRef = messageListScrollRef.value as
     | (InstanceType<typeof PerfectScrollbar> & {
+        ps?: { element?: HTMLElement; value?: { element?: HTMLElement } };
         $el?: HTMLElement;
-        ps?: { update?: () => void };
       })
     | null;
+  const psElement = scrollRef?.ps?.element ?? scrollRef?.ps?.value?.element;
+  if (psElement) return psElement;
+
   const root = scrollRef?.$el ?? null;
 
   if (!root) return null;
@@ -2721,13 +2760,18 @@ const updateMessageScrollbar = async () => {
 
   const scrollRef = messageListScrollRef.value as
     | (InstanceType<typeof PerfectScrollbar> & {
-        ps?: { update?: () => void };
+        ps?: { update?: () => void; value?: { update?: () => void } };
         update?: () => void;
       })
     | null;
 
   if (typeof scrollRef?.ps?.update === 'function') {
     scrollRef.ps.update();
+    return;
+  }
+
+  if (typeof scrollRef?.ps?.value?.update === 'function') {
+    scrollRef.ps.value.update();
     return;
   }
 
@@ -2832,6 +2876,343 @@ const scrollMessagesToBottom = async (smooth = false) => {
     showScrollToBottom.value = false;
     fixedMessageDateLabel.value = '';
   });
+};
+
+const clearHighlightedMessage = () => {
+  if (highlightedMessageTimer) {
+    clearTimeout(highlightedMessageTimer);
+    highlightedMessageTimer = null;
+  }
+
+  highlightedMessageId.value = null;
+};
+
+const highlightMessage = (messageId: string) => {
+  if (highlightedMessageTimer) {
+    clearTimeout(highlightedMessageTimer);
+  }
+
+  highlightedMessageId.value = messageId;
+  highlightedMessageTimer = setTimeout(() => {
+    highlightedMessageId.value = null;
+    highlightedMessageTimer = null;
+  }, 30_000);
+};
+
+const findMessageByTargetId = (targetId: string): InternalMessage | null => {
+  return (
+    messages.value.find(
+      (message) =>
+        message.message_id === targetId ||
+        (message.hash ? message.hash === targetId : false)
+    ) ?? null
+  );
+};
+
+const isMessageLoaded = (targetId: string): boolean => {
+  return Boolean(findMessageByTargetId(targetId));
+};
+
+const ensureMessageLoaded = async (targetId: string): Promise<boolean> => {
+  if (!targetId) return false;
+  if (isMessageLoaded(targetId)) return true;
+
+  while (messagesPaging.value.current_page < messagesPaging.value.total_pages) {
+    const previousPage = messagesPaging.value.current_page;
+    await loadMoreMessages();
+    await nextTick();
+
+    if (isMessageLoaded(targetId)) return true;
+    if (messagesPaging.value.current_page === previousPage) break;
+  }
+
+  return isMessageLoaded(targetId);
+};
+
+const escapeMessageSelectorValue = (value: string): string => {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+};
+
+const findMessageTargetElement = (
+  scrollElement: HTMLElement,
+  messageId: string
+): HTMLElement | null => {
+  const selectorValue = escapeMessageSelectorValue(messageId);
+
+  return (
+    (scrollElement.querySelector(
+      `[data-message-id="${selectorValue}"]`
+    ) as HTMLElement | null) ||
+    (scrollElement.querySelector(
+      `[data-message-group-ids~="${selectorValue}"]`
+    ) as HTMLElement | null) ||
+    (document.getElementById(`internal-msg-${messageId}`) as HTMLElement | null)
+  );
+};
+
+const resolveQuotedTargetId = (message: InternalMessage): string | null => {
+  if (isDeletedMessage(message)) return null;
+
+  const explicitId = message.content?.message_quoted_id;
+  if (explicitId) return String(explicitId);
+
+  const quoted = message.content?.quoted as
+    | {
+        message_id?: string | null;
+        id?: string | null;
+        key?: { id?: string | null } | null;
+        message?: string | null;
+      }
+    | null
+    | undefined;
+
+  const quotedId = quoted?.message_id || quoted?.id || quoted?.key?.id;
+  if (quotedId) return String(quotedId);
+
+  const quotedText = quoted?.message?.trim();
+  if (!quotedText) return null;
+
+  const matchedMessage = messages.value.find(
+    (item) => item.content?.message?.trim() === quotedText
+  );
+
+  return matchedMessage?.message_id ?? null;
+};
+
+const resolveQuotedTargetIds = (message: InternalMessage): string[] => {
+  if (isDeletedMessage(message)) return [];
+
+  const quoted = message.content?.quoted as InternalReplyPreviewContent | null;
+  const ids = [
+    message.content?.message_quoted_id,
+    quoted?.message_id,
+    quoted?.id,
+    quoted?.key?.id,
+  ]
+    .filter(Boolean)
+    .map((id) => String(id));
+
+  return [...new Set(ids)];
+};
+
+const resolveComparableMessageText = (
+  message?: InternalMessage | null
+): string => {
+  if (!message || isDeletedMessage(message) || isSystemMessage(message)) {
+    return '';
+  }
+
+  return (resolveMessageText(message) || '').trim();
+};
+
+const hasSameQuotedMedia = (
+  message: InternalMessage,
+  quotedContent: InternalReplyPreviewContent
+): boolean => {
+  if (quotedContent.type === EMessageType.image) {
+    return Boolean(
+      message.content?.image?.url &&
+      (message.content.image.url === quotedContent.image?.url ||
+        message.content.image.thumbnail === quotedContent.image?.thumbnail)
+    );
+  }
+
+  if (quotedContent.type === EMessageType.video) {
+    return Boolean(
+      message.content?.video?.url &&
+      message.content.video.url === quotedContent.video?.url
+    );
+  }
+
+  if (quotedContent.type === EMessageType.audio) {
+    return Boolean(
+      message.content?.audio?.url &&
+      message.content.audio.url === quotedContent.audio?.url
+    );
+  }
+
+  if (quotedContent.type === EMessageType.document) {
+    return Boolean(
+      message.content?.document?.url &&
+      (message.content.document.url === quotedContent.document?.url ||
+        message.content.document.name === quotedContent.document?.name)
+    );
+  }
+
+  return false;
+};
+
+const hasSameQuotedLocation = (
+  message: InternalMessage,
+  quotedContent: InternalReplyPreviewContent
+): boolean => {
+  if (quotedContent.type !== EMessageType.location) return false;
+
+  return Boolean(
+    message.content?.location &&
+    quotedContent.location &&
+    message.content.location.latitude === quotedContent.location.latitude &&
+    message.content.location.longitude === quotedContent.location.longitude
+  );
+};
+
+const hasSameQuotedContact = (
+  message: InternalMessage,
+  quotedContent: InternalReplyPreviewContent
+): boolean => {
+  if (
+    quotedContent.type !== EMessageType.contact_card &&
+    quotedContent.type !== EMessageType.contacts
+  ) {
+    return false;
+  }
+
+  const quotedContacts = resolveReplyPreviewContacts(quotedContent);
+  const messageContacts =
+    message.content?.contacts?.length && message.content.contacts.length > 0
+      ? message.content.contacts
+      : message.content?.contact
+        ? [message.content.contact]
+        : [];
+
+  if (!quotedContacts.length || !messageContacts.length) return false;
+
+  return quotedContacts.every((quotedContact) =>
+    messageContacts.some(
+      (messageContact) =>
+        (quotedContact.contact_id &&
+          messageContact.contact_id === quotedContact.contact_id) ||
+        resolveContactFullName(messageContact) ===
+          resolveContactFullName(quotedContact)
+    )
+  );
+};
+
+const findMessageByQuotedPreview = (
+  sourceMessage: InternalMessage
+): InternalMessage | null => {
+  const quotedContent = resolveQuotedPreviewContent(sourceMessage);
+  if (!quotedContent) return null;
+
+  const quotedText = resolveReplyPreviewText(quotedContent).trim();
+  const sourceIndex = messages.value.findIndex(
+    (message) => message.message_id === sourceMessage.message_id
+  );
+  const candidates =
+    sourceIndex > -1 ? messages.value.slice(0, sourceIndex) : messages.value;
+
+  for (const candidate of [...candidates].reverse()) {
+    if (candidate.message_id === sourceMessage.message_id) continue;
+    if (isDeletedMessage(candidate) || isSystemMessage(candidate)) continue;
+
+    if (
+      quotedContent.type &&
+      candidate.content?.type &&
+      quotedContent.type !== candidate.content.type
+    ) {
+      continue;
+    }
+
+    if (hasSameQuotedMedia(candidate, quotedContent)) return candidate;
+    if (hasSameQuotedLocation(candidate, quotedContent)) return candidate;
+    if (hasSameQuotedContact(candidate, quotedContent)) return candidate;
+
+    if (quotedText && resolveComparableMessageText(candidate) === quotedText) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
+const resolveQuotedTargetMessage = (
+  message: InternalMessage
+): InternalMessage | null => {
+  for (const targetId of resolveQuotedTargetIds(message)) {
+    const targetMessage = findMessageByTargetId(targetId);
+    if (targetMessage) return targetMessage;
+  }
+
+  return findMessageByQuotedPreview(message);
+};
+
+const ensureQuotedTargetMessageLoaded = async (
+  message: InternalMessage
+): Promise<InternalMessage | null> => {
+  const initialTarget = resolveQuotedTargetMessage(message);
+  if (initialTarget) return initialTarget;
+
+  while (messagesPaging.value.current_page < messagesPaging.value.total_pages) {
+    const previousPage = messagesPaging.value.current_page;
+    await loadMoreMessages();
+    await nextTick();
+
+    const targetMessage = resolveQuotedTargetMessage(message);
+    if (targetMessage) return targetMessage;
+    if (messagesPaging.value.current_page === previousPage) break;
+  }
+
+  return resolveQuotedTargetMessage(message);
+};
+
+const hasQuotedNavigationTarget = (message: InternalMessage): boolean => {
+  return showQuotedMessage(message);
+};
+
+const isMediaGroupHighlighted = (
+  displayItem: InternalMessageDisplayItem
+): boolean => {
+  if (displayItem.kind !== 'media-group') return false;
+
+  return displayItem.messages.some(
+    (message) => message.message_id === highlightedMessageId.value
+  );
+};
+
+const scrollToMessage = async (targetId: string, smooth = true) => {
+  if (!targetId) return;
+
+  shouldAutoScrollMessages.value = false;
+  await ensureMessageLoaded(targetId);
+  await updateMessageScrollbar();
+  await nextTick();
+
+  const scrollElement = getMessageScrollElement();
+  if (!scrollElement) return;
+
+  const loadedMessage = findMessageByTargetId(targetId);
+  const messageId = loadedMessage?.message_id ?? targetId;
+  const target = findMessageTargetElement(scrollElement, messageId);
+  if (!target) return;
+
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const top = scrollElement.scrollTop + targetRect.top - scrollRect.top - 60;
+  const maxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
+  const validTop = Math.max(0, Math.min(top, maxScroll));
+
+  scrollElement.scrollTo({
+    top: validTop,
+    behavior: smooth ? 'smooth' : 'auto',
+  });
+
+  highlightMessage(messageId);
+
+  requestAnimationFrame(() => {
+    if (Math.abs(scrollElement.scrollTop - validTop) > 4) {
+      scrollElement.scrollTop = validTop;
+    }
+    updateMessageScrollbar();
+    updateMessageScrollState(scrollElement);
+  });
+};
+
+const goToQuotedMessage = async (message: InternalMessage) => {
+  const targetMessage = await ensureQuotedTargetMessageLoaded(message);
+  const targetId = targetMessage?.message_id ?? resolveQuotedTargetId(message);
+  if (!targetId) return;
+
+  await scrollToMessage(targetId, true);
 };
 
 const handleMessageListScroll = (event: Event) => {
@@ -3247,6 +3628,12 @@ const getQuotedLocalPayload = (
   if (!message) return undefined;
 
   return {
+    message_id: message.message_id,
+    id: message.message_id,
+    key: {
+      id: message.message_id,
+      is_view_once: false,
+    },
     message: resolveMessageText(message),
     user_name: message.user?.name ?? t('internal_chat_system_user'),
     type: message.content?.type,
@@ -5195,6 +5582,8 @@ onBeforeUnmount(async () => {
     activityCleanupTimer.value = null;
   }
 
+  clearHighlightedMessage();
+
   shouldSendRecording.value = false;
   if (mediaRecorderRef.value && mediaRecorderRef.value.state !== 'inactive') {
     mediaRecorderRef.value.stop();
@@ -5618,14 +6007,28 @@ onBeforeUnmount(async () => {
                 <div
                   v-for="message in [displayItem.message]"
                   :key="message.message_id"
+                  :id="`internal-msg-${message.message_id}`"
+                  :data-message-id="message.message_id"
                   class="internal-chat-message-row"
                   :class="{
                     'internal-chat-message-row--mine': isOwnMessage(message),
+                    'internal-chat-message-row--system':
+                      isSystemMessage(message),
+                    'internal-chat-message-row--target':
+                      highlightedMessageId === message.message_id,
                   }"
                   @mouseenter="onMessageMouseEnter(message)"
                   @mouseleave="onMessageMouseLeave"
                 >
+                  <div
+                    v-if="isSystemMessage(message)"
+                    class="internal-chat-system-message"
+                  >
+                    {{ resolveSystemMessageText(message) }}
+                  </div>
+
                   <button
+                    v-if="!isSystemMessage(message)"
                     type="button"
                     class="internal-chat-message-avatar-button"
                     :disabled="!message.user?.id"
@@ -5651,6 +6054,7 @@ onBeforeUnmount(async () => {
                   </button>
 
                   <div
+                    v-if="!isSystemMessage(message)"
                     class="internal-chat-message-shell"
                     :class="{
                       'internal-chat-message-shell--mine':
@@ -5823,6 +6227,12 @@ onBeforeUnmount(async () => {
                         v-if="showQuotedMessage(message)"
                         type="button"
                         class="internal-chat-quoted"
+                        :class="{
+                          'internal-chat-quoted--clickable':
+                            hasQuotedNavigationTarget(message),
+                        }"
+                        :aria-label="t('internal_chat_original_message')"
+                        @click.prevent.stop="goToQuotedMessage(message)"
                       >
                         <div
                           v-if="resolveQuotedPreviewImageSrc(message)"
@@ -6435,8 +6845,15 @@ onBeforeUnmount(async () => {
               <template v-else-if="displayItem.kind === 'media-group'">
                 <div
                   class="internal-chat-message-row"
+                  :data-message-group-ids="
+                    displayItem.messages
+                      .map((message) => message.message_id)
+                      .join(' ')
+                  "
                   :class="{
                     'internal-chat-message-row--mine': displayItem.isMine,
+                    'internal-chat-message-row--target':
+                      isMediaGroupHighlighted(displayItem),
                   }"
                 >
                   <button
@@ -6501,6 +6918,8 @@ onBeforeUnmount(async () => {
                           ) in getMediaGroupPreviewItems(displayItem)"
                           :key="mediaMessage.message_id"
                           type="button"
+                          :id="`internal-msg-${mediaMessage.message_id}`"
+                          :data-message-id="mediaMessage.message_id"
                           class="internal-chat-media-group-tile"
                           :aria-label="
                             displayItem.mediaKind === 'video'
@@ -8830,6 +9249,31 @@ onBeforeUnmount(async () => {
   justify-content: flex-start;
 }
 
+.internal-chat-message-row--system {
+  justify-content: center;
+  margin-block: 10px 16px;
+}
+
+.internal-chat-system-message {
+  max-inline-size: min(72%, 640px);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: rgba(var(--v-theme-on-surface), 0.08);
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.internal-chat-message-row--target .internal-chat-message-bubble,
+.internal-chat-message-row--target .internal-chat-system-message {
+  animation: internal-chat-message-target 1.1s ease;
+  background-color: rgba(var(--v-theme-primary), 0.12) !important;
+}
+
 .internal-chat-message-avatar-button {
   display: inline-flex;
   flex: 0 0 auto;
@@ -9079,6 +9523,14 @@ onBeforeUnmount(async () => {
   cursor: default;
 }
 
+.internal-chat-quoted--clickable {
+  cursor: pointer;
+}
+
+.internal-chat-quoted--clickable:hover {
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+
 .internal-chat-reply-preview {
   position: relative;
   display: flex;
@@ -9228,7 +9680,7 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-mic-btn {
-  color: rgb(var(--v-theme-error)) !important;
+  color: rgba(var(--v-theme-on-surface), 0.68) !important;
 }
 
 .internal-chat-send-btn {
@@ -9257,7 +9709,6 @@ onBeforeUnmount(async () => {
   overflow-y: hidden;
   border-radius: 12px;
   background: rgb(var(--v-theme-surface));
-  box-shadow: 0 2px 8px rgba(var(--v-theme-on-surface), 0.1);
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -9272,7 +9723,7 @@ onBeforeUnmount(async () => {
 
   &:hover {
     background: rgba(var(--v-theme-on-surface), 0.08) !important;
-    color: rgb(var(--v-theme-primary)) !important;
+    color: rgba(var(--v-theme-on-surface), 0.7) !important;
   }
 }
 
@@ -9389,7 +9840,7 @@ onBeforeUnmount(async () => {
   padding: 0;
   background: rgba(var(--v-theme-on-surface), 0.04);
   color: inherit;
-  cursor: zoom-in;
+  cursor: pointer;
   line-height: 0;
   text-align: start;
 }
@@ -9461,7 +9912,7 @@ onBeforeUnmount(async () => {
   padding: 0;
   background: transparent;
   color: inherit;
-  cursor: zoom-in;
+  cursor: pointer;
 }
 
 .internal-chat-media-group-thumb {
@@ -10557,6 +11008,20 @@ onBeforeUnmount(async () => {
   text-align: center;
   padding: 16px;
   font-size: 0.9rem;
+}
+
+@keyframes internal-chat-message-target {
+  0% {
+    box-shadow: 0 0 0 0 rgba(var(--v-theme-primary), 0);
+  }
+
+  40% {
+    box-shadow: 0 0 0 4px rgba(var(--v-theme-primary), 0.2);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--v-theme-primary), 0);
+  }
 }
 
 @media (max-width: 959px) {

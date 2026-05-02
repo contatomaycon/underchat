@@ -64,6 +64,10 @@ const makePaging = (perPage = 20): Paging => ({
 });
 
 const normalizeMessagePreview = (message: InternalMessage): string | null => {
+  if (message.content?.type === EMessageType.system) {
+    return 'internal_chat_preview_group_event';
+  }
+
   if (message.content?.type === EMessageType.text) {
     return message.content.message ?? null;
   }

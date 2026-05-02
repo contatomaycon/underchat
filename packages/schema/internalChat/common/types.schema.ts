@@ -50,6 +50,7 @@ export const internalChatMessageContentSchema = Type.Object(
   {
     type: Type.String({ enum: Object.values(EMessageType) }),
     message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    system: Type.Optional(Type.Any()),
     message_quoted_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     link_preview: Type.Optional(Type.Any()),
     quoted: Type.Optional(Type.Any()),

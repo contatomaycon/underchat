@@ -63,6 +63,18 @@ type InternalConversationResponse = {
   updated_at: string;
 };
 
+type InternalChatGroupSystemAction =
+  | 'group_created'
+  | 'group_member_added'
+  | 'group_member_removed'
+  | 'group_member_left';
+
+type InternalChatSystemUser = {
+  id: string;
+  name: string;
+  photo: string | null;
+};
+
 @injectable()
 export class InternalChatService {
   constructor(
@@ -172,6 +184,10 @@ export class InternalChatService {
   }
 
   private buildMessagePreview(message: IInternalChatMessage): string | null {
+    if (message.content.type === EMessageType.system) {
+      return 'internal_chat_preview_group_event';
+    }
+
     if (message.content.type === EMessageType.text) {
       return message.content.message ?? null;
     }
@@ -339,6 +355,63 @@ export class InternalChatService {
       name: actor.name,
       photo: actor.photo ?? null,
     };
+  }
+
+  private resolveGroupSystemMessageKey(
+    action: InternalChatGroupSystemAction
+  ): string {
+    return `internal_chat_system_${action}`;
+  }
+
+  private createGroupSystemMessage(input: {
+    accountId: string;
+    conversationId: string;
+    action: InternalChatGroupSystemAction;
+    actor: InternalChatSystemUser;
+    target?: InternalChatSystemUser | null;
+  }): IInternalChatMessage {
+    const key = this.resolveGroupSystemMessageKey(input.action);
+
+    return {
+      message_id: uuidv7(),
+      account_id: input.accountId,
+      conversation_id: input.conversationId,
+      type_user: ETypeUserChat.system,
+      user: null,
+      content: {
+        type: EMessageType.system,
+        message: key,
+        system: {
+          action: input.action,
+          key,
+          actor_user_id: input.actor.id,
+          actor_name: input.actor.name,
+          target_user_id: input.target?.id ?? null,
+          target_name: input.target?.name ?? null,
+          params: {
+            actor: input.actor.name,
+            target: input.target?.name ?? null,
+          },
+        },
+      },
+      hash: uuidv7(),
+      date: new Date().toISOString(),
+      deleted: false,
+    };
+  }
+
+  private async enqueueGroupSystemMessage(input: {
+    accountId: string;
+    conversationId: string;
+    action: InternalChatGroupSystemAction;
+    actor: InternalChatSystemUser;
+    target?: InternalChatSystemUser | null;
+  }): Promise<void> {
+    await this.enqueueInternalMessage({
+      message: this.createGroupSystemMessage(input),
+      conversationType: EInternalChatConversationType.group,
+      senderUserId: input.actor.id,
+    });
   }
 
   private createMessageBase(input: {
@@ -882,6 +955,10 @@ export class InternalChatService {
       accountId,
       conversationId
     );
+    const groupLeavingActor =
+      conversation.type === EInternalChatConversationType.group
+        ? await this.loadActorUser(userId)
+        : null;
 
     const closed =
       conversation.type === EInternalChatConversationType.group
@@ -896,6 +973,23 @@ export class InternalChatService {
 
     if (!closed) {
       throw new Error('chat_update_error');
+    }
+
+    if (groupLeavingActor) {
+      const remainingConversation =
+        await this.conversationRepository.getConversationById(
+          accountId,
+          conversationId
+        );
+
+      if (remainingConversation) {
+        await this.enqueueGroupSystemMessage({
+          accountId,
+          conversationId,
+          action: 'group_member_left',
+          actor: groupLeavingActor,
+        });
+      }
     }
 
     await this.publishConversationSync(accountId, conversationId);
@@ -1269,6 +1363,27 @@ export class InternalChatService {
         memberUserIds: normalizedMembers,
       });
 
+    const actor = await this.loadActorUser(userId);
+    await this.enqueueGroupSystemMessage({
+      accountId,
+      conversationId,
+      action: 'group_created',
+      actor,
+    });
+
+    for (const memberUserId of normalizedMembers) {
+      if (memberUserId === userId) continue;
+
+      const target = await this.loadActorUser(memberUserId);
+      await this.enqueueGroupSystemMessage({
+        accountId,
+        conversationId,
+        action: 'group_member_added',
+        actor,
+        target,
+      });
+    }
+
     const conversation = await this.viewConversation(
       accountId,
       userId,
@@ -1355,11 +1470,32 @@ export class InternalChatService {
       throw new Error('chat_access_denied');
     }
 
+    const wasParticipant = await this.conversationRepository.isUserParticipant({
+      accountId,
+      conversationId,
+      userId: body.user_id,
+    });
+
     await this.conversationRepository.addGroupMember({
       accountId,
       conversationId,
       userId: body.user_id,
     });
+
+    if (!wasParticipant) {
+      const [actor, target] = await Promise.all([
+        this.loadActorUser(userId),
+        this.loadActorUser(body.user_id),
+      ]);
+
+      await this.enqueueGroupSystemMessage({
+        accountId,
+        conversationId,
+        action: 'group_member_added',
+        actor,
+        target,
+      });
+    }
 
     const conversation = await this.viewConversation(
       accountId,
@@ -1382,12 +1518,24 @@ export class InternalChatService {
       throw new Error('chat_access_denied');
     }
 
+    const [actor, target] = await Promise.all([
+      this.loadActorUser(userId),
+      this.loadActorUser(memberUserId),
+    ]);
+
     const removed = await this.conversationRepository.removeGroupMember(
       conversationId,
       memberUserId
     );
 
     if (removed) {
+      await this.enqueueGroupSystemMessage({
+        accountId,
+        conversationId,
+        action: 'group_member_removed',
+        actor,
+        target,
+      });
       await this.publishConversationSync(accountId, conversationId);
     }
 
