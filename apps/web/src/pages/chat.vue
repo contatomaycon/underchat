@@ -6390,8 +6390,10 @@ onBeforeUnmount(() => {
             "
           />
 
+          <VDivider class="chat-composer-divider" />
+
           <VForm
-            class="chat-log-message-form mb-5 mx-5"
+            class="chat-log-message-form whatsapp-chat-composer px-4 py-3"
             @submit.prevent="sendMessage"
           >
             <Transition name="fade">
@@ -8066,6 +8068,15 @@ $chat-app-header-height: 76px;
 
 .chat-content-container {
   background-color: v-bind(chatContentContainerBg);
+
+  .chat-composer-divider {
+    flex: 0 0 auto;
+  }
+
+  .whatsapp-chat-composer {
+    flex: 0 0 auto;
+    background: rgba(var(--v-theme-background), 0.6);
+  }
 
   .chat-message-input {
     .v-field__input {

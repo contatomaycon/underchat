@@ -147,6 +147,56 @@ const loadAccounts = async () => {
 
 type SelectValue = string | number | boolean | null;
 type SelectModelValue = SelectValue | SelectValue[];
+type SensitiveField = 'email' | 'document';
+type SensitiveTableData = Record<SensitiveField, string | null>;
+type SensitiveTableLoading = Record<SensitiveField, boolean>;
+
+const createSensitiveTableData = (): SensitiveTableData => ({
+  email: null,
+  document: null,
+});
+
+const createSensitiveTableLoading = (): SensitiveTableLoading => ({
+  email: false,
+  document: false,
+});
+
+const decryptedSensitiveData = ref<Record<string, SensitiveTableData>>({});
+const sensitiveDataLoading = ref<Record<string, SensitiveTableLoading>>({});
+
+const ensureSensitiveTableData = (userId: string): SensitiveTableData => {
+  if (!decryptedSensitiveData.value[userId]) {
+    decryptedSensitiveData.value[userId] = createSensitiveTableData();
+  }
+
+  return decryptedSensitiveData.value[userId];
+};
+
+const ensureSensitiveTableLoading = (userId: string): SensitiveTableLoading => {
+  if (!sensitiveDataLoading.value[userId]) {
+    sensitiveDataLoading.value[userId] = createSensitiveTableLoading();
+  }
+
+  return sensitiveDataLoading.value[userId];
+};
+
+const isSensitiveFieldLoading = (
+  userId: string,
+  field: SensitiveField
+): boolean => sensitiveDataLoading.value[userId]?.[field] ?? false;
+
+const setSensitiveFieldLoading = (
+  userId: string,
+  field: SensitiveField,
+  value: boolean
+) => {
+  ensureSensitiveTableLoading(userId)[field] = value;
+};
+
+const resetSensitiveTableState = () => {
+  decryptedSensitiveData.value = {};
+  sensitiveDataLoading.value = {};
+};
 
 const handleAccountIdChange = (value: SelectModelValue) => {
   const singleValue = Array.isArray(value) ? (value[0] ?? null) : value;
@@ -338,6 +388,94 @@ const query = computed(() => {
   return q;
 });
 
+const formatDocument = (value: string | null | undefined): string => {
+  if (!value) return '';
+
+  if (/[.\-*]/.test(value)) {
+    return value;
+  }
+
+  const digits = value.replaceAll(/\D/g, '');
+
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
+  }
+
+  if (digits.length === 14) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
+  }
+
+  return value;
+};
+
+const hasEmailData = (item: ListUserResponse): boolean =>
+  Boolean(item.email_partial);
+
+const hasDocumentData = (item: ListUserResponse): boolean =>
+  Boolean(item.user_document?.document_partial);
+
+const getEmailDisplayValue = (item: ListUserResponse): string =>
+  decryptedSensitiveData.value[item.user_id]?.email ||
+  item.email_partial ||
+  '-';
+
+const getDocumentDisplayValue = (item: ListUserResponse): string => {
+  const value =
+    decryptedSensitiveData.value[item.user_id]?.document ||
+    item.user_document?.document_partial ||
+    null;
+
+  return formatDocument(value) || '-';
+};
+
+const isEmailVisible = (userId: string): boolean =>
+  Boolean(decryptedSensitiveData.value[userId]?.email);
+
+const isDocumentVisible = (userId: string): boolean =>
+  Boolean(decryptedSensitiveData.value[userId]?.document);
+
+const toggleEmailVisibility = async (userId: string) => {
+  if (isSensitiveFieldLoading(userId, 'email')) return;
+
+  const userData = ensureSensitiveTableData(userId);
+
+  if (userData.email) {
+    userData.email = null;
+    return;
+  }
+
+  setSensitiveFieldLoading(userId, 'email', true);
+  try {
+    const decryptedEmail = await userStore.getUserEmailDecrypted(userId);
+    if (decryptedEmail) {
+      userData.email = decryptedEmail;
+    }
+  } finally {
+    setSensitiveFieldLoading(userId, 'email', false);
+  }
+};
+
+const toggleDocumentVisibility = async (userId: string) => {
+  if (isSensitiveFieldLoading(userId, 'document')) return;
+
+  const userData = ensureSensitiveTableData(userId);
+
+  if (userData.document) {
+    userData.document = null;
+    return;
+  }
+
+  setSensitiveFieldLoading(userId, 'document', true);
+  try {
+    const decryptedDocument = await userStore.getUserDocumentDecrypted(userId);
+    if (decryptedDocument) {
+      userData.document = decryptedDocument;
+    }
+  } finally {
+    setSensitiveFieldLoading(userId, 'document', false);
+  }
+};
+
 const userDisplayName = (item: ListUserResponse): string => {
   if (!item.user_info?.name) {
     return '-';
@@ -375,6 +513,11 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
+const reloadUsers = async () => {
+  resetSensitiveTableState();
+  await userStore.listUsers(query.value);
+};
+
 const deleteUser = async (id: string) => {
   userToDelete.value = id;
 
@@ -386,26 +529,26 @@ const handleDelete = async () => {
 
   const result = await userStore.deleteUser(userToDelete.value);
   if (result) {
-    await userStore.listUsers(query.value);
+    await reloadUsers();
   }
 
   userToDelete.value = null;
 };
 
 const handleUserCreated = async () => {
-  await userStore.listUsers(query.value);
+  await reloadUsers();
 };
 
 const handleUserUpdated = async () => {
-  await userStore.listUsers(query.value);
+  await reloadUsers();
 };
 
 const handleRoleAssigned = async () => {
-  await userStore.listUsers(query.value);
+  await reloadUsers();
 };
 
 const handleAttendanceHoursUpdated = async () => {
-  await userStore.listUsers(query.value);
+  await reloadUsers();
 };
 
 const openEditDialog = (id: string) => {
@@ -550,8 +693,8 @@ watch(
 
 watch(
   query,
-  async (q) => {
-    await userStore.listUsers(q);
+  async () => {
+    await reloadUsers();
   },
   { immediate: true, deep: true }
 );
@@ -760,12 +903,88 @@ watch(
               <span v-else class="text-medium-emphasis">-</span>
             </template>
 
+            <template #item.email_partial="{ item }">
+              <div class="sensitive-cell">
+                <span class="sensitive-cell__value">
+                  {{ getEmailDisplayValue(item) }}
+                </span>
+                <VBtn
+                  v-if="hasEmailData(item)"
+                  class="sensitive-cell__button"
+                  icon
+                  variant="text"
+                  size="x-small"
+                  density="compact"
+                  :loading="isSensitiveFieldLoading(item.user_id, 'email')"
+                  :disabled="isSensitiveFieldLoading(item.user_id, 'email')"
+                  :aria-label="`${isEmailVisible(item.user_id) ? $t('close') : $t('view')} ${$t('email')}`"
+                  @click.stop="toggleEmailVisibility(item.user_id)"
+                >
+                  <VIcon
+                    :icon="
+                      isEmailVisible(item.user_id)
+                        ? 'tabler-eye-off'
+                        : 'tabler-eye'
+                    "
+                    size="18"
+                  />
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>
+                      {{
+                        `${isEmailVisible(item.user_id) ? $t('close') : $t('view')} ${$t('email')}`
+                      }}
+                    </span>
+                  </VTooltip>
+                </VBtn>
+              </div>
+            </template>
+
             <template #item.phone_partial="{ item }">
               {{ item.user_info?.phone_partial || '-' }}
             </template>
 
             <template #item.document_partial="{ item }">
-              {{ item.user_document?.document_partial || '-' }}
+              <div class="sensitive-cell">
+                <span class="sensitive-cell__value">
+                  {{ getDocumentDisplayValue(item) }}
+                </span>
+                <VBtn
+                  v-if="hasDocumentData(item)"
+                  class="sensitive-cell__button"
+                  icon
+                  variant="text"
+                  size="x-small"
+                  density="compact"
+                  :loading="isSensitiveFieldLoading(item.user_id, 'document')"
+                  :disabled="isSensitiveFieldLoading(item.user_id, 'document')"
+                  :aria-label="`${isDocumentVisible(item.user_id) ? $t('close') : $t('view')} ${$t('document')}`"
+                  @click.stop="toggleDocumentVisibility(item.user_id)"
+                >
+                  <VIcon
+                    :icon="
+                      isDocumentVisible(item.user_id)
+                        ? 'tabler-eye-off'
+                        : 'tabler-eye'
+                    "
+                    size="18"
+                  />
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>
+                      {{
+                        `${isDocumentVisible(item.user_id) ? $t('close') : $t('view')} ${$t('document')}`
+                      }}
+                    </span>
+                  </VTooltip>
+                </VBtn>
+              </div>
             </template>
 
             <template #item.created_at="{ item }">
@@ -1074,6 +1293,25 @@ watch(
   &:hover {
     background: rgba(0, 0, 0, 0.7) !important;
   }
+}
+
+.sensitive-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.sensitive-cell__value {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sensitive-cell__button {
+  flex: 0 0 auto;
 }
 
 .data-table {
