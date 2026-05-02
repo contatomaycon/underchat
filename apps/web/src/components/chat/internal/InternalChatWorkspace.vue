@@ -9484,11 +9484,12 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-audio-bubble {
-  max-inline-size: 380px;
+  max-inline-size: 360px;
   inline-size: 100%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  margin-block-start: 2px;
   position: relative;
 }
 
@@ -9502,8 +9503,21 @@ onBeforeUnmount(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-  border-radius: 20px;
-  padding: 8px 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 18px;
+  padding: 10px 12px;
+  background: rgba(var(--v-theme-on-surface), 0.045);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.54);
+}
+
+.internal-chat-audio-bubble--right .internal-chat-audio-player-container {
+  border-color: rgba(17, 27, 33, 0.1);
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38);
+}
+
+.internal-chat-audio-bubble--left .internal-chat-audio-player-container {
+  background: rgba(var(--v-theme-primary), 0.055);
 }
 
 .internal-chat-audio-play-btn {
@@ -9632,7 +9646,8 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-audio-meta {
-  padding-inline: 14px;
+  margin-block-start: -2px;
+  padding-inline: 12px;
   color: rgba(var(--v-theme-on-surface), 0.58);
   font-size: 0.75rem;
   line-height: 1;
