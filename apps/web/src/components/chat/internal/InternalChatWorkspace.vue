@@ -5142,11 +5142,11 @@ watch(
 
 watch(
   () => messages.value[messages.value.length - 1]?.message_id,
-  async () => {
+  async (messageId, previousMessageId) => {
     await updateMessageScrollbar();
 
-    if (shouldAutoScrollMessages.value) {
-      await scrollMessagesToBottom();
+    if (messageId) {
+      await scrollMessagesToBottom(Boolean(previousMessageId));
       return;
     }
 
@@ -5941,6 +5941,10 @@ onBeforeUnmount(async () => {
                           shouldRenderMessageTextBeforeMedia(message)
                         "
                         class="internal-chat-message-text mb-2"
+                        :class="{
+                          'internal-chat-message-text--deleted':
+                            isDeletedMessage(message),
+                        }"
                       >
                         {{ resolveMessageText(message) }}
                       </div>
@@ -8971,6 +8975,7 @@ onBeforeUnmount(async () => {
 
 .internal-chat-message-bubble--deleted {
   opacity: 0.74;
+  padding-bottom: 34px;
   font-style: italic;
 }
 
@@ -9050,6 +9055,12 @@ onBeforeUnmount(async () => {
 .internal-chat-message-text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.internal-chat-message-text--deleted {
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.78rem;
+  line-height: 1.25;
 }
 
 .internal-chat-quoted {
