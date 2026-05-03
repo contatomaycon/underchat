@@ -52,6 +52,35 @@ export const formatDate = (
   return new Intl.DateTimeFormat('en-US', options).format(new Date(value));
 };
 
+const monthTranslationKeys = [
+  'date_month_january',
+  'date_month_february',
+  'date_month_march',
+  'date_month_april',
+  'date_month_may',
+  'date_month_june',
+  'date_month_july',
+  'date_month_august',
+  'date_month_september',
+  'date_month_october',
+  'date_month_november',
+  'date_month_december',
+];
+
+export function formatDateLong(
+  input: string | Date,
+  t: ComposerTranslation
+): string {
+  const date = typeof input === 'string' ? new Date(input) : input;
+  const monthKey = monthTranslationKeys[date.getMonth()];
+
+  return t('date_format_long', {
+    day: date.getDate(),
+    month: monthKey ? t(monthKey) : '',
+    year: date.getFullYear(),
+  });
+}
+
 export function formatDateToMonthShort(
   input: string | Date,
   t: ComposerTranslation

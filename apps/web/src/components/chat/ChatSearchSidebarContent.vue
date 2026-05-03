@@ -2,7 +2,7 @@
 import { useChatStore } from '@/@webcore/stores/chat';
 import { computed, watch, onUnmounted } from 'vue';
 import { SearchMessagesResult } from '@core/schema/chat/searchMessages/response.schema';
-import { formatDate } from '@/@webcore/utils/formatters';
+import { formatDateLong } from '@/@webcore/utils/formatters';
 import { EColor } from '@core/common/enums/EColor';
 
 const emit = defineEmits<{
@@ -42,7 +42,10 @@ const highlightText = (
 ): string => {
   if (!text || !search) return text || '';
 
-  const escapedSearch = search.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const escapedSearch = search.replaceAll(
+    /[.*+?^${}()|[\]\\]/g,
+    String.raw`\$&`
+  );
   const regex = new RegExp(`(${escapedSearch})`, 'gi');
   return text.replace(regex, '<mark class="search-highlight">$1</mark>');
 };
@@ -61,7 +64,7 @@ const formatMessageDate = (dateString: string): string => {
     return t('yesterday');
   }
 
-  return formatDate(dateString);
+  return formatDateLong(dateString, t);
 };
 
 const handleSearch = async (reset: boolean = true) => {

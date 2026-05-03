@@ -16,6 +16,7 @@ export * from './openDirect';
 export * from './reactMessage';
 export * from './realtimeToken';
 export * from './removeGroupMember';
+export * from './searchMessages';
 export * from './transferLeader';
 export * from './updateGroup';
 export * from './viewContactPhone';

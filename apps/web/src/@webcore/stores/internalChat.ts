@@ -15,6 +15,7 @@ import type { ListInternalChatContactsResponse } from '@core/schema/internalChat
 import type { ViewInternalChatContactPhoneResponse } from '@core/schema/internalChat/viewContactPhone/response.schema';
 import type { ListMessagesQuery } from '@core/schema/internalChat/listMessages/request.schema';
 import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
+import type { SearchInternalChatMessagesResponse } from '@core/schema/internalChat/searchMessages/response.schema';
 import type { MessageHistoryResponse } from '@core/schema/internalChat/messageHistory/response.schema';
 import type { CreateMessageBody } from '@core/schema/internalChat/createMessage/request.schema';
 import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
@@ -726,6 +727,52 @@ export const useInternalChatStore = defineStore('internalChat', {
         return [];
       } finally {
         this.loadingMessages = false;
+      }
+    },
+
+    async searchMessages(
+      conversationId: string,
+      search: string,
+      currentPage: number = 1,
+      perPage: number = 50
+    ): Promise<SearchInternalChatMessagesResponse> {
+      const emptyResponse = {
+        results: [],
+        pagings: {
+          current_page: 1,
+          total_pages: 0,
+          per_page: perPage,
+          count: 0,
+          total: 0,
+        },
+      };
+
+      try {
+        const response = await axios.get<
+          IApiResponse<SearchInternalChatMessagesResponse>
+        >(`/internal-chat/${conversationId}/search`, {
+          params: {
+            search,
+            current_page: currentPage,
+            per_page: perPage,
+          },
+        });
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          return emptyResponse;
+        }
+
+        return data.data;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t('search_messages_error')
+          ),
+          EColor.error
+        );
+        return emptyResponse;
       }
     },
 

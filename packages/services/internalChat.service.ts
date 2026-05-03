@@ -29,6 +29,11 @@ import { ListInternalChatContactsRequest } from '@core/schema/internalChat/listC
 import { ListInternalChatContactsResponse } from '@core/schema/internalChat/listContacts/response.schema';
 import { ViewInternalChatContactPhoneResponse } from '@core/schema/internalChat/viewContactPhone/response.schema';
 import { ListMessagesQuery } from '@core/schema/internalChat/listMessages/request.schema';
+import { SearchInternalChatMessagesQuery } from '@core/schema/internalChat/searchMessages/request.schema';
+import {
+  SearchInternalChatMessagesResponse,
+  SearchInternalChatMessagesResult,
+} from '@core/schema/internalChat/searchMessages/response.schema';
 import { CreateMessageBody } from '@core/schema/internalChat/createMessage/request.schema';
 import { EditMessageBody } from '@core/schema/internalChat/editMessage/request.schema';
 import { ReactMessageBody } from '@core/schema/internalChat/reactMessage/request.schema';
@@ -1148,6 +1153,61 @@ export class InternalChatService {
       pagings: setPaginationData(results.length, total, perPage, currentPage),
       results: results.map((message) =>
         this.sanitizeMessageForPublicPayload(message)
+      ),
+    };
+  }
+
+  async searchMessages(
+    accountId: string,
+    userId: string,
+    conversationId: string,
+    query: SearchInternalChatMessagesQuery
+  ): Promise<SearchInternalChatMessagesResponse> {
+    await this.assertParticipant(accountId, conversationId, userId);
+
+    const { currentPage, perPage } = this.normalizePaging(query);
+    const searchTerm = query.search.trim();
+
+    if (!searchTerm) {
+      return {
+        results: [],
+        pagings: setPaginationData(0, 0, perPage, currentPage),
+      };
+    }
+
+    const { results, total } = await this.messageRepository.searchMessages({
+      accountId,
+      conversationId,
+      currentPage,
+      perPage,
+      search: searchTerm,
+    });
+
+    const visibleResults: SearchInternalChatMessagesResult[] = results
+      .filter((message) => {
+        const text = message.content?.message?.trim();
+        const type = message.content?.type;
+
+        return Boolean(
+          text &&
+          !message.deleted &&
+          type !== EMessageType.delete_message &&
+          type !== EMessageType.system
+        );
+      })
+      .map((message) => ({
+        message_id: message.message_id,
+        date: message.date,
+        message: message.content.message ?? null,
+      }));
+
+    return {
+      results: visibleResults,
+      pagings: setPaginationData(
+        visibleResults.length,
+        total,
+        perPage,
+        currentPage
       ),
     };
   }

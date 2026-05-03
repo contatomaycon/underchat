@@ -111,10 +111,12 @@ const makeGroupConversation = () => ({
 const makeService = (options?: {
   message?: IInternalChatMessage;
   listMessages?: IInternalChatMessage[];
+  searchMessages?: IInternalChatMessage[];
   isParticipant?: boolean;
 }) => {
   const storedMessage = options?.message ?? makeMessage();
   const listMessages = options?.listMessages ?? [storedMessage];
+  const searchMessages = options?.searchMessages ?? listMessages;
 
   const conversationRepository = {
     isUserParticipant: jest
@@ -129,6 +131,10 @@ const makeService = (options?: {
     listMessages: jest.fn().mockResolvedValue({
       results: listMessages.map((message) => clone(message)),
       total: listMessages.length,
+    }),
+    searchMessages: jest.fn().mockResolvedValue({
+      results: searchMessages.map((message) => clone(message)),
+      total: searchMessages.length,
     }),
   };
 
@@ -411,6 +417,82 @@ describe('InternalChatService', () => {
       message: null,
       reactions: null,
       history_available: true,
+    });
+  });
+
+  it('requires participation before searching internal chat messages', async () => {
+    const { service, messageRepository } = makeService({
+      isParticipant: false,
+    });
+
+    await expect(
+      service.searchMessages(accountId, memberUserId, conversationId, {
+        search: 'secret',
+        current_page: 1,
+        per_page: 20,
+      })
+    ).rejects.toThrow('chat_access_denied');
+
+    expect(messageRepository.searchMessages).not.toHaveBeenCalled();
+  });
+
+  it('searches only visible current message text and normalizes pagination input', async () => {
+    const visibleMessage = makeMessage({
+      message_id: 'visible-message',
+      content: {
+        type: EMessageType.text,
+        message: 'needle visible',
+      },
+    });
+    const deletedMessage = makeMessage({
+      message_id: 'deleted-message',
+      deleted: true,
+      content: {
+        type: EMessageType.delete_message,
+        message: null,
+      },
+    });
+    const systemMessage = makeMessage({
+      message_id: 'system-message',
+      type_user: ETypeUserChat.system,
+      user: null,
+      content: {
+        type: EMessageType.system,
+        message: 'internal_chat_system_group_created',
+      },
+    });
+
+    const { service, messageRepository } = makeService({
+      searchMessages: [visibleMessage, deletedMessage, systemMessage],
+    });
+
+    await expect(
+      service.searchMessages(accountId, memberUserId, conversationId, {
+        search: '  needle  ',
+        current_page: 2,
+        per_page: 150,
+      })
+    ).resolves.toEqual({
+      results: [
+        {
+          message_id: 'visible-message',
+          date: visibleMessage.date,
+          message: 'needle visible',
+        },
+      ],
+      pagings: expect.objectContaining({
+        current_page: 2,
+        per_page: 100,
+        count: 1,
+      }),
+    });
+
+    expect(messageRepository.searchMessages).toHaveBeenCalledWith({
+      accountId,
+      conversationId,
+      currentPage: 2,
+      perPage: 100,
+      search: 'needle',
     });
   });
 });

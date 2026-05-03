@@ -22,6 +22,7 @@ import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
 import ChatLocationPicker from '@/components/chat/ChatLocationPicker.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
+import InternalChatSearchSidebarContent from '@/components/chat/internal/InternalChatSearchSidebarContent.vue';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
@@ -275,6 +276,7 @@ const groupPhotoCropArea = ref({
 
 const isGroupInfoDrawerOpen = ref(false);
 const isUserInfoDrawerOpen = ref(false);
+const isSearchDrawerOpen = ref(false);
 const selectedUserInfo = ref<InternalUserInfo | null>(null);
 const selectedUserInfoConversationUserId = ref<string | null>(null);
 const isCloseConversationDialogOpen = ref(false);
@@ -3427,6 +3429,23 @@ const openConversationInfo = async () => {
   openUserInfoDrawer();
 };
 
+const openSearchDrawer = () => {
+  if (!activeConversation.value) return;
+
+  closeGroupInfoDrawer();
+  closeUserInfoDrawer();
+  isSearchDrawerOpen.value = true;
+};
+
+const closeSearchDrawer = () => {
+  isSearchDrawerOpen.value = false;
+};
+
+const handleSearchMessageSelect = async (messageId: string) => {
+  closeSearchDrawer();
+  await scrollToMessage(messageId, true);
+};
+
 const submitGroupNameUpdate = async () => {
   const conversationId = activeConversation.value?.conversation_id;
   const nextName = groupInfoName.value.trim();
@@ -5420,7 +5439,11 @@ watch(groupCandidateSearchDebounced, async () => {
 });
 
 watch(isGroupInfoDrawerOpen, (isOpen) => {
-  if (isOpen) return;
+  if (isOpen) {
+    isSearchDrawerOpen.value = false;
+    return;
+  }
+
   isAddGroupMembersDialogOpen.value = false;
   resetGroupCandidateUsers();
 });
@@ -5433,6 +5456,7 @@ watch(isUserInfoDrawerOpen, (isOpen) => {
   }
 
   isGroupInfoDrawerOpen.value = false;
+  isSearchDrawerOpen.value = false;
 });
 
 watch(isDeleteMessageDialogOpen, (isOpen) => {
@@ -5474,6 +5498,7 @@ watch(
     messageHistoryTarget.value = null;
     messageHistoryItems.value = [];
     loadingMessageHistory.value = false;
+    isSearchDrawerOpen.value = false;
 
     if (isUserInfoDrawerOpen.value && !isActiveDirectConversation.value) {
       closeUserInfoDrawer();
@@ -5920,6 +5945,15 @@ onBeforeUnmount(async () => {
               </template>
 
               <VList density="compact" min-width="190">
+                <VListItem @click="openSearchDrawer">
+                  <template #prepend>
+                    <VIcon size="18">tabler-search</VIcon>
+                  </template>
+                  <VListItemTitle>
+                    {{ t('search_messages') }}
+                  </VListItemTitle>
+                </VListItem>
+
                 <VListItem @click="openConversationInfo">
                   <template #prepend>
                     <VIcon size="18">tabler-info-circle</VIcon>
@@ -7643,6 +7677,22 @@ onBeforeUnmount(async () => {
         </div>
       </div>
     </section>
+
+    <VNavigationDrawer
+      v-model="isSearchDrawerOpen"
+      location="end"
+      temporary
+      width="390"
+      class="internal-chat-search-drawer"
+    >
+      <InternalChatSearchSidebarContent
+        v-if="activeConversation"
+        :conversation-id="activeConversation.conversation_id"
+        :conversation-name="resolveConversationTitle(activeConversation)"
+        @close="closeSearchDrawer"
+        @select-message="handleSearchMessageSelect"
+      />
+    </VNavigationDrawer>
 
     <VNavigationDrawer
       v-model="isGroupInfoDrawerOpen"

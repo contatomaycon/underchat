@@ -15,3 +15,12 @@ export interface IInternalChatListMessagesResult {
   results: IInternalChatMessage[];
   total: number;
 }
+
+export interface IInternalChatSearchMessagesInput extends IInternalChatListMessagesInput {
+  search: string;
+}
+
+export interface IInternalChatSearchMessagesResult {
+  results: IInternalChatMessage[];
+  total: number;
+}

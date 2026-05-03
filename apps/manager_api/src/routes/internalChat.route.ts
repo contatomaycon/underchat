@@ -21,6 +21,7 @@ import { viewInternalChatContactPhoneSchema } from '@core/schema/internalChat/vi
 import { closeConversationSchema } from '@core/schema/internalChat/closeConversation';
 import { markReadSchema } from '@core/schema/internalChat/markRead';
 import { listMessagesSchema } from '@core/schema/internalChat/listMessages';
+import { searchInternalChatMessagesSchema } from '@core/schema/internalChat/searchMessages';
 import { createMessageSchema } from '@core/schema/internalChat/createMessage';
 import { reactMessageSchema } from '@core/schema/internalChat/reactMessage';
 import { editMessageSchema } from '@core/schema/internalChat/editMessage';
@@ -243,6 +244,17 @@ export default function internalChatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/internal-chat/:conversation_id/search', {
+    schema: searchInternalChatMessagesSchema,
+    handler: controller.searchMessages,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
       planStatus,
     ],

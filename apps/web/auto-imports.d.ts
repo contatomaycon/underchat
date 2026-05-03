@@ -58,6 +58,7 @@ declare global {
   const emailValidator: typeof import('./src/@webcore/utils/validators').emailValidator
   const extendRef: typeof import('@vueuse/core').extendRef
   const formatDate: typeof import('./src/@webcore/utils/formatters').formatDate
+  const formatDateLong: typeof import('./src/@webcore/utils/formatters').formatDateLong
   const formatDateToMonthShort: typeof import('./src/@webcore/utils/formatters').formatDateToMonthShort
   const formatNotificationBody: typeof import('./src/composables/useChatNotifications').formatNotificationBody
   const getActivePinia: typeof import('pinia').getActivePinia
@@ -476,6 +477,7 @@ declare module 'vue' {
     readonly emailValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['emailValidator']>
     readonly extendRef: UnwrapRef<typeof import('@vueuse/core')['extendRef']>
     readonly formatDate: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDate']>
+    readonly formatDateLong: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDateLong']>
     readonly formatDateToMonthShort: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDateToMonthShort']>
     readonly formatNotificationBody: UnwrapRef<typeof import('./src/composables/useChatNotifications')['formatNotificationBody']>
     readonly getActivePinia: UnwrapRef<typeof import('pinia')['getActivePinia']>

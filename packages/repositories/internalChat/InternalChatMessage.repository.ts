@@ -6,8 +6,11 @@ import { IInternalChatMessage } from '@core/common/interfaces/internalChat/IInte
 import {
   IInternalChatListMessagesInput,
   IInternalChatListMessagesResult,
+  IInternalChatSearchMessagesInput,
+  IInternalChatSearchMessagesResult,
   IInternalChatSaveMessageResult,
 } from '@core/common/interfaces/internalChat/IInternalChatMessageRepositoryContracts';
+import { EMessageType } from '@core/common/enums/EMessageType';
 
 @injectable()
 export class InternalChatMessageRepository {
@@ -105,6 +108,70 @@ export class InternalChatMessageRepository {
             { term: { account_id: input.accountId } },
             { term: { conversation_id: input.conversationId } },
           ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.internal_chat_message,
+      query
+    );
+
+    const total =
+      ((result?.hits?.total as { value?: number } | undefined)?.value ?? 0) ||
+      0;
+
+    const docs = (result?.hits?.hits ?? []).map(
+      (hit) => hit._source as IInternalChatMessage
+    );
+
+    return {
+      results: docs,
+      total,
+    };
+  }
+
+  async searchMessages(
+    input: IInternalChatSearchMessagesInput
+  ): Promise<IInternalChatSearchMessagesResult> {
+    await this.ensureIndex();
+
+    const query = {
+      from: (input.currentPage - 1) * input.perPage,
+      size: input.perPage,
+      sort: [{ date: { order: 'desc' } }],
+      query: {
+        bool: {
+          filter: [
+            { term: { account_id: input.accountId } },
+            { term: { conversation_id: input.conversationId } },
+          ],
+          must: [
+            {
+              nested: {
+                path: 'content',
+                query: {
+                  bool: {
+                    must: [
+                      {
+                        match: {
+                          'content.message': {
+                            query: input.search,
+                            operator: 'and',
+                          },
+                        },
+                      },
+                    ],
+                    must_not: [
+                      { term: { 'content.type': EMessageType.delete_message } },
+                      { term: { 'content.type': EMessageType.system } },
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+          must_not: [{ term: { deleted: true } }],
         },
       },
     };

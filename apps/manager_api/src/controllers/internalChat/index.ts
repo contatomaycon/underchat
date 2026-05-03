@@ -8,6 +8,7 @@ import { viewContactPhone } from './methods/viewContactPhone';
 import { closeConversation } from './methods/closeConversation';
 import { markRead } from './methods/markRead';
 import { listMessages } from './methods/listMessages';
+import { searchMessages } from './methods/searchMessages';
 import { createMessage } from './methods/createMessage';
 import { reactMessage } from './methods/reactMessage';
 import { editMessage } from './methods/editMessage';
@@ -34,6 +35,7 @@ class InternalChatController {
   public closeConversation = closeConversation;
   public markRead = markRead;
   public listMessages = listMessages;
+  public searchMessages = searchMessages;
   public createMessage = createMessage;
   public reactMessage = reactMessage;
   public editMessage = editMessage;
