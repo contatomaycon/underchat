@@ -181,6 +181,7 @@ const isComposerEmojiOpen = ref(false);
 const ignoreReactionOutsideOnce = ref(false);
 const showScrollToBottom = ref(false);
 const shouldAutoScrollMessages = ref(true);
+const loadingPreviousMessages = ref(false);
 const highlightedMessageId = ref<string | null>(null);
 const fixedMessageDateLabel = ref('');
 const fixedMessageDateIndicatorTop = ref(0);
@@ -2718,6 +2719,11 @@ const handleSidebarScroll = async (event: Event) => {
 };
 
 const messageAutoScrollThreshold = 80;
+const messagePreviousLoadThreshold = 200;
+
+const canLoadPreviousMessages = computed(() => {
+  return messagesPaging.value.current_page < messagesPaging.value.total_pages;
+});
 
 const getMessageScrollElement = (): HTMLElement | null => {
   const scrollRef = messageListScrollRef.value as
@@ -3197,8 +3203,37 @@ const goToQuotedMessage = async (message: InternalMessage) => {
   await scrollToMessage(targetId, true);
 };
 
-const handleMessageListScroll = (event: Event) => {
-  updateMessageScrollState(event.currentTarget as HTMLElement | null);
+const shouldLoadPreviousMessages = (
+  element: HTMLElement,
+  options: { allowNearBottom?: boolean } = {}
+): boolean => {
+  if (!canLoadPreviousMessages.value) return false;
+  if (loadingMessages.value || loadingPreviousMessages.value) return false;
+  if (element.scrollTop > messagePreviousLoadThreshold) return false;
+
+  return options.allowNearBottom === true || !isMessageListNearBottom(element);
+};
+
+const handleMessageListScroll = async (event: Event) => {
+  const element = event.currentTarget as HTMLElement | null;
+  updateMessageScrollState(element);
+  if (!element || !shouldLoadPreviousMessages(element)) return;
+
+  await loadMoreMessages();
+};
+
+const handleMessageListWheel = (event: WheelEvent) => {
+  if (event.deltaY >= 0) return;
+
+  const element = getMessageScrollElement();
+  if (
+    !element ||
+    !shouldLoadPreviousMessages(element, { allowNearBottom: true })
+  ) {
+    return;
+  }
+
+  void loadMoreMessages();
 };
 
 const switchSidebarTab = async (tab: InternalSidebarTab) => {
@@ -3546,31 +3581,35 @@ const transferGroupLeader = async (member: InternalParticipant) => {
 
 const loadMoreMessages = async () => {
   if (!activeConversation.value?.conversation_id) return;
-  if (messagesPaging.value.current_page >= messagesPaging.value.total_pages) {
-    return;
-  }
+  if (!canLoadPreviousMessages.value) return;
+  if (loadingMessages.value || loadingPreviousMessages.value) return;
 
   const scrollElement = getMessageScrollElement();
   const previousScrollHeight = scrollElement?.scrollHeight ?? 0;
   const previousScrollTop = scrollElement?.scrollTop ?? 0;
   shouldAutoScrollMessages.value = false;
 
-  await internalChatStore.listMessages(
-    activeConversation.value.conversation_id,
-    {
-      current_page: messagesPaging.value.current_page + 1,
-      per_page: messagesPaging.value.per_page,
-    },
-    true
-  );
+  loadingPreviousMessages.value = true;
+  try {
+    await internalChatStore.listMessages(
+      activeConversation.value.conversation_id,
+      {
+        current_page: messagesPaging.value.current_page + 1,
+        per_page: messagesPaging.value.per_page,
+      },
+      true
+    );
 
-  await updateMessageScrollbar();
+    await updateMessageScrollbar();
 
-  if (!scrollElement) return;
+    if (!scrollElement) return;
 
-  const scrollDifference = scrollElement.scrollHeight - previousScrollHeight;
-  scrollElement.scrollTop = previousScrollTop + scrollDifference;
-  updateMessageScrollState(scrollElement);
+    const scrollDifference = scrollElement.scrollHeight - previousScrollHeight;
+    scrollElement.scrollTop = previousScrollTop + scrollDifference;
+    updateMessageScrollState(scrollElement);
+  } finally {
+    loadingPreviousMessages.value = false;
+  }
 };
 
 const openCloseConversationDialog = () => {
@@ -5969,23 +6008,21 @@ onBeforeUnmount(async () => {
 
         <VDivider />
 
-        <div class="internal-chat-message-scroll">
+        <div
+          class="internal-chat-message-scroll"
+          @wheel.passive="handleMessageListWheel"
+        >
           <PerfectScrollbar
             ref="messageListScrollRef"
             :options="{ wheelPropagation: false }"
             class="internal-chat-message-list px-4 py-3"
             @ps-scroll-y="handleMessageListScroll"
           >
-            <div class="d-flex justify-center mb-3">
-              <VBtn
-                v-if="messagesPaging.current_page < messagesPaging.total_pages"
-                size="small"
-                variant="tonal"
-                :loading="loadingMessages"
-                @click="loadMoreMessages"
-              >
-                {{ t('internal_chat_load_previous_messages') }}
-              </VBtn>
+            <div
+              v-if="loadingPreviousMessages"
+              class="d-flex justify-center mb-3"
+            >
+              <VProgressCircular indeterminate color="primary" size="24" />
             </div>
 
             <template

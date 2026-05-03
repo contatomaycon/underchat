@@ -131,7 +131,7 @@ export const useInternalChatStore = defineStore('internalChat', {
     activeConversation: null as InternalConversation | null,
     conversationsPaging: makePaging(20),
     usersPaging: makePaging(20),
-    messagesPaging: makePaging(30),
+    messagesPaging: makePaging(10),
     remoteActivities: {} as Record<string, RemoteActivity>,
     localMessageState: {} as Record<string, LocalMessageState>,
     refreshConversationsTimer: null as ReturnType<typeof setTimeout> | null,
