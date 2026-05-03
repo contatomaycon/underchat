@@ -5,7 +5,6 @@ export * from './createGroup';
 export * from './createMessage';
 export * from './deleteMessage';
 export * from './editMessage';
-export * from './forwardMessage';
 export * from './listConversations';
 export * from './listContacts';
 export * from './listGroupMembers';

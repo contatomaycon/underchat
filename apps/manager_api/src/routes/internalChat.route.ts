@@ -25,7 +25,6 @@ import { createMessageSchema } from '@core/schema/internalChat/createMessage';
 import { reactMessageSchema } from '@core/schema/internalChat/reactMessage';
 import { editMessageSchema } from '@core/schema/internalChat/editMessage';
 import { deleteMessageSchema } from '@core/schema/internalChat/deleteMessage';
-import { forwardMessageSchema } from '@core/schema/internalChat/forwardMessage';
 import { activitySchema } from '@core/schema/internalChat/activity';
 import { createGroupSchema } from '@core/schema/internalChat/createGroup';
 import { updateGroupSchema } from '@core/schema/internalChat/updateGroup';
@@ -295,17 +294,6 @@ export default function internalChatRoutes(server: FastifyInstance) {
   server.post('/internal-chat/:conversation_id/messages/:message_id/delete', {
     schema: deleteMessageSchema,
     handler: controller.deleteMessage,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, internalChatWritePermissions),
-      planGuard,
-      planStatus,
-    ],
-  });
-
-  server.post('/internal-chat/:conversation_id/messages/:message_id/forward', {
-    schema: forwardMessageSchema,
-    handler: controller.forwardMessage,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),

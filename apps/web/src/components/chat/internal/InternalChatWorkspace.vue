@@ -270,11 +270,6 @@ const groupPhotoCropArea = ref({
   resizeHandle: null as GroupPhotoCropResizeHandle | null,
 });
 
-const isForwardDialogOpen = ref(false);
-const forwardMessageSource = ref<InternalMessage | null>(null);
-const forwardConversationIds = ref<string[]>([]);
-const forwardingMessage = ref(false);
-
 const isGroupInfoDrawerOpen = ref(false);
 const isUserInfoDrawerOpen = ref(false);
 const selectedUserInfo = ref<InternalUserInfo | null>(null);
@@ -5317,42 +5312,6 @@ const confirmDeleteMessage = async () => {
   }
 };
 
-const openForwardDialog = (message: InternalMessage) => {
-  if (!canInteractWithMessage(message)) return;
-
-  forwardMessageSource.value = message;
-  forwardConversationIds.value = [];
-  isForwardDialogOpen.value = true;
-};
-
-const submitForward = async () => {
-  if (
-    !activeConversation.value?.conversation_id ||
-    !forwardMessageSource.value
-  ) {
-    return;
-  }
-
-  if (forwardConversationIds.value.length === 0) return;
-
-  forwardingMessage.value = true;
-  try {
-    const success = await internalChatStore.forwardMessage(
-      activeConversation.value.conversation_id,
-      forwardMessageSource.value.message_id,
-      forwardConversationIds.value
-    );
-
-    if (!success) return;
-
-    isForwardDialogOpen.value = false;
-    forwardMessageSource.value = null;
-    forwardConversationIds.value = [];
-  } finally {
-    forwardingMessage.value = false;
-  }
-};
-
 const submitCreateGroup = async () => {
   if (!canSubmitCreateGroup.value) return;
   creatingGroup.value = true;
@@ -6160,17 +6119,6 @@ onBeforeUnmount(async () => {
                                 </template>
                                 <VListItemTitle>
                                   {{ t('internal_chat_download_action') }}
-                                </VListItemTitle>
-                              </VListItem>
-
-                              <VListItem @click="openForwardDialog(message)">
-                                <template #prepend>
-                                  <VIcon size="18">
-                                    tabler-arrow-forward-up
-                                  </VIcon>
-                                </template>
-                                <VListItemTitle>
-                                  {{ t('internal_chat_forward_action') }}
                                 </VListItemTitle>
                               </VListItem>
 
@@ -8550,46 +8498,6 @@ onBeforeUnmount(async () => {
             @click="cropGroupPhoto"
           >
             {{ t('internal_chat_save') }}
-          </VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
-
-    <VDialog v-model="isForwardDialogOpen" max-width="560">
-      <VCard :title="t('internal_chat_forward_message_title')">
-        <VCardText>
-          <div class="text-body-2 text-medium-emphasis mb-2">
-            {{ t('internal_chat_forward_destination_conversations') }}
-          </div>
-
-          <VCheckbox
-            v-for="conversation in conversations"
-            :key="`forward-${conversation.conversation_id}`"
-            v-model="forwardConversationIds"
-            :value="conversation.conversation_id"
-            density="comfortable"
-            hide-details
-            :label="
-              conversation.name || t('internal_chat_default_conversation')
-            "
-            :disabled="
-              conversation.conversation_id ===
-              activeConversation?.conversation_id
-            "
-          />
-        </VCardText>
-        <VCardActions class="px-4 pb-4 pt-0">
-          <VSpacer />
-          <VBtn variant="text" @click="isForwardDialogOpen = false">{{
-            t('internal_chat_cancel')
-          }}</VBtn>
-          <VBtn
-            color="primary"
-            :loading="forwardingMessage"
-            :disabled="forwardConversationIds.length === 0"
-            @click="submitForward"
-          >
-            {{ t('internal_chat_forward_action') }}
           </VBtn>
         </VCardActions>
       </VCard>

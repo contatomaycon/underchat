@@ -32,7 +32,6 @@ import { ListMessagesQuery } from '@core/schema/internalChat/listMessages/reques
 import { CreateMessageBody } from '@core/schema/internalChat/createMessage/request.schema';
 import { EditMessageBody } from '@core/schema/internalChat/editMessage/request.schema';
 import { ReactMessageBody } from '@core/schema/internalChat/reactMessage/request.schema';
-import { ForwardMessageBody } from '@core/schema/internalChat/forwardMessage/request.schema';
 import { ActivityBody } from '@core/schema/internalChat/activity/request.schema';
 import { AddGroupMemberBody } from '@core/schema/internalChat/addGroupMember/request.schema';
 import { CreateGroupBody } from '@core/schema/internalChat/createGroup/request.schema';
@@ -1225,74 +1224,6 @@ export class InternalChatService {
 
     await this.publishMessageRealtime(message);
     return true;
-  }
-
-  async forwardMessage(
-    accountId: string,
-    userId: string,
-    sourceConversationId: string,
-    messageId: string,
-    body: ForwardMessageBody
-  ): Promise<{ queued_count: number }> {
-    await this.assertParticipant(accountId, sourceConversationId, userId);
-    const actor = await this.loadActorUser(userId);
-
-    const sourceMessage = await this.messageRepository.getMessageById(
-      accountId,
-      sourceConversationId,
-      messageId
-    );
-    if (!sourceMessage || !sourceMessage.content) {
-      throw new Error('message_not_found');
-    }
-
-    const targetConversationIds = Array.from(
-      new Set(body.target_conversation_ids ?? [])
-    );
-    let queuedCount = 0;
-
-    for (const targetConversationId of targetConversationIds) {
-      await this.assertParticipant(accountId, targetConversationId, userId);
-      const targetConversation = await this.getConversationOrThrow(
-        accountId,
-        targetConversationId
-      );
-
-      const forwardContent = {
-        ...sourceMessage.content,
-        forward: {
-          source_message_id: sourceMessage.message_id,
-          source_chat_id: sourceConversationId,
-          source_type: sourceMessage.content.type,
-        },
-      };
-
-      const forwardMessage: IInternalChatMessage = {
-        message_id: uuidv7(),
-        account_id: accountId,
-        conversation_id: targetConversationId,
-        type_user: ETypeUserChat.operator,
-        user: {
-          id: actor.id,
-          name: actor.name,
-          photo: actor.photo,
-        },
-        content: forwardContent as any,
-        date: new Date().toISOString(),
-        deleted: false,
-        hash: uuidv7(),
-      };
-
-      await this.enqueueInternalMessage({
-        message: forwardMessage,
-        conversationType: targetConversation.type,
-        senderUserId: userId,
-      });
-
-      queuedCount++;
-    }
-
-    return { queued_count: queuedCount };
   }
 
   async publishActivity(

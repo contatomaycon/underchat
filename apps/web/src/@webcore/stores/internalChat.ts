@@ -903,24 +903,6 @@ export const useInternalChatStore = defineStore('internalChat', {
       }
     },
 
-    async forwardMessage(
-      conversationId: string,
-      messageId: string,
-      targetConversationIds: string[]
-    ): Promise<boolean> {
-      try {
-        const response = await axios.post<
-          IApiResponse<{ queued_count: number }>
-        >(`/internal-chat/${conversationId}/messages/${messageId}/forward`, {
-          target_conversation_ids: targetConversationIds,
-        });
-
-        return response?.data?.status === true;
-      } catch {
-        return false;
-      }
-    },
-
     async listGroupMembers(
       conversationId: string
     ): Promise<InternalParticipant[]> {
