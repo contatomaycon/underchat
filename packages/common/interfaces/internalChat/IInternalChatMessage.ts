@@ -38,6 +38,7 @@ export interface IInternalChatMessageContent {
   contact?: IContactMessage | null;
   contacts?: IContactMessage[] | null;
   reactions?: IReaction[] | null;
+  history_available?: boolean | null;
   version?: MessageVersion[] | null;
 }
 

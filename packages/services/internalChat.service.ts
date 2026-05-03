@@ -74,6 +74,21 @@ type InternalChatSystemUser = {
   photo: string | null;
 };
 
+type InternalChatMessageHistoryKind =
+  | 'current'
+  | 'deleted_snapshot'
+  | 'original'
+  | 'previous_version';
+
+type InternalChatMessageHistoryItem = {
+  type: EMessageType | string;
+  message: string | null;
+  date: string;
+  kind: InternalChatMessageHistoryKind;
+  is_current: boolean;
+  is_deleted_snapshot: boolean;
+};
+
 @injectable()
 export class InternalChatService {
   constructor(
@@ -160,7 +175,17 @@ export class InternalChatService {
     }
   }
 
-  private async assertCanMutateMessage(
+  private assertMessageAuthor(
+    userId: string,
+    message: IInternalChatMessage
+  ): void {
+    const isAuthor = message.user?.id === userId;
+    if (isAuthor) return;
+
+    throw new Error('chat_access_denied');
+  }
+
+  private async assertCanViewMessageHistory(
     accountId: string,
     conversationId: string,
     userId: string,
@@ -180,6 +205,98 @@ export class InternalChatService {
     if (!isGroupLeader) {
       throw new Error('chat_access_denied');
     }
+  }
+
+  private hasMessageHistory(message: IInternalChatMessage): boolean {
+    return Array.isArray(message.content?.version)
+      ? message.content.version.length > 0
+      : false;
+  }
+
+  private sanitizeMessageForPublicPayload(
+    message: IInternalChatMessage
+  ): IInternalChatMessage {
+    const historyAvailable = this.hasMessageHistory(message);
+
+    if (
+      message.deleted ||
+      message.content?.type === EMessageType.delete_message
+    ) {
+      const reactions = message.content?.reactions ?? null;
+
+      return {
+        ...message,
+        content: {
+          type: EMessageType.delete_message,
+          message: null,
+          reactions,
+          history_available: historyAvailable,
+        },
+      };
+    }
+
+    const content = {
+      ...message.content,
+      history_available: historyAvailable,
+    };
+    delete content.version;
+
+    return {
+      ...message,
+      content,
+    };
+  }
+
+  private buildMessageHistoryItems(
+    message: IInternalChatMessage
+  ): InternalChatMessageHistoryItem[] {
+    if (!message.content) return [];
+
+    const versions = Array.isArray(message.content.version)
+      ? [...message.content.version]
+      : [];
+
+    const sortedVersions = versions.sort(
+      (a, b) =>
+        new Date(b?.date ?? 0).getTime() - new Date(a?.date ?? 0).getTime()
+    );
+
+    const history: InternalChatMessageHistoryItem[] = [];
+    const latestVersionDate = sortedVersions[0]?.date;
+    const currentMessage = message.content.message?.trim() ?? '';
+
+    if (!message.deleted && currentMessage) {
+      history.push({
+        type: message.content.type,
+        message: currentMessage,
+        date: latestVersionDate || message.date,
+        kind: 'current',
+        is_current: true,
+        is_deleted_snapshot: false,
+      });
+    }
+
+    sortedVersions.forEach((version, index) => {
+      const isFirstDeletedSnapshot = Boolean(message.deleted && index === 0);
+      const isOriginal = index === sortedVersions.length - 1;
+      const versionMessage =
+        typeof version?.message === 'string' ? version.message.trim() : '';
+
+      history.push({
+        type: version?.type ?? EMessageType.text,
+        message: versionMessage || null,
+        date: version?.date || message.date,
+        kind: isFirstDeletedSnapshot
+          ? 'deleted_snapshot'
+          : isOriginal
+            ? 'original'
+            : 'previous_version',
+        is_current: false,
+        is_deleted_snapshot: isFirstDeletedSnapshot,
+      });
+    });
+
+    return history;
   }
 
   private buildMessagePreview(message: IInternalChatMessage): string | null {
@@ -1029,7 +1146,9 @@ export class InternalChatService {
 
     return {
       pagings: setPaginationData(results.length, total, perPage, currentPage),
-      results,
+      results: results.map((message) =>
+        this.sanitizeMessageForPublicPayload(message)
+      ),
     };
   }
 
@@ -1135,12 +1254,7 @@ export class InternalChatService {
       throw new Error('message_not_found');
     }
 
-    await this.assertCanMutateMessage(
-      accountId,
-      conversationId,
-      userId,
-      message
-    );
+    this.assertMessageAuthor(userId, message);
 
     if (message.content.type !== EMessageType.text) {
       throw new Error('only_text_messages_can_be_edited');
@@ -1190,12 +1304,7 @@ export class InternalChatService {
       throw new Error('message_not_found');
     }
 
-    await this.assertCanMutateMessage(
-      accountId,
-      conversationId,
-      userId,
-      message
-    );
+    this.assertMessageAuthor(userId, message);
 
     const currentContent = message.content ?? { type: EMessageType.text };
     const versions = Array.isArray(currentContent.version)
@@ -1224,6 +1333,36 @@ export class InternalChatService {
 
     await this.publishMessageRealtime(message);
     return true;
+  }
+
+  async viewMessageHistory(
+    accountId: string,
+    userId: string,
+    conversationId: string,
+    messageId: string
+  ): Promise<{ results: InternalChatMessageHistoryItem[] }> {
+    await this.assertParticipant(accountId, conversationId, userId);
+
+    const message = await this.messageRepository.getMessageById(
+      accountId,
+      conversationId,
+      messageId
+    );
+
+    if (!message || !message.content) {
+      throw new Error('message_not_found');
+    }
+
+    await this.assertCanViewMessageHistory(
+      accountId,
+      conversationId,
+      userId,
+      message
+    );
+
+    return {
+      results: this.buildMessageHistoryItems(message),
+    };
   }
 
   async publishActivity(
@@ -1579,14 +1718,16 @@ export class InternalChatService {
   }
 
   async publishMessageRealtime(message: IInternalChatMessage): Promise<void> {
+    const publicMessage = this.sanitizeMessageForPublicPayload(message);
+
     await Promise.all([
       this.centrifugoService.publishSub(
         internalChatConversationCentrifugo(message.conversation_id),
-        message
+        publicMessage
       ),
       this.centrifugoService.publishSub(
         internalChatAccountCentrifugo(message.account_id),
-        message
+        publicMessage
       ),
     ]);
   }

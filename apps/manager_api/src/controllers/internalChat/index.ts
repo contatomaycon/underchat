@@ -12,6 +12,7 @@ import { createMessage } from './methods/createMessage';
 import { reactMessage } from './methods/reactMessage';
 import { editMessage } from './methods/editMessage';
 import { deleteMessage } from './methods/deleteMessage';
+import { viewMessageHistory } from './methods/viewMessageHistory';
 import { activity } from './methods/activity';
 import { createGroup } from './methods/createGroup';
 import { updateGroup } from './methods/updateGroup';
@@ -37,6 +38,7 @@ class InternalChatController {
   public reactMessage = reactMessage;
   public editMessage = editMessage;
   public deleteMessage = deleteMessage;
+  public viewMessageHistory = viewMessageHistory;
   public activity = activity;
   public createGroup = createGroup;
   public updateGroup = updateGroup;

@@ -41,6 +41,7 @@ import type { ListConversationsResponse } from '@core/schema/internalChat/listCo
 import type { ListUsersResponse } from '@core/schema/internalChat/listUsers/response.schema';
 import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
 import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
+import type { MessageHistoryResponse } from '@core/schema/internalChat/messageHistory/response.schema';
 import type { ViewInternalChatLinkPreviewResponse } from '@core/schema/internalChat/viewLinkPreview/response.schema';
 import type {
   ISelectedAudioPreview,
@@ -56,6 +57,8 @@ type InternalConversationParticipant =
   InternalConversation['participants'][number];
 type InternalUser = ListUsersResponse['data']['results'][number];
 type InternalMessage = ListMessagesResponse['data']['results'][number];
+type InternalMessageHistoryApiItem =
+  MessageHistoryResponse['data']['results'][number];
 type InternalLinkPreview = ViewInternalChatLinkPreviewResponse['data'];
 type InternalContact = NonNullable<
   InternalMessage['content']['contacts']
@@ -282,6 +285,8 @@ const isDeleteMessageDialogOpen = ref(false);
 const deleteMessageTarget = ref<InternalMessage | null>(null);
 const isMessageHistoryDialogOpen = ref(false);
 const messageHistoryTarget = ref<InternalMessage | null>(null);
+const messageHistoryItems = ref<InternalMessageHistoryItem[]>([]);
+const loadingMessageHistory = ref(false);
 const groupInfoName = ref('');
 const isEditingGroupInfoName = ref(false);
 const updatingGroupInfo = ref(false);
@@ -1048,8 +1053,8 @@ const resolveSystemMessageText = (message: InternalMessage): string => {
   return String(t('internal_chat_preview_group_event'));
 };
 
-const canManageInternalMessage = (message: InternalMessage): boolean => {
-  return isOwnMessage(message) || isActiveConversationLeader.value;
+const canMutateInternalMessage = (message: InternalMessage): boolean => {
+  return isOwnMessage(message);
 };
 
 const canInteractWithMessage = (message: InternalMessage): boolean => {
@@ -1062,24 +1067,25 @@ const canInteractWithMessage = (message: InternalMessage): boolean => {
 
 const canEditInternalMessage = (message: InternalMessage): boolean => {
   return (
-    canManageInternalMessage(message) &&
+    canMutateInternalMessage(message) &&
     !isDeletedMessage(message) &&
     message.content?.type === EMessageType.text
   );
 };
 
 const canDeleteInternalMessage = (message: InternalMessage): boolean => {
-  return canManageInternalMessage(message) && !isDeletedMessage(message);
+  return canMutateInternalMessage(message) && !isDeletedMessage(message);
 };
 
-const hasMessageVersions = (message: InternalMessage): boolean => {
-  return Array.isArray(message.content?.version)
-    ? message.content.version.length > 0
-    : false;
+const hasMessageHistory = (message: InternalMessage): boolean => {
+  return Boolean(message.content?.history_available);
 };
 
 const canViewMessageHistory = (message: InternalMessage): boolean => {
-  return canManageInternalMessage(message) && hasMessageVersions(message);
+  return (
+    (isOwnMessage(message) || isActiveConversationLeader.value) &&
+    hasMessageHistory(message)
+  );
 };
 
 const canShowMessageActions = (message: InternalMessage): boolean => {
@@ -1105,55 +1111,34 @@ const resolveHistoryFallbackText = (
   return t('internal_chat_deleted_message');
 };
 
-const getMessageHistoryItems = (
-  message?: InternalMessage | null
-): InternalMessageHistoryItem[] => {
-  if (!message?.content) return [];
-
-  const versions = Array.isArray(message.content.version)
-    ? [...message.content.version]
-    : [];
-
-  const sortedVersions = versions.sort(
-    (a, b) =>
-      new Date(b?.date ?? 0).getTime() - new Date(a?.date ?? 0).getTime()
-  );
-
-  const history: InternalMessageHistoryItem[] = [];
-  const latestVersionDate = sortedVersions[0]?.date;
-
-  if (!isDeletedMessage(message) && message.content.message?.trim()) {
-    history.push({
-      text: message.content.message,
-      date: latestVersionDate || message.date,
-      label: t('internal_chat_current_message'),
-      isCurrent: true,
-      isDeletedSnapshot: false,
-    });
+const resolveHistoryItemLabel = (
+  item: InternalMessageHistoryApiItem
+): string => {
+  if (item.kind === 'current') return t('internal_chat_current_message');
+  if (item.kind === 'deleted_snapshot') {
+    return t('internal_chat_deleted_message_content');
   }
+  if (item.kind === 'original') return t('internal_chat_original_message');
 
-  sortedVersions.forEach((version, index) => {
-    const isFirstDeletedSnapshot = isDeletedMessage(message) && index === 0;
-    const isOriginal = index === sortedVersions.length - 1;
-    const versionMessage =
-      typeof version?.message === 'string' ? version.message.trim() : '';
+  return t('internal_chat_previous_version');
+};
 
-    history.push({
-      text:
-        versionMessage ||
-        resolveHistoryFallbackText(version?.type as EMessageType | string),
-      date: version?.date || message.date,
-      label: isFirstDeletedSnapshot
-        ? t('internal_chat_deleted_message_content')
-        : isOriginal
-          ? t('internal_chat_original_message')
-          : t('internal_chat_previous_version'),
-      isCurrent: false,
-      isDeletedSnapshot: isFirstDeletedSnapshot,
-    });
+const mapMessageHistoryItems = (
+  items: InternalMessageHistoryApiItem[]
+): InternalMessageHistoryItem[] => {
+  return items.map((item) => {
+    const text =
+      item.message?.trim() ||
+      resolveHistoryFallbackText(item.type as EMessageType | string);
+
+    return {
+      text,
+      date: item.date,
+      label: resolveHistoryItemLabel(item),
+      isCurrent: item.is_current,
+      isDeletedSnapshot: item.is_deleted_snapshot,
+    };
   });
-
-  return history;
 };
 
 const resolveMessageText = (message: InternalMessage): string | null => {
@@ -5242,6 +5227,7 @@ const closeEditMessageDialog = () => {
 const confirmEditMessage = async () => {
   if (!activeConversation.value?.conversation_id) return;
   if (!editMessageTarget.value) return;
+  if (!canEditInternalMessage(editMessageTarget.value)) return;
   if (!canSubmitEditMessage.value) return;
 
   editingMessage.value = true;
@@ -5263,16 +5249,34 @@ const confirmEditMessage = async () => {
   }
 };
 
-const openMessageHistoryDialog = (message: InternalMessage) => {
+const openMessageHistoryDialog = async (message: InternalMessage) => {
+  if (!activeConversation.value?.conversation_id) return;
   if (!canViewMessageHistory(message)) return;
 
   messageHistoryTarget.value = message;
   isMessageHistoryDialogOpen.value = true;
+  messageHistoryItems.value = [];
+  loadingMessageHistory.value = true;
+
+  try {
+    const items = await internalChatStore.viewMessageHistory(
+      activeConversation.value.conversation_id,
+      message.message_id
+    );
+
+    if (messageHistoryTarget.value?.message_id !== message.message_id) return;
+
+    messageHistoryItems.value = mapMessageHistoryItems(items);
+  } finally {
+    loadingMessageHistory.value = false;
+  }
 };
 
 const closeMessageHistoryDialog = () => {
   isMessageHistoryDialogOpen.value = false;
   messageHistoryTarget.value = null;
+  messageHistoryItems.value = [];
+  loadingMessageHistory.value = false;
 };
 
 const onDelete = async (message: InternalMessage) => {
@@ -5293,6 +5297,7 @@ const closeDeleteMessageDialog = () => {
 const confirmDeleteMessage = async () => {
   if (!activeConversation.value?.conversation_id) return;
   if (!deleteMessageTarget.value) return;
+  if (!canDeleteInternalMessage(deleteMessageTarget.value)) return;
   if (deletingMessage.value) return;
 
   deletingMessage.value = true;
@@ -5444,6 +5449,8 @@ watch(isEditMessageDialogOpen, (isOpen) => {
 watch(isMessageHistoryDialogOpen, (isOpen) => {
   if (isOpen) return;
   messageHistoryTarget.value = null;
+  messageHistoryItems.value = [];
+  loadingMessageHistory.value = false;
 });
 
 watch(
@@ -5465,6 +5472,8 @@ watch(
     }
     isMessageHistoryDialogOpen.value = false;
     messageHistoryTarget.value = null;
+    messageHistoryItems.value = [];
+    loadingMessageHistory.value = false;
 
     if (isUserInfoDrawerOpen.value && !isActiveDirectConversation.value) {
       closeUserInfoDrawer();
@@ -6720,7 +6729,7 @@ onBeforeUnmount(async () => {
                             {{ t('internal_chat_deleted_badge') }}
                           </span>
                           <span
-                            v-else-if="hasMessageVersions(message)"
+                            v-else-if="hasMessageHistory(message)"
                             class="internal-chat-message-status-badge"
                           >
                             {{ t('internal_chat_edited') }}
@@ -8148,14 +8157,16 @@ onBeforeUnmount(async () => {
         <VDivider />
 
         <VCardText class="pa-4">
+          <div v-if="loadingMessageHistory" class="d-flex justify-center py-6">
+            <VProgressCircular indeterminate color="primary" />
+          </div>
+
           <div
-            v-if="getMessageHistoryItems(messageHistoryTarget).length > 0"
+            v-else-if="messageHistoryItems.length > 0"
             class="internal-chat-history-list"
           >
             <div
-              v-for="(item, index) in getMessageHistoryItems(
-                messageHistoryTarget
-              )"
+              v-for="(item, index) in messageHistoryItems"
               :key="`${messageHistoryTarget.message_id}-history-${index}`"
               class="internal-chat-history-item"
               :class="{

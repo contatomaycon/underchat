@@ -25,6 +25,7 @@ import { createMessageSchema } from '@core/schema/internalChat/createMessage';
 import { reactMessageSchema } from '@core/schema/internalChat/reactMessage';
 import { editMessageSchema } from '@core/schema/internalChat/editMessage';
 import { deleteMessageSchema } from '@core/schema/internalChat/deleteMessage';
+import { messageHistorySchema } from '@core/schema/internalChat/messageHistory';
 import { activitySchema } from '@core/schema/internalChat/activity';
 import { createGroupSchema } from '@core/schema/internalChat/createGroup';
 import { updateGroupSchema } from '@core/schema/internalChat/updateGroup';
@@ -250,6 +251,17 @@ export default function internalChatRoutes(server: FastifyInstance) {
   server.get('/internal-chat/:conversation_id/messages', {
     schema: listMessagesSchema,
     handler: controller.listMessages,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, internalChatReadPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/internal-chat/:conversation_id/messages/:message_id/history', {
+    schema: messageHistorySchema,
+    handler: controller.viewMessageHistory,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),

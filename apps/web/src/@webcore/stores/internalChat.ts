@@ -15,6 +15,7 @@ import type { ListInternalChatContactsResponse } from '@core/schema/internalChat
 import type { ViewInternalChatContactPhoneResponse } from '@core/schema/internalChat/viewContactPhone/response.schema';
 import type { ListMessagesQuery } from '@core/schema/internalChat/listMessages/request.schema';
 import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
+import type { MessageHistoryResponse } from '@core/schema/internalChat/messageHistory/response.schema';
 import type { CreateMessageBody } from '@core/schema/internalChat/createMessage/request.schema';
 import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
 import type { ViewInternalChatLinkPreviewBody } from '@core/schema/internalChat/viewLinkPreview/request.schema';
@@ -34,6 +35,8 @@ type InternalConversation =
   ListConversationsResponse['data']['results'][number];
 type InternalUser = ListUsersResponse['data']['results'][number];
 type InternalMessage = ListMessagesResponse['data']['results'][number];
+type InternalMessageHistoryItem =
+  MessageHistoryResponse['data']['results'][number];
 type InternalParticipant = ListGroupMembersResponse['data'][number];
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -900,6 +903,31 @@ export const useInternalChatStore = defineStore('internalChat', {
         return response?.data?.status === true;
       } catch {
         return false;
+      }
+    },
+
+    async viewMessageHistory(
+      conversationId: string,
+      messageId: string
+    ): Promise<InternalMessageHistoryItem[]> {
+      try {
+        const response = await axios.get<
+          IApiResponse<MessageHistoryResponse['data']>
+        >(`/internal-chat/${conversationId}/messages/${messageId}/history`);
+
+        const data = response?.data;
+        if (!data?.status || !data.data) return [];
+
+        return data.data.results ?? [];
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t('internal_chat_list_messages_error')
+          ),
+          EColor.error
+        );
+        return [];
       }
     },
 

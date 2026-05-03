@@ -70,7 +70,7 @@ export const internalChatMessageContentSchema = Type.Object(
         })
       )
     ),
-    version: Type.Optional(Type.Array(Type.Any())),
+    history_available: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   },
   { additionalProperties: true }
 );

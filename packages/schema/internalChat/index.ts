@@ -11,6 +11,7 @@ export * from './listGroupMembers';
 export * from './listMessages';
 export * from './listUsers';
 export * from './markRead';
+export * from './messageHistory';
 export * from './openDirect';
 export * from './reactMessage';
 export * from './realtimeToken';
