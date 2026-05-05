@@ -50,6 +50,8 @@ import { validateChatContactSchema } from '@core/schema/chat/validateContact';
 import { listQuickMessageTemplatesSchema } from '@core/schema/chat/listQuickMessageTemplates';
 import { updateChatLabelSchema } from '@core/schema/chat/updateChatLabel';
 import { updateForwardToOutputChatbotSchema } from '@core/schema/chat/updateForwardToOutputChatbot';
+import { viewChatAttendanceInactivitySchema } from '@core/schema/chat/viewChatAttendanceInactivity';
+import { updateChatAttendanceInactivitySchema } from '@core/schema/chat/updateChatAttendanceInactivity';
 import { listChatWorkersSchema } from '@core/schema/chat/listChatWorkers';
 import { listChatUsersSchema } from '@core/schema/chat/listChatUsers';
 import { listChatSectorsSchema } from '@core/schema/chat/listChatSectors';
@@ -539,6 +541,28 @@ export default function chatRoutes(server: FastifyInstance) {
           reply,
           forwardToOutputChatbotPermissions
         ),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chat/:chat_id/attendance-inactivity', {
+    schema: viewChatAttendanceInactivitySchema,
+    handler: chatController.viewChatAttendanceInactivity,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/chat/:chat_id/attendance-inactivity', {
+    schema: updateChatAttendanceInactivitySchema,
+    handler: chatController.updateChatAttendanceInactivity,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
       planStatus,
     ],

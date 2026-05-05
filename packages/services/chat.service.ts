@@ -7,6 +7,7 @@ import { mensageMappings } from '@core/mappings/mensage.mappings';
 import { IChat } from '@core/common/interfaces/IChat';
 import { chatMappings } from '@core/mappings/chat.mappings';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { WorkerConfigForChatViewerRepository } from '@core/repositories/chat/WorkerConfigForChatViewer.repository';
@@ -2088,6 +2089,16 @@ export class ChatService {
             {
               terms: {
                 type_user: ['system', 'bot'],
+              },
+            },
+            {
+              nested: {
+                path: 'content',
+                query: {
+                  term: {
+                    'content.type': EMessageType.annotation,
+                  },
+                },
               },
             },
           ],

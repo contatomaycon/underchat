@@ -9,6 +9,7 @@ export const workerConfigForChatSchema = Type.Object({
   allow_attendance_only_online: Type.Boolean(),
   simultaneous_attendance: Type.Union([Type.Number(), Type.Null()]),
   simultaneous_attendance_enabled: Type.Boolean(),
+  attendance_inactivity_alert_enabled: Type.Boolean(),
   operator_reply_pending_alert_enabled: Type.Boolean(),
   operator_reply_pending_alert_time_minutes: Type.Integer({ minimum: 1 }),
   has_ura_output: Type.Boolean(),

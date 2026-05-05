@@ -639,6 +639,16 @@ export class ChatMessageCreatorUseCase {
     }
 
     if (
+      typeUser === ETypeUserChat.operator &&
+      messageType === EMessageType.annotation
+    ) {
+      await this.attendanceInactivityService.resetOnOperatorAnnotationMessage(
+        chat
+      );
+      return;
+    }
+
+    if (
       !this.shouldResetOperatorInactivity(
         typeUser,
         messageType,

@@ -75,6 +75,8 @@ import { ForwardMessageResponse } from '@core/schema/chat/forwardMessage/respons
 import { ViewChatAttendantsResponse } from '@core/schema/chat/viewChatAttendants/response.schema';
 import { BulkActionChatRequest } from '@core/schema/chat/bulkAction/request.schema';
 import { BulkActionChatResponse } from '@core/schema/chat/bulkAction/response.schema';
+import { ViewChatAttendanceInactivityResponse } from '@core/schema/chat/viewChatAttendanceInactivity/response.schema';
+import { UpdateChatAttendanceInactivityRequest } from '@core/schema/chat/updateChatAttendanceInactivity/request.schema';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
@@ -5797,6 +5799,63 @@ export const useChatStore = defineStore('chat', {
 
         this.showSnackbar(errorMessage, EColor.error);
 
+        return false;
+      }
+    },
+
+    async viewAttendanceInactivityByChat(
+      chatId: string
+    ): Promise<ViewChatAttendanceInactivityResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewChatAttendanceInactivityResponse>
+        >(`/chat/${chatId}/attendance-inactivity`);
+
+        const data = response?.data;
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateAttendanceInactivityByChat(
+      chatId: string,
+      body: UpdateChatAttendanceInactivityRequest
+    ): Promise<boolean> {
+      try {
+        const response = await axios.patch<IApiResponse<{ success: boolean }>>(
+          `/chat/${chatId}/attendance-inactivity`,
+          body
+        );
+
+        const data = response?.data;
+        if (!data?.status) {
+          const errorMessage =
+            data?.message ||
+            this.i18n.global.t('chat_attendance_inactivity_update_failed');
+          this.showSnackbar(errorMessage, EColor.error);
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('chat_attendance_inactivity_update_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'chat_attendance_inactivity_update_failed'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
         return false;
       }
     },

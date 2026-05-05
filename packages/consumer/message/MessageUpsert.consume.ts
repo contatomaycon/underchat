@@ -3518,7 +3518,7 @@ export class MessageUpsertConsume {
           };
 
           await this.saveChatWithCaches(closedChat);
-          await this.attendanceInactivityService.cancelInactivityTracking(
+          await this.attendanceInactivityService.cancelInactivityTrackingForEndedAttendance(
             createChat
           );
 
@@ -3565,7 +3565,7 @@ export class MessageUpsertConsume {
       currentStatusAfterTransfer = currentChat?.status ?? null;
 
       if (currentStatusAfterTransfer !== EChatStatus.in_chat) {
-        await this.attendanceInactivityService.cancelInactivityTracking(
+        await this.attendanceInactivityService.cancelInactivityTrackingForEndedAttendance(
           getChat
         );
       }
@@ -3605,6 +3605,16 @@ export class MessageUpsertConsume {
       canResetByStatus
     ) {
       await this.attendanceInactivityService.resetOnContactMessage(getChat);
+    } else if (
+      wasInChat &&
+      typeUserForInactivity === ETypeUserChat.operator &&
+      data.type === EMessageType.annotation &&
+      !shouldSkipMessageCreation &&
+      canResetByStatus
+    ) {
+      await this.attendanceInactivityService.resetOnOperatorAnnotationMessage(
+        getChat
+      );
     } else if (
       wasInChat &&
       typeUserForInactivity === ETypeUserChat.operator &&

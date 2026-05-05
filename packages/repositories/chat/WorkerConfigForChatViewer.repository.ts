@@ -155,6 +155,11 @@ export class WorkerConfigForChatViewerRepository {
       simultaneous_attendance: simultaneousAttendance,
       simultaneous_attendance_enabled:
         simultaneousAttendance !== null && simultaneousAttendance > 0,
+      attendance_inactivity_alert_enabled: configMap.has(
+        EWorkerConfigType.attendance_inactivity_alert
+      )
+        ? true
+        : false,
       operator_reply_pending_alert_enabled:
         parsedOperatorReplyPendingAlertConfig.enabled,
       operator_reply_pending_alert_time_minutes:

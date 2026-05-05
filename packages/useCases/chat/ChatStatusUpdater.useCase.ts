@@ -817,7 +817,9 @@ export class ChatStatusUpdaterUseCase {
       chat.status === EChatStatus.in_chat &&
       finalStatus !== EChatStatus.in_chat
     ) {
-      await this.attendanceInactivityService.cancelInactivityTracking(updatedChat);
+      await this.attendanceInactivityService.cancelInactivityTrackingForEndedAttendance(
+        updatedChat
+      );
     }
 
     await this.chatService.clearChatSummary(params.chat_id, accountId);

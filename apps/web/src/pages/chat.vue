@@ -295,6 +295,9 @@ const isQueueOrUraStatus = computed(() => {
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
 const isLoadingWorkerConfig = ref(false);
 const lastLoadedWorkerConfigId = ref<string | null>(null);
+const attendanceInactivityDisabledForActiveChat = ref(false);
+const isLoadingAttendanceInactivityState = ref(false);
+const isUpdatingAttendanceInactivityState = ref(false);
 const operatorReplyPendingNow = ref(Date.now());
 let operatorReplyPendingTicker: ReturnType<typeof setInterval> | null = null;
 const OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES = 15;
@@ -560,6 +563,18 @@ watch(
     if (newWorkerId !== oldWorkerId || workerConfigForChat.value === null) {
       loadWorkerConfigForChat().catch(() => {});
     }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => [
+    chatStore.activeChat?.chat_id,
+    chatStore.activeChat?.status,
+    workerConfigForChat.value?.attendance_inactivity_alert_enabled,
+  ],
+  () => {
+    loadAttendanceInactivityStateForActiveChat().catch(() => {});
   },
   { immediate: true }
 );
@@ -1037,6 +1052,9 @@ watch(
     resetHeaderPhoneVisibility();
     attendantsInfo.value = null;
     isAttendantsInfoDialogOpen.value = false;
+    attendanceInactivityDisabledForActiveChat.value = false;
+    isLoadingAttendanceInactivityState.value = false;
+    isUpdatingAttendanceInactivityState.value = false;
   }
 );
 
@@ -1453,7 +1471,8 @@ const canShowHeaderActionsMenu = computed(() => {
   return (
     canShowCloseButton.value ||
     canShowAttendantsInfoAction.value ||
-    canShowLeaveConversationAction.value
+    canShowLeaveConversationAction.value ||
+    canShowDisableAttendanceInactivityAction.value
   );
 });
 
@@ -1477,6 +1496,18 @@ const canToggleForwardToOutputChatbot = computed(() => {
     EChatPermissions.chat_group,
     EChatPermissions.forward_to_output_chatbot,
   ]);
+});
+
+const attendanceInactivityAlertEnabledForChat = computed(() => {
+  return workerConfigForChat.value?.attendance_inactivity_alert_enabled === true;
+});
+
+const canShowDisableAttendanceInactivityAction = computed(() => {
+  return (
+    isInChatStatus.value &&
+    canManageInChatLifecycle.value &&
+    attendanceInactivityAlertEnabledForChat.value
+  );
 });
 
 const canViewContactPhone = computed(() => {
@@ -1552,6 +1583,48 @@ const handleToggleForwardToOutputChatbot = async () => {
     chatStore.activeChat.chat_id,
     next
   );
+};
+
+const loadAttendanceInactivityStateForActiveChat = async () => {
+  const chatId = chatStore.activeChat?.chat_id;
+  if (!chatId || !canShowDisableAttendanceInactivityAction.value) {
+    attendanceInactivityDisabledForActiveChat.value = false;
+    isLoadingAttendanceInactivityState.value = false;
+    return;
+  }
+
+  isLoadingAttendanceInactivityState.value = true;
+  try {
+    const response = await chatStore.viewAttendanceInactivityByChat(chatId);
+    attendanceInactivityDisabledForActiveChat.value =
+      response?.disabled === true;
+  } finally {
+    isLoadingAttendanceInactivityState.value = false;
+  }
+};
+
+const handleDisableAttendanceInactivity = async () => {
+  const chatId = chatStore.activeChat?.chat_id;
+  if (
+    !chatId ||
+    attendanceInactivityDisabledForActiveChat.value ||
+    isUpdatingAttendanceInactivityState.value
+  ) {
+    return;
+  }
+
+  isUpdatingAttendanceInactivityState.value = true;
+  try {
+    const success = await chatStore.updateAttendanceInactivityByChat(chatId, {
+      disabled: true,
+    });
+
+    if (success) {
+      attendanceInactivityDisabledForActiveChat.value = true;
+    }
+  } finally {
+    isUpdatingAttendanceInactivityState.value = false;
+  }
 };
 
 const activeChatLabels = computed(() => {
@@ -6340,7 +6413,9 @@ onBeforeUnmount(() => {
                   <VDivider
                     v-if="
                       canShowAttendantsInfoAction &&
-                      (canShowLeaveConversationAction || canShowCloseButton)
+                      (canShowLeaveConversationAction ||
+                        canShowCloseButton ||
+                        canShowDisableAttendanceInactivityAction)
                     "
                   />
 
@@ -6354,6 +6429,40 @@ onBeforeUnmount(() => {
                     <VListItemTitle>{{
                       t('leave_conversation')
                     }}</VListItemTitle>
+                  </VListItem>
+
+                  <VListItem
+                    v-if="canShowDisableAttendanceInactivityAction"
+                    :disabled="
+                      attendanceInactivityDisabledForActiveChat ||
+                      isLoadingAttendanceInactivityState ||
+                      isUpdatingAttendanceInactivityState
+                    "
+                    @click="handleDisableAttendanceInactivity"
+                  >
+                    <template #prepend>
+                      <VIcon
+                        size="20"
+                        :color="
+                          attendanceInactivityDisabledForActiveChat
+                            ? 'success'
+                            : 'warning'
+                        "
+                      >
+                        {{
+                          attendanceInactivityDisabledForActiveChat
+                            ? 'tabler-check'
+                            : 'tabler-bell-off'
+                        }}
+                      </VIcon>
+                    </template>
+                    <VListItemTitle>
+                      {{
+                        attendanceInactivityDisabledForActiveChat
+                          ? t('chat_attendance_inactivity_disabled_in_chat')
+                          : t('chat_attendance_inactivity_disable_action')
+                      }}
+                    </VListItemTitle>
                   </VListItem>
 
                   <VListItem

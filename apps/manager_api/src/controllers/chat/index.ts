@@ -38,6 +38,8 @@ import { validateContact } from './methods/validateContact';
 import { listQuickMessageTemplates } from './methods/listQuickMessageTemplates';
 import { updateChatLabel } from './methods/updateChatLabel';
 import { updateForwardToOutputChatbot } from './methods/updateForwardToOutputChatbot';
+import { viewChatAttendanceInactivity } from './methods/viewChatAttendanceInactivity';
+import { updateChatAttendanceInactivity } from './methods/updateChatAttendanceInactivity';
 import { listChatWorkers } from './methods/listChatWorkers';
 import { listChatUsers } from './methods/listChatUsers';
 import { listChatSectors } from './methods/listChatSectors';
@@ -91,6 +93,8 @@ class ChatController {
   public listQuickMessageTemplates = listQuickMessageTemplates;
   public updateChatLabel = updateChatLabel;
   public updateForwardToOutputChatbot = updateForwardToOutputChatbot;
+  public viewChatAttendanceInactivity = viewChatAttendanceInactivity;
+  public updateChatAttendanceInactivity = updateChatAttendanceInactivity;
   public listChatWorkers = listChatWorkers;
   public listChatUsers = listChatUsers;
   public listChatSectors = listChatSectors;

@@ -20,13 +20,17 @@ import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
-import { createAttendanceInactivityCacheKey } from '@core/common/functions/createCacheKey';
+import {
+  createAttendanceInactivityCacheKey,
+  createAttendanceInactivityDisabledCacheKey,
+} from '@core/common/functions/createCacheKey';
 import { withLock } from '@core/common/functions/withLock';
 import { IUpsertMessageEnvelope } from '@core/common/interfaces/IUpsertMessage';
 
 @injectable()
 export class AttendanceInactivityService {
   private readonly INACTIVITY_CACHE_TTL_SECONDS = 86400;
+  private readonly INACTIVITY_DISABLED_OVERRIDE_TTL_SECONDS = 2592000;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -54,6 +58,14 @@ export class AttendanceInactivityService {
     chatId: string
   ): string {
     return createAttendanceInactivityCacheKey(accountId, workerId, chatId);
+  }
+
+  private getInactivityDisabledCacheKey(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): string {
+    return createAttendanceInactivityDisabledCacheKey(accountId, workerId, chatId);
   }
 
   private getInactivityLockKey(
@@ -150,7 +162,7 @@ export class AttendanceInactivityService {
     ]);
   }
 
-  private async cancelInactivityTrackingByIdsNoLock(
+  private async clearInactivityTrackingByIdsNoLock(
     accountId: string,
     workerId: string,
     chatId: string
@@ -164,13 +176,59 @@ export class AttendanceInactivityService {
     ]);
   }
 
+  private async clearInactivityDisabledOverrideByIdsNoLock(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): Promise<void> {
+    const disabledKey = this.getInactivityDisabledCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+
+    await this.redis.del(disabledKey);
+  }
+
+  private async isInactivityDisabledByIdsNoLock(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): Promise<boolean> {
+    const disabledKey = this.getInactivityDisabledCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const value = await this.redis.get(disabledKey);
+    return value === '1';
+  }
+
+  private async setInactivityDisabledByIdsNoLock(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): Promise<void> {
+    const disabledKey = this.getInactivityDisabledCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    await this.redis.set(
+      disabledKey,
+      '1',
+      'EX',
+      this.INACTIVITY_DISABLED_OVERRIDE_TTL_SECONDS
+    );
+  }
+
   private async resetTrackingOnMessageNoLock(
     chat: IChat,
     lastHumanInteractor: 'operator' | 'client',
     configOverride?: IAttendanceInactivityAlertConfig | null
   ): Promise<void> {
     if (chat.status !== EChatStatus.in_chat) {
-      await this.cancelInactivityTrackingByIdsNoLock(
+      await this.clearInactivityTrackingByIdsNoLock(
         chat.account.id,
         chat.worker.id,
         chat.chat_id
@@ -181,7 +239,22 @@ export class AttendanceInactivityService {
     const config = await this.resolveConfig(chat.worker.id, configOverride);
 
     if (!config.enabled) {
-      await this.cancelInactivityTrackingByIdsNoLock(
+      await this.clearInactivityTrackingByIdsNoLock(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      );
+      return;
+    }
+
+    if (
+      await this.isInactivityDisabledByIdsNoLock(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      )
+    ) {
+      await this.clearInactivityTrackingByIdsNoLock(
         chat.account.id,
         chat.worker.id,
         chat.chat_id
@@ -221,6 +294,76 @@ export class AttendanceInactivityService {
     await this.upsertInactivitySchedule(cacheKey, data, nextCheckTime);
   }
 
+  private async resetTrackingOnOperatorAnnotationNoLock(
+    chat: IChat,
+    configOverride?: IAttendanceInactivityAlertConfig | null
+  ): Promise<void> {
+    if (chat.status !== EChatStatus.in_chat) {
+      await this.clearInactivityTrackingByIdsNoLock(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      );
+      return;
+    }
+
+    const config = await this.resolveConfig(chat.worker.id, configOverride);
+    if (!config.enabled) {
+      await this.clearInactivityTrackingByIdsNoLock(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      );
+      return;
+    }
+
+    if (
+      await this.isInactivityDisabledByIdsNoLock(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      )
+    ) {
+      await this.clearInactivityTrackingByIdsNoLock(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      );
+      return;
+    }
+
+    const now = Date.now();
+    const nextCheckTime = now + config.time * 60 * 1000;
+    const cacheKey = this.getInactivityCacheKey(
+      chat.account.id,
+      chat.worker.id,
+      chat.chat_id
+    );
+    const inactivityData = this.parseInactivityData(
+      await this.redis.get(cacheKey)
+    );
+
+    const data: IAttendanceInactivityData = inactivityData ?? {
+      lastInteraction: now,
+      alertCount: 0,
+      lastAlertTime: null,
+      lastHumanInteractor: null,
+      accountId: chat.account.id,
+      workerId: chat.worker.id,
+      chatId: chat.chat_id,
+    };
+
+    data.lastInteraction = now;
+    data.alertCount = 0;
+    data.lastAlertTime = null;
+    data.lastHumanInteractor = 'client';
+    data.accountId = chat.account.id;
+    data.workerId = chat.worker.id;
+    data.chatId = chat.chat_id;
+
+    await this.upsertInactivitySchedule(cacheKey, data, nextCheckTime);
+  }
+
   async startTrackingOnInChatEntry(
     chat: IChat,
     configOverride?: IAttendanceInactivityAlertConfig | null
@@ -230,8 +373,14 @@ export class AttendanceInactivityService {
       chat.worker.id,
       chat.chat_id,
       async () => {
+        await this.clearInactivityDisabledOverrideByIdsNoLock(
+          chat.account.id,
+          chat.worker.id,
+          chat.chat_id
+        );
+
         if (chat.status !== EChatStatus.in_chat) {
-          await this.cancelInactivityTrackingByIdsNoLock(
+          await this.clearInactivityTrackingByIdsNoLock(
             chat.account.id,
             chat.worker.id,
             chat.chat_id
@@ -242,7 +391,7 @@ export class AttendanceInactivityService {
         const config = await this.resolveConfig(chat.worker.id, configOverride);
 
         if (!config.enabled) {
-          await this.cancelInactivityTrackingByIdsNoLock(
+          await this.clearInactivityTrackingByIdsNoLock(
             chat.account.id,
             chat.worker.id,
             chat.chat_id
@@ -299,17 +448,50 @@ export class AttendanceInactivityService {
     );
   }
 
+  async resetOnOperatorAnnotationMessage(
+    chat: IChat,
+    configOverride?: IAttendanceInactivityAlertConfig | null
+  ): Promise<void> {
+    await this.withInactivityChatLock(
+      chat.account.id,
+      chat.worker.id,
+      chat.chat_id,
+      async () =>
+        this.resetTrackingOnOperatorAnnotationNoLock(chat, configOverride)
+    );
+  }
+
   async cancelInactivityTracking(chat: IChat): Promise<void> {
     await this.withInactivityChatLock(
       chat.account.id,
       chat.worker.id,
       chat.chat_id,
       async () =>
-        this.cancelInactivityTrackingByIdsNoLock(
+        this.clearInactivityTrackingByIdsNoLock(
           chat.account.id,
           chat.worker.id,
           chat.chat_id
         )
+    );
+  }
+
+  async cancelInactivityTrackingForEndedAttendance(chat: IChat): Promise<void> {
+    await this.withInactivityChatLock(
+      chat.account.id,
+      chat.worker.id,
+      chat.chat_id,
+      async () => {
+        await this.clearInactivityTrackingByIdsNoLock(
+          chat.account.id,
+          chat.worker.id,
+          chat.chat_id
+        );
+        await this.clearInactivityDisabledOverrideByIdsNoLock(
+          chat.account.id,
+          chat.worker.id,
+          chat.chat_id
+        );
+      }
     );
   }
 
@@ -319,7 +501,63 @@ export class AttendanceInactivityService {
     chatId: string
   ): Promise<void> {
     await this.withInactivityChatLock(accountId, workerId, chatId, async () =>
-      this.cancelInactivityTrackingByIdsNoLock(accountId, workerId, chatId)
+      this.clearInactivityTrackingByIdsNoLock(accountId, workerId, chatId)
+    );
+  }
+
+  async viewAttendanceInactivityDisabledForChat(chat: IChat): Promise<boolean> {
+    return this.withInactivityChatLock(
+      chat.account.id,
+      chat.worker.id,
+      chat.chat_id,
+      async () =>
+        this.isInactivityDisabledByIdsNoLock(
+          chat.account.id,
+          chat.worker.id,
+          chat.chat_id
+        )
+    );
+  }
+
+  async updateAttendanceInactivityDisabledForChat(
+    chat: IChat,
+    disabled: boolean
+  ): Promise<void> {
+    await this.withInactivityChatLock(
+      chat.account.id,
+      chat.worker.id,
+      chat.chat_id,
+      async () => {
+        if (disabled) {
+          await this.setInactivityDisabledByIdsNoLock(
+            chat.account.id,
+            chat.worker.id,
+            chat.chat_id
+          );
+          await this.clearInactivityTrackingByIdsNoLock(
+            chat.account.id,
+            chat.worker.id,
+            chat.chat_id
+          );
+          return;
+        }
+
+        await this.clearInactivityDisabledOverrideByIdsNoLock(
+          chat.account.id,
+          chat.worker.id,
+          chat.chat_id
+        );
+
+        if (chat.status === EChatStatus.in_chat) {
+          await this.resetTrackingOnMessageNoLock(chat, 'client');
+        } else {
+          await this.clearInactivityTrackingByIdsNoLock(
+            chat.account.id,
+            chat.worker.id,
+            chat.chat_id
+          );
+        }
+      }
     );
   }
 
@@ -400,7 +638,8 @@ export class AttendanceInactivityService {
       if (
         foundById &&
         foundById.type_user !== ETypeUserChat.system &&
-        foundById.type_user !== ETypeUserChat.bot
+        foundById.type_user !== ETypeUserChat.bot &&
+        foundById.content?.type !== EMessageType.annotation
       ) {
         return foundById;
       }
@@ -622,7 +861,27 @@ export class AttendanceInactivityService {
           );
 
           if (!chat || chat.status !== EChatStatus.in_chat) {
-            await this.cancelInactivityTrackingByIdsNoLock(
+            await this.clearInactivityTrackingByIdsNoLock(
+              inactivityData.accountId,
+              inactivityData.workerId,
+              inactivityData.chatId
+            );
+            await this.clearInactivityDisabledOverrideByIdsNoLock(
+              inactivityData.accountId,
+              inactivityData.workerId,
+              inactivityData.chatId
+            );
+            return;
+          }
+
+          if (
+            await this.isInactivityDisabledByIdsNoLock(
+              inactivityData.accountId,
+              inactivityData.workerId,
+              inactivityData.chatId
+            )
+          ) {
+            await this.clearInactivityTrackingByIdsNoLock(
               inactivityData.accountId,
               inactivityData.workerId,
               inactivityData.chatId
@@ -636,7 +895,7 @@ export class AttendanceInactivityService {
             );
 
           if (!config.enabled) {
-            await this.cancelInactivityTrackingByIdsNoLock(
+            await this.clearInactivityTrackingByIdsNoLock(
               inactivityData.accountId,
               inactivityData.workerId,
               inactivityData.chatId
@@ -663,7 +922,12 @@ export class AttendanceInactivityService {
             }
 
             await this.finishAttendanceByInactivity(t, chat);
-            await this.cancelInactivityTrackingByIdsNoLock(
+            await this.clearInactivityTrackingByIdsNoLock(
+              inactivityData.accountId,
+              inactivityData.workerId,
+              inactivityData.chatId
+            );
+            await this.clearInactivityDisabledOverrideByIdsNoLock(
               inactivityData.accountId,
               inactivityData.workerId,
               inactivityData.chatId

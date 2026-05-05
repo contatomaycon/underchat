@@ -27,12 +27,14 @@ describe('WorkerConfigForChatViewerRepository', () => {
     const activeChain = createActiveConfigChain([]);
     const chatbotOutputChain = createLimitChain([]);
     const aiAgentChain = createLimitChain([]);
+    const operatorReplyPendingAlertChain = createLimitChain([]);
     const dbRo = {
       select: jest
         .fn()
         .mockImplementationOnce(activeChain.select)
         .mockImplementationOnce(chatbotOutputChain.select)
-        .mockImplementationOnce(aiAgentChain.select),
+        .mockImplementationOnce(aiAgentChain.select)
+        .mockImplementationOnce(operatorReplyPendingAlertChain.select),
     };
     const repository = new WorkerConfigForChatViewerRepository(dbRo as never);
 
@@ -68,12 +70,14 @@ describe('WorkerConfigForChatViewerRepository', () => {
         worker_config_status_id: EWorkerConfigStatus.active,
       },
     ]);
+    const operatorReplyPendingAlertChain = createLimitChain([]);
     const dbRo = {
       select: jest
         .fn()
         .mockImplementationOnce(activeChain.select)
         .mockImplementationOnce(chatbotOutputChain.select)
-        .mockImplementationOnce(aiAgentChain.select),
+        .mockImplementationOnce(aiAgentChain.select)
+        .mockImplementationOnce(operatorReplyPendingAlertChain.select),
     };
     const repository = new WorkerConfigForChatViewerRepository(dbRo as never);
 
@@ -88,6 +92,9 @@ describe('WorkerConfigForChatViewerRepository', () => {
       allow_attendance_only_online: false,
       simultaneous_attendance: 3,
       simultaneous_attendance_enabled: true,
+      attendance_inactivity_alert_enabled: false,
+      operator_reply_pending_alert_enabled: false,
+      operator_reply_pending_alert_time_minutes: 15,
       has_ura_output: true,
       ai_agent_enabled: true,
       ai_agent_id: 'agent-1',
