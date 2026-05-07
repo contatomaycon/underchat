@@ -443,7 +443,8 @@ export class ChatMessageService {
     const updateOperatorReplyPending =
       chatBeforeSummary?.status === EChatStatus.in_chat &&
       message.type_user === ETypeUserChat.operator &&
-      message.content.type !== EMessageType.react;
+      message.content.type !== EMessageType.react &&
+      message.content.type !== EMessageType.annotation;
 
     await this.chatService.updateChatSummaryAtomically(
       message.chat_id,

@@ -52,6 +52,9 @@ jest.mock('@core/services/worker.service', () => ({
 }));
 
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 
 describe('ChatMessageService', () => {
@@ -124,5 +127,38 @@ describe('ChatMessageService', () => {
     expect(
       chatService.saveMessageChat.mock.invocationCallOrder[0]
     ).toBeLessThan(streamProducerService.send.mock.invocationCallOrder[0]);
+  });
+
+  it('does not clear pending operator reply when operator sends annotation in in_chat', async () => {
+    const { chatService, service } = makeService(true);
+    chatService.findChatByChatId
+      .mockResolvedValueOnce({ status: EChatStatus.in_chat })
+      .mockResolvedValueOnce({ account: { id: 'acc-1' } });
+
+    const annotationMessage = {
+      ...message,
+      date: '2026-05-07T12:00:00.000Z',
+      type_user: ETypeUserChat.operator,
+      content: {
+        type: EMessageType.annotation,
+        message: 'Nota interna',
+      },
+    } as IChatMessage;
+
+    await expect(service.publishPreparedMessage(annotationMessage)).resolves.toBe(
+      true
+    );
+
+    expect(chatService.updateChatSummaryAtomically).toHaveBeenCalledWith(
+      annotationMessage.chat_id,
+      expect.anything(),
+      annotationMessage.date,
+      expect.any(Number),
+      annotationMessage.message_id,
+      annotationMessage.message_id,
+      false,
+      ETypeUserChat.operator,
+      false
+    );
   });
 });

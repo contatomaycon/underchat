@@ -1589,8 +1589,10 @@ export class ChatService {
 
       if (params.update_operator_reply_pending == true) {
         if (messageUpdated && params.message_author_type_user == 'client') {
-          summary.operator_reply_pending_since = params.last_date;
-          changed = true;
+          if (summary.operator_reply_pending_since == null) {
+            summary.operator_reply_pending_since = params.last_date;
+            changed = true;
+          }
         } else if (params.message_author_type_user == 'operator') {
           if (
             summary.operator_reply_pending_since != null &&

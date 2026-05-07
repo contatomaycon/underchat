@@ -2711,7 +2711,8 @@ export class MessageUpsertConsume {
       const lastDateEpochMillis = new Date(inputChatMessage.date).getTime();
       const updateOperatorReplyPending =
         getChat.status === EChatStatus.in_chat &&
-        data.type !== EMessageType.react;
+        data.type !== EMessageType.react &&
+        data.type !== EMessageType.annotation;
 
       const lockKey = `chat-summary:${getChat.chat_id}`;
       await withLock(
