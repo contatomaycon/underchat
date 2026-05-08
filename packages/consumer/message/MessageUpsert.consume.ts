@@ -2660,6 +2660,82 @@ export class MessageUpsertConsume {
         data.message?.key
       );
       if (existingMessageByKey?.message_id) {
+        if (
+          this.shouldReplaceExistingMessageByKey(
+            existingMessageByKey,
+            inputChatMessage
+          )
+        ) {
+          const replacedMessage: IChatMessage = {
+            ...existingMessageByKey,
+            message_key: this.mergeMessageKeys(
+              existingMessageByKey.message_key,
+              inputChatMessage.message_key
+            ),
+            type_user: inputChatMessage.type_user,
+            summary: inputChatMessage.summary,
+            content: inputChatMessage.content,
+            date: inputChatMessage.date,
+            deleted: false,
+            has_quoted: hasQuotedFlag || !!existingMessageByKey.has_quoted,
+            hash: existingMessageByKey.hash ?? inputChatMessage.hash,
+          };
+
+          await Promise.allSettled([
+            this.chatService.updateMessageChat(replacedMessage),
+            this.centrifugoChatPublish(replacedMessage),
+          ]);
+
+          const replacedContent =
+            replacedMessage.content as IChatMessage['content'];
+          const messageText = extractMessageTextFromContent(
+            (replacedContent ?? { type: EMessageType.text }) as IContent
+          );
+          const lastDateEpochMillis = new Date(replacedMessage.date).getTime();
+          const updateOperatorReplyPending =
+            getChat.status === EChatStatus.in_chat &&
+            data.type !== EMessageType.react &&
+            data.type !== EMessageType.annotation;
+
+          const lockKey = `chat-summary:${getChat.chat_id}`;
+          await withLock(this.redis, lockKey, async () => {
+            await this.updateChatSummaryWithRetry(
+              getChat.chat_id,
+              messageText,
+              replacedMessage.date,
+              lastDateEpochMillis,
+              replacedMessage.message_id,
+              replacedMessage.message_id,
+              false,
+              typeUser,
+              updateOperatorReplyPending
+            );
+
+            const updatedChat = await this.chatService.findChatByChatId(
+              data.account_id,
+              getChat.chat_id
+            );
+
+            if (updatedChat) {
+              await this.centrifugoChatQueuePublish(updatedChat);
+            }
+          });
+
+          logger.info({
+            type: 'message_upsert_replaced_existing_by_key',
+            account_id: data.account_id,
+            worker_id: data.worker_id,
+            chat_id: getChat.chat_id,
+            message_key_id: messageId,
+            source_message_id: existingMessageByKey.message_id,
+          });
+
+          return {
+            handled: true,
+            reactionInactivityInteraction: null,
+          };
+        }
+
         await this.chatService.patchExistingMessageMissingFields(
           existingMessageByKey.message_id,
           inputChatMessage
@@ -2954,6 +3030,72 @@ export class MessageUpsertConsume {
     return `wa_${hash}`;
   }
 
+  private extractNormalizedTextForComparison(
+    content: IContent | null | undefined
+  ): string {
+    if (!content) return '';
+
+    const rawText = extractMessageTextFromContent(content);
+    return this.normalizeMessageTextForEmptyCheck(rawText);
+  }
+
+  private shouldReplaceExistingMessageByKey(
+    existingMessage: IChatMessage,
+    incomingMessage: IChatMessage
+  ): boolean {
+    const incomingContent = incomingMessage.content ?? null;
+    if (!incomingContent || incomingContent.type !== EMessageType.text) {
+      return false;
+    }
+
+    const incomingText =
+      this.extractNormalizedTextForComparison(incomingContent);
+    if (incomingText.length === 0) {
+      return false;
+    }
+
+    const existingContent = existingMessage.content ?? null;
+    if (!existingContent) {
+      return true;
+    }
+
+    if (existingContent.type === EMessageType.system) {
+      return true;
+    }
+
+    if (existingContent.type !== EMessageType.text) {
+      return false;
+    }
+
+    const existingText =
+      this.extractNormalizedTextForComparison(existingContent);
+
+    return existingText !== incomingText;
+  }
+
+  private mergeMessageKeys(
+    existingKey: IChatMessage['message_key'],
+    incomingKey: IChatMessage['message_key']
+  ): IChatMessage['message_key'] {
+    const current: NonNullable<IChatMessage['message_key']> = existingKey ?? {
+      is_view_once: false,
+    };
+    const next: NonNullable<IChatMessage['message_key']> = incomingKey ?? {
+      is_view_once: false,
+    };
+
+    return {
+      remote_jid: next.remote_jid ?? current.remote_jid,
+      remote_jid_alt: next.remote_jid_alt ?? current.remote_jid_alt,
+      from_me: next.from_me ?? current.from_me,
+      id: next.id ?? current.id,
+      participant: next.participant ?? current.participant,
+      participant_alt: next.participant_alt ?? current.participant_alt,
+      addressing_mode: next.addressing_mode ?? current.addressing_mode,
+      is_view_once: next.is_view_once ?? current.is_view_once ?? false,
+    };
+  }
+
   private shouldDiscardByMessageKeyJid(data: IUpsertMessage): boolean {
     const key = data.message?.key;
     if (!key) return false;
@@ -2997,27 +3139,32 @@ export class MessageUpsertConsume {
   }
 
   private shouldDiscardUpsert(data: IUpsertMessage): boolean {
+    return this.getDiscardUpsertReason(data) !== null;
+  }
+
+  private getDiscardUpsertReason(data: IUpsertMessage): string | null {
     if (this.shouldDiscardByMessageKeyJid(data)) {
-      return true;
+      return 'message_key_jid_filtered';
     }
 
     if (this.shouldDiscardEmptyText(data)) {
-      return true;
+      return 'empty_text';
     }
 
     if (data.type === EMessageType.set_disappearing_messages) {
-      return false;
+      return null;
     }
 
     const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
     const protocolMsg = msg?.protocolMessage as { type?: number } | undefined;
     const pType = protocolMsg?.type;
 
-    return (
+    const shouldDiscardProtocol =
       pType === MessageUpsertConsume.PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING ||
       pType ===
-        MessageUpsertConsume.PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE
-    );
+        MessageUpsertConsume.PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE;
+
+    return shouldDiscardProtocol ? 'ephemeral_protocol_sync_or_setting' : null;
   }
 
   private isMessageEmpty(data: IUpsertMessage): boolean {
@@ -4045,7 +4192,15 @@ export class MessageUpsertConsume {
     data: IUpsertMessage,
     phone: string
   ): Promise<void> {
-    if (this.shouldDiscardUpsert(data)) {
+    const discardReason = this.getDiscardUpsertReason(data);
+    if (discardReason) {
+      logger.info({
+        type: 'message_upsert_discarded',
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_key_id: data.message?.key?.id,
+        reason: discardReason,
+      });
       return;
     }
 
@@ -4281,7 +4436,17 @@ export class MessageUpsertConsume {
       const currentChain = previousChain
         .then(async () => {
           const processMessage = async (): Promise<boolean> => {
-            if (this.shouldDiscardUpsert(data)) {
+            const discardReason = this.getDiscardUpsertReason(data);
+            if (discardReason) {
+              logger.info({
+                type: 'message_upsert_discarded',
+                account_id: data.account_id,
+                worker_id: data.worker_id,
+                message_key_id: data.message?.key?.id,
+                partition,
+                offset,
+                reason: discardReason,
+              });
               return true;
             }
 

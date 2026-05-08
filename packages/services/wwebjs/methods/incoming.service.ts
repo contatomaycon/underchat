@@ -53,6 +53,21 @@ type WwebjsIncomingEventSource =
   | 'message_create'
   | 'message_ciphertext';
 
+interface IKafkaSendMetadata {
+  event: string;
+  messageId?: string;
+  messageKeyId?: string;
+}
+
+interface IKafkaRetryQueueItem {
+  topic: string;
+  payload: unknown;
+  kafkaKey?: string | Buffer;
+  metadata: IKafkaSendMetadata;
+  attempts: number;
+  nextAttemptAt: number;
+}
+
 interface WwebjsReactionEvent {
   id?: unknown;
   msgId?: unknown;
@@ -602,12 +617,21 @@ export class WwebjsIncomingMessageService {
   private readonly E2E_NOTIFICATION_DEDUPE_TTL = 31536000;
   private readonly CIPHERTEXT_FANOUT_DEDUPE_PREFIX = 'wwebjs:ciphertext:';
   private readonly CIPHERTEXT_FANOUT_DEDUPE_TTL = 31536000;
+  private readonly KAFKA_IMMEDIATE_SEND_ATTEMPTS = 3;
+  private readonly KAFKA_RETRY_BASE_DELAY_MS = 500;
+  private readonly KAFKA_RETRY_MAX_DELAY_MS = 30_000;
+  private readonly KAFKA_RETRY_BATCH_SIZE = 100;
+  private readonly KAFKA_RETRY_QUEUE_MAX_SIZE = 50_000;
   private readonly LID_PHONE_CACHE = new Map<
     string,
     { phone: string | null; ts: number }
   >();
   private readonly LID_PHONE_CACHE_TTL_MS = 86_400_000;
   private readonly LID_PHONE_CACHE_NO_PHONE_TTL_MS = 300_000;
+  private kafkaRetryQueue: IKafkaRetryQueueItem[] = [];
+  private kafkaRetryProcessing = false;
+  private kafkaRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  private kafkaRetryNextRunAt = 0;
 
   constructor(
     @inject(StreamProducerService)
@@ -625,6 +649,232 @@ export class WwebjsIncomingMessageService {
 
   private logEvent(eventName: string, payload: Record<string, unknown>): void {
     console.log(`[wwebjs] event:${eventName}`, payload);
+  }
+
+  private async waitMs(ms: number): Promise<void> {
+    if (ms <= 0) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => setTimeout(resolve, ms));
+  }
+
+  private computeKafkaRetryDelayMs(attempt: number): number {
+    const safeAttempt = Math.max(0, attempt);
+    return Math.min(
+      this.KAFKA_RETRY_BASE_DELAY_MS * Math.pow(2, safeAttempt),
+      this.KAFKA_RETRY_MAX_DELAY_MS
+    );
+  }
+
+  private scheduleKafkaRetryProcessing(delayMs: number): void {
+    const normalizedDelay = Math.max(0, delayMs);
+    const now = Date.now();
+    const nextRunAt = now + normalizedDelay;
+
+    if (
+      this.kafkaRetryTimer &&
+      this.kafkaRetryNextRunAt > 0 &&
+      this.kafkaRetryNextRunAt <= nextRunAt
+    ) {
+      return;
+    }
+
+    if (this.kafkaRetryTimer) {
+      clearTimeout(this.kafkaRetryTimer);
+      this.kafkaRetryTimer = undefined;
+    }
+
+    this.kafkaRetryNextRunAt = nextRunAt;
+    this.kafkaRetryTimer = setTimeout(() => {
+      this.kafkaRetryTimer = undefined;
+      this.kafkaRetryNextRunAt = 0;
+      void this.processKafkaRetryQueue();
+    }, normalizedDelay);
+    this.kafkaRetryTimer.unref?.();
+  }
+
+  private enqueueKafkaRetry(item: IKafkaRetryQueueItem): boolean {
+    if (this.kafkaRetryQueue.length >= this.KAFKA_RETRY_QUEUE_MAX_SIZE) {
+      this.logEvent('kafka_send_retry_queue_full', {
+        queueSize: this.kafkaRetryQueue.length,
+        maxQueueSize: this.KAFKA_RETRY_QUEUE_MAX_SIZE,
+        event: item.metadata.event,
+        messageId: item.metadata.messageId,
+        messageKeyId: item.metadata.messageKeyId,
+      });
+      return false;
+    }
+
+    this.kafkaRetryQueue.push(item);
+    this.logEvent('kafka_send_retry_enqueued', {
+      queueSize: this.kafkaRetryQueue.length,
+      event: item.metadata.event,
+      messageId: item.metadata.messageId,
+      messageKeyId: item.metadata.messageKeyId,
+      nextAttemptAt: new Date(item.nextAttemptAt).toISOString(),
+      attempts: item.attempts,
+    });
+    this.scheduleKafkaRetryProcessing(0);
+    return true;
+  }
+
+  private async processKafkaRetryQueue(): Promise<void> {
+    if (this.kafkaRetryProcessing) {
+      return;
+    }
+
+    if (this.kafkaRetryQueue.length === 0) {
+      return;
+    }
+
+    this.kafkaRetryProcessing = true;
+
+    try {
+      const now = Date.now();
+      const currentQueue = this.kafkaRetryQueue;
+      this.kafkaRetryQueue = [];
+
+      let processedDue = 0;
+      let earliestNextAttemptAt = Number.POSITIVE_INFINITY;
+
+      for (const item of currentQueue) {
+        const shouldDeferByBatch =
+          processedDue >= this.KAFKA_RETRY_BATCH_SIZE &&
+          item.nextAttemptAt <= now;
+        if (item.nextAttemptAt > now || shouldDeferByBatch) {
+          this.kafkaRetryQueue.push(item);
+          earliestNextAttemptAt = Math.min(
+            earliestNextAttemptAt,
+            item.nextAttemptAt
+          );
+          continue;
+        }
+
+        processedDue += 1;
+
+        try {
+          await this.streamProducerService.send(
+            item.topic,
+            item.payload,
+            item.kafkaKey
+          );
+          this.logEvent('kafka_send_retry_succeeded', {
+            event: item.metadata.event,
+            messageId: item.metadata.messageId,
+            messageKeyId: item.metadata.messageKeyId,
+            attempts: item.attempts + 1,
+            queueSize: this.kafkaRetryQueue.length,
+          });
+        } catch (error) {
+          const nextAttempts = item.attempts + 1;
+          const delayMs = this.computeKafkaRetryDelayMs(nextAttempts);
+          const nextAttemptAt = Date.now() + delayMs;
+          const requeued: IKafkaRetryQueueItem = {
+            ...item,
+            attempts: nextAttempts,
+            nextAttemptAt,
+          };
+          this.kafkaRetryQueue.push(requeued);
+          earliestNextAttemptAt = Math.min(
+            earliestNextAttemptAt,
+            nextAttemptAt
+          );
+
+          this.logEvent('kafka_send_retry_failed_attempt', {
+            event: item.metadata.event,
+            messageId: item.metadata.messageId,
+            messageKeyId: item.metadata.messageKeyId,
+            attempts: nextAttempts,
+            nextAttemptAt: new Date(nextAttemptAt).toISOString(),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      if (this.kafkaRetryQueue.length > 0) {
+        const fallbackDelay =
+          processedDue >= this.KAFKA_RETRY_BATCH_SIZE
+            ? this.KAFKA_RETRY_BASE_DELAY_MS
+            : 0;
+        const nextDelay = Number.isFinite(earliestNextAttemptAt)
+          ? Math.max(0, earliestNextAttemptAt - Date.now())
+          : fallbackDelay;
+        this.scheduleKafkaRetryProcessing(nextDelay);
+      }
+    } finally {
+      this.kafkaRetryProcessing = false;
+      if (this.kafkaRetryQueue.length > 0 && !this.kafkaRetryTimer) {
+        this.scheduleKafkaRetryProcessing(this.KAFKA_RETRY_BASE_DELAY_MS);
+      }
+    }
+  }
+
+  private async sendToKafkaWithRetry(
+    topic: string,
+    payload: unknown,
+    metadata: IKafkaSendMetadata,
+    kafkaKey?: string | Buffer
+  ): Promise<boolean> {
+    for (
+      let attempt = 1;
+      attempt <= this.KAFKA_IMMEDIATE_SEND_ATTEMPTS;
+      attempt++
+    ) {
+      try {
+        await this.streamProducerService.send(topic, payload, kafkaKey);
+
+        if (attempt > 1) {
+          this.logEvent('kafka_send_recovered', {
+            event: metadata.event,
+            messageId: metadata.messageId,
+            messageKeyId: metadata.messageKeyId,
+            attempts: attempt,
+          });
+        }
+
+        return true;
+      } catch (error) {
+        const isLastAttempt = attempt === this.KAFKA_IMMEDIATE_SEND_ATTEMPTS;
+        const nextRetryDelayMs = isLastAttempt
+          ? null
+          : this.computeKafkaRetryDelayMs(attempt - 1);
+
+        this.logEvent('kafka_send_failed_attempt', {
+          event: metadata.event,
+          messageId: metadata.messageId,
+          messageKeyId: metadata.messageKeyId,
+          attempts: attempt,
+          error: error instanceof Error ? error.message : String(error),
+          willQueueRetry: isLastAttempt,
+          nextRetryDelayMs,
+        });
+
+        if (!isLastAttempt && nextRetryDelayMs !== null) {
+          await this.waitMs(nextRetryDelayMs);
+        }
+      }
+    }
+
+    const nextAttemptAt =
+      Date.now() +
+      this.computeKafkaRetryDelayMs(this.KAFKA_IMMEDIATE_SEND_ATTEMPTS);
+    const queued = this.enqueueKafkaRetry({
+      topic,
+      payload,
+      kafkaKey,
+      metadata,
+      attempts: this.KAFKA_IMMEDIATE_SEND_ATTEMPTS,
+      nextAttemptAt,
+    });
+
+    if (!queued) {
+      throw new Error(
+        `Failed to enqueue kafka retry for event "${metadata.event}" message "${metadata.messageId ?? metadata.messageKeyId ?? 'unknown'}"`
+      );
+    }
+
+    return false;
   }
 
   bindTo(client: Client): void {
@@ -1169,6 +1419,21 @@ export class WwebjsIncomingMessageService {
       return true;
     }
 
+    // Fanout ciphertext frequently arrives before the decrypted user text with
+    // the exact same message key. If we ingest it, it may block the later real
+    // text update path in downstream idempotency logic.
+    if (this.isCiphertextFanoutNotification(msg)) {
+      this.logEvent('skip_ciphertext_fanout', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        source,
+      });
+      return true;
+    }
+
     if (this.isGroupMessage(msg)) {
       return true;
     }
@@ -1191,6 +1456,15 @@ export class WwebjsIncomingMessageService {
 
     for (const dedupeKey of dedupeKeys) {
       if (this.processedIncomingMessages.has(dedupeKey)) {
+        this.logEvent('skip_incoming_dedupe', {
+          id: getMessageIdSerialized(msg),
+          fromMe: msg.fromMe,
+          from: msg.from,
+          to: msg.to,
+          type: msg.type,
+          source,
+          dedupeKey,
+        });
         return true;
       }
     }
@@ -1770,7 +2044,32 @@ export class WwebjsIncomingMessageService {
       await this.upsertMediaEnricher.enrich(upsert, msg);
 
       const topic = this.kafkaServiceQueueService.upsertMessage();
-      await this.streamProducerService.send(topic, upsert);
+      const messageId = getMessageIdSerialized(msg);
+      const sentNow = await this.sendToKafkaWithRetry(
+        topic,
+        upsert,
+        {
+          event: 'incoming_upsert',
+          messageId,
+          messageKeyId: upsert.message?.key?.id,
+        },
+        messageId
+      );
+      this.logEvent('incoming_upsert_enqueued', {
+        id: messageId,
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        upsertType: upsert.type,
+        remoteJid: upsert.message.key.remoteJid,
+        remoteJidAlt: upsert.message.key.remoteJidAlt,
+        bodyLength:
+          typeof msg.body === 'string' && msg.body.length > 0
+            ? msg.body.length
+            : 0,
+        dispatchMode: sentNow ? 'immediate' : 'retry_queue',
+      });
     } catch (error) {
       console.error('[wwebjs] handleIncomingMessage failed:', {
         id: getMessageIdSerialized(msg),
@@ -1838,7 +2137,16 @@ export class WwebjsIncomingMessageService {
     upsert.photo = photo ?? null;
 
     const topic = this.kafkaServiceQueueService.upsertMessage();
-    await this.streamProducerService.send(topic, upsert);
+    await this.sendToKafkaWithRetry(
+      topic,
+      upsert,
+      {
+        event: 'pinned_message_upsert',
+        messageId: getMessageIdSerialized(msg),
+        messageKeyId: upsert.message?.key?.id,
+      },
+      getMessageIdSerialized(msg)
+    );
   }
 
   private extractNameFromContact(contact: unknown): string | undefined {
@@ -2442,7 +2750,16 @@ export class WwebjsIncomingMessageService {
     const upsert = buildDeleteMessageUpsert(after, before, resolvedJids);
     if (!upsert) return;
     const topic = this.kafkaServiceQueueService.upsertMessage();
-    await this.streamProducerService.send(topic, upsert);
+    await this.sendToKafkaWithRetry(
+      topic,
+      upsert,
+      {
+        event: 'message_revoke_everyone_upsert',
+        messageId: getMessageIdSerialized(after),
+        messageKeyId: upsert.message?.key?.id,
+      },
+      getMessageIdSerialized(after)
+    );
   }
 
   private async handleRevokeMe(msg: Message): Promise<void> {
@@ -2474,7 +2791,16 @@ export class WwebjsIncomingMessageService {
     const upsert = buildRevokeMeUpsert(msg, resolvedJids);
     if (!upsert) return;
     const topic = this.kafkaServiceQueueService.upsertMessage();
-    await this.streamProducerService.send(topic, upsert);
+    await this.sendToKafkaWithRetry(
+      topic,
+      upsert,
+      {
+        event: 'message_revoke_me_upsert',
+        messageId: getMessageIdSerialized(msg),
+        messageKeyId: upsert.message?.key?.id,
+      },
+      getMessageIdSerialized(msg)
+    );
   }
 
   private async handleMessageEdit(
@@ -2509,7 +2835,16 @@ export class WwebjsIncomingMessageService {
     );
     if (!upsert) return;
     const topic = this.kafkaServiceQueueService.upsertMessage();
-    await this.streamProducerService.send(topic, upsert);
+    await this.sendToKafkaWithRetry(
+      topic,
+      upsert,
+      {
+        event: 'message_edit_upsert',
+        messageId: getMessageIdSerialized(message),
+        messageKeyId: upsert.message?.key?.id,
+      },
+      getMessageIdSerialized(message)
+    );
   }
 
   private async handleMessageReaction(
@@ -2595,7 +2930,16 @@ export class WwebjsIncomingMessageService {
       timestamp
     );
     const topic = this.kafkaServiceQueueService.upsertMessage();
-    await this.streamProducerService.send(topic, upsert);
+    await this.sendToKafkaWithRetry(
+      topic,
+      upsert,
+      {
+        event: 'message_reaction_upsert',
+        messageId: reactionId,
+        messageKeyId: upsert.message?.key?.id,
+      },
+      reactionId
+    );
   }
 
   private async handleCall(call: {
@@ -2636,7 +2980,16 @@ export class WwebjsIncomingMessageService {
     const photo = await this.resolvePhotoForCall(client, jid);
     upsert.photo = photo ?? null;
     const topic = this.kafkaServiceQueueService.upsertMessage();
-    await this.streamProducerService.send(topic, upsert);
+    await this.sendToKafkaWithRetry(
+      topic,
+      upsert,
+      {
+        event: 'incoming_call_upsert',
+        messageId: upsert.message?.key?.id,
+        messageKeyId: upsert.message?.key?.id,
+      },
+      upsert.message?.key?.id
+    );
 
     try {
       const callAction =
@@ -2675,7 +3028,16 @@ export class WwebjsIncomingMessageService {
           sentMessage.timestamp
         );
         systemMessageUpsert.photo = photo ?? null;
-        await this.streamProducerService.send(topic, systemMessageUpsert);
+        await this.sendToKafkaWithRetry(
+          topic,
+          systemMessageUpsert,
+          {
+            event: 'incoming_call_auto_reply_system_upsert',
+            messageId: systemMessageUpsert.message.key.id,
+            messageKeyId: systemMessageUpsert.message.key.id,
+          },
+          systemMessageUpsert.message.key.id
+        );
       }
     } catch (error) {
       console.error('[wwebjs] resolveIncomingCallAction failed:', error);
@@ -2805,7 +3167,16 @@ export class WwebjsIncomingMessageService {
       wwebjsEnvironment.wwebjsAccountId,
       messageId
     );
-    await this.streamProducerService.send(topic, statusUpdate, kafkaKey);
+    await this.sendToKafkaWithRetry(
+      topic,
+      statusUpdate,
+      {
+        event: 'message_status_update',
+        messageId,
+        messageKeyId: messageId,
+      },
+      kafkaKey
+    );
   }
 
   private async sendMessageWithConfirmation(
