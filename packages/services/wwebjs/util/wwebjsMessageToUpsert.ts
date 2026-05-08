@@ -106,6 +106,13 @@ function mapWwebjsTypeToMessageType(
     return EMessageType.system;
   }
 
+  if (
+    t === 'automated_greeting_message' ||
+    t === 'interactive' ||
+    t === 'native_flow'
+  ) {
+    return EMessageType.text;
+  }
   if (t === 'chat') return EMessageType.text;
   if (t === 'image') return EMessageType.image;
   if (t === 'video') return EMessageType.video;
@@ -185,17 +192,29 @@ function isLikelyBase64MediaPayload(value: string): boolean {
   );
 }
 
+function getObjectRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+}
+
 function resolveMessageBody(
   rawType: string,
   body: string,
   rawData?: Record<string, unknown>
 ): string {
+  const ctwaContext = getObjectRecord(rawData?.ctwaContext);
   const caption = getNonEmptyString(rawData?.caption);
+  const greetingMessageBody =
+    getNonEmptyString(ctwaContext?.greetingMessageBody) ??
+    getNonEmptyString(rawData?.greetingMessageBody);
   const isMediaType =
     rawType === 'image' || rawType === 'video' || rawType === 'ptv';
 
   if (!body) {
-    return caption ?? '';
+    return caption ?? greetingMessageBody ?? '';
   }
 
   if (isMediaType && caption && isLikelyBase64MediaPayload(body)) {
@@ -588,14 +607,6 @@ function getRawMessageData(msg: Message): Record<string, unknown> | undefined {
   return undefined;
 }
 
-function getObjectRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value as Record<string, unknown>;
-}
-
 function buildForwardedContextInfo(
   msg: Message
 ): Record<string, unknown> | undefined {
@@ -655,6 +666,7 @@ function buildExternalAdReplyFromRawData(
   if (!rawData) return undefined;
 
   const ctwaContext = getObjectRecord(rawData.ctwaContext);
+  const interactiveHeader = getObjectRecord(rawData.interactiveHeader);
   const conversionData =
     getObjectRecord(ctwaContext?.conversionData) ??
     getObjectRecord(rawData.conversionData);
@@ -662,7 +674,9 @@ function buildExternalAdReplyFromRawData(
   const externalAdReply: Record<string, unknown> = {};
 
   const title =
-    getNonEmptyString(ctwaContext?.title) ?? getNonEmptyString(rawData.title);
+    getNonEmptyString(ctwaContext?.title) ??
+    getNonEmptyString(rawData.title) ??
+    getNonEmptyString(interactiveHeader?.title);
   if (title) externalAdReply.title = title;
 
   const mediaType =
@@ -675,7 +689,8 @@ function buildExternalAdReplyFromRawData(
     getNonEmptyString(ctwaContext?.originalImageUrl) ??
     getNonEmptyString(rawData.originalImageUrl) ??
     getNonEmptyString(ctwaContext?.thumbnailUrl) ??
-    getNonEmptyString(rawData.thumbnailUrl);
+    getNonEmptyString(rawData.thumbnailUrl) ??
+    getNonEmptyString(interactiveHeader?.thumbnail);
   if (thumbnailUrl) externalAdReply.thumbnailUrl = thumbnailUrl;
 
   const sourceType =
