@@ -568,18 +568,6 @@ watch(
 );
 
 watch(
-  () => [
-    chatStore.activeChat?.chat_id,
-    chatStore.activeChat?.status,
-    workerConfigForChat.value?.attendance_inactivity_alert_enabled,
-  ],
-  () => {
-    loadAttendanceInactivityStateForActiveChat().catch(() => {});
-  },
-  { immediate: true }
-);
-
-watch(
   () => route.name,
   async (newRouteName, oldRouteName) => {
     if (
@@ -1602,6 +1590,18 @@ const loadAttendanceInactivityStateForActiveChat = async () => {
     isLoadingAttendanceInactivityState.value = false;
   }
 };
+
+watch(
+  () => [
+    chatStore.activeChat?.chat_id,
+    chatStore.activeChat?.status,
+    workerConfigForChat.value?.attendance_inactivity_alert_enabled,
+  ],
+  () => {
+    loadAttendanceInactivityStateForActiveChat().catch(() => {});
+  },
+  { immediate: true }
+);
 
 const handleDisableAttendanceInactivity = async () => {
   const chatId = chatStore.activeChat?.chat_id;
