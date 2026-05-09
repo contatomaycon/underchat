@@ -16,6 +16,7 @@ export const listReportAttendanceRequestSchema = Type.Object({
   end_date: Type.String({ format: 'date-time' }),
   queue_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   analyst_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  channel_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type ListReportAttendanceRequest = Static<

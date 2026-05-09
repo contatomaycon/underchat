@@ -12,6 +12,7 @@ import { refDebounced } from '@vueuse/core';
 import { useReportSatisfactionStore } from '@/@webcore/stores/reportSatisfaction';
 import axios from '@webcore/axios';
 import type { ReportSatisfactionResult } from '@core/schema/reportSatisfaction/listReportSatisfaction/response.schema';
+import { getChannels } from '@/@webcore/localStorage/user';
 
 definePage({
   meta: {
@@ -35,6 +36,9 @@ const reportType = ref<ReportType>('general');
 const periodType = ref<PeriodType>('month');
 const startDate = ref<string | null>(null);
 const endDate = ref<string | null>(null);
+const ALL_CHANNELS_OPTION = '__all__';
+const selectedChannelId = ref<string>(ALL_CHANNELS_OPTION);
+const channelOptions = ref<Array<{ value: string; title: string }>>([]);
 
 const reportData = computed(() => reportSatisfactionStore.list);
 const summary = computed(() => reportSatisfactionStore.summary);
@@ -153,6 +157,24 @@ const formatDateForPicker = (date: Date): string => {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+};
+
+const getSelectedChannelIdForQuery = (): string | null => {
+  return selectedChannelId.value === ALL_CHANNELS_OPTION
+    ? null
+    : selectedChannelId.value;
+};
+
+const loadChannelOptions = () => {
+  const allOption = {
+    value: ALL_CHANNELS_OPTION,
+    title: t('all', 'Todos'),
+  };
+  const userChannelOptions = getChannels().map((channel) => ({
+    value: channel.id,
+    title: channel.name,
+  }));
+  channelOptions.value = [allOption, ...userChannelOptions];
 };
 
 const getChartTitle = (): string => {
@@ -341,11 +363,13 @@ const loadReportData = async () => {
   const end = formatDateForApi(endDate.value, true);
   if (!start || !end) return;
   try {
+    const selectedChannel = getSelectedChannelIdForQuery();
     const res = await reportSatisfactionStore.listReportSatisfaction({
       report_type: reportType.value,
       period: periodType.value,
       start_date: start,
       end_date: end,
+      ...(selectedChannel ? { channel_id: selectedChannel } : {}),
     });
     if (res) prepareCharts(reportData.value);
   } catch (e) {
@@ -353,7 +377,7 @@ const loadReportData = async () => {
   }
 };
 
-watch([reportType, periodType, startDate, endDate], () => {
+watch([reportType, periodType, startDate, endDate, selectedChannelId], () => {
   if (startDate.value && endDate.value) loadReportData();
 });
 
@@ -364,12 +388,14 @@ const downloadPdf = async () => {
   if (!start || !end) return;
   isDownloadingPdf.value = true;
   try {
+    const selectedChannel = getSelectedChannelIdForQuery();
     const { data } = await axios.get('/report-satisfaction/pdf', {
       params: {
         report_type: reportType.value,
         period: periodType.value,
         start_date: start,
         end_date: end,
+        ...(selectedChannel ? { channel_id: selectedChannel } : {}),
       },
       responseType: 'blob',
     });
@@ -390,6 +416,7 @@ const downloadPdf = async () => {
 };
 
 onMounted(() => {
+  loadChannelOptions();
   const today = new Date();
   const first = new Date(today.getFullYear(), today.getMonth(), 1);
   endDate.value = formatDateForPicker(today);
@@ -425,6 +452,18 @@ onMounted(() => {
                     },
                   ]"
                   :placeholder="$t('select_report_type')"
+                />
+              </div>
+              <div class="report-filters__field">
+                <VLabel class="text-body-2 mb-1">{{
+                  $t('filter_by_channel')
+                }}</VLabel>
+                <AppSelectSearch
+                  v-model="selectedChannelId"
+                  :items="channelOptions"
+                  :placeholder="$t('select_channel_filter')"
+                  item-value="value"
+                  item-title="title"
                 />
               </div>
               <div class="report-filters__field">

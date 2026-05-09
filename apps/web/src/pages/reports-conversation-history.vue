@@ -25,7 +25,7 @@ import { ViewReportConversationHistoryContactResponse } from '@core/schema/repor
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { reportConversationHistoryPdfAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IReportConversationHistoryPdfNotification } from '@core/common/interfaces/IReportConversationHistoryPdfNotification';
-import { getUser } from '@/@webcore/localStorage/user';
+import { getChannels, getUser } from '@/@webcore/localStorage/user';
 import { Subscription } from 'centrifuge';
 import { can } from '@layouts/plugins/casl';
 
@@ -221,6 +221,8 @@ const options = ref({
 const searchBy = ref<
   'date' | 'operator' | 'queue' | 'protocol' | 'client' | 'phone' | 'label'
 >('date');
+const ALL_CHANNELS_OPTION = '__all__';
+const selectedChannelId = ref<string>(ALL_CHANNELS_OPTION);
 const startDate = ref<string | null>(null);
 const endDate = ref<string | null>(null);
 const operatorId = ref<string | null>(null);
@@ -275,6 +277,7 @@ const clientNameDebounced = refDebounced(clientName, 500);
 
 const sectors = ref<Array<{ id: string | null; text: string }>>([]);
 const operators = ref<Array<{ id: string | null; text: string }>>([]);
+const channels = ref<Array<{ id: string; text: string }>>([]);
 const labelTemplates = ref<
   Array<{ id: string | null; text: string; color: string }>
 >([]);
@@ -298,7 +301,25 @@ const loadLabelTemplates = async () => {
   labelTemplates.value = items;
 };
 
+const getSelectedChannelIdForQuery = (): string | null => {
+  return selectedChannelId.value === ALL_CHANNELS_OPTION
+    ? null
+    : selectedChannelId.value;
+};
+
+const loadChannelOptions = () => {
+  const allOption = { id: ALL_CHANNELS_OPTION, text: t('all', 'Todos') };
+  const userChannelOptions = getChannels().map((channel) => ({
+    id: channel.id,
+    text: channel.name,
+  }));
+
+  channels.value = [allOption, ...userChannelOptions];
+};
+
 onMounted(async () => {
+  loadChannelOptions();
+
   const [sectorsData, usersData] = await Promise.all([
     reportConversationHistoryStore.listReportConversationHistorySectors(),
     reportConversationHistoryStore.listReportConversationHistoryUsers(),
@@ -418,6 +439,10 @@ const query = computed(() => {
     sort_by: options.value.sortBy,
     search_by: searchBy.value,
   };
+  const selectedChannel = getSelectedChannelIdForQuery();
+  if (selectedChannel) {
+    baseQuery.channel_id = selectedChannel;
+  }
 
   switch (searchBy.value) {
     case 'date':
@@ -674,6 +699,19 @@ const copyToClipboard = async (text: string) => {
       <VCardText>
         <VCard variant="tonal" color="default" class="mb-6 report-filters">
           <VCardText>
+            <div class="report-filters__field mb-3">
+              <VLabel class="text-body-2 mb-1">{{
+                $t('filter_by_channel')
+              }}</VLabel>
+              <AppSelectSearch
+                v-model="selectedChannelId"
+                :items="channels as any"
+                :placeholder="$t('select_channel_filter')"
+                item-value="id"
+                item-title="text"
+              />
+            </div>
+
             <div class="mb-3">
               <VLabel class="text-body-2 mb-1">{{
                 $t('search_history_by')

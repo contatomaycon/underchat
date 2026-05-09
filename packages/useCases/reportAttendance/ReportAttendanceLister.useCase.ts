@@ -167,6 +167,12 @@ export class ReportAttendanceListerUseCase {
       );
     }
 
+    if (query.channel_id) {
+      filterClauses.push(
+        this.buildNestedFilter('worker', 'worker.id', query.channel_id)
+      );
+    }
+
     return {
       bool: {
         must: mustClauses,

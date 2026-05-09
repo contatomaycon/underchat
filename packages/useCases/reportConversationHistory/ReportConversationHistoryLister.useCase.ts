@@ -89,6 +89,19 @@ export class ReportConversationHistoryListerUseCase {
       });
     }
 
+    if (query.channel_id) {
+      filterClauses.push({
+        nested: {
+          path: 'worker',
+          query: {
+            term: {
+              'worker.id': query.channel_id,
+            },
+          },
+        },
+      });
+    }
+
     if (query.label_template_id) {
       filterClauses.push({
         nested: {

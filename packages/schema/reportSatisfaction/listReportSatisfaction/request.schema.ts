@@ -16,6 +16,7 @@ export const listReportSatisfactionRequestSchema = Type.Object({
   end_date: Type.String({ format: 'date-time' }),
   sector_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   analyst_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  channel_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type ListReportSatisfactionRequest = Static<

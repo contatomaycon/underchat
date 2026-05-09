@@ -24,6 +24,7 @@ export const listReportConversationHistoryRequestSchema = Type.Object({
   ),
   operator_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   queue_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  channel_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   protocol: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   client_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
