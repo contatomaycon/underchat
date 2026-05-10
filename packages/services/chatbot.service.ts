@@ -28,6 +28,8 @@ import { SaveChatbotFlowConfigurationsRequest } from '@core/schema/chatbot/saveC
 import { ListChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/listChatbotFlowConfigurations/response.schema';
 import { RandomMessageService } from '@core/services/randomMessage.service';
 import { v7 as uuidv7 } from 'uuid';
+import { WorkerService } from '@core/services/worker.service';
+import { ListChatbotChannelsResponse } from '@core/schema/chatbot/listChannels/response.schema';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -54,6 +56,8 @@ export class ChatbotService {
     private readonly sectorService: SectorService,
     @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
+    @inject(WorkerService)
+    private readonly workerService: WorkerService,
     @inject(RandomMessageService)
     private readonly randomMessageService: RandomMessageService,
     @inject(ElasticDatabaseService)
@@ -97,9 +101,24 @@ export class ChatbotService {
   };
 
   listChatbotUsers = async (
-    accountId: string
+    accountId: string,
+    channelId?: string
   ): Promise<ListChatbotUsersResponse> => {
-    return this.userService.listUsersForTransfer(accountId);
+    if (!channelId) {
+      return this.userService.listUsersForTransfer(accountId);
+    }
+
+    const [allUsers, allowedUserIds] = await Promise.all([
+      this.userService.listUsersForTransfer(accountId),
+      this.userService.listUserIdsWithAccessToChannel(accountId, channelId),
+    ]);
+
+    if (allowedUserIds.length === 0) {
+      return [];
+    }
+
+    const allowedIdsSet = new Set(allowedUserIds);
+    return allUsers.filter((user) => allowedIdsSet.has(user.id));
   };
 
   listChatbotSectors = async (
@@ -110,9 +129,43 @@ export class ChatbotService {
 
   listChatbotSectorUsers = async (
     accountId: string,
-    sectorId: string
+    sectorId: string,
+    channelId?: string
   ): Promise<ChatbotSectorUserResponse[]> => {
-    return this.sectorService.listSectorUsersForTransfer(accountId, sectorId);
+    const sectorUsers = await this.sectorService.listSectorUsersForTransfer(
+      accountId,
+      sectorId
+    );
+
+    if (!channelId) {
+      return sectorUsers;
+    }
+
+    const allowedUserIds = await this.userService.listUserIdsWithAccessToChannel(
+      accountId,
+      channelId
+    );
+
+    if (allowedUserIds.length === 0) {
+      return [];
+    }
+
+    const allowedIdsSet = new Set(allowedUserIds);
+    return sectorUsers.filter((user) => allowedIdsSet.has(user.id));
+  };
+
+  listChatbotChannels = async (
+    accountId: string,
+    userChannels: { id: string; name: string }[] = []
+  ): Promise<ListChatbotChannelsResponse> => {
+    const channels = await this.workerService.listAllWorkers(accountId);
+
+    if (userChannels.length === 0) {
+      return channels;
+    }
+
+    const allowedChannelIds = new Set(userChannels.map((channel) => channel.id));
+    return channels.filter((channel) => allowedChannelIds.has(channel.id));
   };
 
   listChatbotAiAgents = async (

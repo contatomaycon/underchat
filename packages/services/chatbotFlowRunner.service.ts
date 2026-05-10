@@ -59,6 +59,7 @@ import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMe
 import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
+import { WorkerService } from './worker.service';
 import { SendMessageOptions } from '@core/common/interfaces/ISendMessageOptions';
 import {
   classifyChatbotTriggerEvent,
@@ -136,6 +137,8 @@ export class ChatbotFlowRunnerService {
     private readonly voiceIaService: VoiceIaService,
     @inject(WorkerConfigViewerRepository)
     private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
+    @inject(WorkerService)
+    private readonly workerService: WorkerService,
     @inject(PromptDocumentExtractorService)
     private readonly promptDocumentExtractorService: PromptDocumentExtractorService
   ) {}
@@ -2735,11 +2738,36 @@ export class ChatbotFlowRunnerService {
     return { sector, user };
   }
 
+  private async resolveRedirectWorker(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    selectedChannel: string | null | undefined
+  ): Promise<IChat['worker']> {
+    if (!selectedChannel) {
+      return createChat.worker;
+    }
+
+    const worker = await this.workerService.viewWorkerNameAndId(
+      createChat.account.id,
+      selectedChannel
+    );
+
+    if (!worker) {
+      throw new Error(t('worker_not_found'));
+    }
+
+    return {
+      id: worker.id,
+      name: worker.name,
+    };
+  }
+
   private async updateAndPublishChat(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     user: IChat['user'] | null | undefined,
-    sector: IChat['sector'] | null | undefined
+    sector: IChat['sector'] | null | undefined,
+    worker?: IChat['worker'] | null
   ): Promise<IChat> {
     const activeChat = await this.getAutomationChatIfAllowed(createChat);
     if (!activeChat) {
@@ -2751,8 +2779,11 @@ export class ChatbotFlowRunnerService {
       return createChat;
     }
 
+    const targetWorker = worker ?? activeChat.worker;
+
     const updatedChat: IChat = {
       ...activeChat,
+      worker: targetWorker,
       user,
       sector,
       status: EChatStatus.queue,
@@ -2763,11 +2794,31 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chat_update_failed'));
     }
 
-    await this.clearChatbotRuntimeStateByIds(
-      updatedChat.account.id,
+    const workerIdsToClear = new Set<string>([
+      activeChat.worker.id,
       updatedChat.worker.id,
-      updatedChat.chat_id
-    );
+    ]);
+    const shouldInvalidateTargetWorkerCache =
+      activeChat.worker.id !== updatedChat.worker.id;
+
+    const cacheInvalidations: Promise<void>[] = [
+      this.chatService.invalidateChatCache(activeChat),
+    ];
+
+    if (shouldInvalidateTargetWorkerCache) {
+      cacheInvalidations.push(this.chatService.invalidateChatCache(updatedChat));
+    }
+
+    await Promise.all([
+      ...Array.from(workerIdsToClear).map((workerId) =>
+        this.clearChatbotRuntimeStateByIds(
+          updatedChat.account.id,
+          workerId,
+          updatedChat.chat_id
+        )
+      ),
+      ...cacheInvalidations,
+    ]);
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
@@ -2796,6 +2847,27 @@ export class ChatbotFlowRunnerService {
 
     if (!currentNode) {
       throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const selectedChannel = currentNode.data?.selectedChannel;
+    let targetWorker: IChat['worker'] = createChat.worker;
+
+    try {
+      targetWorker = await this.resolveRedirectWorker(
+        t,
+        createChat,
+        selectedChannel
+      );
+    } catch (error) {
+      console.error('Erro ao redirecionar para canal no chatbot flow:', {
+        error: error instanceof Error ? error.message : String(error),
+        accountId: createChat.account.id,
+        chatId: createChat.chat_id,
+        selectedChannel,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      return false;
     }
 
     const responsibleAttendant = createChat.contact?.responsible_attendant;
@@ -2832,7 +2904,8 @@ export class ChatbotFlowRunnerService {
         t,
         createChat,
         user,
-        undefined
+        undefined,
+        targetWorker
       );
 
       const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
@@ -2930,7 +3003,8 @@ export class ChatbotFlowRunnerService {
       t,
       createChat,
       user,
-      sector
+      sector,
+      targetWorker
     );
 
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);

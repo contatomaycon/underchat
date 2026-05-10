@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { listChatbotUsersResponseSchema } from './response.schema';
+import { listChatbotUsersQuerySchema } from './request.schema';
 
 export const listChatbotUsersSchema = {
   description: 'Listar usuários ativos para chatbot',
@@ -21,6 +22,7 @@ export const listChatbotUsersSchema = {
       })
     ),
   }),
+  querystring: listChatbotUsersQuerySchema,
   response: {
     200: Type.Object(
       {

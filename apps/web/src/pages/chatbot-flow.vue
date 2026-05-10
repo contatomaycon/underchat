@@ -836,6 +836,7 @@ const addRedirectNode = (position?: { x: number; y: number }) => {
     },
     data: {
       redirectType: null,
+      selectedChannel: null,
       selectedUser: null,
       selectedSector: null,
       selectedSectorUser: null,
@@ -1604,6 +1605,7 @@ const processSatisfactionNodeData = (nodeData: any): void => {
 
 const processRedirectNodeData = (nodeData: any): void => {
   if (nodeData.redirectType === undefined) nodeData.redirectType = null;
+  if (nodeData.selectedChannel === undefined) nodeData.selectedChannel = null;
   if (nodeData.selectedUser === undefined) nodeData.selectedUser = null;
   if (nodeData.selectedSector === undefined) nodeData.selectedSector = null;
   if (nodeData.selectedSectorUser === undefined)

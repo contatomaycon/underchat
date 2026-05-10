@@ -220,6 +220,9 @@ export const chatbotFlowMappings = () => {
                 redirectType: {
                   type: 'keyword',
                 },
+                selectedChannel: {
+                  type: 'keyword',
+                },
                 selectedUser: {
                   type: 'keyword',
                 },

@@ -7,3 +7,11 @@ export const listChatbotSectorUsersParamsSchema = Type.Object({
 export type ListChatbotSectorUsersParams = Static<
   typeof listChatbotSectorUsersParamsSchema
 >;
+
+export const listChatbotSectorUsersQuerySchema = Type.Object({
+  channel_id: Type.Optional(Type.String({ format: 'uuid' })),
+});
+
+export type ListChatbotSectorUsersQuery = Static<
+  typeof listChatbotSectorUsersQuerySchema
+>;

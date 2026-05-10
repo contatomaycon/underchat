@@ -13,6 +13,7 @@ import { CloneChatbotResponse } from '@core/schema/chatbot/cloneChatbot/response
 import { UpdateChatbotRequest } from '@core/schema/chatbot/updateChatbot/request.schema';
 import { UpdateChatbotResponse } from '@core/schema/chatbot/updateChatbot/response.schema';
 import { ChatbotUserResponse } from '@core/schema/chatbot/listUsers/response.schema';
+import { ChatbotChannelResponse } from '@core/schema/chatbot/listChannels/response.schema';
 import { ChatbotSectorResponse } from '@core/schema/chatbot/listSectors/response.schema';
 import { ChatbotSectorUserResponse } from '@core/schema/chatbot/listSectorUsers/response.schema';
 import { ChatbotChatTagResponse } from '@core/schema/chatbot/listChatTags/response.schema';
@@ -130,10 +131,11 @@ export const useChatbotStore = defineStore('chatbot', {
 
     async _handleGetRequestArray<T>(
       url: string,
-      errorKey: string
+      errorKey: string,
+      params?: Record<string, string | undefined>
     ): Promise<T[]> {
       try {
-        const response = await axios.get<IApiResponse<T[]>>(url);
+        const response = await axios.get<IApiResponse<T[]>>(url, { params });
 
         const data = response?.data;
 
@@ -337,10 +339,20 @@ export const useChatbotStore = defineStore('chatbot', {
       );
     },
 
-    async listChatbotUsers(): Promise<ChatbotUserResponse[]> {
+    async listChatbotUsers(channelId?: string): Promise<ChatbotUserResponse[]> {
       return this._handleGetRequestArray<ChatbotUserResponse>(
         '/chatbot/users',
-        'error_loading_chatbot_users'
+        'error_loading_chatbot_users',
+        {
+          channel_id: channelId ?? undefined,
+        }
+      );
+    },
+
+    async listChatbotChannels(): Promise<ChatbotChannelResponse[]> {
+      return this._handleGetRequestArray<ChatbotChannelResponse>(
+        '/chatbot/channels',
+        'error_loading_transfer_options'
       );
     },
 
@@ -352,11 +364,15 @@ export const useChatbotStore = defineStore('chatbot', {
     },
 
     async listChatbotSectorUsers(
-      sectorId: string
+      sectorId: string,
+      channelId?: string
     ): Promise<ChatbotSectorUserResponse[]> {
       return this._handleGetRequestArray<ChatbotSectorUserResponse>(
         `/chatbot/sectors/${sectorId}/users`,
-        'error_loading_chatbot_sector_users'
+        'error_loading_chatbot_sector_users',
+        {
+          channel_id: channelId ?? undefined,
+        }
       );
     },
 

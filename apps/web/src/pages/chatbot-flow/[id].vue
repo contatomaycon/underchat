@@ -137,6 +137,7 @@ const addRedirectNode = () => {
     },
     data: {
       redirectType: null,
+      selectedChannel: null,
       selectedUser: null,
       selectedSector: null,
       selectedSectorUser: null,

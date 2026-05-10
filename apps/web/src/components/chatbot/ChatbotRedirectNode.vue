@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 
 interface RedirectData {
   redirectType: 'user' | 'sector' | null;
+  selectedChannel: string | null;
   selectedUser: string | null;
   selectedSector: string | null;
   selectedSectorUser: string | null;
@@ -28,6 +29,7 @@ const getInitialData = (): RedirectData => {
   const data = props.data as RedirectData | undefined;
   return {
     redirectType: data?.redirectType || null,
+    selectedChannel: normalizeValue(data?.selectedChannel),
     selectedUser: normalizeValue(data?.selectedUser),
     selectedSector: normalizeValue(data?.selectedSector),
     selectedSectorUser: normalizeValue(data?.selectedSectorUser),
@@ -37,8 +39,10 @@ const getInitialData = (): RedirectData => {
 const redirectData = ref<RedirectData>(getInitialData());
 
 const users = ref<any[]>([]);
+const channels = ref<any[]>([]);
 const sectors = ref<any[]>([]);
 const sectorUsers = ref<any[]>([]);
+const isLoadingChannels = ref(false);
 const isLoadingUsers = ref(false);
 const isLoadingSectors = ref(false);
 const isLoadingSectorUsers = ref(false);
@@ -47,9 +51,44 @@ const updateNodeData = () => {
   if (props.data) {
     const data = props.data as RedirectData;
     data.redirectType = redirectData.value.redirectType;
+    data.selectedChannel = redirectData.value.selectedChannel;
     data.selectedUser = redirectData.value.selectedUser;
     data.selectedSector = redirectData.value.selectedSector;
     data.selectedSectorUser = redirectData.value.selectedSectorUser;
+  }
+};
+
+const loadChannels = async () => {
+  if (isLoadingChannels.value) return;
+
+  const user = getUser();
+  if (!user?.account_id) return;
+
+  isLoadingChannels.value = true;
+  try {
+    const channelsList = await chatbotStore.listChatbotChannels();
+    channels.value = channelsList.map((channel) => ({
+      value: channel.id,
+      title: channel.name,
+      number: channel.number || null,
+      status: channel.status?.id || null,
+    }));
+
+    if (
+      redirectData.value.selectedChannel &&
+      !channels.value.some((c) => c.value === redirectData.value.selectedChannel)
+    ) {
+      channels.value.unshift({
+        value: redirectData.value.selectedChannel,
+        title: redirectData.value.selectedChannel,
+        number: null,
+        status: null,
+      });
+    }
+  } catch (error) {
+    console.error('Error loading channels:', error);
+  } finally {
+    isLoadingChannels.value = false;
   }
 };
 
@@ -61,7 +100,9 @@ const loadUsers = async () => {
 
   isLoadingUsers.value = true;
   try {
-    const usersList = await chatbotStore.listChatbotUsers();
+    const usersList = await chatbotStore.listChatbotUsers(
+      redirectData.value.selectedChannel || undefined
+    );
     users.value = usersList.map((user) => ({
       value: user.id,
       title: user.name,
@@ -124,7 +165,10 @@ const loadSectorUsers = async (sectorId: string) => {
 
   isLoadingSectorUsers.value = true;
   try {
-    const usersList = await chatbotStore.listChatbotSectorUsers(sectorId);
+    const usersList = await chatbotStore.listChatbotSectorUsers(
+      sectorId,
+      redirectData.value.selectedChannel || undefined
+    );
     sectorUsers.value = usersList.map((user) => ({
       value: user.id,
       title: user.name,
@@ -174,6 +218,30 @@ watch(
 );
 
 watch(
+  () => redirectData.value.selectedChannel,
+  (channelId, previousChannelId) => {
+    if (channelId === previousChannelId) {
+      return;
+    }
+
+    redirectData.value.selectedUser = null;
+    redirectData.value.selectedSectorUser = null;
+    sectorUsers.value = [];
+
+    if (redirectData.value.redirectType === 'user') {
+      void loadUsers();
+    } else if (
+      redirectData.value.redirectType === 'sector' &&
+      redirectData.value.selectedSector
+    ) {
+      void loadSectorUsers(redirectData.value.selectedSector);
+    }
+
+    updateNodeData();
+  }
+);
+
+watch(
   () => redirectData.value.redirectType,
   (newType) => {
     redirectData.value.selectedUser = null;
@@ -213,6 +281,8 @@ const handleRemove = () => {
 };
 
 onMounted(() => {
+  loadChannels();
+
   if (redirectData.value.redirectType === 'user') {
     loadUsers();
   }
@@ -266,6 +336,21 @@ onMounted(() => {
       </VCardTitle>
 
       <VCardText class="pa-3">
+        <VLabel class="text-body-2 mb-1">{{
+          t('chat_forward_channel_label')
+        }}</VLabel>
+        <AppSelectSearch
+          v-model="redirectData.selectedChannel"
+          :items="channels"
+          :placeholder="t('select_channel')"
+          :loading="isLoadingChannels"
+          :clearable="true"
+          item-value="value"
+          item-title="title"
+          class="mb-3"
+          @select="loadChannels()"
+        />
+
         <VLabel class="text-body-2 mb-1">{{ t('chatbot_redirect_to') }}</VLabel>
         <VSelect
           v-model="redirectData.redirectType"

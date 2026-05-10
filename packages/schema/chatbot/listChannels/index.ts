@@ -1,14 +1,10 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { listChatbotSectorUsersResponseSchema } from './response.schema';
-import {
-  listChatbotSectorUsersParamsSchema,
-  listChatbotSectorUsersQuerySchema,
-} from './request.schema';
+import { listChatbotChannelsResponseSchema } from './response.schema';
 
-export const listChatbotSectorUsersSchema = {
-  description: 'Listar usuários ativos de um setor para chatbot',
+export const listChatbotChannelsSchema = {
+  description: 'Listar canais ativos para redirecionamento no chatbot',
   tags: [ETagSwagger.chatbot],
   produces: ['application/json'],
   security: [
@@ -25,15 +21,13 @@ export const listChatbotSectorUsersSchema = {
       })
     ),
   }),
-  params: listChatbotSectorUsersParamsSchema,
-  querystring: listChatbotSectorUsersQuerySchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: listChatbotSectorUsersResponseSchema,
+        data: listChatbotChannelsResponseSchema,
       },
       { description: 'Successful' }
     ),

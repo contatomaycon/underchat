@@ -4,6 +4,7 @@ import { listChatbot } from './methods/listChatbot';
 import { updateChatbot } from './methods/updateChatbot';
 import { deleteChatbot } from './methods/deleteChatbot';
 import { listUsers } from './methods/listUsers';
+import { listChannels } from './methods/listChannels';
 import { listSectors } from './methods/listSectors';
 import { listSectorUsers } from './methods/listSectorUsers';
 import { listChatTags } from './methods/listChatTags';
@@ -24,6 +25,7 @@ class ChatbotController {
   public deleteChatbot = deleteChatbot;
   public cloneChatbot = cloneChatbot;
   public listUsers = listUsers;
+  public listChannels = listChannels;
   public listSectors = listSectors;
   public listSectorUsers = listSectorUsers;
   public listChatTags = listChatTags;

@@ -6,6 +6,7 @@ import { createChatbotSchema } from '@core/schema/chatbot/createChatbot';
 import { listChatbotSchema } from '@core/schema/chatbot/listChatbot';
 import { updateChatbotSchema } from '@core/schema/chatbot/updateChatbot';
 import { listChatbotUsersSchema } from '@core/schema/chatbot/listUsers';
+import { listChatbotChannelsSchema } from '@core/schema/chatbot/listChannels';
 import { listChatbotSectorsSchema } from '@core/schema/chatbot/listSectors';
 import { listChatbotSectorUsersSchema } from '@core/schema/chatbot/listSectorUsers';
 import { listChatbotChatTagsSchema } from '@core/schema/chatbot/listChatTags';
@@ -82,6 +83,17 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.get('/chatbot/users', {
     schema: listChatbotUsersSchema,
     handler: chatbotController.listUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chatbot/channels', {
+    schema: listChatbotChannelsSchema,
+    handler: chatbotController.listChannels,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),

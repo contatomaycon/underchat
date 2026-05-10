@@ -4,11 +4,15 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ChatbotSectorUsersListerUseCase } from '@core/useCases/chatbot/ChatbotSectorUsersLister.useCase';
-import { ListChatbotSectorUsersParams } from '@core/schema/chatbot/listSectorUsers/request.schema';
+import {
+  ListChatbotSectorUsersParams,
+  ListChatbotSectorUsersQuery,
+} from '@core/schema/chatbot/listSectorUsers/request.schema';
 
 export const listSectorUsers = async (
   request: FastifyRequest<{
     Params: ListChatbotSectorUsersParams;
+    Querystring: ListChatbotSectorUsersQuery;
   }>,
   reply: FastifyReply
 ) => {
@@ -20,7 +24,9 @@ export const listSectorUsers = async (
   try {
     const response = await chatbotSectorUsersListerUseCase.execute(
       tokenJwtData.account_id,
-      request.params.sector_id
+      request.params.sector_id,
+      request.query.channel_id,
+      tokenJwtData.channels
     );
 
     return sendResponse(reply, {

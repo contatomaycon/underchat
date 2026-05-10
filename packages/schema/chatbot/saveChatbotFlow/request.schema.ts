@@ -19,6 +19,7 @@ const nodeDataSchema = Type.Object({
   cpf: Type.Optional(Type.String()),
   cnpj: Type.Optional(Type.String()),
   redirectType: Type.Optional(Type.String()),
+  selectedChannel: Type.Optional(Type.String()),
   selectedUser: Type.Optional(Type.String()),
   selectedSector: Type.Optional(Type.String()),
   selectedSectorUser: Type.Optional(Type.String()),

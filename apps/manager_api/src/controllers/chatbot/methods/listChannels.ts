@@ -3,29 +3,25 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { ChatbotUsersListerUseCase } from '@core/useCases/chatbot/ChatbotUsersLister.useCase';
-import { ListChatbotUsersQuery } from '@core/schema/chatbot/listUsers/request.schema';
+import { ChatbotChannelsListerUseCase } from '@core/useCases/chatbot/ChatbotChannelsLister.useCase';
 
-export const listUsers = async (
-  request: FastifyRequest<{
-    Querystring: ListChatbotUsersQuery;
-  }>,
+export const listChannels = async (
+  request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const chatbotUsersListerUseCase = container.resolve(
-    ChatbotUsersListerUseCase
+  const chatbotChannelsListerUseCase = container.resolve(
+    ChatbotChannelsListerUseCase
   );
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await chatbotUsersListerUseCase.execute(
+    const response = await chatbotChannelsListerUseCase.execute(
       tokenJwtData.account_id,
-      request.query.channel_id,
       tokenJwtData.channels
     );
 
     return sendResponse(reply, {
-      message: t('chatbot_users_listed_successfully'),
+      message: t('transfer_options_listed_successfully'),
       httpStatusCode: EHTTPStatusCode.ok,
       data: response,
     });

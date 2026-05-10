@@ -11,8 +11,24 @@ export class ChatbotSectorUsersListerUseCase {
 
   async execute(
     accountId: string,
-    sectorId: string
+    sectorId: string,
+    channelId?: string,
+    userChannels: { id: string; name: string }[] = []
   ): Promise<ChatbotSectorUserResponse[]> {
-    return this.chatbotService.listChatbotSectorUsers(accountId, sectorId);
+    if (channelId && userChannels.length > 0) {
+      const hasAccessToChannel = userChannels.some(
+        (channel) => channel.id === channelId
+      );
+
+      if (!hasAccessToChannel) {
+        return [];
+      }
+    }
+
+    return this.chatbotService.listChatbotSectorUsers(
+      accountId,
+      sectorId,
+      channelId
+    );
   }
 }
