@@ -53,15 +53,24 @@ jest.mock('@core/services/wwebjs/methods/healthCheck.service', () => ({
 }));
 
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
+import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { WwebjsConnectionService } from '@core/services/wwebjs/methods/connection.service';
 
 type WwebjsConnectionServicePrivate = {
   client: unknown;
   status: Status;
+  connecting: boolean;
+  currentPromise?: Promise<IBaileysConnectionState>;
   connectionEstablished: boolean;
   logConnectionEvent: (...args: unknown[]) => void;
   markConnected: (...args: unknown[]) => void;
   startConnectionStateProbe: (...args: unknown[]) => void;
+  cancelAttempt: (skipDestroy?: boolean) => void;
+  startConnection: (
+    fromDisconnectRestart?: boolean
+  ) => Promise<IBaileysConnectionState>;
 };
 
 describe('WwebjsConnectionService', () => {
@@ -160,5 +169,39 @@ describe('WwebjsConnectionService', () => {
       null,
       'state_probe'
     );
+  });
+
+  it('cancels an active connecting attempt when a user forces a new QR request', async () => {
+    const { service, servicePrivate } = makeService();
+    const state: IBaileysConnectionState = {
+      status: Status.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      worker_id: 'worker-w',
+      account_id: 'account-w',
+    };
+
+    servicePrivate.connecting = true;
+    servicePrivate.currentPromise = Promise.resolve(state);
+    servicePrivate.status = Status.connecting;
+
+    const cancelAttemptSpy = jest
+      .spyOn(servicePrivate, 'cancelAttempt')
+      .mockImplementation(() => {
+        servicePrivate.connecting = false;
+        servicePrivate.currentPromise = undefined;
+      });
+    const startConnectionSpy = jest
+      .spyOn(servicePrivate, 'startConnection')
+      .mockResolvedValue(state);
+
+    await service.connect({
+      initial_connection: true,
+      force_new: true,
+      requested_by_user: true,
+      type: EBaileysConnectionType.qrcode,
+    });
+
+    expect(cancelAttemptSpy).toHaveBeenCalled();
+    expect(startConnectionSpy).toHaveBeenCalled();
   });
 });

@@ -500,6 +500,17 @@ export class BaileysConnectionService {
       return this.reportConnected();
     }
 
+    const forcedRestartActiveConnection =
+      forceNew && this.connecting && (requestedByUser || fromDisconnectRestart);
+
+    if (forcedRestartActiveConnection) {
+      this.logConnectionEvent('connection_force_new_active_attempt', {
+        requested_by_user: requestedByUser,
+        from_disconnect_restart: fromDisconnectRestart,
+      });
+      this.cancelAttempt(false);
+    }
+
     if (this.connecting && this.currentPromise) {
       this.logConnectionEvent('connect_short_circuit', {
         reason: 'already_connecting',
@@ -507,7 +518,11 @@ export class BaileysConnectionService {
       return this.currentPromise;
     }
 
-    if (forceNew && (!this.connecting || fromDisconnectRestart)) {
+    if (
+      forceNew &&
+      !forcedRestartActiveConnection &&
+      (!this.connecting || fromDisconnectRestart)
+    ) {
       this.cancelAttempt(false);
     }
 

@@ -281,6 +281,18 @@ export class WwebjsConnectionService {
       return this.reportConnected();
     }
 
+    const forcedRestartActiveConnection =
+      forceNew && this.connecting && (requestedByUser || fromDisconnectRestart);
+
+    if (forcedRestartActiveConnection) {
+      this.logConnectionEvent('connection_force_new_active_attempt', {
+        requested_by_user: requestedByUser,
+        from_disconnect_restart: fromDisconnectRestart,
+        active_attempt_id: this.activeConnectionAttemptId,
+      });
+      this.cancelAttempt(false);
+    }
+
     if (this.connecting && this.currentPromise) {
       this.logConnectionEvent('connect_short_circuit', {
         reason: 'already_connecting',
@@ -289,7 +301,7 @@ export class WwebjsConnectionService {
       return this.currentPromise;
     }
 
-    if (forceNew && this.connecting) {
+    if (forceNew && this.connecting && !forcedRestartActiveConnection) {
       this.logConnectionEvent('connect_short_circuit', {
         reason: 'force_new_ignored_while_connecting',
         from_disconnect_restart: fromDisconnectRestart,
@@ -298,7 +310,7 @@ export class WwebjsConnectionService {
       return this.currentPromise ?? this.state();
     }
 
-    if (forceNew && !this.connecting) {
+    if (forceNew && !this.connecting && !forcedRestartActiveConnection) {
       this.cancelAttempt(false);
     }
 

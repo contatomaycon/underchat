@@ -125,6 +125,19 @@ export class WorkerConnectionStatusWwebjsConsume {
       return;
     }
 
+    if (
+      currentStatus === EBaileysConnectionStatus.connecting &&
+      hasActiveSocket
+    ) {
+      await this.connectWithService(data, {
+        fromDisconnectRestart: false,
+        requestedByUser: true,
+        forceNew: true,
+        allowRestore: false,
+      });
+      return;
+    }
+
     if (isSessionInvalid) {
       this.logConnectionEvent('connection_session_invalid_clearing', {
         code: currentCode,

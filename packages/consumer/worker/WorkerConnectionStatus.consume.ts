@@ -86,10 +86,6 @@ export class WorkerConnectionStatusConsume {
       }
     }
 
-    if (this.activeConnectionRequest) {
-      return;
-    }
-
     const currentStatus = this.baileysService.getStatus();
     const currentCode = this.baileysService.getCode();
     const hasActiveSocket = Boolean(this.baileysService.socket);
@@ -137,6 +133,41 @@ export class WorkerConnectionStatusConsume {
           'error'
         );
       }
+      return;
+    }
+
+    if (
+      currentStatus === EBaileysConnectionStatus.connecting &&
+      hasActiveSocket
+    ) {
+      this.logConnectionEvent('connection_restarting_stale_startup', {
+        status: currentStatus,
+        code: currentCode,
+        has_active_socket: hasActiveSocket,
+      });
+      try {
+        await this.baileysService.connect({
+          initial_connection: true,
+          force_new: true,
+          requested_by_user: true,
+          type: data.type as EBaileysConnectionType,
+          phone_connection: data.phone_connection,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        this.logConnectionEvent(
+          'connection_restart_stale_startup_error',
+          {
+            reason: errorMessage,
+          },
+          'error'
+        );
+      }
+      return;
+    }
+
+    if (this.activeConnectionRequest) {
       return;
     }
 
