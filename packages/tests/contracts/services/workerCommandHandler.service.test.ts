@@ -74,7 +74,13 @@ function buildHandler(
     viewWorkerType: jest.fn(async () => ({
       worker_type_id: EWorkerType.wwebjs,
     })),
+    viewWorker: jest.fn(async () => ({
+      server: { id: 'server-1' },
+      type: { id: EWorkerType.wwebjs },
+    })),
     viewWorkerForMonitor: jest.fn(async () => null),
+    existsContainerWorkerById: jest.fn(async () => true),
+    createContainerWorker: jest.fn(async () => 'container-1'),
   };
 
   const centrifugoService = {
@@ -128,10 +134,122 @@ function buildHandler(
   return {
     handler,
     workerService,
+    centrifugoService,
+    containerHealthService,
     kafkaBaileysQueueService,
     workerBaileysGrpcClientService,
   };
 }
+
+const flushPromises = async (): Promise<void> => {
+  await new Promise((resolve) => setImmediate(resolve));
+};
+
+describe('WorkerCommandHandlerService connection', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('acks an online connection without waiting for worker gRPC completion', async () => {
+    const deps = buildHandler();
+    let resolveConnection!: () => void;
+    deps.workerBaileysGrpcClientService.requestConnection.mockReturnValueOnce(
+      new Promise<undefined>((resolve) => {
+        resolveConnection = () => resolve(undefined);
+      })
+    );
+
+    await expect(
+      deps.handler.handleChangeConnectionStatus(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      )
+    ).resolves.toBeUndefined();
+
+    await flushPromises();
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      }),
+      EWorkerType.wwebjs
+    );
+    expect(deps.containerHealthService.isServiceHealthy).not.toHaveBeenCalled();
+
+    resolveConnection();
+    await flushPromises();
+  });
+
+  it('tries worker gRPC before falling back to container health checks', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.requestConnection
+      .mockRejectedValueOnce(new Error('worker not ready'))
+      .mockResolvedValueOnce(undefined);
+    deps.containerHealthService.isServiceHealthy.mockResolvedValueOnce(true);
+
+    await deps.handler.handleChangeConnectionStatus(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(deps.containerHealthService.isServiceHealthy).toHaveBeenCalledWith(
+      'worker-1',
+      { maxAttempts: 3, delayMs: 1000 }
+    );
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).toHaveBeenCalledTimes(2);
+  });
+
+  it('publishes a disconnected state when the background workflow cannot resolve worker data', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = buildHandler();
+    (deps.workerService.viewWorker as jest.Mock).mockResolvedValueOnce(null);
+    deps.workerService.viewWorkerForMonitor.mockResolvedValueOnce(null);
+    deps.workerService.existsContainerWorkerById.mockResolvedValueOnce(false);
+
+    await expect(
+      deps.handler.handleChangeConnectionStatus(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      )
+    ).resolves.toBeUndefined();
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      expect.stringContaining('account-1'),
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        status: 'disconnected',
+        code: 428,
+      })
+    );
+  });
+});
 
 describe('WorkerCommandHandlerService cleanup', () => {
   it('removes only local container artifacts and does not mutate worker data', async () => {

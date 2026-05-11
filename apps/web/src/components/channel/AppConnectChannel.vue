@@ -95,8 +95,14 @@ const isBlockingOperation = computed(
     modalState.value === 'resetting' ||
     modalState.value === 'pairingInProgress'
 );
+const isConnectionPreparing = computed(
+  () => modalState.value === 'starting' || modalState.value === 'qrPreparing'
+);
 const isActionLocked = computed(
-  () => channelStore.loading || isBlockingOperation.value
+  () =>
+    channelStore.loading ||
+    isBlockingOperation.value ||
+    isConnectionPreparing.value
 );
 
 const formattedTime = computed(() => {

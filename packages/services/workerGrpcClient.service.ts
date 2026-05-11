@@ -53,8 +53,11 @@ export class WorkerGrpcClientService {
     await this.call('DeleteWorker', payload);
   }
 
-  async recreateWorker(payload: IWorkerPayload): Promise<void> {
-    await this.call('RecreateWorker', payload);
+  async recreateWorker(
+    payload: IWorkerPayload,
+    timeoutMs: number = GRPC_DEADLINE_MS
+  ): Promise<void> {
+    await this.call('RecreateWorker', payload, timeoutMs);
   }
 
   async cleanupWorker(payload: IWorkerPayload): Promise<void> {
@@ -76,9 +79,12 @@ export class WorkerGrpcClientService {
 
     const protoPayload = statusConnectionRequestToProto(payload, accountId);
 
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+
     await new Promise<void>((resolve, reject) => {
       (client as any).ChangeConnectionStatus(
         protoPayload,
+        { deadline },
         (err: ServiceError | null) => {
           client.close();
           if (err) {

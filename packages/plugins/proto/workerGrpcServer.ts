@@ -84,15 +84,25 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       return;
     }
 
+    const handleError = (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      fastify.log.error({ err, action }, 'WorkerCommand gRPC handler error');
+      return { code: status.INTERNAL, message: msg, details: msg };
+    };
+
+    if (action === 'recreate') {
+      void handler.handle(payload).catch(handleError);
+      callback(null, {});
+      return;
+    }
+
     handler
       .handle(payload)
       .then(() => {
         callback(null, {});
       })
       .catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        fastify.log.error({ err, action }, 'WorkerCommand gRPC handler error');
-        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+        callback(handleError(err), null);
       });
   };
 

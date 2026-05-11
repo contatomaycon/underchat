@@ -160,14 +160,7 @@ export class WorkerCommandHandlerService {
     this.publishConnectionIntent(payload, accountId);
 
     if (payload.status === EWorkerStatus.online) {
-      const ensured = await this.ensureContainerAndRequestConnection(
-        payload,
-        accountId
-      );
-      if (ensured) {
-        return;
-      }
-      this.startConnectionRequestRetry(payload);
+      this.startOnlineConnectionWorkflow(payload, accountId);
       return;
     }
 
@@ -517,36 +510,127 @@ export class WorkerCommandHandlerService {
     );
   }
 
-  private async ensureContainerAndRequestConnection(
+  private startOnlineConnectionWorkflow(
     payload: StatusConnectionWorkerRequest,
     accountId?: string
-  ): Promise<boolean> {
+  ): void {
+    this.stopConnectionRequestRetry(payload.worker_id);
+
+    void this.runOnlineConnectionWorkflow(payload, accountId).catch((err) => {
+      console.error('Worker online connection workflow failed:', {
+        workerId: payload.worker_id,
+        accountId,
+        error: getErrorMessage(err),
+      });
+
+      void this.publishConnectionFailure(payload, accountId).catch(
+        (publishErr) => {
+          console.error('Failed to publish worker connection failure:', {
+            workerId: payload.worker_id,
+            accountId,
+            error: getErrorMessage(publishErr),
+          });
+        }
+      );
+    });
+  }
+
+  private async runOnlineConnectionWorkflow(
+    payload: StatusConnectionWorkerRequest,
+    accountId?: string
+  ): Promise<void> {
     const workerId = payload.worker_id;
     const workerData = await this.resolveWorkerDataForContainer(
       workerId,
       accountId
     );
-    if (!workerData) {
-      return false;
-    }
+    const workerType =
+      workerData?.workerTypeId ??
+      (await this.resolveWorkerTypeForConnection(workerId, accountId));
 
     const existsContainer =
       await this.workerService.existsContainerWorkerById(workerId);
     if (existsContainer) {
-      const healthy = await this.containerHealthService.isServiceHealthy(
+      const requested = await this.tryRequestConnection(
         workerId,
-        {
-          maxAttempts: 3,
-          delayMs: 1000,
-        }
+        payload,
+        workerType
       );
+      if (requested) {
+        return;
+      }
+
+      const healthy = await this.isExistingContainerHealthy(workerId, {
+        maxAttempts: 3,
+        delayMs: 1000,
+      });
       if (healthy) {
-        return false;
+        this.startConnectionRequestRetry(payload);
+        return;
       }
     }
 
+    if (!workerData) {
+      throw new Error(`Worker data not found for connection: ${workerId}`);
+    }
+
     await this.createWorkerWithPayload(workerId, workerData, payload);
-    return true;
+  }
+
+  private async tryRequestConnection(
+    workerId: string,
+    payload: StatusConnectionWorkerRequest,
+    workerType?: EWorkerType
+  ): Promise<boolean> {
+    try {
+      await this.workerBaileysGrpcClientService.requestConnection(
+        workerId,
+        payload,
+        workerType
+      );
+      return true;
+    } catch (err) {
+      console.error('Initial worker connection request failed:', {
+        workerId,
+        workerType,
+        error: getErrorMessage(err),
+      });
+      return false;
+    }
+  }
+
+  private async isExistingContainerHealthy(
+    workerId: string,
+    options: { maxAttempts: number; delayMs: number }
+  ): Promise<boolean> {
+    try {
+      return await this.containerHealthService.isServiceHealthy(
+        workerId,
+        options
+      );
+    } catch (err) {
+      console.error('Failed to check worker container health:', {
+        workerId,
+        error: getErrorMessage(err),
+      });
+      return false;
+    }
+  }
+
+  private async publishConnectionFailure(
+    payload: StatusConnectionWorkerRequest,
+    accountId?: string
+  ): Promise<void> {
+    if (!accountId) {
+      return;
+    }
+
+    await this.centrifugoPublish({
+      status: EBaileysConnectionStatus.disconnected,
+      code: ECodeMessage.connectionClosed,
+      worker_id: payload.worker_id,
+      account_id: accountId,
+    });
   }
 
   private async resolveWorkerDataForContainer(
@@ -666,23 +750,24 @@ export class WorkerCommandHandlerService {
     const attempt = (this.connectionRequestAttempts.get(workerId) ?? 0) + 1;
     this.connectionRequestAttempts.set(workerId, attempt);
 
-    const workerType = await this.resolveWorkerTypeForConnection(workerId);
+    try {
+      const workerType = await this.resolveWorkerTypeForConnection(workerId);
+      await this.workerBaileysGrpcClientService.requestConnection(
+        workerId,
+        payload,
+        workerType
+      );
+      this.stopConnectionRequestRetry(workerId);
+    } catch (err) {
+      console.error('Failed to request worker connection:', err);
 
-    this.workerBaileysGrpcClientService
-      .requestConnection(workerId, payload, workerType)
-      .then(() => {
-        this.stopConnectionRequestRetry(workerId);
-      })
-      .catch((err) => {
-        console.error('Failed to request worker connection:', err);
-
-        if (attempt < this.connectionRequestMinAttempts) {
-          this.scheduleNextConnectionRequest(workerId);
-          return;
-        }
-
+      if (attempt < this.connectionRequestMinAttempts) {
         this.scheduleNextConnectionRequest(workerId);
-      });
+        return;
+      }
+
+      this.scheduleNextConnectionRequest(workerId);
+    }
   }
 
   private async resolveWorkerTypeForConnection(

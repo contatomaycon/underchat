@@ -116,10 +116,12 @@ export class WorkerBaileysGrpcClientService {
       address,
       credentials.createInsecure()
     );
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
 
     await new Promise<void>((resolve, reject) => {
       (client as any).RequestConnection(
         protoPayload,
+        { deadline },
         (err: ServiceError | null) => {
           client.close();
           if (err) {

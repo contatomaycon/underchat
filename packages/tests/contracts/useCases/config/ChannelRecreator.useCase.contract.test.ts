@@ -20,6 +20,10 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { ChannelRecreatorUseCase } from '@core/useCases/config/ChannelRecreator.useCase';
 
+const flushPromises = async (): Promise<void> => {
+  await new Promise((resolve) => setImmediate(resolve));
+};
+
 describe('ChannelRecreatorUseCase', () => {
   it('throws when worker balancer is not found', async () => {
     const workerService = { updateWorkerById: jest.fn() };
@@ -67,7 +71,8 @@ describe('ChannelRecreatorUseCase', () => {
     expect(workerService.updateWorkerById).not.toHaveBeenCalled();
   });
 
-  it('throws grpc_error when recreate grpc call fails', async () => {
+  it('marks the channel as error when recreate grpc dispatch fails', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
     const workerService = { updateWorkerById: jest.fn(async () => true) };
     const accountService = { existsAccountById: jest.fn(async () => true) };
     const configService = {
@@ -94,9 +99,22 @@ describe('ChannelRecreatorUseCase', () => {
     );
     const t = jest.fn((key: string) => key);
 
-    await expect(useCase.execute(t as never, 'worker-1')).rejects.toThrow(
-      'grpc_error'
+    await expect(useCase.execute(t as never, 'worker-1')).resolves.toBe(true);
+    await flushPromises();
+
+    expect(workerService.updateWorkerById).toHaveBeenCalledWith('acc-1', {
+      worker_id: 'worker-1',
+      worker_status_id: EWorkerStatus.error,
+    });
+    expect(centrifugoService.publish).toHaveBeenCalledWith(
+      'channels:config',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.error,
+      })
     );
+
+    jest.restoreAllMocks();
   });
 
   it('recreates channel successfully', async () => {

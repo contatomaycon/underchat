@@ -54,6 +54,35 @@ function makeSut() {
 }
 
 describe('WorkerRecreatorUseCase', () => {
+  it('returns after publishing recreating status without waiting for gRPC completion', async () => {
+    const { sut, centrifugoService, workerGrpcClientService } = makeSut();
+    let resolveRecreate!: () => void;
+    workerGrpcClientService.recreateWorker.mockReturnValueOnce(
+      new Promise<undefined>((resolve) => {
+        resolveRecreate = () => resolve(undefined);
+      })
+    );
+
+    await expect(sut.execute(t, 'account-1', 'worker-1')).resolves.toBe(true);
+
+    expect(centrifugoService.publishSub).toHaveBeenCalledWith(
+      workerCentrifugoQueue('account-1'),
+      expect.objectContaining({
+        action: EWorkerAction.recreate,
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.recreating,
+      })
+    );
+    expect(workerGrpcClientService.recreateWorker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: EWorkerAction.recreate,
+        worker_id: 'worker-1',
+      })
+    );
+
+    resolveRecreate();
+  });
+
   it('publishes logout before recreating when session cleanup is requested', async () => {
     const { sut, centrifugoService, workerGrpcClientService } = makeSut();
 

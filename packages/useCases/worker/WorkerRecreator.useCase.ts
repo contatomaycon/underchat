@@ -6,7 +6,10 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  channelsConfigCentrifugo,
+  workerCentrifugoQueue,
+} from '@core/common/functions/centrifugoQueue';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
@@ -47,6 +50,62 @@ export class WorkerRecreatorUseCase {
     } catch (err) {
       throw new Error(t('grpc_error'), { cause: err });
     }
+  }
+
+  private dispatchWorkerRecreated(
+    t: TFunction<'translation', undefined>,
+    payload: IWorkerPayload
+  ): void {
+    void this.onWorkerRecreated(t, payload).catch((err) => {
+      void this.publishWorkerRecreateDispatchError(payload, err).catch(
+        (publishErr) => {
+          console.error('Failed to publish worker recreation dispatch error:', {
+            workerId: payload.worker_id,
+            accountId: payload.account_id,
+            error:
+              publishErr instanceof Error
+                ? publishErr.message
+                : String(publishErr),
+          });
+        }
+      );
+    });
+  }
+
+  private async publishWorkerRecreateDispatchError(
+    payload: IWorkerPayload,
+    error: unknown
+  ): Promise<void> {
+    console.error('Failed to dispatch worker recreation:', {
+      workerId: payload.worker_id,
+      accountId: payload.account_id,
+      serverId: payload.server_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    await this.workerService.updateWorkerById(payload.account_id, {
+      worker_id: payload.worker_id,
+      worker_status_id: EWorkerStatus.error,
+    });
+
+    const statusPayload: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_status_id: EWorkerStatus.error,
+    };
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        workerCentrifugoQueue(payload.account_id),
+        statusPayload
+      ),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), {
+        ...payload,
+        worker_status_id: EWorkerStatus.error,
+      }),
+    ]);
   }
 
   private async publishLogoutInProgress(
@@ -120,7 +179,7 @@ export class WorkerRecreatorUseCase {
       inputRecreate
     );
 
-    await this.onWorkerRecreated(t, inputRecreate);
+    this.dispatchWorkerRecreated(t, inputRecreate);
 
     return true;
   }

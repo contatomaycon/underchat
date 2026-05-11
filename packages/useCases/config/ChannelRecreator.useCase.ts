@@ -13,6 +13,9 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 
 @injectable()
 export class ChannelRecreatorUseCase {
@@ -50,6 +53,65 @@ export class ChannelRecreatorUseCase {
     } catch (err) {
       throw new Error(t('grpc_error'), { cause: err });
     }
+  }
+
+  private dispatchChannelRecreated(
+    t: TFunction<'translation', undefined>,
+    payload: IWorkerPayload
+  ): void {
+    void this.onChannelRecreated(t, payload).catch((err) => {
+      void this.publishChannelRecreateDispatchError(payload, err).catch(
+        (publishErr) => {
+          console.error(
+            'Failed to publish channel recreation dispatch error:',
+            {
+              workerId: payload.worker_id,
+              accountId: payload.account_id,
+              error:
+                publishErr instanceof Error
+                  ? publishErr.message
+                  : String(publishErr),
+            }
+          );
+        }
+      );
+    });
+  }
+
+  private async publishChannelRecreateDispatchError(
+    payload: IWorkerPayload,
+    error: unknown
+  ): Promise<void> {
+    console.error('Failed to dispatch channel recreation:', {
+      workerId: payload.worker_id,
+      accountId: payload.account_id,
+      serverId: payload.server_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    await this.workerService.updateWorkerById(payload.account_id, {
+      worker_id: payload.worker_id,
+      worker_status_id: EWorkerStatus.error,
+    });
+
+    const statusPayload: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_status_id: EWorkerStatus.error,
+    };
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        workerCentrifugoQueue(payload.account_id),
+        statusPayload
+      ),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), {
+        ...payload,
+        worker_status_id: EWorkerStatus.error,
+      }),
+    ]);
   }
 
   async execute(
@@ -91,7 +153,7 @@ export class ChannelRecreatorUseCase {
       this.centrifugoService.publish(channelsConfigCentrifugo(), inputRecreate),
     ]);
 
-    await this.onChannelRecreated(t, inputRecreate);
+    this.dispatchChannelRecreated(t, inputRecreate);
 
     return true;
   }
