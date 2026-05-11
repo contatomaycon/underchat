@@ -7,7 +7,11 @@ import {
   toRef,
   watch,
 } from 'vue';
-import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import {
+  fetchRecentHistoryAndProcess,
+  onMessage,
+  unsubscribe,
+} from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
@@ -615,6 +619,10 @@ onMounted(async () => {
   await loadExternalConnectionLink();
 
   await onMessage(
+    workerCentrifugoQueue(accountId.value),
+    handleWorkerConnectionMessage
+  );
+  await fetchRecentHistoryAndProcess(
     workerCentrifugoQueue(accountId.value),
     handleWorkerConnectionMessage
   );

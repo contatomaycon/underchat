@@ -781,17 +781,34 @@ export class WorkerMonitorService {
     return result;
   };
 
-  private readonly isOlderThanOneDay = (dateIso: string | null): boolean => {
-    if (!dateIso) {
+  private readonly isLatestActivityOlderThanOneDay = (
+    worker: IWorkerMonitor
+  ): boolean => {
+    const timestamps = [
+      worker.last_connection_check_at,
+      worker.updated_at,
+      worker.created_at,
+    ]
+      .map((dateIso) => {
+        if (!dateIso) {
+          return null;
+        }
+
+        const parsed = new Date(dateIso);
+        if (Number.isNaN(parsed.getTime())) {
+          return null;
+        }
+
+        return parsed.getTime();
+      })
+      .filter((timestamp): timestamp is number => timestamp !== null);
+
+    if (!timestamps.length) {
       return true;
     }
 
-    const parsed = new Date(dateIso);
-    if (Number.isNaN(parsed.getTime())) {
-      return true;
-    }
-
-    const diff = Date.now() - parsed.getTime();
+    const latestActivity = Math.max(...timestamps);
+    const diff = Date.now() - latestActivity;
     const minutes = diff / 1000 / 60;
 
     return minutes > this.stoppedTimeoutMinutes;
@@ -810,17 +827,7 @@ export class WorkerMonitorService {
       return false;
     }
 
-    const hasVerificationDate = !!worker.last_connection_check_at;
-
-    if (!hasVerificationDate) {
-      const createdAtOlderThanOneDay = this.isOlderThanOneDay(
-        worker.created_at
-      );
-      return createdAtOlderThanOneDay;
-    }
-
-    const result = this.isOlderThanOneDay(worker.last_connection_check_at);
-    return result;
+    return this.isLatestActivityOlderThanOneDay(worker);
   };
 
   private readonly applyStoppedStatus = async (

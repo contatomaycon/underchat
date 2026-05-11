@@ -161,6 +161,62 @@ const waitForConnected = (
   });
 };
 
+const waitForSubscribed = (
+  sub: Subscription,
+  timeoutMs = 10000
+): Promise<void> => {
+  if (sub.state === SubscriptionState.Subscribed) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cleanup = (): void => {};
+
+    const settle = (fn: () => void): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      fn();
+    };
+
+    const onSubscribed = (): void => {
+      settle(resolve);
+    };
+
+    const onUnsubscribed = (ctx: { reason?: string }): void => {
+      settle(() =>
+        reject(new Error(ctx.reason || 'Centrifugo subscription closed'))
+      );
+    };
+
+    const onError = (ctx: unknown): void => {
+      settle(() => reject(ctx instanceof Error ? ctx : new Error(String(ctx))));
+    };
+
+    cleanup = (): void => {
+      sub.off('subscribed', onSubscribed);
+      sub.off('unsubscribed', onUnsubscribed);
+      sub.off('error', onError);
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+
+    timer = setTimeout(() => {
+      settle(() => reject(new Error('Subscription timeout')));
+    }, timeoutMs);
+
+    sub.on('subscribed', onSubscribed);
+    sub.on('unsubscribed', onUnsubscribed);
+    sub.on('error', onError);
+  });
+};
+
 /**
  * Sets up publication, subscribed, and unsubscribed event handlers on a subscription.
  * Extracted as helper to reuse in both onMessage() and reconnection re-subscription.
@@ -459,6 +515,12 @@ export const onMessage = async (
     }
   }
 
+  if (sub.state === SubscriptionState.Unsubscribed) {
+    sub.subscribe();
+  }
+
+  await waitForSubscribed(sub);
+
   return sub;
 };
 
@@ -537,6 +599,39 @@ export const getStreamPosition = (
 
 export const clearStreamPosition = (channel: string): void => {
   channelStreamPositions.delete(channel);
+};
+
+export const fetchRecentHistoryAndProcess = async (
+  channel: string,
+  handler: (data: any, ctx: PublicationContext) => void,
+  limit = 100
+): Promise<number> => {
+  const sub = channelSubscriptions.get(channel);
+
+  if (!sub || sub.state !== SubscriptionState.Subscribed) {
+    return 0;
+  }
+
+  const historyResult = await sub.history({ limit });
+  const publications = historyResult.publications ?? [];
+  let processed = 0;
+
+  for (const pub of publications) {
+    if (pub.offset) {
+      const currentPos = channelStreamPositions.get(channel);
+      if (!currentPos || pub.offset > currentPos.offset) {
+        channelStreamPositions.set(channel, {
+          offset: pub.offset,
+          epoch: currentPos?.epoch ?? historyResult.epoch ?? '',
+        });
+      }
+    }
+
+    handler(pub.data, pub as PublicationContext);
+    processed++;
+  }
+
+  return processed;
 };
 
 const processPublicationThroughHandlers = (
