@@ -15,6 +15,7 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { status as GrpcStatus } from '@grpc/grpc-js';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
+import { getErrorMessage } from '@core/common/functions/toError';
 
 @injectable()
 export class WorkerUpdaterUseCase {
@@ -64,7 +65,6 @@ export class WorkerUpdaterUseCase {
   }
 
   private async disconnectCurrentWorker(
-    t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string,
     serverId: string
@@ -82,7 +82,12 @@ export class WorkerUpdaterUseCase {
         accountId
       );
     } catch (err) {
-      throw new Error(t('grpc_error'), { cause: err });
+      console.error('Failed to disconnect current worker before type change', {
+        workerId,
+        accountId,
+        serverId,
+        error: getErrorMessage(err),
+      });
     }
   }
 
@@ -214,7 +219,6 @@ export class WorkerUpdaterUseCase {
       !shouldRecreateOnServerChange
     ) {
       await this.disconnectCurrentWorker(
-        t,
         accountId,
         input.worker_id,
         currentServerId

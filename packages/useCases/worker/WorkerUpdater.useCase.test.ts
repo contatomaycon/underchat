@@ -37,6 +37,7 @@ function buildUseCase(
     currentServerId?: string;
     nextServerId?: string;
     cleanupError?: unknown;
+    disconnectError?: unknown;
   } = {}
 ) {
   const callOrder: string[] = [];
@@ -79,7 +80,12 @@ function buildUseCase(
         throw overrides.cleanupError;
       }
     }),
-    changeConnectionStatus: jest.fn(async () => undefined),
+    changeConnectionStatus: jest.fn(async () => {
+      callOrder.push('disconnect');
+      if (overrides.disconnectError) {
+        throw overrides.disconnectError;
+      }
+    }),
   };
 
   const workerRecreatorUseCase = {
@@ -236,5 +242,52 @@ describe('WorkerUpdaterUseCase', () => {
         name: 'Wwebjs',
       }
     );
+  });
+
+  it('continues type change when disconnecting the current worker fails', async () => {
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const deps = buildUseCase({
+      disconnectError: Object.assign(new Error('worker command unavailable'), {
+        code: GrpcStatus.UNAVAILABLE,
+      }),
+    });
+
+    try {
+      await expect(
+        deps.useCase.execute(t, 'account-1', {
+          worker_id: 'worker-1',
+          name: 'Baileys',
+          worker_type: EWorkerType.baileys,
+        })
+      ).resolves.toBe(true);
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+
+    expect(
+      deps.workerGrpcClientService.changeConnectionStatus
+    ).toHaveBeenCalledWith(
+      deps.currentServerId,
+      expect.objectContaining({
+        worker_id: 'worker-1',
+      }),
+      'account-1'
+    );
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_type_id: EWorkerType.baileys,
+      })
+    );
+    expect(deps.workerRecreatorUseCase.execute).toHaveBeenCalledWith(
+      t,
+      'account-1',
+      'worker-1',
+      undefined
+    );
+    expect(deps.callOrder).toEqual(['disconnect', 'update', 'recreate']);
   });
 });
