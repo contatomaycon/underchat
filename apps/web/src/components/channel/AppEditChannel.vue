@@ -89,7 +89,11 @@ watch(
     <DialogCloseBtn @click="isVisible = false" />
 
     <VForm ref="refFormEditChannel" @submit.prevent>
-      <VCard :title="$t('edit_channel')" class="position-relative">
+      <VCard
+        :title="$t('edit_channel')"
+        class="position-relative"
+        data-testid="edit-channel-dialog"
+      >
         <VOverlay
           :model-value="isInitializingModal || channelStore.loading"
           class="align-center justify-center"
@@ -108,6 +112,8 @@ watch(
                 :clearable="true"
                 item-value="value"
                 item-title="title"
+                data-testid="edit-channel-type-select"
+                option-test-id-prefix="edit-channel-type-option"
               />
             </VCol>
 
@@ -130,7 +136,9 @@ watch(
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="updateServer"> {{ $t('save') }} </VBtn>
+          <VBtn data-testid="edit-channel-save" @click="updateServer">
+            {{ $t('save') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>

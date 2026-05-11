@@ -485,7 +485,8 @@ export const useChannelsStore = defineStore('channels', {
     async requestExternalConnectionQrCode(token: string): Promise<boolean> {
       try {
         const response = await axios.post<IApiResponse<null>>(
-          `/worker/external-connection/${encodeURIComponent(token)}/qrcode`
+          `/worker/external-connection/${encodeURIComponent(token)}/qrcode`,
+          {}
         );
 
         return Boolean(response?.data?.status);

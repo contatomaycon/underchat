@@ -20,6 +20,6 @@
       ]
     }
   },
-  "include": ["packages/**/*"],
+  "include": ["packages/**/*", "playwright.config.ts"],
   "exclude": ["node_modules"]
 }

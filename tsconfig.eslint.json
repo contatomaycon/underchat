@@ -18,6 +18,7 @@
     "packages/**/src/**/*.tsx",
     "packages/**/*.ts",
     "drizzle.config.ts",
-    "jest.config.ts"
+    "jest.config.ts",
+    "playwright.config.ts"
   ]
 }

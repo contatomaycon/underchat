@@ -386,6 +386,7 @@ onUnmounted(async () => {
                 dense
                 outlined
                 v-model="options.search"
+                data-testid="channels-search"
               />
             </div>
           </div>
@@ -420,6 +421,7 @@ onUnmounted(async () => {
               <VChip
                 :color="resolveStatusVariant(item?.status?.id).color"
                 size="small"
+                :data-testid="`channel-status-${item.id}`"
               >
                 {{ resolveStatusVariant(item?.status?.id).text }}
               </VChip>
@@ -429,6 +431,7 @@ onUnmounted(async () => {
               <VChip
                 :color="resolveTypeVariant(item?.type?.id).color"
                 size="small"
+                :data-testid="`channel-type-${item.id}`"
               >
                 {{ resolveTypeVariant(item?.type?.id).text }}
               </VChip>
@@ -490,6 +493,7 @@ onUnmounted(async () => {
                     <span>{{ $t('connect_channel') }}</span> </VTooltip
                   ><VIcon
                     icon="tabler-plug-connected"
+                    :data-testid="`channel-connect-${item.id}`"
                     @click="openConnectionDialog(item)"
                 /></IconBtn>
 
@@ -500,7 +504,10 @@ onUnmounted(async () => {
                     activator="parent"
                   >
                     <span>{{ $t('edit_channel') }}</span> </VTooltip
-                  ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
+                  ><VIcon
+                    icon="tabler-edit"
+                    :data-testid="`channel-edit-${item.id}`"
+                    @click="openEditDialog(item.id)"
                 /></IconBtn>
 
                 <IconBtn v-if="$canPermission(permissionsProfileStatus)"

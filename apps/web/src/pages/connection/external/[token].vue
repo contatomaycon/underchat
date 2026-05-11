@@ -460,7 +460,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="external-connection-page bg-surface">
+  <main
+    class="external-connection-page bg-surface"
+    data-testid="external-connection-page"
+  >
     <VCard class="external-connection-card" elevation="8">
       <VRow no-gutters>
         <VCol cols="12" lg="7" order="2" order-lg="1">
@@ -475,6 +478,7 @@ onUnmounted(() => {
                 :src="qrcode"
                 max-width="240"
                 width="240"
+                data-testid="external-connection-qr-image"
               />
               <VProgressCircular
                 v-else-if="isLoading || stageMeta.loading || isRequestingQr"

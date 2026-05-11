@@ -660,7 +660,7 @@ onUnmounted(() => {
   <VDialog v-model="isVisible" max-width="640">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VCard>
+    <VCard data-testid="connection-dialog">
       <VRow no-gutters>
         <VCol cols="12" sm="8" md="12" lg="7" order="2" order-lg="1">
           <VCardItem>
@@ -674,6 +674,7 @@ onUnmounted(() => {
                 :src="qrcode"
                 max-width="240"
                 width="240"
+                data-testid="connection-qr-image"
               />
               <VProgressCircular
                 v-else-if="stageMeta.loading"
@@ -697,7 +698,9 @@ onUnmounted(() => {
             </div>
 
             <div class="connection-copy text-center">
-              <h4 class="text-h6 mb-2">{{ $t(stageMeta.title) }}</h4>
+              <h4 class="text-h6 mb-2" data-testid="connection-stage-title">
+                {{ $t(stageMeta.title) }}
+              </h4>
               <p class="text-body-2 mb-0">
                 {{ $t(stageMeta.description) }}
               </p>
@@ -781,6 +784,7 @@ onUnmounted(() => {
                 :disabled="isActionLocked"
                 :loading="channelStore.loading && modalState === 'starting'"
                 color="warning"
+                data-testid="connection-reconnect"
                 @click="reconnectChannel"
               >
                 <VTooltip
@@ -817,6 +821,7 @@ onUnmounted(() => {
                 readonly
                 density="compact"
                 hide-details
+                data-testid="external-connection-url"
                 :loading="isExternalConnectionLinkLoading"
                 :placeholder="$t('external_connection_link_loading')"
               >

@@ -38,6 +38,7 @@ const props = withDefaults(
     itemText?: string;
     noItemsText?: string;
     noResultsText?: string;
+    optionTestIdPrefix?: string;
     rules?: Array<((value: any) => boolean | string) | (boolean | string)>;
     multiple?: boolean;
     chips?: boolean;
@@ -55,6 +56,7 @@ const props = withDefaults(
     itemText: 'text',
     noItemsText: 'no_items_available',
     noResultsText: 'no_results_found',
+    optionTestIdPrefix: '',
     rules: () => [],
     multiple: false,
     chips: false,
@@ -439,6 +441,11 @@ onUnmounted(() => {
               v-for="(item, index) in filteredItems"
               :key="index"
               :value="getItemValue(item)"
+              :data-testid="
+                optionTestIdPrefix
+                  ? `${optionTestIdPrefix}-${String(getItemValue(item))}`
+                  : undefined
+              "
               @click.prevent="handleSelect(item)"
               :active="
                 multiple
