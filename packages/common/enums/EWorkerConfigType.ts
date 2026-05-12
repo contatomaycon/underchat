@@ -29,4 +29,8 @@ export enum EWorkerConfigType {
   attendance_inactivity_alert = '01a0f0f1-1b2c-7d3e-8f90-1234567890ab',
   typing_simulation = '01a12c40-5a6b-7c8d-9e0f-112233445566',
   operator_reply_pending_alert = '01a34b50-6c7d-8e9f-a021-334455667788',
+  security_key = '019e19fd-ec33-7243-ab45-0cedecb5b22d',
+  security_key_chatbot = '019e19fd-ec34-715d-8285-30050fced53a',
+  security_key_schedule = '019e19fd-ec34-715d-8285-379564246120',
+  security_key_quick_message = '019e19fd-ec34-715d-8285-3aea36167be9',
 }

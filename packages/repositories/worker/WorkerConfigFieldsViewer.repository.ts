@@ -100,6 +100,22 @@ export class WorkerConfigFieldsViewerRepository {
       simultaneous_attendance: this.parseNumber(
         configMap.get(EWorkerConfigType.simultaneous_attendance)
       ),
+      security_key: configMap.has(EWorkerConfigType.security_key) ? true : null,
+      security_key_chatbot: configMap.has(
+        EWorkerConfigType.security_key_chatbot
+      )
+        ? true
+        : null,
+      security_key_schedule: configMap.has(
+        EWorkerConfigType.security_key_schedule
+      )
+        ? true
+        : null,
+      security_key_quick_message: configMap.has(
+        EWorkerConfigType.security_key_quick_message
+      )
+        ? true
+        : null,
     };
   }
 

@@ -21,8 +21,12 @@ import { ViewAttendanceInactivityAlertResponse } from '@core/schema/worker/viewA
 import { UpdateAttendanceInactivityAlertRequest } from '@core/schema/worker/updateAttendanceInactivityAlert/request.schema';
 import { ViewOperatorReplyPendingAlertResponse } from '@core/schema/worker/viewOperatorReplyPendingAlert/response.schema';
 import { UpdateOperatorReplyPendingAlertRequest } from '@core/schema/worker/updateOperatorReplyPendingAlert/request.schema';
+import { ViewSecurityKeyResponse } from '@core/schema/worker/viewSecurityKey/response.schema';
+import { UpdateSecurityKeyRequest } from '@core/schema/worker/updateSecurityKey/request.schema';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 import AppSelectSearch from '@/components/AppSelectSearch.vue';
+import AppSecurityKeyConfigDialog from '@/components/channel/AppSecurityKeyConfigDialog.vue';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 
 const channelStore = useChannelsStore();
 const contactGroupStore = useContactGroupStore();
@@ -212,6 +216,7 @@ type WorkerConfigForm = {
   auto_save_contacts: boolean;
   mark_as_read: boolean;
   typing_simulation: boolean;
+  security_key: boolean;
   chatbot: boolean;
   ai_agent: boolean;
   attendance_hours: boolean;
@@ -249,6 +254,7 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   auto_save_contacts: false,
   mark_as_read: false,
   typing_simulation: true,
+  security_key: true,
   chatbot: false,
   ai_agent: false,
   attendance_hours: false,
@@ -485,6 +491,26 @@ const typingSimulationModalOpen = ref(false);
 const isSavingTypingSimulation = ref(false);
 const typingSimulationSpeedInModal = ref(TYPING_SIMULATION_DEFAULT_SPEED);
 const typingSimulationEnabledInModal = ref(true);
+type SecurityKeyConfig = UpdateSecurityKeyRequest;
+const createDefaultSecurityKeyConfig = (): SecurityKeyConfig => ({
+  enabled: true,
+  chatbot: true,
+  schedule: true,
+  quick_message: true,
+});
+const securityKeyConfig = reactive<SecurityKeyConfig>(
+  createDefaultSecurityKeyConfig()
+);
+const securityKeyModalOpen = ref(false);
+const isSavingSecurityKey = ref(false);
+const isLoadingSecurityKey = ref(false);
+const securityKeyDisableConfirmOpen = ref(false);
+const hasSecurityKeyOptionActive = computed(
+  () =>
+    securityKeyConfig.chatbot ||
+    securityKeyConfig.schedule ||
+    securityKeyConfig.quick_message
+);
 const typingSimulationProfiles = computed(() => [
   {
     min: 0,
@@ -1131,6 +1157,7 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
   proxyPassword.value = null;
 
   if (config) {
+    nextState.security_key = workerConfigForm.security_key;
     nextState.show_attendee_name = config.show_attendee_name;
     nextState.show_worker_name = config.show_worker_name;
     nextState.show_protocol_in_chat = config.show_protocol_in_chat ?? false;
@@ -1169,6 +1196,7 @@ const resetWorkerConfigState = () => {
   applyAttendanceInactivityAlertState();
   applyOperatorReplyPendingAlertState();
   applyTypingSimulationState();
+  applySecurityKeyState();
   workerConfigLoadedFor.value = null;
 };
 
@@ -1179,6 +1207,18 @@ const applyTypingSimulationState = (
   typingSimulationEnabledInModal.value = config?.enabled ?? true;
   typingSimulationSpeedInModal.value =
     config?.speed ?? TYPING_SIMULATION_DEFAULT_SPEED;
+};
+
+const applySecurityKeyState = (
+  config?: ViewSecurityKeyResponse | null
+): void => {
+  const nextConfig = config ?? createDefaultSecurityKeyConfig();
+
+  securityKeyConfig.enabled = nextConfig.enabled;
+  securityKeyConfig.chatbot = nextConfig.chatbot;
+  securityKeyConfig.schedule = nextConfig.schedule;
+  securityKeyConfig.quick_message = nextConfig.quick_message;
+  workerConfigForm.security_key = nextConfig.enabled;
 };
 
 function applyAttendanceHoursState(
@@ -1445,6 +1485,7 @@ const loadWorkerConfig = async (force = false) => {
       protocolStartData,
       simultaneousAttendanceData,
       typingSimulationData,
+      securityKeyData,
       showMessageOnCallData,
       sendMessageOnFinishAttendanceData,
       attendanceInactivityAlertData,
@@ -1459,6 +1500,7 @@ const loadWorkerConfig = async (force = false) => {
       channelStore.fetchStartProtocolText(channelId.value),
       channelStore.fetchSimultaneousAttendance(channelId.value),
       channelStore.fetchTypingSimulation(channelId.value),
+      channelStore.fetchSecurityKey(channelId.value),
       channelStore.fetchShowMessageOnCall(channelId.value),
       channelStore.fetchSendMessageOnFinishAttendance(channelId.value),
       channelStore.fetchAttendanceInactivityAlert(channelId.value),
@@ -1521,6 +1563,7 @@ const loadWorkerConfig = async (force = false) => {
     }
 
     applyTypingSimulationState(typingSimulationData);
+    applySecurityKeyState(securityKeyData);
 
     if (showMessageOnCallData) {
       showMessageOnCallText.value =
@@ -1565,6 +1608,7 @@ const saveWorkerConfig = async () => {
       attendance_inactivity_alert: _attendanceInactivityAlert,
       operator_reply_pending_alert: _operatorReplyPendingAlert,
       typing_simulation: _typingSimulation,
+      security_key: _securityKey,
       ...payload
     } = workerConfigForm;
     const result = await channelStore.updateWorkerConfig(
@@ -2122,6 +2166,76 @@ const saveTypingSimulationConfiguration = async () => {
   }
 };
 
+const fetchSecurityKeyConfig = async () => {
+  if (!channelId.value) return null;
+
+  isLoadingSecurityKey.value = true;
+  try {
+    const data = await channelStore.fetchSecurityKey(channelId.value);
+    applySecurityKeyState(data);
+    return data;
+  } finally {
+    isLoadingSecurityKey.value = false;
+  }
+};
+
+const openSecurityKeyModal = async () => {
+  if (!channelId.value) return;
+
+  await fetchSecurityKeyConfig();
+  securityKeyModalOpen.value = true;
+};
+
+const saveSecurityKeyConfiguration = async (config: SecurityKeyConfig) => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingSecurityKey.value = true;
+    const result = await channelStore.updateSecurityKey(
+      channelId.value,
+      config
+    );
+
+    if (result) {
+      applySecurityKeyState(result);
+      securityKeyModalOpen.value = false;
+    }
+  } finally {
+    isSavingSecurityKey.value = false;
+  }
+};
+
+const toggleSecurityKeyStatus = async () => {
+  if (!channelId.value) return;
+
+  const newEnabled = !workerConfigForm.security_key;
+
+  if (newEnabled && !hasSecurityKeyOptionActive.value) {
+    channelStore.showSnackbar(
+      t('security_key_configure_required_tooltip'),
+      EColor.warning
+    );
+    return;
+  }
+
+  if (!newEnabled) {
+    securityKeyDisableConfirmOpen.value = true;
+    return;
+  }
+
+  await saveSecurityKeyConfiguration({
+    ...securityKeyConfig,
+    enabled: true,
+  });
+};
+
+const confirmDisableSecurityKey = async () => {
+  await saveSecurityKeyConfiguration({
+    ...securityKeyConfig,
+    enabled: false,
+  });
+};
+
 const openShowMessageOnCallModal = async () => {
   if (!channelId.value) return;
 
@@ -2389,9 +2503,7 @@ const saveAttendanceInactivityAlertConfiguration = async () => {
   }
 };
 
-const openOperatorReplyPendingAlertModal = async (
-  forceEnable = false
-) => {
+const openOperatorReplyPendingAlertModal = async (forceEnable = false) => {
   if (!channelId.value) return;
 
   const data = await channelStore.fetchOperatorReplyPendingAlert(
@@ -2837,6 +2949,11 @@ const workerConfigOptions = computed(() => [
     description: t('channel_general_config_typing_simulation_description'),
   },
   {
+    key: 'security_key' as WorkerConfigField,
+    title: t('channel_general_config_security_key_title'),
+    description: t('channel_general_config_security_key_description'),
+  },
+  {
     key: 'attendance_inactivity_alert' as WorkerConfigField,
     title: t('channel_general_config_attendance_inactivity_alert_title'),
     description: t(
@@ -2875,6 +2992,7 @@ const hasModal = (key: WorkerConfigField): boolean => {
     key === 'show_message_on_call' ||
     key === 'send_message_on_finish_attendance' ||
     key === 'typing_simulation' ||
+    key === 'security_key' ||
     key === 'attendance_inactivity_alert' ||
     key === 'operator_reply_pending_alert' ||
     key === 'attendance_hours' ||
@@ -2995,6 +3113,22 @@ const getToggleDisabled = (key: WorkerConfigField): boolean => {
     return isSavingWorkerConfig.value || isSavingTypingSimulation.value;
   }
 
+  if (key === 'security_key') {
+    if (
+      isSavingWorkerConfig.value ||
+      isSavingSecurityKey.value ||
+      isLoadingSecurityKey.value
+    ) {
+      return true;
+    }
+
+    if (!workerConfigForm.security_key && !hasSecurityKeyOptionActive.value) {
+      return true;
+    }
+
+    return false;
+  }
+
   if (key === 'chatbot') {
     return isSavingWorkerConfig.value || isSavingChatbot.value;
   }
@@ -3072,6 +3206,12 @@ const handleToggleClick = (key: WorkerConfigField): void => {
     return;
   }
 
+  if (key === 'security_key') {
+    void toggleSecurityKeyStatus();
+
+    return;
+  }
+
   if (key === 'chatbot') {
     toggleChatbotStatus();
 
@@ -3138,6 +3278,12 @@ const handleCardClick = (key: WorkerConfigField): void => {
 
   if (key === 'typing_simulation') {
     openTypingSimulationModal();
+
+    return;
+  }
+
+  if (key === 'security_key') {
+    void openSecurityKeyModal();
 
     return;
   }
@@ -3239,6 +3385,18 @@ const getToggleTooltip = (key: WorkerConfigField): string | undefined => {
 
     if (!hasValue) {
       return t('toggle_disabled_show_message_on_call_tooltip');
+    }
+
+    return undefined;
+  }
+
+  if (key === 'security_key') {
+    if (isSavingSecurityKey.value || isLoadingSecurityKey.value) {
+      return undefined;
+    }
+
+    if (!hasSecurityKeyOptionActive.value) {
+      return t('security_key_configure_required_tooltip');
     }
 
     return undefined;
@@ -5754,6 +5912,22 @@ onMounted(async () => {
     </VCard>
   </VDialog>
 
+  <AppSecurityKeyConfigDialog
+    v-model="securityKeyModalOpen"
+    :config="securityKeyConfig"
+    :saving="isSavingSecurityKey"
+    @save="saveSecurityKeyConfiguration"
+  />
+
+  <VDialogHandler
+    v-model="securityKeyDisableConfirmOpen"
+    :title="$t('security_key_disable_title')"
+    :message="$t('security_key_disable_confirmation')"
+    :confirm-text="$t('confirm')"
+    :cancel-text="$t('cancel')"
+    @confirm="confirmDisableSecurityKey"
+  />
+
   <VDialog v-model="showMessageOnCallModalOpen" max-width="600" persistent>
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">
@@ -6096,7 +6270,9 @@ onMounted(async () => {
       <VCardText>
         <p class="text-body-2 text-medium-emphasis mb-4">
           {{
-            $t('channel_general_config_operator_reply_pending_alert_description')
+            $t(
+              'channel_general_config_operator_reply_pending_alert_description'
+            )
           }}
         </p>
 

@@ -77,6 +77,15 @@ function buildUseCase() {
       callOrder.push('typing-default');
       return { enabled: true, speed: 50 };
     }),
+    ensureSecurityKeyDefault: jest.fn(async () => {
+      callOrder.push('security-key-default');
+      return {
+        enabled: true,
+        chatbot: true,
+        schedule: true,
+        quick_message: true,
+      };
+    }),
   };
 
   const useCase = new WorkerCreatorUseCase(
@@ -105,7 +114,7 @@ describe('WorkerCreatorUseCase', () => {
     jest.clearAllMocks();
   });
 
-  it('creates active typing simulation defaults immediately after creating a channel', async () => {
+  it('creates active security and typing defaults immediately after creating a channel', async () => {
     const deps = buildUseCase();
 
     await expect(
@@ -127,6 +136,9 @@ describe('WorkerCreatorUseCase', () => {
     expect(
       deps.workerConfigService.ensureTypingSimulationDefault
     ).toHaveBeenCalledWith('worker-created-id');
+    expect(
+      deps.workerConfigService.ensureSecurityKeyDefault
+    ).toHaveBeenCalledWith('worker-created-id');
     expect(deps.workerGrpcClientService.createWorker).toHaveBeenCalledWith(
       expect.objectContaining({
         action: EWorkerAction.create,
@@ -137,6 +149,7 @@ describe('WorkerCreatorUseCase', () => {
     expect(deps.callOrder).toEqual([
       'create-worker',
       'typing-default',
+      'security-key-default',
       'publish',
       'grpc-create',
       'mark-disponible',

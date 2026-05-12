@@ -103,6 +103,46 @@ describe('WorkerConfigUpserterRepository', () => {
     );
   });
 
+  it('updateSecurityKey persists the main flag and all scopes', async () => {
+    const { repository } = buildRepository();
+    (repository as any).upsertBooleanConfig = jest.fn(async () => undefined);
+
+    await expect(
+      repository.updateSecurityKey('w-1', {
+        enabled: true,
+        chatbot: true,
+        schedule: false,
+        quick_message: true,
+      })
+    ).resolves.toBeUndefined();
+
+    expect((repository as any).upsertBooleanConfig).toHaveBeenCalledTimes(4);
+    expect((repository as any).upsertBooleanConfig).toHaveBeenCalledWith(
+      { tx: true },
+      'w-1',
+      EWorkerConfigType.security_key,
+      true
+    );
+    expect((repository as any).upsertBooleanConfig).toHaveBeenCalledWith(
+      { tx: true },
+      'w-1',
+      EWorkerConfigType.security_key_chatbot,
+      true
+    );
+    expect((repository as any).upsertBooleanConfig).toHaveBeenCalledWith(
+      { tx: true },
+      'w-1',
+      EWorkerConfigType.security_key_schedule,
+      false
+    );
+    expect((repository as any).upsertBooleanConfig).toHaveBeenCalledWith(
+      { tx: true },
+      'w-1',
+      EWorkerConfigType.security_key_quick_message,
+      true
+    );
+  });
+
   it('updateShowMessage and updateSendMessage return persisted values', async () => {
     const { repository } = buildRepository();
     (repository as any).upsertConfigValue = jest.fn(async () => undefined);

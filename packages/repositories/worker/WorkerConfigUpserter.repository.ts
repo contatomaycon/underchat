@@ -221,6 +221,46 @@ export class WorkerConfigUpserterRepository {
     return value !== null ? parseInt(value, 10) : speed;
   };
 
+  updateSecurityKey = async (
+    workerId: string,
+    config: {
+      enabled: boolean;
+      chatbot: boolean;
+      schedule: boolean;
+      quick_message: boolean;
+    }
+  ): Promise<void> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.upsertBooleanConfig(
+        tx,
+        workerId,
+        EWorkerConfigType.security_key,
+        config.enabled
+      );
+
+      await this.upsertBooleanConfig(
+        tx,
+        workerId,
+        EWorkerConfigType.security_key_chatbot,
+        config.chatbot
+      );
+
+      await this.upsertBooleanConfig(
+        tx,
+        workerId,
+        EWorkerConfigType.security_key_schedule,
+        config.schedule
+      );
+
+      await this.upsertBooleanConfig(
+        tx,
+        workerId,
+        EWorkerConfigType.security_key_quick_message,
+        config.quick_message
+      );
+    });
+  };
+
   updateShowMessageOnCall = async (
     workerId: string,
     text: string | null,

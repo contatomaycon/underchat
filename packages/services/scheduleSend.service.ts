@@ -51,6 +51,12 @@ import { ScheduleControlRepository } from '@core/repositories/schedule/ScheduleC
 import { PhoneValidationService } from './phoneValidation.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
+import {
+  appendSecurityKeyToText,
+  shouldApplySecurityKey,
+} from '@core/common/functions/securityKeyConfig';
+import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
+import { WorkerConfigService } from './workerConfig.service';
 
 @injectable()
 export class ScheduleSendService {
@@ -84,6 +90,8 @@ export class ScheduleSendService {
     private readonly phoneValidationService: PhoneValidationService,
     @inject(ScheduleControlRepository)
     private readonly scheduleControlRepository: ScheduleControlRepository,
+    @inject(WorkerConfigService)
+    private readonly workerConfigService: WorkerConfigService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -358,12 +366,37 @@ export class ScheduleSendService {
     await this.redis.del(lockKey);
   }
 
+  private async appendScheduleSecurityKey(
+    schedule: ISchedulePendingData,
+    message: string,
+    options?: { allowSecurityKeyOnly?: boolean }
+  ): Promise<string> {
+    if (!message.trim() && !options?.allowSecurityKeyOnly) {
+      return message;
+    }
+
+    const scopes: TSecurityKeyScope[] = ['schedule'];
+    const securityKeyConfig = await this.workerConfigService.viewSecurityKey(
+      schedule.worker_id
+    );
+
+    if (!shouldApplySecurityKey(securityKeyConfig, scopes)) {
+      return message;
+    }
+
+    return appendSecurityKeyToText(message, options);
+  }
+
   private async createTextMessage(
     schedule: ISchedulePendingData,
     baseMessage: IChatMessage,
     contact: IScheduleContactValidated
   ): Promise<IChatMessage> {
-    const message = await this.replaceTags(schedule.message, schedule, contact);
+    const message = await this.appendScheduleSecurityKey(
+      schedule,
+      await this.replaceTags(schedule.message, schedule, contact),
+      { allowSecurityKeyOnly: true }
+    );
 
     return {
       ...baseMessage,
@@ -383,7 +416,11 @@ export class ScheduleSendService {
       return baseMessage;
     }
 
-    const message = await this.replaceTags(schedule.message, schedule, contact);
+    const message = await this.appendScheduleSecurityKey(
+      schedule,
+      await this.replaceTags(schedule.message, schedule, contact),
+      { allowSecurityKeyOnly: true }
+    );
 
     return {
       ...baseMessage,
@@ -412,7 +449,10 @@ export class ScheduleSendService {
       return baseMessage;
     }
 
-    const message = await this.replaceTags(schedule.message, schedule, contact);
+    const message = await this.appendScheduleSecurityKey(
+      schedule,
+      await this.replaceTags(schedule.message, schedule, contact)
+    );
 
     return {
       ...baseMessage,
@@ -1161,7 +1201,8 @@ export class ScheduleSendService {
         t,
         minimalData,
         chat,
-        chatbotId
+        chatbotId,
+        ['chatbot', 'schedule']
       );
       return null;
     } catch (err) {

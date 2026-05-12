@@ -61,6 +61,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
 import { WorkerService } from './worker.service';
 import { SendMessageOptions } from '@core/common/interfaces/ISendMessageOptions';
+import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import {
   classifyChatbotTriggerEvent,
   isChatbotTriggerEventEnabled,
@@ -96,6 +97,10 @@ export class ChatbotFlowRunnerService {
       EChatStatus.ura_schedule,
       EChatStatus.ura_webhook,
     ]);
+  private readonly securityKeyScopesByChatId = new Map<
+    string,
+    TSecurityKeyScope[]
+  >();
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -337,7 +342,22 @@ export class ChatbotFlowRunnerService {
       ...options,
       chat: guardedChat,
       accountId: guardedChat.account.id,
+      securityKeyScopes:
+        options.securityKeyScopes ??
+        this.getSecurityKeyScopesForChat(guardedChat.chat_id),
     });
+  }
+
+  private getSecurityKeyScopesForChat(chatId: string): TSecurityKeyScope[] {
+    return this.securityKeyScopesByChatId.get(chatId) ?? ['chatbot'];
+  }
+
+  private normalizeSecurityKeyScopes(
+    scopes?: TSecurityKeyScope[]
+  ): TSecurityKeyScope[] {
+    return Array.from(
+      new Set<TSecurityKeyScope>([...(scopes ?? []), 'chatbot'])
+    );
   }
 
   private getRagCacheKey(
@@ -2806,7 +2826,9 @@ export class ChatbotFlowRunnerService {
     ];
 
     if (shouldInvalidateTargetWorkerCache) {
-      cacheInvalidations.push(this.chatService.invalidateChatCache(updatedChat));
+      cacheInvalidations.push(
+        this.chatService.invalidateChatCache(updatedChat)
+      );
     }
 
     await Promise.all([
@@ -9766,7 +9788,8 @@ Retorne APENAS JSON válido (sem markdown):
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
     createChat: IChat,
-    chatbotId: string
+    chatbotId: string,
+    securityKeyScopes?: TSecurityKeyScope[]
   ): Promise<string | null> => {
     const activeChat = await this.getAutomationChatIfAllowed(createChat);
     if (!activeChat) {
@@ -9777,114 +9800,123 @@ Retorne APENAS JSON válido (sem markdown):
       return null;
     }
 
-    const configurations =
-      await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+    this.securityKeyScopesByChatId.set(
+      activeChat.chat_id,
+      this.normalizeSecurityKeyScopes(securityKeyScopes)
+    );
+
+    try {
+      const configurations =
+        await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+          activeChat.account.id,
+          chatbotId
+        );
+
+      const canTrigger = await this.canTriggerChatbotEvent(
+        data,
+        activeChat.account.id,
+        chatbotId,
+        configurations
+      );
+      if (!canTrigger) {
+        return null;
+      }
+
+      const userText = this.getTextFromUpsertMessage(data)?.trim();
+
+      if (userText) {
+        const finishTriggers =
+          configurations?.configurations?.finish_triggers || [];
+        const userTextLower = userText.toLowerCase();
+        const userWords = userTextLower.split(/\s+/);
+
+        const hasFinishTrigger = finishTriggers.some((trigger) => {
+          const triggerLower = trigger.toLowerCase();
+          return userWords.includes(triggerLower);
+        });
+
+        if (hasFinishTrigger) {
+          const customServiceFinishedMessage =
+            configurations?.configurations?.messages?.service_finished_message;
+          const serviceFinishedMessageEnabled =
+            configurations?.configurations?.messages
+              ?.service_finished_message_enabled !== false;
+
+          await this.sendFinishMessage(
+            t,
+            activeChat,
+            customServiceFinishedMessage,
+            serviceFinishedMessageEnabled
+          );
+
+          return null;
+        }
+      }
+
+      const chatbotFlow = await this.chatbotService.findChatbotFlowByChatbotId(
         activeChat.account.id,
         chatbotId
       );
 
-    const canTrigger = await this.canTriggerChatbotEvent(
-      data,
-      activeChat.account.id,
-      chatbotId,
-      configurations
-    );
-    if (!canTrigger) {
-      return null;
-    }
-
-    const userText = this.getTextFromUpsertMessage(data)?.trim();
-
-    if (userText) {
-      const finishTriggers =
-        configurations?.configurations?.finish_triggers || [];
-      const userTextLower = userText.toLowerCase();
-      const userWords = userTextLower.split(/\s+/);
-
-      const hasFinishTrigger = finishTriggers.some((trigger) => {
-        const triggerLower = trigger.toLowerCase();
-        return userWords.includes(triggerLower);
-      });
-
-      if (hasFinishTrigger) {
-        const customServiceFinishedMessage =
-          configurations?.configurations?.messages?.service_finished_message;
-        const serviceFinishedMessageEnabled =
-          configurations?.configurations?.messages
-            ?.service_finished_message_enabled !== false;
-
-        await this.sendFinishMessage(
-          t,
-          activeChat,
-          customServiceFinishedMessage,
-          serviceFinishedMessageEnabled
-        );
-
-        return null;
+      if (!chatbotFlow) {
+        throw new Error(t('chatbot_flow_not_found'));
       }
-    }
 
-    const chatbotFlow = await this.chatbotService.findChatbotFlowByChatbotId(
-      activeChat.account.id,
-      chatbotId
-    );
+      const messagesConfig = configurations?.configurations?.messages;
+      const customMessages = messagesConfig
+        ? {
+            ...messagesConfig,
+            invalid_menu_option_message_enabled:
+              messagesConfig.invalid_menu_option_message_enabled !== false,
+            invalid_satisfaction_option_message_enabled:
+              messagesConfig.invalid_satisfaction_option_message_enabled !==
+              false,
+            invalid_email_message_enabled:
+              messagesConfig.invalid_email_message_enabled !== false,
+            invalid_cpf_message_enabled:
+              messagesConfig.invalid_cpf_message_enabled !== false,
+            invalid_cnpj_message_enabled:
+              messagesConfig.invalid_cnpj_message_enabled !== false,
+            service_finished_message_enabled:
+              messagesConfig.service_finished_message_enabled !== false,
+            transfer_message_user_enabled:
+              messagesConfig.transfer_message_user_enabled !== false,
+            transfer_message_sector_enabled:
+              messagesConfig.transfer_message_sector_enabled !== false,
+            transfer_message_sector_user_enabled:
+              messagesConfig.transfer_message_sector_user_enabled !== false,
+          }
+        : undefined;
+      const inactivityAlert = configurations?.configurations?.inactivity_alert;
+      const redirectFailedAttempts =
+        configurations?.configurations?.redirect_failed_attempts;
 
-    if (!chatbotFlow) {
-      throw new Error(t('chatbot_flow_not_found'));
-    }
+      const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
+        chatbotFlow,
+        activeChat
+      );
 
-    const messagesConfig = configurations?.configurations?.messages;
-    const customMessages = messagesConfig
-      ? {
-          ...messagesConfig,
-          invalid_menu_option_message_enabled:
-            messagesConfig.invalid_menu_option_message_enabled !== false,
-          invalid_satisfaction_option_message_enabled:
-            messagesConfig.invalid_satisfaction_option_message_enabled !==
-            false,
-          invalid_email_message_enabled:
-            messagesConfig.invalid_email_message_enabled !== false,
-          invalid_cpf_message_enabled:
-            messagesConfig.invalid_cpf_message_enabled !== false,
-          invalid_cnpj_message_enabled:
-            messagesConfig.invalid_cnpj_message_enabled !== false,
-          service_finished_message_enabled:
-            messagesConfig.service_finished_message_enabled !== false,
-          transfer_message_user_enabled:
-            messagesConfig.transfer_message_user_enabled !== false,
-          transfer_message_sector_enabled:
-            messagesConfig.transfer_message_sector_enabled !== false,
-          transfer_message_sector_user_enabled:
-            messagesConfig.transfer_message_sector_user_enabled !== false,
+      if (!currentFlowId) {
+        throw new Error(t('chatbot_flow_not_found'));
+      }
+
+      await this.processFlowNode(
+        t,
+        data,
+        activeChat,
+        chatbotFlow,
+        currentFlowId,
+        chatbotId,
+        {
+          inactivityAlert,
+          redirectFailedAttempts,
+          customMessages,
         }
-      : undefined;
-    const inactivityAlert = configurations?.configurations?.inactivity_alert;
-    const redirectFailedAttempts =
-      configurations?.configurations?.redirect_failed_attempts;
+      );
 
-    const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
-      chatbotFlow,
-      activeChat
-    );
-
-    if (!currentFlowId) {
-      throw new Error(t('chatbot_flow_not_found'));
+      return currentFlowId;
+    } finally {
+      this.securityKeyScopesByChatId.delete(activeChat.chat_id);
     }
-
-    await this.processFlowNode(
-      t,
-      data,
-      activeChat,
-      chatbotFlow,
-      currentFlowId,
-      chatbotId,
-      {
-        inactivityAlert,
-        redirectFailedAttempts,
-        customMessages,
-      }
-    );
-
-    return currentFlowId;
   };
 }

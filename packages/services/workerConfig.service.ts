@@ -34,6 +34,11 @@ import {
 import { ITypingSimulationConfig } from '@core/common/interfaces/ITypingSimulationConfig';
 import { IOperatorReplyPendingAlertConfig } from '@core/common/interfaces/IOperatorReplyPendingAlertConfig';
 import { parseOperatorReplyPendingAlertConfig } from '@core/common/functions/operatorReplyPendingAlertConfig';
+import {
+  ISecurityKeyConfig,
+  TSecurityKeyScope,
+} from '@core/common/interfaces/ISecurityKeyConfig';
+import { defaultSecurityKeyConfig } from '@core/common/functions/securityKeyConfig';
 
 @injectable()
 export class WorkerConfigService {
@@ -514,6 +519,119 @@ export class WorkerConfigService {
       DEFAULT_TYPING_SIMULATION_SPEED,
       true
     );
+  }
+
+  async ensureSecurityKeyDefault(
+    workerId: string
+  ): Promise<ISecurityKeyConfig> {
+    const [securityKey, chatbot, schedule, quickMessage] = await Promise.all([
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.security_key
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.security_key_chatbot
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.security_key_schedule
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.security_key_quick_message
+      ),
+    ]);
+
+    if (
+      securityKey.statusId &&
+      chatbot.statusId &&
+      schedule.statusId &&
+      quickMessage.statusId
+    ) {
+      return this.viewSecurityKey(workerId);
+    }
+
+    return this.updateSecurityKey(workerId, defaultSecurityKeyConfig());
+  }
+
+  async updateSecurityKey(
+    workerId: string,
+    input: ISecurityKeyConfig
+  ): Promise<ISecurityKeyConfig> {
+    const normalizedInput = this.normalizeSecurityKeyConfig(input);
+
+    await Promise.all([
+      this.workerConfigUpserterRepository.updateSecurityKey(
+        workerId,
+        normalizedInput
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return normalizedInput;
+  }
+
+  async viewSecurityKey(workerId: string): Promise<ISecurityKeyConfig> {
+    const defaultConfig = defaultSecurityKeyConfig();
+    const [securityKey, chatbot, schedule, quickMessage] = await Promise.all([
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.security_key
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.security_key_chatbot
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.security_key_schedule
+      ),
+      this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.security_key_quick_message
+      ),
+    ]);
+
+    const config = {
+      enabled: securityKey.statusId
+        ? securityKey.statusId === EWorkerConfigStatus.active
+        : defaultConfig.enabled,
+      chatbot: chatbot.statusId
+        ? chatbot.statusId === EWorkerConfigStatus.active
+        : defaultConfig.chatbot,
+      schedule: schedule.statusId
+        ? schedule.statusId === EWorkerConfigStatus.active
+        : defaultConfig.schedule,
+      quick_message: quickMessage.statusId
+        ? quickMessage.statusId === EWorkerConfigStatus.active
+        : defaultConfig.quick_message,
+    };
+
+    return this.normalizeSecurityKeyConfig(config, true);
+  }
+
+  private normalizeSecurityKeyConfig(
+    input: ISecurityKeyConfig,
+    allowDisabledEffectiveState = false
+  ): ISecurityKeyConfig {
+    const scopeKeys: TSecurityKeyScope[] = [
+      'chatbot',
+      'schedule',
+      'quick_message',
+    ];
+    const hasActiveScope = scopeKeys.some((scope) => input[scope]);
+
+    if (input.enabled && !hasActiveScope && !allowDisabledEffectiveState) {
+      throw new Error('security_key_requires_active_option');
+    }
+
+    return {
+      enabled: input.enabled && hasActiveScope,
+      chatbot: input.chatbot,
+      schedule: input.schedule,
+      quick_message: input.quick_message,
+    };
   }
 
   async updateTypingSimulation(

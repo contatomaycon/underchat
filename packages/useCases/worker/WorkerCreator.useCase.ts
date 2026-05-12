@@ -116,7 +116,10 @@ export class WorkerCreatorUseCase {
       throw new Error(t('worker_creation_failed'));
     }
 
-    await this.workerConfigService.ensureTypingSimulationDefault(workerId);
+    await Promise.all([
+      this.workerConfigService.ensureTypingSimulationDefault(workerId),
+      this.workerConfigService.ensureSecurityKeyDefault(workerId),
+    ]);
 
     const payloadCreate: IWorkerPayload = {
       action: EWorkerAction.create,

@@ -51,6 +51,10 @@ jest.mock('@core/services/worker.service', () => ({
   WorkerService: class WorkerService {},
 }));
 
+jest.mock('@core/services/workerConfig.service', () => ({
+  WorkerConfigService: class WorkerConfigService {},
+}));
+
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -80,6 +84,7 @@ describe('ChatMessageService', () => {
       kafkaBaileysQueueService as never,
       streamProducerService as never,
       centrifugoService as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -145,9 +150,9 @@ describe('ChatMessageService', () => {
       },
     } as IChatMessage;
 
-    await expect(service.publishPreparedMessage(annotationMessage)).resolves.toBe(
-      true
-    );
+    await expect(
+      service.publishPreparedMessage(annotationMessage)
+    ).resolves.toBe(true);
 
     expect(chatService.updateChatSummaryAtomically).toHaveBeenCalledWith(
       annotationMessage.chat_id,

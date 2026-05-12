@@ -44,6 +44,12 @@ import {
 } from '@core/common/interfaces/ISendMessageOptions';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
+import {
+  appendSecurityKeyToText,
+  shouldApplySecurityKey,
+} from '@core/common/functions/securityKeyConfig';
+import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
+import { WorkerConfigService } from './workerConfig.service';
 
 @injectable()
 export class ChatMessageService {
@@ -68,7 +74,9 @@ export class ChatMessageService {
     @inject(ContactViewerRepository)
     private readonly contactViewerRepository: ContactViewerRepository,
     @inject(WorkerService)
-    private readonly workerService: WorkerService
+    private readonly workerService: WorkerService,
+    @inject(WorkerConfigService)
+    private readonly workerConfigService: WorkerConfigService
   ) {}
 
   private async getChat(
@@ -163,6 +171,31 @@ export class ChatMessageService {
     }
 
     return `${prefix}${text}`;
+  }
+
+  private async appendSecurityKeyIfNeeded(
+    chat: IChat,
+    message: string | null,
+    scopes?: TSecurityKeyScope[],
+    options?: { allowSecurityKeyOnly?: boolean }
+  ): Promise<string | null> {
+    if (
+      (!message?.trim() && !options?.allowSecurityKeyOnly) ||
+      !chat.worker?.id ||
+      !scopes?.length
+    ) {
+      return message;
+    }
+
+    const securityKeyConfig = await this.workerConfigService.viewSecurityKey(
+      chat.worker.id
+    );
+
+    if (!shouldApplySecurityKey(securityKeyConfig, scopes)) {
+      return message;
+    }
+
+    return appendSecurityKeyToText(message ?? '', options);
   }
 
   private resolveAuthorUser(
@@ -1063,6 +1096,11 @@ export class ChatMessageService {
       formattedMessage,
       messageContext.typeUser
     );
+    const finalMessage = await this.appendSecurityKeyIfNeeded(
+      chatData,
+      whatsappMessage,
+      options.securityKeyScopes
+    );
 
     const linkPreview =
       'linkPreview' in options ? options.linkPreview : undefined;
@@ -1083,7 +1121,7 @@ export class ChatMessageService {
       chat: chatData,
       chatId,
       type,
-      message: whatsappMessage,
+      message: finalMessage,
       linkPreview: processedLinkPreview,
       messageQuotedId: messageContext.quotedId,
       quotedMessage: messageContext.quotedMessage,
@@ -1244,12 +1282,18 @@ export class ChatMessageService {
       messageContext.typeUser,
       messageContext.senderName
     );
+    const finalMessage = await this.appendSecurityKeyIfNeeded(
+      chatData,
+      formattedMessage,
+      imageOptions.securityKeyScopes,
+      { allowSecurityKeyOnly: true }
+    );
 
     const imageMessage = this.createImageMessage({
       chat: chatData,
       chatId,
       type,
-      message: formattedMessage,
+      message: finalMessage,
       imageData,
       messageQuotedId: messageContext.quotedId,
       quotedMessage: messageContext.quotedMessage,
@@ -1314,13 +1358,19 @@ export class ChatMessageService {
       messageContext.typeUser,
       messageContext.senderName
     );
+    const finalMessage = await this.appendSecurityKeyIfNeeded(
+      chatData,
+      formattedMessage,
+      videoOptions.securityKeyScopes,
+      { allowSecurityKeyOnly: true }
+    );
 
     const videoMessage = this.createVideoMessage(
       {
         chat: chatData,
         chatId,
         type,
-        message: formattedMessage,
+        message: finalMessage,
         videoData,
         messageQuotedId: messageContext.quotedId,
         quotedMessage: messageContext.quotedMessage,
@@ -1385,13 +1435,18 @@ export class ChatMessageService {
       messageContext.typeUser,
       messageContext.senderName
     );
+    const finalMessage = await this.appendSecurityKeyIfNeeded(
+      chatData,
+      formattedMessage,
+      audioOptions.securityKeyScopes
+    );
 
     const audioMessage = this.createAudioMessage(
       {
         chat: chatData,
         chatId,
         type,
-        message: formattedMessage,
+        message: finalMessage,
         audioData,
         messageQuotedId: messageContext.quotedId,
         quotedMessage: messageContext.quotedMessage,
@@ -1451,12 +1506,18 @@ export class ChatMessageService {
       messageContext.typeUser,
       messageContext.senderName
     );
+    const finalMessage = await this.appendSecurityKeyIfNeeded(
+      chatData,
+      formattedMessage,
+      documentOptions.securityKeyScopes,
+      { allowSecurityKeyOnly: true }
+    );
 
     const documentMessage = this.createDocumentMessage({
       chat: chatData,
       chatId,
       type,
-      message: formattedMessage,
+      message: finalMessage,
       documentData,
       messageQuotedId: messageContext.quotedId,
       quotedMessage: messageContext.quotedMessage,
@@ -1490,6 +1551,11 @@ export class ChatMessageService {
       messageContext.typeUser,
       messageContext.senderName
     );
+    const finalMessage = await this.appendSecurityKeyIfNeeded(
+      chatData,
+      formattedMessage,
+      locationOptions.securityKeyScopes
+    );
 
     const locationMessage: IChatMessage = {
       message_id: uuidv7(),
@@ -1514,7 +1580,7 @@ export class ChatMessageService {
       has_quoted: !!messageContext.quotedMessage,
       content: {
         type,
-        message: formattedMessage,
+        message: finalMessage,
         message_quoted_id: messageContext.quotedId,
         quoted: messageContext.quotedMessage,
         location: {
@@ -1627,6 +1693,11 @@ export class ChatMessageService {
       messageContext.typeUser,
       messageContext.senderName
     );
+    const finalMessage = await this.appendSecurityKeyIfNeeded(
+      chatData,
+      formattedMessage,
+      contactOptions.securityKeyScopes
+    );
 
     const publishTasks = validContacts.map((contactData) => {
       const messageHash = messageContext.normalizedHash || uuidv7();
@@ -1653,7 +1724,7 @@ export class ChatMessageService {
         has_quoted: !!messageContext.quotedMessage,
         content: {
           type,
-          message: formattedMessage,
+          message: finalMessage,
           message_quoted_id: messageContext.quotedId,
           quoted: messageContext.quotedMessage,
           contact: {

@@ -5,6 +5,7 @@ import {
   TYPING_SIMULATION_CACHE_TTL_SECONDS,
   typingSimulationCacheKey,
 } from '@core/common/functions/typingSimulationConfig';
+import { defaultSecurityKeyConfig } from '@core/common/functions/securityKeyConfig';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 
 jest.mock('@core/repositories/worker/WorkerConfigViewer.repository', () => ({
@@ -35,6 +36,7 @@ function buildService() {
     updateTypingSimulation: jest.fn(
       async () => DEFAULT_TYPING_SIMULATION_SPEED
     ),
+    updateSecurityKey: jest.fn(async () => undefined),
   };
   const redis = {
     del: jest.fn(async () => 1),
@@ -101,5 +103,76 @@ describe('WorkerConfigService typing simulation defaults', () => {
       'EX',
       TYPING_SIMULATION_CACHE_TTL_SECONDS
     );
+  });
+
+  it('creates security key defaults when a worker has no config yet', async () => {
+    const {
+      redis,
+      service,
+      workerConfigUpserterRepository,
+      workerConfigViewerRepository,
+    } = buildService();
+
+    workerConfigViewerRepository.fetchConfigValueByType
+      .mockResolvedValueOnce({ statusId: null, value: null })
+      .mockResolvedValueOnce({ statusId: null, value: null })
+      .mockResolvedValueOnce({ statusId: null, value: null })
+      .mockResolvedValueOnce({ statusId: null, value: null })
+      .mockResolvedValueOnce({
+        statusId: EWorkerConfigStatus.active,
+        value: String(DEFAULT_TYPING_SIMULATION_SPEED),
+      });
+
+    await expect(service.ensureSecurityKeyDefault('worker-1')).resolves.toEqual(
+      defaultSecurityKeyConfig()
+    );
+
+    expect(
+      workerConfigUpserterRepository.updateSecurityKey
+    ).toHaveBeenCalledWith('worker-1', defaultSecurityKeyConfig());
+    expect(redis.del).toHaveBeenCalledWith('worker:worker-1:config_fields');
+    expect(redis.del).toHaveBeenCalledWith('worker:worker-1:mark_as_read');
+  });
+
+  it('views security key config from active and inactive status rows', async () => {
+    const { service, workerConfigViewerRepository } = buildService();
+
+    workerConfigViewerRepository.fetchConfigValueByType
+      .mockResolvedValueOnce({
+        statusId: EWorkerConfigStatus.active,
+        value: null,
+      })
+      .mockResolvedValueOnce({
+        statusId: EWorkerConfigStatus.active,
+        value: null,
+      })
+      .mockResolvedValueOnce({
+        statusId: EWorkerConfigStatus.inactive,
+        value: null,
+      })
+      .mockResolvedValueOnce({
+        statusId: EWorkerConfigStatus.active,
+        value: null,
+      });
+
+    await expect(service.viewSecurityKey('worker-1')).resolves.toEqual({
+      enabled: true,
+      chatbot: true,
+      schedule: false,
+      quick_message: true,
+    });
+  });
+
+  it('rejects enabling security key without an active option', async () => {
+    const { service } = buildService();
+
+    await expect(
+      service.updateSecurityKey('worker-1', {
+        enabled: true,
+        chatbot: false,
+        schedule: false,
+        quick_message: false,
+      })
+    ).rejects.toThrow('security_key_requires_active_option');
   });
 });

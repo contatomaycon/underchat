@@ -42,6 +42,8 @@ import { updateSimultaneousAttendanceSchema } from '@core/schema/worker/updateSi
 import { viewSimultaneousAttendanceSchema } from '@core/schema/worker/viewSimultaneousAttendance';
 import { updateTypingSimulationSchema } from '@core/schema/worker/updateTypingSimulation';
 import { viewTypingSimulationSchema } from '@core/schema/worker/viewTypingSimulation';
+import { updateSecurityKeySchema } from '@core/schema/worker/updateSecurityKey';
+import { viewSecurityKeySchema } from '@core/schema/worker/viewSecurityKey';
 import { updateShowMessageOnCallSchema } from '@core/schema/worker/updateShowMessageOnCall';
 import { viewShowMessageOnCallSchema } from '@core/schema/worker/viewShowMessageOnCall';
 import { updateSendMessageOnFinishAttendanceSchema } from '@core/schema/worker/updateSendMessageOnFinishAttendance';
@@ -422,6 +424,28 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/typing-simulation', {
     schema: updateTypingSimulationSchema,
     handler: workerController.updateTypingSimulation,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/security-key', {
+    schema: viewSecurityKeySchema,
+    handler: workerController.viewSecurityKey,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/security-key', {
+    schema: updateSecurityKeySchema,
+    handler: workerController.updateSecurityKey,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

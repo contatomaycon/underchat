@@ -39,6 +39,23 @@ describe('WorkerConfigFieldsViewerRepository', () => {
                   EWorkerConfigType.simultaneous_attendance,
                 value: '3',
               },
+              {
+                worker_config_type_id: EWorkerConfigType.security_key,
+                value: null,
+              },
+              {
+                worker_config_type_id: EWorkerConfigType.security_key_chatbot,
+                value: null,
+              },
+              {
+                worker_config_type_id: EWorkerConfigType.security_key_schedule,
+                value: null,
+              },
+              {
+                worker_config_type_id:
+                  EWorkerConfigType.security_key_quick_message,
+                value: null,
+              },
             ]),
           })),
         })),
@@ -52,6 +69,10 @@ describe('WorkerConfigFieldsViewerRepository', () => {
         show_attendee_name: true,
         generate_protocol_at_start: 'start text',
         simultaneous_attendance: 3,
+        security_key: true,
+        security_key_chatbot: true,
+        security_key_schedule: true,
+        security_key_quick_message: true,
       })
     );
   });

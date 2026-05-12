@@ -2,6 +2,7 @@ import { IChat } from './IChat';
 import { EMessageType } from '../enums/EMessageType';
 import { ETypeUserChat } from '../enums/ETypeUserChat';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
+import { TSecurityKeyScope } from './ISecurityKeyConfig';
 
 export interface ISendMessageOptions {
   chat: IChat;
@@ -14,6 +15,7 @@ export interface ISendMessageOptions {
   senderName?: string | null;
   senderUser?: IChat['user'] | null;
   linkPreview?: any;
+  securityKeyScopes?: TSecurityKeyScope[];
 }
 
 export interface ISendTextMessageOptions extends ISendMessageOptions {

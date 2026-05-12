@@ -29,6 +29,8 @@ import { updateSimultaneousAttendance } from './methods/updateSimultaneousAttend
 import { viewSimultaneousAttendance } from './methods/viewSimultaneousAttendance';
 import { updateTypingSimulation } from './methods/updateTypingSimulation';
 import { viewTypingSimulation } from './methods/viewTypingSimulation';
+import { updateSecurityKey } from './methods/updateSecurityKey';
+import { viewSecurityKey } from './methods/viewSecurityKey';
 import { updateShowMessageOnCall } from './methods/updateShowMessageOnCall';
 import { viewShowMessageOnCall } from './methods/viewShowMessageOnCall';
 import { updateSendMessageOnFinishAttendance } from './methods/updateSendMessageOnFinishAttendance';
@@ -82,6 +84,8 @@ class WorkerController {
   public viewSimultaneousAttendance = viewSimultaneousAttendance;
   public updateTypingSimulation = updateTypingSimulation;
   public viewTypingSimulation = viewTypingSimulation;
+  public updateSecurityKey = updateSecurityKey;
+  public viewSecurityKey = viewSecurityKey;
   public updateShowMessageOnCall = updateShowMessageOnCall;
   public viewShowMessageOnCall = viewShowMessageOnCall;
   public updateSendMessageOnFinishAttendance =

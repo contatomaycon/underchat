@@ -16,4 +16,8 @@ export interface IWorkerConfigFields {
   auto_save_contacts: boolean | null;
   simultaneous_attendance: number | null;
   mark_as_read: boolean | null;
+  security_key: boolean | null;
+  security_key_chatbot: boolean | null;
+  security_key_schedule: boolean | null;
+  security_key_quick_message: boolean | null;
 }

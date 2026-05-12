@@ -715,6 +715,7 @@ export class ChatMessageCreatorUseCase {
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
+      securityKeyScopes: messageContext.securityKeyScopes,
       contactIds: contactData.contacts,
     });
   }
@@ -748,6 +749,7 @@ export class ChatMessageCreatorUseCase {
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
+      securityKeyScopes: messageContext.securityKeyScopes,
       latitude: locationData.latitude,
       longitude: locationData.longitude,
       name: locationData.name,
@@ -783,6 +785,7 @@ export class ChatMessageCreatorUseCase {
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
+      securityKeyScopes: messageContext.securityKeyScopes,
       documents:
         documentData.documents.length > 0 ? documentData.documents : undefined,
       documentUrl: documentData.isQuickMessage
@@ -826,6 +829,7 @@ export class ChatMessageCreatorUseCase {
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
+      securityKeyScopes: messageContext.securityKeyScopes,
       videos: videoData.videos.length > 0 ? videoData.videos : undefined,
       videoUrl: videoData.isQuickMessage
         ? videoData.quickMessageUrl
@@ -885,6 +889,7 @@ export class ChatMessageCreatorUseCase {
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
+      securityKeyScopes: messageContext.securityKeyScopes,
       audios: audioData.audios.length > 0 ? audioData.audios : undefined,
       audioUrl: audioData.isQuickMessage
         ? audioData.quickMessageUrl
@@ -930,6 +935,7 @@ export class ChatMessageCreatorUseCase {
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
+      securityKeyScopes: messageContext.securityKeyScopes,
       images: imageData.images.length > 0 ? imageData.images : undefined,
       imageUrl: imageData.isQuickMessage
         ? imageData.quickMessageUrl
@@ -967,6 +973,7 @@ export class ChatMessageCreatorUseCase {
       typeUser: messageContext.typeUser,
       senderName: messageContext.senderName,
       senderUser: messageContext.senderUser,
+      securityKeyScopes: messageContext.securityKeyScopes,
       linkPreview,
     });
   }
@@ -1030,6 +1037,7 @@ export class ChatMessageCreatorUseCase {
       senderName,
       senderUser,
       senderUserId: userId,
+      securityKeyScopes: isQuickMessage ? ['quick_message'] : undefined,
     };
 
     const actionResult = await this.processActionMessages(

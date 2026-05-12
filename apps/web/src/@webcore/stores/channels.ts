@@ -43,6 +43,9 @@ import { UpdateOperatorReplyPendingAlertResponse } from '@core/schema/worker/upd
 import { ViewTypingSimulationResponse } from '@core/schema/worker/viewTypingSimulation/response.schema';
 import { UpdateTypingSimulationRequest } from '@core/schema/worker/updateTypingSimulation/request.schema';
 import { UpdateTypingSimulationResponse } from '@core/schema/worker/updateTypingSimulation/response.schema';
+import { ViewSecurityKeyResponse } from '@core/schema/worker/viewSecurityKey/response.schema';
+import { UpdateSecurityKeyRequest } from '@core/schema/worker/updateSecurityKey/request.schema';
+import { UpdateSecurityKeyResponse } from '@core/schema/worker/updateSecurityKey/response.schema';
 import { WorkerExternalConnectionLinkResponse } from '@core/schema/worker/externalConnectionLink/response.schema';
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
 
@@ -1815,6 +1818,70 @@ export const useChannelsStore = defineStore('channels', {
         return data.data;
       } catch (error) {
         let message = this.i18n.global.t('typing_simulation_update_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
+    async fetchSecurityKey(
+      workerId: string
+    ): Promise<ViewSecurityKeyResponse | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<IApiResponse<ViewSecurityKeyResponse>>(
+          `/worker/${workerId}/config/security-key`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateSecurityKey(
+      workerId: string,
+      body: UpdateSecurityKeyRequest
+    ): Promise<UpdateSecurityKeyResponse | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.patch<
+          IApiResponse<UpdateSecurityKeyResponse>
+        >(`/worker/${workerId}/config/security-key`, body);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('security_key_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('security_key_update_success'),
+          EColor.success
+        );
+
+        delete this.workerConfigCache[workerId];
+        delete this.workerConfigForChatCache[workerId];
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t('security_key_update_error');
         if (error instanceof AxiosError) {
           message = error?.response?.data?.message ?? message;
         }
