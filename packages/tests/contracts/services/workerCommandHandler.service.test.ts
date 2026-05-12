@@ -71,6 +71,7 @@ function buildHandler(
     updateWorkerById: jest.fn(async () => true),
     deleteWorkerById: jest.fn(async () => true),
     existsWorkerById: jest.fn(async () => true),
+    removeContainerWorker: jest.fn(async () => true),
     viewWorkerType: jest.fn(async () => ({
       worker_type_id: EWorkerType.wwebjs,
     })),
@@ -98,6 +99,13 @@ function buildHandler(
   };
   const workerBaileysGrpcClientService = {
     requestConnection: jest.fn(async () => undefined),
+    requestConnectionQrCode: jest.fn(async () => ({
+      status: 'connecting',
+      code: 202,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      qrcode: 'data:image/png;base64,qr',
+    })),
   };
   const serverSshViewerRepository = {
     viewServerSshById: jest.fn(async () => null),
@@ -150,7 +158,27 @@ describe('WorkerCommandHandlerService connection', () => {
     jest.restoreAllMocks();
   });
 
-  it('acks an online connection without waiting for worker gRPC completion', async () => {
+  it('rejects legacy QR status changes without publishing a connection intent', async () => {
+    const deps = buildHandler();
+
+    await expect(
+      deps.handler.handleChangeConnectionStatus(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      )
+    ).rejects.toThrow('Use RequestConnectionQrCode for QR Code connections.');
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
+  });
+
+  it('acks a non-QR online connection without waiting for worker gRPC completion', async () => {
     const deps = buildHandler();
     let resolveConnection!: () => void;
     deps.workerBaileysGrpcClientService.requestConnection.mockReturnValueOnce(
@@ -164,7 +192,7 @@ describe('WorkerCommandHandlerService connection', () => {
         {
           worker_id: 'worker-1',
           status: EWorkerStatus.online,
-          type: EBaileysConnectionType.qrcode,
+          type: EBaileysConnectionType.phone,
         },
         'account-1'
       )
@@ -179,7 +207,7 @@ describe('WorkerCommandHandlerService connection', () => {
       expect.objectContaining({
         worker_id: 'worker-1',
         status: EWorkerStatus.online,
-        type: EBaileysConnectionType.qrcode,
+        type: EBaileysConnectionType.phone,
       }),
       EWorkerType.wwebjs
     );
@@ -201,7 +229,7 @@ describe('WorkerCommandHandlerService connection', () => {
       {
         worker_id: 'worker-1',
         status: EWorkerStatus.online,
-        type: EBaileysConnectionType.qrcode,
+        type: EBaileysConnectionType.phone,
       },
       'account-1'
     );
@@ -230,7 +258,7 @@ describe('WorkerCommandHandlerService connection', () => {
         {
           worker_id: 'worker-1',
           status: EWorkerStatus.online,
-          type: EBaileysConnectionType.qrcode,
+          type: EBaileysConnectionType.phone,
         },
         'account-1'
       )
@@ -248,6 +276,57 @@ describe('WorkerCommandHandlerService connection', () => {
         code: 428,
       })
     );
+  });
+
+  it('returns a QR code through the synchronous worker request without publishing a connection intent', async () => {
+    const deps = buildHandler();
+
+    const response = await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        qrcode: 'data:image/png;base64,qr',
+      })
+    );
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      }),
+      EWorkerType.wwebjs
+    );
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
+  });
+
+  it('does not request a QR code in background after recreating a worker', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode
+    ).not.toHaveBeenCalled();
   });
 });
 

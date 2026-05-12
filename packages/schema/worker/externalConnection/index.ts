@@ -3,17 +3,11 @@ import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { workerExternalConnectionRequestSchema } from './request.schema';
 import { workerExternalConnectionViewResponseSchema } from './response.schema';
+import { workerConnectionStateResponseSchema } from '@core/schema/worker/connectionState/response.schema';
 
 const publicErrorResponseSchema = Type.Object({
   id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   status: Type.Boolean({ default: false }),
-  message: Type.String(),
-  data: Type.Null(),
-});
-
-const successNullResponseSchema = Type.Object({
-  id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  status: Type.Boolean({ const: true }),
   message: Type.String(),
   data: Type.Null(),
 });
@@ -58,7 +52,15 @@ export const requestWorkerExternalConnectionQrCodeSchema = {
   headers: languageHeadersSchema,
   params: workerExternalConnectionRequestSchema,
   response: {
-    200: successNullResponseSchema,
+    200: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ const: true }),
+        message: Type.String(),
+        data: workerConnectionStateResponseSchema,
+      },
+      { description: 'Successful' }
+    ),
     400: publicErrorResponseSchema,
     404: publicErrorResponseSchema,
     410: publicErrorResponseSchema,

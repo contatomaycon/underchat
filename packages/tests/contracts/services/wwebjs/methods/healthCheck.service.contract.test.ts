@@ -197,6 +197,56 @@ describe('WwebjsHealthCheckService', () => {
     expect(notifyStatusChangeSpy).not.toHaveBeenCalled();
   });
 
+  it('does not disconnect on the first transient state check failure while reported connected', async () => {
+    const { service } = makeService();
+
+    const mismatch = jest.fn();
+    const client = {
+      info: {
+        wid: {
+          _serialized: '5511777777777@c.us',
+        },
+      },
+      getState: jest.fn(async () => {
+        throw new Error("Cannot read properties of null (reading 'evaluate')");
+      }),
+    };
+
+    service.configure({
+      getClient: () => client as never,
+      getStatus: () => Status.connected,
+      getCode: () => ECodeMessage.connectionEstablished,
+      reconnect: jest.fn(),
+      isConnected: () => true,
+      hasSession: () => true,
+      onStatusMismatch: mismatch,
+    });
+
+    (service as any).lastKnownStatus = Status.connected;
+    (service as any).lastKnownWorkerStatus = EWorkerStatus.online;
+
+    await expect(service.runHealthCheck()).resolves.toEqual({
+      isHealthy: true,
+      reason:
+        "Transient health check failure ignored (1/2): Failed to get state: Cannot read properties of null (reading 'evaluate')",
+      detectedStatus: Status.connected,
+      workerStatus: EWorkerStatus.online,
+    });
+    expect(mismatch).not.toHaveBeenCalled();
+
+    await expect(service.runHealthCheck()).resolves.toEqual({
+      isHealthy: false,
+      reason:
+        "Failed to get state: Cannot read properties of null (reading 'evaluate')",
+      detectedStatus: Status.disconnected,
+      workerStatus: EWorkerStatus.offline,
+    });
+    expect(mismatch).toHaveBeenCalledWith(
+      Status.disconnected,
+      EWorkerStatus.offline
+    );
+  });
+
   it('covers bootstrap flow, timers, fallback skip/trigger reasons and lock reuse', async () => {
     const { service, balanceWorkerStatusGrpcClientService } = makeService();
 

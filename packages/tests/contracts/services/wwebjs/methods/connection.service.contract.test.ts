@@ -67,7 +67,9 @@ type WwebjsConnectionServicePrivate = {
   logConnectionEvent: (...args: unknown[]) => void;
   markConnected: (...args: unknown[]) => void;
   startConnectionStateProbe: (...args: unknown[]) => void;
+  handleHealthCheckMismatch: (detectedStatus: Status) => void;
   cancelAttempt: (skipDestroy?: boolean) => void;
+  waitForPendingTeardown: () => Promise<void>;
   startConnection: (
     fromDisconnectRestart?: boolean
   ) => Promise<IBaileysConnectionState>;
@@ -203,5 +205,47 @@ describe('WwebjsConnectionService', () => {
 
     expect(cancelAttemptSpy).toHaveBeenCalled();
     expect(startConnectionSpy).toHaveBeenCalled();
+  });
+
+  it('tears down the active client before reconnecting after a health-check disconnect', () => {
+    const { servicePrivate, healthCheckService } = makeService();
+
+    servicePrivate.client = {};
+    servicePrivate.status = Status.connected;
+    servicePrivate.connectionEstablished = true;
+
+    const cancelAttemptSpy = jest
+      .spyOn(servicePrivate, 'cancelAttempt')
+      .mockImplementation(() => {
+        servicePrivate.connectionEstablished = false;
+      });
+
+    servicePrivate.handleHealthCheckMismatch(Status.disconnected);
+
+    expect(cancelAttemptSpy).toHaveBeenCalledWith(false);
+    expect(healthCheckService.stop).toHaveBeenCalled();
+    expect(servicePrivate.connectionEstablished).toBe(false);
+  });
+
+  it('destroys the captured client when cancel teardown runs asynchronously', async () => {
+    const { servicePrivate } = makeService();
+
+    const oldClient = {
+      destroy: jest.fn(async () => undefined),
+    };
+    const newClient = {
+      destroy: jest.fn(async () => undefined),
+    };
+
+    servicePrivate.client = oldClient;
+
+    servicePrivate.cancelAttempt(false);
+    servicePrivate.client = newClient;
+
+    await servicePrivate.waitForPendingTeardown();
+
+    expect(oldClient.destroy).toHaveBeenCalledTimes(1);
+    expect(newClient.destroy).not.toHaveBeenCalled();
+    expect(servicePrivate.client).toBe(newClient);
   });
 });

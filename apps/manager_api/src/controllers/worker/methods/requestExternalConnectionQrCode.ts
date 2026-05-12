@@ -18,14 +18,16 @@ export const requestExternalConnectionQrCode = async (
   const { t } = request;
 
   try {
-    await workerExternalConnectionQrCodeRequesterUseCase.execute(
-      t,
-      request.params.token
-    );
+    const response =
+      await workerExternalConnectionQrCodeRequesterUseCase.execute(
+        t,
+        request.params.token
+      );
 
     return sendResponse(reply, {
       message: t('worker_external_connection_qrcode_success'),
       httpStatusCode: EHTTPStatusCode.ok,
+      data: response,
     });
   } catch (error) {
     handleExternalConnectionError(error, reply, t);

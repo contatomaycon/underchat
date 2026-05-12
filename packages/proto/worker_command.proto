@@ -8,6 +8,7 @@ service WorkerCommand {
   rpc RecreateWorker(WorkerPayload) returns (WorkerCommandResponse);
   rpc CleanupWorker(WorkerPayload) returns (WorkerCommandResponse);
   rpc ChangeConnectionStatus(ChangeConnectionStatusRequest) returns (WorkerCommandResponse);
+  rpc RequestConnectionQrCode(ChangeConnectionStatusRequest) returns (WorkerConnectionState);
   rpc NotifyWorkerStatus(NotifyWorkerStatusRequest) returns (WorkerCommandResponse);
   rpc ResolveIncomingCallAction(ResolveIncomingCallActionRequest) returns (ResolveIncomingCallActionResponse);
   rpc GetTypingSimulationConfig(GetTypingSimulationConfigRequest) returns (GetTypingSimulationConfigResponse);
@@ -43,6 +44,23 @@ message NotifyWorkerStatusRequest {
   string worker_status_id = 3;
   string phone = 4;
   bool disconnected_user = 5;
+}
+
+message WorkerConnectionState {
+  int32 code = 1;
+  string status = 2;
+  string worker_id = 3;
+  string account_id = 4;
+  string qrcode = 5;
+  bool is_new_login = 6;
+  int64 time = 7;
+  string phone = 8;
+  bool disconnected_user = 9;
+  string pairing_code = 10;
+  int32 seconds_until_next_attempt = 11;
+  string worker_status_id = 12;
+  int32 attempt = 13;
+  int32 max_attempts = 14;
 }
 
 message ResolveIncomingCallActionRequest {

@@ -318,6 +318,14 @@ export class BaileysConnectionService {
   }
 
   private publishConnectionStarting(): void {
+    if (
+      this.typeConnection === EBaileysConnectionType.qrcode &&
+      this.qrReadSessionActive &&
+      !this.qrReadSessionLocked
+    ) {
+      return;
+    }
+
     this.publishSub(
       {
         status: Status.connecting,
@@ -879,7 +887,6 @@ export class BaileysConnectionService {
       max_attempts: this.maxQrGenerations,
       worker_status_id: EWorkerStatus.disponible,
     };
-    this.publishSub(payload, true);
     void this.notifyWorkerStatusSafely(payload, 'qr');
 
     if (!this.initialConnection) {
@@ -1261,16 +1268,6 @@ export class BaileysConnectionService {
     if (requestedByUser) {
       this.qrReadSessionActive = true;
       this.qrReadSessionLocked = false;
-      this.qrGenerationCount = 0;
-      this.qrHash = undefined;
-    }
-
-    if (
-      !this.qrReadSessionActive &&
-      !this.qrReadSessionLocked &&
-      !this.hasSession()
-    ) {
-      this.qrReadSessionActive = true;
       this.qrGenerationCount = 0;
       this.qrHash = undefined;
     }

@@ -17,6 +17,9 @@ import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
+import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -37,6 +40,7 @@ if (!WorkerCommandClient) {
 }
 
 const GRPC_DEADLINE_MS = 10_000;
+const CONNECTION_QR_GRPC_DEADLINE_MS = 30_000;
 
 @injectable()
 export class WorkerGrpcClientService {
@@ -92,6 +96,42 @@ export class WorkerGrpcClientService {
             return;
           }
           resolve();
+        }
+      );
+    });
+  }
+
+  async requestConnectionQrCode(
+    serverId: string,
+    payload: StatusConnectionWorkerRequest,
+    accountId: string
+  ): Promise<IBaileysConnectionState> {
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const address = `${host}:${port}`;
+    const client = new WorkerCommandClient(
+      address,
+      credentials.createInsecure()
+    );
+
+    const protoPayload = statusConnectionRequestToProto(payload, accountId);
+    const deadline = new Date(Date.now() + CONNECTION_QR_GRPC_DEADLINE_MS);
+
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
+      (client as any).RequestConnectionQrCode(
+        protoPayload,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IWorkerConnectionStateProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          resolve(protoToConnectionState(response ?? {}));
         }
       );
     });

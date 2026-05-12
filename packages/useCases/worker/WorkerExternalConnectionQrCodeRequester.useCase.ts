@@ -1,13 +1,12 @@
 import { inject, injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
-import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerService } from '@core/services/worker.service';
 import {
   WorkerExternalConnectionTokenPayload,
   WorkerExternalConnectionTokenService,
 } from '@core/services/workerExternalConnectionToken.service';
-import { WorkerChangeStatusConnectionUseCase } from '@core/useCases/worker/WorkerChangeStatusConnection.useCase';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { WorkerConnectionQrCodeRequesterUseCase } from '@core/useCases/worker/WorkerConnectionQrCodeRequester.useCase';
 
 @injectable()
 export class WorkerExternalConnectionQrCodeRequesterUseCase {
@@ -16,14 +15,14 @@ export class WorkerExternalConnectionQrCodeRequesterUseCase {
     private readonly workerService: WorkerService,
     @inject(WorkerExternalConnectionTokenService)
     private readonly workerExternalConnectionTokenService: WorkerExternalConnectionTokenService,
-    @inject(WorkerChangeStatusConnectionUseCase)
-    private readonly workerChangeStatusConnectionUseCase: WorkerChangeStatusConnectionUseCase
+    @inject(WorkerConnectionQrCodeRequesterUseCase)
+    private readonly workerConnectionQrCodeRequesterUseCase: WorkerConnectionQrCodeRequesterUseCase
   ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
     token: string
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
     const payload = this.validateToken(t, token);
     const existsWorker = await this.workerService.existsWorkerById(
       payload.account_id,
@@ -34,14 +33,10 @@ export class WorkerExternalConnectionQrCodeRequesterUseCase {
       throw new Error(t('worker_not_found'));
     }
 
-    await this.workerChangeStatusConnectionUseCase.execute(
+    return this.workerConnectionQrCodeRequesterUseCase.execute(
       t,
       payload.account_id,
-      {
-        worker_id: payload.worker_id,
-        status: EWorkerStatus.online,
-        type: EBaileysConnectionType.qrcode,
-      }
+      payload.worker_id
     );
   }
 

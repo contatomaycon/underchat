@@ -208,7 +208,21 @@ func (m *WhatsAppManager) IsConnected() bool {
 	return m.connected
 }
 
-func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConnectionRequest) error {
+func (m *WhatsAppManager) currentConnectionState() ConnectionState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return ConnectionState{
+		Code:        m.code,
+		Status:      m.status,
+		WorkerID:    m.cfg.WorkerID,
+		AccountID:   m.cfg.AccountID,
+		QRCode:      m.currentQRCode,
+		PairingCode: m.currentPairingCode,
+		Time:        time.Now().Unix(),
+	}
+}
+
+func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConnectionRequest) (ConnectionState, error) {
 	log.Printf(
 		"whatsmeow RequestConnection worker_id=%s status=%s type=%s remove_session=%t phone_connection_set=%t",
 		req.WorkerID,
@@ -218,29 +232,38 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 		req.PhoneConnection != "",
 	)
 	if req.WorkerID != "" && req.WorkerID != m.cfg.WorkerID {
-		return fmt.Errorf("request worker_id %s does not match %s", req.WorkerID, m.cfg.WorkerID)
+		return ConnectionState{}, fmt.Errorf("request worker_id %s does not match %s", req.WorkerID, m.cfg.WorkerID)
 	}
 
 	connectionType := strings.ToLower(req.Type)
 	if connectionType == "phone" {
-		return fmt.Errorf("phone connection is disabled; use qrcode")
+		return ConnectionState{}, fmt.Errorf("phone connection is disabled; use qrcode")
 	}
 
 	if req.RemoveSession || req.Status == WorkerStatusDisponible {
-		return m.removeSession(ctx)
+		if err := m.removeSession(ctx); err != nil {
+			return ConnectionState{}, err
+		}
+		return ConnectionState{
+			Code:             CodeConnectionClosed,
+			Status:           "disconnected",
+			WorkerID:         m.cfg.WorkerID,
+			AccountID:        m.cfg.AccountID,
+			DisconnectedUser: true,
+			Time:             time.Now().Unix(),
+			WorkerStatusID:   WorkerStatusDisponible,
+		}, nil
 	}
 
 	if m.publishConnectedIfAuthenticated(ctx, "request-connection-already-authenticated") {
-		return nil
+		return m.currentConnectionState(), nil
 	}
-
-	m.publishState(ctx, "connecting", CodeAwaitConnection, "", "", "", false)
 
 	switch connectionType {
 	case "qrcode", "":
 		return m.connectWithQRCode(ctx)
 	default:
-		return fmt.Errorf("unsupported connection type %q", req.Type)
+		return ConnectionState{}, fmt.Errorf("unsupported connection type %q", req.Type)
 	}
 }
 
@@ -583,15 +606,15 @@ func (m *WhatsAppManager) connectClient(ctx context.Context, client *whatsmeow.C
 	return nil
 }
 
-func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) error {
+func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) (ConnectionState, error) {
 	return m.connectWithQRCodeInternal(ctx, true)
 }
 
-func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDeletedStoreRetry bool) error {
+func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDeletedStoreRetry bool) (ConnectionState, error) {
 	client, err := m.ensureUsableClientForLogin(ctx, "qrcode-request")
 	if err != nil {
 		m.publishState(ctx, "disconnected", CodeConnectionLost, WorkerStatusDisponible, "", "", false)
-		return err
+		return ConnectionState{}, err
 	}
 	connectCtx := m.connectionContext()
 	if m.isAuthenticated(client) {
@@ -601,14 +624,13 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 		m.resetQRCodeReadSession(true)
 		go m.markPresenceAvailable(context.Background(), "qrcode-already-authenticated")
 		m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
-		return nil
+		return m.currentConnectionState(), nil
 	}
 	m.resetQRCodeReadSession(true)
 	if client.IsConnected() {
 		if client.Store.ID != nil {
 			log.Printf("whatsmeow qrcode request authentication in progress worker_id=%s", m.cfg.WorkerID)
-			m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
-			return nil
+			return m.currentConnectionState(), nil
 		}
 		log.Printf("whatsmeow qrcode request restarting active scan worker_id=%s", m.cfg.WorkerID)
 		client.Disconnect()
@@ -619,9 +641,9 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 		m.armFreshLoginFallback(freshLoginRequest{Type: "qrcode"})
 		m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
 		if err := m.connectClient(connectCtx, client, "qrcode-stored-session"); err != nil {
-			return m.handleStoredSessionConnectError(ctx, err)
+			return ConnectionState{}, m.handleStoredSessionConnectError(ctx, err)
 		}
-		return nil
+		return m.currentConnectionState(), nil
 	}
 
 	log.Printf("whatsmeow qrcode request starting new login worker_id=%s", m.cfg.WorkerID)
@@ -631,11 +653,25 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 	qrChan, err := client.GetQRChannel(connectCtx)
 	if err != nil {
 		log.Printf("whatsmeow GetQRChannel failed worker_id=%s error=%v", m.cfg.WorkerID, err)
-		return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "qrcode"}, err, allowDeletedStoreRetry)
+		if err := m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "qrcode"}, err, allowDeletedStoreRetry); err != nil {
+			return ConnectionState{}, err
+		}
+		return m.currentConnectionState(), nil
 	}
 	m.publishState(ctx, "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", "", true)
 	if err := m.connectClient(connectCtx, client, "qrcode-new-login"); err != nil {
-		return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "qrcode"}, err, allowDeletedStoreRetry)
+		if err := m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "qrcode"}, err, allowDeletedStoreRetry); err != nil {
+			return ConnectionState{}, err
+		}
+		return m.currentConnectionState(), nil
+	}
+
+	resultCh := make(chan ConnectionState, 1)
+	var resultOnce sync.Once
+	sendResult := func(state ConnectionState) {
+		resultOnce.Do(func() {
+			resultCh <- state
+		})
 	}
 
 	go func() {
@@ -650,22 +686,63 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 					log.Printf("whatsmeow qr generation limit reached worker_id=%s attempt=%d max_attempts=%d", m.cfg.WorkerID, attempt, maxQRCodeGenerations)
 					client.Disconnect()
 					m.publishStateWithAttempts(context.Background(), "disconnected", CodeConnectionClosed, WorkerStatusDisponible, "", "", true, attempt, maxQRCodeGenerations)
+					sendResult(ConnectionState{
+						Code:           CodeConnectionClosed,
+						Status:         "disconnected",
+						WorkerID:       m.cfg.WorkerID,
+						AccountID:      m.cfg.AccountID,
+						IsNewLogin:     true,
+						Time:           time.Now().Unix(),
+						WorkerStatusID: WorkerStatusDisponible,
+						Attempt:        attempt,
+						MaxAttempts:    maxQRCodeGenerations,
+					})
 					return
 				}
 				qrImage := qrCodeDataURL(evt.Code)
 				m.setCurrentQRCode(qrImage)
 				log.Printf("whatsmeow qr code received worker_id=%s timeout=%s attempt=%d max_attempts=%d", m.cfg.WorkerID, evt.Timeout, attempt, maxQRCodeGenerations)
 				m.publishStateWithAttempts(context.Background(), "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", qrImage, true, attempt, maxQRCodeGenerations)
+				sendResult(ConnectionState{
+					Code:           CodeAwaitingReadQRCode,
+					Status:         "connecting",
+					WorkerID:       m.cfg.WorkerID,
+					AccountID:      m.cfg.AccountID,
+					QRCode:         qrImage,
+					IsNewLogin:     true,
+					Time:           time.Now().Unix(),
+					WorkerStatusID: WorkerStatusDisponible,
+					Attempt:        attempt,
+					MaxAttempts:    maxQRCodeGenerations,
+				})
 			case "success":
 				m.clearLoginArtifacts()
 				m.resetQRCodeReadSession(true)
 				log.Printf("whatsmeow qr scanned, pairing in progress worker_id=%s", m.cfg.WorkerID)
 				m.publishState(context.Background(), "connecting", CodePairingInProgress, WorkerStatusDisponible, "", "", true)
+				sendResult(ConnectionState{
+					Code:           CodePairingInProgress,
+					Status:         "connecting",
+					WorkerID:       m.cfg.WorkerID,
+					AccountID:      m.cfg.AccountID,
+					IsNewLogin:     true,
+					Time:           time.Now().Unix(),
+					WorkerStatusID: WorkerStatusDisponible,
+				})
 			case "timeout":
 				m.clearLoginArtifacts()
 				m.resetQRCodeReadSession(true)
 				log.Printf("whatsmeow qr timeout worker_id=%s", m.cfg.WorkerID)
 				m.publishState(context.Background(), "disconnected", CodeConnectionClosed, WorkerStatusDisponible, "", "", true)
+				sendResult(ConnectionState{
+					Code:           CodeConnectionClosed,
+					Status:         "disconnected",
+					WorkerID:       m.cfg.WorkerID,
+					AccountID:      m.cfg.AccountID,
+					IsNewLogin:     true,
+					Time:           time.Now().Unix(),
+					WorkerStatusID: WorkerStatusDisponible,
+				})
 			default:
 				if evt.Error != nil {
 					log.Printf("qr event error: %v", evt.Error)
@@ -676,7 +753,15 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 		}
 		log.Printf("whatsmeow qr channel closed worker_id=%s", m.cfg.WorkerID)
 	}()
-	return nil
+
+	select {
+	case state := <-resultCh:
+		return state, nil
+	case <-ctx.Done():
+		return ConnectionState{}, ctx.Err()
+	case <-time.After(30 * time.Second):
+		return ConnectionState{}, fmt.Errorf("qrcode request timeout")
+	}
 }
 
 func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone string) error {
@@ -894,7 +979,8 @@ func (m *WhatsAppManager) handleFreshLoginConnectError(ctx context.Context, req 
 			return fmt.Errorf("reset invalid whatsmeow session: %w", resetErr)
 		}
 
-		return m.connectWithQRCodeInternal(ctx, false)
+		_, err := m.connectWithQRCodeInternal(ctx, false)
+		return err
 	}
 
 	m.clearLoginArtifacts()
@@ -950,7 +1036,8 @@ func (m *WhatsAppManager) resetAndStartFreshLogin(ctx context.Context, req fresh
 	if err := m.resetLocalSession(ctx); err != nil {
 		return err
 	}
-	return m.connectWithQRCode(ctx)
+	_, err := m.connectWithQRCode(ctx)
+	return err
 }
 
 func (m *WhatsAppManager) resetLocalSession(ctx context.Context) error {
@@ -1037,8 +1124,10 @@ func (m *WhatsAppManager) publishStateWithAttempts(ctx context.Context, status s
 		state.Attempt,
 		state.MaxAttempts,
 	)
-	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
-		log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, status, code, err)
+	if code != CodeAwaitingReadQRCode {
+		if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
+			log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, status, code, err)
+		}
 	}
 	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {

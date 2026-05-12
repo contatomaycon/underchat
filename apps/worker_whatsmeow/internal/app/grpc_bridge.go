@@ -13,7 +13,7 @@ import (
 )
 
 type WorkerConnectionHandler interface {
-	RequestConnection(context.Context, StatusConnectionRequest) error
+	RequestConnection(context.Context, StatusConnectionRequest) (ConnectionState, error)
 	ValidatePhone(context.Context, PhoneValidationRequest) (PhoneValidationResponse, error)
 }
 
@@ -76,12 +76,32 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		req.RemoveSession,
 		req.PhoneConnection != "",
 	)
-	if err := s.handler.RequestConnection(ctx, req); err != nil {
+	resp, err := s.handler.RequestConnection(ctx, req)
+	if err != nil {
 		log.Printf("grpc RequestConnection failed worker_id=%s type=%s error=%v", req.WorkerID, req.Type, err)
 		return nil, err
 	}
-	log.Printf("grpc RequestConnection completed worker_id=%s type=%s", req.WorkerID, req.Type)
-	return newDynamicMessage(descs.workerConnectionResponse), nil
+	log.Printf("grpc RequestConnection completed worker_id=%s type=%s has_qr=%t", req.WorkerID, req.Type, resp.QRCode != "")
+	out := newDynamicMessage(descs.workerConnectionResponse)
+	setConnectionStateMessage(out, resp)
+	return out, nil
+}
+
+func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
+	setDynamicInt32(out, "code", int32(state.Code))
+	setDynamicString(out, "status", state.Status)
+	setDynamicString(out, "worker_id", state.WorkerID)
+	setDynamicString(out, "account_id", state.AccountID)
+	setDynamicString(out, "qrcode", state.QRCode)
+	setDynamicBool(out, "is_new_login", state.IsNewLogin)
+	setDynamicInt64(out, "time", state.Time)
+	setDynamicString(out, "phone", state.Phone)
+	setDynamicBool(out, "disconnected_user", state.DisconnectedUser)
+	setDynamicString(out, "pairing_code", state.PairingCode)
+	setDynamicInt32(out, "seconds_until_next_attempt", int32(state.SecondsUntilNextAttempt))
+	setDynamicString(out, "worker_status_id", state.WorkerStatusID)
+	setDynamicInt32(out, "attempt", int32(state.Attempt))
+	setDynamicInt32(out, "max_attempts", int32(state.MaxAttempts))
 }
 
 func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {

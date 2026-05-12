@@ -157,6 +157,13 @@ export class WorkerCommandHandlerService {
       remove_session: input.remove_session,
     };
 
+    if (
+      payload.status === EWorkerStatus.online &&
+      payload.type === EBaileysConnectionType.qrcode
+    ) {
+      throw new Error('Use RequestConnectionQrCode for QR Code connections.');
+    }
+
     this.publishConnectionIntent(payload, accountId);
 
     if (payload.status === EWorkerStatus.online) {
@@ -180,6 +187,24 @@ export class WorkerCommandHandlerService {
         throw err;
       }
     }
+  }
+
+  async handleRequestConnectionQrCode(
+    input: StatusConnectionWorkerRequest,
+    accountId?: string
+  ): Promise<IBaileysConnectionState> {
+    if (input.type === EBaileysConnectionType.phone) {
+      throw new Error('Phone connection is disabled. Use QR Code.');
+    }
+
+    const payload: StatusConnectionWorkerRequest = {
+      worker_id: input.worker_id,
+      status: EWorkerStatus.online,
+      type: EBaileysConnectionType.qrcode,
+    };
+
+    this.stopConnectionRequestRetry(payload.worker_id);
+    return this.runConnectionQrCodeWorkflow(payload, accountId);
   }
 
   private publishConnectionIntent(
@@ -577,6 +602,66 @@ export class WorkerCommandHandlerService {
     await this.createWorkerWithPayload(workerId, workerData, payload);
   }
 
+  private async runConnectionQrCodeWorkflow(
+    payload: StatusConnectionWorkerRequest,
+    accountId?: string
+  ): Promise<IBaileysConnectionState> {
+    const workerId = payload.worker_id;
+    const workerData = await this.resolveWorkerDataForContainer(
+      workerId,
+      accountId
+    );
+    const workerType =
+      workerData?.workerTypeId ??
+      (await this.resolveWorkerTypeForConnection(workerId, accountId));
+
+    const existsContainer =
+      await this.workerService.existsContainerWorkerById(workerId);
+    if (existsContainer) {
+      try {
+        return await this.workerBaileysGrpcClientService.requestConnectionQrCode(
+          workerId,
+          payload,
+          workerType
+        );
+      } catch (err) {
+        console.error('Initial worker QR request failed:', {
+          workerId,
+          workerType,
+          error: getErrorMessage(err),
+        });
+
+        const healthy = await this.isExistingContainerHealthy(workerId, {
+          maxAttempts: 3,
+          delayMs: 1000,
+        });
+
+        if (healthy) {
+          return this.workerBaileysGrpcClientService.requestConnectionQrCode(
+            workerId,
+            payload,
+            workerType
+          );
+        }
+      }
+    }
+
+    if (!workerData) {
+      throw new Error(`Worker data not found for connection: ${workerId}`);
+    }
+
+    await this.createWorkerWithPayload(workerId, workerData, undefined, {
+      maxAttempts: 10,
+      delayMs: 1000,
+    });
+
+    return this.workerBaileysGrpcClientService.requestConnectionQrCode(
+      workerId,
+      payload,
+      workerData.workerTypeId
+    );
+  }
+
   private async tryRequestConnection(
     workerId: string,
     payload: StatusConnectionWorkerRequest,
@@ -702,7 +787,8 @@ export class WorkerCommandHandlerService {
       serverId: string;
       workerTypeId: EWorkerType;
     },
-    connectionRequest?: StatusConnectionWorkerRequest
+    connectionRequest?: StatusConnectionWorkerRequest,
+    healthOptions?: { maxAttempts: number; delayMs: number }
   ): Promise<void> {
     const createPayload: IWorkerPayload = {
       action: EWorkerAction.create,
@@ -712,12 +798,20 @@ export class WorkerCommandHandlerService {
       worker_type_id: workerData.workerTypeId,
     };
 
-    await this.createWorker(createPayload, connectionRequest);
+    await this.createWorker(createPayload, connectionRequest, healthOptions);
   }
 
   private startConnectionRequestRetry(
     payload: StatusConnectionWorkerRequest
   ): void {
+    if (payload.type === EBaileysConnectionType.qrcode) {
+      console.warn('Skipping background QR Code connection request:', {
+        workerId: payload.worker_id,
+        status: payload.status,
+      });
+      return;
+    }
+
     this.stopConnectionRequestRetry(payload.worker_id);
     this.connectionRequestPayloads.set(payload.worker_id, payload);
     this.connectionRequestAttempts.set(payload.worker_id, 0);
@@ -1137,14 +1231,6 @@ export class WorkerCommandHandlerService {
       });
     }
 
-    const payload: StatusConnectionWorkerRequest = {
-      worker_id: data.worker_id,
-      status: EWorkerStatus.recreating,
-      type: EBaileysConnectionType.qrcode,
-    };
-
-    this.startConnectionRequestRetry(payload);
-
     const dataPublish: IBaileysConnectionState = {
       code: ECodeMessage.info,
       status: EBaileysConnectionStatus.info,
@@ -1344,7 +1430,11 @@ export class WorkerCommandHandlerService {
 
   private async createWorker(
     data: IWorkerPayload,
-    connectionRequest?: StatusConnectionWorkerRequest
+    connectionRequest?: StatusConnectionWorkerRequest,
+    healthOptions: { maxAttempts: number; delayMs: number } = {
+      maxAttempts: 30,
+      delayMs: 2000,
+    }
   ): Promise<PublishResult> {
     if (!data?.worker_type_id) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
@@ -1410,10 +1500,7 @@ export class WorkerCommandHandlerService {
 
     const healthy = await this.containerHealthService.isServiceHealthy(
       containerId,
-      {
-        maxAttempts: 30,
-        delayMs: 2000,
-      }
+      healthOptions
     );
 
     if (!healthy) {

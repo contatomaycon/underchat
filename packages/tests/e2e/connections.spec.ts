@@ -83,6 +83,14 @@ interface ExternalConnectionLink {
   expires_at: string;
 }
 
+interface ConnectionState {
+  status: string;
+  code: number;
+  worker_id: string;
+  account_id: string;
+  qrcode?: string;
+}
+
 interface WorkerDbRow {
   worker_id: string;
   name: string;
@@ -203,8 +211,12 @@ test.describe.serial('worker channel connections', () => {
 
     const qrRequestResponse = await qrRequestPromise;
     const ackMs = Date.now() - startedAt;
-    await assertApiResponse<null>(qrRequestResponse, 'external QR request');
-    expect(ackMs).toBeLessThanOrEqual(ctx.config.connectAckMaxMs);
+    const qrState = await assertApiResponse<ConnectionState>(
+      qrRequestResponse,
+      'external QR request'
+    );
+    expect(qrState.qrcode).toContain('data:image/');
+    expect(ackMs).toBeLessThanOrEqual(ctx.config.qrMaxMs);
 
     await expectQrImage(
       page.getByTestId('external-connection-qr-image'),
@@ -341,8 +353,10 @@ async function connectChannelAndExpectQr(
   const responsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
-      response.url().includes('/worker/whatsapp/unofficial'),
-    { timeout: ctx.config.connectAckMaxMs + 5_000 }
+      response
+        .url()
+        .includes(`/worker/${ctx.config.workerId}/connection/qrcode`),
+    { timeout: ctx.config.qrMaxMs }
   );
 
   const startedAt = Date.now();
@@ -353,8 +367,12 @@ async function connectChannelAndExpectQr(
 
   const response = await responsePromise;
   const ackMs = Date.now() - startedAt;
-  await assertApiResponse<boolean>(response, 'connection request');
-  expect(ackMs).toBeLessThanOrEqual(ctx.config.connectAckMaxMs);
+  const qrState = await assertApiResponse<ConnectionState>(
+    response,
+    'connection request'
+  );
+  expect(qrState.qrcode).toContain('data:image/');
+  expect(ackMs).toBeLessThanOrEqual(ctx.config.qrMaxMs);
 
   await expectQrImage(
     page.getByTestId('connection-qr-image'),

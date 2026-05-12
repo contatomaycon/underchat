@@ -294,7 +294,7 @@ function applyConnectedState(data: IBaileysConnectionState) {
   resetQrAttempts();
 }
 
-function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
+function applyDirectConnectionResponse(data: IBaileysConnectionState) {
   if (
     isExpired.value ||
     !externalConnection.value ||
@@ -351,6 +351,64 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
   if (data.phone) {
     phoneNumber.value = formatPhoneBR(data.phone);
   }
+
+  isRequestingQr.value = false;
+}
+
+function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
+  if (
+    isExpired.value ||
+    !externalConnection.value ||
+    data.worker_id !== externalConnection.value.worker_id
+  ) {
+    return;
+  }
+
+  const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
+  const incomingCode = data.code as ECodeMessage | undefined;
+  const isConnectedEvent =
+    incomingStatus === EBaileysConnectionStatus.connected ||
+    incomingCode === ECodeMessage.connectionEstablished;
+
+  if (isConnectedEvent) {
+    applyConnectedState(data);
+    return;
+  }
+
+  applyQrAttempts(data);
+
+  if (data.disconnected_user !== undefined) {
+    disconnectedByUser.value = data.disconnected_user;
+  }
+
+  if (hasExceededQrAttempts(data)) {
+    qrcode.value = undefined;
+    isRequestingQr.value = false;
+  } else if (
+    incomingCode === ECodeMessage.awaitConnection ||
+    incomingCode === ECodeMessage.logoutInProgress ||
+    incomingCode === ECodeMessage.pairingInProgress ||
+    incomingCode === ECodeMessage.newLoginAttempt ||
+    incomingStatus === EBaileysConnectionStatus.disconnected
+  ) {
+    qrcode.value = undefined;
+  }
+
+  if (incomingStatus === EBaileysConnectionStatus.disconnected) {
+    isRequestingQr.value = false;
+  }
+
+  if (incomingStatus) {
+    statusConnection.value = incomingStatus;
+  }
+
+  if (incomingCode && incomingCode !== ECodeMessage.info) {
+    statusCode.value = incomingCode;
+  }
+
+  if (data.phone) {
+    phoneNumber.value = formatPhoneBR(data.phone);
+  }
 }
 
 async function requestQrCode() {
@@ -364,14 +422,15 @@ async function requestQrCode() {
   qrcode.value = undefined;
   resetQrAttempts();
 
-  const requested = await channelStore.requestExternalConnectionQrCode(
-    token.value
-  );
+  const state = await channelStore.requestExternalConnectionQrCode(token.value);
 
-  if (!requested) {
+  if (!state) {
     isRequestingQr.value = false;
     await loadExternalConnection(false);
+    return;
   }
+
+  applyDirectConnectionResponse(state);
 }
 
 async function subscribeToExternalConnection(

@@ -28,6 +28,8 @@ import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
+import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
+import { connectionStateToProto } from '@core/common/functions/workerConnectionStateProtoMapper';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -137,6 +139,45 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         fastify.log.error(
           { err, workerId: req.worker_id },
           'ChangeConnectionStatus gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
+  const handleRequestConnectionQrCode = (
+    call: ServerUnaryCall<
+      IChangeConnectionStatusRequestProto,
+      IWorkerConnectionStateProto
+    >,
+    callback: sendUnaryData<IWorkerConnectionStateProto>
+  ) => {
+    const req = call.request;
+    let payload;
+    try {
+      payload = protoToStatusConnectionRequest(req);
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message: e.message,
+          details: e.message,
+        },
+        null
+      );
+      return;
+    }
+
+    handler
+      .handleRequestConnectionQrCode(payload, req.account_id)
+      .then((response) => {
+        callback(null, connectionStateToProto(response));
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, workerId: req.worker_id },
+          'RequestConnectionQrCode gRPC handler error'
         );
         callback({ code: status.INTERNAL, message: msg, details: msg }, null);
       });
@@ -289,6 +330,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       cb: sendUnaryData<unknown>
     ) => handleUnary(call, cb, 'cleanup'),
     ChangeConnectionStatus: handleChangeConnectionStatus,
+    RequestConnectionQrCode: handleRequestConnectionQrCode,
     NotifyWorkerStatus: handleNotifyWorkerStatus,
     ResolveIncomingCallAction: handleResolveIncomingCallAction,
     GetTypingSimulationConfig: handleGetTypingSimulationConfig,

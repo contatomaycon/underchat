@@ -23,6 +23,7 @@ const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
 const STATE_CHECK_TIMEOUT_MS = 10_000;
 const BOOTSTRAP_ORCHESTRATOR_GRACE_MS = 15_000;
+const TRANSIENT_DISCONNECT_THRESHOLD = 2;
 
 type WAState =
   | 'CONFLICT'
@@ -74,6 +75,7 @@ export class WwebjsHealthCheckService {
   private bootstrapPromise: Promise<void> | undefined;
   private bootstrapLock = false;
   private bootstrapFallbackTimer: NodeJS.Timeout | undefined;
+  private transientDisconnectFailures = 0;
 
   constructor(
     @inject(CentrifugoService)
@@ -182,7 +184,14 @@ export class WwebjsHealthCheckService {
     const client = this.clientGetter();
     const reportedStatus = this.statusGetter();
 
-    const result = await this.checkConnectivity(client, reportedStatus);
+    const connectivityResult = await this.checkConnectivity(
+      client,
+      reportedStatus
+    );
+    const result = this.withTransientDisconnectTolerance(
+      connectivityResult,
+      reportedStatus
+    );
 
     if (
       result.detectedStatus !== this.lastKnownStatus ||
@@ -200,7 +209,7 @@ export class WwebjsHealthCheckService {
 
     if (reportedStatus !== result.detectedStatus && this.onStatusMismatch) {
       console.log(
-        `[WwebjsHealthCheck] Mismatch detected: reported=${reportedStatus}, actual=${result.detectedStatus}`
+        `[WwebjsHealthCheck] Mismatch detected: reported=${reportedStatus}, actual=${result.detectedStatus}, reason=${result.reason ?? 'unknown'}`
       );
       this.onStatusMismatch(result.detectedStatus, result.workerStatus);
     }
@@ -415,6 +424,54 @@ export class WwebjsHealthCheckService {
       ...stateResult,
       waState,
     };
+  }
+
+  private withTransientDisconnectTolerance(
+    result: HealthCheckResult,
+    reportedStatus: Status
+  ): HealthCheckResult {
+    if (this.isTransientDisconnectResult(result, reportedStatus)) {
+      this.transientDisconnectFailures += 1;
+
+      if (this.transientDisconnectFailures < TRANSIENT_DISCONNECT_THRESHOLD) {
+        return {
+          ...result,
+          isHealthy: true,
+          reason: `Transient health check failure ignored (${this.transientDisconnectFailures}/${TRANSIENT_DISCONNECT_THRESHOLD}): ${result.reason ?? 'unknown'}`,
+          detectedStatus: Status.connected,
+          workerStatus: EWorkerStatus.online,
+        };
+      }
+
+      return result;
+    }
+
+    this.transientDisconnectFailures = 0;
+    return result;
+  }
+
+  private isTransientDisconnectResult(
+    result: HealthCheckResult,
+    reportedStatus: Status
+  ): boolean {
+    if (
+      reportedStatus !== Status.connected ||
+      result.detectedStatus !== Status.disconnected ||
+      result.workerStatus !== EWorkerStatus.offline
+    ) {
+      return false;
+    }
+
+    const reason = result.reason ?? '';
+
+    return (
+      reason.startsWith('Failed to get state:') ||
+      reason === 'State not available' ||
+      reason === 'Connected state but no client info' ||
+      reason === 'Connection timeout' ||
+      reason === 'Client not launched' ||
+      reason.startsWith('Unknown state:')
+    );
   }
 
   private getStateWithTimeout(client: Client): Promise<WAState | undefined> {

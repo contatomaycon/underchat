@@ -19,7 +19,6 @@ import {
 } from '@core/schema/worker/listWorkerServers/response.schema';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
-import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
@@ -344,31 +343,30 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async updateConnectionChannel(
-      input: StatusConnectionWorkerRequest
-    ): Promise<boolean> {
+    async requestConnectionQrCode(
+      workerId: string
+    ): Promise<IBaileysConnectionState | null> {
       try {
         this.loading = true;
 
-        const response = await axios.post<IApiResponse<boolean>>(
-          '/worker/whatsapp/unofficial',
-          input
-        );
+        const response = await axios.post<
+          IApiResponse<IBaileysConnectionState>
+        >(`/worker/${workerId}/connection/qrcode`, {});
 
         this.loading = false;
 
         const data = response?.data;
 
-        if (!data?.status) {
-          const mensage =
+        if (!data?.status || !data?.data) {
+          const message =
             data?.message ?? this.i18n.global.t('worker_status_update_error');
 
-          this.showSnackbar(mensage, EColor.error);
+          this.showSnackbar(message, EColor.error);
 
-          return false;
+          return null;
         }
 
-        return true;
+        return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('worker_status_update_error');
         if (error instanceof AxiosError) {
@@ -379,7 +377,7 @@ export const useChannelsStore = defineStore('channels', {
 
         this.loading = false;
 
-        return false;
+        return null;
       }
     },
 
@@ -485,16 +483,20 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async requestExternalConnectionQrCode(token: string): Promise<boolean> {
+    async requestExternalConnectionQrCode(
+      token: string
+    ): Promise<IBaileysConnectionState | null> {
       try {
-        const response = await axios.post<IApiResponse<null>>(
+        const response = await axios.post<
+          IApiResponse<IBaileysConnectionState>
+        >(
           `/worker/external-connection/${encodeURIComponent(token)}/qrcode`,
           {}
         );
 
-        return Boolean(response?.data?.status);
+        return response?.data?.status ? (response.data.data ?? null) : null;
       } catch {
-        return false;
+        return null;
       }
     },
 

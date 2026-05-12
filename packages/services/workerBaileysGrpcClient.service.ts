@@ -13,6 +13,9 @@ import { balanceEnvironment } from '@core/config/environments';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
+import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,6 +41,7 @@ if (!WorkerConnectionClient) {
 }
 
 const GRPC_DEADLINE_MS = 10_000;
+const CONNECTION_QR_GRPC_DEADLINE_MS = 30_000;
 
 @injectable()
 export class WorkerBaileysGrpcClientService {
@@ -134,6 +138,42 @@ export class WorkerBaileysGrpcClientService {
     });
   }
 
+  private async requestConnectionQrCodeByAddress(
+    address: string,
+    protoPayload: {
+      worker_id: string;
+      status: string;
+      type: string;
+      phone_connection?: string;
+      remove_session?: boolean;
+    }
+  ): Promise<IBaileysConnectionState> {
+    const client = new WorkerConnectionClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + CONNECTION_QR_GRPC_DEADLINE_MS);
+
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
+      (client as any).RequestConnection(
+        protoPayload,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IWorkerConnectionStateProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          resolve(protoToConnectionState(response ?? {}));
+        }
+      );
+    });
+  }
+
   private async validatePhoneByAddress(
     address: string,
     payload: IPhoneValidationRequest
@@ -211,6 +251,18 @@ export class WorkerBaileysGrpcClientService {
 
     await this.callWithFallback(workerId, workerType, (address) =>
       this.requestConnectionByAddress(address, protoPayload)
+    );
+  }
+
+  async requestConnectionQrCode(
+    workerId: string,
+    payload: StatusConnectionWorkerRequest,
+    workerType?: EWorkerType
+  ): Promise<IBaileysConnectionState> {
+    const protoPayload = this.buildConnectionProtoPayload(payload);
+
+    return this.callWithFallback(workerId, workerType, (address) =>
+      this.requestConnectionQrCodeByAddress(address, protoPayload)
     );
   }
 

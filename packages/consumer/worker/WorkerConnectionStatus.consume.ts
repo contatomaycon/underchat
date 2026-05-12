@@ -31,7 +31,9 @@ export class WorkerConnectionStatusConsume {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  requestConnection(payload: StatusConnectionWorkerRequest): void {
+  async requestConnection(
+    payload: StatusConnectionWorkerRequest
+  ): Promise<IBaileysConnectionState> {
     this.logConnectionEvent('connection_request_received', {
       status: payload.status,
       connection_type: payload.type,
@@ -43,7 +45,7 @@ export class WorkerConnectionStatusConsume {
       throw new Error('Phone connection is disabled. Use QR Code.');
     }
 
-    void this.handleConnectionStatus(payload);
+    return this.handleConnectionStatus(payload);
   }
 
   async close(): Promise<void> {
@@ -52,37 +54,35 @@ export class WorkerConnectionStatusConsume {
 
   private async handleConnectionStatus(
     data: StatusConnectionWorkerRequest
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
     if (data.status === EWorkerStatus.online) {
-      await this.handleOnline(data);
-
-      return;
+      return this.handleOnline(data);
     }
 
     if (data.status === EWorkerStatus.recreating) {
-      this.handleRecreating();
-
-      return;
+      return this.handleRecreating();
     }
 
     if (data.status === EWorkerStatus.disponible) {
-      await this.handleDisponible(data);
+      return this.handleDisponible(data);
     }
+
+    return this.currentState(ECodeMessage.awaitConnection);
   }
 
   private async handleOnline(
     data: StatusConnectionWorkerRequest
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
+    this.stopConnectionRetry();
+
     if (this.baileysService.isConnected()) {
-      await this.publishConnectedStatus();
-      return;
+      return this.publishConnectedStatus();
     }
 
     if (this.baileysService.hasSession()) {
       await this.waitForReconnection(3000, 500);
       if (this.baileysService.isConnected()) {
-        await this.publishConnectedStatus();
-        return;
+        return this.publishConnectedStatus();
       }
     }
 
@@ -101,7 +101,7 @@ export class WorkerConnectionStatusConsume {
       pairingInProgress
     ) {
       this.baileysService.republishLastState();
-      return;
+      return this.currentState(currentCode);
     }
 
     if (
@@ -115,7 +115,7 @@ export class WorkerConnectionStatusConsume {
         has_active_socket: hasActiveSocket,
       });
       try {
-        await this.baileysService.connect({
+        return await this.baileysService.connect({
           initial_connection: true,
           force_new: true,
           requested_by_user: true,
@@ -132,8 +132,8 @@ export class WorkerConnectionStatusConsume {
           },
           'error'
         );
+        throw error;
       }
-      return;
     }
 
     if (
@@ -146,7 +146,7 @@ export class WorkerConnectionStatusConsume {
         has_active_socket: hasActiveSocket,
       });
       try {
-        await this.baileysService.connect({
+        return await this.baileysService.connect({
           initial_connection: true,
           force_new: true,
           requested_by_user: true,
@@ -163,24 +163,31 @@ export class WorkerConnectionStatusConsume {
           },
           'error'
         );
+        throw error;
       }
-      return;
     }
 
     if (this.activeConnectionRequest) {
-      return;
+      return this.currentState(currentCode);
     }
 
-    this.startConnectionRetry(data);
+    return this.baileysService.connect({
+      initial_connection: true,
+      force_new: false,
+      requested_by_user: true,
+      type: data.type as EBaileysConnectionType,
+      phone_connection: data.phone_connection,
+    });
   }
 
-  private handleRecreating(): void {
+  private handleRecreating(): IBaileysConnectionState {
     this.baileysService.reconnect({ initial_connection: true });
+    return this.currentState(ECodeMessage.awaitConnection);
   }
 
   private async handleDisponible(
     data: StatusConnectionWorkerRequest
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
     const removeSession = data.remove_session === true;
 
     this.stopConnectionRetry();
@@ -215,6 +222,8 @@ export class WorkerConnectionStatusConsume {
         fromDisconnectRestart: true,
       });
     }
+
+    return payload;
   }
 
   private startConnectionRetry(
@@ -302,7 +311,7 @@ export class WorkerConnectionStatusConsume {
     );
   }
 
-  private async publishConnectedStatus(): Promise<void> {
+  private async publishConnectedStatus(): Promise<IBaileysConnectionState> {
     const workerId = baileysEnvironment.baileysWorkerId;
     const accountId = baileysEnvironment.baileysAccountId;
 
@@ -337,6 +346,17 @@ export class WorkerConnectionStatusConsume {
       has_phone: Boolean(payload.phone),
       worker_status_id: payload.worker_status_id,
     });
+
+    return payload;
+  }
+
+  private currentState(code: ECodeMessage): IBaileysConnectionState {
+    return {
+      status: this.baileysService.getStatus(),
+      code,
+      worker_id: baileysEnvironment.baileysWorkerId,
+      account_id: baileysEnvironment.baileysAccountId,
+    };
   }
 
   private async waitForReconnection(

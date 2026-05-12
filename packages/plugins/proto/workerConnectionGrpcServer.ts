@@ -26,6 +26,8 @@ import { BaileysService } from '@core/services/baileys';
 import { WwebjsService } from '@core/services/wwebjs';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
+import { connectionStateToProto } from '@core/common/functions/workerConnectionStateProtoMapper';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -89,8 +91,11 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
   const grpcServer = new Server();
 
   const handleRequestConnection = (
-    call: ServerUnaryCall<IStatusConnectionRequestProto, unknown>,
-    callback: sendUnaryData<unknown>
+    call: ServerUnaryCall<
+      IStatusConnectionRequestProto,
+      IWorkerConnectionStateProto
+    >,
+    callback: sendUnaryData<IWorkerConnectionStateProto>
   ) => {
     const req = call.request;
     const payload: StatusConnectionWorkerRequest = {
@@ -121,42 +126,45 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       'Worker connection request received'
     );
 
-    try {
-      connectionConsume.requestConnection(payload);
-      fastify.log.info(
-        {
-          module,
-          component: 'worker_connection_grpc_server',
-          type: 'connection_status',
-          event: 'worker_connection_request_dispatched',
-          worker_id: payload.worker_id,
-          account_id: accountId,
-          status: payload.status,
-          connection_type: payload.type,
-          remove_session: payload.remove_session === true,
-        },
-        'Worker connection request dispatched'
-      );
-      callback(null, {});
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      fastify.log.error(
-        {
-          err,
-          module,
-          component: 'worker_connection_grpc_server',
-          type: 'connection_status',
-          event: 'worker_connection_request_error',
-          worker_id: payload.worker_id,
-          account_id: accountId,
-          status: payload.status,
-          connection_type: payload.type,
-          remove_session: payload.remove_session === true,
-        },
-        'WorkerConnection gRPC handler error'
-      );
-      callback({ code: status.INTERNAL, message: msg, details: msg }, null);
-    }
+    connectionConsume
+      .requestConnection(payload)
+      .then((response) => {
+        fastify.log.info(
+          {
+            module,
+            component: 'worker_connection_grpc_server',
+            type: 'connection_status',
+            event: 'worker_connection_request_dispatched',
+            worker_id: payload.worker_id,
+            account_id: accountId,
+            status: payload.status,
+            connection_type: payload.type,
+            remove_session: payload.remove_session === true,
+            has_qr: Boolean(response.qrcode),
+          },
+          'Worker connection request dispatched'
+        );
+        callback(null, connectionStateToProto(response));
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          {
+            err,
+            module,
+            component: 'worker_connection_grpc_server',
+            type: 'connection_status',
+            event: 'worker_connection_request_error',
+            worker_id: payload.worker_id,
+            account_id: accountId,
+            status: payload.status,
+            connection_type: payload.type,
+            remove_session: payload.remove_session === true,
+          },
+          'WorkerConnection gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
   };
 
   const handleValidatePhone = (

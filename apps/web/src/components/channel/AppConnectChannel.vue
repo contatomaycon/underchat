@@ -14,10 +14,8 @@ import {
 } from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
-import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
-import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
@@ -378,31 +376,15 @@ function prepareInitialModalState() {
   clearConnectedStateDelay();
 }
 
-function buildRequest(
-  status: EWorkerStatus,
-  removeSession = false
-): StatusConnectionWorkerRequest {
-  const payload: StatusConnectionWorkerRequest = {
-    worker_id: channelId.value!,
-    status,
-    type: EBaileysConnectionType.qrcode,
-  };
-
-  if (removeSession) {
-    payload.remove_session = true;
-  }
-
-  return payload;
-}
-
 async function reconnectChannel() {
   if (!channelId.value) return;
 
   prepareConnectionStart();
 
-  await channelStore.updateConnectionChannel(
-    buildRequest(EWorkerStatus.online)
-  );
+  const state = await channelStore.requestConnectionQrCode(channelId.value);
+  if (state) {
+    applyDirectConnectionResponse(state);
+  }
 }
 
 async function restartQrCodeAttempt() {
@@ -516,6 +498,63 @@ function applyConnectedState(data: IBaileysConnectionState) {
   clearConnectedStateDelay();
 }
 
+function applyDirectConnectionResponse(data: IBaileysConnectionState) {
+  if (!channelId.value || data.worker_id !== channelId.value) {
+    return;
+  }
+
+  applyQrAttempts(data);
+
+  const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
+  const incomingCode = data.code as ECodeMessage | undefined;
+  const isConnectedEvent =
+    incomingStatus === EBaileysConnectionStatus.connected ||
+    incomingCode === ECodeMessage.connectionEstablished;
+
+  if (isConnectedEvent) {
+    scheduleConnectedState(data);
+    return;
+  }
+
+  clearConnectedStateDelay();
+
+  if (data.disconnected_user !== undefined) {
+    disconnectedByUser.value = data.disconnected_user;
+  }
+
+  if (hasExceededQrAttempts(data)) {
+    qrcode.value = undefined;
+  } else if (data.qrcode) {
+    qrcode.value = data.qrcode;
+  } else if (
+    incomingCode === ECodeMessage.awaitConnection ||
+    incomingCode === ECodeMessage.logoutInProgress ||
+    incomingCode === ECodeMessage.pairingInProgress ||
+    incomingCode === ECodeMessage.newLoginAttempt ||
+    incomingStatus === EBaileysConnectionStatus.disconnected
+  ) {
+    qrcode.value = undefined;
+  }
+
+  if (incomingStatus) {
+    statusConnection.value = incomingStatus;
+  }
+
+  if (incomingCode && incomingCode !== ECodeMessage.info) {
+    statusCode.value = incomingCode;
+  }
+
+  if (data.phone) {
+    phoneNumber.value = formatPhoneBR(data.phone);
+  }
+
+  if (data.pairing_code) {
+    const [primary, secondary] = splitCode(data.pairing_code);
+    pairingCodePrimary.value = primary;
+    pairingCodeSecondary.value = secondary;
+  }
+}
+
 function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
   if (!channelId.value || data.worker_id !== channelId.value) {
     return;
@@ -568,8 +607,6 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
 
   if (hasExceededQrAttempts(data)) {
     qrcode.value = undefined;
-  } else if (data.qrcode) {
-    qrcode.value = data.qrcode;
   } else if (
     incomingCode === ECodeMessage.awaitConnection ||
     incomingCode === ECodeMessage.logoutInProgress ||
@@ -627,9 +664,10 @@ onMounted(async () => {
     handleWorkerConnectionMessage
   );
 
-  await channelStore.updateConnectionChannel(
-    buildRequest(EWorkerStatus.online)
-  );
+  const state = await channelStore.requestConnectionQrCode(channelId.value);
+  if (state) {
+    applyDirectConnectionResponse(state);
+  }
 });
 
 watch(isVisible, (visible) => {

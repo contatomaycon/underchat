@@ -49,6 +49,7 @@ import { checkWorkerOpenConversations } from './methods/checkWorkerOpenConversat
 import { createExternalConnectionLink } from './methods/createExternalConnectionLink';
 import { viewExternalConnection } from './methods/viewExternalConnection';
 import { requestExternalConnectionQrCode } from './methods/requestExternalConnectionQrCode';
+import { requestConnectionQrCode } from './methods/requestConnectionQrCode';
 
 @injectable()
 class WorkerController {
@@ -105,6 +106,7 @@ class WorkerController {
   public createExternalConnectionLink = createExternalConnectionLink;
   public viewExternalConnection = viewExternalConnection;
   public requestExternalConnectionQrCode = requestExternalConnectionQrCode;
+  public requestConnectionQrCode = requestConnectionQrCode;
 }
 
 export default WorkerController;

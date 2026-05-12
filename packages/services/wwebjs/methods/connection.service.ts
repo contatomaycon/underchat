@@ -174,6 +174,8 @@ export class WwebjsConnectionService {
       );
       this.connectionEstablished = false;
       this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
+      this.healthCheckService.stop();
+      this.cancelAttempt(false);
 
       if (!this.userRequestedDisconnect) {
         this.scheduleNextReconnectAttempt();
@@ -603,6 +605,14 @@ export class WwebjsConnectionService {
   }
 
   private publishConnectionStarting(): void {
+    if (
+      this.typeConnection === EBaileysConnectionType.qrcode &&
+      this.qrReadSessionActive &&
+      !this.qrReadSessionLocked
+    ) {
+      return;
+    }
+
     this.publishSub(
       {
         status: Status.connecting,
@@ -1011,7 +1021,6 @@ export class WwebjsConnectionService {
           worker_status_id: EWorkerStatus.disponible,
         };
 
-        this.publishSub(payload, true);
         void this.notifyWorkerStatusSafely(payload, 'qr');
 
         if (!this.initialConnection) {
@@ -1792,16 +1801,6 @@ export class WwebjsConnectionService {
       this.qrGenerationCount = 0;
       this.qrHash = undefined;
     }
-
-    if (
-      !this.qrReadSessionActive &&
-      !this.qrReadSessionLocked &&
-      !this.hasSession()
-    ) {
-      this.qrReadSessionActive = true;
-      this.qrGenerationCount = 0;
-      this.qrHash = undefined;
-    }
   }
 
   private normalizePhoneConnection(
@@ -1887,16 +1886,14 @@ export class WwebjsConnectionService {
     this.incomingMessageService.unbind();
 
     if (!skipDestroy && this.client) {
-      this.queueTeardown('cancel_attempt', async () => {
-        if (!this.client) {
-          return;
-        }
+      const clientToDestroy = this.client;
+      this.client = undefined;
 
+      this.queueTeardown('cancel_attempt', async () => {
         try {
-          await this.client.destroy();
+          await clientToDestroy.destroy();
         } catch {}
 
-        this.client = undefined;
         this.clearChromiumProfileLock();
       });
     }

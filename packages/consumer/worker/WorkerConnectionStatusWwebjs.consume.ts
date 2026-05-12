@@ -31,7 +31,9 @@ export class WorkerConnectionStatusWwebjsConsume {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  requestConnection(payload: StatusConnectionWorkerRequest): void {
+  async requestConnection(
+    payload: StatusConnectionWorkerRequest
+  ): Promise<IBaileysConnectionState> {
     this.logConnectionEvent('connection_request_received', {
       status: payload.status,
       connection_type: payload.type,
@@ -43,7 +45,7 @@ export class WorkerConnectionStatusWwebjsConsume {
       throw new Error('Phone connection is disabled. Use QR Code.');
     }
 
-    void this.handleConnectionStatus(payload);
+    return this.handleConnectionStatus(payload);
   }
 
   async close(): Promise<void> {
@@ -52,30 +54,29 @@ export class WorkerConnectionStatusWwebjsConsume {
 
   private async handleConnectionStatus(
     data: StatusConnectionWorkerRequest
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
     if (data.status === EWorkerStatus.online) {
-      await this.handleOnline(data);
-      return;
+      return this.handleOnline(data);
     }
 
     if (data.status === EWorkerStatus.recreating) {
-      this.handleRecreating();
-      return;
+      return this.handleRecreating();
     }
 
     if (data.status === EWorkerStatus.disponible) {
-      await this.handleDisponible(data);
+      return this.handleDisponible(data);
     }
+
+    return this.currentState(ECodeMessage.awaitConnection);
   }
 
   private async handleOnline(
     data: StatusConnectionWorkerRequest
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
     this.stopConnectionRetry();
 
     if (this.wwebjsService.isConnected()) {
-      await this.publishConnectedStatus();
-      return;
+      return this.publishConnectedStatus();
     }
 
     const currentCode = this.wwebjsService.getCode();
@@ -86,13 +87,12 @@ export class WorkerConnectionStatusWwebjsConsume {
     if (this.wwebjsService.hasSession() && !isSessionInvalid) {
       await this.waitForReconnection(3000, 500);
       if (this.wwebjsService.isConnected()) {
-        await this.publishConnectedStatus();
-        return;
+        return this.publishConnectedStatus();
       }
     }
 
     if (this.activeConnectionRequest) {
-      return;
+      return this.currentState(currentCode);
     }
 
     const currentStatus = this.wwebjsService.getStatus();
@@ -109,7 +109,7 @@ export class WorkerConnectionStatusWwebjsConsume {
       pairingInProgress
     ) {
       this.wwebjsService.republishLastState();
-      return;
+      return this.currentState(currentCode);
     }
 
     if (
@@ -117,25 +117,23 @@ export class WorkerConnectionStatusWwebjsConsume {
       hasActiveSocket &&
       awaitingQrRead
     ) {
-      await this.connectWithService(data, {
+      return this.connectWithService(data, {
         fromDisconnectRestart: false,
         requestedByUser: true,
         forceNew: true,
       });
-      return;
     }
 
     if (
       currentStatus === EBaileysConnectionStatus.connecting &&
       hasActiveSocket
     ) {
-      await this.connectWithService(data, {
+      return this.connectWithService(data, {
         fromDisconnectRestart: false,
         requestedByUser: true,
         forceNew: true,
         allowRestore: false,
       });
-      return;
     }
 
     if (isSessionInvalid) {
@@ -152,20 +150,21 @@ export class WorkerConnectionStatusWwebjsConsume {
       });
     }
 
-    await this.connectWithService(data, {
+    return this.connectWithService(data, {
       fromDisconnectRestart: isSessionInvalid,
       requestedByUser: true,
       allowRestore: !isSessionInvalid,
     });
   }
 
-  private handleRecreating(): void {
+  private handleRecreating(): IBaileysConnectionState {
     this.wwebjsService.reconnect({ initial_connection: true });
+    return this.currentState(ECodeMessage.awaitConnection);
   }
 
   private async handleDisponible(
     data: StatusConnectionWorkerRequest
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
     const removeSession = data.remove_session === true;
 
     this.stopConnectionRetry();
@@ -201,6 +200,8 @@ export class WorkerConnectionStatusWwebjsConsume {
         requestedByUser: false,
       });
     }
+
+    return payload;
   }
 
   private async connectWithService(
@@ -211,7 +212,7 @@ export class WorkerConnectionStatusWwebjsConsume {
       allowRestore?: boolean;
       forceNew?: boolean;
     }
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
     const allowRestore = options.allowRestore ?? true;
     const forceNew = options.forceNew ?? options.fromDisconnectRestart;
 
@@ -242,6 +243,8 @@ export class WorkerConnectionStatusWwebjsConsume {
         has_qr: Boolean(state?.qrcode),
         delegated_retry_owner: 'connection_service',
       });
+
+      return state;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -254,6 +257,7 @@ export class WorkerConnectionStatusWwebjsConsume {
         },
         'error'
       );
+      throw error;
     }
   }
 
@@ -324,7 +328,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     );
   }
 
-  private async publishConnectedStatus(): Promise<void> {
+  private async publishConnectedStatus(): Promise<IBaileysConnectionState> {
     const workerId = wwebjsEnvironment.wwebjsWorkerId;
     const accountId = wwebjsEnvironment.wwebjsAccountId;
 
@@ -359,6 +363,17 @@ export class WorkerConnectionStatusWwebjsConsume {
       has_phone: Boolean(payload.phone),
       worker_status_id: payload.worker_status_id,
     });
+
+    return payload;
+  }
+
+  private currentState(code: ECodeMessage): IBaileysConnectionState {
+    return {
+      status: this.wwebjsService.getStatus(),
+      code,
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      account_id: wwebjsEnvironment.wwebjsAccountId,
+    };
   }
 
   private async waitForReconnection(

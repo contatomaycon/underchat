@@ -37,7 +37,7 @@ func TestRequestConnectionRejectsPhonePairing(t *testing.T) {
 		},
 	}
 
-	err := manager.RequestConnection(context.Background(), StatusConnectionRequest{
+	_, err := manager.RequestConnection(context.Background(), StatusConnectionRequest{
 		WorkerID:        "worker-1",
 		Status:          WorkerStatusOnline,
 		Type:            "phone",

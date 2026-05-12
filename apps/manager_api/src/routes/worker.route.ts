@@ -18,7 +18,7 @@ import { createWorkerSchema } from '@core/schema/worker/createWorker';
 import { editWorkerSchema } from '@core/schema/worker/editWorker';
 import { viewWorkerSchema } from '@core/schema/worker/viewWorker';
 import { deleteWorkerSchema } from '@core/schema/worker/deleteWorker';
-import { statusConnectionWorkerSchema } from '@core/schema/worker/statusConnection';
+import { workerConnectionQrCodeSchema } from '@core/schema/worker/connectionQrCode';
 import { workerConnectionLogsSchema } from '@core/schema/worker/workerConnectionLogs';
 import { recreateWorkerSchema } from '@core/schema/worker/recreateWorker';
 import { resetWorkerConnectionSchema } from '@core/schema/worker/resetWorkerConnection';
@@ -98,6 +98,17 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerRecreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/:worker_id/connection/qrcode', {
+    schema: workerConnectionQrCodeSchema,
+    handler: workerController.requestConnectionQrCode,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
       planGuard,
       planStatus,
     ],
@@ -185,17 +196,6 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerDeletePermissions),
-      planGuard,
-      planStatus,
-    ],
-  });
-
-  server.post('/worker/whatsapp/unofficial', {
-    schema: statusConnectionWorkerSchema,
-    handler: workerController.changeStatusConnection,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, workerCreatePermissions),
       planGuard,
       planStatus,
     ],
