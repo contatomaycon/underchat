@@ -706,6 +706,17 @@ onBeforeUnmount(() => {
   &--italic {
     font-style: italic;
   }
+
+  code {
+    border-radius: 3px;
+    background: rgba(var(--v-theme-on-surface), 0.08);
+    color: inherit;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+      'Courier New', monospace;
+    font-size: 0.86em;
+    padding: 0 0.18em;
+  }
 }
 
 .contact-label {

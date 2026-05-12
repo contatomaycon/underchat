@@ -1774,10 +1774,12 @@ const handleContactClick = (message: ListMessageResult) => {
                       item.message.content?.type !== EMessageType.annotation,
                     'has-edit-history':
                       hasMessageVersions(item.message) && !item.message.deleted,
-                    'is-closure-reason-annotation':
-                      isClosureReasonAnnotation(item.message),
-                    'is-closure-audit-annotation':
-                      isClosureAuditAnnotation(item.message),
+                    'is-closure-reason-annotation': isClosureReasonAnnotation(
+                      item.message
+                    ),
+                    'is-closure-audit-annotation': isClosureAuditAnnotation(
+                      item.message
+                    ),
                   },
                 ]"
                 @click.stop="
@@ -3536,6 +3538,15 @@ const handleContactClick = (message: ListMessageResult) => {
     &.chat-right {
       border-start-start-radius: 6px;
 
+      :deep(.whatsapp-quote) {
+        border-left-color: rgba(17, 27, 33, 0.38);
+        color: rgba(17, 27, 33, 0.68);
+      }
+
+      :deep(.whatsapp-quote code) {
+        color: inherit;
+      }
+
       .message-meta {
         color: rgba(17, 27, 33, 0.6);
 
@@ -3608,6 +3619,39 @@ const handleContactClick = (message: ListMessageResult) => {
     line-height: 1.5;
     margin: 0;
     max-width: 100%;
+  }
+
+  .message-text,
+  .chat-text,
+  .image-caption,
+  .video-caption,
+  .audio-caption {
+    :deep(code) {
+      border-radius: 3px;
+      background: rgba(var(--v-theme-on-surface), 0.08);
+      color: inherit;
+      font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        'Liberation Mono', 'Courier New', monospace;
+      font-size: 0.86em;
+      padding: 0 0.18em;
+      white-space: pre-wrap;
+    }
+
+    :deep(.whatsapp-quote) {
+      display: block;
+      margin-block: 0.35rem 0.1rem;
+      border-left: 4px solid rgba(var(--v-theme-on-surface), 0.35);
+      color: rgba(var(--v-theme-on-surface), 0.68);
+      line-height: 1.4;
+      padding-block: 0.08rem;
+      padding-inline-start: 0.65rem;
+    }
+
+    :deep(.whatsapp-quote code) {
+      background: transparent;
+      padding: 0;
+    }
   }
 
   .message-meta {

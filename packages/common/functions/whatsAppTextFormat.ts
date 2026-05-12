@@ -4,7 +4,9 @@ export type WhatsAppTextTokenType =
   | 'italic'
   | 'strike'
   | 'code'
-  | 'newline';
+  | 'newline'
+  | 'quote_start'
+  | 'quote_end';
 
 export interface WhatsAppTextToken {
   type: WhatsAppTextTokenType;
@@ -17,6 +19,7 @@ interface TruncateTokensResult {
 }
 
 const MARKERS = [
+  { marker: '```', type: 'code' as const },
   { marker: '`', type: 'code' as const },
   { marker: '~', type: 'strike' as const },
   { marker: '_', type: 'italic' as const },
@@ -30,12 +33,14 @@ function isMarkerBoundaryValid(
   closeIndex: number
 ): boolean {
   const beforeOpen = openIndex > 0 ? source[openIndex - 1] : null;
-  const afterOpen = source[openIndex + 1] ?? null;
+  const afterOpen = source[openIndex + marker.length] ?? null;
   const beforeClose = closeIndex > 0 ? source[closeIndex - 1] : null;
-  const afterClose = source[closeIndex + 1] ?? null;
+  const afterClose = source[closeIndex + marker.length] ?? null;
 
-  if (beforeOpen === marker || afterOpen === marker) return false;
-  if (beforeClose === marker || afterClose === marker) return false;
+  if (marker.length === 1) {
+    if (beforeOpen === marker || afterOpen === marker) return false;
+    if (beforeClose === marker || afterClose === marker) return false;
+  }
   if (afterOpen === null || beforeClose === null) return false;
   if (afterOpen === '\n' || beforeClose === '\n') return false;
 
@@ -61,7 +66,7 @@ function applyMarkerFormatting(
     while (cursor < value.length) {
       const openIndex = value.indexOf(marker, cursor);
 
-      if (openIndex < 0 || openIndex + 2 > value.length) {
+      if (openIndex < 0 || openIndex + marker.length * 2 > value.length) {
         const rest = value.slice(cursor);
         if (rest) {
           next.push({ type: 'text', text: rest });
@@ -69,7 +74,7 @@ function applyMarkerFormatting(
         break;
       }
 
-      const closeIndex = value.indexOf(marker, openIndex + 1);
+      const closeIndex = value.indexOf(marker, openIndex + marker.length);
       if (
         closeIndex < 0 ||
         !isMarkerBoundaryValid(value, marker, openIndex, closeIndex)
@@ -87,42 +92,18 @@ function applyMarkerFormatting(
         next.push({ type: 'text', text: before });
       }
 
-      const inside = value.slice(openIndex + 1, closeIndex);
+      const inside = value.slice(openIndex + marker.length, closeIndex);
       if (inside) {
         next.push({ type, text: inside });
       } else {
         next.push({ type: 'text', text: marker + marker });
       }
 
-      cursor = closeIndex + 1;
+      cursor = closeIndex + marker.length;
     }
   }
 
   return next;
-}
-
-function splitNewlines(tokens: WhatsAppTextToken[]): WhatsAppTextToken[] {
-  const out: WhatsAppTextToken[] = [];
-
-  for (const token of tokens) {
-    if (!token.text.includes('\n')) {
-      out.push(token);
-      continue;
-    }
-
-    const parts = token.text.split('\n');
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (part.length > 0) {
-        out.push({ type: token.type, text: part });
-      }
-      if (i < parts.length - 1) {
-        out.push({ type: 'newline', text: '\n' });
-      }
-    }
-  }
-
-  return out;
 }
 
 function escapeHtml(text: string): string {
@@ -148,6 +129,10 @@ function renderWhatsAppTokensToHtml(tokens: WhatsAppTextToken[]): string {
           return `<code>${escapeHtml(token.text)}</code>`;
         case 'newline':
           return '<br />';
+        case 'quote_start':
+          return '<span class="whatsapp-quote">';
+        case 'quote_end':
+          return '</span>';
         default:
           return escapeHtml(token.text);
       }
@@ -158,10 +143,16 @@ function renderWhatsAppTokensToHtml(tokens: WhatsAppTextToken[]): string {
 function convertTokensToSingleLine(
   tokens: WhatsAppTextToken[]
 ): WhatsAppTextToken[] {
-  return tokens.map((token) => {
-    if (token.type !== 'newline') return token;
-    return { type: 'text', text: ' ' };
-  });
+  return tokens
+    .map((token): WhatsAppTextToken => {
+      if (token.type === 'quote_start' || token.type === 'quote_end') {
+        return { type: 'text', text: '' };
+      }
+
+      if (token.type !== 'newline') return token;
+      return { type: 'text', text: ' ' };
+    })
+    .filter((token) => token.text);
 }
 
 function truncateWhatsAppTextTokens(
@@ -208,18 +199,41 @@ function truncateWhatsAppTextTokens(
   return { tokens: next, truncated };
 }
 
-export function parseWhatsAppTextTokens(
-  text?: string | null
-): WhatsAppTextToken[] {
-  if (!text) return [];
-
+function parseInlineWhatsAppTextTokens(text: string): WhatsAppTextToken[] {
   let tokens: WhatsAppTextToken[] = [{ type: 'text', text }];
 
   for (const item of MARKERS) {
     tokens = applyMarkerFormatting(tokens, item.marker, item.type);
   }
 
-  return splitNewlines(tokens);
+  return tokens;
+}
+
+export function parseWhatsAppTextTokens(
+  text?: string | null
+): WhatsAppTextToken[] {
+  if (!text) return [];
+
+  const tokens: WhatsAppTextToken[] = [];
+  const lines = text.split('\n');
+
+  lines.forEach((line, index) => {
+    const quoteMatch = line.match(/^>\s?(.*)$/);
+
+    if (quoteMatch) {
+      tokens.push({ type: 'quote_start', text: '' });
+      tokens.push(...parseInlineWhatsAppTextTokens(quoteMatch[1]));
+      tokens.push({ type: 'quote_end', text: '' });
+    } else if (line.length > 0) {
+      tokens.push(...parseInlineWhatsAppTextTokens(line));
+    }
+
+    if (index < lines.length - 1) {
+      tokens.push({ type: 'newline', text: '\n' });
+    }
+  });
+
+  return tokens;
 }
 
 export function formatWhatsAppTextToHtml(text?: string | null): string {
