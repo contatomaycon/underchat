@@ -933,6 +933,12 @@ export class WwebjsIncomingMessageService {
         type: msg.type,
       });
       this.handleCiphertextFailed(msg);
+
+      if (this.shouldSkipIncomingMessage(msg, 'message_ciphertext')) {
+        return;
+      }
+
+      void this.handleIncomingMessage(msg);
     });
     client.on('message_create', (msg: Message) => {
       this.logEvent('message_create', {
@@ -1191,7 +1197,9 @@ export class WwebjsIncomingMessageService {
     source: WwebjsIncomingEventSource
   ): string[] {
     const namespace =
-      source === 'message_ciphertext' ? 'ciphertext' : 'default';
+      source === 'message_ciphertext' || this.isCiphertextMessage(msg)
+        ? 'ciphertext'
+        : 'default';
     const messageId = getNonEmptyString(getMessageIdSerialized(msg));
     const scopedStanzaDedupeKey = buildScopedStanzaDedupeKey(msg);
 
@@ -1419,21 +1427,6 @@ export class WwebjsIncomingMessageService {
       return true;
     }
 
-    // Fanout ciphertext frequently arrives before the decrypted user text with
-    // the exact same message key. If we ingest it, it may block the later real
-    // text update path in downstream idempotency logic.
-    if (this.isCiphertextFanoutNotification(msg)) {
-      this.logEvent('skip_ciphertext_fanout', {
-        id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
-        from: msg.from,
-        to: msg.to,
-        type: msg.type,
-        source,
-      });
-      return true;
-    }
-
     if (this.isGroupMessage(msg)) {
       return true;
     }
@@ -1514,6 +1507,11 @@ export class WwebjsIncomingMessageService {
   private isCiphertextFanoutNotification(msg: Message): boolean {
     const { type, subtype } = this.getMessageTypeAndSubtype(msg);
     return type === 'ciphertext' && subtype === 'fanout';
+  }
+
+  private isCiphertextMessage(msg: Message): boolean {
+    const { type } = this.getMessageTypeAndSubtype(msg);
+    return type === 'ciphertext';
   }
 
   private getE2ENotificationDedupeKey(
@@ -1649,22 +1647,7 @@ export class WwebjsIncomingMessageService {
 
   private shouldHandleCiphertextMessage(msg: Message): boolean {
     const messageType = getNonEmptyString(msg.type)?.toLowerCase();
-    if (messageType !== 'ciphertext') {
-      return false;
-    }
-
-    const rawSubtype = getNonEmptyString(
-      (msg as unknown as { _data?: { subtype?: unknown } })._data?.subtype
-    )?.toLowerCase();
-    if (!rawSubtype) {
-      return false;
-    }
-
-    return (
-      rawSubtype === 'fanout' ||
-      rawSubtype === 'view_once_unavailable_fanout' ||
-      rawSubtype.startsWith('view_once_unavailable_')
-    );
+    return messageType === 'ciphertext';
   }
 
   private shouldSkipPinnedMessage(

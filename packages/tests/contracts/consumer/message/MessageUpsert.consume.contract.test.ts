@@ -148,6 +148,8 @@ describe('MessageUpsertConsume edit fallback', () => {
   const editEventId = `edit_${targetMessageId}_1778190016147`;
   const adBody =
     'Olá! Gostaria de saber sobre a Pós-Graduação EAD com um atendimento humanizado!';
+  const ciphertextFallbackBody =
+    'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';
 
   const makeChat = (): IChat =>
     ({
@@ -197,6 +199,45 @@ describe('MessageUpsertConsume edit fallback', () => {
       has_quoted: false,
       hash: 'hash-1',
     }) as IChatMessage;
+
+  const makeExistingCiphertextSystemMessage = (): IChatMessage =>
+    ({
+      ...makeExistingMessage(),
+      type_user: ETypeUserChat.system,
+      summary: {
+        is_sent: true,
+        is_delivered: true,
+        is_seen: true,
+        is_sent_to_internal: true,
+      },
+      content: {
+        type: EMessageType.system,
+        message: ciphertextFallbackBody,
+      },
+    }) as IChatMessage;
+
+  const makeTextUpsert = (): IUpsertMessage => ({
+    account_id: 'account-1',
+    worker_id: 'worker-1',
+    type: EMessageType.text,
+    has_quoted: false,
+    message: {
+      key: {
+        id: targetMessageId,
+        remoteJid: phoneJid,
+        remoteJidAlt: lidJid,
+        fromMe: false,
+      },
+      message: {
+        conversation: adBody,
+        extendedTextMessage: {
+          text: adBody,
+        },
+      },
+      messageTimestamp: 1778190016,
+      pushName: 'Luh',
+    },
+  });
 
   const makeEditUpsert = (): IUpsertMessage => ({
     account_id: 'account-1',
@@ -390,5 +431,32 @@ describe('MessageUpsertConsume edit fallback', () => {
         message: adBody,
       }),
     ]);
+  });
+
+  it('replaces a ciphertext system fallback when the real text arrives with the same key', async () => {
+    const existingMessage = makeExistingCiphertextSystemMessage();
+    const { consumer, chat, chatService } = makeConsumer(
+      elasticHit(existingMessage)
+    );
+
+    const result = await (consumer as any).createChatMessage(
+      chat,
+      makeTextUpsert()
+    );
+
+    expect(result.handled).toBe(true);
+    expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
+    expect(chatService.updateMessageChat).toHaveBeenCalledTimes(1);
+
+    const updatedMessage = chatService.updateMessageChat.mock
+      .calls[0][0] as IChatMessage;
+    expect(updatedMessage.message_id).toBe(existingMessage.message_id);
+    expect(updatedMessage.type_user).toBe(ETypeUserChat.client);
+    expect(updatedMessage.content).toEqual(
+      expect.objectContaining({
+        type: EMessageType.text,
+        message: adBody,
+      })
+    );
   });
 });

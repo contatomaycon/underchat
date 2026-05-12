@@ -108,4 +108,40 @@ describe('wwebjsMessageToUpsert', () => {
       })
     );
   });
+
+  it('converts ciphertext into a visible system fallback message', async () => {
+    const fallbackText =
+      'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';
+
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      type: 'ciphertext',
+      body: '',
+      _data: {
+        subtype: 'fanout',
+      },
+    } as never);
+
+    const innerMessage = upsert?.message.message as Record<string, any>;
+
+    expect(upsert?.type).toBe(EMessageType.system);
+    expect(innerMessage.conversation).toBe(fallbackText);
+  });
+
+  it('uses the same fallback for ciphertext without a subtype', async () => {
+    const fallbackText =
+      'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';
+
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      type: 'ciphertext',
+      body: '',
+      _data: {},
+    } as never);
+
+    const innerMessage = upsert?.message.message as Record<string, any>;
+
+    expect(upsert?.type).toBe(EMessageType.system);
+    expect(innerMessage.conversation).toBe(fallbackText);
+  });
 });

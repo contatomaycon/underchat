@@ -229,6 +229,8 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
   const contactCardSerializedId = `false_${lidJid}_3EB0FA10AEA02E9B21D2`;
   const adBody =
     'Olá! Gostaria de saber sobre a Pós-Graduação EAD com um atendimento humanizado!';
+  const ciphertextFallbackBody =
+    'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';
 
   class FakeWwebjsClient {
     readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
@@ -565,14 +567,33 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
         9272, 9273, 9274, 9275, 9276, 9277, 9278, 9279, 9280, 9282, 9325, 9326,
         9327, 2886, 2887, 2888, 2889, 2890, 2891, 2892,
       ]);
-      expect(upsertPayloads).toHaveLength(1);
-      expect(inboundAdPayloads).toHaveLength(1);
+      expect(upsertPayloads).toHaveLength(2);
+      expect(inboundAdPayloads).toHaveLength(2);
       expect(
         upsertPayloads.some(
           (payload) => payload.type === EMessageType.edit_text
         )
       ).toBe(false);
-      expect(inboundAdPayloads[0]).toEqual(
+
+      const ciphertextPayload = inboundAdPayloads.find(
+        (payload) => payload.type === EMessageType.system
+      );
+      const textPayload = inboundAdPayloads.find(
+        (payload) => payload.type === EMessageType.text
+      );
+
+      expect(ciphertextPayload).toEqual(
+        expect.objectContaining({
+          type: EMessageType.system,
+          worker_id: 'worker-w',
+          account_id: 'account-w',
+          has_quoted: false,
+        })
+      );
+      expect(ciphertextPayload?.message.message.conversation).toBe(
+        ciphertextFallbackBody
+      );
+      expect(textPayload).toEqual(
         expect.objectContaining({
           type: EMessageType.text,
           worker_id: 'worker-w',
@@ -580,7 +601,7 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
           has_quoted: false,
         })
       );
-      expect(inboundAdPayloads[0].message.key).toEqual(
+      expect(textPayload?.message.key).toEqual(
         expect.objectContaining({
           id: adSerializedId,
           remoteJid: phoneJid,
@@ -588,9 +609,9 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
           fromMe: false,
         })
       );
-      expect(inboundAdPayloads[0].message.message.conversation).toBe(adBody);
+      expect(textPayload?.message.message.conversation).toBe(adBody);
       expect(
-        inboundAdPayloads[0].message.message.extendedTextMessage.contextInfo
+        textPayload?.message.message.extendedTextMessage.contextInfo
           .externalAdReply
       ).toEqual(
         expect.objectContaining({
@@ -604,6 +625,48 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
     } finally {
       consoleLogSpy.mockRestore();
       consoleDirSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
+    }
+  });
+
+  it('creates the ciphertext fallback when only message_ciphertext_failed is received', async () => {
+    const consoleLogSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+    const consoleWarnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+
+    try {
+      const { service, streamProducerService } = makeService();
+      const client = new FakeWwebjsClient();
+      service.bindTo(client as never);
+
+      client.emit(
+        'message_ciphertext_failed',
+        makeAdMessage('ciphertext', '', 'fanout')
+      );
+      await flushAsyncHandlers();
+
+      const upsertSends = streamProducerService.send.mock.calls.filter(
+        ([topic]) => topic === 'upsert-message'
+      );
+      const upsertPayloads = upsertSends.map(([, payload]) => payload as any);
+
+      expect(upsertPayloads).toHaveLength(1);
+      expect(upsertPayloads[0]).toEqual(
+        expect.objectContaining({
+          type: EMessageType.system,
+          worker_id: 'worker-w',
+          account_id: 'account-w',
+        })
+      );
+      expect(upsertPayloads[0].message.key.id).toBe(adSerializedId);
+      expect(upsertPayloads[0].message.message.conversation).toBe(
+        ciphertextFallbackBody
+      );
+    } finally {
+      consoleLogSpy.mockRestore();
       consoleWarnSpy.mockRestore();
     }
   });

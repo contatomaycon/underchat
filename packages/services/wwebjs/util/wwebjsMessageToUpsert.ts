@@ -94,15 +94,7 @@ function mapWwebjsTypeToMessageType(
     return EMessageType.set_disappearing_messages;
   }
 
-  if (
-    t === 'ciphertext' &&
-    (subType === 'view_once_unavailable_fanout' ||
-      subType?.startsWith('view_once_unavailable_'))
-  ) {
-    return EMessageType.view_once;
-  }
-
-  if (t === 'ciphertext' && subType === 'fanout') {
+  if (t === 'ciphertext') {
     return EMessageType.system;
   }
 
@@ -145,19 +137,12 @@ function resolveE2ENotificationBody(
   return undefined;
 }
 
-function resolveCiphertextFallbackBody(
-  rawType: string,
-  rawSubType?: string
-): string | undefined {
+function resolveCiphertextFallbackBody(rawType: string): string | undefined {
   if (rawType !== 'ciphertext') {
     return undefined;
   }
 
-  if (rawSubType === 'fanout') {
-    return CIPHERTEXT_FANOUT_NOTIFICATION_TEXT;
-  }
-
-  return undefined;
+  return CIPHERTEXT_FANOUT_NOTIFICATION_TEXT;
 }
 
 function getNumber(value: unknown): number | undefined {
@@ -1345,9 +1330,10 @@ export async function wwebjsMessageToUpsert(
     (rawSubType === 'view_once_unavailable_fanout' ||
       rawSubType?.startsWith('view_once_unavailable_'));
   const isViewOnce =
-    (msg as { isViewOnce?: boolean }).isViewOnce === true ||
-    isViewOnceUnavailableFanout ||
-    messageType === EMessageType.view_once;
+    rawType !== 'ciphertext' &&
+    ((msg as { isViewOnce?: boolean }).isViewOnce === true ||
+      isViewOnceUnavailableFanout ||
+      messageType === EMessageType.view_once);
   if (isViewOnce) {
     messageType = EMessageType.view_once;
   }
@@ -1359,10 +1345,7 @@ export async function wwebjsMessageToUpsert(
     }
   }
   if (!body) {
-    const ciphertextFallbackBody = resolveCiphertextFallbackBody(
-      rawType,
-      rawSubType
-    );
+    const ciphertextFallbackBody = resolveCiphertextFallbackBody(rawType);
     if (ciphertextFallbackBody) {
       body = ciphertextFallbackBody;
     }

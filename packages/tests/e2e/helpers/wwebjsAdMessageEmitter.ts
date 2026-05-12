@@ -375,6 +375,14 @@ function getPayloadMessageKeyId(payload: unknown): string | undefined {
     : undefined;
 }
 
+function getPayloadMessageType(payload: unknown): string | undefined {
+  const value = payload as {
+    type?: unknown;
+  };
+
+  return typeof value?.type === 'string' ? value.type : undefined;
+}
+
 function toOptionalError(value: unknown): Error | null {
   if (!value) {
     return null;
@@ -798,16 +806,20 @@ async function main(): Promise<void> {
     }
 
     await flushAsyncHandlers();
-    await producer.waitFor(
-      (calls) =>
-        calls.some(
+    await producer.waitFor((calls) => {
+      const deliveredAdTypes = calls
+        .filter(
           (call) =>
             call.delivered &&
             call.topic === 'upsert.message' &&
             getPayloadMessageKeyId(call.payload) === replay.adSerializedId
-        ),
-      deliveryTimeoutMs
-    );
+        )
+        .map((call) => getPayloadMessageType(call.payload));
+
+      return (
+        deliveredAdTypes.includes('system') && deliveredAdTypes.includes('text')
+      );
+    }, deliveryTimeoutMs);
 
     process.stdout.write(
       JSON.stringify({
