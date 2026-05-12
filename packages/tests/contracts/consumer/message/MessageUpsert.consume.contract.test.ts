@@ -1,0 +1,394 @@
+import 'reflect-metadata';
+
+jest.mock('@core/plugins/kafkaStreams', () => ({}));
+
+jest.mock('@core/common/vendors/nodeRdkafka', () => ({ rdkafka: {} }));
+
+jest.mock('@core/common/functions/withLock', () => ({
+  withLock: jest.fn(async (_redis, _key, fn: () => Promise<unknown>) => fn()),
+}));
+
+jest.mock('@core/common/functions/commitOffset', () => ({
+  commitOffset: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/connectConsumer', () => ({
+  connectConsumer: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/createConsumer', () => ({
+  createConsumer: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/ensureKafkaTopic', () => ({
+  ensureKafkaTopic: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/handleConsumerError', () => ({
+  handleConsumerError: jest.fn(),
+}));
+
+jest.mock('@core/common/functions/startHeartbeat', () => ({
+  startHeartbeat: jest.fn(() => jest.fn()),
+}));
+
+jest.mock('@core/common/functions/normalizeJid', () => ({
+  normalizeJid: jest.fn((jid?: string | null) => jid ?? undefined),
+}));
+
+jest.mock('@core/services/account.service', () => ({
+  AccountService: class AccountService {},
+}));
+
+jest.mock('@core/services/attendanceInactivity.service', () => ({
+  AttendanceInactivityService: class AttendanceInactivityService {},
+}));
+
+jest.mock('@core/services/centrifugo.service', () => ({
+  CentrifugoService: class CentrifugoService {},
+}));
+
+jest.mock('@core/services/chat.service', () => ({
+  ChatService: class ChatService {},
+}));
+
+jest.mock('@core/services/chatMessage.service', () => ({
+  ChatMessageService: class ChatMessageService {},
+}));
+
+jest.mock('@core/services/chatbotFlowRunner.service', () => ({
+  ChatbotFlowRunnerService: class ChatbotFlowRunnerService {},
+}));
+
+jest.mock('@core/services/contact.service', () => ({
+  ContactService: class ContactService {},
+}));
+
+jest.mock('@core/services/elasticDatabase.service', () => ({
+  ElasticDatabaseService: class ElasticDatabaseService {},
+}));
+
+jest.mock('@core/services/encrypt.service', () => ({
+  EncryptService: class EncryptService {},
+}));
+
+jest.mock('@core/services/kafkaServiceQueue.service', () => ({
+  KafkaServiceQueueService: class KafkaServiceQueueService {},
+}));
+
+jest.mock('@core/services/planAccount.service', () => ({
+  PlanAccountService: class PlanAccountService {},
+}));
+
+jest.mock('@core/services/pushNotification.service', () => ({
+  PushNotificationService: class PushNotificationService {},
+}));
+
+jest.mock('@core/services/sector.service', () => ({
+  SectorService: class SectorService {},
+}));
+
+jest.mock('@core/services/storage.service', () => ({
+  StorageService: class StorageService {},
+}));
+
+jest.mock('@core/services/streamProducer.service', () => ({
+  StreamProducerService: class StreamProducerService {},
+}));
+
+jest.mock('@core/services/user.service', () => ({
+  UserService: class UserService {},
+}));
+
+jest.mock('@core/services/worker.service', () => ({
+  WorkerService: class WorkerService {},
+}));
+
+jest.mock('@core/services/workerConfig.service', () => ({
+  WorkerConfigService: class WorkerConfigService {},
+}));
+
+jest.mock('@core/config/environments', () => ({
+  generalEnvironment: {
+    automationSendDedupeTtlSeconds: 60,
+  },
+}));
+
+jest.mock('@core/plugins/telemetry/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+}));
+
+jest.mock('@core/plugins/telemetry/observability', () => ({
+  incrementCounter: jest.fn(),
+  recordException: jest.fn(),
+}));
+
+jest.mock('uuid', () => ({
+  v7: jest.fn(() => 'uuid-v7'),
+}));
+
+import { MessageUpsertConsume } from '@core/consumer/message/MessageUpsert.consume';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import type { IChat } from '@core/common/interfaces/IChat';
+import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
+
+describe('MessageUpsertConsume edit fallback', () => {
+  const account = { id: 'account-1', name: 'Account' };
+  const worker = { id: 'worker-1', name: 'WWebJS' };
+  const phoneJid = '556999715039@s.whatsapp.net';
+  const lidJid = '6352894177535@lid';
+  const targetMessageId = `false_${lidJid}_3A7E64CFE62F38192A29`;
+  const editEventId = `edit_${targetMessageId}_1778190016147`;
+  const adBody =
+    'Olá! Gostaria de saber sobre a Pós-Graduação EAD com um atendimento humanizado!';
+
+  const makeChat = (): IChat =>
+    ({
+      chat_id: 'chat-1',
+      account,
+      worker,
+      status: EChatStatus.queue,
+      name: 'Luh',
+      phone: {
+        id: 'phone-1',
+        phone: '6999715039',
+        phone_ddi: '55',
+      },
+      user: null,
+      sector: null,
+      contact: null,
+      photo: null,
+      date: '2026-05-07T22:32:34.147Z',
+    }) as unknown as IChat;
+
+  const makeExistingMessage = (): IChatMessage =>
+    ({
+      message_id: 'message-existing',
+      chat_id: 'chat-1',
+      message_key: {
+        id: targetMessageId,
+        remote_jid: phoneJid,
+        remote_jid_alt: lidJid,
+        from_me: false,
+      },
+      type_user: ETypeUserChat.client,
+      account,
+      worker,
+      phone: makeChat().phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+        is_sent_to_internal: true,
+      },
+      content: {
+        type: EMessageType.text,
+        message: 'texto anterior',
+      },
+      date: '2026-05-07T22:32:34.147Z',
+      deleted: false,
+      has_quoted: false,
+      hash: 'hash-1',
+    }) as IChatMessage;
+
+  const makeEditUpsert = (): IUpsertMessage => ({
+    account_id: 'account-1',
+    worker_id: 'worker-1',
+    type: EMessageType.edit_text,
+    has_quoted: false,
+    message: {
+      key: {
+        id: editEventId,
+        remoteJid: phoneJid,
+        remoteJidAlt: lidJid,
+        fromMe: false,
+      },
+      message: {
+        protocolMessage: {
+          key: {
+            id: targetMessageId,
+          },
+          editedMessage: {
+            conversation: adBody,
+            extendedTextMessage: {
+              text: adBody,
+            },
+          },
+        },
+      },
+      messageTimestamp: 1778190016,
+      pushName: 'Luh',
+    },
+  });
+
+  const elasticHit = (message: IChatMessage) => ({
+    hits: {
+      hits: [
+        {
+          _source: message,
+        },
+      ],
+    },
+  });
+
+  const emptyElasticResult = {
+    hits: {
+      hits: [],
+    },
+  };
+
+  const makeConsumer = (selectResult: unknown = emptyElasticResult) => {
+    const redis = {
+      get: jest.fn(async () => null),
+      set: jest.fn(async () => 'OK'),
+      eval: jest.fn(async () => 1),
+      status: 'ready',
+    };
+    const chat = makeChat();
+    const chatService = {
+      createMessageIdempotent: jest.fn(async (..._args: unknown[]) => ({
+        created: true,
+        conflict: false,
+        id: 'message-created',
+      })),
+      patchExistingMessageMissingFields: jest.fn(
+        async (..._args: unknown[]) => undefined
+      ),
+      updateMessageChat: jest.fn(async (..._args: unknown[]) => undefined),
+      updateChatSummaryAtomically: jest.fn(async (..._args: unknown[]) => true),
+      findChatByChatId: jest.fn(async (..._args: unknown[]) => chat),
+      saveChat: jest.fn(async (..._args: unknown[]) => undefined),
+    };
+    const elasticDatabaseService = {
+      select: jest.fn(async () => selectResult),
+      updateWithScriptOCC: jest.fn(async () => 'updated'),
+      isReadOnlyAllowDeleteBlockError: jest.fn(() => false),
+    };
+    const consumer = new MessageUpsertConsume(
+      redis as never,
+      {} as never,
+      {
+        upsertMessage: jest.fn(() => 'upsert-message'),
+        markMessageRead: jest.fn(() => 'mark-message-read'),
+        getNumPartitions: jest.fn(() => 1),
+        getReplicationFactor: jest.fn(() => 1),
+      } as never,
+      elasticDatabaseService as never,
+      {} as never,
+      {
+        viewWorkerConfigFieldsByWorkerId: jest.fn(async () => null),
+      } as never,
+      chatService as never,
+      {} as never,
+      {
+        publishSub: jest.fn(async () => ({})),
+      } as never,
+      {
+        uploadFromUrl: jest.fn(async () => null),
+        deleteImage: jest.fn(async () => undefined),
+      } as never,
+      {
+        send: jest.fn(async () => undefined),
+      } as never,
+      {} as never,
+      {
+        createContact: jest.fn(async () => null),
+        getContactByPhone: jest.fn(async () => null),
+        updateContactById: jest.fn(async () => undefined),
+      } as never,
+      {
+        viewWorkerConfig: jest.fn(async () => ({
+          mark_as_read: false,
+        })),
+      } as never,
+      {
+        canTriggerChatbotEvent: jest.fn(async () => false),
+      } as never,
+      {
+        cancelInactivityTrackingForEndedAttendance: jest.fn(
+          async () => undefined
+        ),
+        resetOnContactMessage: jest.fn(async () => undefined),
+        resetOnOperatorMessage: jest.fn(async () => undefined),
+        resetOnOperatorAnnotationMessage: jest.fn(async () => undefined),
+      } as never,
+      {} as never,
+      {
+        sendNotificationForChatMessage: jest.fn(async () => undefined),
+      } as never,
+      {} as never,
+      {} as never
+    );
+
+    return {
+      consumer,
+      chat,
+      chatService,
+      elasticDatabaseService,
+    };
+  };
+
+  it('creates the original message when edit_text points to a missing target', async () => {
+    const { consumer, chat, chatService } = makeConsumer();
+
+    const result = await (consumer as any).createChatMessage(
+      chat,
+      makeEditUpsert()
+    );
+
+    expect(result.handled).toBe(true);
+    expect(chatService.updateMessageChat).not.toHaveBeenCalled();
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+
+    const createdMessage = chatService.createMessageIdempotent.mock
+      .calls[0][0] as IChatMessage;
+    expect(createdMessage.message_key).toEqual(
+      expect.objectContaining({
+        id: targetMessageId,
+        remote_jid: phoneJid,
+        remote_jid_alt: lidJid,
+        from_me: false,
+      })
+    );
+    expect(createdMessage.type_user).toBe(ETypeUserChat.client);
+    expect(createdMessage.content).toEqual(
+      expect.objectContaining({
+        type: EMessageType.text,
+        message: adBody,
+      })
+    );
+  });
+
+  it('keeps normal edit behavior when the target message exists', async () => {
+    const existingMessage = makeExistingMessage();
+    const { consumer, chat, chatService } = makeConsumer(
+      elasticHit(existingMessage)
+    );
+
+    const result = await (consumer as any).createChatMessage(
+      chat,
+      makeEditUpsert()
+    );
+
+    expect(result.handled).toBe(true);
+    expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
+    expect(chatService.updateMessageChat).toHaveBeenCalledTimes(1);
+
+    const updatedMessage = chatService.updateMessageChat.mock
+      .calls[0][0] as IChatMessage;
+    expect(updatedMessage.message_id).toBe(existingMessage.message_id);
+    expect(updatedMessage.content?.version).toEqual([
+      expect.objectContaining({
+        type: EMessageType.text,
+        message: adBody,
+      }),
+    ]);
+  });
+});

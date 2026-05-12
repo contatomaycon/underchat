@@ -110,6 +110,12 @@ interface ICreateChatMessageResult {
   reactionInactivityInteraction: IReactionInactivityInteraction | null;
 }
 
+interface IEditMessagePayload {
+  protocolKey?: Record<string, unknown>;
+  targetMessageId?: string;
+  editedContent?: Record<string, unknown>;
+}
+
 function isReactionInactivityTypeUser(
   typeUser: ETypeUserChat
 ): typeUser is ReactionInactivityTypeUser {
@@ -513,6 +519,186 @@ export class MessageUpsertConsume {
     return (
       this.toRecord(editedWrapper?.message) ??
       this.toRecord(editedWrapper?.protocolMessage)
+    );
+  }
+
+  private getEditMessagePayload(
+    data: IUpsertMessage
+  ): IEditMessagePayload | null {
+    if (data.type !== EMessageType.edit_text) return null;
+
+    const protocolMessage = this.getProtocolMessagePayload(data);
+    const protocolKey = this.toRecord(protocolMessage?.key);
+    const targetMessageId = this.firstStringField(protocolKey, ['id', 'ID']);
+    const editedContent = this.toRecord(protocolMessage?.editedMessage);
+
+    return {
+      protocolKey,
+      targetMessageId,
+      editedContent,
+    };
+  }
+
+  private isWwebjsSerializedMessageId(value: string): boolean {
+    return /^(true|false)_.+@.+_.+$/.test(value);
+  }
+
+  private async findEditTargetMessage(
+    getChat: IChat,
+    data: IUpsertMessage,
+    targetMessageId: string
+  ): Promise<IChatMessage | null> {
+    let targetMessage = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      targetMessageId,
+      data.message?.key
+    );
+
+    if (!targetMessage && this.isWwebjsSerializedMessageId(targetMessageId)) {
+      targetMessage = await this.findMessageByKeyIdInAccount(
+        data.account_id,
+        targetMessageId,
+        data.message?.key
+      );
+    }
+
+    return targetMessage;
+  }
+
+  private getEditedMessageText(editedContent: Record<string, unknown>): string {
+    const extText = this.toRecord(editedContent.extendedTextMessage);
+    return (
+      this.firstStringField(editedContent, ['conversation']) ??
+      this.firstStringField(extText, ['text']) ??
+      ''
+    );
+  }
+
+  private buildEditedMessageContentForCreate(
+    editedContent: Record<string, unknown>,
+    text: string
+  ): Record<string, unknown> {
+    const extText = this.toRecord(editedContent.extendedTextMessage);
+
+    return {
+      ...editedContent,
+      conversation:
+        this.firstStringField(editedContent, ['conversation']) ?? text,
+      extendedTextMessage: {
+        ...(extText ?? {}),
+        text,
+      },
+    };
+  }
+
+  private buildEditMessageCreateFallback(
+    data: IUpsertMessage,
+    editPayload: Required<
+      Pick<IEditMessagePayload, 'targetMessageId' | 'editedContent'>
+    >,
+    newText: string,
+    chatId?: string
+  ): IUpsertMessage {
+    logger.info({
+      type: 'message_edit_missing_target_create_fallback',
+      account_id: data.account_id,
+      chat_id: chatId,
+      worker_id: data.worker_id,
+      target_message_id: editPayload.targetMessageId,
+      event_message_id: data.message.key?.id,
+    });
+
+    return {
+      ...data,
+      type: EMessageType.text,
+      message: {
+        ...data.message,
+        key: {
+          ...data.message.key,
+          id: editPayload.targetMessageId,
+        },
+        message: this.buildEditedMessageContentForCreate(
+          editPayload.editedContent,
+          newText
+        ),
+      },
+    };
+  }
+
+  private async buildMissingEditMessageCreateFallback(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<IUpsertMessage | null> {
+    const editPayload = this.getEditMessagePayload(data);
+    if (
+      !editPayload?.targetMessageId ||
+      !editPayload.editedContent ||
+      !data.message
+    ) {
+      return null;
+    }
+
+    const targetMessage = await this.findEditTargetMessage(
+      getChat,
+      data,
+      editPayload.targetMessageId
+    );
+    if (targetMessage?.content) {
+      return null;
+    }
+
+    const newText = this.getEditedMessageText(editPayload.editedContent);
+    if (!newText) {
+      return null;
+    }
+
+    return this.buildEditMessageCreateFallback(
+      data,
+      {
+        targetMessageId: editPayload.targetMessageId,
+        editedContent: editPayload.editedContent,
+      },
+      newText,
+      getChat.chat_id
+    );
+  }
+
+  private async buildMissingEditMessageCreateFallbackWithoutChat(
+    data: IUpsertMessage
+  ): Promise<IUpsertMessage | null> {
+    const editPayload = this.getEditMessagePayload(data);
+    if (
+      !editPayload?.targetMessageId ||
+      !editPayload.editedContent ||
+      !data.message
+    ) {
+      return null;
+    }
+
+    if (this.isWwebjsSerializedMessageId(editPayload.targetMessageId)) {
+      const targetMessage = await this.findMessageByKeyIdInAccount(
+        data.account_id,
+        editPayload.targetMessageId,
+        data.message.key
+      );
+      if (targetMessage?.content) {
+        return null;
+      }
+    }
+
+    const newText = this.getEditedMessageText(editPayload.editedContent);
+    if (!newText) {
+      return null;
+    }
+
+    return this.buildEditMessageCreateFallback(
+      data,
+      {
+        targetMessageId: editPayload.targetMessageId,
+        editedContent: editPayload.editedContent,
+      },
+      newText
     );
   }
 
@@ -1197,12 +1383,10 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean | null> {
-    if (data.type !== EMessageType.edit_text) return null;
+    const editPayload = this.getEditMessagePayload(data);
+    if (!editPayload) return null;
 
-    const protocolMessage = this.getProtocolMessagePayload(data);
-    const protocolKey = this.toRecord(protocolMessage?.key);
-    const targetMessageId = this.firstStringField(protocolKey, ['id', 'ID']);
-    const editedContent = this.toRecord(protocolMessage?.editedMessage);
+    const { protocolKey, targetMessageId, editedContent } = editPayload;
 
     if (!targetMessageId || !editedContent) {
       logger.warn(
@@ -1223,26 +1407,11 @@ export class MessageUpsertConsume {
       return true;
     }
 
-    let targetMessage = await this.findMessageByKeyId(
-      data.account_id,
-      getChat.chat_id,
-      targetMessageId,
-      data.message?.key
+    const targetMessage = await this.findEditTargetMessage(
+      getChat,
+      data,
+      targetMessageId
     );
-
-    if (!targetMessage) {
-      const isWwebjsSerializedId = /^(true|false)_.+@.+_.+$/.test(
-        targetMessageId
-      );
-
-      if (isWwebjsSerializedId) {
-        targetMessage = await this.findMessageByKeyIdInAccount(
-          data.account_id,
-          targetMessageId,
-          data.message?.key
-        );
-      }
-    }
 
     if (!targetMessage?.content) {
       logger.warn(
@@ -1261,11 +1430,7 @@ export class MessageUpsertConsume {
       return true;
     }
 
-    const extText = this.toRecord(editedContent.extendedTextMessage);
-    const newText =
-      this.firstStringField(editedContent, ['conversation']) ??
-      this.firstStringField(extText, ['text']) ??
-      '';
+    const newText = this.getEditedMessageText(editedContent);
 
     if (!newText) {
       logger.warn(
@@ -2558,6 +2723,12 @@ export class MessageUpsertConsume {
           handled: reactionResult.handled,
           reactionInactivityInteraction: reactionResult.inactivityInteraction,
         };
+      }
+
+      const editCreateFallback =
+        await this.buildMissingEditMessageCreateFallback(getChat, data);
+      if (editCreateFallback) {
+        data = editCreateFallback;
       }
 
       const editResult = await this.handleEditMessage(getChat, data);
@@ -4227,6 +4398,13 @@ export class MessageUpsertConsume {
             this.workerService.viewWorkerConfigFieldsByWorkerId(data.worker_id),
           ]
         );
+
+        const editCreateFallback = getChat
+          ? await this.buildMissingEditMessageCreateFallback(getChat, data)
+          : await this.buildMissingEditMessageCreateFallbackWithoutChat(data);
+        if (editCreateFallback) {
+          data = editCreateFallback;
+        }
 
         const outsideHoursContext = this.resolveOutsideHoursContext(
           data,

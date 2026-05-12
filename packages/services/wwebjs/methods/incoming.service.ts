@@ -2803,6 +2803,20 @@ export class WwebjsIncomingMessageService {
     );
   }
 
+  private ensureEditedMessageBody(message: Message, body: string): void {
+    const mutableMessage = message as unknown as {
+      body?: string;
+      _data?: {
+        body?: string;
+      };
+    };
+
+    mutableMessage.body = body;
+    if (mutableMessage._data) {
+      mutableMessage._data.body = body;
+    }
+  }
+
   private async handleMessageEdit(
     message: Message,
     newBody: string,
@@ -2820,6 +2834,17 @@ export class WwebjsIncomingMessageService {
     }
 
     const normalizedPrevBody = getNonEmptyString(prevBody);
+    if (!normalizedPrevBody) {
+      this.ensureEditedMessageBody(message, normalizedNewBody);
+
+      if (this.shouldSkipIncomingMessage(message, 'message')) {
+        return;
+      }
+
+      await this.handleIncomingMessage(message);
+      return;
+    }
+
     if (normalizedPrevBody && normalizedPrevBody === normalizedNewBody) {
       return;
     }

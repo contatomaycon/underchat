@@ -28,7 +28,11 @@ jest.mock('@core/services/kafkaServiceQueue.service', () => ({
 }));
 
 jest.mock('@core/services/messageStatus.service', () => ({
-  MessageStatusService: class {},
+  MessageStatusService: class {
+    static statusKafkaKey(accountId: string, messageId: string) {
+      return `${accountId}:${messageId}`;
+    }
+  },
 }));
 
 jest.mock('@core/services/wwebjs/methods/upsertMediaEnricher.service', () => ({
@@ -44,6 +48,7 @@ jest.mock('@core/services/wwebjs/methods/deliveryConfirmation.service', () => ({
 }));
 
 import { WwebjsIncomingMessageService } from '@core/services/wwebjs/methods/incoming.service';
+import { EMessageType } from '@core/common/enums/EMessageType';
 
 type WwebjsIncomingMessageServicePrivate = {
   resolvePhotoForMessage: (
@@ -210,5 +215,396 @@ describe('WwebjsIncomingMessageService profile photo cache', () => {
     expect(redisStore.get(`photo:no-photo:wwebjs:jid:${phoneJid}`)).toBe(
       '__no_photo__'
     );
+  });
+});
+
+describe('WwebjsIncomingMessageService ad message_edit replay', () => {
+  const selfJid = '5517991552458@c.us';
+  const phoneJid = '556999715039@s.whatsapp.net';
+  const lidJid = '6352894177535@lid';
+  const contactInfoTo = '205127956844693:15@lid';
+  const adMessageId = '3A7E64CFE62F38192A29';
+  const adSerializedId = `false_${lidJid}_${adMessageId}`;
+  const e2eSerializedId = `false_${lidJid}_3EB086C68C75A88D1F23`;
+  const contactCardSerializedId = `false_${lidJid}_3EB0FA10AEA02E9B21D2`;
+  const adBody =
+    'Olá! Gostaria de saber sobre a Pós-Graduação EAD com um atendimento humanizado!';
+
+  class FakeWwebjsClient {
+    readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
+    readonly info = {
+      wid: {
+        _serialized: selfJid,
+      },
+    };
+    readonly getProfilePicUrl = jest.fn(async () => undefined);
+    readonly getContactById = jest.fn(async () => ({
+      isMe: false,
+      pushname: 'Luh',
+      getProfilePicUrl: jest.fn(async () => undefined),
+    }));
+    readonly getContactLidAndPhone = jest.fn(async () => [
+      {
+        lid: lidJid,
+        pn: phoneJid,
+      },
+    ]);
+    readonly onWhatsApp = jest.fn(async () => [
+      {
+        exists: true,
+        jid: phoneJid,
+      },
+    ]);
+
+    on(event: string, handler: (...args: unknown[]) => void): this {
+      const handlers = this.handlers.get(event) ?? [];
+      handlers.push(handler);
+      this.handlers.set(event, handlers);
+      return this;
+    }
+
+    emit(event: string, ...args: unknown[]): void {
+      for (const handler of this.handlers.get(event) ?? []) {
+        handler(...args);
+      }
+    }
+  }
+
+  const makeService = () => {
+    const redisStore = new Map<string, string>();
+    const redis = {
+      get: jest.fn(async (key: string) => redisStore.get(key) ?? null),
+      set: jest.fn(async (key: string, value: string) => {
+        redisStore.set(key, value);
+        return 'OK';
+      }),
+    };
+    const streamProducerService = {
+      send: jest.fn(async (..._args: unknown[]) => undefined),
+    };
+    const kafkaServiceQueueService = {
+      upsertMessage: jest.fn(() => 'upsert-message'),
+      updateMessageStatus: jest.fn(() => 'update-message-status'),
+    };
+    const service = new WwebjsIncomingMessageService(
+      streamProducerService as never,
+      kafkaServiceQueueService as never,
+      redis as never,
+      { enrich: jest.fn(async () => undefined) } as never,
+      {
+        resolveIncomingCallAction: jest.fn(async () => ({
+          reject_call: false,
+          show_message_on_call: false,
+        })),
+      } as never,
+      {
+        waitForOutcome: jest.fn(async () => 'sent'),
+        markFailed: jest.fn(),
+        markSent: jest.fn(),
+      } as never
+    );
+
+    return {
+      service,
+      streamProducerService,
+      kafkaServiceQueueService,
+    };
+  };
+
+  const makeLogMessage = (input: {
+    serializedId: string;
+    fromMe: boolean;
+    type: string;
+    body?: string;
+    subtype?: string;
+    from: string;
+    to: string;
+    timestamp?: number;
+    ack?: number;
+    author?: string;
+    ctwaContext?: Record<string, unknown>;
+  }) => {
+    const id = {
+      fromMe: input.fromMe,
+      remote: lidJid,
+      id: input.serializedId.split('_').at(-1),
+      _serialized: input.serializedId,
+      remoteJid: phoneJid,
+      name: null,
+    };
+    const body = input.body ?? '';
+    const message = {
+      _data: {
+        id,
+        body,
+        type: input.type,
+        subtype: input.subtype,
+        t: input.timestamp ?? 1778190016,
+        from: input.from,
+        to: input.to,
+        ack: input.ack,
+        notifyName: input.fromMe ? '' : 'Luh',
+        ctwaContext: input.ctwaContext,
+      },
+      id,
+      ack: input.ack,
+      hasMedia: false,
+      body,
+      type: input.type,
+      timestamp: input.timestamp ?? 1778190016,
+      from: input.from,
+      to: input.to,
+      author: input.author,
+      deviceType: input.fromMe ? 'android' : 'ios',
+      fromMe: input.fromMe,
+      hasQuotedMsg: false,
+      hasReaction: false,
+      getContact: jest.fn(async () => ({
+        pushname: 'Luh',
+        getProfilePicUrl: jest.fn(async () => undefined),
+      })),
+      getChat: jest.fn(async () => ({
+        name: '+55 69 9971-5039',
+      })),
+      getQuotedMessage: jest.fn(async () => undefined),
+    };
+
+    return message;
+  };
+
+  const adCtwaContext = {
+    conversionSource: 'FB_Ads',
+    ctwaSignals: 'all,all',
+    sourceUrl: 'https://fb.me/6G4qyAUIJ',
+    description:
+      'Você já concluiu a graduação e quer ir além, mas sem enrolação?',
+    title: 'Pós-Graduação EAD',
+    mediaType: 1,
+    sourceApp: 'facebook',
+    greetingMessageBody: 'Olá! Diga como podemos ajudar você.',
+    automatedGreetingMessageShown: true,
+    sourceId: '120241701325990384',
+    originalImageUrl: 'https://www.facebook.com/ads/image/?d=example',
+  };
+
+  const makeAdMessage = (type: string, body = '', subtype?: string) =>
+    makeLogMessage({
+      serializedId: adSerializedId,
+      fromMe: false,
+      type,
+      body,
+      subtype,
+      from: lidJid,
+      to: selfJid,
+      ack: 1,
+      ctwaContext: body ? adCtwaContext : undefined,
+    });
+
+  const makeUnreadCount = (
+    lastMessage: Record<string, unknown>,
+    unreadCount: number
+  ) => ({
+    id: {
+      server: 'lid',
+      user: lidJid.replace('@lid', ''),
+      _serialized: lidJid,
+    },
+    name: '+55 69 9971-5039',
+    isGroup: false,
+    unreadCount,
+    timestamp: 1778190016,
+    pinned: false,
+    isMuted: false,
+    muteExpiration: 0,
+    lastMessage,
+  });
+
+  const makeChatState = () => ({
+    chatId: lidJid,
+    userId: lidJid,
+    state: 'unavailable',
+    isOnline: false,
+    isGroup: false,
+    typingUserIds: [],
+    recordingUserIds: [],
+    timestamp: null,
+    deny: null,
+    stale: true,
+    isSubscribed: true,
+    hasData: false,
+    trigger: 'chatstate_change_type',
+  });
+
+  const makeE2ENotification = () =>
+    makeLogMessage({
+      serializedId: e2eSerializedId,
+      fromMe: false,
+      type: 'e2e_notification',
+      subtype: 'encrypt',
+      from: lidJid,
+      to: contactInfoTo,
+    });
+
+  const makeContactInfoCard = () =>
+    makeLogMessage({
+      serializedId: contactCardSerializedId,
+      fromMe: false,
+      type: 'notification_template',
+      subtype: 'contact_info_card',
+      from: lidJid,
+      to: contactInfoTo,
+    });
+
+  const flushAsyncHandlers = async () => {
+    for (let index = 0; index < 10; index += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+
+  it('replays the 6999715039 ad history in order and creates the decrypted edit as a new incoming message', async () => {
+    const consoleLogSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+    const consoleDirSpy = jest
+      .spyOn(console, 'dir')
+      .mockImplementation(() => undefined);
+    const consoleWarnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+
+    try {
+      const { service, streamProducerService } = makeService();
+      const client = new FakeWwebjsClient();
+      service.bindTo(client as never);
+
+      const historyEvents = [
+        { seq: 9272, event: 'message_create', args: [makeE2ENotification()] },
+        { seq: 9273, event: 'message', args: [makeE2ENotification()] },
+        { seq: 9274, event: 'message_create', args: [makeContactInfoCard()] },
+        { seq: 9275, event: 'message', args: [makeContactInfoCard()] },
+        {
+          seq: 9276,
+          event: 'message_ciphertext',
+          args: [makeAdMessage('ciphertext', '', 'fanout')],
+        },
+        {
+          seq: 9277,
+          event: 'unread_count',
+          args: [makeUnreadCount(makeAdMessage('ciphertext', '', 'fanout'), 1)],
+        },
+        {
+          seq: 9278,
+          event: 'message_create',
+          args: [makeAdMessage('ciphertext', '', 'fanout')],
+        },
+        {
+          seq: 9279,
+          event: 'message',
+          args: [makeAdMessage('ciphertext', '', 'fanout')],
+        },
+        {
+          seq: 9280,
+          event: 'message_ciphertext_failed',
+          args: [makeAdMessage('ciphertext', '', 'fanout')],
+        },
+        {
+          seq: 9282,
+          event: 'chat_state',
+          args: [makeChatState()],
+        },
+        {
+          seq: 9325,
+          event: 'message_edit',
+          args: [makeAdMessage('chat', adBody), adBody, null],
+        },
+        {
+          seq: 9326,
+          event: 'message_create',
+          args: [makeAdMessage('chat', adBody)],
+        },
+        {
+          seq: 9327,
+          event: 'message',
+          args: [makeAdMessage('chat', adBody)],
+        },
+        {
+          seq: 2886,
+          event: 'message_create',
+          args: [makeAdMessage('chat', adBody)],
+        },
+        {
+          seq: 2887,
+          event: 'message',
+          args: [makeAdMessage('chat', adBody)],
+        },
+        {
+          seq: 2888,
+          event: 'message_ack',
+          args: [makeAdMessage('chat', adBody), 3],
+        },
+        { seq: 2889, event: 'message_create', args: [makeE2ENotification()] },
+        { seq: 2890, event: 'message', args: [makeE2ENotification()] },
+        { seq: 2891, event: 'message_create', args: [makeContactInfoCard()] },
+        { seq: 2892, event: 'message', args: [makeContactInfoCard()] },
+      ] as const;
+
+      for (const historyEvent of historyEvents) {
+        client.emit(historyEvent.event, ...historyEvent.args);
+      }
+      await flushAsyncHandlers();
+
+      const upsertSends = streamProducerService.send.mock.calls.filter(
+        ([topic]) => topic === 'upsert-message'
+      );
+      const upsertPayloads = upsertSends.map(([, payload]) => payload as any);
+      const inboundAdPayloads = upsertPayloads.filter(
+        (payload) => payload.message.key.id === adSerializedId
+      );
+
+      expect(historyEvents.map((event) => event.seq)).toEqual([
+        9272, 9273, 9274, 9275, 9276, 9277, 9278, 9279, 9280, 9282, 9325, 9326,
+        9327, 2886, 2887, 2888, 2889, 2890, 2891, 2892,
+      ]);
+      expect(upsertPayloads).toHaveLength(1);
+      expect(inboundAdPayloads).toHaveLength(1);
+      expect(
+        upsertPayloads.some(
+          (payload) => payload.type === EMessageType.edit_text
+        )
+      ).toBe(false);
+      expect(inboundAdPayloads[0]).toEqual(
+        expect.objectContaining({
+          type: EMessageType.text,
+          worker_id: 'worker-w',
+          account_id: 'account-w',
+          has_quoted: false,
+        })
+      );
+      expect(inboundAdPayloads[0].message.key).toEqual(
+        expect.objectContaining({
+          id: adSerializedId,
+          remoteJid: phoneJid,
+          remoteJidAlt: lidJid,
+          fromMe: false,
+        })
+      );
+      expect(inboundAdPayloads[0].message.message.conversation).toBe(adBody);
+      expect(
+        inboundAdPayloads[0].message.message.extendedTextMessage.contextInfo
+          .externalAdReply
+      ).toEqual(
+        expect.objectContaining({
+          title: 'Pós-Graduação EAD',
+          sourceApp: 'facebook',
+          sourceId: '120241701325990384',
+          sourceUrl: 'https://fb.me/6G4qyAUIJ',
+          automatedGreetingMessageShown: true,
+        })
+      );
+    } finally {
+      consoleLogSpy.mockRestore();
+      consoleDirSpy.mockRestore();
+      consoleWarnSpy.mockRestore();
+    }
   });
 });
