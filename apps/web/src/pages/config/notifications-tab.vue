@@ -10,6 +10,20 @@ import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/resp
 import TablePagination from '@/@webcore/components/TablePagination.vue';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 
+type NotificationTypeKey =
+  | 'two_factor'
+  | 'plan_new'
+  | 'plan_renewal'
+  | 'plan_expiration'
+  | 'plan_cancellation'
+  | 'recurring_payment_failure'
+  | 'test_plan_new'
+  | 'test_plan_expiration';
+
+type NotificationConfig = NonNullable<
+  ListNotificationsResponse['two_factor_notification']
+>;
+
 const { t } = useI18n();
 const settingsStore = useSettingsStore();
 const notificationsStore = useNotificationsStore();
@@ -20,94 +34,122 @@ const notifications = ref<ListNotificationsResponse | null>(null);
 const workers = ref<ListWorkersResponse>([]);
 
 const isWorkerModalOpen = ref(false);
-const selectedNotificationType = ref<
-  | 'two_factor'
-  | 'plan_new'
-  | 'plan_renewal'
-  | 'plan_expiration'
-  | 'plan_cancellation'
-  | 'recurring_payment_failure'
-  | 'test_plan_new'
-  | 'test_plan_expiration'
-  | null
->(null);
+const selectedNotificationType = ref<NotificationTypeKey | null>(null);
 const selectedWorkerId = ref<string | null>(null);
+const whatsappEnabled = ref(false);
 const whatsappMessage = ref<string>('');
+const emailEnabled = ref(false);
 const emailSubject = ref<string>('');
 const emailMessage = ref<string>('');
 const isSaving = ref(false);
 
-const isTwoFactorActive = computed(() => {
-  return (
-    notifications.value?.two_factor_notification !== null &&
-    (notifications.value?.two_factor_notification?.whatsapp?.worker_id !==
-      null ||
-      notifications.value?.two_factor_notification?.email?.message !== null)
+const getNotificationByType = (
+  type: NotificationTypeKey
+): NotificationConfig | null => {
+  const notificationMap: Record<
+    NotificationTypeKey,
+    NotificationConfig | null | undefined
+  > = {
+    two_factor: notifications.value?.two_factor_notification,
+    plan_new: notifications.value?.plan_new_notification,
+    plan_renewal: notifications.value?.plan_renewal_notification,
+    plan_expiration: notifications.value?.plan_expiration_reminder,
+    plan_cancellation: notifications.value?.plan_cancellation_notification,
+    recurring_payment_failure:
+      notifications.value?.recurring_payment_failure_notification,
+    test_plan_new: notifications.value?.test_plan_new_notification,
+    test_plan_expiration: notifications.value?.test_plan_expiration_reminder,
+  };
+
+  return notificationMap[type] ?? null;
+};
+
+const isWhatsappChannelActive = (
+  notification: NotificationConfig | null | undefined
+) => {
+  return !!(
+    notification?.whatsapp?.enabled === true &&
+    notification.whatsapp.worker_id &&
+    notification.whatsapp.message
   );
+};
+
+const isEmailChannelActive = (
+  notification: NotificationConfig | null | undefined
+) => {
+  return !!(
+    notification?.email?.enabled === true && notification.email.message
+  );
+};
+
+const isNotificationActive = (
+  notification: NotificationConfig | null | undefined
+) => {
+  return (
+    isWhatsappChannelActive(notification) || isEmailChannelActive(notification)
+  );
+};
+
+const getChannelColor = (isActive: boolean) => {
+  return isActive ? 'success' : 'error';
+};
+
+const getChannelSummary = (type: NotificationTypeKey) => {
+  const notification = getNotificationByType(type);
+  const whatsappActive = isWhatsappChannelActive(notification);
+  const emailActive = isEmailChannelActive(notification);
+
+  return [
+    {
+      key: 'whatsapp',
+      icon: 'tabler-brand-whatsapp',
+      label: t('whatsapp'),
+      active: whatsappActive,
+    },
+    {
+      key: 'email',
+      icon: 'tabler-mail',
+      label: t('email'),
+      active: emailActive,
+    },
+  ];
+};
+
+const isTwoFactorActive = computed(() => {
+  return isNotificationActive(notifications.value?.two_factor_notification);
 });
 
 const isPlanNewActive = computed(() => {
-  return (
-    notifications.value?.plan_new_notification !== null &&
-    (notifications.value?.plan_new_notification?.whatsapp?.worker_id !== null ||
-      notifications.value?.plan_new_notification?.email?.message !== null)
-  );
+  return isNotificationActive(notifications.value?.plan_new_notification);
 });
 
 const isPlanRenewalActive = computed(() => {
-  return (
-    notifications.value?.plan_renewal_notification !== null &&
-    (notifications.value?.plan_renewal_notification?.whatsapp?.worker_id !==
-      null ||
-      notifications.value?.plan_renewal_notification?.email?.message !== null)
-  );
+  return isNotificationActive(notifications.value?.plan_renewal_notification);
 });
 
 const isPlanExpirationActive = computed(() => {
-  return (
-    notifications.value?.plan_expiration_reminder !== null &&
-    (notifications.value?.plan_expiration_reminder?.whatsapp?.worker_id !==
-      null ||
-      notifications.value?.plan_expiration_reminder?.email?.message !== null)
-  );
+  return isNotificationActive(notifications.value?.plan_expiration_reminder);
 });
 
 const isPlanCancellationActive = computed(() => {
-  return (
-    notifications.value?.plan_cancellation_notification !== null &&
-    (notifications.value?.plan_cancellation_notification?.whatsapp
-      ?.worker_id !== null ||
-      notifications.value?.plan_cancellation_notification?.email?.message !==
-        null)
+  return isNotificationActive(
+    notifications.value?.plan_cancellation_notification
   );
 });
 
 const isRecurringPaymentFailureActive = computed(() => {
-  return (
-    notifications.value?.recurring_payment_failure_notification !== null &&
-    (notifications.value?.recurring_payment_failure_notification?.whatsapp
-      ?.worker_id !== null ||
-      notifications.value?.recurring_payment_failure_notification?.email
-        ?.message !== null)
+  return isNotificationActive(
+    notifications.value?.recurring_payment_failure_notification
   );
 });
 
 const isTestPlanNewActive = computed(() => {
-  return (
-    notifications.value?.test_plan_new_notification !== null &&
-    (notifications.value?.test_plan_new_notification?.whatsapp?.worker_id !==
-      null ||
-      notifications.value?.test_plan_new_notification?.email?.message !== null)
-  );
+  return isNotificationActive(notifications.value?.test_plan_new_notification);
 });
 
 const isTestPlanExpirationActive = computed(() => {
-  return (
-    notifications.value?.test_plan_expiration_reminder !== null &&
-    (notifications.value?.test_plan_expiration_reminder?.whatsapp?.worker_id !==
-      null ||
-      notifications.value?.test_plan_expiration_reminder?.email?.message !==
-        null)
+  return isNotificationActive(
+    notifications.value?.test_plan_expiration_reminder
   );
 });
 
@@ -174,107 +216,22 @@ const loadWorkers = async () => {
   }
 };
 
-const openWorkerModal = async (
-  type:
-    | 'two_factor'
-    | 'plan_new'
-    | 'plan_renewal'
-    | 'plan_expiration'
-    | 'plan_cancellation'
-    | 'recurring_payment_failure'
-    | 'test_plan_new'
-    | 'test_plan_expiration'
-) => {
+const openWorkerModal = async (type: NotificationTypeKey) => {
   selectedNotificationType.value = type;
   selectedWorkerId.value = null;
+  whatsappEnabled.value = false;
   whatsappMessage.value = '';
+  emailEnabled.value = false;
   emailSubject.value = '';
   emailMessage.value = '';
 
-  if (type === 'two_factor') {
-    selectedWorkerId.value =
-      notifications.value?.two_factor_notification?.whatsapp?.worker_id || null;
-    whatsappMessage.value =
-      notifications.value?.two_factor_notification?.whatsapp?.message || '';
-    emailSubject.value =
-      notifications.value?.two_factor_notification?.email?.subject || '';
-    emailMessage.value =
-      notifications.value?.two_factor_notification?.email?.message || '';
-  } else if (type === 'plan_new') {
-    selectedWorkerId.value =
-      notifications.value?.plan_new_notification?.whatsapp?.worker_id || null;
-    whatsappMessage.value =
-      notifications.value?.plan_new_notification?.whatsapp?.message || '';
-    emailSubject.value =
-      notifications.value?.plan_new_notification?.email?.subject || '';
-    emailMessage.value =
-      notifications.value?.plan_new_notification?.email?.message || '';
-  } else if (type === 'plan_renewal') {
-    selectedWorkerId.value =
-      notifications.value?.plan_renewal_notification?.whatsapp?.worker_id ||
-      null;
-    whatsappMessage.value =
-      notifications.value?.plan_renewal_notification?.whatsapp?.message || '';
-    emailSubject.value =
-      notifications.value?.plan_renewal_notification?.email?.subject || '';
-    emailMessage.value =
-      notifications.value?.plan_renewal_notification?.email?.message || '';
-  } else if (type === 'plan_expiration') {
-    selectedWorkerId.value =
-      notifications.value?.plan_expiration_reminder?.whatsapp?.worker_id ||
-      null;
-    whatsappMessage.value =
-      notifications.value?.plan_expiration_reminder?.whatsapp?.message || '';
-    emailSubject.value =
-      notifications.value?.plan_expiration_reminder?.email?.subject || '';
-    emailMessage.value =
-      notifications.value?.plan_expiration_reminder?.email?.message || '';
-  } else if (type === 'plan_cancellation') {
-    selectedWorkerId.value =
-      notifications.value?.plan_cancellation_notification?.whatsapp
-        ?.worker_id || null;
-    whatsappMessage.value =
-      notifications.value?.plan_cancellation_notification?.whatsapp?.message ||
-      '';
-    emailSubject.value =
-      notifications.value?.plan_cancellation_notification?.email?.subject || '';
-    emailMessage.value =
-      notifications.value?.plan_cancellation_notification?.email?.message || '';
-  } else if (type === 'recurring_payment_failure') {
-    selectedWorkerId.value =
-      notifications.value?.recurring_payment_failure_notification?.whatsapp
-        ?.worker_id || null;
-    whatsappMessage.value =
-      notifications.value?.recurring_payment_failure_notification?.whatsapp
-        ?.message || '';
-    emailSubject.value =
-      notifications.value?.recurring_payment_failure_notification?.email
-        ?.subject || '';
-    emailMessage.value =
-      notifications.value?.recurring_payment_failure_notification?.email
-        ?.message || '';
-  } else if (type === 'test_plan_new') {
-    selectedWorkerId.value =
-      notifications.value?.test_plan_new_notification?.whatsapp?.worker_id ||
-      null;
-    whatsappMessage.value =
-      notifications.value?.test_plan_new_notification?.whatsapp?.message || '';
-    emailSubject.value =
-      notifications.value?.test_plan_new_notification?.email?.subject || '';
-    emailMessage.value =
-      notifications.value?.test_plan_new_notification?.email?.message || '';
-  } else if (type === 'test_plan_expiration') {
-    selectedWorkerId.value =
-      notifications.value?.test_plan_expiration_reminder?.whatsapp?.worker_id ||
-      null;
-    whatsappMessage.value =
-      notifications.value?.test_plan_expiration_reminder?.whatsapp?.message ||
-      '';
-    emailSubject.value =
-      notifications.value?.test_plan_expiration_reminder?.email?.subject || '';
-    emailMessage.value =
-      notifications.value?.test_plan_expiration_reminder?.email?.message || '';
-  }
+  const notification = getNotificationByType(type);
+  selectedWorkerId.value = notification?.whatsapp?.worker_id || null;
+  whatsappEnabled.value = notification?.whatsapp?.enabled ?? false;
+  whatsappMessage.value = notification?.whatsapp?.message || '';
+  emailEnabled.value = notification?.email?.enabled ?? false;
+  emailSubject.value = notification?.email?.subject || '';
+  emailMessage.value = notification?.email?.message || '';
 
   await loadWorkers();
   isWorkerModalOpen.value = true;
@@ -292,7 +249,9 @@ const closeWorkerModal = () => {
   isWorkerModalOpen.value = false;
   selectedNotificationType.value = null;
   selectedWorkerId.value = null;
+  whatsappEnabled.value = false;
   whatsappMessage.value = '';
+  emailEnabled.value = false;
   emailSubject.value = '';
   emailMessage.value = '';
 };
@@ -308,52 +267,69 @@ const saveNotification = async () => {
     if (selectedNotificationType.value === 'two_factor') {
       updateData.two_factor_notification = selectedWorkerId.value;
       updateData.two_factor_message_whatsapp = whatsappMessage.value || null;
+      updateData.two_factor_whatsapp_enabled = whatsappEnabled.value;
       updateData.two_factor_message_email = emailMessage.value || null;
       updateData.two_factor_email_subject = emailSubject.value || null;
+      updateData.two_factor_email_enabled = emailEnabled.value;
     } else if (selectedNotificationType.value === 'plan_new') {
       updateData.plan_new_notification = selectedWorkerId.value;
       updateData.plan_new_message_whatsapp = whatsappMessage.value || null;
+      updateData.plan_new_whatsapp_enabled = whatsappEnabled.value;
       updateData.plan_new_message_email = emailMessage.value || null;
       updateData.plan_new_email_subject = emailSubject.value || null;
+      updateData.plan_new_email_enabled = emailEnabled.value;
     } else if (selectedNotificationType.value === 'plan_renewal') {
       updateData.plan_renewal_notification = selectedWorkerId.value;
       updateData.plan_renewal_message_whatsapp = whatsappMessage.value || null;
+      updateData.plan_renewal_whatsapp_enabled = whatsappEnabled.value;
       updateData.plan_renewal_message_email = emailMessage.value || null;
       updateData.plan_renewal_email_subject = emailSubject.value || null;
+      updateData.plan_renewal_email_enabled = emailEnabled.value;
     } else if (selectedNotificationType.value === 'plan_expiration') {
       updateData.plan_expiration_reminder = selectedWorkerId.value;
       updateData.plan_expiration_message_whatsapp =
         whatsappMessage.value || null;
+      updateData.plan_expiration_whatsapp_enabled = whatsappEnabled.value;
       updateData.plan_expiration_message_email = emailMessage.value || null;
       updateData.plan_expiration_email_subject = emailSubject.value || null;
+      updateData.plan_expiration_email_enabled = emailEnabled.value;
     } else if (selectedNotificationType.value === 'plan_cancellation') {
       updateData.plan_cancellation_notification = selectedWorkerId.value;
       updateData.plan_cancellation_message_whatsapp =
         whatsappMessage.value || null;
+      updateData.plan_cancellation_whatsapp_enabled = whatsappEnabled.value;
       updateData.plan_cancellation_message_email = emailMessage.value || null;
       updateData.plan_cancellation_email_subject = emailSubject.value || null;
+      updateData.plan_cancellation_email_enabled = emailEnabled.value;
     } else if (selectedNotificationType.value === 'recurring_payment_failure') {
       updateData.recurring_payment_failure_notification =
         selectedWorkerId.value;
       updateData.recurring_payment_failure_message_whatsapp =
         whatsappMessage.value || null;
+      updateData.recurring_payment_failure_whatsapp_enabled =
+        whatsappEnabled.value;
       updateData.recurring_payment_failure_message_email =
         emailMessage.value || null;
       updateData.recurring_payment_failure_email_subject =
         emailSubject.value || null;
+      updateData.recurring_payment_failure_email_enabled = emailEnabled.value;
     } else if (selectedNotificationType.value === 'test_plan_new') {
       updateData.test_plan_new_notification = selectedWorkerId.value;
       updateData.test_plan_new_message_whatsapp = whatsappMessage.value || null;
+      updateData.test_plan_new_whatsapp_enabled = whatsappEnabled.value;
       updateData.test_plan_new_message_email = emailMessage.value || null;
       updateData.test_plan_new_email_subject = emailSubject.value || null;
+      updateData.test_plan_new_email_enabled = emailEnabled.value;
     } else if (selectedNotificationType.value === 'test_plan_expiration') {
       updateData.test_plan_expiration_reminder = selectedWorkerId.value;
       updateData.test_plan_expiration_message_whatsapp =
         whatsappMessage.value || null;
+      updateData.test_plan_expiration_whatsapp_enabled = whatsappEnabled.value;
       updateData.test_plan_expiration_message_email =
         emailMessage.value || null;
       updateData.test_plan_expiration_email_subject =
         emailSubject.value || null;
+      updateData.test_plan_expiration_email_enabled = emailEnabled.value;
     }
 
     const result = await settingsStore.updateNotifications(updateData);
@@ -379,17 +355,7 @@ const saveNotification = async () => {
   }
 };
 
-const removeNotification = async (
-  type:
-    | 'two_factor'
-    | 'plan_new'
-    | 'plan_renewal'
-    | 'plan_expiration'
-    | 'plan_cancellation'
-    | 'recurring_payment_failure'
-    | 'test_plan_new'
-    | 'test_plan_expiration'
-) => {
+const removeNotification = async (type: NotificationTypeKey) => {
   try {
     isSaving.value = true;
 
@@ -663,6 +629,19 @@ onMounted(async () => {
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
                     </div>
+                    <div class="notification-channel-summary mt-3">
+                      <VChip
+                        v-for="channel in getChannelSummary('two_factor')"
+                        :key="channel.key"
+                        :color="getChannelColor(channel.active)"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        <VIcon :icon="channel.icon" start size="14" />
+                        {{ channel.label }}:
+                        {{ channel.active ? $t('active') : $t('deactivated') }}
+                      </VChip>
+                    </div>
                   </VCardText>
                 </VCard>
               </VCol>
@@ -704,6 +683,19 @@ onMounted(async () => {
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
+                    </div>
+                    <div class="notification-channel-summary mt-3">
+                      <VChip
+                        v-for="channel in getChannelSummary('plan_new')"
+                        :key="channel.key"
+                        :color="getChannelColor(channel.active)"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        <VIcon :icon="channel.icon" start size="14" />
+                        {{ channel.label }}:
+                        {{ channel.active ? $t('active') : $t('deactivated') }}
+                      </VChip>
                     </div>
                   </VCardText>
                 </VCard>
@@ -748,6 +740,19 @@ onMounted(async () => {
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
+                    </div>
+                    <div class="notification-channel-summary mt-3">
+                      <VChip
+                        v-for="channel in getChannelSummary('plan_renewal')"
+                        :key="channel.key"
+                        :color="getChannelColor(channel.active)"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        <VIcon :icon="channel.icon" start size="14" />
+                        {{ channel.label }}:
+                        {{ channel.active ? $t('active') : $t('deactivated') }}
+                      </VChip>
                     </div>
                   </VCardText>
                 </VCard>
@@ -794,6 +799,19 @@ onMounted(async () => {
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
+                    </div>
+                    <div class="notification-channel-summary mt-3">
+                      <VChip
+                        v-for="channel in getChannelSummary('plan_expiration')"
+                        :key="channel.key"
+                        :color="getChannelColor(channel.active)"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        <VIcon :icon="channel.icon" start size="14" />
+                        {{ channel.label }}:
+                        {{ channel.active ? $t('active') : $t('deactivated') }}
+                      </VChip>
                     </div>
                   </VCardText>
                 </VCard>
@@ -842,6 +860,21 @@ onMounted(async () => {
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
+                    </div>
+                    <div class="notification-channel-summary mt-3">
+                      <VChip
+                        v-for="channel in getChannelSummary(
+                          'plan_cancellation'
+                        )"
+                        :key="channel.key"
+                        :color="getChannelColor(channel.active)"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        <VIcon :icon="channel.icon" start size="14" />
+                        {{ channel.label }}:
+                        {{ channel.active ? $t('active') : $t('deactivated') }}
+                      </VChip>
                     </div>
                   </VCardText>
                 </VCard>
@@ -897,6 +930,21 @@ onMounted(async () => {
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
                     </div>
+                    <div class="notification-channel-summary mt-3">
+                      <VChip
+                        v-for="channel in getChannelSummary(
+                          'recurring_payment_failure'
+                        )"
+                        :key="channel.key"
+                        :color="getChannelColor(channel.active)"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        <VIcon :icon="channel.icon" start size="14" />
+                        {{ channel.label }}:
+                        {{ channel.active ? $t('active') : $t('deactivated') }}
+                      </VChip>
+                    </div>
                   </VCardText>
                 </VCard>
               </VCol>
@@ -940,6 +988,19 @@ onMounted(async () => {
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
+                    </div>
+                    <div class="notification-channel-summary mt-3">
+                      <VChip
+                        v-for="channel in getChannelSummary('test_plan_new')"
+                        :key="channel.key"
+                        :color="getChannelColor(channel.active)"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        <VIcon :icon="channel.icon" start size="14" />
+                        {{ channel.label }}:
+                        {{ channel.active ? $t('active') : $t('deactivated') }}
+                      </VChip>
                     </div>
                   </VCardText>
                 </VCard>
@@ -990,6 +1051,21 @@ onMounted(async () => {
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
+                    </div>
+                    <div class="notification-channel-summary mt-3">
+                      <VChip
+                        v-for="channel in getChannelSummary(
+                          'test_plan_expiration'
+                        )"
+                        :key="channel.key"
+                        :color="getChannelColor(channel.active)"
+                        size="x-small"
+                        variant="tonal"
+                      >
+                        <VIcon :icon="channel.icon" start size="14" />
+                        {{ channel.label }}:
+                        {{ channel.active ? $t('active') : $t('deactivated') }}
+                      </VChip>
                     </div>
                   </VCardText>
                 </VCard>
@@ -1232,9 +1308,18 @@ onMounted(async () => {
 
         <VCardText class="pt-6">
           <div class="mb-6">
-            <div class="d-flex align-center gap-2 mb-4">
-              <VIcon icon="tabler-brand-whatsapp" color="success" />
-              <span class="text-h6">{{ $t('whatsapp') }}</span>
+            <div class="d-flex align-center justify-space-between mb-4">
+              <div class="d-flex align-center gap-2">
+                <VIcon icon="tabler-brand-whatsapp" color="success" />
+                <span class="text-h6">{{ $t('whatsapp') }}</span>
+              </div>
+              <VSwitch
+                v-model="whatsappEnabled"
+                color="success"
+                density="compact"
+                hide-details
+                inset
+              />
             </div>
 
             <VAutocomplete
@@ -1246,7 +1331,7 @@ onMounted(async () => {
               variant="outlined"
               clearable
               :filter="filterWorkers"
-              :disabled="!hasWorkers"
+              :disabled="!whatsappEnabled || !hasWorkers"
               prepend-inner-icon="tabler-search"
             >
               <template #no-data>
@@ -1275,16 +1360,25 @@ onMounted(async () => {
               variant="outlined"
               rows="4"
               :placeholder="$t('notification_message_placeholder')"
-              :disabled="!hasWorkers || !selectedWorkerId"
+              :disabled="!whatsappEnabled || !hasWorkers || !selectedWorkerId"
             />
           </div>
 
           <VDivider class="my-6" />
 
           <div>
-            <div class="d-flex align-center gap-2 mb-4">
-              <VIcon icon="tabler-mail" color="primary" />
-              <span class="text-h6">{{ $t('email') }}</span>
+            <div class="d-flex align-center justify-space-between mb-4">
+              <div class="d-flex align-center gap-2">
+                <VIcon icon="tabler-mail" color="primary" />
+                <span class="text-h6">{{ $t('email') }}</span>
+              </div>
+              <VSwitch
+                v-model="emailEnabled"
+                color="primary"
+                density="compact"
+                hide-details
+                inset
+              />
             </div>
 
             <VLabel class="text-body-2 mb-1">{{ $t('email_subject') }}:</VLabel>
@@ -1292,6 +1386,7 @@ onMounted(async () => {
               v-model="emailSubject"
               variant="outlined"
               :placeholder="$t('email_subject_placeholder')"
+              :disabled="!emailEnabled"
             />
 
             <VLabel class="text-body-2 mb-1 mt-4"
@@ -1302,6 +1397,7 @@ onMounted(async () => {
               variant="outlined"
               rows="4"
               :placeholder="$t('email_message_placeholder')"
+              :disabled="!emailEnabled"
             />
 
             <VCard v-if="emailMessage" variant="outlined" class="mt-4">
@@ -1526,11 +1622,46 @@ onMounted(async () => {
   flex-grow: 1;
 }
 
+.notification-card
+  :deep(.v-card-text > .d-flex.align-start.justify-space-between) {
+  gap: 0.75rem;
+}
+
+.notification-card
+  :deep(
+    .v-card-text > .d-flex.align-start.justify-space-between > .flex-grow-1
+  ) {
+  min-width: 0;
+}
+
+.notification-card
+  :deep(.v-card-text > .d-flex.align-start.justify-space-between > .v-chip) {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+
+.notification-card
+  :deep(
+    .v-card-text
+      > .d-flex.align-start.justify-space-between
+      > .v-chip
+      .v-chip__content
+  ) {
+  overflow: visible;
+  white-space: nowrap;
+}
+
 .notification-card :deep(.font-weight-medium) {
   word-wrap: break-word;
   overflow-wrap: break-word;
   white-space: normal;
   line-height: 1.4;
+}
+
+.notification-channel-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
 }
 
 .email-preview {

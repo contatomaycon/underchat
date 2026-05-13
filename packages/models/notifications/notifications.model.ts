@@ -1,4 +1,11 @@
-import { pgTable, timestamp, uuid, text, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  timestamp,
+  uuid,
+  text,
+  index,
+  boolean,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { worker } from '@core/models';
 import { notificationType } from './notificationType.model';
@@ -12,8 +19,10 @@ export const notifications = pgTable(
       .references(() => notificationType.notification_type_id)
       .notNull(),
     message_whatsapp: text(),
+    whatsapp_enabled: boolean().notNull().default(false),
     email_subject: text(),
     message_email: text(),
+    email_enabled: boolean().notNull().default(false),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,

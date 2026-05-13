@@ -84,11 +84,12 @@ export class AuthRegisterSendTwoFactorUseCase {
       throw new Error(t('register_phone_already_used'));
     }
 
-    await this.notificationMessageService.sendTwoFactorCodeByWhatsApp(
-      fullPhone,
-      phoneDDI,
-      input.name,
-      normalizedEmail
-    );
+    await this.notificationMessageService.sendTwoFactorCodeWithChannels({
+      email: normalizedEmail,
+      userId: null,
+      phone: fullPhone,
+      phoneDdi: phoneDDI,
+      name: input.name,
+    });
   }
 }

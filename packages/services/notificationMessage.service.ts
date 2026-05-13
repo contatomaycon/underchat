@@ -63,7 +63,11 @@ export class NotificationMessageService {
     notification: any,
     notificationTypeName: string,
     fullName: string | null,
-    accountId: string
+    accountId: string,
+    channels: {
+      whatsapp: boolean;
+      email: boolean;
+    }
   ): Promise<{
     whatsappMessage: string | null;
     emailMessage: string | null;
@@ -73,7 +77,7 @@ export class NotificationMessageService {
     let emailMessage: string | null = null;
     let emailSubject: string | null = null;
 
-    if (notification.message_whatsapp) {
+    if (channels.whatsapp && notification.message_whatsapp) {
       whatsappMessage = await this.replaceNotificationParameters(
         notification.message_whatsapp,
         notificationTypeName,
@@ -82,7 +86,7 @@ export class NotificationMessageService {
       );
     }
 
-    if (notification.message_email) {
+    if (channels.email && notification.message_email) {
       emailMessage = await this.replaceNotificationParameters(
         notification.message_email,
         notificationTypeName,
@@ -128,7 +132,12 @@ export class NotificationMessageService {
     workerId: string | null,
     notificationMessage: INotificationMessage
   ): Promise<void> {
-    if (!notification.message_whatsapp || !phone || !workerId) {
+    if (
+      notification.whatsapp_enabled !== true ||
+      !notificationMessage.message_whatsapp ||
+      !phone ||
+      !workerId
+    ) {
       return;
     }
 
@@ -143,7 +152,12 @@ export class NotificationMessageService {
     emailMessage: string | null,
     emailSubject: string | null
   ): Promise<void> {
-    if (!notification.message_email || !userEmail || !emailMessage) {
+    if (
+      notification.email_enabled !== true ||
+      !notification.message_email ||
+      !userEmail ||
+      !emailMessage
+    ) {
       return;
     }
 
@@ -166,6 +180,17 @@ export class NotificationMessageService {
 
     if (!notification) {
       throw new Error('Notification not found');
+    }
+
+    const hasWhatsappConfig =
+      notification.whatsapp_enabled === true &&
+      !!notification.message_whatsapp &&
+      !!notification.worker_id;
+    const hasEmailConfig =
+      notification.email_enabled === true && !!notification.message_email;
+
+    if (!hasWhatsappConfig && !hasEmailConfig) {
+      return true;
     }
 
     const masterUser =
@@ -194,38 +219,46 @@ export class NotificationMessageService {
     );
     const userEmail = await this.getUserEmail(masterUser.user_id);
 
+    let shouldSendWhatsapp = !!(
+      hasWhatsappConfig &&
+      phone &&
+      userInfo.phone_ddi
+    );
+    const shouldSendEmail = !!(hasEmailConfig && userEmail);
+
+    if (!shouldSendWhatsapp && !shouldSendEmail) {
+      return true;
+    }
+
     const { whatsappMessage, emailMessage, emailSubject } =
       await this.prepareNotificationMessages(
         notification,
         notificationTypeName,
         fullName,
-        accountId
+        accountId,
+        {
+          whatsapp: shouldSendWhatsapp,
+          email: shouldSendEmail,
+        }
       );
-
-    if (!notification.message_whatsapp && !notification.message_email) {
-      return true;
-    }
 
     let workerId: string | null = null;
     let workerName: string | null = null;
 
-    if (notification.message_whatsapp) {
-      if (!notification.worker_id) {
-        throw new Error('Worker ID not found in notification');
-      }
-
+    if (shouldSendWhatsapp && notification.worker_id) {
       workerId = notification.worker_id;
 
       workerName =
         await this.workerNameViewerRepository.findWorkerNameById(workerId);
 
       if (!workerName) {
-        throw new Error('Worker not found');
+        shouldSendWhatsapp = false;
+        workerId = null;
       }
     }
 
-    if (!phone || !userInfo?.phone_ddi) {
-      throw new Error('Remote JID or phone or phone DDI not found');
+    if (!shouldSendWhatsapp && !shouldSendEmail) {
+      return true;
     }
 
     const notificationMessage: INotificationMessage = {
@@ -234,8 +267,8 @@ export class NotificationMessageService {
       notification_id: notification.notification_id,
       message_key: {
         remote_jid: remoteJid,
-        phone_ddi: userInfo.phone_ddi,
-        phone_number: phone,
+        phone_ddi: userInfo.phone_ddi || '',
+        phone_number: phone || '',
       },
       account: {
         id: accountId,
@@ -249,9 +282,9 @@ export class NotificationMessageService {
         id: notification.notification_type_id,
         name: notificationTypeName,
       },
-      message_whatsapp: whatsappMessage,
-      message_email: emailMessage,
-      email_subject: emailSubject,
+      message_whatsapp: shouldSendWhatsapp ? whatsappMessage : null,
+      message_email: shouldSendEmail ? emailMessage : null,
+      email_subject: shouldSendEmail ? emailSubject : null,
       name: fullName,
       phone: phone || null,
       email: userEmail || null,
@@ -263,19 +296,23 @@ export class NotificationMessageService {
       notification.notification_id
     );
 
-    await this.sendWhatsAppNotification(
-      notification,
-      phone,
-      workerId,
-      notificationMessage
-    );
+    if (shouldSendWhatsapp) {
+      await this.sendWhatsAppNotification(
+        notification,
+        phone,
+        workerId,
+        notificationMessage
+      );
+    }
 
-    await this.sendEmailNotification(
-      notification,
-      userEmail,
-      emailMessage,
-      emailSubject
-    );
+    if (shouldSendEmail) {
+      await this.sendEmailNotification(
+        notification,
+        userEmail,
+        emailMessage,
+        emailSubject
+      );
+    }
 
     return true;
   }
@@ -427,12 +464,17 @@ export class NotificationMessageService {
     });
   }
 
-  async sendTwoFactorCodeByWhatsApp(
-    phone: string,
-    phoneDdi: string,
-    name: string | null = null,
-    email?: string | null
-  ): Promise<string> {
+  async sendTwoFactorCodeWithChannels(input: {
+    email?: string | null;
+    userId?: string | null;
+    phone?: string | null;
+    phoneDdi?: string | null;
+    name?: string | null;
+  }): Promise<{
+    code: string;
+    sent_via_email: boolean;
+    sent_via_whatsapp: boolean;
+  }> {
     const notification =
       await this.notificationMessageViewerRepository.findNotificationByTypeId(
         ENotificationTypeId.two_factor
@@ -442,44 +484,91 @@ export class NotificationMessageService {
       throw new Error('Two factor notification not found');
     }
 
-    if (!notification.message_whatsapp) {
-      throw new Error('WhatsApp message template not found for two factor');
+    const email = input.email?.trim() || null;
+    const phone = input.phone?.trim() || null;
+    const phoneDdi = input.phoneDdi?.trim() || null;
+    const name = input.name ?? null;
+
+    let shouldSendWhatsapp = !!(
+      notification.whatsapp_enabled === true &&
+      notification.message_whatsapp &&
+      notification.worker_id &&
+      phone &&
+      phoneDdi
+    );
+    const shouldSendEmail = !!(
+      notification.email_enabled === true &&
+      notification.message_email &&
+      email
+    );
+
+    let workerId: string | null = shouldSendWhatsapp
+      ? notification.worker_id
+      : null;
+    let workerName: string | null = null;
+
+    if (shouldSendWhatsapp && workerId) {
+      workerName =
+        await this.workerNameViewerRepository.findWorkerNameById(workerId);
+
+      if (!workerName) {
+        shouldSendWhatsapp = false;
+        workerId = null;
+      }
     }
 
-    if (!notification.worker_id) {
-      throw new Error('Worker ID not found in notification');
+    if (!shouldSendWhatsapp && !shouldSendEmail) {
+      throw new Error('Two factor notification channels not configured');
     }
 
     const code = this.generateCode();
     const token = randomUUID();
     const notificationTypeName = notification.nnt?.name || '';
 
-    const whatsappMessage = notification.message_whatsapp
-      .replaceAll('{{code}}', code)
-      .replaceAll('{{name}}', name || '');
+    const whatsappMessage =
+      shouldSendWhatsapp && notification.message_whatsapp
+        ? notification.message_whatsapp
+            .replaceAll('{{code}}', code)
+            .replaceAll('{{name}}', name || '')
+        : null;
 
-    const phoneEncrypted = this.passwordEncryptorService.encrypt(phone);
-    const phoneC = this.encryptService.encrypt(phone);
-    const phonePartial =
-      this.encryptService.sanitize(phone, ETypeSanetize.phone)?.slice(0, 15) ||
-      null;
+    const emailMessage =
+      shouldSendEmail && notification.message_email
+        ? notification.message_email
+            .replaceAll('{{code}}', code)
+            .replaceAll('{{name}}', name || '')
+        : null;
 
-    let emailEncrypted: string | null = null;
-    let emailC: string | null = null;
-    let emailPartial: string | null = null;
+    const emailSubject =
+      shouldSendEmail && notification.email_subject
+        ? notification.email_subject
+            .replaceAll('{{code}}', code)
+            .replaceAll('{{name}}', name || '')
+        : null;
 
-    if (email) {
-      emailEncrypted = this.passwordEncryptorService.encrypt(email);
-      emailC = this.encryptService.encrypt(email);
-      emailPartial =
-        this.encryptService
+    const phoneEncrypted = phone
+      ? this.passwordEncryptorService.encrypt(phone)
+      : null;
+    const phoneC = phone ? this.encryptService.encrypt(phone) : null;
+    const phonePartial = phone
+      ? this.encryptService
+          .sanitize(phone, ETypeSanetize.phone)
+          ?.slice(0, 15) || null
+      : null;
+
+    const emailEncrypted = email
+      ? this.passwordEncryptorService.encrypt(email)
+      : null;
+    const emailC = email ? this.encryptService.encrypt(email) : null;
+    const emailPartial = email
+      ? this.encryptService
           .sanitize(email, ETypeSanetize.email)
-          ?.slice(0, 50) || null;
-    }
+          ?.slice(0, 50) || null
+      : null;
 
     await this.twoFactorCreatorRepository.createTwoFactor({
-      userId: null,
-      phoneDdi: phoneDdi || null,
+      userId: input.userId ?? null,
+      phoneDdi,
       phone: phoneEncrypted,
       phonePartial,
       phoneC,
@@ -490,46 +579,73 @@ export class NotificationMessageService {
       token,
     });
 
-    const workerName = await this.workerNameViewerRepository.findWorkerNameById(
-      notification.worker_id
-    );
+    let sentViaWhatsapp = false;
 
-    if (!workerName) {
-      throw new Error('Worker not found');
+    if (shouldSendWhatsapp && phone && phoneDdi && workerId && workerName) {
+      const notificationMessage: INotificationMessage = {
+        id: notification.notification_id,
+        notification_id: notification.notification_id,
+        message_key: {
+          phone_ddi: phoneDdi,
+          phone_number: phone.replaceAll(/\D/g, ''),
+        },
+        worker: {
+          id: workerId,
+          name: workerName,
+        },
+        notification_type: {
+          id: notification.notification_type_id,
+          name: notificationTypeName,
+        },
+        message_whatsapp: whatsappMessage,
+        message_email: null,
+        email_subject: null,
+        name: name || null,
+        phone: phone || null,
+        email: email || null,
+        date: new Date().toISOString(),
+      };
+
+      await this.sendWhatsAppNotification(
+        notification,
+        phone,
+        workerId,
+        notificationMessage
+      );
+      sentViaWhatsapp = true;
     }
 
-    const notificationMessage: INotificationMessage = {
-      id: notification.notification_id,
-      notification_id: notification.notification_id,
-      message_key: {
-        phone_ddi: phoneDdi,
-        phone_number: phone.replaceAll(/\D/g, ''),
-      },
-      worker: {
-        id: notification.worker_id,
-        name: workerName,
-      },
-      notification_type: {
-        id: notification.notification_type_id,
-        name: notificationTypeName,
-      },
-      message_whatsapp: whatsappMessage,
-      message_email: null,
-      email_subject: null,
-      name: name || null,
-      phone: phone || null,
-      email: email || null,
-      date: new Date().toISOString(),
+    if (shouldSendEmail) {
+      await this.sendEmailNotification(
+        notification,
+        email,
+        emailMessage,
+        emailSubject
+      );
+    }
+
+    return {
+      code,
+      sent_via_email: shouldSendEmail,
+      sent_via_whatsapp: sentViaWhatsapp,
     };
+  }
 
-    await this.sendWhatsAppNotification(
-      notification,
+  async sendTwoFactorCodeByWhatsApp(
+    phone: string,
+    phoneDdi: string,
+    name: string | null = null,
+    email?: string | null
+  ): Promise<string> {
+    const result = await this.sendTwoFactorCodeWithChannels({
+      email,
+      userId: null,
       phone,
-      notification.worker_id,
-      notificationMessage
-    );
+      phoneDdi,
+      name,
+    });
 
-    return code;
+    return result.code;
   }
 
   async sendTwoFactorCodeByEmail(
@@ -539,13 +655,13 @@ export class NotificationMessageService {
     phoneDdi: string | null = null,
     name: string | null = null
   ): Promise<string> {
-    const result = await this.sendTwoFactorCodeByEmailWithChannels(
+    const result = await this.sendTwoFactorCodeWithChannels({
       email,
       userId,
       phone,
       phoneDdi,
-      name
-    );
+      name,
+    });
     return result.code;
   }
 
@@ -560,138 +676,12 @@ export class NotificationMessageService {
     sent_via_email: boolean;
     sent_via_whatsapp: boolean;
   }> {
-    const notification =
-      await this.notificationMessageViewerRepository.findNotificationByTypeId(
-        ENotificationTypeId.two_factor
-      );
-
-    if (!notification) {
-      throw new Error('Two factor notification not found');
-    }
-
-    if (!notification.message_email) {
-      throw new Error('Email message template not found for two factor');
-    }
-
-    const code = this.generateCode();
-    const token = randomUUID();
-    const notificationTypeName = notification.nnt?.name ?? '';
-
-    const emailMessage = notification.message_email
-      .replaceAll('{{code}}', code)
-      .replaceAll('{{name}}', name ?? '');
-
-    const emailSubject = notification.email_subject
-      ? notification.email_subject
-          .replaceAll('{{code}}', code)
-          .replaceAll('{{name}}', name ?? '')
-      : null;
-
-    let whatsappMessage: string | null = null;
-    if (notification.message_whatsapp) {
-      whatsappMessage = notification.message_whatsapp
-        .replaceAll('{{code}}', code)
-        .replaceAll('{{name}}', name ?? '');
-    }
-
-    const emailEncrypted = this.passwordEncryptorService.encrypt(email);
-    const emailC = this.encryptService.encrypt(email);
-    const emailPartial =
-      this.encryptService.sanitize(email, ETypeSanetize.email)?.slice(0, 50) ??
-      null;
-
-    let phoneEncrypted: string | null = null;
-    let phoneC: string | null = null;
-    let phonePartial: string | null = null;
-
-    if (phone) {
-      phoneEncrypted = this.passwordEncryptorService.encrypt(phone);
-      phoneC = this.encryptService.encrypt(phone);
-      phonePartial =
-        this.encryptService
-          .sanitize(phone, ETypeSanetize.phone)
-          ?.slice(0, 15) ?? null;
-    }
-
-    await this.twoFactorCreatorRepository.createTwoFactor({
-      userId: userId,
-      phoneDdi: phoneDdi ?? null,
-      phone: phoneEncrypted,
-      phonePartial,
-      phoneC,
-      email: emailEncrypted,
-      emailPartial,
-      emailC,
-      code,
-      token,
-    });
-
-    await this.sendEmailNotification(
-      notification,
+    return this.sendTwoFactorCodeWithChannels({
       email,
-      emailMessage,
-      emailSubject
-    );
-
-    const sentViaWhatsapp = !!(
-      phone &&
-      phoneDdi &&
-      notification.message_whatsapp &&
-      notification.worker_id &&
-      whatsappMessage
-    );
-
-    if (sentViaWhatsapp) {
-      if (!notification.worker_id) {
-        return {
-          code,
-          sent_via_email: true,
-          sent_via_whatsapp: false,
-        };
-      }
-
-      const workerId = notification.worker_id;
-      const workerName =
-        await this.workerNameViewerRepository.findWorkerNameById(workerId);
-
-      if (workerName) {
-        const notificationMessage: INotificationMessage = {
-          id: notification.notification_id,
-          notification_id: notification.notification_id,
-          message_key: {
-            phone_ddi: phoneDdi,
-            phone_number: phone.replaceAll(/\D/g, ''),
-          },
-          worker: {
-            id: workerId,
-            name: workerName,
-          },
-          notification_type: {
-            id: notification.notification_type_id,
-            name: notificationTypeName,
-          },
-          message_whatsapp: whatsappMessage,
-          message_email: emailMessage,
-          email_subject: emailSubject,
-          name: name ?? null,
-          phone: phone ?? null,
-          email: email ?? null,
-          date: new Date().toISOString(),
-        };
-
-        await this.sendWhatsAppNotification(
-          notification,
-          phone,
-          workerId,
-          notificationMessage
-        );
-      }
-    }
-
-    return {
-      code,
-      sent_via_email: true,
-      sent_via_whatsapp: sentViaWhatsapp,
-    };
+      userId,
+      phone,
+      phoneDdi,
+      name,
+    });
   }
 }

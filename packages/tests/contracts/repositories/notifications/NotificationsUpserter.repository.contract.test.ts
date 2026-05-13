@@ -110,11 +110,13 @@ describe('NotificationsUpserterRepository', () => {
     expect(result.notification_id).toBe('n-new');
     expect(result.plan_new_notification).toEqual({
       whatsapp: {
+        enabled: false,
         worker_id: 'w-1',
         name: 'Worker',
         message: 'wpp',
       },
       email: {
+        enabled: false,
         subject: 'sub',
         message: 'mail',
       },
@@ -228,6 +230,8 @@ describe('NotificationsUpserterRepository', () => {
         null,
         undefined,
         undefined,
+        undefined,
+        undefined,
         undefined
       )
     ).resolves.toBeNull();
@@ -251,6 +255,8 @@ describe('NotificationsUpserterRepository', () => {
       (repository as any).upsertNotificationByType(
         tx,
         'type-1',
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -288,7 +294,9 @@ describe('NotificationsUpserterRepository', () => {
         'w-1',
         'wpp',
         'mail',
-        'subject'
+        'subject',
+        true,
+        false
       )
     ).resolves.toEqual({
       notification_id: 'generated-notification-id',
@@ -303,6 +311,104 @@ describe('NotificationsUpserterRepository', () => {
         message_whatsapp: 'wpp',
         message_email: 'mail',
         email_subject: 'subject',
+        whatsapp_enabled: true,
+        email_enabled: false,
+      })
+    );
+  });
+
+  it('upsertNotificationByType inserts email-only notification with null worker', async () => {
+    const { repository } = createRepository();
+    const { insert, values } = createInsertChain();
+
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        notification_id: 'generated-notification-id',
+        nwr: null,
+      });
+
+    const tx = {
+      query: {
+        notifications: {
+          findFirst,
+        },
+      },
+      update: jest.fn(),
+      insert,
+    };
+
+    await expect(
+      (repository as any).upsertNotificationByType(
+        tx,
+        'type-1',
+        null,
+        null,
+        'mail',
+        'subject',
+        false,
+        true
+      )
+    ).resolves.toEqual({
+      notification_id: 'generated-notification-id',
+      nwr: null,
+    });
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: null,
+        message_whatsapp: null,
+        message_email: 'mail',
+        email_subject: 'subject',
+        whatsapp_enabled: false,
+        email_enabled: true,
+      })
+    );
+  });
+
+  it('upsertNotificationByType keeps row when worker is null with channel status input', async () => {
+    const { repository } = createRepository();
+    const { update, set } = createUpdateChain();
+
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce({ notification_id: 'n-1' })
+      .mockResolvedValueOnce({ notification_id: 'n-1', nwr: null });
+
+    const tx = {
+      query: {
+        notifications: {
+          findFirst,
+        },
+      },
+      update,
+      insert: jest.fn(),
+    };
+
+    await expect(
+      (repository as any).upsertNotificationByType(
+        tx,
+        'type-1',
+        null,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        true
+      )
+    ).resolves.toEqual({ notification_id: 'n-1', nwr: null });
+
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: null,
+        whatsapp_enabled: false,
+        email_enabled: true,
+      })
+    );
+    expect(set).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        deleted_at: expect.any(String),
       })
     );
   });

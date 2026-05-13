@@ -23,6 +23,8 @@ describe('NotificationsViewerRepository', () => {
         message_whatsapp: 'msg-two',
         message_email: 'mail-two',
         email_subject: 'subject-two',
+        whatsapp_enabled: true,
+        email_enabled: false,
         created_at: '2026-04-21T00:00:00.000Z',
         updated_at: '2026-04-21T01:00:00.000Z',
         nwr: { worker_id: 'w-1', name: 'Worker' },
@@ -33,6 +35,8 @@ describe('NotificationsViewerRepository', () => {
         message_whatsapp: 'msg-renew',
         message_email: 'mail-renew',
         email_subject: 'subject-renew',
+        whatsapp_enabled: false,
+        email_enabled: true,
         created_at: null,
         updated_at: '2026-04-21T02:00:00.000Z',
         nwr: null,
@@ -48,22 +52,26 @@ describe('NotificationsViewerRepository', () => {
     expect(result.notification_id).toBe('n-two');
     expect(result.two_factor_notification).toEqual({
       whatsapp: {
+        enabled: true,
         worker_id: 'w-1',
         name: 'Worker',
         message: 'msg-two',
       },
       email: {
+        enabled: false,
         subject: 'subject-two',
         message: 'mail-two',
       },
     });
     expect(result.plan_renewal_notification).toEqual({
       whatsapp: {
+        enabled: false,
         worker_id: null,
         name: null,
         message: 'msg-renew',
       },
       email: {
+        enabled: true,
         subject: 'subject-renew',
         message: 'mail-renew',
       },

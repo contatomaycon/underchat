@@ -74,11 +74,13 @@ export class NotificationsViewerRepository {
       two_factor_notification: twoFactorNotification
         ? {
             whatsapp: {
+              enabled: twoFactorNotification.whatsapp_enabled,
               worker_id: twoFactorNotification.nwr?.worker_id || null,
               name: twoFactorNotification.nwr?.name || null,
               message: twoFactorNotification.message_whatsapp || null,
             },
             email: {
+              enabled: twoFactorNotification.email_enabled,
               subject: twoFactorNotification.email_subject || null,
               message: twoFactorNotification.message_email || null,
             },
@@ -87,11 +89,13 @@ export class NotificationsViewerRepository {
       plan_new_notification: planNewNotification
         ? {
             whatsapp: {
+              enabled: planNewNotification.whatsapp_enabled,
               worker_id: planNewNotification.nwr?.worker_id || null,
               name: planNewNotification.nwr?.name || null,
               message: planNewNotification.message_whatsapp || null,
             },
             email: {
+              enabled: planNewNotification.email_enabled,
               subject: planNewNotification.email_subject || null,
               message: planNewNotification.message_email || null,
             },
@@ -100,11 +104,13 @@ export class NotificationsViewerRepository {
       plan_renewal_notification: planRenewalNotification
         ? {
             whatsapp: {
+              enabled: planRenewalNotification.whatsapp_enabled,
               worker_id: planRenewalNotification.nwr?.worker_id || null,
               name: planRenewalNotification.nwr?.name || null,
               message: planRenewalNotification.message_whatsapp || null,
             },
             email: {
+              enabled: planRenewalNotification.email_enabled,
               subject: planRenewalNotification.email_subject || null,
               message: planRenewalNotification.message_email || null,
             },
@@ -113,11 +119,13 @@ export class NotificationsViewerRepository {
       plan_expiration_reminder: planExpirationNotification
         ? {
             whatsapp: {
+              enabled: planExpirationNotification.whatsapp_enabled,
               worker_id: planExpirationNotification.nwr?.worker_id || null,
               name: planExpirationNotification.nwr?.name || null,
               message: planExpirationNotification.message_whatsapp || null,
             },
             email: {
+              enabled: planExpirationNotification.email_enabled,
               subject: planExpirationNotification.email_subject || null,
               message: planExpirationNotification.message_email || null,
             },
@@ -126,11 +134,13 @@ export class NotificationsViewerRepository {
       plan_cancellation_notification: planCancellationNotification
         ? {
             whatsapp: {
+              enabled: planCancellationNotification.whatsapp_enabled,
               worker_id: planCancellationNotification.nwr?.worker_id || null,
               name: planCancellationNotification.nwr?.name || null,
               message: planCancellationNotification.message_whatsapp || null,
             },
             email: {
+              enabled: planCancellationNotification.email_enabled,
               subject: planCancellationNotification.email_subject || null,
               message: planCancellationNotification.message_email || null,
             },
@@ -140,6 +150,7 @@ export class NotificationsViewerRepository {
         recurringPaymentFailureNotification
           ? {
               whatsapp: {
+                enabled: recurringPaymentFailureNotification.whatsapp_enabled,
                 worker_id:
                   recurringPaymentFailureNotification.nwr?.worker_id || null,
                 name: recurringPaymentFailureNotification.nwr?.name || null,
@@ -147,6 +158,7 @@ export class NotificationsViewerRepository {
                   recurringPaymentFailureNotification.message_whatsapp || null,
               },
               email: {
+                enabled: recurringPaymentFailureNotification.email_enabled,
                 subject:
                   recurringPaymentFailureNotification.email_subject || null,
                 message:
@@ -157,11 +169,13 @@ export class NotificationsViewerRepository {
       test_plan_new_notification: testPlanNewNotification
         ? {
             whatsapp: {
+              enabled: testPlanNewNotification.whatsapp_enabled,
               worker_id: testPlanNewNotification.nwr?.worker_id || null,
               name: testPlanNewNotification.nwr?.name || null,
               message: testPlanNewNotification.message_whatsapp || null,
             },
             email: {
+              enabled: testPlanNewNotification.email_enabled,
               subject: testPlanNewNotification.email_subject || null,
               message: testPlanNewNotification.message_email || null,
             },
@@ -170,11 +184,13 @@ export class NotificationsViewerRepository {
       test_plan_expiration_reminder: testPlanExpirationNotification
         ? {
             whatsapp: {
+              enabled: testPlanExpirationNotification.whatsapp_enabled,
               worker_id: testPlanExpirationNotification.nwr?.worker_id || null,
               name: testPlanExpirationNotification.nwr?.name || null,
               message: testPlanExpirationNotification.message_whatsapp || null,
             },
             email: {
+              enabled: testPlanExpirationNotification.email_enabled,
               subject: testPlanExpirationNotification.email_subject || null,
               message: testPlanExpirationNotification.message_email || null,
             },
@@ -228,6 +244,8 @@ export class NotificationsViewerRepository {
         message_whatsapp: true,
         message_email: true,
         email_subject: true,
+        whatsapp_enabled: true,
+        email_enabled: true,
         created_at: true,
         updated_at: true,
       },

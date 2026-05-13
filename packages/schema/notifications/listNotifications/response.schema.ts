@@ -1,12 +1,14 @@
 import { Static, Type } from '@sinclair/typebox';
 
 const whatsappSchema = Type.Object({
+  enabled: Type.Boolean(),
   worker_id: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
   name: Type.Union([Type.String(), Type.Null()]),
   message: Type.Union([Type.String(), Type.Null()]),
 });
 
 const emailSchema = Type.Object({
+  enabled: Type.Boolean(),
   subject: Type.Union([Type.String(), Type.Null()]),
   message: Type.Union([Type.String(), Type.Null()]),
 });

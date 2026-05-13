@@ -30,12 +30,16 @@ export class NotificationsUpserterRepository {
           hasInput:
             input.two_factor_notification !== undefined ||
             input.two_factor_message_whatsapp !== undefined ||
+            input.two_factor_whatsapp_enabled !== undefined ||
             input.two_factor_message_email !== undefined ||
-            input.two_factor_email_subject !== undefined,
+            input.two_factor_email_subject !== undefined ||
+            input.two_factor_email_enabled !== undefined,
           workerId: input.two_factor_notification,
           messageWhatsapp: input.two_factor_message_whatsapp,
           messageEmail: input.two_factor_message_email,
           emailSubject: input.two_factor_email_subject,
+          whatsappEnabled: input.two_factor_whatsapp_enabled,
+          emailEnabled: input.two_factor_email_enabled,
           key: 'two_factor_notification',
         },
         {
@@ -43,12 +47,16 @@ export class NotificationsUpserterRepository {
           hasInput:
             input.plan_new_notification !== undefined ||
             input.plan_new_message_whatsapp !== undefined ||
+            input.plan_new_whatsapp_enabled !== undefined ||
             input.plan_new_message_email !== undefined ||
-            input.plan_new_email_subject !== undefined,
+            input.plan_new_email_subject !== undefined ||
+            input.plan_new_email_enabled !== undefined,
           workerId: input.plan_new_notification,
           messageWhatsapp: input.plan_new_message_whatsapp,
           messageEmail: input.plan_new_message_email,
           emailSubject: input.plan_new_email_subject,
+          whatsappEnabled: input.plan_new_whatsapp_enabled,
+          emailEnabled: input.plan_new_email_enabled,
           key: 'plan_new_notification',
         },
         {
@@ -56,12 +64,16 @@ export class NotificationsUpserterRepository {
           hasInput:
             input.plan_renewal_notification !== undefined ||
             input.plan_renewal_message_whatsapp !== undefined ||
+            input.plan_renewal_whatsapp_enabled !== undefined ||
             input.plan_renewal_message_email !== undefined ||
-            input.plan_renewal_email_subject !== undefined,
+            input.plan_renewal_email_subject !== undefined ||
+            input.plan_renewal_email_enabled !== undefined,
           workerId: input.plan_renewal_notification,
           messageWhatsapp: input.plan_renewal_message_whatsapp,
           messageEmail: input.plan_renewal_message_email,
           emailSubject: input.plan_renewal_email_subject,
+          whatsappEnabled: input.plan_renewal_whatsapp_enabled,
+          emailEnabled: input.plan_renewal_email_enabled,
           key: 'plan_renewal_notification',
         },
         {
@@ -69,12 +81,16 @@ export class NotificationsUpserterRepository {
           hasInput:
             input.plan_expiration_reminder !== undefined ||
             input.plan_expiration_message_whatsapp !== undefined ||
+            input.plan_expiration_whatsapp_enabled !== undefined ||
             input.plan_expiration_message_email !== undefined ||
-            input.plan_expiration_email_subject !== undefined,
+            input.plan_expiration_email_subject !== undefined ||
+            input.plan_expiration_email_enabled !== undefined,
           workerId: input.plan_expiration_reminder,
           messageWhatsapp: input.plan_expiration_message_whatsapp,
           messageEmail: input.plan_expiration_message_email,
           emailSubject: input.plan_expiration_email_subject,
+          whatsappEnabled: input.plan_expiration_whatsapp_enabled,
+          emailEnabled: input.plan_expiration_email_enabled,
           key: 'plan_expiration_reminder',
         },
         {
@@ -82,12 +98,16 @@ export class NotificationsUpserterRepository {
           hasInput:
             input.plan_cancellation_notification !== undefined ||
             input.plan_cancellation_message_whatsapp !== undefined ||
+            input.plan_cancellation_whatsapp_enabled !== undefined ||
             input.plan_cancellation_message_email !== undefined ||
-            input.plan_cancellation_email_subject !== undefined,
+            input.plan_cancellation_email_subject !== undefined ||
+            input.plan_cancellation_email_enabled !== undefined,
           workerId: input.plan_cancellation_notification,
           messageWhatsapp: input.plan_cancellation_message_whatsapp,
           messageEmail: input.plan_cancellation_message_email,
           emailSubject: input.plan_cancellation_email_subject,
+          whatsappEnabled: input.plan_cancellation_whatsapp_enabled,
+          emailEnabled: input.plan_cancellation_email_enabled,
           key: 'plan_cancellation_notification',
         },
         {
@@ -95,12 +115,16 @@ export class NotificationsUpserterRepository {
           hasInput:
             input.recurring_payment_failure_notification !== undefined ||
             input.recurring_payment_failure_message_whatsapp !== undefined ||
+            input.recurring_payment_failure_whatsapp_enabled !== undefined ||
             input.recurring_payment_failure_message_email !== undefined ||
-            input.recurring_payment_failure_email_subject !== undefined,
+            input.recurring_payment_failure_email_subject !== undefined ||
+            input.recurring_payment_failure_email_enabled !== undefined,
           workerId: input.recurring_payment_failure_notification,
           messageWhatsapp: input.recurring_payment_failure_message_whatsapp,
           messageEmail: input.recurring_payment_failure_message_email,
           emailSubject: input.recurring_payment_failure_email_subject,
+          whatsappEnabled: input.recurring_payment_failure_whatsapp_enabled,
+          emailEnabled: input.recurring_payment_failure_email_enabled,
           key: 'recurring_payment_failure_notification',
         },
         {
@@ -108,12 +132,16 @@ export class NotificationsUpserterRepository {
           hasInput:
             input.test_plan_new_notification !== undefined ||
             input.test_plan_new_message_whatsapp !== undefined ||
+            input.test_plan_new_whatsapp_enabled !== undefined ||
             input.test_plan_new_message_email !== undefined ||
-            input.test_plan_new_email_subject !== undefined,
+            input.test_plan_new_email_subject !== undefined ||
+            input.test_plan_new_email_enabled !== undefined,
           workerId: input.test_plan_new_notification,
           messageWhatsapp: input.test_plan_new_message_whatsapp,
           messageEmail: input.test_plan_new_message_email,
           emailSubject: input.test_plan_new_email_subject,
+          whatsappEnabled: input.test_plan_new_whatsapp_enabled,
+          emailEnabled: input.test_plan_new_email_enabled,
           key: 'test_plan_new_notification',
         },
         {
@@ -121,12 +149,16 @@ export class NotificationsUpserterRepository {
           hasInput:
             input.test_plan_expiration_reminder !== undefined ||
             input.test_plan_expiration_message_whatsapp !== undefined ||
+            input.test_plan_expiration_whatsapp_enabled !== undefined ||
             input.test_plan_expiration_message_email !== undefined ||
-            input.test_plan_expiration_email_subject !== undefined,
+            input.test_plan_expiration_email_subject !== undefined ||
+            input.test_plan_expiration_email_enabled !== undefined,
           workerId: input.test_plan_expiration_reminder,
           messageWhatsapp: input.test_plan_expiration_message_whatsapp,
           messageEmail: input.test_plan_expiration_message_email,
           emailSubject: input.test_plan_expiration_email_subject,
+          whatsappEnabled: input.test_plan_expiration_whatsapp_enabled,
+          emailEnabled: input.test_plan_expiration_email_enabled,
           key: 'test_plan_expiration_reminder',
         },
       ];
@@ -140,7 +172,9 @@ export class NotificationsUpserterRepository {
                 config.workerId,
                 config.messageWhatsapp,
                 config.messageEmail,
-                config.emailSubject
+                config.emailSubject,
+                config.whatsappEnabled,
+                config.emailEnabled
               )
             : await this.findNotificationByType(tx, config.typeId);
 
@@ -266,11 +300,13 @@ export class NotificationsUpserterRepository {
 
     return {
       whatsapp: {
+        enabled: notification.whatsapp_enabled === true,
         worker_id: notification.nwr?.worker_id || null,
         name: notification.nwr?.name || null,
         message: notification.message_whatsapp || null,
       },
       email: {
+        enabled: notification.email_enabled === true,
         subject: notification.email_subject || null,
         message: notification.message_email || null,
       },
@@ -325,6 +361,8 @@ export class NotificationsUpserterRepository {
         message_whatsapp: true,
         message_email: true,
         email_subject: true,
+        whatsapp_enabled: true,
+        email_enabled: true,
         created_at: true,
         updated_at: true,
         worker_id: true,
@@ -342,12 +380,21 @@ export class NotificationsUpserterRepository {
     workerId: string | null | undefined,
     messageWhatsapp: string | null | undefined,
     messageEmail: string | null | undefined,
-    emailSubject: string | null | undefined
+    emailSubject: string | null | undefined,
+    whatsappEnabled: boolean | undefined,
+    emailEnabled: boolean | undefined
   ) {
     const existing = await this.findNotificationByType(tx, notificationTypeId);
+    const shouldSoftDelete =
+      workerId === null &&
+      messageWhatsapp === undefined &&
+      messageEmail === undefined &&
+      emailSubject === undefined &&
+      whatsappEnabled === undefined &&
+      emailEnabled === undefined;
 
     if (existing) {
-      if (workerId === null) {
+      if (shouldSoftDelete) {
         await tx
           .update(notifications)
           .set({ deleted_at: new Date().toISOString() })
@@ -357,10 +404,12 @@ export class NotificationsUpserterRepository {
       }
 
       const updateData: {
-        worker_id?: string;
+        worker_id?: string | null;
         message_whatsapp?: string | null;
         message_email?: string | null;
         email_subject?: string | null;
+        whatsapp_enabled?: boolean;
+        email_enabled?: boolean;
         updated_at: string;
       } = {
         updated_at: new Date().toISOString(),
@@ -380,6 +429,14 @@ export class NotificationsUpserterRepository {
 
       if (emailSubject !== undefined) {
         updateData.email_subject = emailSubject;
+      }
+
+      if (whatsappEnabled !== undefined) {
+        updateData.whatsapp_enabled = whatsappEnabled;
+      }
+
+      if (emailEnabled !== undefined) {
+        updateData.email_enabled = emailEnabled;
       }
 
       await tx
@@ -403,6 +460,8 @@ export class NotificationsUpserterRepository {
           message_whatsapp: true,
           message_email: true,
           email_subject: true,
+          whatsapp_enabled: true,
+          email_enabled: true,
           created_at: true,
           updated_at: true,
           worker_id: true,
@@ -410,7 +469,15 @@ export class NotificationsUpserterRepository {
       });
     }
 
-    if (workerId === null || workerId === undefined) {
+    const shouldCreate =
+      workerId !== undefined ||
+      messageWhatsapp !== undefined ||
+      messageEmail !== undefined ||
+      emailSubject !== undefined ||
+      whatsappEnabled !== undefined ||
+      emailEnabled !== undefined;
+
+    if (!shouldCreate || shouldSoftDelete) {
       return null;
     }
 
@@ -421,10 +488,12 @@ export class NotificationsUpserterRepository {
       .values({
         notification_id: notificationId,
         notification_type_id: notificationTypeId,
-        worker_id: workerId,
+        worker_id: workerId ?? null,
         message_whatsapp: messageWhatsapp || null,
         message_email: messageEmail || null,
         email_subject: emailSubject || null,
+        whatsapp_enabled: whatsappEnabled ?? false,
+        email_enabled: emailEnabled ?? false,
       })
       .execute();
 
@@ -443,6 +512,8 @@ export class NotificationsUpserterRepository {
         message_whatsapp: true,
         message_email: true,
         email_subject: true,
+        whatsapp_enabled: true,
+        email_enabled: true,
         created_at: true,
         updated_at: true,
         worker_id: true,

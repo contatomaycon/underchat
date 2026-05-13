@@ -43,13 +43,13 @@ export class AuthForgotPasswordSendCodeUseCase {
     );
 
     const result =
-      await this.notificationMessageService.sendTwoFactorCodeByEmailWithChannels(
-        decryptedEmail,
-        userData.user_id,
-        decryptedPhone ?? null,
-        userData.phone_ddi ?? null,
-        userData.name
-      );
+      await this.notificationMessageService.sendTwoFactorCodeWithChannels({
+        email: decryptedEmail,
+        userId: userData.user_id,
+        phone: decryptedPhone ?? null,
+        phoneDdi: userData.phone_ddi ?? null,
+        name: userData.name,
+      });
 
     return {
       success: true,
