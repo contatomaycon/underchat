@@ -1603,24 +1603,22 @@ watch(
   { immediate: true }
 );
 
-const handleDisableAttendanceInactivity = async () => {
+const handleToggleAttendanceInactivity = async () => {
   const chatId = chatStore.activeChat?.chat_id;
-  if (
-    !chatId ||
-    attendanceInactivityDisabledForActiveChat.value ||
-    isUpdatingAttendanceInactivityState.value
-  ) {
+  if (!chatId || isUpdatingAttendanceInactivityState.value) {
     return;
   }
+
+  const nextDisabled = !attendanceInactivityDisabledForActiveChat.value;
 
   isUpdatingAttendanceInactivityState.value = true;
   try {
     const success = await chatStore.updateAttendanceInactivityByChat(chatId, {
-      disabled: true,
+      disabled: nextDisabled,
     });
 
     if (success) {
-      attendanceInactivityDisabledForActiveChat.value = true;
+      attendanceInactivityDisabledForActiveChat.value = nextDisabled;
     }
   } finally {
     isUpdatingAttendanceInactivityState.value = false;
@@ -6434,24 +6432,23 @@ onBeforeUnmount(() => {
                   <VListItem
                     v-if="canShowDisableAttendanceInactivityAction"
                     :disabled="
-                      attendanceInactivityDisabledForActiveChat ||
                       isLoadingAttendanceInactivityState ||
                       isUpdatingAttendanceInactivityState
                     "
-                    @click="handleDisableAttendanceInactivity"
+                    @click="handleToggleAttendanceInactivity"
                   >
                     <template #prepend>
                       <VIcon
                         size="20"
                         :color="
                           attendanceInactivityDisabledForActiveChat
-                            ? 'success'
+                            ? 'primary'
                             : 'warning'
                         "
                       >
                         {{
                           attendanceInactivityDisabledForActiveChat
-                            ? 'tabler-check'
+                            ? 'tabler-bell'
                             : 'tabler-bell-off'
                         }}
                       </VIcon>
@@ -6459,7 +6456,7 @@ onBeforeUnmount(() => {
                     <VListItemTitle>
                       {{
                         attendanceInactivityDisabledForActiveChat
-                          ? t('chat_attendance_inactivity_disabled_in_chat')
+                          ? t('chat_attendance_inactivity_enable_action')
                           : t('chat_attendance_inactivity_disable_action')
                       }}
                     </VListItemTitle>

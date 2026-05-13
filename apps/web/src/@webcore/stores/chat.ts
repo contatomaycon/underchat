@@ -5841,10 +5841,11 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
-        this.showSnackbar(
-          this.i18n.global.t('chat_attendance_inactivity_update_success'),
-          EColor.success
-        );
+        const successKey = body.disabled
+          ? 'chat_attendance_inactivity_update_success'
+          : 'chat_attendance_inactivity_update_enable_success';
+
+        this.showSnackbar(this.i18n.global.t(successKey), EColor.success);
 
         return true;
       } catch (error) {
