@@ -141,6 +141,8 @@ export class MessageUpsertConsume {
     'automation-send:idempotency:v1';
   private readonly AUTOMATION_SEND_DEDUPE_TTL_SECONDS =
     generalEnvironment.automationSendDedupeTtlSeconds;
+  private readonly DLQ_SEND_DEDUPE_PREFIX = 'message-upsert:dlq:v1';
+  private readonly DLQ_SEND_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING = 3;
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE = 4;
@@ -214,6 +216,39 @@ export class MessageUpsertConsume {
   ): Promise<boolean> {
     const maxDlqRetries = 5;
     const dlqTopic = this.kafkaServiceQueueService.upsertMessageDlq();
+    const dlqDedupeKey = this.buildDlqDedupeKey(data, error);
+
+    if (dlqDedupeKey) {
+      try {
+        const acquired = await this.redis.set(
+          dlqDedupeKey,
+          '1',
+          'EX',
+          this.DLQ_SEND_DEDUPE_TTL_SECONDS,
+          'NX'
+        );
+
+        if (acquired !== 'OK') {
+          logger.info({
+            type: 'message_upsert_dlq_duplicate_skipped',
+            account_id: data.account_id,
+            worker_id: data.worker_id,
+            message_key_id: data.message?.key?.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return true;
+        }
+      } catch (dedupeError) {
+        logger.warn({
+          type: 'message_upsert_dlq_dedupe_error',
+          account_id: data.account_id,
+          worker_id: data.worker_id,
+          message_key_id: data.message?.key?.id,
+          error:
+            dedupeError instanceof Error ? dedupeError.message : dedupeError,
+        });
+      }
+    }
 
     for (let attempt = 0; attempt < maxDlqRetries; attempt++) {
       try {
@@ -237,6 +272,10 @@ export class MessageUpsertConsume {
       }
     }
 
+    if (dlqDedupeKey) {
+      await this.redis.del(dlqDedupeKey).catch(() => undefined);
+    }
+
     console.error(
       '[DLQ] CRITICAL: Failed to send to DLQ after all retries. Message data:',
       JSON.stringify({
@@ -246,6 +285,31 @@ export class MessageUpsertConsume {
       })
     );
     return false;
+  }
+
+  private buildDlqDedupeKey(
+    data: IUpsertMessage,
+    error: unknown
+  ): string | null {
+    const messageId = this.toNonEmptyString(data.message?.key?.id);
+    if (!messageId) {
+      return null;
+    }
+
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const rawJid =
+      remoteJid(data.message?.key) || remoteJidAlt(data.message?.key) || '';
+    const source = [
+      data.account_id,
+      data.worker_id,
+      data.message?.key?.fromMe === true ? '1' : '0',
+      rawJid,
+      messageId,
+      errorMessage,
+    ].join(':');
+    const hash = createHash('sha1').update(source).digest('hex');
+
+    return `${this.DLQ_SEND_DEDUPE_PREFIX}:${hash}`;
   }
 
   private async processWithRetry(
@@ -1196,6 +1260,198 @@ export class MessageUpsertConsume {
     }
 
     return result.hits.hits[0]._source as IChatMessage;
+  }
+
+  private async findMessageByKeyIdInAccountWorker(
+    accountId: string,
+    workerId: string,
+    messageId: string,
+    keyContext?: IMessageKeyIdContext
+  ): Promise<IChatMessage | null> {
+    if (!accountId || !workerId || !messageId) {
+      return null;
+    }
+
+    const keyIdCandidates = this.buildMessageKeyIdCandidates(
+      messageId,
+      keyContext
+    );
+    if (!keyIdCandidates.length) {
+      return null;
+    }
+
+    const remoteCandidates = this.collectRemoteIdCandidatesFromKey(keyContext);
+    const messageKeyMust: Array<Record<string, unknown>> = [
+      {
+        bool: {
+          should: keyIdCandidates.map((candidate) => ({
+            term: { 'message_key.id': candidate },
+          })),
+          minimum_should_match: 1,
+        },
+      },
+    ];
+
+    if (remoteCandidates.length) {
+      messageKeyMust.push({
+        bool: {
+          should: remoteCandidates.flatMap((candidate) => [
+            { term: { 'message_key.remote_jid': candidate } },
+            { term: { 'message_key.remote_jid_alt': candidate } },
+            { term: { 'message_key.participant': candidate } },
+            { term: { 'message_key.participant_alt': candidate } },
+          ]),
+          minimum_should_match: 1,
+        },
+      });
+    }
+
+    const queryElastic = {
+      size: 20,
+      sort: [
+        {
+          date: {
+            order: 'asc',
+            unmapped_type: 'date',
+          },
+        },
+      ],
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: { 'account.id': accountId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: { 'worker.id': workerId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'message_key',
+                query: {
+                  bool: {
+                    must: messageKeyMust,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    if (!result || result.hits.hits.length === 0) {
+      return null;
+    }
+
+    return result.hits.hits[0]._source as IChatMessage;
+  }
+
+  private collectIncomingMessageLookupIds(
+    data: IUpsertMessage,
+    options?: { includeRelatedTargetIds?: boolean }
+  ): string[] {
+    const ids = new Set<string>();
+    const directMessageId = this.toNonEmptyString(data.message?.key?.id);
+
+    if (directMessageId) {
+      ids.add(directMessageId);
+    }
+
+    if (options?.includeRelatedTargetIds !== true) {
+      return Array.from(ids);
+    }
+
+    const protocolMessage = this.getProtocolMessagePayload(data);
+    const protocolKey = this.toRecord(protocolMessage?.key);
+    const protocolTargetMessageId = this.firstStringField(protocolKey, [
+      'id',
+      'ID',
+    ]);
+
+    if (
+      protocolTargetMessageId &&
+      (data.type === EMessageType.edit_text ||
+        data.type === EMessageType.delete_message)
+    ) {
+      ids.add(protocolTargetMessageId);
+    }
+
+    if (data.type === EMessageType.react) {
+      const reactionMessage = extractReactionMessage(
+        data.message?.message as Parameters<typeof extractReactionMessage>[0]
+      );
+      const reactionTargetMessageId = this.toNonEmptyString(
+        reactionMessage?.key?.id
+      );
+
+      if (reactionTargetMessageId) {
+        ids.add(reactionTargetMessageId);
+      }
+    }
+
+    return Array.from(ids);
+  }
+
+  private async findExistingMessageForIncomingData(
+    data: IUpsertMessage,
+    options?: { includeRelatedTargetIds?: boolean }
+  ): Promise<IChatMessage | null> {
+    const messageIds = this.collectIncomingMessageLookupIds(data, options);
+
+    for (const messageId of messageIds) {
+      const existingMessage = await this.findMessageByKeyIdInAccountWorker(
+        data.account_id,
+        data.worker_id,
+        messageId,
+        data.message?.key
+      );
+
+      if (existingMessage?.message_id) {
+        return existingMessage;
+      }
+    }
+
+    return null;
+  }
+
+  private async handleExistingMessageInOriginalChat(
+    data: IUpsertMessage,
+    existingMessage: IChatMessage
+  ): Promise<void> {
+    const existingChat = await this.chatService.findChatByChatId(
+      data.account_id,
+      existingMessage.chat_id
+    );
+
+    if (!existingChat) {
+      logger.warn({
+        type: 'message_upsert_existing_message_chat_not_found',
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        chat_id: existingMessage.chat_id,
+        message_id: existingMessage.message_id,
+        message_key_id: data.message?.key?.id,
+      });
+      return;
+    }
+
+    await this.createChatMessage(existingChat, data);
   }
 
   private async handleReactionMessage(
@@ -4388,6 +4644,13 @@ export class MessageUpsertConsume {
         const jid = remoteJid(data.message?.key);
         const jidAlt = remoteJidAlt(data.message?.key);
 
+        const existingMessage =
+          await this.findExistingMessageForIncomingData(data);
+        if (existingMessage?.message_id) {
+          await this.handleExistingMessageInOriginalChat(data, existingMessage);
+          return;
+        }
+
         const [chatbotsConfig, getChat, workerConfigFields] = await Promise.all(
           [
             this.workerConfigService.viewChatbots(data.worker_id),
@@ -4401,6 +4664,21 @@ export class MessageUpsertConsume {
             this.workerService.viewWorkerConfigFieldsByWorkerId(data.worker_id),
           ]
         );
+
+        if (!getChat) {
+          const existingRelatedMessage =
+            await this.findExistingMessageForIncomingData(data, {
+              includeRelatedTargetIds: true,
+            });
+
+          if (existingRelatedMessage?.message_id) {
+            await this.handleExistingMessageInOriginalChat(
+              data,
+              existingRelatedMessage
+            );
+            return;
+          }
+        }
 
         const editCreateFallback = getChat
           ? await this.buildMissingEditMessageCreateFallback(getChat, data)

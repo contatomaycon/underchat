@@ -175,6 +175,14 @@ describe('MessageUpsertConsume edit fallback', () => {
       date: '2026-05-07T22:32:34.147Z',
     }) as unknown as IChat;
 
+  const makeClosedChat = (): IChat =>
+    ({
+      ...makeChat(),
+      chat_id: 'chat-closed',
+      status: EChatStatus.closed,
+      closed_at: '2026-05-08T10:00:00.000Z',
+    }) as IChat;
+
   const makeExistingMessage = (): IChatMessage =>
     ({
       message_id: 'message-existing',
@@ -293,10 +301,37 @@ describe('MessageUpsertConsume edit fallback', () => {
     },
   };
 
+  const queryHasExactMessageKeyId = (
+    query: unknown,
+    messageId: string
+  ): boolean => {
+    if (!query || typeof query !== 'object') {
+      return false;
+    }
+
+    if (
+      'term' in query &&
+      query.term &&
+      typeof query.term === 'object' &&
+      (query.term as Record<string, unknown>)['message_key.id'] === messageId
+    ) {
+      return true;
+    }
+
+    return Object.values(query).some((value) => {
+      if (Array.isArray(value)) {
+        return value.some((item) => queryHasExactMessageKeyId(item, messageId));
+      }
+
+      return queryHasExactMessageKeyId(value, messageId);
+    });
+  };
+
   const makeConsumer = (selectResult: unknown = emptyElasticResult) => {
     const redis = {
       get: jest.fn(async () => null),
       set: jest.fn(async () => 'OK'),
+      del: jest.fn(async () => 1),
       eval: jest.fn(async () => 1),
       status: 'ready',
     };
@@ -313,6 +348,7 @@ describe('MessageUpsertConsume edit fallback', () => {
       updateMessageChat: jest.fn(async (..._args: unknown[]) => undefined),
       updateChatSummaryAtomically: jest.fn(async (..._args: unknown[]) => true),
       findChatByChatId: jest.fn(async (..._args: unknown[]) => chat),
+      findChatByPhone: jest.fn(async (..._args: unknown[]) => null),
       saveChat: jest.fn(async (..._args: unknown[]) => undefined),
     };
     const elasticDatabaseService = {
@@ -358,6 +394,14 @@ describe('MessageUpsertConsume edit fallback', () => {
       {
         viewWorkerConfig: jest.fn(async () => ({
           mark_as_read: false,
+        })),
+        viewChatbots: jest.fn(async () => ({
+          enabled: false,
+          chatbot_id: null,
+          output_chatbot_id: null,
+          chatbot_working_hours_enabled: false,
+          chatbot_working_hours_rules: null,
+          chatbot_working_hours_timezone: null,
         })),
       } as never,
       {
@@ -525,5 +569,79 @@ describe('MessageUpsertConsume edit fallback', () => {
         message: adBody,
       })
     );
+  });
+
+  it('deduplicates an incoming message already stored in a closed chat before creating another chat', async () => {
+    const closedChat = makeClosedChat();
+    const existingMessage: IChatMessage = {
+      ...makeExistingMessage(),
+      chat_id: closedChat.chat_id,
+      content: {
+        type: EMessageType.text,
+        message: adBody,
+      },
+    };
+    const { consumer, chatService } = makeConsumer(elasticHit(existingMessage));
+    chatService.findChatByChatId.mockImplementation(
+      async (...args: unknown[]) =>
+        args[1] === closedChat.chat_id ? closedChat : makeChat()
+    );
+
+    await (consumer as any).createOrUpdateChat(
+      jest.fn(),
+      makeTextUpsert(),
+      '556999715039'
+    );
+
+    expect(chatService.findChatByPhone).not.toHaveBeenCalled();
+    expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
+    expect(chatService.patchExistingMessageMissingFields).toHaveBeenCalledWith(
+      existingMessage.message_id,
+      expect.objectContaining({
+        chat_id: closedChat.chat_id,
+      })
+    );
+  });
+
+  it('applies an edit event to the original closed chat instead of creating a fresh chat', async () => {
+    const closedChat = makeClosedChat();
+    const existingMessage: IChatMessage = {
+      ...makeExistingMessage(),
+      chat_id: closedChat.chat_id,
+    };
+    const { consumer, chatService, elasticDatabaseService } =
+      makeConsumer(emptyElasticResult);
+    (elasticDatabaseService.select as jest.Mock).mockImplementation(
+      async (...args: unknown[]) => {
+        const query = args[1];
+        return queryHasExactMessageKeyId(query, targetMessageId)
+          ? elasticHit(existingMessage)
+          : emptyElasticResult;
+      }
+    );
+    chatService.findChatByChatId.mockImplementation(
+      async (...args: unknown[]) =>
+        args[1] === closedChat.chat_id ? closedChat : makeChat()
+    );
+
+    await (consumer as any).createOrUpdateChat(
+      jest.fn(),
+      makeEditUpsert(),
+      '556999715039'
+    );
+
+    expect(chatService.findChatByPhone).toHaveBeenCalledTimes(1);
+    expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
+    expect(chatService.updateMessageChat).toHaveBeenCalledTimes(1);
+
+    const updatedMessage = chatService.updateMessageChat.mock
+      .calls[0][0] as IChatMessage;
+    expect(updatedMessage.chat_id).toBe(closedChat.chat_id);
+    expect(updatedMessage.content?.version).toEqual([
+      expect.objectContaining({
+        type: EMessageType.text,
+        message: adBody,
+      }),
+    ]);
   });
 });
