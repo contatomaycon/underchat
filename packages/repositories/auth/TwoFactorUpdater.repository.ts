@@ -22,4 +22,18 @@ export class TwoFactorUpdaterRepository {
       })
       .where(eq(twoFactor.two_factor_id, twoFactorId));
   };
+
+  updateValidatedAt = async (
+    twoFactorId: string,
+    validatedAt: string
+  ): Promise<void> => {
+    await this.dbRw
+      .update(twoFactor)
+      .set({
+        validated_at: validatedAt,
+        deleted_at: validatedAt,
+        updated_at: validatedAt,
+      })
+      .where(eq(twoFactor.two_factor_id, twoFactorId));
+  };
 }

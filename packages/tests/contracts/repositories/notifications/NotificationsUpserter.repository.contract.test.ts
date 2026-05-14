@@ -153,6 +153,44 @@ describe('NotificationsUpserterRepository', () => {
     );
   });
 
+  it('clears two-factor email and message fields during update', async () => {
+    const { repository } = createRepository();
+
+    (repository as any).findAllNotificationTypeIds = jest.fn(async () => ({
+      twoFactor: 'two',
+      planNew: 'new',
+      planRenewal: 'renew',
+      planExpiration: 'exp',
+      planCancellation: 'cancel',
+      recurringPaymentFailure: 'failure',
+      testPlanNew: 'test-new',
+      testPlanExpiration: 'test-exp',
+    }));
+
+    (repository as any).upsertNotificationByType = jest.fn(async () => null);
+    (repository as any).findNotificationByType = jest.fn(async () => null);
+
+    await repository.upsertNotifications({
+      two_factor_notification: 'w-1',
+      two_factor_message_whatsapp: 'ignored',
+      two_factor_message_email: '<p>ignored</p>',
+      two_factor_email_subject: 'ignored',
+      two_factor_whatsapp_enabled: true,
+      two_factor_email_enabled: true,
+    } as never);
+
+    expect((repository as any).upsertNotificationByType).toHaveBeenCalledWith(
+      expect.anything(),
+      'two',
+      'w-1',
+      null,
+      null,
+      null,
+      true,
+      false
+    );
+  });
+
   it('findAllNotificationTypeIds resolves all expected keys in order', async () => {
     const { repository } = createRepository();
 

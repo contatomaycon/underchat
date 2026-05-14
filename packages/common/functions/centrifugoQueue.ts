@@ -54,6 +54,11 @@ export function paymentAccountCentrifugo(accountId: string): string {
   return `payment:account#${accountId}`;
 }
 
+export function registerValidationCentrifugo(twoFactorId: string): string {
+  validateChannelId(twoFactorId, 'registerValidationCentrifugo');
+  return `register.validation:session#${twoFactorId}`;
+}
+
 export function channelsConfigCentrifugo(): string {
   return 'channels:config';
 }

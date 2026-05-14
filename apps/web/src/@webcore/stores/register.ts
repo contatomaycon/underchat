@@ -5,6 +5,7 @@ import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { AuthRegisterSendTwoFactorRequest } from '@core/schema/register/sendTwoFactor/request.schema';
+import { AuthRegisterSendTwoFactorResponse } from '@core/schema/register/sendTwoFactor/response.schema';
 import { AuthRegisterVerifyCodeRequest } from '@core/schema/register/verifyCode/request.schema';
 import { AuthRegisterVerifyCodeResponse } from '@core/schema/register/verifyCode/response.schema';
 import { ViewRegisterZipcodeRequest } from '@core/schema/register/viewZipcode/request.schema';
@@ -47,7 +48,7 @@ export const useRegisterStore = defineStore('register', {
     },
     async sendTwoFactor(
       data: AuthRegisterSendTwoFactorRequest
-    ): Promise<boolean> {
+    ): Promise<AuthRegisterSendTwoFactorResponse | null> {
       const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
@@ -56,7 +57,7 @@ export const useRegisterStore = defineStore('register', {
             'Backend URL não configurada. Verifique o arquivo .env',
           EColor.error
         );
-        return false;
+        return null;
       }
 
       this.isLoading = true;
@@ -65,7 +66,7 @@ export const useRegisterStore = defineStore('register', {
         const currentLocale = this.i18n.global.locale;
 
         const response = await axios.post<
-          IApiResponse<{ success: boolean; message: string }>
+          IApiResponse<AuthRegisterSendTwoFactorResponse>
         >(`${url}/v1/register/send-two-factor`, data, {
           headers: {
             'Content-Type': 'application/json',
@@ -75,19 +76,15 @@ export const useRegisterStore = defineStore('register', {
 
         const responseData = response?.data;
 
-        if (!responseData?.status) {
+        if (!responseData?.status || !responseData?.data) {
           this.showSnackbar(
             responseData?.message || this.i18n.global.t('register_error'),
             EColor.error
           );
-          return false;
+          return null;
         }
 
-        this.showSnackbar(
-          this.i18n.global.t('register_code_sent'),
-          EColor.success
-        );
-        return true;
+        return responseData.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('register_error');
         if (error instanceof AxiosError) {
@@ -95,10 +92,15 @@ export const useRegisterStore = defineStore('register', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
-        return false;
+        return null;
       } finally {
         this.isLoading = false;
       }
+    },
+    setRegisterToken(token: string) {
+      const tokenCookie = useCookie<string>('register_token');
+      tokenCookie.value = token;
+      this.registerToken = token;
     },
     async verifyCode(data: AuthRegisterVerifyCodeRequest): Promise<boolean> {
       const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);

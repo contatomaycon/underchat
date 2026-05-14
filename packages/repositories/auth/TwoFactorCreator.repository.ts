@@ -21,6 +21,9 @@ export class TwoFactorCreatorRepository {
     emailC?: string | null;
     code: string;
     token: string;
+    workerId?: string | null;
+    workerNumber?: string | null;
+    validationContext?: string | null;
   }): Promise<string> => {
     const twoFactorId = randomUUID();
     const now = new Date().toISOString();
@@ -37,6 +40,9 @@ export class TwoFactorCreatorRepository {
       email_c: data.emailC || null,
       code: data.code,
       token: data.token,
+      worker_id: data.workerId || null,
+      worker_number: data.workerNumber || null,
+      validation_context: data.validationContext || null,
       created_at: now,
     });
 

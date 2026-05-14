@@ -267,10 +267,6 @@ export const useAuthStore = defineStore('auth', {
           return null;
         }
 
-        this.showSnackbar(
-          this.i18n.global.t('forgot_password_code_sent'),
-          EColor.success
-        );
         return responseData.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('forgot_password_error');

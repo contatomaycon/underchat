@@ -65,28 +65,36 @@ const getNotificationByType = (
 };
 
 const isWhatsappChannelActive = (
-  notification: NotificationConfig | null | undefined
+  notification: NotificationConfig | null | undefined,
+  type?: NotificationTypeKey
 ) => {
   return !!(
     notification?.whatsapp?.enabled === true &&
     notification.whatsapp.worker_id &&
-    notification.whatsapp.message
+    (type === 'two_factor' || notification.whatsapp.message)
   );
 };
 
 const isEmailChannelActive = (
-  notification: NotificationConfig | null | undefined
+  notification: NotificationConfig | null | undefined,
+  type?: NotificationTypeKey
 ) => {
+  if (type === 'two_factor') {
+    return false;
+  }
+
   return !!(
     notification?.email?.enabled === true && notification.email.message
   );
 };
 
 const isNotificationActive = (
-  notification: NotificationConfig | null | undefined
+  notification: NotificationConfig | null | undefined,
+  type?: NotificationTypeKey
 ) => {
   return (
-    isWhatsappChannelActive(notification) || isEmailChannelActive(notification)
+    isWhatsappChannelActive(notification, type) ||
+    isEmailChannelActive(notification, type)
   );
 };
 
@@ -96,10 +104,10 @@ const getChannelColor = (isActive: boolean) => {
 
 const getChannelSummary = (type: NotificationTypeKey) => {
   const notification = getNotificationByType(type);
-  const whatsappActive = isWhatsappChannelActive(notification);
-  const emailActive = isEmailChannelActive(notification);
+  const whatsappActive = isWhatsappChannelActive(notification, type);
+  const emailActive = isEmailChannelActive(notification, type);
 
-  return [
+  const channels = [
     {
       key: 'whatsapp',
       icon: 'tabler-brand-whatsapp',
@@ -113,43 +121,66 @@ const getChannelSummary = (type: NotificationTypeKey) => {
       active: emailActive,
     },
   ];
+
+  if (type === 'two_factor') {
+    return channels.slice(0, 1);
+  }
+  return channels;
 };
 
 const isTwoFactorActive = computed(() => {
-  return isNotificationActive(notifications.value?.two_factor_notification);
+  return isNotificationActive(
+    notifications.value?.two_factor_notification,
+    'two_factor'
+  );
 });
 
 const isPlanNewActive = computed(() => {
-  return isNotificationActive(notifications.value?.plan_new_notification);
+  return isNotificationActive(
+    notifications.value?.plan_new_notification,
+    'plan_new'
+  );
 });
 
 const isPlanRenewalActive = computed(() => {
-  return isNotificationActive(notifications.value?.plan_renewal_notification);
+  return isNotificationActive(
+    notifications.value?.plan_renewal_notification,
+    'plan_renewal'
+  );
 });
 
 const isPlanExpirationActive = computed(() => {
-  return isNotificationActive(notifications.value?.plan_expiration_reminder);
+  return isNotificationActive(
+    notifications.value?.plan_expiration_reminder,
+    'plan_expiration'
+  );
 });
 
 const isPlanCancellationActive = computed(() => {
   return isNotificationActive(
-    notifications.value?.plan_cancellation_notification
+    notifications.value?.plan_cancellation_notification,
+    'plan_cancellation'
   );
 });
 
 const isRecurringPaymentFailureActive = computed(() => {
   return isNotificationActive(
-    notifications.value?.recurring_payment_failure_notification
+    notifications.value?.recurring_payment_failure_notification,
+    'recurring_payment_failure'
   );
 });
 
 const isTestPlanNewActive = computed(() => {
-  return isNotificationActive(notifications.value?.test_plan_new_notification);
+  return isNotificationActive(
+    notifications.value?.test_plan_new_notification,
+    'test_plan_new'
+  );
 });
 
 const isTestPlanExpirationActive = computed(() => {
   return isNotificationActive(
-    notifications.value?.test_plan_expiration_reminder
+    notifications.value?.test_plan_expiration_reminder,
+    'test_plan_expiration'
   );
 });
 
@@ -228,10 +259,14 @@ const openWorkerModal = async (type: NotificationTypeKey) => {
   const notification = getNotificationByType(type);
   selectedWorkerId.value = notification?.whatsapp?.worker_id || null;
   whatsappEnabled.value = notification?.whatsapp?.enabled ?? false;
-  whatsappMessage.value = notification?.whatsapp?.message || '';
-  emailEnabled.value = notification?.email?.enabled ?? false;
-  emailSubject.value = notification?.email?.subject || '';
-  emailMessage.value = notification?.email?.message || '';
+  whatsappMessage.value =
+    type === 'two_factor' ? '' : notification?.whatsapp?.message || '';
+  emailEnabled.value =
+    type === 'two_factor' ? false : (notification?.email?.enabled ?? false);
+  emailSubject.value =
+    type === 'two_factor' ? '' : notification?.email?.subject || '';
+  emailMessage.value =
+    type === 'two_factor' ? '' : notification?.email?.message || '';
 
   await loadWorkers();
   isWorkerModalOpen.value = true;
@@ -266,11 +301,11 @@ const saveNotification = async () => {
 
     if (selectedNotificationType.value === 'two_factor') {
       updateData.two_factor_notification = selectedWorkerId.value;
-      updateData.two_factor_message_whatsapp = whatsappMessage.value || null;
+      updateData.two_factor_message_whatsapp = null;
       updateData.two_factor_whatsapp_enabled = whatsappEnabled.value;
-      updateData.two_factor_message_email = emailMessage.value || null;
-      updateData.two_factor_email_subject = emailSubject.value || null;
-      updateData.two_factor_email_enabled = emailEnabled.value;
+      updateData.two_factor_message_email = null;
+      updateData.two_factor_email_subject = null;
+      updateData.two_factor_email_enabled = false;
     } else if (selectedNotificationType.value === 'plan_new') {
       updateData.plan_new_notification = selectedWorkerId.value;
       updateData.plan_new_message_whatsapp = whatsappMessage.value || null;
@@ -363,6 +398,11 @@ const removeNotification = async (type: NotificationTypeKey) => {
 
     if (type === 'two_factor') {
       updateData.two_factor_notification = null;
+      updateData.two_factor_message_whatsapp = null;
+      updateData.two_factor_whatsapp_enabled = false;
+      updateData.two_factor_message_email = null;
+      updateData.two_factor_email_subject = null;
+      updateData.two_factor_email_enabled = false;
     } else if (type === 'plan_new') {
       updateData.plan_new_notification = null;
     } else if (type === 'plan_renewal') {
@@ -1354,19 +1394,26 @@ onMounted(async () => {
               </template>
             </VAutocomplete>
 
-            <VLabel class="text-body-2 mb-1 mt-4">{{ $t('message') }}:</VLabel>
-            <VTextarea
-              v-model="whatsappMessage"
-              variant="outlined"
-              rows="4"
-              :placeholder="$t('notification_message_placeholder')"
-              :disabled="!whatsappEnabled || !hasWorkers || !selectedWorkerId"
-            />
+            <template v-if="selectedNotificationType !== 'two_factor'">
+              <VLabel class="text-body-2 mb-1 mt-4"
+                >{{ $t('message') }}:</VLabel
+              >
+              <VTextarea
+                v-model="whatsappMessage"
+                variant="outlined"
+                rows="4"
+                :placeholder="$t('notification_message_placeholder')"
+                :disabled="!whatsappEnabled || !hasWorkers || !selectedWorkerId"
+              />
+            </template>
           </div>
 
-          <VDivider class="my-6" />
+          <VDivider
+            v-if="selectedNotificationType !== 'two_factor'"
+            class="my-6"
+          />
 
-          <div>
+          <div v-if="selectedNotificationType !== 'two_factor'">
             <div class="d-flex align-center justify-space-between mb-4">
               <div class="d-flex align-center gap-2">
                 <VIcon icon="tabler-mail" color="primary" />
@@ -1434,7 +1481,10 @@ onMounted(async () => {
           </div>
 
           <VCard
-            v-if="selectedNotificationType"
+            v-if="
+              selectedNotificationType &&
+              selectedNotificationType !== 'two_factor'
+            "
             variant="outlined"
             color="info"
             class="mt-4"
@@ -1444,14 +1494,7 @@ onMounted(async () => {
                 {{ $t('allowed_parameters') }}:
               </div>
               <div
-                v-if="selectedNotificationType === 'two_factor'"
-                class="text-body-2"
-              >
-                <div>• {{ $t('code') }}: {{ formatParameter('code') }}</div>
-                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
-              </div>
-              <div
-                v-else-if="selectedNotificationType === 'plan_new'"
+                v-if="selectedNotificationType === 'plan_new'"
                 class="text-body-2"
               >
                 <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>

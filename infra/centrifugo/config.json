@@ -84,6 +84,18 @@
         "allow_history_for_subscriber": true
       },
       {
+        "name": "register.validation",
+        "allow_user_limited_channels": true,
+        "allow_subscribe_for_client": true,
+        "allow_publish_for_client": false,
+        "presence": false,
+        "history_size": 20,
+        "history_ttl": "120s",
+        "force_recovery": true,
+        "allow_recover_for_client": true,
+        "allow_history_for_subscriber": true
+      },
+      {
         "name": "channels",
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,

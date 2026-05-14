@@ -27,6 +27,7 @@ export class NotificationMessageViewerRepository {
           columns: {
             worker_id: true,
             name: true,
+            number: true,
           },
         },
       },
@@ -62,6 +63,7 @@ export class NotificationMessageViewerRepository {
           columns: {
             worker_id: true,
             name: true,
+            number: true,
           },
         },
       },

@@ -193,6 +193,7 @@ declare global {
   const useAbility: typeof import('./src/plugins/0.casl/composables/useAbility').useAbility
   const useAbs: typeof import('@vueuse/math').useAbs
   const useActiveElement: typeof import('@vueuse/core').useActiveElement
+  const useActiveWhatsappValidation: typeof import('./src/composables/useActiveWhatsappValidation').useActiveWhatsappValidation
   const useAnimate: typeof import('@vueuse/core').useAnimate
   const useApi: typeof import('./src/composables/useApi').useApi
   const useArrayDifference: typeof import('@vueuse/core').useArrayDifference
@@ -421,6 +422,9 @@ declare global {
   export type { CookieOptions, CookieRef } from './src/@webcore/composable/useCookie'
   import('./src/@webcore/composable/useCookie')
   // @ts-ignore
+  export type { ActiveWhatsappValidationHandler, ActiveWhatsappValidationConfig } from './src/composables/useActiveWhatsappValidation'
+  import('./src/composables/useActiveWhatsappValidation')
+  // @ts-ignore
   export type { ChatNotificationToastPayload } from './src/composables/useChatNotificationToast'
   import('./src/composables/useChatNotificationToast')
 }
@@ -604,6 +608,7 @@ declare module 'vue' {
     readonly useAbility: UnwrapRef<typeof import('./src/plugins/0.casl/composables/useAbility')['useAbility']>
     readonly useAbs: UnwrapRef<typeof import('@vueuse/math')['useAbs']>
     readonly useActiveElement: UnwrapRef<typeof import('@vueuse/core')['useActiveElement']>
+    readonly useActiveWhatsappValidation: UnwrapRef<typeof import('./src/composables/useActiveWhatsappValidation')['useActiveWhatsappValidation']>
     readonly useAnimate: UnwrapRef<typeof import('@vueuse/core')['useAnimate']>
     readonly useArrayDifference: UnwrapRef<typeof import('@vueuse/core')['useArrayDifference']>
     readonly useArrayEvery: UnwrapRef<typeof import('@vueuse/core')['useArrayEvery']>

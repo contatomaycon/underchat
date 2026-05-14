@@ -20,6 +20,12 @@ export class TwoFactorService {
     return this.twoFactorViewerRepository.findTwoFactorByCode(code);
   };
 
+  findActiveValidationByCode = async (
+    code: string
+  ): Promise<ITwoFactorData | null> => {
+    return this.twoFactorViewerRepository.findActiveValidationByCode(code);
+  };
+
   findTwoFactorByCodeAndEmailPhone = async (
     data: IFindTwoFactorByCodeAndEmailPhone
   ): Promise<ITwoFactorData | null> => {
@@ -43,6 +49,16 @@ export class TwoFactorService {
     return this.twoFactorUpdaterRepository.updateDeletedAt(
       twoFactorId,
       deletedAt
+    );
+  };
+
+  updateValidatedAt = async (
+    twoFactorId: string,
+    validatedAt: string
+  ): Promise<void> => {
+    return this.twoFactorUpdaterRepository.updateValidatedAt(
+      twoFactorId,
+      validatedAt
     );
   };
 }

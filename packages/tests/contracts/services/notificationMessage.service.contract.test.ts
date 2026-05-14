@@ -129,6 +129,7 @@ function buildNotification(overrides: Record<string, unknown> = {}) {
     nwr: {
       worker_id: 'worker-1',
       name: 'Conta Business',
+      number: '5561995999040',
     },
     ...overrides,
   };
@@ -246,16 +247,16 @@ describe('NotificationMessageService', () => {
     expect(mocks.emailService.sendEmail).toHaveBeenCalledTimes(1);
   });
 
-  it('sends two-factor through enabled channels using one code', async () => {
+  it('generates active WhatsApp validation payload for two-factor without configurable message', async () => {
     const { service, mocks } = createService();
     mocks.notificationMessageViewerRepository.findNotificationByTypeId.mockResolvedValue(
       buildNotification({
         notification_type_id: ENotificationTypeId.two_factor,
         whatsapp_enabled: true,
-        email_enabled: true,
-        message_whatsapp: 'Código WhatsApp {{code}} para {{name}}',
-        message_email: '<p>Código Email {{code}} para {{name}}</p>',
-        email_subject: 'Código {{code}}',
+        email_enabled: false,
+        message_whatsapp: null,
+        message_email: null,
+        email_subject: null,
         nnt: {
           notification_type_id: ENotificationTypeId.two_factor,
           name: ENotificationType.two_factor,
@@ -273,35 +274,43 @@ describe('NotificationMessageService', () => {
 
     const createTwoFactorCalls = mocks.twoFactorCreatorRepository
       .createTwoFactor.mock.calls as unknown as Array<[Record<string, string>]>;
-    const streamSendCalls = mocks.streamProducerService.send.mock
-      .calls as unknown as Array<[string, { message_whatsapp: string }]>;
-    const emailSendCalls = mocks.emailService.sendEmail.mock
-      .calls as unknown as Array<[{ html: string; subject: string }]>;
     const [createTwoFactorPayload] = getFirstCall(
       createTwoFactorCalls,
       'createTwoFactor'
     );
-    const [, whatsappPayload] = getFirstCall(
-      streamSendCalls,
-      'streamProducerService.send'
-    );
-    const [emailPayload] = getFirstCall(emailSendCalls, 'sendEmail');
     const createdCode = createTwoFactorPayload.code;
 
-    expect(result).toEqual({
-      code: createdCode,
-      sent_via_email: true,
-      sent_via_whatsapp: true,
-    });
+    expect(createdCode).toMatch(/^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}-UNDERCHAT$/);
+    expect(result).toEqual(
+      expect.objectContaining({
+        code: createdCode,
+        sent_via_email: false,
+        sent_via_whatsapp: true,
+        validation_id: 'two-factor-1',
+        validation_text: `Código de Validação: ${createdCode}`,
+        target_phone: '5561995999040',
+        centrifugo_channel: 'register.validation:session#two-factor-1',
+      })
+    );
+    expect(result.whatsapp_url).toContain('phone=5561995999040');
+    expect(new URL(result.whatsapp_url).searchParams.get('text')).toBe(
+      `Código de Validação: ${createdCode}`
+    );
     expect(
       mocks.twoFactorCreatorRepository.createTwoFactor
     ).toHaveBeenCalledTimes(1);
-    expect(whatsappPayload.message_whatsapp).toContain(createdCode);
-    expect(emailPayload.html).toContain(createdCode);
-    expect(emailPayload.subject).toContain(createdCode);
+    expect(createTwoFactorPayload).toEqual(
+      expect.objectContaining({
+        workerId: 'worker-1',
+        workerNumber: '5561995999040',
+        validationContext: 'register',
+      })
+    );
+    expect(mocks.streamProducerService.send).not.toHaveBeenCalled();
+    expect(mocks.emailService.sendEmail).not.toHaveBeenCalled();
   });
 
-  it('respects two-factor channel flags', async () => {
+  it('rejects two-factor generation when WhatsApp channel is disabled', async () => {
     const { service, mocks } = createService();
     mocks.notificationMessageViewerRepository.findNotificationByTypeId.mockResolvedValue(
       buildNotification({
@@ -317,17 +326,16 @@ describe('NotificationMessageService', () => {
       })
     );
 
-    const result = await service.sendTwoFactorCodeWithChannels({
-      email: 'john@example.com',
-      userId: 'user-1',
-      phone: '11991204099',
-      phoneDdi: '55',
-      name: 'John',
-    });
-
-    expect(result.sent_via_email).toBe(true);
-    expect(result.sent_via_whatsapp).toBe(false);
+    await expect(
+      service.sendTwoFactorCodeWithChannels({
+        email: 'john@example.com',
+        userId: 'user-1',
+        phone: '11991204099',
+        phoneDdi: '55',
+        name: 'John',
+      })
+    ).rejects.toThrow('Two factor notification channels not configured');
     expect(mocks.streamProducerService.send).not.toHaveBeenCalled();
-    expect(mocks.emailService.sendEmail).toHaveBeenCalledTimes(1);
+    expect(mocks.emailService.sendEmail).not.toHaveBeenCalled();
   });
 });

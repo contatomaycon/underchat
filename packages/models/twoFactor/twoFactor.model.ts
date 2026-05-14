@@ -14,8 +14,12 @@ export const twoFactor = pgTable(
     email: varchar({ length: 500 }),
     email_partial: varchar({ length: 50 }),
     email_c: varchar({ length: 500 }),
-    code: varchar({ length: 8 }).notNull(),
+    code: varchar({ length: 64 }).notNull(),
     token: varchar({ length: 255 }).notNull(),
+    worker_id: uuid(),
+    worker_number: varchar({ length: 20 }),
+    validation_context: varchar({ length: 30 }),
+    validated_at: timestamp({ mode: 'string', withTimezone: true }),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,
@@ -30,6 +34,9 @@ export const twoFactor = pgTable(
     index('two_factor_user_id_idx').on(table.user_id),
     index('two_factor_token_idx').on(table.token),
     index('two_factor_code_idx').on(table.code),
+    index('two_factor_worker_id_idx').on(table.worker_id),
+    index('two_factor_validation_context_idx').on(table.validation_context),
+    index('two_factor_validated_at_idx').on(table.validated_at),
     index('two_factor_deleted_at_idx').on(table.deleted_at),
     index('two_factor_email_c_phone_c_code_deleted_at_idx').on(
       table.email_c,

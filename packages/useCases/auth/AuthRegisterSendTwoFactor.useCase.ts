@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AuthRegisterSendTwoFactorRequest } from '@core/schema/register/sendTwoFactor/request.schema';
+import { AuthRegisterSendTwoFactorResponse } from '@core/schema/register/sendTwoFactor/response.schema';
 import { AccountTestService } from '@core/services/accountTest.service';
 import { UserService } from '@core/services/user.service';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
@@ -47,7 +48,7 @@ export class AuthRegisterSendTwoFactorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: AuthRegisterSendTwoFactorRequest
-  ): Promise<void> {
+  ): Promise<AuthRegisterSendTwoFactorResponse> {
     const normalizedEmail = input.email.trim().toLowerCase();
     const phoneNumber = input.phone.replaceAll(/\D/g, '');
     const phoneDDD = input.phone_ddd?.replaceAll(/\D/g, '') || '';
@@ -84,12 +85,26 @@ export class AuthRegisterSendTwoFactorUseCase {
       throw new Error(t('register_phone_already_used'));
     }
 
-    await this.notificationMessageService.sendTwoFactorCodeWithChannels({
-      email: normalizedEmail,
-      userId: null,
-      phone: fullPhone,
-      phoneDdi: phoneDDI,
-      name: input.name,
-    });
+    const result =
+      await this.notificationMessageService.sendTwoFactorCodeWithChannels({
+        email: normalizedEmail,
+        userId: null,
+        phone: fullPhone,
+        phoneDdi: phoneDDI,
+        name: input.name,
+        context: 'register',
+      });
+
+    return {
+      success: true,
+      message: t('register_code_sent'),
+      validation_id: result.validation_id,
+      validation_text: result.validation_text,
+      whatsapp_url: result.whatsapp_url,
+      target_phone: result.target_phone,
+      centrifugo_url: result.centrifugo_url,
+      centrifugo_token: result.centrifugo_token,
+      centrifugo_channel: result.centrifugo_channel,
+    };
   }
 }

@@ -16,6 +16,7 @@ import {
   ENotificationTypeId,
 } from '@core/common/enums/ENotificationType';
 import { webcrypto, randomUUID } from 'node:crypto';
+import jwt from 'jsonwebtoken';
 import { EmailService } from './email.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import Redis from 'ioredis';
@@ -24,6 +25,12 @@ import { TwoFactorCreatorRepository } from '@core/repositories/auth/TwoFactorCre
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { EncryptService } from './encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
+import { centrifugoEnvironment } from '@core/config/environments';
+import { registerValidationCentrifugo } from '@core/common/functions/centrifugoQueue';
+import {
+  ActiveWhatsappValidationContext,
+  IActiveWhatsappValidationResponse,
+} from '@core/common/interfaces/IActiveWhatsappValidation';
 
 @injectable()
 export class NotificationMessageService {
@@ -326,6 +333,50 @@ export class NotificationMessageService {
     );
   }
 
+  private generateActiveValidationCode(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const randomArray = new Uint32Array(16);
+    webcrypto.getRandomValues(randomArray);
+    const raw = Array.from(
+      randomArray,
+      (value) => chars[value % chars.length]
+    ).join('');
+    const chunks = raw.match(/.{1,4}/g) ?? [raw];
+    return `${chunks.join('-')}-UNDERCHAT`;
+  }
+
+  private buildValidationText(code: string): string {
+    return `Código de Validação: ${code}`;
+  }
+
+  private buildWhatsappUrl(phone: string, text: string): string {
+    const normalizedPhone = phone.replaceAll(/\D/g, '');
+    const params = new URLSearchParams({
+      phone: normalizedPhone,
+      text,
+      type: 'phone_number',
+      app_absent: '0',
+    });
+
+    return `https://web.whatsapp.com/send/?${params.toString()}`;
+  }
+
+  private generateValidationCentrifugoToken(validationId: string): string {
+    const exp = Math.floor(Date.now() / 1000) + 30 * 60;
+    return jwt.sign(
+      {
+        sub: validationId,
+        user: validationId,
+        exp,
+        params: {
+          userID: validationId,
+        },
+      },
+      centrifugoEnvironment.centrifugoHmacSecretKey,
+      { algorithm: 'HS256' }
+    );
+  }
+
   private async getPlanData(accountId: string): Promise<{
     plan: string | null;
     expiration_date: string | null;
@@ -470,11 +521,14 @@ export class NotificationMessageService {
     phone?: string | null;
     phoneDdi?: string | null;
     name?: string | null;
-  }): Promise<{
-    code: string;
-    sent_via_email: boolean;
-    sent_via_whatsapp: boolean;
-  }> {
+    context?: ActiveWhatsappValidationContext;
+  }): Promise<
+    {
+      code: string;
+      sent_via_email: boolean;
+      sent_via_whatsapp: boolean;
+    } & IActiveWhatsappValidationResponse
+  > {
     const notification =
       await this.notificationMessageViewerRepository.findNotificationByTypeId(
         ENotificationTypeId.two_factor
@@ -487,64 +541,36 @@ export class NotificationMessageService {
     const email = input.email?.trim() || null;
     const phone = input.phone?.trim() || null;
     const phoneDdi = input.phoneDdi?.trim() || null;
-    const name = input.name ?? null;
+    const context = input.context ?? 'register';
 
-    let shouldSendWhatsapp = !!(
+    const hasWhatsappValidationConfig = !!(
       notification.whatsapp_enabled === true &&
-      notification.message_whatsapp &&
       notification.worker_id &&
+      notification.nwr?.number &&
       phone &&
       phoneDdi
     );
-    const shouldSendEmail = !!(
-      notification.email_enabled === true &&
-      notification.message_email &&
-      email
-    );
 
-    let workerId: string | null = shouldSendWhatsapp
-      ? notification.worker_id
-      : null;
-    let workerName: string | null = null;
-
-    if (shouldSendWhatsapp && workerId) {
-      workerName =
-        await this.workerNameViewerRepository.findWorkerNameById(workerId);
-
-      if (!workerName) {
-        shouldSendWhatsapp = false;
-        workerId = null;
-      }
-    }
-
-    if (!shouldSendWhatsapp && !shouldSendEmail) {
+    if (!hasWhatsappValidationConfig) {
       throw new Error('Two factor notification channels not configured');
     }
 
-    const code = this.generateCode();
+    const workerId = notification.worker_id;
+    const workerNumber = notification.nwr?.number?.replaceAll(/\D/g, '') ?? '';
+
+    if (!workerId || !workerNumber) {
+      throw new Error('Two factor notification channels not configured');
+    }
+
+    const workerName =
+      await this.workerNameViewerRepository.findWorkerNameById(workerId);
+
+    if (!workerName) {
+      throw new Error('Two factor notification channels not configured');
+    }
+
+    const code = this.generateActiveValidationCode();
     const token = randomUUID();
-    const notificationTypeName = notification.nnt?.name || '';
-
-    const whatsappMessage =
-      shouldSendWhatsapp && notification.message_whatsapp
-        ? notification.message_whatsapp
-            .replaceAll('{{code}}', code)
-            .replaceAll('{{name}}', name || '')
-        : null;
-
-    const emailMessage =
-      shouldSendEmail && notification.message_email
-        ? notification.message_email
-            .replaceAll('{{code}}', code)
-            .replaceAll('{{name}}', name || '')
-        : null;
-
-    const emailSubject =
-      shouldSendEmail && notification.email_subject
-        ? notification.email_subject
-            .replaceAll('{{code}}', code)
-            .replaceAll('{{name}}', name || '')
-        : null;
 
     const phoneEncrypted = phone
       ? this.passwordEncryptorService.encrypt(phone)
@@ -566,7 +592,7 @@ export class NotificationMessageService {
           ?.slice(0, 50) || null
       : null;
 
-    await this.twoFactorCreatorRepository.createTwoFactor({
+    const validationId = await this.twoFactorCreatorRepository.createTwoFactor({
       userId: input.userId ?? null,
       phoneDdi,
       phone: phoneEncrypted,
@@ -577,57 +603,27 @@ export class NotificationMessageService {
       emailC,
       code,
       token,
+      workerId,
+      workerNumber,
+      validationContext: context,
     });
 
-    let sentViaWhatsapp = false;
-
-    if (shouldSendWhatsapp && phone && phoneDdi && workerId && workerName) {
-      const notificationMessage: INotificationMessage = {
-        id: notification.notification_id,
-        notification_id: notification.notification_id,
-        message_key: {
-          phone_ddi: phoneDdi,
-          phone_number: phone.replaceAll(/\D/g, ''),
-        },
-        worker: {
-          id: workerId,
-          name: workerName,
-        },
-        notification_type: {
-          id: notification.notification_type_id,
-          name: notificationTypeName,
-        },
-        message_whatsapp: whatsappMessage,
-        message_email: null,
-        email_subject: null,
-        name: name || null,
-        phone: phone || null,
-        email: email || null,
-        date: new Date().toISOString(),
-      };
-
-      await this.sendWhatsAppNotification(
-        notification,
-        phone,
-        workerId,
-        notificationMessage
-      );
-      sentViaWhatsapp = true;
-    }
-
-    if (shouldSendEmail) {
-      await this.sendEmailNotification(
-        notification,
-        email,
-        emailMessage,
-        emailSubject
-      );
-    }
+    const validationText = this.buildValidationText(code);
+    const channel = registerValidationCentrifugo(validationId);
+    const centrifugoToken =
+      this.generateValidationCentrifugoToken(validationId);
 
     return {
       code,
-      sent_via_email: shouldSendEmail,
-      sent_via_whatsapp: sentViaWhatsapp,
+      sent_via_email: false,
+      sent_via_whatsapp: true,
+      validation_id: validationId,
+      validation_text: validationText,
+      whatsapp_url: this.buildWhatsappUrl(workerNumber, validationText),
+      target_phone: workerNumber,
+      centrifugo_url: centrifugoEnvironment.centrifugoWsUrl,
+      centrifugo_token: centrifugoToken,
+      centrifugo_channel: channel,
     };
   }
 

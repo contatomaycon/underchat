@@ -409,11 +409,12 @@ export class OrderPaymentCreatorUseCase {
       email = sensitiveData.email;
     }
 
-    const hasExistingTest = await this.accountTestService.checkExistingTest({
-      document,
-      phone,
-      email,
-    });
+    const hasExistingTest =
+      await this.accountTestService.checkExistingCreatedTest({
+        document,
+        phone,
+        email,
+      });
 
     if (hasExistingTest) {
       throw new Error(t('test_plan_already_used'));

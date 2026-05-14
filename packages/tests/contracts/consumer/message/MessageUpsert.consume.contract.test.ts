@@ -44,6 +44,10 @@ jest.mock('@core/services/attendanceInactivity.service', () => ({
   AttendanceInactivityService: class AttendanceInactivityService {},
 }));
 
+jest.mock('@core/services/activeWhatsappValidation.service', () => ({
+  ActiveWhatsappValidationService: class ActiveWhatsappValidationService {},
+}));
+
 jest.mock('@core/services/centrifugo.service', () => ({
   CentrifugoService: class CentrifugoService {},
 }));
@@ -148,6 +152,7 @@ describe('MessageUpsertConsume edit fallback', () => {
   const editEventId = `edit_${targetMessageId}_1778190016147`;
   const adBody =
     'Olá! Gostaria de saber sobre a Pós-Graduação EAD com um atendimento humanizado!';
+  const validationText = 'Código de Validação: ABCD-EF12-3456-WXYZ-UNDERCHAT';
   const ciphertextFallbackBody =
     'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';
 
@@ -216,7 +221,10 @@ describe('MessageUpsertConsume edit fallback', () => {
       },
     }) as IChatMessage;
 
-  const makeTextUpsert = (): IUpsertMessage => ({
+  const makeTextUpsert = (
+    body: string = adBody,
+    options: { fromMe?: boolean } = {}
+  ): IUpsertMessage => ({
     account_id: 'account-1',
     worker_id: 'worker-1',
     type: EMessageType.text,
@@ -226,12 +234,12 @@ describe('MessageUpsertConsume edit fallback', () => {
         id: targetMessageId,
         remoteJid: phoneJid,
         remoteJidAlt: lidJid,
-        fromMe: false,
+        fromMe: options.fromMe ?? false,
       },
       message: {
-        conversation: adBody,
+        conversation: body,
         extendedTextMessage: {
-          text: adBody,
+          text: body,
         },
       },
       messageTimestamp: 1778190016,
@@ -312,6 +320,9 @@ describe('MessageUpsertConsume edit fallback', () => {
       updateWithScriptOCC: jest.fn(async () => 'updated'),
       isReadOnlyAllowDeleteBlockError: jest.fn(() => false),
     };
+    const activeWhatsappValidationService = {
+      handleIncomingMessage: jest.fn(async () => false),
+    };
     const consumer = new MessageUpsertConsume(
       redis as never,
       {} as never,
@@ -365,7 +376,8 @@ describe('MessageUpsertConsume edit fallback', () => {
         sendNotificationForChatMessage: jest.fn(async () => undefined),
       } as never,
       {} as never,
-      {} as never
+      {} as never,
+      activeWhatsappValidationService as never
     );
 
     return {
@@ -373,8 +385,63 @@ describe('MessageUpsertConsume edit fallback', () => {
       chat,
       chatService,
       elasticDatabaseService,
+      activeWhatsappValidationService,
     };
   };
+
+  it('delegates exact active WhatsApp validation messages before normal processing', async () => {
+    const { consumer, activeWhatsappValidationService } = makeConsumer();
+    activeWhatsappValidationService.handleIncomingMessage.mockResolvedValueOnce(
+      true
+    );
+
+    const result = await (consumer as any).handleActiveWhatsappValidation(
+      makeTextUpsert(validationText),
+      '556999715039'
+    );
+
+    expect(result).toBe(true);
+    expect(
+      activeWhatsappValidationService.handleIncomingMessage
+    ).toHaveBeenCalledWith({
+      workerId: 'worker-1',
+      fromPhone: '556999715039',
+      messageText: validationText,
+    });
+  });
+
+  it('ignores exact active WhatsApp validation messages sent by the operator', async () => {
+    const { consumer, activeWhatsappValidationService } = makeConsumer();
+
+    const result = await (consumer as any).handleActiveWhatsappValidation(
+      makeTextUpsert(validationText, { fromMe: true }),
+      '556999715039'
+    );
+
+    expect(result).toBe(false);
+    expect(
+      activeWhatsappValidationService.handleIncomingMessage
+    ).not.toHaveBeenCalled();
+  });
+
+  it('does not consume similar active WhatsApp validation messages', async () => {
+    const { consumer, activeWhatsappValidationService } = makeConsumer();
+    const similarText = `Recebi o ${validationText}`;
+
+    const result = await (consumer as any).handleActiveWhatsappValidation(
+      makeTextUpsert(similarText),
+      '556999715039'
+    );
+
+    expect(result).toBe(false);
+    expect(
+      activeWhatsappValidationService.handleIncomingMessage
+    ).toHaveBeenCalledWith({
+      workerId: 'worker-1',
+      fromPhone: '556999715039',
+      messageText: similarText,
+    });
+  });
 
   it('creates the original message when edit_text points to a missing target', async () => {
     const { consumer, chat, chatService } = makeConsumer();

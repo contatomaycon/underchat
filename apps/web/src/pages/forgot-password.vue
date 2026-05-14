@@ -20,14 +20,18 @@ import { VForm } from 'vuetify/components/VForm';
 import { useTheme } from 'vuetify';
 import { ability } from '@/plugins/0.casl/ability';
 import { useI18n } from 'vue-i18n';
-
-const { t: $t } = useI18n();
+import ActiveWhatsappValidationCard from '@/components/auth/ActiveWhatsappValidationCard.vue';
+import { useActiveWhatsappValidation } from '@/composables/useActiveWhatsappValidation';
+import type { AuthForgotPasswordSendCodeResponse } from '@core/schema/auth/forgotPassword/sendCode/response.schema';
+import { EColor } from '@core/common/enums/EColor';
 import {
   requiredValidator,
   emailValidator,
   confirmedValidator,
 } from '@/@webcore/utils/validators';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
+
+const { t: $t } = useI18n();
 
 const authStore = useAuthStore();
 const chatStore = useChatStore();
@@ -52,14 +56,25 @@ const refFormPassword = ref<VForm>();
 
 const currentStep = ref(0);
 const email = ref('');
-const verificationCode = ref('');
-const isVerifyingCode = ref(false);
-const isVerificationValid = ref(false);
 const isSendingCode = ref(false);
 const isResettingPassword = ref(false);
 const resetPasswordToken = ref<string | null>(null);
-const sentViaEmail = ref(false);
-const sentViaWhatsapp = ref(false);
+const activeValidation = ref<AuthForgotPasswordSendCodeResponse | null>(null);
+const activeValidationStatus = ref<'waiting' | 'validated' | 'rejected'>(
+  'waiting'
+);
+const activeValidationRejectionReason = ref<string | null>(null);
+const activeWhatsappValidation = useActiveWhatsappValidation();
+let activeValidationAdvanceTimer: number | null = null;
+
+const recoverableActiveValidationReasons = new Set([
+  'phone_mismatch',
+  'worker_mismatch',
+]);
+
+const isRecoverableActiveValidationReason = (
+  reason: string | null | undefined
+): boolean => !!reason && recoverableActiveValidationReasons.has(reason);
 
 const newPassword = ref('');
 const confirmPassword = ref('');
@@ -76,28 +91,66 @@ const authThemeImg = useGenerateImageVariant(
 
 const authThemeMask = useGenerateImageVariant(authV2MaskLight, authV2MaskDark);
 
-watch(verificationCode, (newValue, oldValue) => {
-  if (isVerifyingCode.value) {
-    return;
+const clearActiveValidationAdvanceTimer = () => {
+  if (activeValidationAdvanceTimer !== null) {
+    window.clearTimeout(activeValidationAdvanceTimer);
+    activeValidationAdvanceTimer = null;
   }
+};
 
-  if (!newValue) {
-    isVerificationValid.value = false;
-    return;
-  }
+const initActiveValidationSubscription = async (
+  validation: AuthForgotPasswordSendCodeResponse
+) => {
+  activeWhatsappValidation.cleanup();
+  clearActiveValidationAdvanceTimer();
 
-  if (newValue !== newValue.toUpperCase()) {
-    verificationCode.value = newValue.toUpperCase();
-    return;
-  }
+  try {
+    await activeWhatsappValidation.subscribe(
+      {
+        centrifugoUrl: validation.centrifugo_url,
+        centrifugoToken: validation.centrifugo_token,
+        centrifugoChannel: validation.centrifugo_channel,
+      },
+      (payload) => {
+        if (payload.context !== 'forgot_password') return;
 
-  if (newValue.length === 6 && oldValue !== newValue) {
-    isVerificationValid.value = false;
-    handleVerifyCode();
-  } else if (newValue.length < 6) {
-    isVerificationValid.value = false;
+        if (payload.status === 'validated' && payload.token) {
+          resetPasswordToken.value = payload.token;
+          activeValidationStatus.value = 'validated';
+          activeValidationRejectionReason.value = null;
+          activeWhatsappValidation.cleanup();
+          clearActiveValidationAdvanceTimer();
+          activeValidationAdvanceTimer = window.setTimeout(() => {
+            currentStep.value = 2;
+          }, 1200);
+          return;
+        }
+
+        if (payload.status === 'rejected') {
+          activeValidationRejectionReason.value = payload.reason ?? null;
+
+          if (isRecoverableActiveValidationReason(payload.reason)) {
+            activeValidationStatus.value = 'waiting';
+            return;
+          }
+
+          activeValidationStatus.value = 'rejected';
+          activeWhatsappValidation.cleanup();
+          authStore.showSnackbar(
+            $t('active_whatsapp_validation_rejected_description'),
+            EColor.error
+          );
+        }
+      }
+    );
+  } catch (error) {
+    activeValidationStatus.value = 'rejected';
+    activeValidationRejectionReason.value = 'connection_error';
+    if (import.meta.env.DEV) {
+      console.error('Erro ao conectar validação ativa:', error);
+    }
   }
-});
+};
 
 const handleSendCode = async () => {
   const validateForm = await refFormEmail?.value?.validate();
@@ -111,49 +164,24 @@ const handleSendCode = async () => {
     });
 
     if (response) {
-      sentViaEmail.value = response.sent_via_email || false;
-      sentViaWhatsapp.value = response.sent_via_whatsapp || false;
+      activeValidation.value = response;
+      activeValidationStatus.value = 'waiting';
+      activeValidationRejectionReason.value = null;
       currentStep.value = 1;
+      await initActiveValidationSubscription(response);
     }
   } finally {
     isSendingCode.value = false;
   }
 };
 
-const handleVerifyCode = async (): Promise<boolean> => {
-  if (isVerifyingCode.value) {
-    return false;
-  }
-
-  if (!verificationCode.value || verificationCode.value.length !== 6) {
-    return false;
-  }
-
-  isVerifyingCode.value = true;
-
-  try {
-    const verifyData = await authStore.forgotPasswordVerifyCode({
-      code: verificationCode.value,
-    });
-
-    if (!verifyData) {
-      isVerificationValid.value = false;
-      verificationCode.value = '';
-      return false;
-    }
-
-    resetPasswordToken.value = verifyData.token;
-    currentStep.value = 2;
-
-    return true;
-  } catch (error) {
-    console.error('Erro ao verificar código:', error);
-    isVerificationValid.value = false;
-    verificationCode.value = '';
-    return false;
-  } finally {
-    isVerifyingCode.value = false;
-  }
+const backToEmailStep = () => {
+  activeWhatsappValidation.cleanup();
+  clearActiveValidationAdvanceTimer();
+  activeValidation.value = null;
+  activeValidationStatus.value = 'waiting';
+  activeValidationRejectionReason.value = null;
+  currentStep.value = 0;
 };
 
 const handleResetPassword = async (): Promise<boolean> => {
@@ -236,6 +264,11 @@ const confirmPasswordRules = [
       $t('passwords_do_not_match')
     ) === true || $t('passwords_do_not_match'),
 ];
+
+onBeforeUnmount(() => {
+  activeWhatsappValidation.cleanup();
+  clearActiveValidationAdvanceTimer();
+});
 </script>
 
 <template>
@@ -352,75 +385,21 @@ const confirmPasswordRules = [
 
           <VRow justify="center">
             <VCol cols="12" md="12">
-              <VCard class="otp-card" variant="flat">
-                <div class="otp-card__header">
-                  <div class="otp-card__badge">
-                    <VIcon icon="tabler-shield-lock" size="18" />
-                  </div>
-                  <div class="d-flex flex-column flex-grow-1">
-                    <span class="text-body-1 font-weight-semibold">
-                      {{ $t('verification_code') }}
-                    </span>
-                    <span class="text-caption text-medium-emphasis">
-                      {{ $t('verification_code_subtitle') }}
-                    </span>
-                  </div>
-                  <div class="d-flex gap-2 ms-auto">
-                    <VChip
-                      v-if="sentViaWhatsapp"
-                      color="success"
-                      size="small"
-                      variant="tonal"
-                    >
-                      {{ $t('whatsapp') }}
-                    </VChip>
-                    <VChip
-                      v-if="sentViaEmail"
-                      color="info"
-                      size="small"
-                      variant="tonal"
-                    >
-                      {{ $t('email') }}
-                    </VChip>
-                  </div>
-                </div>
-
-                <VDivider class="my-4" />
-
-                <div class="otp-input-wrapper">
-                  <VOtpInput
-                    v-model="verificationCode"
-                    length="6"
-                    type="text"
-                    variant="outlined"
-                    density="compact"
-                    class="otp-input-custom"
-                    :rules="[
-                      requiredValidator(
-                        verificationCode,
-                        $t('verification_code_required')
-                      ),
-                    ]"
-                  />
-                </div>
-
-                <p class="otp-hint text-caption text-medium-emphasis">
-                  <template v-if="sentViaEmail && sentViaWhatsapp">
-                    {{ $t('verification_code_sent_whatsapp') }} /
-                    {{ $t('email') }}
-                  </template>
-                  <template v-else-if="sentViaEmail">
-                    {{ $t('verification_code_sent_email') }}
-                  </template>
-                  <template v-else-if="sentViaWhatsapp">
-                    {{ $t('verification_code_sent_whatsapp') }}
-                  </template>
-                </p>
-              </VCard>
+              <ActiveWhatsappValidationCard
+                v-if="activeValidation"
+                :validation-text="activeValidation.validation_text"
+                :whatsapp-url="activeValidation.whatsapp_url"
+                :target-phone="activeValidation.target_phone"
+                :status="activeValidationStatus"
+                :rejection-reason="activeValidationRejectionReason"
+              />
+              <VAlert v-else type="info" variant="tonal">
+                {{ $t('active_whatsapp_validation_prepare') }}
+              </VAlert>
             </VCol>
           </VRow>
 
-          <VBtn block variant="text" class="mt-4" @click="currentStep = 0">
+          <VBtn block variant="text" class="mt-4" @click="backToEmailStep">
             {{ $t('back') }}
           </VBtn>
         </VCardText>

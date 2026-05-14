@@ -18,15 +18,15 @@ export const sendTwoFactor = async (
   const { t } = request;
 
   try {
-    await authRegisterSendTwoFactorUseCase.execute(t, request.body);
+    const response = await authRegisterSendTwoFactorUseCase.execute(
+      t,
+      request.body
+    );
 
     return sendResponse(reply, {
       message: t('register_code_sent'),
       httpStatusCode: EHTTPStatusCode.ok,
-      data: {
-        success: true,
-        message: t('register_code_sent'),
-      },
+      data: response,
     });
   } catch (error) {
     handleControllerError(error, reply, t);

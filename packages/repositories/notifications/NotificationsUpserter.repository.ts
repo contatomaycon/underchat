@@ -35,11 +35,11 @@ export class NotificationsUpserterRepository {
             input.two_factor_email_subject !== undefined ||
             input.two_factor_email_enabled !== undefined,
           workerId: input.two_factor_notification,
-          messageWhatsapp: input.two_factor_message_whatsapp,
-          messageEmail: input.two_factor_message_email,
-          emailSubject: input.two_factor_email_subject,
+          messageWhatsapp: null,
+          messageEmail: null,
+          emailSubject: null,
           whatsappEnabled: input.two_factor_whatsapp_enabled,
-          emailEnabled: input.two_factor_email_enabled,
+          emailEnabled: false,
           key: 'two_factor_notification',
         },
         {

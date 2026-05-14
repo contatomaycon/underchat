@@ -49,6 +49,7 @@ export class AuthForgotPasswordSendCodeUseCase {
         phone: decryptedPhone ?? null,
         phoneDdi: userData.phone_ddi ?? null,
         name: userData.name,
+        context: 'forgot_password',
       });
 
     return {
@@ -56,6 +57,13 @@ export class AuthForgotPasswordSendCodeUseCase {
       message: t('forgot_password_code_sent'),
       sent_via_email: result.sent_via_email,
       sent_via_whatsapp: result.sent_via_whatsapp,
+      validation_id: result.validation_id,
+      validation_text: result.validation_text,
+      whatsapp_url: result.whatsapp_url,
+      target_phone: result.target_phone,
+      centrifugo_url: result.centrifugo_url,
+      centrifugo_token: result.centrifugo_token,
+      centrifugo_channel: result.centrifugo_channel,
     };
   }
 }

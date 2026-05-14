@@ -15,8 +15,11 @@ import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { Centrifuge, Subscription, SubscriptionState, State } from 'centrifuge';
 import type { PublicationContext } from 'centrifuge';
+import ActiveWhatsappValidationCard from '@/components/auth/ActiveWhatsappValidationCard.vue';
+import { useActiveWhatsappValidation } from '@/composables/useActiveWhatsappValidation';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { ECountry } from '@core/common/enums/ECountry';
+import type { AuthRegisterSendTwoFactorResponse } from '@core/schema/register/sendTwoFactor/response.schema';
 import { ViewRegisterZipcodeRequest } from '@core/schema/register/viewZipcode/request.schema';
 import { ListRegisterPlanWithItemsResponse } from '@core/schema/register/listPlanWithItems/response.schema';
 import { ListRegisterAvailableCrossSellResponse } from '@core/schema/register/listAvailableCrossSell/response.schema';
@@ -55,6 +58,16 @@ type PaymentStatus =
   | 'REFUNDED';
 
 type PaymentMethod = 'boleto' | 'credit_card' | 'pix';
+type ActiveValidationStatus = 'waiting' | 'validated' | 'rejected';
+
+const recoverableActiveValidationReasons = new Set([
+  'phone_mismatch',
+  'worker_mismatch',
+]);
+
+const isRecoverableActiveValidationReason = (
+  reason: string | null | undefined
+): boolean => !!reason && recoverableActiveValidationReasons.has(reason);
 
 const registerMultistepBg = useGenerateImageVariant(
   registerMultistepBgLight,
@@ -110,7 +123,7 @@ const stepConfig = computed(() => {
     {
       title: t('verification_code'),
       subtitle: t('verification_code_subtitle'),
-      icon: 'tabler-key',
+      icon: 'tabler-brand-whatsapp',
     },
     {
       title: t('data'),
@@ -161,9 +174,9 @@ const email = ref<string | null>(null);
 const phone_ddi = ref<string | null>('55');
 const phone_ddd = ref<string | null>(null);
 const phone = ref<string | null>(null);
-const verificationCode = ref<string>('');
-const isVerificationValid = ref(false);
-const isVerifyingCode = ref(false);
+const activeValidation = ref<AuthRegisterSendTwoFactorResponse | null>(null);
+const activeValidationStatus = ref<ActiveValidationStatus>('waiting');
+const activeValidationRejectionReason = ref<string | null>(null);
 const account_name = ref<string | null>(null);
 const password = ref<string | null>(null);
 const confirmPassword = ref<string | null>(null);
@@ -260,6 +273,8 @@ const testPlanSuccess = ref(false);
 const isSubmitting = ref(false);
 const installments = ref<number>(1);
 const recurringPayment = ref(true);
+const activeWhatsappValidation = useActiveWhatsappValidation();
+let activeValidationAdvanceTimer: number | null = null;
 const nextButtonLabel = computed(() => {
   if (
     selectedPlanForCheckout.value &&
@@ -329,71 +344,6 @@ watch(phone_ddi, (newValue) => {
     phone_ddd.value = null;
   }
 });
-
-watch(isValidationStepValid, (isValid) => {
-  if (isValid && maxStepReached.value === 0) {
-    maxStepReached.value = 1;
-  }
-});
-
-watch(verificationCode, (newValue, oldValue) => {
-  if (isVerifyingCode.value) {
-    return;
-  }
-
-  if (!newValue) {
-    isVerificationValid.value = false;
-    return;
-  }
-
-  if (newValue !== newValue.toUpperCase()) {
-    verificationCode.value = newValue.toUpperCase();
-    return;
-  }
-
-  if (newValue.length === 6 && oldValue !== newValue) {
-    isVerificationValid.value = false;
-    handleVerifyCode();
-  } else if (newValue.length < 6) {
-    isVerificationValid.value = false;
-  }
-});
-
-const handleVerifyCode = async (): Promise<boolean> => {
-  if (isVerifyingCode.value) {
-    return false;
-  }
-
-  if (!verificationCode.value || verificationCode.value.length !== 6) {
-    return false;
-  }
-
-  isVerifyingCode.value = true;
-
-  try {
-    const success = await registerStore.verifyCode({
-      code: verificationCode.value,
-    });
-
-    if (!success) {
-      isVerificationValid.value = false;
-      verificationCode.value = '';
-      return false;
-    }
-
-    isVerificationValid.value = true;
-    maxStepReached.value = 2;
-    currentStep.value = 2;
-    return true;
-  } catch (error) {
-    console.error('Erro ao verificar código:', error);
-    isVerificationValid.value = false;
-    verificationCode.value = '';
-    return false;
-  } finally {
-    isVerifyingCode.value = false;
-  }
-};
 
 const canGoToStep = (step: number) => {
   if (step === ADDONS_STEP_INDEX.value && ADDONS_STEP_INDEX.value === -1) {
@@ -465,6 +415,68 @@ watch(billingPeriod, (period) => {
   }
 });
 
+const clearActiveValidationAdvanceTimer = () => {
+  if (activeValidationAdvanceTimer !== null) {
+    window.clearTimeout(activeValidationAdvanceTimer);
+    activeValidationAdvanceTimer = null;
+  }
+};
+
+const initActiveValidationSubscription = async (
+  validation: AuthRegisterSendTwoFactorResponse
+) => {
+  activeWhatsappValidation.cleanup();
+  clearActiveValidationAdvanceTimer();
+
+  try {
+    await activeWhatsappValidation.subscribe(
+      {
+        centrifugoUrl: validation.centrifugo_url,
+        centrifugoToken: validation.centrifugo_token,
+        centrifugoChannel: validation.centrifugo_channel,
+      },
+      (payload) => {
+        if (payload.context !== 'register') return;
+
+        if (payload.status === 'validated' && payload.token) {
+          registerStore.setRegisterToken(payload.token);
+          activeValidationStatus.value = 'validated';
+          activeValidationRejectionReason.value = null;
+          maxStepReached.value = Math.max(maxStepReached.value, 2);
+          activeWhatsappValidation.cleanup();
+          clearActiveValidationAdvanceTimer();
+          activeValidationAdvanceTimer = window.setTimeout(() => {
+            currentStep.value = 2;
+          }, 1200);
+          return;
+        }
+
+        if (payload.status === 'rejected') {
+          activeValidationRejectionReason.value = payload.reason ?? null;
+
+          if (isRecoverableActiveValidationReason(payload.reason)) {
+            activeValidationStatus.value = 'waiting';
+            return;
+          }
+
+          activeValidationStatus.value = 'rejected';
+          activeWhatsappValidation.cleanup();
+          registerStore.showSnackbar(
+            t('active_whatsapp_validation_rejected_description'),
+            EColor.error
+          );
+        }
+      }
+    );
+  } catch (error) {
+    activeValidationStatus.value = 'rejected';
+    activeValidationRejectionReason.value = 'connection_error';
+    if (import.meta.env.DEV) {
+      console.error('Erro ao conectar validação ativa:', error);
+    }
+  }
+};
+
 const handleRegister = async () => {
   hasTriedToValidate.value = true;
 
@@ -472,7 +484,7 @@ const handleRegister = async () => {
     return;
   }
 
-  const success = await registerStore.sendTwoFactor({
+  const validation = await registerStore.sendTwoFactor({
     name: name.value?.trim() || '',
     email: email.value?.trim() || '',
     phone_ddi: phone_ddi.value || '',
@@ -480,9 +492,13 @@ const handleRegister = async () => {
     phone: phone.value?.replaceAll(/\D/g, '') || '',
   });
 
-  if (success) {
+  if (validation) {
+    activeValidation.value = validation;
+    activeValidationStatus.value = 'waiting';
+    activeValidationRejectionReason.value = null;
     maxStepReached.value = 1;
     currentStep.value = 1;
+    await initActiveValidationSubscription(validation);
   }
 };
 
@@ -704,14 +720,7 @@ const handleStep0 = () => {
 };
 
 const handleStep1 = async (): Promise<boolean> => {
-  if (!verificationCode.value || verificationCode.value.length !== 6) {
-    return false;
-  }
-  const verified = await handleVerifyCode();
-  if (!verified || !isVerificationValid.value) {
-    return false;
-  }
-  return true;
+  return activeValidationStatus.value === 'validated';
 };
 
 const handleStep2 = async (): Promise<boolean> => {
@@ -1257,6 +1266,8 @@ watch(pixModalOpen, async (isOpen) => {
 });
 
 onBeforeUnmount(async () => {
+  activeWhatsappValidation.cleanup();
+  clearActiveValidationAdvanceTimer();
   await cleanupPaymentSubscription();
 });
 
@@ -2011,11 +2022,13 @@ watch(currentStep, async (newStep) => {
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('phone_without_ddd') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="phoneFormatted"
                       type="tel"
-                      :placeholder="$t('phone')"
+                      :placeholder="$t('phone_without_ddd')"
                       :maxlength="showDDDField ? 10 : 15"
                       :rules="[requiredValidator(phone, $t('phone_required'))]"
                     />
@@ -2047,53 +2060,18 @@ watch(currentStep, async (newStep) => {
                 </p>
 
                 <VRow justify="center">
-                  <VCol cols="12" md="8">
-                    <VCard class="otp-card" variant="flat">
-                      <div class="otp-card__header">
-                        <div class="otp-card__badge">
-                          <VIcon icon="tabler-shield-lock" size="18" />
-                        </div>
-                        <div class="d-flex flex-column">
-                          <span class="text-body-1 font-weight-semibold">
-                            {{ $t('verification_code_sent_whatsapp') }}
-                          </span>
-                          <span class="text-caption text-medium-emphasis">
-                            {{ $t('verification_code_subtitle') }}
-                          </span>
-                        </div>
-                        <VChip
-                          color="primary"
-                          size="small"
-                          variant="tonal"
-                          class="ms-auto"
-                        >
-                          {{ $t('whatsapp') }}
-                        </VChip>
-                      </div>
-
-                      <VDivider class="my-4" />
-
-                      <div class="otp-input-wrapper">
-                        <VOtpInput
-                          v-model="verificationCode"
-                          length="6"
-                          type="text"
-                          variant="outlined"
-                          density="compact"
-                          class="otp-input-custom"
-                          :rules="[
-                            requiredValidator(
-                              verificationCode,
-                              $t('verification_code_required')
-                            ),
-                          ]"
-                        />
-                      </div>
-
-                      <p class="otp-hint text-caption text-medium-emphasis">
-                        {{ $t('verification_code_sent_whatsapp') }}
-                      </p>
-                    </VCard>
+                  <VCol cols="12" md="9" lg="8">
+                    <ActiveWhatsappValidationCard
+                      v-if="activeValidation"
+                      :validation-text="activeValidation.validation_text"
+                      :whatsapp-url="activeValidation.whatsapp_url"
+                      :target-phone="activeValidation.target_phone"
+                      :status="activeValidationStatus"
+                      :rejection-reason="activeValidationRejectionReason"
+                    />
+                    <VAlert v-else type="info" variant="tonal">
+                      {{ $t('active_whatsapp_validation_prepare') }}
+                    </VAlert>
                   </VCol>
                 </VRow>
               </div>
@@ -3576,6 +3554,7 @@ watch(currentStep, async (newStep) => {
           <VBtn
             :disabled="
               (currentStep === 0 && !isValidationStepValid) ||
+              (currentStep === 1 && activeValidationStatus !== 'validated') ||
               (currentStep === 3 && !selectedPlanForCheckout) ||
               isSubmitting ||
               registerStore.isLoading

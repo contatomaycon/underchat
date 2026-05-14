@@ -92,6 +92,7 @@ import {
   recordException,
 } from '@core/plugins/telemetry/observability';
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
+import { ActiveWhatsappValidationService } from '@core/services/activeWhatsappValidation.service';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -183,7 +184,9 @@ export class MessageUpsertConsume {
     @inject(SectorService)
     private readonly sectorService: SectorService,
     @inject(UserService)
-    private readonly userService: UserService
+    private readonly userService: UserService,
+    @inject(ActiveWhatsappValidationService)
+    private readonly activeWhatsappValidationService: ActiveWhatsappValidationService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -4581,6 +4584,31 @@ export class MessageUpsertConsume {
     );
   }
 
+  private async handleActiveWhatsappValidation(
+    data: IUpsertMessage,
+    phone: string
+  ): Promise<boolean> {
+    if (data.message?.key?.fromMe === true) {
+      return false;
+    }
+
+    if (
+      data.type !== EMessageType.text &&
+      data.type !== EMessageType.edit_text
+    ) {
+      return false;
+    }
+
+    const content = this.buildMessageContent(data);
+    const messageText = extractMessageTextFromContent(content);
+
+    return this.activeWhatsappValidationService.handleIncomingMessage({
+      workerId: data.worker_id,
+      fromPhone: phone,
+      messageText,
+    });
+  }
+
   public async execute(t: TFunction<'translation', undefined>): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
@@ -4649,6 +4677,13 @@ export class MessageUpsertConsume {
                 0
               );
               return dlqSent;
+            }
+
+            const handledActiveValidation =
+              await this.handleActiveWhatsappValidation(data, phone);
+
+            if (handledActiveValidation) {
+              return true;
             }
 
             await this.processWithRetry(t, data, phone);

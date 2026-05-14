@@ -12,6 +12,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    ActiveWhatsappValidationCard: typeof import('./src/components/auth/ActiveWhatsappValidationCard.vue')['default']
     AiReplyModal: typeof import('./src/components/chat/AiReplyModal.vue')['default']
     AppAccountExclusivePlans: typeof import('./src/components/account/AppAccountExclusivePlans.vue')['default']
     AppAccountInfo: typeof import('./src/components/account/AppAccountInfo.vue')['default']
@@ -175,6 +176,7 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
+  const ActiveWhatsappValidationCard: typeof import('./src/components/auth/ActiveWhatsappValidationCard.vue')['default']
   const AiReplyModal: typeof import('./src/components/chat/AiReplyModal.vue')['default']
   const AppAccountExclusivePlans: typeof import('./src/components/account/AppAccountExclusivePlans.vue')['default']
   const AppAccountInfo: typeof import('./src/components/account/AppAccountInfo.vue')['default']
