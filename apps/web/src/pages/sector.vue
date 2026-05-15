@@ -71,6 +71,9 @@ const sectorToDelete = ref<string | null>(null);
 const isDialogEditSectorShow = ref(false);
 const isAddSectorVisible = ref(false);
 const sectorToEdit = ref<string | null>(null);
+const isSectorUsersModalOpen = ref(false);
+const sectorToViewUsersId = ref<string | null>(null);
+const sectorToViewUsersName = ref<string | null>(null);
 
 const isHexColor = (s: string) => /^#([0-9A-F]{6}|[0-9A-F]{3})$/i.test(s);
 
@@ -161,6 +164,12 @@ const openEditDialog = (id: string) => {
   sectorToEdit.value = id;
 
   isDialogEditSectorShow.value = true;
+};
+
+const openSectorUsersModal = (sector: ListSectorResponse) => {
+  sectorToViewUsersId.value = sector.sector_id;
+  sectorToViewUsersName.value = sector.name;
+  isSectorUsersModalOpen.value = true;
 };
 
 const handleSectorUpdated = async () => {
@@ -320,6 +329,20 @@ watch(
                     icon="tabler-trash"
                     @click="deleteSector(item.sector_id)"
                 /></IconBtn>
+
+                <IconBtn>
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('users') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-users"
+                    @click="openSectorUsersModal(item)"
+                  />
+                </IconBtn>
               </div>
             </template>
 
@@ -354,6 +377,12 @@ watch(
       />
 
       <AppAddSector v-if="isAddSectorVisible" v-model="isAddSectorVisible" />
+
+      <AppSectorUsersModal
+        v-model="isSectorUsersModalOpen"
+        :sector-id="sectorToViewUsersId"
+        :sector-name="sectorToViewUsersName"
+      />
     </VCard>
 
     <VSnackbar

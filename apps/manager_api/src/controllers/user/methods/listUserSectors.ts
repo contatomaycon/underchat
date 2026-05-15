@@ -4,18 +4,26 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { UserSectorsListerUseCase } from '@core/useCases/user/UserSectorsLister.useCase';
+import { canOperateOnOtherAccounts } from '@core/common/functions/hasFullAccess';
+import { ListUserSectorsRequest } from '@core/schema/user/listUserSectors/request.schema';
 
 export const listUserSectors = async (
-  request: FastifyRequest,
+  request: FastifyRequest<{
+    Querystring: ListUserSectorsRequest;
+  }>,
   reply: FastifyReply
 ) => {
   const userSectorsListerUseCase = container.resolve(UserSectorsListerUseCase);
   const { t, tokenJwtData } = request;
+  const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
 
   try {
-    const response = await userSectorsListerUseCase.execute(
-      tokenJwtData.account_id
-    );
+    const accountIdToUse =
+      canOperateOnOthers && request.query.account_id
+        ? request.query.account_id
+        : tokenJwtData.account_id;
+
+    const response = await userSectorsListerUseCase.execute(accountIdToUse);
 
     return sendResponse(reply, {
       message: t('user_sectors_list_successfully'),

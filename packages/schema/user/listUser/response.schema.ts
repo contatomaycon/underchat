@@ -49,6 +49,12 @@ const countrySchema = Type.Object({
   name: Type.String(),
 });
 
+const userSectorSchema = Type.Object({
+  sector_id: Type.String({ format: 'uuid' }),
+  name: Type.String(),
+  color: Type.String(),
+});
+
 const userAddressSchema = Type.Object({
   user_address_id: Type.String({ format: 'uuid' }),
   country: Type.Union([countrySchema, Type.Null()]),
@@ -73,6 +79,7 @@ export const listUserResponseSchema = Type.Object({
   user_info: Type.Optional(Type.Union([userInfoSchema, Type.Null()])),
   user_document: Type.Optional(Type.Union([userDocumentSchema, Type.Null()])),
   user_address: Type.Optional(Type.Union([userAddressSchema, Type.Null()])),
+  sectors: Type.Optional(Type.Array(userSectorSchema)),
   chat_user: Type.Optional(Type.Union([chatUserSchema, Type.Null()])),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });

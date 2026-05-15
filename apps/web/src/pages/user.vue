@@ -124,6 +124,10 @@ const itemsAccount = ref<Array<{ id: string; text: string }>>([]);
 const accountsLoading = ref(false);
 const itemsPermissionRole = ref<Array<{ id: string; text: string }>>([]);
 const rolesLoading = ref(false);
+const itemsSector = ref<Array<{ id: string; text: string; color?: string }>>(
+  []
+);
+const sectorsLoading = ref(false);
 
 const loadAccounts = async () => {
   if (!hasFullAccess.value || itemsAccount.value.length > 0) return;
@@ -234,6 +238,11 @@ const photoViewerDownloadName = ref<string>('user-photo.jpg');
 const switchingSession = ref(false);
 const isDialogSessionLoginShow = ref(false);
 const userToSessionLogin = ref<string | null>(null);
+const isUserSectorsModalOpen = ref(false);
+const userSectorsModalName = ref<string | null>(null);
+const userSectorsModalSectors = ref<
+  Array<{ sector_id: string; name: string; color: string }>
+>([]);
 
 const resolvePresenceLabel = (status?: EChatUserStatus | null): string => {
   if (!status) {
@@ -262,6 +271,7 @@ const headers = computed<DataTableHeader<ListUserResponse>[]>(() => {
 
   baseHeaders.push(
     { title: t('status'), key: 'status' },
+    { title: t('sector'), key: 'sectors', sortable: false },
     { title: t('email'), key: 'email_partial' },
     { title: t('phone'), key: 'phone_partial' },
     { title: t('document'), key: 'document_partial' },
@@ -277,6 +287,7 @@ const options = ref({
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
   user_status: null as string | null,
+  sector_id: null as string | null,
   permission_role_id: null as string | null,
   account_id: undefined as string | null | undefined,
   search: null as string | null,
@@ -285,8 +296,27 @@ const options = ref({
 const roleFilterDisabled = computed(
   () => hasFullAccess.value && options.value.account_id === 'all'
 );
+const sectorFilterDisabled = computed(
+  () => hasFullAccess.value && options.value.account_id === 'all'
+);
 
 const roleFilterAccountId = computed(() => {
+  if (!hasFullAccess.value) {
+    return null;
+  }
+
+  if (options.value.account_id === 'all') {
+    return null;
+  }
+
+  if (options.value.account_id) {
+    return options.value.account_id;
+  }
+
+  return currentUser.value?.account_id ?? null;
+});
+
+const sectorFilterAccountId = computed(() => {
   if (!hasFullAccess.value) {
     return null;
   }
@@ -363,6 +393,40 @@ const loadPermissionRoles = async () => {
   }
 };
 
+const loadSectorFilters = async () => {
+  if (sectorFilterDisabled.value) {
+    itemsSector.value = [{ id: '', text: t('all') }];
+    options.value.sector_id = null;
+    return;
+  }
+
+  sectorsLoading.value = true;
+  try {
+    const sectors = await userStore.listUserSectors(sectorFilterAccountId.value);
+
+    itemsSector.value = [
+      { id: '', text: t('all') },
+      ...(sectors ?? []).map((sector) => ({
+        id: sector.sector_id,
+        text: sector.name,
+        color: sector.color,
+      })),
+    ];
+
+    if (
+      options.value.sector_id &&
+      !itemsSector.value.some((item) => item.id === options.value.sector_id)
+    ) {
+      options.value.sector_id = null;
+    }
+  } catch (error) {
+    console.error('Erro ao carregar setores:', error);
+    itemsSector.value = [{ id: '', text: t('all') }];
+  } finally {
+    sectorsLoading.value = false;
+  }
+};
+
 const debouncedSearch = refDebounced(
   computed(() => options.value.search),
   500
@@ -379,6 +443,10 @@ const query = computed(() => {
 
   if (options.value.permission_role_id) {
     q.permission_role_id = options.value.permission_role_id;
+  }
+
+  if (options.value.sector_id) {
+    q.sector_id = options.value.sector_id;
   }
 
   if (hasFullAccess.value && options.value.account_id !== undefined) {
@@ -511,6 +579,21 @@ const handleTableChange = (o: {
   options.value.page = o.page;
   options.value.itemsPerPage = o.itemsPerPage;
   options.value.sortBy = o.sortBy;
+};
+
+const getVisibleUserSectors = (item: ListUserResponse) => {
+  return item.sectors?.slice(0, 1) ?? [];
+};
+
+const getHiddenUserSectorsCount = (item: ListUserResponse): number => {
+  const total = item.sectors?.length ?? 0;
+  return total > 1 ? total - 1 : 0;
+};
+
+const openUserSectorsModal = (item: ListUserResponse) => {
+  userSectorsModalName.value = userDisplayName(item);
+  userSectorsModalSectors.value = item.sectors ?? [];
+  isUserSectorsModalOpen.value = true;
 };
 
 const reloadUsers = async () => {
@@ -684,9 +767,10 @@ watch(
   async () => {
     if (options.value.account_id === 'all') {
       options.value.permission_role_id = null;
+      options.value.sector_id = null;
     }
 
-    await loadPermissionRoles();
+    await Promise.all([loadPermissionRoles(), loadSectorFilters()]);
   },
   { immediate: true }
 );
@@ -768,6 +852,28 @@ watch(
                 item-title="text"
                 @update:modelValue="options.page = 1"
               />
+            </div>
+            <div class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('sector') }}:</VLabel>
+              <AppSelectSearch
+                v-model="options.sector_id"
+                :items="itemsSector"
+                :placeholder="$t('select_sectors')"
+                :clearable="true"
+                :loading="sectorsLoading"
+                :disabled="sectorFilterDisabled"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
+              >
+                <template #item-prepend="{ item }">
+                  <VAvatar
+                    v-if="item.color"
+                    size="20"
+                    :style="{ backgroundColor: item.color }"
+                  />
+                </template>
+              </AppSelectSearch>
             </div>
             <div class="invoice-list-filter">
               <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
@@ -901,6 +1007,39 @@ watch(
                 }}
               </VChip>
               <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.sectors="{ item }">
+              <div
+                v-if="item.sectors?.length"
+                class="d-flex flex-wrap align-center gap-1"
+              >
+                <VChip
+                  v-for="sector in getVisibleUserSectors(item)"
+                  :key="sector.sector_id"
+                  size="small"
+                  class="user-sector-chip"
+                  :style="{
+                    backgroundColor: sector.color,
+                    color: 'white',
+                  }"
+                  @click="openUserSectorsModal(item)"
+                >
+                  {{ sector.name }}
+                </VChip>
+
+                <VChip
+                  v-if="getHiddenUserSectorsCount(item) > 0"
+                  size="small"
+                  class="user-sector-chip"
+                  color="primary"
+                  variant="tonal"
+                  @click="openUserSectorsModal(item)"
+                >
+                  +{{ getHiddenUserSectorsCount(item) }}
+                </VChip>
+              </div>
+              <span v-else>-</span>
             </template>
 
             <template #item.email_partial="{ item }">
@@ -1133,6 +1272,12 @@ watch(
         :user-id="userToAttendanceHours"
         @updated="handleAttendanceHoursUpdated"
       />
+
+      <AppUserSectorsModal
+        v-model="isUserSectorsModalOpen"
+        :user-name="userSectorsModalName"
+        :sectors="userSectorsModalSectors"
+      />
     </VCard>
 
     <VDialog
@@ -1312,6 +1457,10 @@ watch(
 
 .sensitive-cell__button {
   flex: 0 0 auto;
+}
+
+.user-sector-chip {
+  cursor: pointer;
 }
 
 .data-table {

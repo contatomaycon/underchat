@@ -2,6 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { listUserSectorsResponseSchema } from './response.schema';
+import { listUserSectorsRequestSchema } from './request.schema';
 
 export const listUserSectorsSchema = {
   description: 'Lista todos os setores disponíveis da conta',
@@ -21,6 +22,7 @@ export const listUserSectorsSchema = {
       })
     ),
   }),
+  querystring: listUserSectorsRequestSchema,
   response: {
     200: Type.Object(
       {

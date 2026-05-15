@@ -108,13 +108,9 @@ export const useSectorsStore = defineStore('sectors', {
       sectorId: string
     ): Promise<ListSectorUsersResponse[] | null> {
       try {
-        this.loading = true;
-
         const response = await axios.get<
           IApiResponse<ListSectorUsersResponse[]>
         >(`/sector/${sectorId}/users`);
-
-        this.loading = false;
 
         const data = response?.data;
 
@@ -124,8 +120,6 @@ export const useSectorsStore = defineStore('sectors', {
 
         return data.data;
       } catch {
-        this.loading = false;
-
         return null;
       }
     },

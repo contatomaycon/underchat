@@ -6,6 +6,8 @@ import {
   userAddress,
   userDocument,
   permissionAssignment,
+  sectorUser,
+  sector,
   account,
   country,
 } from '@core/models';
@@ -26,6 +28,11 @@ import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 import { PresenceService } from '@core/services/presence.service';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+
+type UserSectorMap = Record<
+  string,
+  Array<{ sector_id: string; name: string; color: string }>
+>;
 
 @injectable()
 export class UserListerRepository {
@@ -104,7 +111,10 @@ export class UserListerRepository {
     return filters;
   };
 
-  private setFilters(query: ListUserRequest): SQLWrapper[] {
+  private setFilters(
+    query: ListUserRequest,
+    accountId: string | null
+  ): SQLWrapper[] {
     const filters: SQLWrapper[] = [];
 
     if (query.user_status) {
@@ -128,8 +138,77 @@ export class UserListerRepository {
       );
     }
 
+    if (query.sector_id) {
+      const sectorConditions: SQLWrapper[] = [
+        eq(sectorUser.sector_id, query.sector_id),
+        isNull(sectorUser.deleted_at),
+        isNull(sector.deleted_at),
+      ];
+
+      if (accountId !== null && accountId !== undefined) {
+        sectorConditions.push(eq(sector.account_id, accountId));
+      }
+
+      filters.push(
+        inArray(
+          user.user_id,
+          this.dbRo
+            .select({ user_id: sectorUser.user_id })
+            .from(sectorUser)
+            .innerJoin(sector, eq(sectorUser.sector_id, sector.sector_id))
+            .where(and(...sectorConditions))
+        )
+      );
+    }
+
     return filters;
   }
+
+  private listUsersSectorsByUserIds = async (
+    userIds: string[],
+    accountId: string | null
+  ): Promise<UserSectorMap> => {
+    if (!userIds.length) {
+      return {};
+    }
+
+    const conditions: SQLWrapper[] = [
+      inArray(sectorUser.user_id, userIds),
+      isNull(sectorUser.deleted_at),
+      isNull(sector.deleted_at),
+    ];
+
+    if (accountId !== null && accountId !== undefined) {
+      conditions.push(eq(sector.account_id, accountId));
+    }
+
+    const result = await this.dbRo
+      .select({
+        user_id: sectorUser.user_id,
+        sector_id: sector.sector_id,
+        name: sector.name,
+        color: sector.color,
+      })
+      .from(sectorUser)
+      .innerJoin(sector, eq(sectorUser.sector_id, sector.sector_id))
+      .where(and(...conditions))
+      .orderBy(sector.name)
+      .execute();
+
+    return result.reduce<UserSectorMap>((acc, item) => {
+      if (!acc[item.user_id]) {
+        acc[item.user_id] = [];
+      }
+
+      acc[item.user_id].push({
+        sector_id: item.sector_id,
+        name: item.name,
+        color: item.color,
+      });
+
+      return acc;
+    }, {});
+  };
 
   listUsers = async (
     perPage: number,
@@ -139,7 +218,7 @@ export class UserListerRepository {
     searchHashes: string | null
   ): Promise<ListUserResponse[]> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
-    const filters = this.setFilters(query);
+    const filters = this.setFilters(query, accountId);
 
     const whereConditions = [
       isNull(user.deleted_at),
@@ -259,6 +338,11 @@ export class UserListerRepository {
       return [];
     }
 
+    const sectorsByUserId = await this.listUsersSectorsByUserIds(
+      result.map((item) => item.user_id),
+      accountId
+    );
+
     const usersWithStatus = await Promise.all(
       result.map(async (userData) => {
         const status = await this.presenceService.getStatus(userData.user_id);
@@ -346,6 +430,7 @@ export class UserListerRepository {
               name: user.upa.ppr.name,
             }
           : null,
+        sectors: sectorsByUserId[user.user_id] ?? [],
         created_at: user.created_at,
       };
     });
@@ -357,7 +442,7 @@ export class UserListerRepository {
     searchHashes: string | null
   ): Promise<number> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
-    const filters = this.setFilters(query);
+    const filters = this.setFilters(query, accountId);
 
     const whereConditions = [
       isNull(user.deleted_at),

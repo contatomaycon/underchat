@@ -73,6 +73,7 @@ export const useUsersStore = defineStore('users', {
               sort_by: input.sort_by,
               search: input.search,
               user_status: input.user_status,
+              sector_id: input.sector_id,
               permission_role_id: input.permission_role_id,
               account_id: input.account_id,
             }
@@ -860,14 +861,18 @@ export const useUsersStore = defineStore('users', {
       }
     },
 
-    async listUserSectors(): Promise<ListUserSectorsResponse | null> {
+    async listUserSectors(
+      accountId?: string | null
+    ): Promise<ListUserSectorsResponse | null> {
       try {
         this.loading = true;
 
-        const response =
-          await axios.get<IApiResponse<ListUserSectorsResponse>>(
-            `/user/sectors`
-          );
+        const response = await axios.get<IApiResponse<ListUserSectorsResponse>>(
+          `/user/sectors`,
+          {
+            params: accountId ? { account_id: accountId } : undefined,
+          }
+        );
 
         this.loading = false;
 
