@@ -3038,6 +3038,9 @@ const handleContactClick = async (contact: ListChatContactsResponse) => {
   selectedSectorId.value = null;
 
   await loadTransferOptions();
+  if (availableWorkers.value.length === 1) {
+    selectedWorkerId.value = availableWorkers.value[0]?.id ?? null;
+  }
 
   isSelectChannelSectorModalOpen.value = true;
 };
