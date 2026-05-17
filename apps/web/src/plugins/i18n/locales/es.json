@@ -1939,6 +1939,7 @@
   "chatbot_redirect_sector": "Sector",
   "chatbot_options": "Opciones",
   "chatbot_contact": "Contacto",
+  "chatbot_weekday": "Días de la semana",
   "chatbot_contact_title_placeholder": "Define el título del contacto",
   "chatbot_contact_option": "Contacto",
   "chatbot_ai_agent": "Agente de IA",

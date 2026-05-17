@@ -262,6 +262,9 @@ export const chatbotFlowMappings = () => {
                 distributionSelectedSector: {
                   type: 'keyword',
                 },
+                timezone: {
+                  type: 'keyword',
+                },
                 selectedRandomMessage: {
                   type: 'keyword',
                 },

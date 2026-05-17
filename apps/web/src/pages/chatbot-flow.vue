@@ -29,6 +29,7 @@ import ChatbotAnnotationNode from '@/components/chatbot/ChatbotAnnotationNode.vu
 import ChatbotDistributionNode from '@/components/chatbot/ChatbotDistributionNode.vue';
 import ChatbotConditionalNode from '@/components/chatbot/ChatbotConditionalNode.vue';
 import ChatbotRandomMessageNode from '@/components/chatbot/ChatbotRandomMessageNode.vue';
+import ChatbotWeekdayNode from '@/components/chatbot/ChatbotWeekdayNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -62,6 +63,7 @@ const nodeTypes = {
   distribution: markRaw(ChatbotDistributionNode),
   conditional: markRaw(ChatbotConditionalNode),
   randomMessage: markRaw(ChatbotRandomMessageNode),
+  weekday: markRaw(ChatbotWeekdayNode),
 };
 
 const { t } = useI18n();
@@ -556,7 +558,78 @@ const contextMenuEdgeId = ref<string | null>(null);
 const contextMenuCard = ref<HTMLElement | null>(null);
 
 let nodeIdCounter = 2;
-const optionNodeTypes = new Set(['menu', 'satisfaction', 'contact']);
+const optionNodeTypes = new Set(['menu', 'satisfaction', 'contact', 'weekday']);
+
+type WeekdayOptionId =
+  | 'sunday'
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday';
+
+interface WeekdayOption {
+  id: WeekdayOptionId;
+  text: string;
+  required: boolean;
+}
+
+const WEEKDAY_NODE_DEFAULT_TIMEZONE = 'America/Sao_Paulo';
+const WEEKDAY_OPTION_IDS: WeekdayOptionId[] = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+];
+
+const getWeekdayOptionText = (weekdayId: WeekdayOptionId): string => {
+  switch (weekdayId) {
+    case 'monday':
+      return t('monday');
+    case 'tuesday':
+      return t('tuesday');
+    case 'wednesday':
+      return t('wednesday');
+    case 'thursday':
+      return t('thursday');
+    case 'friday':
+      return t('friday');
+    case 'saturday':
+      return t('saturday');
+    default:
+      return t('sunday');
+  }
+};
+
+const buildWeekdayOptions = (
+  existingOptions?: Array<{ id?: string; text?: string; required?: boolean }>
+): WeekdayOption[] => {
+  const optionsById = new Map<WeekdayOptionId, { text?: string }>();
+
+  for (const option of existingOptions || []) {
+    const optionId = option?.id;
+    if (!optionId) {
+      continue;
+    }
+
+    if (WEEKDAY_OPTION_IDS.includes(optionId as WeekdayOptionId)) {
+      optionsById.set(optionId as WeekdayOptionId, option);
+    }
+  }
+
+  return WEEKDAY_OPTION_IDS.map((weekdayId) => {
+    const existing = optionsById.get(weekdayId);
+    return {
+      id: weekdayId,
+      text: existing?.text || getWeekdayOptionText(weekdayId),
+      required: true,
+    };
+  });
+};
 
 const normalizeHandleId = (handle?: string | null): string | null => {
   if (!handle) {
@@ -999,6 +1072,24 @@ const addConditionalNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode);
 };
 
+const addWeekdayNode = (position?: { x: number; y: number }) => {
+  const nodeId = `weekday-${nodeIdCounter++}`;
+  const newNode: Node = {
+    id: nodeId,
+    type: 'weekday',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      timezone: WEEKDAY_NODE_DEFAULT_TIMEZONE,
+      options: buildWeekdayOptions(),
+      onRemove: () => removeNode(nodeId),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const addAiAgentNode = (position?: { x: number; y: number }) => {
   const nodeId = `aiAgent-${nodeIdCounter++}`;
   const newNode: Node = {
@@ -1313,6 +1404,9 @@ const onDrop = (event: DragEvent) => {
       break;
     case 'conditional':
       addConditionalNode(position);
+      break;
+    case 'weekday':
+      addWeekdayNode(position);
       break;
   }
 
@@ -1687,6 +1781,16 @@ const processConditionalNodeData = (nodeData: any): void => {
   }
 };
 
+const processWeekdayNodeData = (nodeData: any): void => {
+  if (nodeData.timezone === undefined || !nodeData.timezone) {
+    nodeData.timezone = WEEKDAY_NODE_DEFAULT_TIMEZONE;
+  }
+
+  nodeData.options = buildWeekdayOptions(
+    Array.isArray(nodeData.options) ? nodeData.options : []
+  );
+};
+
 const processNodeDataByType = (node: Node): void => {
   if (!node.data) {
     node.data = {};
@@ -1728,6 +1832,9 @@ const processNodeDataByType = (node: Node): void => {
       break;
     case 'conditional':
       processConditionalNodeData(node.data);
+      break;
+    case 'weekday':
+      processWeekdayNodeData(node.data);
       break;
   }
 };
@@ -2391,6 +2498,26 @@ onUnmounted(() => {
                 >
                   <VIcon icon="tabler-database" class="me-2" />
                   {{ t('chatbot_data') }}
+                </VBtn>
+                <VBtn
+                  color="primary"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'weekday';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-calendar" class="me-2" />
+                  {{ t('chatbot_weekday') }}
                 </VBtn>
                 <VBtn
                   color="distribution"

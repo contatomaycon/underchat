@@ -729,6 +729,7 @@
   "chatbot_tag": "Tag",
   "chatbot_data": "Data",
   "chatbot_contact": "Contact",
+  "chatbot_weekday": "Weekdays",
   "chatbot_annotation_node_title": "Annotations",
   "chatbot_distribution": "Service Distribution",
   "chatbot_finish": "Finish",

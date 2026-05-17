@@ -77,6 +77,10 @@ import { ERandomMessageStatus } from '@core/common/enums/ERandomMessageStatus';
 import { PromptDocumentExtractorService } from './promptDocumentExtractor.service';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { incrementCounter } from '@core/plugins/telemetry/observability';
+import {
+  CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
+  normalizeChatbotWorkingHoursTimezone,
+} from '@core/common/functions/chatbotWorkingHours';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -90,6 +94,15 @@ export class ChatbotFlowRunnerService {
   private readonly AI_AGENT_API_RETRY_ATTEMPTS = 3;
   private readonly AI_AGENT_API_RETRY_BASE_DELAY_MS = 500;
   private readonly RANDOM_MESSAGE_CYCLE_TTL_SECONDS = 28800;
+  private readonly WEEKDAY_OPTION_IDS = new Set([
+    'sunday',
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+  ]);
   private readonly AUTOMATION_CHAT_STATUSES: ReadonlySet<EChatStatus> =
     new Set<EChatStatus>([
       EChatStatus.ura,
@@ -796,6 +809,30 @@ export class ChatbotFlowRunnerService {
     );
 
     return edge?.target ?? null;
+  }
+
+  private getCurrentWeekdayOptionId(
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): string {
+    const rawTimezone = node.data?.timezone;
+    const timezone = normalizeChatbotWorkingHoursTimezone(
+      typeof rawTimezone === 'string' && rawTimezone.trim().length > 0
+        ? rawTimezone
+        : CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE
+    );
+
+    const weekdayName = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      timeZone: timezone,
+    })
+      .format(new Date())
+      .toLowerCase();
+
+    if (this.WEEKDAY_OPTION_IDS.has(weekdayName)) {
+      return weekdayName;
+    }
+
+    return 'sunday';
   }
 
   private getAiAgentInteractionsCountKey(
@@ -2330,6 +2367,17 @@ export class ChatbotFlowRunnerService {
 
     if (nextFlowNode.type === 'menu' || nextFlowNode.type === 'satisfaction') {
       return this.sendBuildMenuMessage(t, createChat, nextFlowNode, true);
+    }
+
+    if (nextFlowNode.type === 'weekday') {
+      return this.processWeekdayNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages,
+        data
+      );
     }
 
     if (nextFlowNode.type === 'contact') {
@@ -8982,6 +9030,42 @@ Retorne APENAS JSON válido (sem markdown):
     return result;
   }
 
+  private async processWeekdayNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const weekdayOptionId = this.getCurrentWeekdayOptionId(currentNode);
+    const nextFlowId = this.getNextFlowIdByOption(
+      chatbotFlow,
+      currentFlowId,
+      weekdayOptionId
+    );
+
+    if (!nextFlowId) {
+      throw new Error(t('chatbot_flow_not_found'));
+    }
+
+    await this.updateCache(createChat, nextFlowId);
+
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages,
+      data
+    );
+  }
+
   private async processFlowNode(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -9045,6 +9129,17 @@ Retorne APENAS JSON válido (sem markdown):
           redirectFailedAttempts,
           customMessages,
         }
+      );
+    }
+
+    if (currentNode.type === 'weekday') {
+      return this.processWeekdayNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages,
+        data
       );
     }
 
