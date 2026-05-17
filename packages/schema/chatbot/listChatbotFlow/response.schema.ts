@@ -51,6 +51,8 @@ const nodeDataSchema = Type.Object({
         id: Type.String(),
         text: Type.String(),
         required: Type.Optional(Type.Boolean()),
+        start_time: Type.Optional(Type.String()),
+        end_time: Type.Optional(Type.String()),
       })
     )
   ),

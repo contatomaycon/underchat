@@ -80,6 +80,7 @@ import { incrementCounter } from '@core/plugins/telemetry/observability';
 import {
   CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
   normalizeChatbotWorkingHoursTimezone,
+  toChatbotWorkingHoursMinutes,
 } from '@core/common/functions/chatbotWorkingHours';
 
 @injectable()
@@ -103,6 +104,7 @@ export class ChatbotFlowRunnerService {
     'friday',
     'saturday',
   ]);
+  private readonly HOURS_OUTSIDE_OPTION_ID = 'outside-hours';
   private readonly AUTOMATION_CHAT_STATUSES: ReadonlySet<EChatStatus> =
     new Set<EChatStatus>([
       EChatStatus.ura,
@@ -833,6 +835,88 @@ export class ChatbotFlowRunnerService {
     }
 
     return 'sunday';
+  }
+
+  private getCurrentTimeInTimezoneMinutes(timezone: string): number {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: timezone,
+    }).formatToParts(new Date());
+
+    const hourPart = parts.find((part) => part.type === 'hour');
+    const minutePart = parts.find((part) => part.type === 'minute');
+
+    const hours = Number.parseInt(hourPart?.value || '', 10);
+    const minutes = Number.parseInt(minutePart?.value || '', 10);
+
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+      return 0;
+    }
+
+    return hours * 60 + minutes;
+  }
+
+  private getCurrentHoursOptionId(
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): string {
+    const rawTimezone = node.data?.timezone;
+    const timezone = normalizeChatbotWorkingHoursTimezone(
+      typeof rawTimezone === 'string' && rawTimezone.trim().length > 0
+        ? rawTimezone
+        : CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE
+    );
+    const currentMinutes = this.getCurrentTimeInTimezoneMinutes(timezone);
+
+    const options = Array.isArray(node.data?.options) ? node.data.options : [];
+
+    const intervalOptions = options.filter((option) => {
+      const optionId =
+        option?.id !== null && option?.id !== undefined
+          ? String(option.id).trim().toLowerCase()
+          : '';
+      return optionId !== this.HOURS_OUTSIDE_OPTION_ID;
+    });
+
+    const sortedOptions = [...intervalOptions].sort((first, second) => {
+      const firstStart = toChatbotWorkingHoursMinutes(
+        typeof first?.start_time === 'string' ? first.start_time : null
+      );
+      const secondStart = toChatbotWorkingHoursMinutes(
+        typeof second?.start_time === 'string' ? second.start_time : null
+      );
+
+      return (firstStart || 0) - (secondStart || 0);
+    });
+
+    for (const option of sortedOptions) {
+      const optionId =
+        option?.id !== null && option?.id !== undefined
+          ? String(option.id).trim()
+          : '';
+      const startMinutes = toChatbotWorkingHoursMinutes(
+        typeof option?.start_time === 'string' ? option.start_time : null
+      );
+      const endMinutes = toChatbotWorkingHoursMinutes(
+        typeof option?.end_time === 'string' ? option.end_time : null
+      );
+
+      if (
+        !optionId ||
+        startMinutes === null ||
+        endMinutes === null ||
+        startMinutes >= endMinutes
+      ) {
+        continue;
+      }
+
+      if (currentMinutes >= startMinutes && currentMinutes <= endMinutes) {
+        return optionId;
+      }
+    }
+
+    return this.HOURS_OUTSIDE_OPTION_ID;
   }
 
   private getAiAgentInteractionsCountKey(
@@ -2371,6 +2455,17 @@ export class ChatbotFlowRunnerService {
 
     if (nextFlowNode.type === 'weekday') {
       return this.processWeekdayNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages,
+        data
+      );
+    }
+
+    if (nextFlowNode.type === 'hours') {
+      return this.processHoursNode(
         t,
         createChat,
         chatbotFlow,
@@ -9066,6 +9161,42 @@ Retorne APENAS JSON válido (sem markdown):
     );
   }
 
+  private async processHoursNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const hoursOptionId = this.getCurrentHoursOptionId(currentNode);
+    const nextFlowId = this.getNextFlowIdByOption(
+      chatbotFlow,
+      currentFlowId,
+      hoursOptionId
+    );
+
+    if (!nextFlowId) {
+      throw new Error(t('chatbot_flow_not_found'));
+    }
+
+    await this.updateCache(createChat, nextFlowId);
+
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages,
+      data
+    );
+  }
+
   private async processFlowNode(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -9134,6 +9265,17 @@ Retorne APENAS JSON válido (sem markdown):
 
     if (currentNode.type === 'weekday') {
       return this.processWeekdayNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages,
+        data
+      );
+    }
+
+    if (currentNode.type === 'hours') {
+      return this.processHoursNode(
         t,
         createChat,
         chatbotFlow,

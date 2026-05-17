@@ -30,6 +30,7 @@ import ChatbotDistributionNode from '@/components/chatbot/ChatbotDistributionNod
 import ChatbotConditionalNode from '@/components/chatbot/ChatbotConditionalNode.vue';
 import ChatbotRandomMessageNode from '@/components/chatbot/ChatbotRandomMessageNode.vue';
 import ChatbotWeekdayNode from '@/components/chatbot/ChatbotWeekdayNode.vue';
+import ChatbotHoursNode from '@/components/chatbot/ChatbotHoursNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -64,6 +65,7 @@ const nodeTypes = {
   conditional: markRaw(ChatbotConditionalNode),
   randomMessage: markRaw(ChatbotRandomMessageNode),
   weekday: markRaw(ChatbotWeekdayNode),
+  hours: markRaw(ChatbotHoursNode),
 };
 
 const { t } = useI18n();
@@ -558,7 +560,13 @@ const contextMenuEdgeId = ref<string | null>(null);
 const contextMenuCard = ref<HTMLElement | null>(null);
 
 let nodeIdCounter = 2;
-const optionNodeTypes = new Set(['menu', 'satisfaction', 'contact', 'weekday']);
+const optionNodeTypes = new Set([
+  'menu',
+  'satisfaction',
+  'contact',
+  'weekday',
+  'hours',
+]);
 
 type WeekdayOptionId =
   | 'sunday'
@@ -575,7 +583,20 @@ interface WeekdayOption {
   required: boolean;
 }
 
+interface HoursOption {
+  id: string;
+  text: string;
+  required: boolean;
+  start_time?: string;
+  end_time?: string;
+}
+
 const WEEKDAY_NODE_DEFAULT_TIMEZONE = 'America/Sao_Paulo';
+const HOURS_NODE_DEFAULT_TIMEZONE = 'America/Sao_Paulo';
+const HOURS_OUTSIDE_OPTION_ID = 'outside-hours';
+const HOURS_DEFAULT_START_TIME = '09:00';
+const HOURS_DEFAULT_END_TIME = '18:00';
+const HOURS_TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const WEEKDAY_OPTION_IDS: WeekdayOptionId[] = [
   'sunday',
   'monday',
@@ -629,6 +650,110 @@ const buildWeekdayOptions = (
       required: true,
     };
   });
+};
+
+const isValidHoursTime = (value?: string): boolean => {
+  return typeof value === 'string' && HOURS_TIME_REGEX.test(value);
+};
+
+const isValidHoursWindow = (start?: string, end?: string): boolean => {
+  if (!isValidHoursTime(start) || !isValidHoursTime(end)) {
+    return false;
+  }
+
+  return (start as string) < (end as string);
+};
+
+const normalizeHoursIntervalOption = (
+  option?: Partial<HoursOption>
+): HoursOption => {
+  const normalizedId =
+    typeof option?.id === 'string' && option.id.trim().length > 0
+      ? option.id.trim().replace(/^option-/i, '')
+      : crypto.randomUUID();
+
+  let startTime = isValidHoursTime(option?.start_time)
+    ? option?.start_time
+    : HOURS_DEFAULT_START_TIME;
+  let endTime = isValidHoursTime(option?.end_time)
+    ? option?.end_time
+    : HOURS_DEFAULT_END_TIME;
+
+  if (!isValidHoursWindow(startTime, endTime)) {
+    startTime = HOURS_DEFAULT_START_TIME;
+    endTime = HOURS_DEFAULT_END_TIME;
+  }
+
+  const text =
+    typeof option?.text === 'string' && option.text.trim().length > 0
+      ? option.text
+      : `${startTime} -> ${endTime}`;
+
+  return {
+    id: normalizedId,
+    text,
+    required: false,
+    start_time: startTime,
+    end_time: endTime,
+  };
+};
+
+const buildHoursOptions = (
+  existingOptions?: Array<{
+    id?: string;
+    text?: string;
+    required?: boolean;
+    start_time?: string;
+    end_time?: string;
+  }>
+): HoursOption[] => {
+  const intervalOptions: HoursOption[] = [];
+  let outsideHoursText = t('chatbot_hours_outside_hours');
+
+  for (const option of existingOptions || []) {
+    const optionId =
+      typeof option?.id === 'string'
+        ? option.id.trim().replace(/^option-/i, '')
+        : '';
+
+    if (!optionId) {
+      continue;
+    }
+
+    if (optionId === HOURS_OUTSIDE_OPTION_ID) {
+      if (typeof option.text === 'string' && option.text.trim().length > 0) {
+        outsideHoursText = option.text;
+      }
+      continue;
+    }
+
+    intervalOptions.push(
+      normalizeHoursIntervalOption({
+        ...option,
+        id: optionId,
+      })
+    );
+  }
+
+  if (intervalOptions.length === 0) {
+    intervalOptions.push(
+      normalizeHoursIntervalOption({
+        id: crypto.randomUUID(),
+        text: `${HOURS_DEFAULT_START_TIME} -> ${HOURS_DEFAULT_END_TIME}`,
+        start_time: HOURS_DEFAULT_START_TIME,
+        end_time: HOURS_DEFAULT_END_TIME,
+      })
+    );
+  }
+
+  return [
+    ...intervalOptions,
+    {
+      id: HOURS_OUTSIDE_OPTION_ID,
+      text: outsideHoursText,
+      required: true,
+    },
+  ];
 };
 
 const normalizeHandleId = (handle?: string | null): string | null => {
@@ -1090,6 +1215,25 @@ const addWeekdayNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode);
 };
 
+const addHoursNode = (position?: { x: number; y: number }) => {
+  const nodeId = `hours-${nodeIdCounter++}`;
+  const newNode: Node = {
+    id: nodeId,
+    type: 'hours',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      timezone: HOURS_NODE_DEFAULT_TIMEZONE,
+      options: buildHoursOptions(),
+      onRemove: () => removeNode(nodeId),
+      onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const addAiAgentNode = (position?: { x: number; y: number }) => {
   const nodeId = `aiAgent-${nodeIdCounter++}`;
   const newNode: Node = {
@@ -1408,6 +1552,9 @@ const onDrop = (event: DragEvent) => {
     case 'weekday':
       addWeekdayNode(position);
       break;
+    case 'hours':
+      addHoursNode(position);
+      break;
   }
 
   draggedNodeType.value = null;
@@ -1510,6 +1657,130 @@ const validateAllNodesConnected = (): string | null => {
   return null;
 };
 
+const toHoursMinutes = (value?: string): number | null => {
+  if (!isValidHoursTime(value)) {
+    return null;
+  }
+
+  const [hours, minutes] = (value || '')
+    .split(':')
+    .map((item) => Number.parseInt(item, 10));
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+};
+
+const validateHoursNodesBeforeSave = (): string | null => {
+  for (const node of nodes.value) {
+    if (node.type !== 'hours') {
+      continue;
+    }
+
+    const nodeLabel = node.data?.title || node.label || node.id;
+    const options = Array.isArray(node.data?.options)
+      ? (node.data.options as HoursOption[])
+      : [];
+
+    if (options.length === 0) {
+      return t('chatbot_flow_validation_options_required', { nodeLabel });
+    }
+
+    const outsideOption = options.find(
+      (option) => option.id === HOURS_OUTSIDE_OPTION_ID
+    );
+    if (!outsideOption) {
+      return t('chatbot_flow_validation_hours_outside_option_required', {
+        nodeLabel,
+      });
+    }
+
+    const intervalOptions = options.filter(
+      (option) => option.id !== HOURS_OUTSIDE_OPTION_ID
+    );
+    if (intervalOptions.length === 0) {
+      return t('chatbot_flow_validation_hours_interval_required', {
+        nodeLabel,
+      });
+    }
+
+    for (const option of options) {
+      const expectedSourceHandle = `option-${option.id}-source`;
+      const hasConnection = edges.value.some(
+        (edge) =>
+          edge.source === node.id &&
+          edge.sourceHandle === expectedSourceHandle
+      );
+
+      if (!hasConnection) {
+        return t('chatbot_flow_validation_option_not_connected', {
+          nodeLabel,
+          optionText: option.text || `Opção ${option.id}`,
+        });
+      }
+    }
+
+    const normalizedIntervals = intervalOptions.map((option) => {
+      const start = toHoursMinutes(option.start_time);
+      const end = toHoursMinutes(option.end_time);
+
+      return {
+        option,
+        start,
+        end,
+      };
+    });
+
+    for (const interval of normalizedIntervals) {
+      if (
+        interval.start === null ||
+        interval.end === null ||
+        interval.start >= interval.end
+      ) {
+        return t('chatbot_flow_validation_hours_invalid_time_range', {
+          nodeLabel,
+          interval:
+            interval.option.text ||
+            `${interval.option.start_time || '--:--'} -> ${
+              interval.option.end_time || '--:--'
+            }`,
+        });
+      }
+    }
+
+    const sortedIntervals = [...normalizedIntervals].sort(
+      (first, second) => (first.start || 0) - (second.start || 0)
+    );
+
+    for (let i = 0; i < sortedIntervals.length - 1; i++) {
+      const current = sortedIntervals[i];
+      const next = sortedIntervals[i + 1];
+
+      if (
+        current.start === null ||
+        current.end === null ||
+        next.start === null ||
+        next.end === null
+      ) {
+        continue;
+      }
+
+      const hasConflict =
+        current.start <= next.end && next.start <= current.end;
+
+      if (hasConflict) {
+        return t('chatbot_flow_validation_hours_conflict', {
+          nodeLabel,
+        });
+      }
+    }
+  }
+
+  return null;
+};
+
 const handleSave = async () => {
   if (!chatbotId.value) {
     chatbotStore.showSnackbar(
@@ -1597,6 +1868,12 @@ const handleSave = async () => {
       }),
       EColor.error
     );
+    return;
+  }
+
+  const hoursValidationError = validateHoursNodesBeforeSave();
+  if (hoursValidationError) {
+    chatbotStore.showSnackbar(hoursValidationError, EColor.error);
     return;
   }
 
@@ -1791,6 +2068,16 @@ const processWeekdayNodeData = (nodeData: any): void => {
   );
 };
 
+const processHoursNodeData = (nodeData: any): void => {
+  if (nodeData.timezone === undefined || !nodeData.timezone) {
+    nodeData.timezone = HOURS_NODE_DEFAULT_TIMEZONE;
+  }
+
+  nodeData.options = buildHoursOptions(
+    Array.isArray(nodeData.options) ? nodeData.options : []
+  );
+};
+
 const processNodeDataByType = (node: Node): void => {
   if (!node.data) {
     node.data = {};
@@ -1836,6 +2123,9 @@ const processNodeDataByType = (node: Node): void => {
     case 'weekday':
       processWeekdayNodeData(node.data);
       break;
+    case 'hours':
+      processHoursNodeData(node.data);
+      break;
   }
 };
 
@@ -1856,7 +2146,8 @@ const processLoadedNode = (node: Node): Node => {
       node.type === 'menu' ||
       node.type === 'satisfaction' ||
       node.type === 'contact' ||
-      node.type === 'aiAgent'
+      node.type === 'aiAgent' ||
+      node.type === 'hours'
     ) {
       node.data.onRemoveOption = (optionId: string) =>
         removeOptionEdge(node.id, optionId);
@@ -2518,6 +2809,26 @@ onUnmounted(() => {
                 >
                   <VIcon icon="tabler-calendar" class="me-2" />
                   {{ t('chatbot_weekday') }}
+                </VBtn>
+                <VBtn
+                  color="warning"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'hours';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-clock-hour-3" class="me-2" />
+                  {{ t('chatbot_hours') }}
                 </VBtn>
                 <VBtn
                   color="distribution"

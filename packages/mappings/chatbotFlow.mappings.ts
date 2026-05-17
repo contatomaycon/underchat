@@ -283,6 +283,12 @@ export const chatbotFlowMappings = () => {
                     required: {
                       type: 'boolean',
                     },
+                    start_time: {
+                      type: 'keyword',
+                    },
+                    end_time: {
+                      type: 'keyword',
+                    },
                   },
                 },
               },

@@ -11,6 +11,13 @@ import { ConverterService } from '@core/services/converter';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import {
+  CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
+  findConflictingChatbotWorkingHoursRules,
+  isChatbotWorkingHoursRuleWindowValid,
+  normalizeChatbotWorkingHoursTimezone,
+} from '@core/common/functions/chatbotWorkingHours';
+import { IChatbotWorkingHoursRule } from '@core/common/interfaces/IChatbotWorkingHours';
 
 type MediaType = 'image' | 'video' | 'audio' | 'document';
 type WeekdayOptionId =
@@ -72,6 +79,7 @@ export class ChatbotFlowSaverUseCase {
     'friday',
     'saturday',
   ];
+  private readonly HOURS_OUTSIDE_OPTION_ID = 'outside-hours';
 
   constructor(
     @inject(ChatbotService)
@@ -197,6 +205,10 @@ export class ChatbotFlowSaverUseCase {
       return t('chatbot_weekday');
     }
 
+    if (node.type === 'hours') {
+      return t('chatbot_hours');
+    }
+
     if (node.type === 'annotation') {
       return t('chatbot_annotation_node_title');
     }
@@ -230,6 +242,7 @@ export class ChatbotFlowSaverUseCase {
       node.type !== 'menu' &&
       node.type !== 'satisfaction' &&
       node.type !== 'weekday' &&
+      node.type !== 'hours' &&
       node.type !== 'aiAgent' &&
       node.type !== 'conditional'
     ) {
@@ -275,7 +288,11 @@ export class ChatbotFlowSaverUseCase {
         continue;
       }
 
-      if (node.type !== 'weekday' && handleLessEdges.length > 0) {
+      if (
+        node.type !== 'weekday' &&
+        node.type !== 'hours' &&
+        handleLessEdges.length > 0
+      ) {
         handleLessEdges.pop();
         continue;
       }
@@ -877,6 +894,134 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private validateHoursNode(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    errors: string[]
+  ): void {
+    if (node.type !== 'hours') {
+      return;
+    }
+
+    const data = node.data;
+    const nodeLabel = this.getNodeLabel(t, node);
+
+    if (!data) {
+      errors.push(
+        t('chatbot_flow_validation_options_required', {
+          nodeLabel,
+        })
+      );
+      return;
+    }
+
+    data.timezone = normalizeChatbotWorkingHoursTimezone(
+      typeof data.timezone === 'string' && data.timezone.trim().length > 0
+        ? data.timezone
+        : CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE
+    );
+
+    if (!Array.isArray(data.options) || data.options.length === 0) {
+      errors.push(
+        t('chatbot_flow_validation_options_required', {
+          nodeLabel,
+        })
+      );
+      return;
+    }
+
+    const options = data.options as Array<{
+      id?: unknown;
+      text?: unknown;
+      start_time?: unknown;
+      end_time?: unknown;
+    }>;
+
+    const outsideHoursOption = options.find((option) => {
+      const optionId =
+        option?.id !== null && option?.id !== undefined
+          ? String(option.id).trim().toLowerCase()
+          : '';
+
+      return optionId === this.HOURS_OUTSIDE_OPTION_ID;
+    });
+
+    if (!outsideHoursOption) {
+      errors.push(
+        t('chatbot_flow_validation_hours_outside_option_required', {
+          nodeLabel,
+        })
+      );
+      return;
+    }
+
+    const intervalOptions = options.filter((option) => {
+      const optionId =
+        option?.id !== null && option?.id !== undefined
+          ? String(option.id).trim().toLowerCase()
+          : '';
+      return optionId !== this.HOURS_OUTSIDE_OPTION_ID;
+    });
+
+    if (intervalOptions.length === 0) {
+      errors.push(
+        t('chatbot_flow_validation_hours_interval_required', {
+          nodeLabel,
+        })
+      );
+      return;
+    }
+
+    const normalizedRules: IChatbotWorkingHoursRule[] = [];
+
+    for (const option of intervalOptions) {
+      const startTime =
+        option.start_time !== null && option.start_time !== undefined
+          ? String(option.start_time).trim()
+          : '';
+      const endTime =
+        option.end_time !== null && option.end_time !== undefined
+          ? String(option.end_time).trim()
+          : '';
+      const intervalText =
+        option.text !== null && option.text !== undefined
+          ? String(option.text)
+          : `${startTime || '--:--'} -> ${endTime || '--:--'}`;
+
+      const isValidWindow = isChatbotWorkingHoursRuleWindowValid({
+        start_time: startTime,
+        end_time: endTime,
+      });
+
+      if (!isValidWindow) {
+        errors.push(
+          t('chatbot_flow_validation_hours_invalid_time_range', {
+            nodeLabel,
+            interval: intervalText,
+          })
+        );
+        return;
+      }
+
+      normalizedRules.push({
+        weekday: 'monday',
+        start_time: startTime,
+        end_time: endTime,
+        chatbot_id: 'hours',
+      });
+    }
+
+    const conflictingRules =
+      findConflictingChatbotWorkingHoursRules(normalizedRules);
+    if (conflictingRules) {
+      errors.push(
+        t('chatbot_flow_validation_hours_conflict', {
+          nodeLabel,
+        })
+      );
+    }
+  }
+
   private hasMediaFileForNode(
     input: SaveChatbotFlowRequest & Record<string, unknown>,
     nodeId: string,
@@ -1025,6 +1170,7 @@ export class ChatbotFlowSaverUseCase {
       this.validateRandomMessageNode(t, node, errors);
       this.validateMenuOrSatisfactionNode(t, node, errors);
       this.validateWeekdayNode(t, node, errors);
+      this.validateHoursNode(t, node, errors);
       this.validateDistributionNode(t, node, errors);
       this.validateConditionalNode(t, node, errors);
     }
