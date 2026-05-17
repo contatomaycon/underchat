@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
+import moment from 'moment-timezone';
 import { useReportSalesStore } from '@/@webcore/stores/reportSales';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
@@ -56,6 +57,7 @@ const selectedPlan = ref<string | null>(null);
 const startDate = ref<string | null>(null);
 const endDate = ref<string | null>(null);
 const selectedPaymentType = ref<string | null>(null);
+const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
 
 const plans = ref<Array<{ id: string | null; text: string }>>([]);
 
@@ -93,26 +95,71 @@ onMounted(async () => {
   await loadSales();
 });
 
-const formatDateForApi = (
-  date: string | null,
-  isEndDate = false
-): string | null => {
-  if (!date) return null;
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return null;
-  if (isEndDate) {
-    d.setHours(23, 59, 59, 999);
-  } else {
-    d.setHours(0, 0, 0, 0);
+const parseDateInBrazilTimezone = (date: string): moment.Moment | null => {
+  const dateOnlyMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (dateOnlyMatch) {
+    const year = Number.parseInt(dateOnlyMatch[1], 10);
+    const month = Number.parseInt(dateOnlyMatch[2], 10);
+    const day = Number.parseInt(dateOnlyMatch[3], 10);
+    const parsedDate = moment.tz(
+      { year, month: month - 1, day },
+      BRAZIL_TIMEZONE
+    );
+
+    return parsedDate.isValid() ? parsedDate : null;
   }
-  return d.toISOString();
+
+  const parsedDate = moment.tz(date, BRAZIL_TIMEZONE);
+  if (parsedDate.isValid()) {
+    return parsedDate;
+  }
+
+  const fallbackDate = moment(date);
+  if (!fallbackDate.isValid()) {
+    return null;
+  }
+
+  return fallbackDate.tz(BRAZIL_TIMEZONE);
+};
+
+const buildDateRangeForApi = (
+  start: string | null,
+  end: string | null
+): { startDate: string | null; endDate: string | null } => {
+  const startMoment = start ? parseDateInBrazilTimezone(start) : null;
+  const endMoment = end ? parseDateInBrazilTimezone(end) : null;
+
+  if (!startMoment && !endMoment) {
+    return {
+      startDate: null,
+      endDate: null,
+    };
+  }
+
+  const startDate = startMoment
+    ? startMoment.clone().startOf('day').utc().toISOString()
+    : null;
+
+  const endDate = endMoment
+    ? endMoment.clone().endOf('day').utc().toISOString()
+    : startMoment
+      ? moment.tz(BRAZIL_TIMEZONE).utc().toISOString()
+      : null;
+
+  return {
+    startDate,
+    endDate,
+  };
 };
 
 const query = computed(() => {
+  const dateRange = buildDateRangeForApi(startDate.value, endDate.value);
+
   return {
     plan_id: selectedPlan.value || null,
-    start_date: formatDateForApi(startDate.value, false),
-    end_date: formatDateForApi(endDate.value, true),
+    start_date: dateRange.startDate,
+    end_date: dateRange.endDate,
     payment_billing_type_id: selectedPaymentType.value || null,
   };
 });
@@ -128,8 +175,19 @@ const totalRevenue = computed(() => {
   );
 });
 
+const totalClients = computed(() => {
+  return reportSalesStore.summary.total_clients;
+});
+
+const newClients = computed(() => {
+  return reportSalesStore.summary.new_clients;
+});
+
 const loadSales = async () => {
-  await reportSalesStore.listPlanSales(query.value);
+  await Promise.all([
+    reportSalesStore.listPlanSales(query.value),
+    reportSalesStore.listPlanSalesSummary(query.value),
+  ]);
 };
 
 watch([selectedPlan, startDate, endDate, selectedPaymentType], () => {
@@ -200,8 +258,8 @@ const getPaymentBillingTypeLabel = (
 
 <template>
   <div>
-    <div class="d-flex gap-4 mb-6">
-      <VCard class="flex-1">
+    <div class="d-flex flex-wrap gap-4 mb-6">
+      <VCard class="summary-card">
         <VCardText>
           <div class="d-flex justify-space-between align-center">
             <div>
@@ -219,7 +277,7 @@ const getPaymentBillingTypeLabel = (
         </VCardText>
       </VCard>
 
-      <VCard class="flex-1">
+      <VCard class="summary-card">
         <VCardText>
           <div class="d-flex justify-space-between align-center">
             <div>
@@ -237,6 +295,42 @@ const getPaymentBillingTypeLabel = (
             </div>
             <VAvatar color="success" variant="tonal" size="56">
               <VIcon size="28">tabler-currency-dollar</VIcon>
+            </VAvatar>
+          </div>
+        </VCardText>
+      </VCard>
+
+      <VCard class="summary-card">
+        <VCardText>
+          <div class="d-flex justify-space-between align-center">
+            <div>
+              <div class="text-body-2 text-medium-emphasis mb-1">
+                {{ $t('total_clients') }}
+              </div>
+              <div class="text-h4 font-weight-bold text-info">
+                {{ totalClients }}
+              </div>
+            </div>
+            <VAvatar color="info" variant="tonal" size="56">
+              <VIcon size="28">tabler-users</VIcon>
+            </VAvatar>
+          </div>
+        </VCardText>
+      </VCard>
+
+      <VCard class="summary-card">
+        <VCardText>
+          <div class="d-flex justify-space-between align-center">
+            <div>
+              <div class="text-body-2 text-medium-emphasis mb-1">
+                {{ $t('new_clients') }}
+              </div>
+              <div class="text-h4 font-weight-bold text-warning">
+                {{ newClients }}
+              </div>
+            </div>
+            <VAvatar color="warning" variant="tonal" size="56">
+              <VIcon size="28">tabler-user-plus</VIcon>
             </VAvatar>
           </div>
         </VCardText>
@@ -574,6 +668,10 @@ const getPaymentBillingTypeLabel = (
 </template>
 
 <style lang="scss" scoped>
+.summary-card {
+  flex: 1 1 260px;
+}
+
 .invoice-list-filter {
   inline-size: 20rem;
 }

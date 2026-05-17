@@ -21,6 +21,7 @@ import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.s
 import { ListPlanProductAllResponse } from '@core/schema/plan/listPlanProductAll/response.schema';
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
+import { ListPlanSalesSummaryResponse } from '@core/schema/plan/listPlanSalesSummary/response.schema';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 import { ListPlanProductWithPriceResponse } from '@core/schema/plan/listPlanProductWithPrice/response.schema';
 import { PlanProductWithPriceListerRepository } from '@core/repositories/plan/PlanProductWithPriceLister.repository';
@@ -137,6 +138,12 @@ export class PlanService {
     query: ListPlanSalesRequest
   ): Promise<ListPlanSalesResponse[]> => {
     return this.planSalesListerRepository.listPlanSales(query);
+  };
+
+  listPlanSalesSummary = async (
+    query: ListPlanSalesRequest
+  ): Promise<ListPlanSalesSummaryResponse> => {
+    return this.planSalesListerRepository.listPlanSalesSummary(query);
   };
 
   listPlanWithItems = async (

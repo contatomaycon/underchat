@@ -12,6 +12,7 @@ import {
 } from '@core/schema/plan/listPlanSales/response.schema';
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { IListPlanSales } from '../interfaces/IListPlanSales';
+import { ListPlanSalesSummaryResponse } from '@core/schema/plan/listPlanSalesSummary/response.schema';
 
 export const useReportSalesStore = defineStore('reportSales', {
   state: () => ({
@@ -24,6 +25,10 @@ export const useReportSalesStore = defineStore('reportSales', {
     loading: false,
     listAll: [] as ListPlanAllResponse[],
     listSales: [] as ListPlanSalesResponse[],
+    summary: {
+      total_clients: 0,
+      new_clients: 0,
+    } as ListPlanSalesSummaryResponse,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -120,6 +125,51 @@ export const useReportSalesStore = defineStore('reportSales', {
         this.showSnackbar(errorMessage, EColor.error);
 
         this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listPlanSalesSummary(
+      input?: IListPlanSales
+    ): Promise<ListPlanSalesSummaryResponse | null> {
+      try {
+        const request: ListPlanSalesRequest | undefined = input
+          ? {
+              plan_id: input.plan_id,
+              start_date: input.start_date,
+              end_date: input.end_date,
+              payment_billing_type_id: input.payment_billing_type_id,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListPlanSalesSummaryResponse>
+        >('/sales/plan/summary', {
+          params: request,
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_sales_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.summary = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_sales_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         return null;
       }

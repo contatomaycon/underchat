@@ -16,7 +16,6 @@ export * from './expenditure.permissions';
 export * from './config.permissions';
 export * from './schedule.permissions';
 export * from './sales.permissions';
-export * from './clients.permissions';
 export * from './masterSession.permissions';
 export * from './aiAgent.permissions';
 export * from './release.permissions';

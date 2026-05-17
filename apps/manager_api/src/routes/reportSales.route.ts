@@ -6,6 +6,7 @@ import { salesViewPermissions } from '@/permissions/sales.permissions';
 import { listSectorSchema } from '@core/schema/sector/listSector';
 import { listPlanAllSchema } from '@core/schema/plan/listPlanAll';
 import { listPlanSalesSchema } from '@core/schema/plan/listPlanSales';
+import { listPlanSalesSummarySchema } from '@core/schema/plan/listPlanSalesSummary';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -37,6 +38,16 @@ export default function reportSalesRoutes(server: FastifyInstance) {
   server.get('/sales/plan/sales', {
     schema: listPlanSalesSchema,
     handler: planController.listPlanSales,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, salesViewPermissions),
+      planStatus,
+    ],
+  });
+
+  server.get('/sales/plan/summary', {
+    schema: listPlanSalesSummarySchema,
+    handler: planController.listPlanSalesSummary,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, salesViewPermissions),

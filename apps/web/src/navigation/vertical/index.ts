@@ -346,28 +346,6 @@ export default [
         ],
       },
       {
-        title: 'clients',
-        to: { name: 'reports-clients' as keyof RouteNamedMap },
-        icon: { icon: 'tabler-user' },
-        permissions: [
-          EGeneralPermissions.full_access,
-          EGeneralPermissions.full_access_group,
-          EFinancialPermissions.financial_group,
-          EFinancialPermissions.financial_view,
-        ],
-      },
-      {
-        title: 'users',
-        to: { name: 'reports-users' as keyof RouteNamedMap },
-        icon: { icon: 'tabler-users' },
-        permissions: [
-          EGeneralPermissions.full_access,
-          EGeneralPermissions.full_access_group,
-          EFinancialPermissions.financial_group,
-          EFinancialPermissions.financial_view,
-        ],
-      },
-      {
         title: 'financial',
         to: { name: 'reports-financial' as keyof RouteNamedMap },
         icon: { icon: 'tabler-currency-dollar' },

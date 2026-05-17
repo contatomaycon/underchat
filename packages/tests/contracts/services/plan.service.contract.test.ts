@@ -98,6 +98,10 @@ describe('PlanService', () => {
     };
     const planSalesListerRepository = {
       listPlanSales: jest.fn(async () => [{ sale_id: 's1' }]),
+      listPlanSalesSummary: jest.fn(async () => ({
+        total_clients: 3,
+        new_clients: 1,
+      })),
     };
     const planWithItemsListerRepository = {
       listPlanWithItems: jest.fn(async () => [{ plan_id: 'p1', items: [] }]),
@@ -248,6 +252,12 @@ describe('PlanService', () => {
     await expect(
       service.listPlanSales({ search: 'x' } as never)
     ).resolves.toEqual([{ sale_id: 's1' }]);
+    await expect(
+      service.listPlanSalesSummary({ search: 'x' } as never)
+    ).resolves.toEqual({
+      total_clients: 3,
+      new_clients: 1,
+    });
     await expect(service.listPlanWithItems(null)).resolves.toEqual([
       { plan_id: 'p1', items: [] },
     ]);
@@ -292,6 +302,11 @@ describe('PlanService', () => {
     expect(planSalesListerRepository.listPlanSales).toHaveBeenCalledWith({
       search: 'x',
     });
+    expect(planSalesListerRepository.listPlanSalesSummary).toHaveBeenCalledWith(
+      {
+        search: 'x',
+      }
+    );
     expect(
       planWithItemsListerRepository.listPlanWithItems
     ).toHaveBeenCalledWith(null);

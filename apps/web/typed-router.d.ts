@@ -347,13 +347,6 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    'reports-clients': RouteRecordInfo<
-      'reports-clients',
-      '/reports-clients',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
     'reports-conversation-history': RouteRecordInfo<
       'reports-conversation-history',
       '/reports-conversation-history',
@@ -378,13 +371,6 @@ declare module 'vue-router/auto-routes' {
     'reports-satisfaction': RouteRecordInfo<
       'reports-satisfaction',
       '/reports-satisfaction',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    'reports-users': RouteRecordInfo<
-      'reports-users',
-      '/reports-users',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -734,12 +720,6 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
-    'src/pages/reports-clients.vue': {
-      routes:
-        | 'reports-clients'
-      views:
-        | never
-    }
     'src/pages/reports-conversation-history.vue': {
       routes:
         | 'reports-conversation-history'
@@ -761,12 +741,6 @@ declare module 'vue-router/auto-routes' {
     'src/pages/reports-satisfaction.vue': {
       routes:
         | 'reports-satisfaction'
-      views:
-        | never
-    }
-    'src/pages/reports-users.vue': {
-      routes:
-        | 'reports-users'
       views:
         | never
     }

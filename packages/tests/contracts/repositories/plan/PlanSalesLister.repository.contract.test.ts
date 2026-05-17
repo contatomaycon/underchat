@@ -60,7 +60,7 @@ describe('PlanSalesListerRepository', () => {
         account_id: 'acc-1',
         account_name: 'Account 1',
         payment_value: '130',
-        payment_date: '2026-04-21T10:00:00.000Z',
+        contracted_at: '2026-04-21T10:00:00.000Z',
       },
     ]);
 
@@ -106,5 +106,22 @@ describe('PlanSalesListerRepository', () => {
         payment_billing_type_name: 'PIX',
       },
     ]);
+  });
+
+  it('returns plan sales summary with numeric values', async () => {
+    const execute = jest.fn(async () => ({
+      rows: [{ total_clients: '3', new_clients: '1' }],
+    }));
+
+    const repository = new PlanSalesListerRepository({
+      execute,
+    } as never);
+
+    await expect(repository.listPlanSalesSummary({} as never)).resolves.toEqual(
+      {
+        total_clients: 3,
+        new_clients: 1,
+      }
+    );
   });
 });

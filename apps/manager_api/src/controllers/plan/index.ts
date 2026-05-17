@@ -12,6 +12,7 @@ import { listPlanProductWithPrice } from './methods/listPlanProductWithPrice';
 import { listUserCards } from './methods/listUserCards';
 import { viewUserInfo } from './methods/viewUserInfo';
 import { listPlanSales } from './methods/listPlanSales';
+import { listPlanSalesSummary } from './methods/listPlanSalesSummary';
 import { listPlanWithItems } from './methods/listPlanWithItems';
 import { viewCurrentPlan } from './methods/viewCurrentPlan';
 import { calculateUpgradeDiscount } from './methods/calculateUpgradeDiscount';
@@ -36,6 +37,7 @@ class PlanController {
   public listUserCards = listUserCards;
   public viewUserInfo = viewUserInfo;
   public listPlanSales = listPlanSales;
+  public listPlanSalesSummary = listPlanSalesSummary;
   public listPlanWithItems = listPlanWithItems;
   public viewCurrentPlan = viewCurrentPlan;
   public calculateUpgradeDiscount = calculateUpgradeDiscount;
