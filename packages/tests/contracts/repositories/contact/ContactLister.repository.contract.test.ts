@@ -14,6 +14,43 @@ function createCountDbRo(result: unknown[]) {
 }
 
 describe('ContactListerRepository', () => {
+  it('setFilters applies label filter when filter_label_template_id is provided', () => {
+    const repository = new ContactListerRepository({
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          innerJoin: jest.fn(() => ({
+            where: jest.fn(() => ({ subquery: true })),
+          })),
+        })),
+      })),
+    } as never);
+
+    const filters = (repository as any).setFilters(
+      {
+        filter_label_template_id: '11111111-1111-1111-1111-111111111111',
+      },
+      null
+    );
+
+    expect(filters).toHaveLength(1);
+  });
+
+  it('setFilters does not apply label filter when filter_label_template_id is not provided', () => {
+    const repository = new ContactListerRepository({
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          innerJoin: jest.fn(() => ({
+            where: jest.fn(() => ({ subquery: true })),
+          })),
+        })),
+      })),
+    } as never);
+
+    const filters = (repository as any).setFilters({}, null);
+
+    expect(filters).toHaveLength(0);
+  });
+
   it('returns empty array when contact list is empty', async () => {
     const repository = new ContactListerRepository({} as never);
     (repository as any).findContacts = jest.fn(async () => []);

@@ -55,8 +55,8 @@ export class ContactUpdaterRepository {
       inputUpdate.phone_c = input.phone_c ?? null;
     }
 
-    if (input.nickname) {
-      inputUpdate.nickname = input.nickname;
+    if (input.nickname !== undefined) {
+      inputUpdate.nickname = nullIfEmpty(input.nickname);
     }
 
     if (input.birthday !== undefined) {

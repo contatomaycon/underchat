@@ -255,6 +255,10 @@
   });
 
   const selectedUserId = ref<string | null>(null);
+  const selectedLabelTemplateId = ref<string | null>(null);
+  const labelTemplates = ref<
+    Array<{ value: string; title: string; color: string }>
+  >([]);
   
   const debouncedSearch = refDebounced(
     computed(() => options.value.search),
@@ -267,12 +271,17 @@
     sort_by: options.value.sortBy,
     search: debouncedSearch.value,
     user_id: selectedUserId.value,
+    filter_label_template_id: selectedLabelTemplateId.value,
   }));
 
   const users = ref<Array<{ id: string | null; text: string }>>([]);
 
   onMounted(async () => {
-    const usersList = await contactStore.listContactUsers();
+    const [usersList, labelsList] = await Promise.all([
+      contactStore.listContactUsers(),
+      contactStore.listLabelTemplates(),
+    ]);
+
     if (usersList) {
       users.value = [
         { id: null, text: t('all') },
@@ -281,6 +290,14 @@
           text: u.name || u.user_id,
         })),
       ];
+    }
+
+    if (labelsList) {
+      labelTemplates.value = labelsList.map((labelTemplate) => ({
+        value: labelTemplate.label_template_id,
+        title: labelTemplate.label,
+        color: labelTemplate.color,
+      }));
     }
   });
   
@@ -494,6 +511,34 @@
                   item-value="id"
                   item-title="text"
                 />
+              </div>
+              <div class="invoice-list-filter">
+                <VLabel class="text-body-2 mb-1">{{ $t('filter_by_tag') }}:</VLabel>
+                <AppSelectSearch
+                  v-model="selectedLabelTemplateId"
+                  :items="labelTemplates as any"
+                  :placeholder="$t('select_tag_filter')"
+                  :clearable="true"
+                  item-value="value"
+                  item-title="title"
+                >
+                  <template #item-prepend="{ item }">
+                    <VAvatar
+                      v-if="item.color"
+                      :color="item.color"
+                      size="24"
+                      class="me-2"
+                    />
+                  </template>
+                  <template #prepend-inner="{ item }">
+                    <VAvatar
+                      v-if="item && !Array.isArray(item) && item.color"
+                      :color="item.color"
+                      size="20"
+                      class="me-2"
+                    />
+                  </template>
+                </AppSelectSearch>
               </div>
               <div class="invoice-list-filter">
                 <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>

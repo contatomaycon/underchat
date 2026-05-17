@@ -2683,6 +2683,7 @@
   "available_tags": "Etiquetas Disponibles",
   "tag_greeting_description": "Saludo basado en la hora del día (Buenos días, Buenas tardes, Buenas noches)",
   "tag_name_description": "Nombre del contacto guardado o nombre que viene de WhatsApp",
+  "tag_nickname_description": "Apodo del contacto guardado; si no existe, usa el nombre del contacto guardado y luego el nombre de WhatsApp",
   "tag_protocol_description": "Protocolo de atención",
   "tag_sector_description": "Sector que recibirá la transferencia",
   "tag_user_description": "Atendente que recibirá la transferencia",

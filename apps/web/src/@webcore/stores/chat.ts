@@ -5201,8 +5201,8 @@ export const useChatStore = defineStore('chat', {
         if (phone) {
           formData.append('phone', phone);
         }
-        const nickname = extractFieldValue(body.nickname as FieldValue);
-        if (nickname) {
+        if (body.nickname !== undefined) {
+          const nickname = extractFieldValue(body.nickname as FieldValue);
           formData.append('nickname', nickname);
         }
         const birthday = extractFieldValue(body.birthday as FieldValue);

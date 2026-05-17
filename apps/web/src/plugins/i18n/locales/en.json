@@ -2683,6 +2683,7 @@
   "available_tags": "Available Tags",
   "tag_greeting_description": "Greeting based on time of day (Good morning, Good afternoon, Good evening)",
   "tag_name_description": "Saved contact name or name from WhatsApp",
+  "tag_nickname_description": "Saved contact nickname; if missing, uses saved contact name and then WhatsApp name",
   "tag_protocol_description": "Service protocol",
   "tag_sector_description": "Sector that will receive the transfer",
   "tag_user_description": "Attendant that will receive the transfer",

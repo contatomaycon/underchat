@@ -708,15 +708,18 @@ export class ContactService {
     const channelIds = hasChannelIds
       ? this.extractChannelIds(input.channel_ids)
       : null;
+    const hasNickname = input.nickname !== undefined;
     const name = this.normalizeContactText(
       extractFieldValue(input.name as FieldValue)
     );
     const lastName = this.normalizeContactText(
       extractFieldValue(input.last_name as FieldValue)
     );
-    const nickname = this.normalizeContactText(
-      extractFieldValue(input.nickname as FieldValue)
-    );
+    const nickname = hasNickname
+      ? this.normalizeContactText(
+          extractFieldValue(input.nickname as FieldValue)
+        )
+      : undefined;
     const birthday = extractFieldValue(input.birthday as FieldValue);
     const notes = this.normalizeContactText(
       extractFieldValue(input.notes as FieldValue)
@@ -757,12 +760,15 @@ export class ContactService {
       phone: phoneCEncrypted,
       phone_partial: phonePartialEncrypted,
       phone_c: phoneC,
-      nickname: nickname ?? '',
       photo: photoUrl,
       birthday: nullIfEmpty(birthday),
       notes: notes ?? '',
       is_valided: isValided,
     };
+
+    if (hasNickname) {
+      payload.nickname = nickname ?? '';
+    }
 
     if (hasLabelTemplateIds) {
       payload.label_template_ids = labelTemplateIds;

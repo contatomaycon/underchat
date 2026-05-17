@@ -367,7 +367,10 @@ export class ContactUpdaterUseCase {
     const phone = this.normalizePhoneDigits(
       extractFieldValue(normalizedBody.phone as FieldValue)
     );
-    const nickname = extractFieldValue(normalizedBody.nickname as FieldValue);
+    const hasNickname = normalizedBody.nickname !== undefined;
+    const nickname = hasNickname
+      ? extractFieldValue(normalizedBody.nickname as FieldValue)
+      : undefined;
     const birthday = extractFieldValue(normalizedBody.birthday as FieldValue);
     const notes = extractFieldValue(normalizedBody.notes as FieldValue);
     const hasContactDocumentTypeId =
@@ -411,7 +414,6 @@ export class ContactUpdaterUseCase {
       email,
       phone_ddi: normalizedPhone?.phoneDdi ?? phoneDdi,
       phone: normalizedPhone?.phone ?? phone,
-      nickname,
       birthday,
       notes,
       photo: normalizedBody.photo,
@@ -419,6 +421,10 @@ export class ContactUpdaterUseCase {
       user_id: normalizedBody.user_id,
       ignore: normalizedBody.ignore,
     };
+
+    if (hasNickname) {
+      bodyToUpdate.nickname = nickname;
+    }
 
     if (hasContactDocumentTypeId) {
       bodyToUpdate.contact_document_type_id = contactDocumentTypeId;

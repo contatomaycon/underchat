@@ -331,6 +331,10 @@ const availableTags = computed(() => [
     description: t('tag_greeting_description'),
   },
   {
+    tag: '{{ nickname }}',
+    description: t('tag_nickname_description'),
+  },
+  {
     tag: '{{ name }}',
     description: t('tag_name_description'),
   },

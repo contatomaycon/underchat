@@ -70,6 +70,7 @@ export const useContactStore = defineStore('contact', {
               sort_by: input.sort_by,
               search: input.search,
               user_id: input.user_id,
+              filter_label_template_id: input.filter_label_template_id,
             }
           : undefined;
 
@@ -233,8 +234,8 @@ export const useContactStore = defineStore('contact', {
       if (phone) {
         formData.append('phone', phone);
       }
-      const nickname = extractFieldValue(body.nickname as FieldValue);
-      if (nickname) {
+      if (body.nickname !== undefined) {
+        const nickname = extractFieldValue(body.nickname as FieldValue);
         formData.append('nickname', nickname);
       }
       const birthday = extractFieldValue(body.birthday as FieldValue);

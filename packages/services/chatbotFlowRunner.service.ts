@@ -1499,7 +1499,9 @@ export class ChatbotFlowRunnerService {
     return t('good_evening');
   }
 
-  private async getContactName(createChat: IChat): Promise<string | null> {
+  private async getContactByChatPhone(
+    createChat: IChat
+  ): Promise<Awaited<ReturnType<ContactService['getContactByPhone']>>> {
     if (!createChat.phone) {
       return null;
     }
@@ -1509,12 +1511,19 @@ export class ChatbotFlowRunnerService {
       return null;
     }
 
-    const contact = await this.contactService.getContactByPhone(
+    return this.contactService.getContactByPhone(
       createChat.account.id,
       phoneAndDdi.phone,
       phoneAndDdi.phone_ddi
     );
+  }
 
+  private buildSavedContactFullName(
+    contact: {
+      name: string;
+      last_name?: string | null;
+    } | null
+  ): string | null {
     if (!contact) {
       return null;
     }
@@ -1525,6 +1534,39 @@ export class ChatbotFlowRunnerService {
       .trim();
 
     return fullName || null;
+  }
+
+  private async getContactName(createChat: IChat): Promise<string | null> {
+    const contact = await this.getContactByChatPhone(createChat);
+    return this.buildSavedContactFullName(contact);
+  }
+
+  private async getRandomMessageNicknameValue(
+    createChat: IChat
+  ): Promise<string> {
+    const contact = await this.getContactByChatPhone(createChat);
+    const savedNickname = contact?.nickname?.trim() || null;
+
+    if (savedNickname) {
+      return savedNickname;
+    }
+
+    const savedName = this.buildSavedContactFullName(contact);
+    if (savedName) {
+      return savedName;
+    }
+
+    return createChat.name?.trim() || '';
+  }
+
+  private replaceRandomMessageNicknameTags(
+    message: string,
+    nickname: string
+  ): string {
+    let replaced = message;
+    replaced = replaced.replaceAll(/\{\{\s*nickname\s*\}\}/gi, nickname);
+    replaced = replaced.replaceAll(/\{\{\s*apelido\s*\}\}/gi, nickname);
+    return replaced;
   }
 
   private async replaceVariables(
@@ -1873,8 +1915,13 @@ export class ChatbotFlowRunnerService {
       height: number | null;
     }
   ): Promise<boolean> {
-    const messageText =
+    const messageTextRaw =
       item.type === EMessageType.audio ? '' : (item.message ?? '');
+    const nickname = await this.getRandomMessageNicknameValue(createChat);
+    const messageText = this.replaceRandomMessageNicknameTags(
+      messageTextRaw,
+      nickname
+    );
 
     const nodeLike = {
       data: {

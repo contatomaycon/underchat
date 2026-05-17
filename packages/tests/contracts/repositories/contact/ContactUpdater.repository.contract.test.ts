@@ -8,7 +8,7 @@ jest.mock('uuid', () => ({
 function createUpdateChain(rowCount: number) {
   const execute = jest.fn(async () => ({ rowCount }));
   const where = jest.fn(() => ({ execute }));
-  const set = jest.fn(() => ({ where }));
+  const set = jest.fn((_: unknown) => ({ where }));
   const update = jest.fn(() => ({ set }));
 
   return {
@@ -140,6 +140,35 @@ describe('ContactUpdaterRepository', () => {
         phone_c: 'hash-phone',
       })
     );
+  });
+
+  it('clears nickname when empty string is provided', async () => {
+    const { repository, dbSet } = createRepository();
+
+    await expect(
+      repository.updateContactById('contact-1', { nickname: '' } as never)
+    ).resolves.toBe(true);
+
+    expect(dbSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nickname: null,
+      })
+    );
+  });
+
+  it('does not include nickname in update when field is absent', async () => {
+    const { repository, dbSet } = createRepository();
+
+    await expect(
+      repository.updateContactById('contact-1', {
+        name: 'Contact Name',
+      } as never)
+    ).resolves.toBe(true);
+
+    const firstCall = dbSet.mock.calls.at(0);
+    expect(firstCall).toBeDefined();
+    const updatePayload = firstCall?.[0] as Record<string, unknown>;
+    expect(updatePayload).not.toHaveProperty('nickname');
   });
 
   it('validateContact sets validation fields and returns true when rowCount is 1', async () => {

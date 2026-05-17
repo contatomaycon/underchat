@@ -6,4 +6,5 @@ export interface IListContact {
   sort_by: SortRequest[];
   search?: string | null;
   user_id?: string | null;
+  filter_label_template_id?: string | null;
 }

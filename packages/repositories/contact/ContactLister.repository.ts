@@ -65,6 +65,33 @@ export class ContactListerRepository {
       filters.push(eq(contact.user_id, query.user_id));
     }
 
+    if (query.filter_label_template_id) {
+      filters.push(
+        inArray(
+          contact.contact_id,
+          this.dbRo
+            .select({ contact_id: contactLabelTemplate.contact_id })
+            .from(contactLabelTemplate)
+            .innerJoin(
+              labelTemplate,
+              eq(
+                labelTemplate.label_template_id,
+                contactLabelTemplate.label_template_id
+              )
+            )
+            .where(
+              and(
+                eq(
+                  contactLabelTemplate.label_template_id,
+                  query.filter_label_template_id
+                ),
+                isNull(labelTemplate.deleted_at)
+              )
+            )
+        )
+      );
+    }
+
     const searchTerm = query.search;
     if (!searchTerm) return filters;
 
