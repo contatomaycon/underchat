@@ -47,17 +47,12 @@ const normalizeIntervalOption = (option: HoursOption): HoursOption => {
       ? option.id.trim().replace(/^option-/i, '')
       : crypto.randomUUID();
 
-  let startTime = isValidTime(option.start_time)
+  const startTime = isValidTime(option.start_time)
     ? option.start_time!
     : DEFAULT_INTERVAL_START;
-  let endTime = isValidTime(option.end_time)
+  const endTime = isValidTime(option.end_time)
     ? option.end_time!
     : DEFAULT_INTERVAL_END;
-
-  if (!isValidWindow(startTime, endTime)) {
-    startTime = DEFAULT_INTERVAL_START;
-    endTime = DEFAULT_INTERVAL_END;
-  }
 
   const text =
     typeof option.text === 'string' && option.text.trim().length > 0

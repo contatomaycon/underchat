@@ -2033,7 +2033,7 @@
   "chatbot_flow_validation_options_required": "Pelo menos uma opção é obrigatória no nó \"{nodeLabel}\"",
   "chatbot_flow_validation_hours_outside_option_required": "A saída \"Fora do horário\" é obrigatória no nó \"{nodeLabel}\"",
   "chatbot_flow_validation_hours_interval_required": "Pelo menos um intervalo é obrigatório no nó \"{nodeLabel}\"",
-  "chatbot_flow_validation_hours_invalid_time_range": "Intervalo de horário inválido (\"{interval}\") no nó \"{nodeLabel}\". O início deve ser menor que o fim.",
+  "chatbot_flow_validation_hours_invalid_time_range": "Intervalo inválido em \"{nodeLabel}\" (\"{interval}\"). Início e fim não podem ser iguais e devem estar no formato HH:mm.",
   "chatbot_flow_validation_hours_conflict": "Existe conflito entre intervalos de horário no nó \"{nodeLabel}\". Os intervalos não podem se sobrepor nem encostar.",
   "chatbot_flow_validation_interactions_quantity_required": "Quantidade de interações é obrigatória quando a ação após interações está habilitada no nó \"{nodeLabel}\"",
   "chatbot_flow_validation_interactions_handle_required": "A conexão do handler de quantidade de interações é obrigatória quando a ação após interações está habilitada no nó \"{nodeLabel}\"",

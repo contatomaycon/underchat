@@ -717,7 +717,7 @@
   "chatbot_flow_validation_options_required": "At least one option is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_hours_outside_option_required": "The \"Outside working hours\" output is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_hours_interval_required": "At least one interval is required in node \"{{nodeLabel}}\"",
-  "chatbot_flow_validation_hours_invalid_time_range": "Invalid time interval (\"{{interval}}\") in node \"{{nodeLabel}}\". Start time must be less than end time.",
+  "chatbot_flow_validation_hours_invalid_time_range": "Invalid interval in \"{{nodeLabel}}\" (\"{{interval}}\"). Start and end cannot be equal and must use HH:mm format.",
   "chatbot_flow_validation_hours_conflict": "There is a conflict between time intervals in node \"{{nodeLabel}}\". Intervals cannot overlap or touch.",
   "chatbot_flow_validation_interactions_quantity_required": "Number of interactions is required when action after interactions is enabled in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_interactions_handle_required": "Interactions quantity handler connection is required when action after interactions is enabled in node \"{{nodeLabel}}\"",

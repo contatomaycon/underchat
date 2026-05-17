@@ -879,18 +879,7 @@ export class ChatbotFlowRunnerService {
       return optionId !== this.HOURS_OUTSIDE_OPTION_ID;
     });
 
-    const sortedOptions = [...intervalOptions].sort((first, second) => {
-      const firstStart = toChatbotWorkingHoursMinutes(
-        typeof first?.start_time === 'string' ? first.start_time : null
-      );
-      const secondStart = toChatbotWorkingHoursMinutes(
-        typeof second?.start_time === 'string' ? second.start_time : null
-      );
-
-      return (firstStart || 0) - (secondStart || 0);
-    });
-
-    for (const option of sortedOptions) {
+    for (const option of intervalOptions) {
       const optionId =
         option?.id !== null && option?.id !== undefined
           ? String(option.id).trim()
@@ -906,12 +895,17 @@ export class ChatbotFlowRunnerService {
         !optionId ||
         startMinutes === null ||
         endMinutes === null ||
-        startMinutes >= endMinutes
+        startMinutes === endMinutes
       ) {
         continue;
       }
 
-      if (currentMinutes >= startMinutes && currentMinutes <= endMinutes) {
+      const isOvernightRange = startMinutes > endMinutes;
+      const isInRange = isOvernightRange
+        ? currentMinutes >= startMinutes || currentMinutes <= endMinutes
+        : currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+
+      if (isInRange) {
         return optionId;
       }
     }

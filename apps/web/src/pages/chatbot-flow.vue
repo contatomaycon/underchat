@@ -656,14 +656,6 @@ const isValidHoursTime = (value?: string): boolean => {
   return typeof value === 'string' && HOURS_TIME_REGEX.test(value);
 };
 
-const isValidHoursWindow = (start?: string, end?: string): boolean => {
-  if (!isValidHoursTime(start) || !isValidHoursTime(end)) {
-    return false;
-  }
-
-  return (start as string) < (end as string);
-};
-
 const normalizeHoursIntervalOption = (
   option?: Partial<HoursOption>
 ): HoursOption => {
@@ -672,17 +664,12 @@ const normalizeHoursIntervalOption = (
       ? option.id.trim().replace(/^option-/i, '')
       : crypto.randomUUID();
 
-  let startTime = isValidHoursTime(option?.start_time)
+  const startTime = isValidHoursTime(option?.start_time)
     ? option?.start_time
     : HOURS_DEFAULT_START_TIME;
-  let endTime = isValidHoursTime(option?.end_time)
+  const endTime = isValidHoursTime(option?.end_time)
     ? option?.end_time
     : HOURS_DEFAULT_END_TIME;
-
-  if (!isValidHoursWindow(startTime, endTime)) {
-    startTime = HOURS_DEFAULT_START_TIME;
-    endTime = HOURS_DEFAULT_END_TIME;
-  }
 
   const text =
     typeof option?.text === 'string' && option.text.trim().length > 0
@@ -1673,13 +1660,49 @@ const toHoursMinutes = (value?: string): number | null => {
   return hours * 60 + minutes;
 };
 
+interface MinuteRange {
+  start: number;
+  end: number;
+}
+
+const buildDailyRanges = (
+  startMinutes: number,
+  endMinutes: number
+): MinuteRange[] => {
+  if (startMinutes < endMinutes) {
+    return [
+      {
+        start: startMinutes,
+        end: endMinutes,
+      },
+    ];
+  }
+
+  return [
+    {
+      start: startMinutes,
+      end: 1439,
+    },
+    {
+      start: 0,
+      end: endMinutes,
+    },
+  ];
+};
+
+const hasRangeConflict = (first: MinuteRange, second: MinuteRange): boolean => {
+  return first.start <= second.end && second.start <= first.end;
+};
+
 const validateHoursNodesBeforeSave = (): string | null => {
   for (const node of nodes.value) {
     if (node.type !== 'hours') {
       continue;
     }
 
-    const nodeLabel = node.data?.title || node.label || node.id;
+    const nodeTitle =
+      typeof node.data?.title === 'string' ? node.data.title.trim() : '';
+    const nodeLabel = nodeTitle || t('chatbot_hours');
     const options = Array.isArray(node.data?.options)
       ? (node.data.options as HoursOption[])
       : [];
@@ -1730,6 +1753,10 @@ const validateHoursNodesBeforeSave = (): string | null => {
         option,
         start,
         end,
+        ranges:
+          start !== null && end !== null && start !== end
+            ? buildDailyRanges(start, end)
+            : [],
       };
     });
 
@@ -1737,7 +1764,7 @@ const validateHoursNodesBeforeSave = (): string | null => {
       if (
         interval.start === null ||
         interval.end === null ||
-        interval.start >= interval.end
+        interval.start === interval.end
       ) {
         return t('chatbot_flow_validation_hours_invalid_time_range', {
           nodeLabel,
@@ -1750,30 +1777,22 @@ const validateHoursNodesBeforeSave = (): string | null => {
       }
     }
 
-    const sortedIntervals = [...normalizedIntervals].sort(
-      (first, second) => (first.start || 0) - (second.start || 0)
-    );
+    for (let i = 0; i < normalizedIntervals.length; i++) {
+      const current = normalizedIntervals[i];
+      for (let j = i + 1; j < normalizedIntervals.length; j++) {
+        const next = normalizedIntervals[j];
 
-    for (let i = 0; i < sortedIntervals.length - 1; i++) {
-      const current = sortedIntervals[i];
-      const next = sortedIntervals[i + 1];
-
-      if (
-        current.start === null ||
-        current.end === null ||
-        next.start === null ||
-        next.end === null
-      ) {
-        continue;
-      }
-
-      const hasConflict =
-        current.start <= next.end && next.start <= current.end;
-
-      if (hasConflict) {
-        return t('chatbot_flow_validation_hours_conflict', {
-          nodeLabel,
+        const hasConflict = current.ranges.some((currentRange) => {
+          return next.ranges.some((nextRange) =>
+            hasRangeConflict(currentRange, nextRange)
+          );
         });
+
+        if (hasConflict) {
+          return t('chatbot_flow_validation_hours_conflict', {
+            nodeLabel,
+          });
+        }
       }
     }
   }

@@ -13,11 +13,9 @@ import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import {
   CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
-  findConflictingChatbotWorkingHoursRules,
-  isChatbotWorkingHoursRuleWindowValid,
   normalizeChatbotWorkingHoursTimezone,
+  toChatbotWorkingHoursMinutes,
 } from '@core/common/functions/chatbotWorkingHours';
-import { IChatbotWorkingHoursRule } from '@core/common/interfaces/IChatbotWorkingHours';
 
 type MediaType = 'image' | 'video' | 'audio' | 'document';
 type WeekdayOptionId =
@@ -104,6 +102,38 @@ export class ChatbotFlowSaverUseCase {
       .replace(/-source$/i, '');
 
     return normalized || null;
+  }
+
+  private buildDailyRanges(
+    startMinutes: number,
+    endMinutes: number
+  ): Array<{ start: number; end: number }> {
+    if (startMinutes < endMinutes) {
+      return [
+        {
+          start: startMinutes,
+          end: endMinutes,
+        },
+      ];
+    }
+
+    return [
+      {
+        start: startMinutes,
+        end: 1439,
+      },
+      {
+        start: 0,
+        end: endMinutes,
+      },
+    ];
+  }
+
+  private hasRangeConflict(
+    first: { start: number; end: number },
+    second: { start: number; end: number }
+  ): boolean {
+    return first.start <= second.end && second.start <= first.end;
   }
 
   private validateBasicFlowStructure(
@@ -972,7 +1002,10 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    const normalizedRules: IChatbotWorkingHoursRule[] = [];
+    const normalizedIntervals: Array<{
+      ranges: Array<{ start: number; end: number }>;
+      intervalText: string;
+    }> = [];
 
     for (const option of intervalOptions) {
       const startTime =
@@ -988,12 +1021,14 @@ export class ChatbotFlowSaverUseCase {
           ? String(option.text)
           : `${startTime || '--:--'} -> ${endTime || '--:--'}`;
 
-      const isValidWindow = isChatbotWorkingHoursRuleWindowValid({
-        start_time: startTime,
-        end_time: endTime,
-      });
+      const startMinutes = toChatbotWorkingHoursMinutes(startTime);
+      const endMinutes = toChatbotWorkingHoursMinutes(endTime);
 
-      if (!isValidWindow) {
+      if (
+        startMinutes === null ||
+        endMinutes === null ||
+        startMinutes === endMinutes
+      ) {
         errors.push(
           t('chatbot_flow_validation_hours_invalid_time_range', {
             nodeLabel,
@@ -1003,22 +1038,31 @@ export class ChatbotFlowSaverUseCase {
         return;
       }
 
-      normalizedRules.push({
-        weekday: 'monday',
-        start_time: startTime,
-        end_time: endTime,
-        chatbot_id: 'hours',
+      normalizedIntervals.push({
+        intervalText,
+        ranges: this.buildDailyRanges(startMinutes, endMinutes),
       });
     }
 
-    const conflictingRules =
-      findConflictingChatbotWorkingHoursRules(normalizedRules);
-    if (conflictingRules) {
-      errors.push(
-        t('chatbot_flow_validation_hours_conflict', {
-          nodeLabel,
-        })
-      );
+    for (let i = 0; i < normalizedIntervals.length; i++) {
+      const current = normalizedIntervals[i];
+      for (let j = i + 1; j < normalizedIntervals.length; j++) {
+        const next = normalizedIntervals[j];
+        const hasConflict = current.ranges.some((currentRange) => {
+          return next.ranges.some((nextRange) =>
+            this.hasRangeConflict(currentRange, nextRange)
+          );
+        });
+
+        if (hasConflict) {
+          errors.push(
+            t('chatbot_flow_validation_hours_conflict', {
+              nodeLabel,
+            })
+          );
+          return;
+        }
+      }
     }
   }
 
