@@ -9256,6 +9256,43 @@ Retorne APENAS JSON válido (sem markdown):
     return holidayResolution.holidayNames;
   }
 
+  private buildHolidayTagFromName(name: string): string {
+    const normalized = name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+    return normalized ? `#${normalized}` : '#feriado_local';
+  }
+
+  private formatHolidayTagsWithType(
+    t: TFunction<'translation', undefined>,
+    holidayResolution: {
+      holidayTags: string[];
+      holidayDetails?: Array<{
+        name: string;
+        type: 'national' | 'state' | 'municipal';
+      }>;
+    }
+  ): string[] {
+    if (
+      Array.isArray(holidayResolution.holidayDetails) &&
+      holidayResolution.holidayDetails.length > 0
+    ) {
+      const tagsWithType = holidayResolution.holidayDetails.map((holiday) => {
+        const holidayTypeLabel = this.getHolidayTypeLabel(t, holiday.type);
+        const holidayTag = this.buildHolidayTagFromName(holiday.name);
+        return `${holidayTag} (${holidayTypeLabel})`;
+      });
+
+      return ['#feriado', ...Array.from(new Set(tagsWithType))];
+    }
+
+    return holidayResolution.holidayTags;
+  }
+
   private async processHolidayNode(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -9289,11 +9326,15 @@ Retorne APENAS JSON válido (sem markdown):
         t,
         holidayResolution
       );
+      const holidayTagsWithType = this.formatHolidayTagsWithType(
+        t,
+        holidayResolution
+      );
 
       const holidayMessageWithPlaceholders = this.replaceHolidayPlaceholders(
         holidayMessageTemplate,
         holidayNamesWithType,
-        holidayResolution.holidayTags
+        holidayTagsWithType
       );
 
       const finalHolidayMessage = await this.replaceVariables(
