@@ -60,6 +60,8 @@ const nationalHolidays = ref<NationalHolidayItem[]>([]);
 const localHolidays = ref<LocalHolidayItem[]>([]);
 const isSavingLocalHoliday = ref(false);
 const editingHolidayId = ref<string | null>(null);
+const isDialogDeleterShow = ref(false);
+const holidayToDelete = ref<LocalHolidayItem | null>(null);
 
 const scope = ref<'state' | 'municipal'>('state');
 const name = ref('');
@@ -306,16 +308,29 @@ const editLocalHoliday = async (item: LocalHolidayItem) => {
   cityId.value = item.city_id;
 };
 
-const deleteLocalHoliday = async (item: LocalHolidayItem) => {
-  const success = await holidayStore.deleteLocalHoliday(item.chatbot_holiday_id);
+const deleteLocalHoliday = (item: LocalHolidayItem) => {
+  holidayToDelete.value = item;
+  isDialogDeleterShow.value = true;
+};
+
+const handleDeleteLocalHoliday = async () => {
+  if (!holidayToDelete.value) {
+    return;
+  }
+
+  const holidayId = holidayToDelete.value.chatbot_holiday_id;
+  const success = await holidayStore.deleteLocalHoliday(holidayId);
 
   if (success) {
     await loadLocalHolidays();
 
-    if (editingHolidayId.value === item.chatbot_holiday_id) {
+    if (editingHolidayId.value === holidayId) {
       resetForm();
     }
   }
+
+  isDialogDeleterShow.value = false;
+  holidayToDelete.value = null;
 };
 
 watch(
@@ -347,6 +362,15 @@ watch(
     if (newStateId !== oldStateId) {
       cityId.value = null;
       await loadCities(newStateId);
+    }
+  }
+);
+
+watch(
+  () => isDialogDeleterShow.value,
+  (isOpen) => {
+    if (!isOpen) {
+      holidayToDelete.value = null;
     }
   }
 );
@@ -524,6 +548,14 @@ onMounted(async () => {
             </div>
           </template>
         </VDataTable>
+
+        <VDialogHandler
+          v-if="isDialogDeleterShow"
+          v-model="isDialogDeleterShow"
+          :title="$t('delete_holiday')"
+          :message="$t('delete_holiday_confirmation')"
+          @confirm="handleDeleteLocalHoliday"
+        />
       </VCardText>
     </VCard>
   </div>

@@ -1225,6 +1225,8 @@
   "edit_contact_group": "Editar Grupo de Contatos",
   "delete_contact_group_confirmation": "Você tem certeza que deseja excluir este grupo de contatos?",
   "delete_contact_group": "Excluir Grupo de Contatos",
+  "delete_holiday": "Excluir feriado",
+  "delete_holiday_confirmation": "Você tem certeza que deseja excluir este feriado?",
   "add_contact_group": "Adicionar Grupo de Contatos",
   "selected_contacts": "Contatos Selecionados",
   "add_or_delete_contact_group": "Adicionar ou Excluir Contato do Grupo",

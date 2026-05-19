@@ -1220,6 +1220,8 @@
   "edit_contact_group": "Editar Grupo de Contactos",
   "delete_contact_group_confirmation": "¿Estás seguro de que deseas eliminar este grupo de contactos?",
   "delete_contact_group": "Eliminar Grupo de Contactos",
+  "delete_holiday": "Eliminar feriado",
+  "delete_holiday_confirmation": "¿Estás seguro de que deseas eliminar este feriado?",
   "description": "Descripción",
   "add_contact_group": "Agregar Grupo de Contactos",
   "selected_contacts": "Contactos Seleccionados",

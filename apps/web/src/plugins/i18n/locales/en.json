@@ -1220,6 +1220,8 @@
   "edit_contact_group": "Edit Contact Group",
   "delete_contact_group_confirmation": "Are you sure you want to delete this contact group?",
   "delete_contact_group": "Delete Contact Group",
+  "delete_holiday": "Delete Holiday",
+  "delete_holiday_confirmation": "Are you sure you want to delete this holiday?",
   "description": "Description",
   "add_contact_group": "Add Contact Group",
   "selected_contacts": "Selected Contacts",
