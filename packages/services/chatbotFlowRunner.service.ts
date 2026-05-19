@@ -82,6 +82,7 @@ import {
   normalizeChatbotWorkingHoursTimezone,
   toChatbotWorkingHoursMinutes,
 } from '@core/common/functions/chatbotWorkingHours';
+import { HolidayService } from './holiday.service';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -105,6 +106,8 @@ export class ChatbotFlowRunnerService {
     'saturday',
   ]);
   private readonly HOURS_OUTSIDE_OPTION_ID = 'outside-hours';
+  private readonly HOLIDAY_IS_OPTION_ID = 'is-holiday';
+  private readonly HOLIDAY_NOT_OPTION_ID = 'not-holiday';
   private readonly AUTOMATION_CHAT_STATUSES: ReadonlySet<EChatStatus> =
     new Set<EChatStatus>([
       EChatStatus.ura,
@@ -160,7 +163,9 @@ export class ChatbotFlowRunnerService {
     @inject(WorkerService)
     private readonly workerService: WorkerService,
     @inject(PromptDocumentExtractorService)
-    private readonly promptDocumentExtractorService: PromptDocumentExtractorService
+    private readonly promptDocumentExtractorService: PromptDocumentExtractorService,
+    @inject(HolidayService)
+    private readonly holidayService: HolidayService
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -2460,6 +2465,17 @@ export class ChatbotFlowRunnerService {
 
     if (nextFlowNode.type === 'hours') {
       return this.processHoursNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages,
+        data
+      );
+    }
+
+    if (nextFlowNode.type === 'holiday') {
+      return this.processHolidayNode(
         t,
         createChat,
         chatbotFlow,
@@ -9191,6 +9207,138 @@ Retorne APENAS JSON válido (sem markdown):
     );
   }
 
+  private replaceHolidayPlaceholders(
+    message: string,
+    holidayNames: string[],
+    holidayTags: string[]
+  ): string {
+    const holidayNamesText = holidayNames.join(', ');
+    const holidayTagsText = holidayTags.join(' ');
+
+    return message
+      .replaceAll(/\{\{\s*holiday_names\s*\}\}/gi, holidayNamesText)
+      .replaceAll(/\{\{\s*holiday_tags\s*\}\}/gi, holidayTagsText);
+  }
+
+  private getHolidayTypeLabel(
+    t: TFunction<'translation', undefined>,
+    holidayType: 'national' | 'state' | 'municipal'
+  ): string {
+    const labelByType: Record<'national' | 'state' | 'municipal', string> = {
+      national: t('chatbot_holiday_type_national'),
+      state: t('chatbot_holiday_type_state'),
+      municipal: t('chatbot_holiday_type_municipal'),
+    };
+
+    return labelByType[holidayType];
+  }
+
+  private formatHolidayNamesWithType(
+    t: TFunction<'translation', undefined>,
+    holidayResolution: {
+      holidayNames: string[];
+      holidayDetails?: Array<{
+        name: string;
+        type: 'national' | 'state' | 'municipal';
+      }>;
+    }
+  ): string[] {
+    if (
+      Array.isArray(holidayResolution.holidayDetails) &&
+      holidayResolution.holidayDetails.length > 0
+    ) {
+      return holidayResolution.holidayDetails.map((holiday) => {
+        const holidayTypeLabel = this.getHolidayTypeLabel(t, holiday.type);
+        return `${holiday.name} (${holidayTypeLabel})`;
+      });
+    }
+
+    return holidayResolution.holidayNames;
+  }
+
+  private async processHolidayNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const holidayResolution = await this.holidayService.resolveHolidaysForDate(
+      createChat.account.id,
+      new Date()
+    );
+
+    if (holidayResolution.isHoliday) {
+      const rawHolidayMessage =
+        typeof currentNode.data?.holidayMessage === 'string'
+          ? currentNode.data.holidayMessage
+          : '';
+
+      const holidayMessageTemplate =
+        rawHolidayMessage.trim().length > 0
+          ? rawHolidayMessage
+          : t('chatbot_holiday_default_message');
+
+      const holidayNamesWithType = this.formatHolidayNamesWithType(
+        t,
+        holidayResolution
+      );
+
+      const holidayMessageWithPlaceholders = this.replaceHolidayPlaceholders(
+        holidayMessageTemplate,
+        holidayNamesWithType,
+        holidayResolution.holidayTags
+      );
+
+      const finalHolidayMessage = await this.replaceVariables(
+        t,
+        holidayMessageWithPlaceholders,
+        createChat,
+        createChat.user,
+        createChat.sector
+      );
+
+      if (finalHolidayMessage.trim().length > 0) {
+        await this.sendMessageWithStatusGuard(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
+          type: EMessageType.text,
+          message: finalHolidayMessage,
+          typeUser: ETypeUserChat.bot,
+        });
+      }
+    }
+
+    const nextFlowId = this.getNextFlowIdByOption(
+      chatbotFlow,
+      currentFlowId,
+      holidayResolution.isHoliday
+        ? this.HOLIDAY_IS_OPTION_ID
+        : this.HOLIDAY_NOT_OPTION_ID
+    );
+
+    if (!nextFlowId) {
+      throw new Error(t('chatbot_flow_not_found'));
+    }
+
+    await this.updateCache(createChat, nextFlowId);
+
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages,
+      data
+    );
+  }
+
   private async processFlowNode(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -9270,6 +9418,17 @@ Retorne APENAS JSON válido (sem markdown):
 
     if (currentNode.type === 'hours') {
       return this.processHoursNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages,
+        data
+      );
+    }
+
+    if (currentNode.type === 'holiday') {
+      return this.processHolidayNode(
         t,
         createChat,
         chatbotFlow,

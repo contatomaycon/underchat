@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import ChatbotController from '@/controllers/chatbot';
 import { chatbotPermissions } from '@/permissions/chatbot.permissions';
+import { holidayPermissions } from '@/permissions/holiday.permissions';
 import { createChatbotSchema } from '@core/schema/chatbot/createChatbot';
 import { listChatbotSchema } from '@core/schema/chatbot/listChatbot';
 import { updateChatbotSchema } from '@core/schema/chatbot/updateChatbot';
@@ -19,6 +20,11 @@ import { listChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/listCh
 import { deleteChatbotSchema } from '@core/schema/chatbot/deleteChatbot';
 import { viewChatbotConfigSchema } from '@core/schema/chatbot/viewChatbotConfig';
 import { cloneChatbotSchema } from '@core/schema/chatbot/cloneChatbot';
+import { listNationalHolidaysSchema } from '@core/schema/chatbot/listNationalHolidays';
+import { listLocalHolidaysSchema } from '@core/schema/chatbot/listLocalHolidays';
+import { createLocalHolidaySchema } from '@core/schema/chatbot/createLocalHoliday';
+import { updateLocalHolidaySchema } from '@core/schema/chatbot/updateLocalHoliday';
+import { deleteLocalHolidaySchema } from '@core/schema/chatbot/deleteLocalHoliday';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -207,6 +213,61 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chatbot/holidays/national', {
+    schema: listNationalHolidaysSchema,
+    handler: chatbotController.listNationalHolidays,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, holidayPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chatbot/holidays/local', {
+    schema: listLocalHolidaysSchema,
+    handler: chatbotController.listLocalHolidays,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, holidayPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chatbot/holidays/local', {
+    schema: createLocalHolidaySchema,
+    handler: chatbotController.createLocalHoliday,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, holidayPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/chatbot/holidays/local/:chatbot_holiday_id', {
+    schema: updateLocalHolidaySchema,
+    handler: chatbotController.updateLocalHoliday,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, holidayPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.delete('/chatbot/holidays/local/:chatbot_holiday_id', {
+    schema: deleteLocalHolidaySchema,
+    handler: chatbotController.deleteLocalHoliday,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, holidayPermissions),
       planGuard,
       planStatus,
     ],

@@ -78,6 +78,8 @@ export class ChatbotFlowSaverUseCase {
     'saturday',
   ];
   private readonly HOURS_OUTSIDE_OPTION_ID = 'outside-hours';
+  private readonly HOLIDAY_IS_OPTION_ID = 'is-holiday';
+  private readonly HOLIDAY_NOT_OPTION_ID = 'not-holiday';
 
   constructor(
     @inject(ChatbotService)
@@ -239,6 +241,10 @@ export class ChatbotFlowSaverUseCase {
       return t('chatbot_hours');
     }
 
+    if (node.type === 'holiday') {
+      return t('chatbot_holidays');
+    }
+
     if (node.type === 'annotation') {
       return t('chatbot_annotation_node_title');
     }
@@ -273,6 +279,7 @@ export class ChatbotFlowSaverUseCase {
       node.type !== 'satisfaction' &&
       node.type !== 'weekday' &&
       node.type !== 'hours' &&
+      node.type !== 'holiday' &&
       node.type !== 'aiAgent' &&
       node.type !== 'conditional'
     ) {
@@ -321,6 +328,7 @@ export class ChatbotFlowSaverUseCase {
       if (
         node.type !== 'weekday' &&
         node.type !== 'hours' &&
+        node.type !== 'holiday' &&
         handleLessEdges.length > 0
       ) {
         handleLessEdges.pop();
@@ -909,7 +917,9 @@ export class ChatbotFlowSaverUseCase {
           (option: { id?: unknown }) =>
             option?.id !== null && option?.id !== undefined
         )
-        .map((option: { id: unknown }) => String(option.id).trim().toLowerCase())
+        .map((option: { id: unknown }) =>
+          String(option.id).trim().toLowerCase()
+        )
     );
 
     for (const weekdayId of this.WEEKDAY_OPTION_IDS) {
@@ -1066,6 +1076,50 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private validateHolidayNode(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    errors: string[]
+  ): void {
+    if (node.type !== 'holiday') {
+      return;
+    }
+
+    const data = node.data;
+    const nodeLabel = this.getNodeLabel(t, node);
+
+    if (!data || !Array.isArray(data.options) || data.options.length !== 2) {
+      errors.push(
+        t('chatbot_flow_validation_options_required', {
+          nodeLabel,
+        })
+      );
+      return;
+    }
+
+    const optionIds = new Set<string>(
+      data.options
+        .filter(
+          (option: { id?: unknown }) =>
+            option?.id !== null && option?.id !== undefined
+        )
+        .map((option: { id: unknown }) =>
+          String(option.id).trim().toLowerCase()
+        )
+    );
+
+    if (
+      !optionIds.has(this.HOLIDAY_IS_OPTION_ID) ||
+      !optionIds.has(this.HOLIDAY_NOT_OPTION_ID)
+    ) {
+      errors.push(
+        t('chatbot_flow_validation_holiday_options_required', {
+          nodeLabel,
+        })
+      );
+    }
+  }
+
   private hasMediaFileForNode(
     input: SaveChatbotFlowRequest & Record<string, unknown>,
     nodeId: string,
@@ -1215,6 +1269,7 @@ export class ChatbotFlowSaverUseCase {
       this.validateMenuOrSatisfactionNode(t, node, errors);
       this.validateWeekdayNode(t, node, errors);
       this.validateHoursNode(t, node, errors);
+      this.validateHolidayNode(t, node, errors);
       this.validateDistributionNode(t, node, errors);
       this.validateConditionalNode(t, node, errors);
     }

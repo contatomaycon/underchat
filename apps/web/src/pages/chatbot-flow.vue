@@ -31,6 +31,7 @@ import ChatbotConditionalNode from '@/components/chatbot/ChatbotConditionalNode.
 import ChatbotRandomMessageNode from '@/components/chatbot/ChatbotRandomMessageNode.vue';
 import ChatbotWeekdayNode from '@/components/chatbot/ChatbotWeekdayNode.vue';
 import ChatbotHoursNode from '@/components/chatbot/ChatbotHoursNode.vue';
+import ChatbotHolidayNode from '@/components/chatbot/ChatbotHolidayNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -66,6 +67,7 @@ const nodeTypes = {
   randomMessage: markRaw(ChatbotRandomMessageNode),
   weekday: markRaw(ChatbotWeekdayNode),
   hours: markRaw(ChatbotHoursNode),
+  holiday: markRaw(ChatbotHolidayNode),
 };
 
 const { t } = useI18n();
@@ -566,6 +568,7 @@ const optionNodeTypes = new Set([
   'contact',
   'weekday',
   'hours',
+  'holiday',
 ]);
 
 type WeekdayOptionId =
@@ -594,6 +597,8 @@ interface HoursOption {
 const WEEKDAY_NODE_DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const HOURS_NODE_DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 const HOURS_OUTSIDE_OPTION_ID = 'outside-hours';
+const HOLIDAY_IS_OPTION_ID = 'is-holiday';
+const HOLIDAY_NOT_OPTION_ID = 'not-holiday';
 const HOURS_DEFAULT_START_TIME = '09:00';
 const HOURS_DEFAULT_END_TIME = '18:00';
 const HOURS_TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -1221,6 +1226,36 @@ const addHoursNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode);
 };
 
+const addHolidayNode = (position?: { x: number; y: number }) => {
+  const nodeId = `holiday-${nodeIdCounter++}`;
+  const newNode: Node = {
+    id: nodeId,
+    type: 'holiday',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      holidayMessage: '',
+      options: [
+        {
+          id: HOLIDAY_IS_OPTION_ID,
+          text: t('chatbot_holiday_option_is_holiday'),
+          required: true,
+        },
+        {
+          id: HOLIDAY_NOT_OPTION_ID,
+          text: t('chatbot_holiday_option_not_holiday'),
+          required: true,
+        },
+      ],
+      onRemove: () => removeNode(nodeId),
+      onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const addAiAgentNode = (position?: { x: number; y: number }) => {
   const nodeId = `aiAgent-${nodeIdCounter++}`;
   const newNode: Node = {
@@ -1541,6 +1576,9 @@ const onDrop = (event: DragEvent) => {
       break;
     case 'hours':
       addHoursNode(position);
+      break;
+    case 'holiday':
+      addHolidayNode(position);
       break;
   }
 
@@ -2097,6 +2135,33 @@ const processHoursNodeData = (nodeData: any): void => {
   );
 };
 
+const processHolidayNodeData = (nodeData: any): void => {
+  const options = Array.isArray(nodeData.options) ? nodeData.options : [];
+  const isHolidayOption = options.find(
+    (option: { id?: string }) => option?.id === HOLIDAY_IS_OPTION_ID
+  );
+  const notHolidayOption = options.find(
+    (option: { id?: string }) => option?.id === HOLIDAY_NOT_OPTION_ID
+  );
+
+  nodeData.options = [
+    {
+      id: HOLIDAY_IS_OPTION_ID,
+      text: isHolidayOption?.text || t('chatbot_holiday_option_is_holiday'),
+      required: true,
+    },
+    {
+      id: HOLIDAY_NOT_OPTION_ID,
+      text: notHolidayOption?.text || t('chatbot_holiday_option_not_holiday'),
+      required: true,
+    },
+  ];
+
+  if (nodeData.holidayMessage === undefined || nodeData.holidayMessage === null) {
+    nodeData.holidayMessage = '';
+  }
+};
+
 const processNodeDataByType = (node: Node): void => {
   if (!node.data) {
     node.data = {};
@@ -2145,6 +2210,9 @@ const processNodeDataByType = (node: Node): void => {
     case 'hours':
       processHoursNodeData(node.data);
       break;
+    case 'holiday':
+      processHolidayNodeData(node.data);
+      break;
   }
 };
 
@@ -2166,7 +2234,8 @@ const processLoadedNode = (node: Node): Node => {
       node.type === 'satisfaction' ||
       node.type === 'contact' ||
       node.type === 'aiAgent' ||
-      node.type === 'hours'
+      node.type === 'hours' ||
+      node.type === 'holiday'
     ) {
       node.data.onRemoveOption = (optionId: string) =>
         removeOptionEdge(node.id, optionId);
@@ -2848,6 +2917,26 @@ onUnmounted(() => {
                 >
                   <VIcon icon="tabler-clock-hour-3" class="me-2" />
                   {{ t('chatbot_hours') }}
+                </VBtn>
+                <VBtn
+                  color="primary"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'holiday';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-calendar-star" class="me-2" />
+                  {{ t('chatbot_holidays') }}
                 </VBtn>
                 <VBtn
                   color="distribution"

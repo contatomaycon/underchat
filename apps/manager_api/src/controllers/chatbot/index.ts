@@ -16,6 +16,11 @@ import { saveChatbotFlowConfigurations } from './methods/saveChatbotFlowConfigur
 import { listChatbotFlowConfigurations } from './methods/listChatbotFlowConfigurations';
 import { viewChatbotConfig } from './methods/viewChatbotConfig';
 import { cloneChatbot } from './methods/cloneChatbot';
+import { listNationalHolidays } from './methods/listNationalHolidays';
+import { listLocalHolidays } from './methods/listLocalHolidays';
+import { createLocalHoliday } from './methods/createLocalHoliday';
+import { updateLocalHoliday } from './methods/updateLocalHoliday';
+import { deleteLocalHoliday } from './methods/deleteLocalHoliday';
 
 @injectable()
 class ChatbotController {
@@ -36,6 +41,11 @@ class ChatbotController {
   public saveChatbotFlowConfigurations = saveChatbotFlowConfigurations;
   public listChatbotFlowConfigurations = listChatbotFlowConfigurations;
   public viewChatbotConfig = viewChatbotConfig;
+  public listNationalHolidays = listNationalHolidays;
+  public listLocalHolidays = listLocalHolidays;
+  public createLocalHoliday = createLocalHoliday;
+  public updateLocalHoliday = updateLocalHoliday;
+  public deleteLocalHoliday = deleteLocalHoliday;
 }
 
 export default ChatbotController;

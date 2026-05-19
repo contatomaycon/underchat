@@ -22,6 +22,7 @@ import { EReportAttendancePermissions } from '@core/common/enums/EPermissions/re
 import { EReleasePermissions } from '@core/common/enums/EPermissions/release';
 import { EIntegrationPermissions } from '@core/common/enums/EPermissions/integration';
 import { ERandomMessagePermissions } from '@core/common/enums/EPermissions/randomMessage';
+import { EHolidayPermissions } from '@core/common/enums/EPermissions/holiday';
 
 export default [
   {
@@ -151,6 +152,17 @@ export default [
           ESchedulePermissions.schedule_create,
           ESchedulePermissions.schedule_update,
           ESchedulePermissions.schedule_delete,
+        ],
+      },
+      {
+        title: 'holidays',
+        to: { name: 'holidays' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-calendar-star' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EHolidayPermissions.holiday_group,
+          EHolidayPermissions.holiday_access,
         ],
       },
       {

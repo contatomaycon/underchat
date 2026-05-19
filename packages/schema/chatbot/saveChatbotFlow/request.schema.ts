@@ -29,6 +29,7 @@ const nodeDataSchema = Type.Object({
   selectedAiAgent: Type.Optional(Type.String()),
   defaultQuestion: Type.Optional(Type.String()),
   continueMessage: Type.Optional(Type.String()),
+  holidayMessage: Type.Optional(Type.String()),
   actionAfterInteractions: Type.Optional(Type.Boolean()),
   interactionsQuantity: Type.Optional(Type.Number()),
   distributionType: Type.Optional(Type.String()),

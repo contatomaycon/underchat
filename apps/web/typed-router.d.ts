@@ -235,6 +235,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'holidays': RouteRecordInfo<
+      'holidays',
+      '/holidays',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'integration': RouteRecordInfo<
       'integration',
       '/integration',
@@ -620,6 +627,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/forgot-password.vue': {
       routes:
         | 'forgot-password'
+      views:
+        | never
+    }
+    'src/pages/holidays.vue': {
+      routes:
+        | 'holidays'
       views:
         | never
     }

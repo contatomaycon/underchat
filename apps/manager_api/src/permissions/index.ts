@@ -21,3 +21,4 @@ export * from './aiAgent.permissions';
 export * from './release.permissions';
 export * from './randomMessage.permissions';
 export * from './internalChat.permissions';
+export * from './holiday.permissions';

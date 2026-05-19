@@ -247,6 +247,9 @@ export const chatbotFlowMappings = () => {
                 continueMessage: {
                   type: 'text',
                 },
+                holidayMessage: {
+                  type: 'text',
+                },
                 actionAfterInteractions: {
                   type: 'boolean',
                 },
