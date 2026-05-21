@@ -63,6 +63,10 @@ const HISTORY_RECONCILIATION_MESSAGE_LIMIT = readPositiveIntEnv(
   'HISTORY_RECONCILIATION_MESSAGE_LIMIT',
   100
 );
+const HISTORY_RECONCILIATION_MAX_AGE_MS = readPositiveIntEnv(
+  'HISTORY_RECONCILIATION_MAX_AGE_MS',
+  6 * 60 * 60 * 1000
+);
 const HISTORY_EVENT_BUFFER_FLUSH_DELAY_MS = 1000;
 const HISTORY_EVENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const HISTORY_EVENT_DEDUPE_MAX_SIZE = 100000;
@@ -1286,10 +1290,10 @@ export class WwebjsIncomingMessageService {
       return false;
     }
 
-    if (msg.fromMe || this.shouldSkipHistoricalMessageCandidate(msg)) {
+    if (this.shouldSkipHistoricalMessageCandidate(msg)) {
       this.logEvent('history_event_skipped', {
         id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
+        fromMe: this.isMessageFromMe(msg),
         from: msg.from,
         to: msg.to,
         type: msg.type,
@@ -1304,7 +1308,7 @@ export class WwebjsIncomingMessageService {
     if (this.getRemainingHistoryEventLimit() <= 0) {
       this.logEvent('history_event_limit_reached', {
         id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
+        fromMe: this.isMessageFromMe(msg),
         from: msg.from,
         to: msg.to,
         type: msg.type,
@@ -1317,7 +1321,7 @@ export class WwebjsIncomingMessageService {
     if (this.processedHistoryMessages.has(key)) {
       this.logEvent('history_event_dedupe', {
         id: getMessageIdSerialized(msg),
-        fromMe: msg.fromMe,
+        fromMe: this.isMessageFromMe(msg),
         from: msg.from,
         to: msg.to,
         type: msg.type,
@@ -1344,7 +1348,7 @@ export class WwebjsIncomingMessageService {
     this.scheduleHistoryEventFlush();
     this.logEvent('history_event_buffered', {
       id: getMessageIdSerialized(msg),
-      fromMe: msg.fromMe,
+      fromMe: this.isMessageFromMe(msg),
       from: msg.from,
       to: msg.to,
       type: msg.type,
@@ -1382,7 +1386,7 @@ export class WwebjsIncomingMessageService {
       parseBooleanLike(rawData?.recvFresh) ??
       parseBooleanLike((msg as unknown as { recvFresh?: unknown }).recvFresh);
 
-    return !msg.fromMe && recvFresh === true;
+    return !this.isMessageFromMe(msg) && recvFresh === true;
   }
 
   private getMessageIsNewMsg(msg: Message): boolean | undefined {
@@ -1395,10 +1399,21 @@ export class WwebjsIncomingMessageService {
 
   private shouldSkipHistoricalMessageCandidate(msg: Message): boolean {
     return (
+      this.isMessageFromMe(msg) ||
+      !this.isHistoryMessageWithinAllowedAge(msg) ||
       this.isUnsupportedSystemNotification(msg) ||
       this.isGroupMessage(msg) ||
       this.isStatusOrBroadcastMessage(msg)
     );
+  }
+
+  private isHistoryMessageWithinAllowedAge(msg: Message): boolean {
+    const timestampMs = this.getMessageTimestampMs(msg);
+    if (!timestampMs) {
+      return false;
+    }
+
+    return Date.now() - timestampMs <= HISTORY_RECONCILIATION_MAX_AGE_MS;
   }
 
   private buildHistoryEventDedupeKey(msg: Message): string {
@@ -1536,8 +1551,32 @@ export class WwebjsIncomingMessageService {
   }
 
   private getMessageTimestampMs(message: Message): number | null {
-    const raw = message.timestamp;
-    const value = Number(raw);
+    const rawData = this.getRawMessageData(message);
+    const timestamps = [
+      (message as unknown as { timestamp?: unknown }).timestamp,
+      rawData?.timestamp,
+      rawData?.t,
+      rawData?.senderTimestampMs,
+      rawData?.senderTimestamp,
+      rawData?.latestEditSenderTimestampMs,
+      rawData?.clientReceivedTsMillis,
+    ]
+      .map((raw) => this.normalizeTimestampMs(raw))
+      .filter((value): value is number => value !== null);
+
+    return timestamps.length > 0 ? Math.min(...timestamps) : null;
+  }
+
+  private normalizeTimestampMs(raw: unknown): number | null {
+    if (raw === null || raw === undefined) {
+      return null;
+    }
+
+    const value =
+      typeof raw === 'object' && raw && 'toNumber' in raw
+        ? (raw as { toNumber: () => number }).toNumber()
+        : Number(raw);
+
     if (!Number.isFinite(value) || value <= 0) {
       return null;
     }
@@ -1552,6 +1591,20 @@ export class WwebjsIncomingMessageService {
 
   private getRawMessageData(msg: Message): Record<string, unknown> | undefined {
     return (msg as unknown as { _data?: Record<string, unknown> })._data;
+  }
+
+  private isMessageFromMe(msg: Message): boolean {
+    const rawData = this.getRawMessageData(msg);
+    const candidates = [
+      getFromMeFromSerializedLike(msg.id),
+      getFromMeFromSerializedLike(rawData?.id),
+      parseBooleanLike(msg.fromMe),
+      parseBooleanLike(rawData?.fromMe),
+      parseBooleanLike(rawData?.from_me),
+      getFromMeFromSerializedLike(getMessageIdSerialized(msg)),
+    ];
+
+    return candidates.some((candidate) => candidate === true);
   }
 
   private getPinActionState(
@@ -2348,7 +2401,10 @@ export class WwebjsIncomingMessageService {
   }
 
   public async handleHistoryMessage(msg: Message): Promise<void> {
-    if (msg.fromMe) {
+    if (
+      this.isMessageFromMe(msg) ||
+      !this.isHistoryMessageWithinAllowedAge(msg)
+    ) {
       return;
     }
 
@@ -2369,7 +2425,11 @@ export class WwebjsIncomingMessageService {
     }
 
     try {
-      if (options.fromHistorySync && msg.fromMe) {
+      if (
+        options.fromHistorySync &&
+        (this.isMessageFromMe(msg) ||
+          !this.isHistoryMessageWithinAllowedAge(msg))
+      ) {
         return;
       }
 

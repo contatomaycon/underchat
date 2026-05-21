@@ -188,7 +188,7 @@ export class MessageHistorySyncConsume {
       return;
     }
 
-    if (data.message?.key?.fromMe) {
+    if (this.isMessageFromMe(data.message)) {
       return;
     }
 
@@ -236,11 +236,33 @@ export class MessageHistorySyncConsume {
   private getMessageTimestampMs(
     message: WAMessage | null | undefined
   ): number | null {
-    const raw = message?.messageTimestamp;
+    const messageLike = message as
+      | (WAMessage & {
+          timestamp?: unknown;
+          _data?: Record<string, unknown>;
+        })
+      | null
+      | undefined;
+    const timestamps = [
+      messageLike?.messageTimestamp,
+      messageLike?.timestamp,
+      messageLike?._data?.timestamp,
+      messageLike?._data?.t,
+      messageLike?._data?.senderTimestampMs,
+      messageLike?._data?.senderTimestamp,
+      messageLike?._data?.latestEditSenderTimestampMs,
+      messageLike?._data?.clientReceivedTsMillis,
+    ]
+      .map((raw) => this.normalizeTimestampMs(raw))
+      .filter((value): value is number => value !== null);
+
+    return timestamps.length > 0 ? Math.min(...timestamps) : null;
+  }
+
+  private normalizeTimestampMs(raw: unknown): number | null {
     if (!raw) {
       return null;
     }
-
     if (typeof raw === 'number') {
       return raw > 1_000_000_000_000 ? raw : raw * 1000;
     }
@@ -269,6 +291,39 @@ export class MessageHistorySyncConsume {
     }
 
     return fallback > 1_000_000_000_000 ? fallback : fallback * 1000;
+  }
+
+  private isMessageFromMe(message: WAMessage | null | undefined): boolean {
+    const key = message?.key as
+      | (IMessageKeyIdContext & {
+          fromMe?: unknown;
+          from_me?: unknown;
+        })
+      | undefined;
+    const keyFromMe = key?.fromMe ?? key?.from_me;
+    if (this.isTrueLike(keyFromMe)) {
+      return true;
+    }
+
+    const parsed = parseSerializedMessageId(message?.key?.id);
+    return parsed?.fromMe === true;
+  }
+
+  private isTrueLike(value: unknown): boolean {
+    if (value === true) {
+      return true;
+    }
+
+    if (typeof value === 'number') {
+      return value === 1;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'true' || normalized === '1';
+    }
+
+    return false;
   }
 
   private async getMinAllowedTimestampMs(

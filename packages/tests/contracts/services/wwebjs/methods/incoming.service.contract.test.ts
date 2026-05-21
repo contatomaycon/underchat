@@ -325,12 +325,14 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
     timestamp?: number;
     ack?: number;
     author?: string;
+    idFromMe?: boolean;
     isNewMsg?: boolean;
     recvFresh?: boolean;
     ctwaContext?: Record<string, unknown>;
   }) => {
+    const idFromMe = input.idFromMe ?? input.fromMe;
     const id = {
-      fromMe: input.fromMe,
+      fromMe: idFromMe,
       remote: lidJid,
       id: input.serializedId.split('_').at(-1),
       _serialized: input.serializedId,
@@ -739,15 +741,59 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
         'message_create',
         makeLogMessage({
           serializedId: `true_${lidJid}_history-from-me`,
-          fromMe: true,
+          fromMe: false,
+          idFromMe: true,
           type: 'chat',
           body: 'old outgoing message',
-          from: selfJid,
+          from: lidJid,
           to: lidJid,
           timestamp: nowSeconds - 30,
           isNewMsg: false,
           author: selfJid,
           ack: 3,
+        })
+      );
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+
+      expect(
+        streamProducerService.send.mock.calls.filter(
+          ([topic]) => topic === 'upsert-message-history'
+        )
+      ).toHaveLength(1);
+
+      const oldRawTimestampMessage = makeLogMessage({
+        serializedId: `false_${lidJid}_history-old-raw`,
+        fromMe: false,
+        type: 'chat',
+        body: 'old raw timestamp',
+        from: lidJid,
+        to: selfJid,
+        timestamp: nowSeconds,
+        isNewMsg: false,
+      }) as any;
+      oldRawTimestampMessage._data.t = nowSeconds - 24 * 60 * 60;
+      client.emit('message', oldRawTimestampMessage);
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+
+      expect(
+        streamProducerService.send.mock.calls.filter(
+          ([topic]) => topic === 'upsert-message-history'
+        )
+      ).toHaveLength(1);
+
+      client.emit(
+        'message',
+        makeLogMessage({
+          serializedId: `false_${lidJid}_history-too-old`,
+          fromMe: false,
+          type: 'chat',
+          body: 'too old',
+          from: lidJid,
+          to: selfJid,
+          timestamp: nowSeconds - 24 * 60 * 60,
+          isNewMsg: false,
         })
       );
       await jest.advanceTimersByTimeAsync(1000);
