@@ -808,6 +808,86 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
         )
       ).toHaveLength(1);
 
+      const missingTimestampOldChatMessage = makeLogMessage({
+        serializedId: `false_${lidJid}_history-missing-timestamp-old-chat`,
+        fromMe: false,
+        type: 'chat',
+        body: 'missing timestamp with old chat',
+        from: lidJid,
+        to: selfJid,
+      }) as any;
+      delete missingTimestampOldChatMessage.timestamp;
+      delete missingTimestampOldChatMessage._data.t;
+      missingTimestampOldChatMessage.getChat = jest.fn(async () => ({
+        name: '+55 69 9971-5039',
+        timestamp: nowSeconds - 24 * 60 * 60,
+      }));
+      client.emit('message', missingTimestampOldChatMessage);
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+
+      expect(
+        streamProducerService.send.mock.calls.filter(
+          ([topic]) => topic === 'upsert-message-history'
+        )
+      ).toHaveLength(1);
+
+      const missingTimestampSeconds = Math.floor(Date.now() / 1000);
+      const missingTimestampMessage = makeLogMessage({
+        serializedId: `false_${lidJid}_history-missing-timestamp`,
+        fromMe: false,
+        type: 'chat',
+        body: 'missing timestamp but inside ready grace',
+        from: lidJid,
+        to: selfJid,
+      }) as any;
+      delete missingTimestampMessage.timestamp;
+      delete missingTimestampMessage._data.t;
+      client.emit('message', missingTimestampMessage);
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+
+      let historyPayloads = streamProducerService.send.mock.calls
+        .filter(([topic]) => topic === 'upsert-message-history')
+        .map(([, payload]) => payload as any);
+
+      expect(historyPayloads).toHaveLength(2);
+      expect(historyPayloads[1].message.key.id).toBe(
+        `false_${lidJid}_history-missing-timestamp`
+      );
+      expect(
+        historyPayloads[1].message.messageTimestamp
+      ).toBeGreaterThanOrEqual(missingTimestampSeconds);
+      expect(historyPayloads[1].message.messageTimestamp).toBeLessThanOrEqual(
+        missingTimestampSeconds + 1
+      );
+
+      const fromMeMissingTimestampMessage = makeLogMessage({
+        serializedId: `true_${lidJid}_history-from-me-missing-timestamp`,
+        fromMe: true,
+        type: 'chat',
+        body: 'sent from phone while reconnecting',
+        from: selfJid,
+        to: lidJid,
+        author: selfJid,
+        ack: 3,
+      }) as any;
+      delete fromMeMissingTimestampMessage.timestamp;
+      delete fromMeMissingTimestampMessage._data.t;
+      client.emit('message_create', fromMeMissingTimestampMessage);
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+
+      historyPayloads = streamProducerService.send.mock.calls
+        .filter(([topic]) => topic === 'upsert-message-history')
+        .map(([, payload]) => payload as any);
+      expect(historyPayloads).toHaveLength(2);
+      expect(
+        streamProducerService.send.mock.calls.filter(
+          ([topic]) => topic === 'upsert-message'
+        )
+      ).toHaveLength(0);
+
       client.emit(
         'message',
         makeLogMessage({
@@ -831,7 +911,7 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
         ([topic]) => topic === 'upsert-message'
       );
 
-      expect(historySends).toHaveLength(1);
+      expect(historySends).toHaveLength(2);
       expect(liveSends).toHaveLength(1);
     } finally {
       consoleLogSpy.mockRestore();
@@ -883,6 +963,49 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
         ([topic]) => topic === 'upsert-message-history'
       );
       expect(historySends).toHaveLength(1);
+    } finally {
+      consoleLogSpy.mockRestore();
+      consoleDirSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('drops timestamp-less historical events after the post-ready grace window', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-05-21T12:00:00.000Z'),
+    });
+    const consoleLogSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+    const consoleDirSpy = jest
+      .spyOn(console, 'dir')
+      .mockImplementation(() => undefined);
+
+    try {
+      const { service, streamProducerService } = makeService();
+      const client = new FakeWwebjsClient();
+      service.bindTo(client as never);
+      service.markConnectionReady();
+
+      await jest.advanceTimersByTimeAsync(121000);
+
+      const message = makeLogMessage({
+        serializedId: `false_${lidJid}_late-missing-timestamp`,
+        fromMe: false,
+        type: 'chat',
+        body: 'missing timestamp outside grace',
+        from: lidJid,
+        to: selfJid,
+        isNewMsg: false,
+      }) as any;
+      delete message.timestamp;
+      delete message._data.t;
+      client.emit('message', message);
+
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+
+      expect(streamProducerService.send).not.toHaveBeenCalled();
     } finally {
       consoleLogSpy.mockRestore();
       consoleDirSpy.mockRestore();
