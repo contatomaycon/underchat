@@ -30,20 +30,31 @@ export const useHolidayStore = defineStore('holiday', {
       this.snackbar.status = false;
     },
 
+    _translateMessageIfExists(message: string): string {
+      const trimmedMessage = message.trim();
+
+      if (!trimmedMessage) {
+        return trimmedMessage;
+      }
+
+      return this.i18n.global.te(trimmedMessage)
+        ? this.i18n.global.t(trimmedMessage)
+        : trimmedMessage;
+    },
+
     _translateErrorMessage(backendMessage: string): string {
       if (backendMessage.includes(';')) {
         const messages = backendMessage
           .split(';')
-          .map((msg: string) => msg.trim());
-        const translatedMessages = messages.map((msg: string) => {
-          const translation = this.i18n.global.t(msg);
-          return translation === msg ? msg : translation;
-        });
+          .map((msg: string) => msg.trim())
+          .filter(Boolean);
+        const translatedMessages = messages.map((msg: string) =>
+          this._translateMessageIfExists(msg)
+        );
         return translatedMessages.join('; ');
       }
 
-      const translation = this.i18n.global.t(backendMessage);
-      return translation === backendMessage ? backendMessage : translation;
+      return this._translateMessageIfExists(backendMessage);
     },
 
     _getErrorMessage(error: unknown, defaultKey: string): string {
