@@ -68,6 +68,12 @@ interface IKafkaRetryQueueItem {
   nextAttemptAt: number;
 }
 
+interface IWwebjsIncomingMessageOptions {
+  topic?: string;
+  metadataEvent?: string;
+  fromHistorySync?: boolean;
+}
+
 interface WwebjsReactionEvent {
   id?: unknown;
   msgId?: unknown;
@@ -2001,13 +2007,32 @@ export class WwebjsIncomingMessageService {
       : { remoteJid: primaryJid };
   }
 
-  private async handleIncomingMessage(msg: Message): Promise<void> {
+  public async handleHistoryMessage(msg: Message): Promise<void> {
+    if (msg.fromMe) {
+      return;
+    }
+
+    await this.handleIncomingMessage(msg, {
+      topic: this.kafkaServiceQueueService.upsertMessageHistory(),
+      metadataEvent: 'history_reconciliation_upsert',
+      fromHistorySync: true,
+    });
+  }
+
+  private async handleIncomingMessage(
+    msg: Message,
+    options: IWwebjsIncomingMessageOptions = {}
+  ): Promise<void> {
     const client = this.currentClient;
     if (!client) {
       return;
     }
 
     try {
+      if (options.fromHistorySync && msg.fromMe) {
+        return;
+      }
+
       const resolvedJids = await this.resolveRemoteJids(client, msg);
       if (!resolvedJids) return;
       if (this.shouldSkipResolvedJids(resolvedJids)) return;
@@ -2022,17 +2047,21 @@ export class WwebjsIncomingMessageService {
 
       const upsert = await wwebjsMessageToUpsert(msg, resolvedJids, pushName);
       if (!upsert) return;
+      if (options.fromHistorySync) {
+        upsert.from_history_sync = true;
+      }
       upsert.photo = photo ?? null;
 
       await this.upsertMediaEnricher.enrich(upsert, msg);
 
-      const topic = this.kafkaServiceQueueService.upsertMessage();
+      const topic =
+        options.topic ?? this.kafkaServiceQueueService.upsertMessage();
       const messageId = getMessageIdSerialized(msg);
       const sentNow = await this.sendToKafkaWithRetry(
         topic,
         upsert,
         {
-          event: 'incoming_upsert',
+          event: options.metadataEvent ?? 'incoming_upsert',
           messageId,
           messageKeyId: upsert.message?.key?.id,
         },

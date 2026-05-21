@@ -93,6 +93,7 @@ import {
 } from '@core/plugins/telemetry/observability';
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
 import { ActiveWhatsappValidationService } from '@core/services/activeWhatsappValidation.service';
+import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -143,6 +144,7 @@ export class MessageUpsertConsume {
     generalEnvironment.automationSendDedupeTtlSeconds;
   private readonly DLQ_SEND_DEDUPE_PREFIX = 'message-upsert:dlq:v1';
   private readonly DLQ_SEND_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
+  private readonly historyReceiptCache: MessageHistoryReceiptCacheService;
 
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING = 3;
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE = 4;
@@ -189,7 +191,11 @@ export class MessageUpsertConsume {
     private readonly userService: UserService,
     @inject(ActiveWhatsappValidationService)
     private readonly activeWhatsappValidationService: ActiveWhatsappValidationService
-  ) {}
+  ) {
+    this.historyReceiptCache = new MessageHistoryReceiptCacheService(
+      this.redis
+    );
+  }
 
   private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) {
@@ -1454,6 +1460,14 @@ export class MessageUpsertConsume {
     await this.createChatMessage(existingChat, data);
   }
 
+  private async markHistoryReceiptKnown(data: IUpsertMessage): Promise<void> {
+    try {
+      await this.historyReceiptCache.markKnown(data);
+    } catch {
+      return;
+    }
+  }
+
   private async handleReactionMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -1622,6 +1636,7 @@ export class MessageUpsertConsume {
       this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
+    await this.markHistoryReceiptKnown(data);
 
     const inactivityInteraction =
       isReactionInactivityTypeUser(targetTypeUser) &&
@@ -1730,6 +1745,7 @@ export class MessageUpsertConsume {
       this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
+    await this.markHistoryReceiptKnown(data);
 
     return true;
   }
@@ -1787,6 +1803,7 @@ export class MessageUpsertConsume {
       this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
+    await this.markHistoryReceiptKnown(data);
 
     return true;
   }
@@ -1865,6 +1882,7 @@ export class MessageUpsertConsume {
       this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
+    await this.markHistoryReceiptKnown(data);
   }
 
   private buildTypeUserAndSummary(
@@ -3115,6 +3133,7 @@ export class MessageUpsertConsume {
             this.chatService.updateMessageChat(replacedMessage),
             this.centrifugoChatPublish(replacedMessage),
           ]);
+          await this.markHistoryReceiptKnown(data);
 
           const replacedContent =
             replacedMessage.content as IChatMessage['content'];
@@ -3170,6 +3189,7 @@ export class MessageUpsertConsume {
           existingMessageByKey.message_id,
           inputChatMessage
         );
+        await this.markHistoryReceiptKnown(data);
         return {
           handled: true,
           reactionInactivityInteraction: null,
@@ -3180,6 +3200,10 @@ export class MessageUpsertConsume {
         await this.chatService.createMessageIdempotent(inputChatMessage);
 
       if (!createResult.created && !createResult.conflict) {
+        if (createResult.attempted) {
+          await this.markHistoryReceiptKnown(data);
+        }
+
         return {
           handled: false,
           reactionInactivityInteraction: null,
@@ -3192,11 +3216,15 @@ export class MessageUpsertConsume {
           inputChatMessage
         );
 
+        await this.markHistoryReceiptKnown(data);
+
         return {
           handled: true,
           reactionInactivityInteraction: null,
         };
       }
+
+      await this.markHistoryReceiptKnown(data);
 
       await this.centrifugoChatPublish(inputChatMessage);
 

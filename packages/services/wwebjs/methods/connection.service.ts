@@ -26,6 +26,7 @@ import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppCon
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { WwebjsIncomingMessageService } from './incoming.service';
 import { WwebjsHealthCheckService } from './healthCheck.service';
+import { WwebjsHistoryReconciliationService } from './historyReconciliation.service';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { logger } from '@core/plugins/telemetry/logger';
@@ -148,7 +149,9 @@ export class WwebjsConnectionService {
     @inject(WwebjsIncomingMessageService)
     private readonly incomingMessageService: WwebjsIncomingMessageService,
     @inject(WwebjsHealthCheckService)
-    private readonly healthCheckService: WwebjsHealthCheckService
+    private readonly healthCheckService: WwebjsHealthCheckService,
+    @inject(WwebjsHistoryReconciliationService)
+    private readonly historyReconciliationService?: WwebjsHistoryReconciliationService
   ) {
     this.configureHealthCheck();
   }
@@ -461,6 +464,7 @@ export class WwebjsConnectionService {
     this.healthCheckService.stop();
     this.clearDisconnectRetryTimer();
     this.clearConnectionStateProbe();
+    this.historyReconciliationService?.stop();
     this.incomingMessageService.unbind();
 
     if (this.client) {
@@ -1154,6 +1158,7 @@ export class WwebjsConnectionService {
         this.pendingResolve?.(this.state());
         this.pendingResolve = undefined;
 
+        this.historyReconciliationService?.stop();
         this.incomingMessageService.unbind();
         this.client = undefined;
 
@@ -1221,6 +1226,7 @@ export class WwebjsConnectionService {
           this.client = undefined;
           this.clearChromiumProfileLock();
         });
+        this.historyReconciliationService?.stop();
         this.incomingMessageService.unbind();
         this.clearFolder();
 
@@ -1632,6 +1638,7 @@ export class WwebjsConnectionService {
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
     this.connectionEstablished = true;
     this.incomingMessageService.bindTo(client);
+    this.historyReconciliationService?.start(client);
 
     const phone = this.getClientPhone(client);
 
@@ -1883,6 +1890,7 @@ export class WwebjsConnectionService {
     this.connecting = false;
     this.connectionEstablished = false;
     this.clearDisconnectRetryTimer();
+    this.historyReconciliationService?.stop();
     this.incomingMessageService.unbind();
 
     if (!skipDestroy && this.client) {

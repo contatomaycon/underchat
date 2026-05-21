@@ -241,7 +241,12 @@ export class ChatService {
 
   createMessageIdempotent = async (
     messageChat: IChatMessage
-  ): Promise<{ created: boolean; conflict: boolean; id: string }> => {
+  ): Promise<{
+    created: boolean;
+    conflict: boolean;
+    id: string;
+    attempted: boolean;
+  }> => {
     const normalizedMessage = this.normalizeMessageForElastic(messageChat);
     const mappings = mensageMappings();
 
@@ -251,7 +256,7 @@ export class ChatService {
     );
 
     if (!indicesResult || !normalizedMessage || !normalizedMessage.message_id) {
-      return { created: false, conflict: false, id: '' };
+      return { created: false, conflict: false, id: '', attempted: false };
     }
 
     const documentId = normalizedMessage.message_id;
@@ -265,6 +270,7 @@ export class ChatService {
       created: createResult === 'created',
       conflict: createResult === 'conflict',
       id: documentId,
+      attempted: true,
     };
   };
 

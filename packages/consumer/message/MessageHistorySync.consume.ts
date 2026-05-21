@@ -8,13 +8,18 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { ICachedWorkerDates } from '@core/common/interfaces/ICachedWorkerDates';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { IMessageKeyIdContext } from '@core/common/interfaces/IMessageKeyIdContext';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
 import { WAMessage } from '@whiskeysockets/baileys';
+import Redis from 'ioredis';
 
 @singleton()
 export class MessageHistorySyncConsume {
@@ -22,11 +27,18 @@ export class MessageHistorySyncConsume {
   private isRunning = false;
   private partitionChains: Map<number, Promise<void>> = new Map();
 
-  private readonly HISTORY_WINDOW_MS = 6 * 60 * 60 * 1000;
+  private readonly HISTORY_RECONCILIATION_ENABLED =
+    process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
+  private readonly HISTORY_WINDOW_MS = this.readPositiveIntEnv(
+    'HISTORY_RECONCILIATION_MAX_AGE_MS',
+    6 * 60 * 60 * 1000
+  );
   private readonly WORKER_DATES_CACHE_TTL_MS = 60 * 1000;
   private workerDatesCache: Map<string, ICachedWorkerDates> = new Map();
+  private readonly receiptCache: MessageHistoryReceiptCacheService;
 
   constructor(
+    @inject('Redis') private readonly redis: Redis,
     @inject('Kafka') private readonly kafka: KafkaClient,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
@@ -36,7 +48,9 @@ export class MessageHistorySyncConsume {
     private readonly workerService: WorkerService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService
-  ) {}
+  ) {
+    this.receiptCache = new MessageHistoryReceiptCacheService(this.redis);
+  }
 
   private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) {
@@ -162,6 +176,10 @@ export class MessageHistorySyncConsume {
   }
 
   private async handleHistoryMessage(data: IUpsertMessage): Promise<void> {
+    if (!this.HISTORY_RECONCILIATION_ENABLED) {
+      return;
+    }
+
     if (data.is_call_event) {
       return;
     }
@@ -187,11 +205,19 @@ export class MessageHistorySyncConsume {
       return;
     }
 
-    const exists = await this.messageExistsInElastic(
-      data.account_id,
-      data.message.key.id
-    );
+    if (await this.receiptCache.isKnown(data)) {
+      return;
+    }
+
+    const acquired = await this.receiptCache.acquireInflight(data);
+    if (!acquired) {
+      return;
+    }
+
+    const exists = await this.messageExistsInElastic(data);
     if (exists) {
+      await this.receiptCache.markKnown(data);
+      await this.receiptCache.releaseInflight(data);
       return;
     }
 
@@ -300,32 +326,46 @@ export class MessageHistorySyncConsume {
     return { connectionDateMs, createdAtMs };
   }
 
-  private async messageExistsInElastic(
-    accountId: string,
-    messageId: string
-  ): Promise<boolean> {
-    if (!accountId || !messageId) {
+  private async messageExistsInElastic(data: IUpsertMessage): Promise<boolean> {
+    const accountId = data.account_id;
+    const workerId = data.worker_id;
+    const messageId = data.message?.key?.id;
+    if (!accountId || !workerId || !messageId) {
       return false;
     }
 
-    const must: Array<Record<string, unknown>> = [
+    const keyIdCandidates = this.buildMessageKeyIdCandidates(
+      messageId,
+      data.message?.key
+    );
+    if (!keyIdCandidates.length) {
+      return false;
+    }
+
+    const remoteCandidates = this.collectRemoteIdCandidatesFromKey(
+      data.message?.key
+    );
+    const messageKeyMust: Array<Record<string, unknown>> = [
       {
-        nested: {
-          path: 'message_key',
-          query: {
-            term: { 'message_key.id': messageId },
-          },
+        bool: {
+          should: keyIdCandidates.map((candidate) => ({
+            term: { 'message_key.id': candidate },
+          })),
+          minimum_should_match: 1,
         },
       },
     ];
 
-    if (accountId) {
-      must.push({
-        nested: {
-          path: 'account',
-          query: {
-            term: { 'account.id': accountId },
-          },
+    if (remoteCandidates.length) {
+      messageKeyMust.push({
+        bool: {
+          should: remoteCandidates.flatMap((candidate) => [
+            { term: { 'message_key.remote_jid': candidate } },
+            { term: { 'message_key.remote_jid_alt': candidate } },
+            { term: { 'message_key.participant': candidate } },
+            { term: { 'message_key.participant_alt': candidate } },
+          ]),
+          minimum_should_match: 1,
         },
       });
     }
@@ -334,7 +374,34 @@ export class MessageHistorySyncConsume {
       size: 1,
       query: {
         bool: {
-          must,
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: { 'account.id': accountId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: {
+                  term: { 'worker.id': workerId },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'message_key',
+                query: {
+                  bool: {
+                    must: messageKeyMust,
+                  },
+                },
+              },
+            },
+          ],
         },
       },
     };
@@ -345,6 +412,107 @@ export class MessageHistorySyncConsume {
     );
 
     return !!result && result.hits.hits.length > 0;
+  }
+
+  private collectRemoteIdCandidatesFromKey(
+    keyContext?: IMessageKeyIdContext
+  ): string[] {
+    if (!keyContext) return [];
+
+    const rawCandidates = [
+      keyContext.remoteJid,
+      keyContext.remoteJidAlt,
+      keyContext.participant,
+      keyContext.participantAlt,
+      keyContext.remote_jid,
+      keyContext.remote_jid_alt,
+      keyContext.participant_alt,
+    ];
+
+    const candidates = new Set<string>();
+
+    for (const candidate of rawCandidates) {
+      if (typeof candidate !== 'string' || candidate.trim() === '') continue;
+
+      const raw = candidate.trim();
+      candidates.add(raw);
+
+      const normalized = normalizeJid(raw) ?? raw;
+      candidates.add(normalized);
+
+      if (normalized.endsWith('@s.whatsapp.net')) {
+        candidates.add(normalized.replace(/@s\.whatsapp\.net$/, '@c.us'));
+      }
+
+      if (normalized.endsWith('@c.us')) {
+        candidates.add(normalized.replace(/@c\.us$/, '@s.whatsapp.net'));
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
+  private collectFromMeCandidatesFromKey(
+    keyContext?: IMessageKeyIdContext
+  ): boolean[] {
+    if (!keyContext) {
+      return [false, true];
+    }
+
+    const fromMe = keyContext.fromMe ?? keyContext.from_me;
+    if (typeof fromMe === 'boolean') {
+      return [fromMe];
+    }
+
+    return [false, true];
+  }
+
+  private buildMessageKeyIdCandidates(
+    messageId: string,
+    keyContext?: IMessageKeyIdContext
+  ): string[] {
+    const normalizedId = messageId.trim();
+    if (!normalizedId) {
+      return [];
+    }
+
+    const candidates = new Set<string>([normalizedId]);
+    const parsed = parseSerializedMessageId(normalizedId);
+    const stanzaId = parsed?.stanzaId ?? normalizedId;
+
+    candidates.add(stanzaId);
+
+    const remoteCandidates = new Set<string>([
+      ...this.collectRemoteIdCandidatesFromKey(keyContext),
+      ...(parsed?.remoteJid ? [parsed.remoteJid] : []),
+    ]);
+
+    const fromMeCandidates = this.collectFromMeCandidatesFromKey(keyContext);
+    if (parsed && !fromMeCandidates.includes(parsed.fromMe)) {
+      fromMeCandidates.push(parsed.fromMe);
+    }
+
+    for (const remoteCandidate of remoteCandidates) {
+      for (const fromMe of fromMeCandidates) {
+        candidates.add(`${fromMe}_${remoteCandidate}_${stanzaId}`);
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
+  private readPositiveIntEnv(key: string, fallback: number): number {
+    const raw = process.env[key];
+    if (!raw) {
+      return fallback;
+    }
+
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return fallback;
+    }
+
+    return Math.floor(parsed);
   }
 
   private async commitNext(

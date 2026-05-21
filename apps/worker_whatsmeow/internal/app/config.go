@@ -59,6 +59,10 @@ type Config struct {
 	SendTimeout            time.Duration
 	WhatsAppConnectTimeout time.Duration
 	KafkaPollInterval      time.Duration
+
+	HistoryReconciliationEnabled      bool
+	HistoryReconciliationMessageLimit int
+	HistoryReconciliationMaxAge       time.Duration
 }
 
 func LoadConfig() (Config, error) {
@@ -105,7 +109,10 @@ func LoadConfig() (Config, error) {
 			"WORKER_WHATSAPP_CONNECT_TIMEOUT",
 			45*time.Second,
 		),
-		KafkaPollInterval: 250 * time.Millisecond,
+		KafkaPollInterval:                 250 * time.Millisecond,
+		HistoryReconciliationEnabled:      envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
+		HistoryReconciliationMessageLimit: envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
+		HistoryReconciliationMaxAge:       envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", 6*time.Hour),
 	}
 
 	if cfg.WorkerID == "" {
@@ -122,6 +129,9 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.BalanceGRPCPort <= 0 {
 		return cfg, fmt.Errorf("BALANCER_GRPC_PORT is invalid")
+	}
+	if cfg.HistoryReconciliationMessageLimit <= 0 {
+		cfg.HistoryReconciliationMessageLimit = 100
 	}
 
 	return cfg, nil
@@ -206,6 +216,22 @@ func envDurationDefault(key string, fallback time.Duration) time.Duration {
 	seconds, err := strconv.Atoi(raw)
 	if err == nil && seconds > 0 {
 		return time.Duration(seconds) * time.Second
+	}
+	return fallback
+}
+
+func envMillisDurationDefault(key string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := time.ParseDuration(raw)
+	if err == nil {
+		return value
+	}
+	millis, err := strconv.Atoi(raw)
+	if err == nil && millis > 0 {
+		return time.Duration(millis) * time.Millisecond
 	}
 	return fallback
 }

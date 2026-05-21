@@ -216,6 +216,7 @@ func topicWorkerWebhook(workerID string) string {
 const (
 	topicUpdateMessage                 = "update.message"
 	topicUpsertMessage                 = "upsert.message"
+	topicUpsertMessageHistory          = "upsert.message.history"
 	topicUpdateMessageStatus           = "update.message.status"
 	topicMarkMessageRead               = "mark.message.read"
 	topicPhoneValidationResponse       = "phone.validation.response"

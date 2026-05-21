@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	qrcode "github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -946,6 +948,8 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.publishState(context.Background(), "disconnected", CodeConnectionReplaced, WorkerStatusOffline, "", "", false)
 	case *events.Message:
 		go m.handleIncomingMessage(context.Background(), event)
+	case *events.HistorySync:
+		go m.handleHistorySync(context.Background(), event)
 	case *events.Receipt:
 		go m.handleReceipt(context.Background(), event)
 	case *events.CallOffer:
@@ -1222,6 +1226,89 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 	)
 }
 
+func (m *WhatsAppManager) handleHistorySync(ctx context.Context, evt *events.HistorySync) {
+	if !m.cfg.HistoryReconciliationEnabled || evt == nil || evt.Data == nil {
+		return
+	}
+
+	client := m.getClient()
+	if !m.isAuthenticated(client) {
+		return
+	}
+
+	published := 0
+	for _, conversation := range evt.Data.GetConversations() {
+		if conversation == nil {
+			continue
+		}
+
+		chatJID, err := types.ParseJID(conversation.GetID())
+		if err != nil || !isWhatsmeowUserChat(chatJID) {
+			continue
+		}
+
+		historyMessages := append([]*waHistorySync.HistorySyncMsg(nil), conversation.GetMessages()...)
+		sort.SliceStable(historyMessages, func(i, j int) bool {
+			return historySyncMessageTimestamp(historyMessages[i]) > historySyncMessageTimestamp(historyMessages[j])
+		})
+		if len(historyMessages) > m.cfg.HistoryReconciliationMessageLimit {
+			historyMessages = historyMessages[:m.cfg.HistoryReconciliationMessageLimit]
+		}
+		sort.SliceStable(historyMessages, func(i, j int) bool {
+			return historySyncMessageTimestamp(historyMessages[i]) < historySyncMessageTimestamp(historyMessages[j])
+		})
+
+		for _, historyMessage := range historyMessages {
+			webMessage := historyMessage.GetMessage()
+			if webMessage == nil || !m.isRecentHistoryWebMessage(webMessage.GetMessageTimestamp()) {
+				continue
+			}
+
+			messageEvent, err := client.ParseWebMessage(chatJID, webMessage)
+			if err != nil {
+				log.Printf("whatsmeow history sync parse failed worker_id=%s chat=%s error=%v", m.cfg.WorkerID, chatJID.String(), err)
+				continue
+			}
+			if messageEvent == nil || messageEvent.Info.IsFromMe {
+				continue
+			}
+
+			upsert, err := m.buildIncomingUpsert(ctx, messageEvent, true)
+			if err != nil {
+				log.Printf("whatsmeow history sync map failed worker_id=%s chat=%s id=%s error=%v", m.cfg.WorkerID, chatJID.String(), incomingMessageID(messageEvent), err)
+				continue
+			}
+			if upsert == nil {
+				continue
+			}
+
+			key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
+			if err := m.kafka.SendJSON(ctx, topicUpsertMessageHistory, key, upsert); err != nil {
+				log.Printf("whatsmeow history sync publish failed worker_id=%s chat=%s key=%s error=%v", m.cfg.WorkerID, chatJID.String(), key, err)
+				continue
+			}
+			published++
+		}
+	}
+
+	if published > 0 {
+		log.Printf("whatsmeow history sync candidates published worker_id=%s count=%d", m.cfg.WorkerID, published)
+	}
+}
+
+func (m *WhatsAppManager) isRecentHistoryWebMessage(timestamp uint64) bool {
+	if timestamp == 0 {
+		return false
+	}
+
+	timestampMs := int64(timestamp) * int64(time.Second/time.Millisecond)
+	if timestamp > 1_000_000_000_000 {
+		timestampMs = int64(timestamp)
+	}
+
+	return time.Since(time.UnixMilli(timestampMs)) <= m.cfg.HistoryReconciliationMaxAge
+}
+
 func (m *WhatsAppManager) handleReceipt(ctx context.Context, evt *events.Receipt) {
 	patch := map[string]any{}
 	switch evt.Type {
@@ -1401,8 +1488,9 @@ func (m *WhatsAppManager) publishPresence(ctx context.Context, evt *events.ChatP
 	_ = m.centrifugo.Publish(ctx, chatAccountCentrifugo(m.cfg.AccountID), payload)
 }
 
-func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.Message) (*UpsertMessage, error) {
-	if incomingSkipReason(evt) != "" {
+func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.Message, fromHistorySync ...bool) (*UpsertMessage, error) {
+	isHistorySync := len(fromHistorySync) > 0 && fromHistorySync[0]
+	if incomingSkipReasonWithHistory(evt, isHistorySync) != "" {
 		return nil, nil
 	}
 	messageMap := map[string]any{}
@@ -1429,9 +1517,10 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 			"messageTimestamp": evt.Info.Timestamp.Unix(),
 			"pushName":         evt.Info.PushName,
 		},
-		Content:   content,
-		Photo:     photo,
-		HasQuoted: hasQuoted,
+		Content:         content,
+		Photo:           photo,
+		HasQuoted:       hasQuoted,
+		FromHistorySync: isHistorySync,
 	}, nil
 }
 
@@ -2054,13 +2143,17 @@ func truncateLogValue(value string, limit int) string {
 }
 
 func incomingSkipReason(evt *events.Message) string {
+	return incomingSkipReasonWithHistory(evt, false)
+}
+
+func incomingSkipReasonWithHistory(evt *events.Message, allowHistorySync bool) string {
 	if evt == nil || evt.Message == nil {
 		return "empty_message"
 	}
 	if strings.EqualFold(evt.Info.Category, "peer") {
 		return "peer_category"
 	}
-	if evt.SourceWebMsg != nil && evt.UnavailableRequestID == "" {
+	if !allowHistorySync && evt.SourceWebMsg != nil && evt.UnavailableRequestID == "" {
 		return "history_sync_message"
 	}
 	if evt.Info.IsIncomingBroadcast() {
@@ -2070,6 +2163,13 @@ func incomingSkipReason(evt *events.Message) string {
 		return "non_user_chat"
 	}
 	return ""
+}
+
+func historySyncMessageTimestamp(message *waHistorySync.HistorySyncMsg) uint64 {
+	if message == nil || message.GetMessage() == nil {
+		return 0
+	}
+	return message.GetMessage().GetMessageTimestamp()
 }
 
 func incomingRemoteJIDAlt(evt *events.Message) string {

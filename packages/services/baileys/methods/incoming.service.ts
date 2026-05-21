@@ -50,6 +50,54 @@ import { BaileysDeliveryConfirmationService } from './deliveryConfirmation.servi
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { resolveCallEventJidAndPhone } from '../util/callEventResolver';
 
+function readPositiveIntEnv(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
+}
+
+const HISTORY_RECONCILIATION_ENABLED =
+  process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
+const HISTORY_RECONCILIATION_MESSAGE_LIMIT = readPositiveIntEnv(
+  'HISTORY_RECONCILIATION_MESSAGE_LIMIT',
+  100
+);
+const HISTORY_RECONCILIATION_MAX_AGE_MS = readPositiveIntEnv(
+  'HISTORY_RECONCILIATION_MAX_AGE_MS',
+  6 * 60 * 60 * 1000
+);
+
+interface ProcessIncomingOptions {
+  allowHistoricalUpsert?: boolean;
+  fromHistorySync?: boolean;
+}
+
+function getWAMessageTimestampMs(message: WAMessage): number | null {
+  const raw: unknown = message.messageTimestamp;
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+
+  const value =
+    typeof raw === 'object' && raw && 'toNumber' in raw
+      ? (raw as { toNumber: () => number }).toNumber()
+      : Number(raw);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return value > 1_000_000_000_000 ? value : value * 1000;
+}
+
 @singleton()
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
@@ -613,9 +661,41 @@ export class BaileysIncomingMessageService {
 
       if (!e?.messages?.length) return;
 
+      const isHistoryUpsert = e.type && e.type !== EMessageUpsertType.notify;
+
       for (const m of e.messages) {
         void this.cacheMessage(m);
-        this.processMessage(socket, m, e.type);
+        if (isHistoryUpsert) {
+          this.processHistoryMessage(socket, m, e.type);
+        } else {
+          this.processMessage(socket, m, e.type);
+        }
+      }
+    });
+
+    socket.ev.on('messaging-history.set', (event) => {
+      if (!HISTORY_RECONCILIATION_ENABLED) return;
+      if (!Array.isArray(event?.messages) || event.messages.length === 0) {
+        return;
+      }
+
+      const messages = event.messages
+        .filter((message): message is WAMessage => Boolean(message))
+        .sort(
+          (a, b) =>
+            (getWAMessageTimestampMs(b) ?? 0) -
+            (getWAMessageTimestampMs(a) ?? 0)
+        )
+        .slice(0, HISTORY_RECONCILIATION_MESSAGE_LIMIT)
+        .sort(
+          (a, b) =>
+            (getWAMessageTimestampMs(a) ?? 0) -
+            (getWAMessageTimestampMs(b) ?? 0)
+        );
+
+      for (const message of messages) {
+        void this.cacheMessage(message);
+        this.processHistoryMessage(socket, message, 'messaging-history.set');
       }
     });
 
@@ -665,11 +745,45 @@ export class BaileysIncomingMessageService {
     );
   }
 
+  private processHistoryMessage(
+    socket: WASocket,
+    m: WAMessage,
+    upsertType: string | null
+  ): void {
+    if (!HISTORY_RECONCILIATION_ENABLED) {
+      return;
+    }
+
+    if (m.key?.fromMe) {
+      return;
+    }
+
+    const timestampMs = getWAMessageTimestampMs(m);
+    if (
+      !timestampMs ||
+      Date.now() - timestampMs > HISTORY_RECONCILIATION_MAX_AGE_MS
+    ) {
+      return;
+    }
+
+    this.processIncomingMessage(
+      socket,
+      m,
+      upsertType,
+      this.kafkaServiceQueueService.upsertMessageHistory(),
+      {
+        allowHistoricalUpsert: true,
+        fromHistorySync: true,
+      }
+    );
+  }
+
   private processIncomingMessage(
     socket: WASocket,
     m: WAMessage,
     upsertType: string | null,
-    topic: string
+    topic: string,
+    options: ProcessIncomingOptions = {}
   ): void {
     try {
       if (m.category === 'peer') return;
@@ -685,7 +799,10 @@ export class BaileysIncomingMessageService {
         return;
       }
 
-      if (this.isDuplicate(messageKey)) {
+      const localDuplicateKey = options.fromHistorySync
+        ? `history:${messageKey}`
+        : messageKey;
+      if (this.isDuplicate(localDuplicateKey)) {
         return;
       }
 
@@ -698,6 +815,7 @@ export class BaileysIncomingMessageService {
       if (
         upsertType &&
         upsertType !== EMessageUpsertType.notify &&
+        !options.allowHistoricalUpsert &&
         type !== EMessageType.view_once
       ) {
         return;
@@ -720,6 +838,9 @@ export class BaileysIncomingMessageService {
         photo: null,
         has_quoted: hasQuoted,
       };
+      if (options.fromHistorySync) {
+        inputUpsert.from_history_sync = true;
+      }
 
       const pendingItem = this.enqueueMessage(inputUpsert, messageKey, topic);
       if (!pendingItem) return;
@@ -1486,6 +1607,7 @@ export class BaileysIncomingMessageService {
     if (!this.currentSocket) return;
     try {
       this.currentSocket.ev.removeAllListeners('messages.upsert');
+      this.currentSocket.ev.removeAllListeners('messaging-history.set');
       this.currentSocket.ev.removeAllListeners('messages.update');
       this.currentSocket.ev.removeAllListeners('message-receipt.update');
       this.currentSocket.ev.removeAllListeners('contacts.upsert');
