@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { DataTableHeader } from 'vuetify';
+import { VForm } from 'vuetify/components/VForm';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EHolidayPermissions } from '@core/common/enums/EPermissions/holiday';
-import { EColor } from '@core/common/enums/EColor';
 import { useHolidayStore } from '@/@webcore/stores/holiday';
+import {
+  betweenValidator,
+  integerValidator,
+  requiredValidator,
+} from '@/@webcore/utils/validators';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { useStatesAndCities } from '@/composables/useStatesAndCities';
 
@@ -59,9 +64,12 @@ const selectedYear = ref(currentYear);
 const nationalHolidays = ref<NationalHolidayItem[]>([]);
 const localHolidays = ref<LocalHolidayItem[]>([]);
 const isSavingLocalHoliday = ref(false);
+const isHydratingLocalHolidayForm = ref(false);
+const isLocalHolidayDialogOpen = ref(false);
 const editingHolidayId = ref<string | null>(null);
 const isDialogDeleterShow = ref(false);
 const holidayToDelete = ref<LocalHolidayItem | null>(null);
+const refFormLocalHoliday = ref<VForm>();
 
 const scope = ref<'state' | 'municipal'>('state');
 const name = ref('');
@@ -129,6 +137,62 @@ const localHeaders = computed<DataTableHeader<LocalHolidayItem>[]>(() => [
   { title: t('actions'), key: 'actions', sortable: false },
 ]);
 
+const localHolidayDialogTitle = computed(() =>
+  editingHolidayId.value
+    ? t('chatbot_holiday_local_edit_title')
+    : t('chatbot_holiday_local_add_title')
+);
+
+const scopeRules = computed(() => [
+  (value: unknown) => requiredValidator(value, t('type_required')),
+]);
+
+const hasLocalHolidayRuleValue = (value: unknown) =>
+  value !== null && value !== undefined && String(value).trim().length > 0;
+
+const nameRules = computed(() => [
+  (value: unknown) =>
+    requiredValidator(value, t('chatbot_holiday_name_required')),
+]);
+
+const dayRules = computed(() => [
+  (value: unknown) =>
+    requiredValidator(value, t('chatbot_holiday_day_required')),
+  (value: unknown) =>
+    hasLocalHolidayRuleValue(value)
+      ? integerValidator(value, t('chatbot_holiday_day_invalid'))
+      : true,
+  (value: unknown) =>
+    hasLocalHolidayRuleValue(value)
+      ? betweenValidator(value, 1, 31, t('chatbot_holiday_day_invalid'))
+      : true,
+]);
+
+const monthRules = computed(() => [
+  (value: unknown) =>
+    requiredValidator(value, t('chatbot_holiday_month_required')),
+  (value: unknown) =>
+    hasLocalHolidayRuleValue(value)
+      ? integerValidator(value, t('chatbot_holiday_month_invalid'))
+      : true,
+  (value: unknown) =>
+    hasLocalHolidayRuleValue(value)
+      ? betweenValidator(value, 1, 12, t('chatbot_holiday_month_invalid'))
+      : true,
+]);
+
+const stateRules = computed(() => [
+  (value: unknown) =>
+    requiredValidator(value, t('chatbot_holiday_state_required')),
+]);
+
+const cityRules = computed(() => [
+  (value: unknown) =>
+    scope.value === 'municipal'
+      ? requiredValidator(value, t('chatbot_holiday_city_required'))
+      : true,
+]);
+
 const resetForm = () => {
   editingHolidayId.value = null;
   scope.value = 'state';
@@ -138,6 +202,27 @@ const resetForm = () => {
   stateId.value = null;
   cityId.value = null;
   clearCities();
+};
+
+const resetLocalHolidayFormValidation = async () => {
+  await nextTick();
+  refFormLocalHoliday.value?.resetValidation();
+};
+
+const openCreateLocalHolidayDialog = async () => {
+  resetForm();
+  isLocalHolidayDialogOpen.value = true;
+  await resetLocalHolidayFormValidation();
+};
+
+const closeLocalHolidayDialog = async () => {
+  if (isSavingLocalHoliday.value) {
+    return;
+  }
+
+  isLocalHolidayDialogOpen.value = false;
+  resetForm();
+  await resetLocalHolidayFormValidation();
 };
 
 const loadNationalHolidays = async () => {
@@ -229,37 +314,13 @@ const getHolidayWeekdayLabel = (weekday: string): string => {
   return t(weekdayKey);
 };
 
-const validateLocalHolidayForm = (): boolean => {
-  if (!name.value.trim()) {
-    holidayStore.showSnackbar(t('chatbot_holiday_name_required'), EColor.error);
-    return false;
-  }
-
-  if (!month.value || month.value < 1 || month.value > 12) {
-    holidayStore.showSnackbar(t('chatbot_holiday_month_required'), EColor.error);
-    return false;
-  }
-
-  if (!day.value || day.value < 1 || day.value > 31) {
-    holidayStore.showSnackbar(t('chatbot_holiday_day_required'), EColor.error);
-    return false;
-  }
-
-  if (!stateId.value) {
-    holidayStore.showSnackbar(t('chatbot_holiday_state_required'), EColor.error);
-    return false;
-  }
-
-  if (scope.value === 'municipal' && !cityId.value) {
-    holidayStore.showSnackbar(t('chatbot_holiday_city_required'), EColor.error);
-    return false;
-  }
-
-  return true;
+const validateLocalHolidayForm = async (): Promise<boolean> => {
+  const validateForm = await refFormLocalHoliday.value?.validate();
+  return !!validateForm?.valid;
 };
 
 const saveLocalHoliday = async () => {
-  if (!validateLocalHolidayForm()) {
+  if (!(await validateLocalHolidayForm())) {
     return;
   }
 
@@ -286,7 +347,9 @@ const saveLocalHoliday = async () => {
 
     if (success) {
       await loadLocalHolidays();
+      isLocalHolidayDialogOpen.value = false;
       resetForm();
+      await resetLocalHolidayFormValidation();
     }
   } finally {
     isSavingLocalHoliday.value = false;
@@ -294,18 +357,25 @@ const saveLocalHoliday = async () => {
 };
 
 const editLocalHoliday = async (item: LocalHolidayItem) => {
+  isHydratingLocalHolidayForm.value = true;
+  resetForm();
+
   editingHolidayId.value = item.chatbot_holiday_id;
   scope.value = item.scope;
   name.value = item.name;
   month.value = item.month;
   day.value = item.day;
   stateId.value = item.state_id;
+  isLocalHolidayDialogOpen.value = true;
 
   if (item.state_id) {
     await loadCities(item.state_id);
   }
 
   cityId.value = item.city_id;
+  await nextTick();
+  isHydratingLocalHolidayForm.value = false;
+  await resetLocalHolidayFormValidation();
 };
 
 const deleteLocalHoliday = (item: LocalHolidayItem) => {
@@ -325,7 +395,9 @@ const handleDeleteLocalHoliday = async () => {
     await loadLocalHolidays();
 
     if (editingHolidayId.value === holidayId) {
+      isLocalHolidayDialogOpen.value = false;
       resetForm();
+      await resetLocalHolidayFormValidation();
     }
   }
 
@@ -342,10 +414,19 @@ watch(
 
 watch(
   () => scope.value,
-  (newScope) => {
+  async (newScope) => {
+    if (isHydratingLocalHolidayForm.value) {
+      return;
+    }
+
     if (newScope === 'state') {
       cityId.value = null;
       clearCities();
+      return;
+    }
+
+    if (stateId.value) {
+      await loadCities(stateId.value);
     }
   }
 );
@@ -353,6 +434,10 @@ watch(
 watch(
   () => stateId.value,
   async (newStateId, oldStateId) => {
+    if (isHydratingLocalHolidayForm.value) {
+      return;
+    }
+
     if (!newStateId) {
       cityId.value = null;
       clearCities();
@@ -361,7 +446,11 @@ watch(
 
     if (newStateId !== oldStateId) {
       cityId.value = null;
-      await loadCities(newStateId);
+      clearCities();
+
+      if (scope.value === 'municipal') {
+        await loadCities(newStateId);
+      }
     }
   }
 );
@@ -416,91 +505,15 @@ onMounted(async () => {
 
     <VCard :title="$t('chatbot_holiday_local_table_title')">
       <VCardText>
-        <VRow>
-          <VCol cols="12" md="3">
-            <AppSelectSearch
-              v-model="scope"
-              :items="scopeOptions"
-              item-title="title"
-              item-value="value"
-              :label="$t('type')"
-            />
-          </VCol>
-
-          <VCol cols="12" md="3">
-            <AppTextField
-              v-model="name"
-              :label="$t('name')"
-              :placeholder="$t('chatbot_holiday_name_placeholder')"
-            />
-          </VCol>
-
-          <VCol cols="6" md="2">
-            <AppTextField
-              v-model.number="day"
-              type="number"
-              :label="$t('day')"
-              min="1"
-              max="31"
-            />
-          </VCol>
-
-          <VCol cols="6" md="2">
-            <AppSelect
-              v-model="month"
-              :items="monthOptions"
-              item-title="title"
-              item-value="value"
-              :label="$t('month')"
-            />
-          </VCol>
-
-          <VCol cols="12" md="3">
-            <AppSelectSearch
-              v-model="stateId"
-              :items="filteredStates"
-              :label="$t('state')"
-              :loading="loadingStates"
-              item-title="title"
-              item-value="value"
-              clearable
-            />
-          </VCol>
-
-          <VCol cols="12" md="3" v-if="scope === 'municipal'">
-            <AppSelectSearch
-              v-model="cityId"
-              :items="filteredCities"
-              :label="$t('city')"
-              :loading="loadingCities"
-              item-title="title"
-              item-value="value"
-              :disabled="!stateId"
-              clearable
-            />
-          </VCol>
-
-          <VCol cols="12" md="6" class="d-flex align-end gap-2">
-            <VBtn
-              color="primary"
-              :loading="isSavingLocalHoliday"
-              @click="saveLocalHoliday"
-            >
-              {{ editingHolidayId ? $t('save') : $t('add') }}
-            </VBtn>
-
-            <VBtn
-              v-if="editingHolidayId"
-              variant="outlined"
-              color="secondary"
-              @click="resetForm"
-            >
-              {{ $t('cancel') }}
-            </VBtn>
-          </VCol>
-        </VRow>
-
-        <VDivider class="my-4" />
+        <div class="d-flex justify-start mb-4">
+          <VBtn
+            color="primary"
+            prepend-icon="tabler-plus"
+            @click="openCreateLocalHolidayDialog"
+          >
+            {{ $t('add') }}
+          </VBtn>
+        </div>
 
         <VDataTable
           :headers="localHeaders"
@@ -548,6 +561,139 @@ onMounted(async () => {
             </div>
           </template>
         </VDataTable>
+
+        <VDialog
+          v-model="isLocalHolidayDialogOpen"
+          max-width="720"
+          persistent
+        >
+          <VOverlay
+            :model-value="isSavingLocalHoliday"
+            class="align-center justify-center"
+            contained
+          >
+            <VProgressCircular color="primary" indeterminate size="64" />
+          </VOverlay>
+
+          <VCard>
+            <VCardTitle class="d-flex align-center justify-space-between pa-4">
+              <span>{{ localHolidayDialogTitle }}</span>
+              <VBtn
+                icon
+                size="small"
+                variant="text"
+                :disabled="isSavingLocalHoliday"
+                @click="closeLocalHolidayDialog"
+              >
+                <VIcon icon="tabler-x" />
+              </VBtn>
+            </VCardTitle>
+
+            <VDivider />
+
+            <VCardText class="pa-4">
+              <VForm
+                ref="refFormLocalHoliday"
+                @submit.prevent="saveLocalHoliday"
+              >
+                <VRow>
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
+                    <AppSelectSearch
+                      v-model="scope"
+                      :items="scopeOptions"
+                      item-title="title"
+                      item-value="value"
+                      :rules="scopeRules"
+                      :disabled="isSavingLocalHoliday"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
+                    <AppTextField
+                      v-model="name"
+                      :placeholder="$t('chatbot_holiday_name_placeholder')"
+                      :rules="nameRules"
+                      :disabled="isSavingLocalHoliday"
+                      autofocus
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('day') }}:</VLabel>
+                    <AppTextField
+                      v-model.number="day"
+                      type="number"
+                      min="1"
+                      max="31"
+                      :rules="dayRules"
+                      :disabled="isSavingLocalHoliday"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('month') }}:</VLabel>
+                    <AppSelect
+                      v-model="month"
+                      :items="monthOptions"
+                      item-title="title"
+                      item-value="value"
+                      :rules="monthRules"
+                      :disabled="isSavingLocalHoliday"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('state') }}:</VLabel>
+                    <AppSelectSearch
+                      v-model="stateId"
+                      :items="filteredStates"
+                      :loading="loadingStates"
+                      item-title="title"
+                      item-value="value"
+                      :rules="stateRules"
+                      :disabled="isSavingLocalHoliday"
+                      clearable
+                    />
+                  </VCol>
+
+                  <VCol v-if="scope === 'municipal'" cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('city') }}:</VLabel>
+                    <AppSelectSearch
+                      v-model="cityId"
+                      :items="filteredCities"
+                      :loading="loadingCities"
+                      item-title="title"
+                      item-value="value"
+                      :rules="cityRules"
+                      :disabled="!stateId || isSavingLocalHoliday"
+                      clearable
+                    />
+                  </VCol>
+                </VRow>
+              </VForm>
+            </VCardText>
+
+            <VCardText class="d-flex justify-end flex-wrap gap-3">
+              <VBtn
+                variant="tonal"
+                color="secondary"
+                :disabled="isSavingLocalHoliday"
+                @click="closeLocalHolidayDialog"
+              >
+                {{ $t('cancel') }}
+              </VBtn>
+              <VBtn
+                color="primary"
+                :loading="isSavingLocalHoliday"
+                @click="saveLocalHoliday"
+              >
+                {{ editingHolidayId ? $t('save') : $t('add') }}
+              </VBtn>
+            </VCardText>
+          </VCard>
+        </VDialog>
 
         <VDialogHandler
           v-if="isDialogDeleterShow"
