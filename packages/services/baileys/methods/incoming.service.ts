@@ -663,7 +663,11 @@ export class BaileysIncomingMessageService {
 
       const isHistoryUpsert = e.type && e.type !== EMessageUpsertType.notify;
 
-      for (const m of e.messages) {
+      const messages = isHistoryUpsert
+        ? this.selectLatestHistoryMessages(e.messages)
+        : e.messages;
+
+      for (const m of messages) {
         void this.cacheMessage(m);
         if (isHistoryUpsert) {
           this.processHistoryMessage(socket, m, e.type);
@@ -679,19 +683,7 @@ export class BaileysIncomingMessageService {
         return;
       }
 
-      const messages = event.messages
-        .filter((message): message is WAMessage => Boolean(message))
-        .sort(
-          (a, b) =>
-            (getWAMessageTimestampMs(b) ?? 0) -
-            (getWAMessageTimestampMs(a) ?? 0)
-        )
-        .slice(0, HISTORY_RECONCILIATION_MESSAGE_LIMIT)
-        .sort(
-          (a, b) =>
-            (getWAMessageTimestampMs(a) ?? 0) -
-            (getWAMessageTimestampMs(b) ?? 0)
-        );
+      const messages = this.selectLatestHistoryMessages(event.messages);
 
       for (const message of messages) {
         void this.cacheMessage(message);
@@ -776,6 +768,20 @@ export class BaileysIncomingMessageService {
         fromHistorySync: true,
       }
     );
+  }
+
+  private selectLatestHistoryMessages(messages: WAMessage[]): WAMessage[] {
+    return messages
+      .filter((message): message is WAMessage => Boolean(message))
+      .sort(
+        (a, b) =>
+          (getWAMessageTimestampMs(b) ?? 0) - (getWAMessageTimestampMs(a) ?? 0)
+      )
+      .slice(0, HISTORY_RECONCILIATION_MESSAGE_LIMIT)
+      .sort(
+        (a, b) =>
+          (getWAMessageTimestampMs(a) ?? 0) - (getWAMessageTimestampMs(b) ?? 0)
+      );
   }
 
   private processIncomingMessage(

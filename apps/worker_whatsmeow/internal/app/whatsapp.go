@@ -73,6 +73,12 @@ type freshLoginRequest struct {
 	Phone string
 }
 
+type historySyncCandidate struct {
+	chatJID   types.JID
+	message   *waHistorySync.HistorySyncMsg
+	timestamp uint64
+}
+
 func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, centrifugo *CentrifugoClient, balance *BalanceGRPCClient, storage *StorageClient, redisClient *redis.Client) (*WhatsAppManager, error) {
 	manager := &WhatsAppManager{
 		cfg:        cfg,
@@ -1236,7 +1242,7 @@ func (m *WhatsAppManager) handleHistorySync(ctx context.Context, evt *events.His
 		return
 	}
 
-	published := 0
+	candidates := make([]historySyncCandidate, 0)
 	for _, conversation := range evt.Data.GetConversations() {
 		if conversation == nil {
 			continue
@@ -1247,53 +1253,80 @@ func (m *WhatsAppManager) handleHistorySync(ctx context.Context, evt *events.His
 			continue
 		}
 
-		historyMessages := append([]*waHistorySync.HistorySyncMsg(nil), conversation.GetMessages()...)
-		sort.SliceStable(historyMessages, func(i, j int) bool {
-			return historySyncMessageTimestamp(historyMessages[i]) > historySyncMessageTimestamp(historyMessages[j])
-		})
-		if len(historyMessages) > m.cfg.HistoryReconciliationMessageLimit {
-			historyMessages = historyMessages[:m.cfg.HistoryReconciliationMessageLimit]
+		for _, historyMessage := range conversation.GetMessages() {
+			timestamp := historySyncMessageTimestamp(historyMessage)
+			if timestamp == 0 {
+				continue
+			}
+			candidates = append(candidates, historySyncCandidate{
+				chatJID:   chatJID,
+				message:   historyMessage,
+				timestamp: timestamp,
+			})
 		}
-		sort.SliceStable(historyMessages, func(i, j int) bool {
-			return historySyncMessageTimestamp(historyMessages[i]) < historySyncMessageTimestamp(historyMessages[j])
-		})
+	}
 
-		for _, historyMessage := range historyMessages {
-			webMessage := historyMessage.GetMessage()
-			if webMessage == nil || !m.isRecentHistoryWebMessage(webMessage.GetMessageTimestamp()) {
-				continue
-			}
+	candidates = selectLatestHistorySyncCandidates(
+		candidates,
+		m.cfg.HistoryReconciliationMessageLimit,
+	)
 
-			messageEvent, err := client.ParseWebMessage(chatJID, webMessage)
-			if err != nil {
-				log.Printf("whatsmeow history sync parse failed worker_id=%s chat=%s error=%v", m.cfg.WorkerID, chatJID.String(), err)
-				continue
-			}
-			if messageEvent == nil || messageEvent.Info.IsFromMe {
-				continue
-			}
-
-			upsert, err := m.buildIncomingUpsert(ctx, messageEvent, true)
-			if err != nil {
-				log.Printf("whatsmeow history sync map failed worker_id=%s chat=%s id=%s error=%v", m.cfg.WorkerID, chatJID.String(), incomingMessageID(messageEvent), err)
-				continue
-			}
-			if upsert == nil {
-				continue
-			}
-
-			key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
-			if err := m.kafka.SendJSON(ctx, topicUpsertMessageHistory, key, upsert); err != nil {
-				log.Printf("whatsmeow history sync publish failed worker_id=%s chat=%s key=%s error=%v", m.cfg.WorkerID, chatJID.String(), key, err)
-				continue
-			}
-			published++
+	published := 0
+	for _, candidate := range candidates {
+		chatJID := candidate.chatJID
+		historyMessage := candidate.message
+		webMessage := historyMessage.GetMessage()
+		if webMessage == nil || !m.isRecentHistoryWebMessage(webMessage.GetMessageTimestamp()) {
+			continue
 		}
+
+		messageEvent, err := client.ParseWebMessage(chatJID, webMessage)
+		if err != nil {
+			log.Printf("whatsmeow history sync parse failed worker_id=%s chat=%s error=%v", m.cfg.WorkerID, chatJID.String(), err)
+			continue
+		}
+		if messageEvent == nil || messageEvent.Info.IsFromMe {
+			continue
+		}
+
+		upsert, err := m.buildIncomingUpsert(ctx, messageEvent, true)
+		if err != nil {
+			log.Printf("whatsmeow history sync map failed worker_id=%s chat=%s id=%s error=%v", m.cfg.WorkerID, chatJID.String(), incomingMessageID(messageEvent), err)
+			continue
+		}
+		if upsert == nil {
+			continue
+		}
+
+		key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
+		if err := m.kafka.SendJSON(ctx, topicUpsertMessageHistory, key, upsert); err != nil {
+			log.Printf("whatsmeow history sync publish failed worker_id=%s chat=%s key=%s error=%v", m.cfg.WorkerID, chatJID.String(), key, err)
+			continue
+		}
+		published++
 	}
 
 	if published > 0 {
 		log.Printf("whatsmeow history sync candidates published worker_id=%s count=%d", m.cfg.WorkerID, published)
 	}
+}
+
+func selectLatestHistorySyncCandidates(candidates []historySyncCandidate, limit int) []historySyncCandidate {
+	if limit <= 0 {
+		return nil
+	}
+
+	selected := append([]historySyncCandidate(nil), candidates...)
+	sort.SliceStable(selected, func(i, j int) bool {
+		return selected[i].timestamp > selected[j].timestamp
+	})
+	if len(selected) > limit {
+		selected = selected[:limit]
+	}
+	sort.SliceStable(selected, func(i, j int) bool {
+		return selected[i].timestamp < selected[j].timestamp
+	})
+	return selected
 }
 
 func (m *WhatsAppManager) isRecentHistoryWebMessage(timestamp uint64) bool {

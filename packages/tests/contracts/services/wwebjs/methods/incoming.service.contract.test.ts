@@ -286,6 +286,7 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
     };
     const kafkaServiceQueueService = {
       upsertMessage: jest.fn(() => 'upsert-message'),
+      upsertMessageHistory: jest.fn(() => 'upsert-message-history'),
       updateMessageStatus: jest.fn(() => 'update-message-status'),
     };
     const service = new WwebjsIncomingMessageService(
@@ -324,6 +325,8 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
     timestamp?: number;
     ack?: number;
     author?: string;
+    isNewMsg?: boolean;
+    recvFresh?: boolean;
     ctwaContext?: Record<string, unknown>;
   }) => {
     const id = {
@@ -341,10 +344,12 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
         body,
         type: input.type,
         subtype: input.subtype,
-        t: input.timestamp ?? 1778190016,
+        t: input.timestamp ?? Math.floor(Date.now() / 1000),
         from: input.from,
         to: input.to,
         ack: input.ack,
+        isNewMsg: input.isNewMsg,
+        recvFresh: input.recvFresh,
         notifyName: input.fromMe ? '' : 'Luh',
         ctwaContext: input.ctwaContext,
       },
@@ -353,10 +358,12 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
       hasMedia: false,
       body,
       type: input.type,
-      timestamp: input.timestamp ?? 1778190016,
+      timestamp: input.timestamp ?? Math.floor(Date.now() / 1000),
       from: input.from,
       to: input.to,
       author: input.author,
+      isNewMsg: input.isNewMsg,
+      recvFresh: input.recvFresh,
       deviceType: input.fromMe ? 'android' : 'ios',
       fromMe: input.fromMe,
       hasQuotedMsg: false,
@@ -460,6 +467,12 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
   const flushAsyncHandlers = async () => {
     for (let index = 0; index < 10; index += 1) {
       await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+
+  const flushMicrotasks = async () => {
+    for (let index = 0; index < 20; index += 1) {
+      await Promise.resolve();
     }
   };
 
@@ -668,6 +681,167 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
     } finally {
       consoleLogSpy.mockRestore();
       consoleWarnSpy.mockRestore();
+    }
+  });
+
+  it('routes historical WWebJS message events to the history topic without filling live dedupe', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-05-21T12:00:00.000Z'),
+    });
+    const consoleLogSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+    const consoleDirSpy = jest
+      .spyOn(console, 'dir')
+      .mockImplementation(() => undefined);
+
+    try {
+      const { service, streamProducerService } = makeService();
+      const client = new FakeWwebjsClient();
+      service.bindTo(client as never);
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const serializedId = `false_${lidJid}_history-1`;
+      client.emit(
+        'message',
+        makeLogMessage({
+          serializedId,
+          fromMe: false,
+          type: 'chat',
+          body: 'old message',
+          from: lidJid,
+          to: selfJid,
+          timestamp: nowSeconds - 60,
+          isNewMsg: false,
+        })
+      );
+
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+
+      let historySends = streamProducerService.send.mock.calls.filter(
+        ([topic]) => topic === 'upsert-message-history'
+      );
+      let liveSends = streamProducerService.send.mock.calls.filter(
+        ([topic]) => topic === 'upsert-message'
+      );
+
+      expect(historySends).toHaveLength(1);
+      expect(liveSends).toHaveLength(0);
+      expect(historySends[0][1]).toEqual(
+        expect.objectContaining({
+          from_history_sync: true,
+          type: EMessageType.text,
+        })
+      );
+
+      client.emit(
+        'message_create',
+        makeLogMessage({
+          serializedId: `true_${lidJid}_history-from-me`,
+          fromMe: true,
+          type: 'chat',
+          body: 'old outgoing message',
+          from: selfJid,
+          to: lidJid,
+          timestamp: nowSeconds - 30,
+          isNewMsg: false,
+          author: selfJid,
+          ack: 3,
+        })
+      );
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+
+      expect(
+        streamProducerService.send.mock.calls.filter(
+          ([topic]) => topic === 'upsert-message-history'
+        )
+      ).toHaveLength(1);
+
+      client.emit(
+        'message',
+        makeLogMessage({
+          serializedId,
+          fromMe: false,
+          type: 'chat',
+          body: 'fresh message',
+          from: lidJid,
+          to: selfJid,
+          timestamp: nowSeconds,
+          isNewMsg: false,
+          recvFresh: true,
+        })
+      );
+      await flushMicrotasks();
+
+      historySends = streamProducerService.send.mock.calls.filter(
+        ([topic]) => topic === 'upsert-message-history'
+      );
+      liveSends = streamProducerService.send.mock.calls.filter(
+        ([topic]) => topic === 'upsert-message'
+      );
+
+      expect(historySends).toHaveLength(1);
+      expect(liveSends).toHaveLength(1);
+    } finally {
+      consoleLogSpy.mockRestore();
+      consoleDirSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('buffers only the latest 100 historical WWebJS messages and flushes them chronologically', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-05-21T12:00:00.000Z'),
+    });
+    const consoleLogSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+    const consoleDirSpy = jest
+      .spyOn(console, 'dir')
+      .mockImplementation(() => undefined);
+
+    try {
+      const { service, streamProducerService } = makeService();
+      const client = new FakeWwebjsClient();
+      service.bindTo(client as never);
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      for (let index = 0; index < 105; index += 1) {
+        client.emit(
+          'message',
+          makeLogMessage({
+            serializedId: `false_${lidJid}_history-${index}`,
+            fromMe: false,
+            type: 'chat',
+            body: `history ${index}`,
+            from: lidJid,
+            to: selfJid,
+            timestamp: nowSeconds - 200 + index,
+            isNewMsg: false,
+          })
+        );
+      }
+
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+
+      const historyPayloads = streamProducerService.send.mock.calls
+        .filter(([topic]) => topic === 'upsert-message-history')
+        .map(([, payload]) => payload as any);
+
+      expect(historyPayloads).toHaveLength(100);
+      expect(historyPayloads[0].message.key.id).toBe(
+        `false_${lidJid}_history-5`
+      );
+      expect(historyPayloads[historyPayloads.length - 1].message.key.id).toBe(
+        `false_${lidJid}_history-104`
+      );
+    } finally {
+      consoleLogSpy.mockRestore();
+      consoleDirSpy.mockRestore();
+      jest.useRealTimers();
     }
   });
 });

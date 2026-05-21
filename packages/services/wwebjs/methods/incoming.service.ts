@@ -43,6 +43,30 @@ const SYSTEM_MESSAGE_JID_ALIASES = new Set([
   '0@s.whatsapp.net',
 ]);
 
+function readPositiveIntEnv(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
+}
+
+const HISTORY_RECONCILIATION_ENABLED =
+  process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
+const HISTORY_RECONCILIATION_MESSAGE_LIMIT = readPositiveIntEnv(
+  'HISTORY_RECONCILIATION_MESSAGE_LIMIT',
+  100
+);
+const HISTORY_EVENT_BUFFER_FLUSH_DELAY_MS = 1000;
+const HISTORY_EVENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
+const HISTORY_EVENT_DEDUPE_MAX_SIZE = 100000;
+
 interface WwebjsResolvedJids {
   remoteJid: string;
   remoteJidAlt?: string;
@@ -51,7 +75,8 @@ interface WwebjsResolvedJids {
 type WwebjsIncomingEventSource =
   | 'message'
   | 'message_create'
-  | 'message_ciphertext';
+  | 'message_ciphertext'
+  | 'message_ciphertext_failed';
 
 interface IKafkaSendMetadata {
   event: string;
@@ -66,6 +91,13 @@ interface IKafkaRetryQueueItem {
   metadata: IKafkaSendMetadata;
   attempts: number;
   nextAttemptAt: number;
+}
+
+interface IWwebjsHistoryBufferedMessage {
+  msg: Message;
+  key: string;
+  timestampMs: number;
+  sequence: number;
 }
 
 interface IWwebjsIncomingMessageOptions {
@@ -600,6 +632,15 @@ export class WwebjsIncomingMessageService {
   private readonly processedCalls = new Map<string, number>();
   private readonly processedPinMessages = new Map<string, number>();
   private readonly processedIncomingMessages = new Map<string, number>();
+  private readonly processedHistoryMessages = new Map<string, number>();
+  private readonly historyEventBuffer = new Map<
+    string,
+    IWwebjsHistoryBufferedMessage
+  >();
+  private historyEventFlushTimer: ReturnType<typeof setTimeout> | undefined;
+  private historyEventSequence = 0;
+  private historyEventPublishedCount = 0;
+  private listenerAttachedAtSeconds = 0;
   private readonly PIN_MESSAGE_CACHE_TTL_MS = 15000;
   private readonly INCOMING_MESSAGE_CACHE_TTL_MS = 30000;
   private readonly INCOMING_MESSAGE_CACHE_MAX_SIZE = 100000;
@@ -889,6 +930,11 @@ export class WwebjsIncomingMessageService {
     }
 
     this.currentClient = client;
+    this.listenerAttachedAtSeconds = Math.floor(Date.now() / 1000);
+    this.clearHistoryEventBuffer();
+    this.processedHistoryMessages.clear();
+    this.historyEventSequence = 0;
+    this.historyEventPublishedCount = 0;
     client.on('message', (msg: Message) => {
       this.logEvent('message', {
         id: getMessageIdSerialized(msg),
@@ -897,6 +943,10 @@ export class WwebjsIncomingMessageService {
         to: msg.to,
         type: msg.type,
       });
+
+      if (this.enqueueHistoricalMessageIfNeeded(msg, 'message')) {
+        return;
+      }
 
       if (this.shouldSkipIncomingMessage(msg, 'message')) {
         return;
@@ -920,6 +970,10 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
+      if (this.enqueueHistoricalMessageIfNeeded(msg, 'message_ciphertext')) {
+        return;
+      }
+
       if (this.shouldSkipIncomingMessage(msg, 'message_ciphertext')) {
         return;
       }
@@ -940,6 +994,12 @@ export class WwebjsIncomingMessageService {
       });
       this.handleCiphertextFailed(msg);
 
+      if (
+        this.enqueueHistoricalMessageIfNeeded(msg, 'message_ciphertext_failed')
+      ) {
+        return;
+      }
+
       if (this.shouldSkipIncomingMessage(msg, 'message_ciphertext')) {
         return;
       }
@@ -954,6 +1014,10 @@ export class WwebjsIncomingMessageService {
         to: msg.to,
         type: msg.type,
       });
+
+      if (this.enqueueHistoricalMessageIfNeeded(msg, 'message_create')) {
+        return;
+      }
 
       if (!this.shouldHandleFromMeCreatedMessage(msg)) {
         return;
@@ -1212,6 +1276,282 @@ export class WwebjsIncomingMessageService {
     return [messageId, scopedStanzaDedupeKey]
       .filter((key): key is string => !!key)
       .map((key) => `${namespace}:${key}`);
+  }
+
+  private enqueueHistoricalMessageIfNeeded(
+    msg: Message,
+    source: WwebjsIncomingEventSource
+  ): boolean {
+    if (!this.isHistoricalMessageEvent(msg)) {
+      return false;
+    }
+
+    if (msg.fromMe || this.shouldSkipHistoricalMessageCandidate(msg)) {
+      this.logEvent('history_event_skipped', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        source,
+      });
+      return true;
+    }
+
+    const now = Date.now();
+    this.cleanupProcessedHistoryMessages(now);
+
+    if (this.getRemainingHistoryEventLimit() <= 0) {
+      this.logEvent('history_event_limit_reached', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        source,
+      });
+      return true;
+    }
+
+    const key = this.buildHistoryEventDedupeKey(msg);
+    if (this.processedHistoryMessages.has(key)) {
+      this.logEvent('history_event_dedupe', {
+        id: getMessageIdSerialized(msg),
+        fromMe: msg.fromMe,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        source,
+        dedupeKey: key,
+      });
+      return true;
+    }
+
+    const timestampMs = this.getMessageTimestampMs(msg) ?? now;
+    const existing = this.historyEventBuffer.get(key);
+    const candidate: IWwebjsHistoryBufferedMessage = {
+      msg,
+      key,
+      timestampMs,
+      sequence: this.historyEventSequence++,
+    };
+
+    if (!existing || this.shouldReplaceBufferedHistoryMessage(existing, msg)) {
+      this.historyEventBuffer.set(key, candidate);
+      this.trimHistoryEventBuffer();
+    }
+
+    this.scheduleHistoryEventFlush();
+    this.logEvent('history_event_buffered', {
+      id: getMessageIdSerialized(msg),
+      fromMe: msg.fromMe,
+      from: msg.from,
+      to: msg.to,
+      type: msg.type,
+      source,
+      dedupeKey: key,
+      bufferSize: this.historyEventBuffer.size,
+    });
+    return true;
+  }
+
+  private isHistoricalMessageEvent(msg: Message): boolean {
+    if (!HISTORY_RECONCILIATION_ENABLED) {
+      return false;
+    }
+
+    if (this.isFreshIncomingMessage(msg)) {
+      return false;
+    }
+
+    if (this.getMessageIsNewMsg(msg) === false) {
+      return true;
+    }
+
+    const timestampSeconds = this.getMessageTimestampSeconds(msg);
+    if (!timestampSeconds || !this.listenerAttachedAtSeconds) {
+      return false;
+    }
+
+    return timestampSeconds < this.listenerAttachedAtSeconds;
+  }
+
+  private isFreshIncomingMessage(msg: Message): boolean {
+    const rawData = this.getRawMessageData(msg);
+    const recvFresh =
+      parseBooleanLike(rawData?.recvFresh) ??
+      parseBooleanLike((msg as unknown as { recvFresh?: unknown }).recvFresh);
+
+    return !msg.fromMe && recvFresh === true;
+  }
+
+  private getMessageIsNewMsg(msg: Message): boolean | undefined {
+    const rawData = this.getRawMessageData(msg);
+    return (
+      parseBooleanLike(rawData?.isNewMsg) ??
+      parseBooleanLike((msg as unknown as { isNewMsg?: unknown }).isNewMsg)
+    );
+  }
+
+  private shouldSkipHistoricalMessageCandidate(msg: Message): boolean {
+    return (
+      this.isUnsupportedSystemNotification(msg) ||
+      this.isGroupMessage(msg) ||
+      this.isStatusOrBroadcastMessage(msg)
+    );
+  }
+
+  private buildHistoryEventDedupeKey(msg: Message): string {
+    return (
+      getNonEmptyString(getMessageIdSerialized(msg)) ??
+      getNonEmptyString(buildScopedStanzaDedupeKey(msg)) ??
+      `history:${this.historyEventSequence}`
+    );
+  }
+
+  private shouldReplaceBufferedHistoryMessage(
+    existing: IWwebjsHistoryBufferedMessage,
+    incoming: Message
+  ): boolean {
+    const existingCiphertext = this.isCiphertextMessage(existing.msg);
+    const incomingCiphertext = this.isCiphertextMessage(incoming);
+    if (existingCiphertext !== incomingCiphertext) {
+      return existingCiphertext && !incomingCiphertext;
+    }
+
+    const existingBody = getNonEmptyString(existing.msg.body);
+    const incomingBody = getNonEmptyString(incoming.body);
+    if (!existingBody && incomingBody) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private scheduleHistoryEventFlush(): void {
+    if (this.historyEventFlushTimer) {
+      clearTimeout(this.historyEventFlushTimer);
+    }
+
+    this.historyEventFlushTimer = setTimeout(() => {
+      this.historyEventFlushTimer = undefined;
+      void this.flushHistoryEventBuffer();
+    }, HISTORY_EVENT_BUFFER_FLUSH_DELAY_MS);
+  }
+
+  private async flushHistoryEventBuffer(): Promise<void> {
+    if (this.historyEventBuffer.size === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    this.cleanupProcessedHistoryMessages(now);
+    const remainingLimit = this.getRemainingHistoryEventLimit();
+    if (remainingLimit <= 0) {
+      this.historyEventBuffer.clear();
+      return;
+    }
+
+    const bufferedMessages = Array.from(this.historyEventBuffer.values())
+      .sort((a, b) => b.timestampMs - a.timestampMs || b.sequence - a.sequence)
+      .slice(0, remainingLimit)
+      .sort((a, b) => a.timestampMs - b.timestampMs || a.sequence - b.sequence);
+
+    this.historyEventBuffer.clear();
+
+    for (const bufferedMessage of bufferedMessages) {
+      this.processedHistoryMessages.set(bufferedMessage.key, now);
+      await this.handleHistoryMessage(bufferedMessage.msg);
+    }
+    this.historyEventPublishedCount += bufferedMessages.length;
+
+    this.logEvent('history_event_buffer_flushed', {
+      count: bufferedMessages.length,
+      publishedCount: this.historyEventPublishedCount,
+    });
+  }
+
+  private trimHistoryEventBuffer(): void {
+    const remainingLimit = this.getRemainingHistoryEventLimit();
+    if (remainingLimit <= 0) {
+      this.historyEventBuffer.clear();
+      return;
+    }
+
+    if (this.historyEventBuffer.size <= remainingLimit) {
+      return;
+    }
+
+    const keptEntries = Array.from(this.historyEventBuffer.entries())
+      .sort(
+        ([, a], [, b]) =>
+          b.timestampMs - a.timestampMs || b.sequence - a.sequence
+      )
+      .slice(0, remainingLimit);
+
+    this.historyEventBuffer.clear();
+    for (const [key, value] of keptEntries) {
+      this.historyEventBuffer.set(key, value);
+    }
+  }
+
+  private getRemainingHistoryEventLimit(): number {
+    return Math.max(
+      0,
+      HISTORY_RECONCILIATION_MESSAGE_LIMIT - this.historyEventPublishedCount
+    );
+  }
+
+  private cleanupProcessedHistoryMessages(now: number): void {
+    for (const [key, timestamp] of this.processedHistoryMessages.entries()) {
+      if (now - timestamp > HISTORY_EVENT_DEDUPE_TTL_MS) {
+        this.processedHistoryMessages.delete(key);
+      }
+    }
+
+    if (this.processedHistoryMessages.size <= HISTORY_EVENT_DEDUPE_MAX_SIZE) {
+      return;
+    }
+
+    const excess =
+      this.processedHistoryMessages.size - HISTORY_EVENT_DEDUPE_MAX_SIZE;
+    const iterator = this.processedHistoryMessages.keys();
+    for (let i = 0; i < excess; i++) {
+      const key = iterator.next().value;
+      if (!key) {
+        break;
+      }
+
+      this.processedHistoryMessages.delete(key);
+    }
+  }
+
+  private clearHistoryEventBuffer(): void {
+    if (this.historyEventFlushTimer) {
+      clearTimeout(this.historyEventFlushTimer);
+      this.historyEventFlushTimer = undefined;
+    }
+
+    this.historyEventBuffer.clear();
+  }
+
+  private getMessageTimestampMs(message: Message): number | null {
+    const raw = message.timestamp;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0) {
+      return null;
+    }
+
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
+
+  private getMessageTimestampSeconds(message: Message): number | null {
+    const timestampMs = this.getMessageTimestampMs(message);
+    return timestampMs ? Math.floor(timestampMs / 1000) : null;
+  }
+
+  private getRawMessageData(msg: Message): Record<string, unknown> | undefined {
+    return (msg as unknown as { _data?: Record<string, unknown> })._data;
   }
 
   private getPinActionState(
@@ -3303,10 +3643,15 @@ export class WwebjsIncomingMessageService {
   }
 
   unbind(): void {
+    this.clearHistoryEventBuffer();
     this.currentClient = undefined;
+    this.listenerAttachedAtSeconds = 0;
+    this.historyEventSequence = 0;
+    this.historyEventPublishedCount = 0;
     this.processedCalls.clear();
     this.processedPinMessages.clear();
     this.processedIncomingMessages.clear();
+    this.processedHistoryMessages.clear();
   }
 
   async markRead(keys: IMessageKeyLike[]): Promise<void> {

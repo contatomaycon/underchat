@@ -71,7 +71,10 @@ describe('BaileysIncomingMessageService', () => {
     };
     const service = new BaileysIncomingMessageService(
       streamProducerService as never,
-      { upsertMessage: jest.fn(() => 'upsert-message') } as never,
+      {
+        upsertMessage: jest.fn(() => 'upsert-message'),
+        upsertMessageHistory: jest.fn(() => 'upsert-message-history'),
+      } as never,
       { publishSub: jest.fn(async () => undefined) } as never,
       redis as never,
       { enrich: jest.fn(async () => undefined) } as never,
@@ -374,5 +377,30 @@ describe('BaileysIncomingMessageService', () => {
       }),
       'message-key-2'
     );
+  });
+
+  it('selects the latest 100 historical messages globally and returns them chronologically', () => {
+    const { service } = makeService();
+    const sut = service as unknown as {
+      selectLatestHistoryMessages: (messages: unknown[]) => Array<{
+        key?: { id?: string };
+      }>;
+    };
+
+    const messages = Array.from({ length: 105 }, (_, index) => ({
+      key: {
+        id: `history-${index}`,
+        remoteJid: '5511999999999@s.whatsapp.net',
+        fromMe: false,
+      },
+      messageTimestamp: 1000 + index,
+      message: { conversation: `history ${index}` },
+    }));
+
+    const selected = sut.selectLatestHistoryMessages(messages);
+
+    expect(selected).toHaveLength(100);
+    expect(selected[0].key?.id).toBe('history-5');
+    expect(selected[selected.length - 1].key?.id).toBe('history-104');
   });
 });
