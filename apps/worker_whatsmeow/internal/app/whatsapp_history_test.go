@@ -2,8 +2,13 @@ package app
 
 import (
 	"testing"
+	"time"
 
+	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waHistorySync"
+	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/types"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestSelectLatestHistorySyncCandidatesLimitsGloballyAndReturnsChronologically(t *testing.T) {
@@ -37,5 +42,55 @@ func TestSelectLatestHistorySyncCandidatesLimitsGloballyAndReturnsChronologicall
 		if selected[i].timestamp < selected[i-1].timestamp {
 			t.Fatalf("candidates must be chronological at index %d", i)
 		}
+	}
+}
+
+func TestBuildHistorySyncCandidateFiltersBeforeLimit(t *testing.T) {
+	manager := &WhatsAppManager{
+		cfg: Config{
+			HistoryReconciliationMaxAge: time.Hour,
+		},
+	}
+	chatJID := types.NewJID("5511999999999", types.DefaultUserServer)
+	now := uint64(time.Now().Unix())
+
+	recentIncoming := &waHistorySync.HistorySyncMsg{
+		Message: &waWeb.WebMessageInfo{
+			Key: &waCommon.MessageKey{
+				FromMe: proto.Bool(false),
+			},
+			MessageTimestamp: proto.Uint64(now - 30),
+		},
+	}
+	candidate, ok := manager.buildHistorySyncCandidate(chatJID, recentIncoming)
+	if !ok {
+		t.Fatalf("expected recent incoming message to be eligible")
+	}
+	if candidate.timestamp != now-30 {
+		t.Fatalf("expected timestamp %d, got %d", now-30, candidate.timestamp)
+	}
+
+	ownMessage := &waHistorySync.HistorySyncMsg{
+		Message: &waWeb.WebMessageInfo{
+			Key: &waCommon.MessageKey{
+				FromMe: proto.Bool(true),
+			},
+			MessageTimestamp: proto.Uint64(now - 20),
+		},
+	}
+	if _, ok := manager.buildHistorySyncCandidate(chatJID, ownMessage); ok {
+		t.Fatalf("own messages must not count against the history limit")
+	}
+
+	oldIncoming := &waHistorySync.HistorySyncMsg{
+		Message: &waWeb.WebMessageInfo{
+			Key: &waCommon.MessageKey{
+				FromMe: proto.Bool(false),
+			},
+			MessageTimestamp: proto.Uint64(now - 61*60),
+		},
+	}
+	if _, ok := manager.buildHistorySyncCandidate(chatJID, oldIncoming); ok {
+		t.Fatalf("messages older than the configured history window must be skipped")
 	}
 }

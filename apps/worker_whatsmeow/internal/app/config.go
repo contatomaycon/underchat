@@ -112,7 +112,7 @@ func LoadConfig() (Config, error) {
 		KafkaPollInterval:                 250 * time.Millisecond,
 		HistoryReconciliationEnabled:      envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
 		HistoryReconciliationMessageLimit: envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
-		HistoryReconciliationMaxAge:       envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", 6*time.Hour),
+		HistoryReconciliationMaxAge:       envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", time.Hour),
 	}
 
 	if cfg.WorkerID == "" {

@@ -63,14 +63,16 @@ const HISTORY_RECONCILIATION_MESSAGE_LIMIT = readPositiveIntEnv(
   'HISTORY_RECONCILIATION_MESSAGE_LIMIT',
   100
 );
+const HISTORY_RECONCILIATION_DEFAULT_MAX_AGE_MS = 60 * 60 * 1000;
 const HISTORY_RECONCILIATION_MAX_AGE_MS = readPositiveIntEnv(
   'HISTORY_RECONCILIATION_MAX_AGE_MS',
-  6 * 60 * 60 * 1000
+  HISTORY_RECONCILIATION_DEFAULT_MAX_AGE_MS
 );
 const HISTORY_EVENT_BUFFER_FLUSH_DELAY_MS = 1000;
 const HISTORY_EVENT_POST_READY_GRACE_MS = 2 * 60 * 1000;
 const HISTORY_EVENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const HISTORY_EVENT_DEDUPE_MAX_SIZE = 100000;
+const HISTORY_FETCH_CHAT_SCAN_LIMIT = HISTORY_RECONCILIATION_MESSAGE_LIMIT;
 
 interface WwebjsResolvedJids {
   remoteJid: string;
@@ -99,6 +101,28 @@ interface IKafkaRetryQueueItem {
 }
 
 interface IWwebjsHistoryBufferedMessage {
+  msg: Message;
+  key: string;
+  timestampMs: number;
+  sequence: number;
+}
+
+interface IWwebjsHistoryFetchChat {
+  id?: {
+    _serialized?: string;
+  };
+  isGroup?: boolean;
+  timestamp?: unknown;
+  t?: unknown;
+  lastMessage?: {
+    timestamp?: unknown;
+    t?: unknown;
+    _data?: Record<string, unknown>;
+  };
+  fetchMessages?: (searchOptions: { limit: number }) => Promise<Message[]>;
+}
+
+interface IWwebjsHistoryFetchCandidate {
   msg: Message;
   key: string;
   timestampMs: number;
@@ -1192,6 +1216,208 @@ export class WwebjsIncomingMessageService {
     if (this.historyEventBuffer.size > 0) {
       void this.flushHistoryEventBuffer();
     }
+    void this.reconcileRecentHistoryFromChats(this.currentClient);
+  }
+
+  private async reconcileRecentHistoryFromChats(client: Client): Promise<void> {
+    if (!HISTORY_RECONCILIATION_ENABLED) {
+      return;
+    }
+
+    const getChats = (
+      client as unknown as { getChats?: () => Promise<unknown[]> }
+    ).getChats;
+    if (typeof getChats !== 'function') {
+      return;
+    }
+
+    const startedAt = Date.now();
+    let chats: unknown[];
+    try {
+      chats = await getChats.call(client);
+    } catch (error) {
+      this.logEvent('history_fetch_failed', {
+        step: 'get_chats',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    if (this.currentClient !== client || !this.connectionReady) {
+      return;
+    }
+
+    const recentChats = chats
+      .map((chat) => chat as IWwebjsHistoryFetchChat)
+      .filter((chat) => !this.shouldSkipHistoryFetchChat(chat))
+      .sort(
+        (a, b) =>
+          (this.getHistoryFetchChatTimestampMs(b) ?? 0) -
+          (this.getHistoryFetchChatTimestampMs(a) ?? 0)
+      )
+      .slice(0, HISTORY_FETCH_CHAT_SCAN_LIMIT);
+
+    this.cleanupProcessedHistoryMessages(Date.now());
+    const candidates = new Map<string, IWwebjsHistoryFetchCandidate>();
+    for (const chat of recentChats) {
+      if (this.getRemainingHistoryEventLimit() <= 0) {
+        break;
+      }
+
+      if (typeof chat.fetchMessages !== 'function') {
+        continue;
+      }
+
+      let messages: Message[];
+      try {
+        messages = await chat.fetchMessages({
+          limit: HISTORY_RECONCILIATION_MESSAGE_LIMIT,
+        });
+      } catch (error) {
+        this.logEvent('history_fetch_failed', {
+          step: 'fetch_messages',
+          chatId: this.getHistoryFetchChatId(chat),
+          error: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
+
+      for (const msg of messages) {
+        const candidate = this.buildHistoryFetchCandidate(msg);
+        if (!candidate) {
+          continue;
+        }
+
+        const existing = candidates.get(candidate.key);
+        if (
+          !existing ||
+          this.shouldReplaceBufferedHistoryMessage(existing, candidate.msg)
+        ) {
+          candidates.set(candidate.key, candidate);
+        }
+      }
+    }
+
+    if (!candidates.size || this.currentClient !== client) {
+      return;
+    }
+
+    const now = Date.now();
+    this.cleanupProcessedHistoryMessages(now);
+    const remainingLimit = this.getRemainingHistoryEventLimit();
+    if (remainingLimit <= 0) {
+      return;
+    }
+
+    const selected = Array.from(candidates.values())
+      .sort((a, b) => b.timestampMs - a.timestampMs || b.sequence - a.sequence)
+      .slice(0, remainingLimit)
+      .sort((a, b) => a.timestampMs - b.timestampMs || a.sequence - b.sequence);
+
+    let publishedCount = 0;
+    for (const candidate of selected) {
+      this.processedHistoryMessages.set(candidate.key, now);
+      const published = await this.handleHistoryMessage(candidate.msg);
+      if (published) {
+        publishedCount += 1;
+      }
+    }
+
+    this.historyEventPublishedCount += publishedCount;
+    this.logEvent('history_fetch_flushed', {
+      count: publishedCount,
+      candidateCount: selected.length,
+      scannedChats: recentChats.length,
+      publishedCount: this.historyEventPublishedCount,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  private shouldSkipHistoryFetchChat(chat: IWwebjsHistoryFetchChat): boolean {
+    if (chat.isGroup === true) {
+      return true;
+    }
+
+    const chatId = this.getHistoryFetchChatId(chat);
+    if (chatId) {
+      const normalized = normalizeJid(chatId) ?? chatId;
+      if (
+        this.shouldSkipChat(normalized) ||
+        this.isGroupOrBroadcastJid(normalized)
+      ) {
+        return true;
+      }
+    }
+
+    const timestampMs = this.getHistoryFetchChatTimestampMs(chat);
+    return (
+      timestampMs !== null && !this.isTimestampWithinHistoryMaxAge(timestampMs)
+    );
+  }
+
+  private getHistoryFetchChatId(
+    chat: IWwebjsHistoryFetchChat
+  ): string | undefined {
+    return getNonEmptyString(chat.id?._serialized);
+  }
+
+  private getHistoryFetchChatTimestampMs(
+    chat: IWwebjsHistoryFetchChat
+  ): number | null {
+    const timestamps = [
+      chat.timestamp,
+      chat.t,
+      chat.lastMessage?.timestamp,
+      chat.lastMessage?.t,
+      chat.lastMessage?._data?.timestamp,
+      chat.lastMessage?._data?.t,
+    ]
+      .map((raw) => this.normalizeTimestampMs(raw))
+      .filter((value): value is number => value !== null);
+
+    return timestamps.length > 0 ? Math.max(...timestamps) : null;
+  }
+
+  private buildHistoryFetchCandidate(
+    msg: Message
+  ): IWwebjsHistoryFetchCandidate | null {
+    const skipReason = this.getHistoricalMessageSkipReason(msg);
+    const ageStatus = this.getHistoryMessageAgeStatus(msg);
+    if (skipReason) {
+      this.logEvent('history_fetch_skipped', {
+        id: getMessageIdSerialized(msg),
+        fromMe: this.isMessageFromMe(msg),
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        reason: skipReason,
+        timestampMs: ageStatus.timestampMs ?? undefined,
+        ageMs: ageStatus.ageMs ?? undefined,
+        maxAgeMs: HISTORY_RECONCILIATION_MAX_AGE_MS,
+      });
+      return null;
+    }
+
+    const now = Date.now();
+    const key = this.buildHistoryEventDedupeKey(msg);
+    if (this.processedHistoryMessages.has(key)) {
+      this.logEvent('history_fetch_dedupe', {
+        id: getMessageIdSerialized(msg),
+        fromMe: this.isMessageFromMe(msg),
+        from: msg.from,
+        to: msg.to,
+        type: msg.type,
+        dedupeKey: key,
+      });
+      return null;
+    }
+
+    return {
+      msg,
+      key,
+      timestampMs: this.getMessageTimestampMs(msg) ?? now,
+      sequence: this.historyEventSequence++,
+    };
   }
 
   private shouldSkipChat(remoteJid: string): boolean {

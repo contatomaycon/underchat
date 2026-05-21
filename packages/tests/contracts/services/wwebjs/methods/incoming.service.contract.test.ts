@@ -473,7 +473,7 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
   };
 
   const flushMicrotasks = async () => {
-    for (let index = 0; index < 20; index += 1) {
+    for (let index = 0; index < 100; index += 1) {
       await Promise.resolve();
     }
   };
@@ -913,6 +913,103 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
 
       expect(historySends).toHaveLength(2);
       expect(liveSends).toHaveLength(1);
+    } finally {
+      consoleLogSpy.mockRestore();
+      consoleDirSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('fetches recent chat messages on ready and routes missing history to the history topic', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-05-21T12:00:00.000Z'),
+    });
+    const consoleLogSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+    const consoleDirSpy = jest
+      .spyOn(console, 'dir')
+      .mockImplementation(() => undefined);
+
+    try {
+      const { service, streamProducerService } = makeService();
+      const client = new FakeWwebjsClient() as FakeWwebjsClient & {
+        getChats: jest.Mock;
+      };
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const fetchMessages = jest.fn(async () => [
+        makeLogMessage({
+          serializedId: `false_${lidJid}_history-fetch-too-old`,
+          fromMe: false,
+          type: 'chat',
+          body: 'too old',
+          from: lidJid,
+          to: selfJid,
+          timestamp: nowSeconds - 61 * 60,
+          isNewMsg: false,
+        }),
+        makeLogMessage({
+          serializedId: `false_${lidJid}_history-fetch-11`,
+          fromMe: false,
+          type: 'chat',
+          body: '11',
+          from: lidJid,
+          to: selfJid,
+          timestamp: nowSeconds - 120,
+          isNewMsg: false,
+        }),
+        makeLogMessage({
+          serializedId: `false_${lidJid}_history-fetch-12`,
+          fromMe: false,
+          type: 'chat',
+          body: '12',
+          from: lidJid,
+          to: selfJid,
+          timestamp: nowSeconds - 60,
+          isNewMsg: false,
+        }),
+        makeLogMessage({
+          serializedId: `false_${lidJid}_history-fetch-13`,
+          fromMe: false,
+          type: 'chat',
+          body: '13',
+          from: lidJid,
+          to: selfJid,
+          timestamp: nowSeconds - 30,
+          isNewMsg: false,
+        }),
+      ]);
+      client.getChats = jest.fn(async () => [
+        {
+          id: { _serialized: lidJid },
+          isGroup: false,
+          timestamp: nowSeconds - 30,
+          fetchMessages,
+        },
+      ]);
+
+      service.bindTo(client as never);
+      service.markConnectionReady();
+      await flushMicrotasks();
+
+      const historyPayloads = streamProducerService.send.mock.calls
+        .filter(([topic]) => topic === 'upsert-message-history')
+        .map(([, payload]) => payload as any);
+      const liveSends = streamProducerService.send.mock.calls.filter(
+        ([topic]) => topic === 'upsert-message'
+      );
+
+      expect(fetchMessages).toHaveBeenCalledWith({ limit: 100 });
+      expect(historyPayloads).toHaveLength(3);
+      expect(historyPayloads.map((payload) => payload.message.key.id)).toEqual([
+        `false_${lidJid}_history-fetch-11`,
+        `false_${lidJid}_history-fetch-12`,
+        `false_${lidJid}_history-fetch-13`,
+      ]);
+      expect(
+        historyPayloads.every((payload) => payload.from_history_sync)
+      ).toBe(true);
+      expect(liveSends).toHaveLength(0);
     } finally {
       consoleLogSpy.mockRestore();
       consoleDirSpy.mockRestore();

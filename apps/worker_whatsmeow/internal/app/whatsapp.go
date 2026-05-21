@@ -1254,15 +1254,11 @@ func (m *WhatsAppManager) handleHistorySync(ctx context.Context, evt *events.His
 		}
 
 		for _, historyMessage := range conversation.GetMessages() {
-			timestamp := historySyncMessageTimestamp(historyMessage)
-			if timestamp == 0 {
+			candidate, ok := m.buildHistorySyncCandidate(chatJID, historyMessage)
+			if !ok {
 				continue
 			}
-			candidates = append(candidates, historySyncCandidate{
-				chatJID:   chatJID,
-				message:   historyMessage,
-				timestamp: timestamp,
-			})
+			candidates = append(candidates, candidate)
 		}
 	}
 
@@ -1327,6 +1323,28 @@ func selectLatestHistorySyncCandidates(candidates []historySyncCandidate, limit 
 		return selected[i].timestamp < selected[j].timestamp
 	})
 	return selected
+}
+
+func (m *WhatsAppManager) buildHistorySyncCandidate(chatJID types.JID, historyMessage *waHistorySync.HistorySyncMsg) (historySyncCandidate, bool) {
+	webMessage := historyMessage.GetMessage()
+	if webMessage == nil {
+		return historySyncCandidate{}, false
+	}
+
+	if webMessage.GetKey().GetFromMe() {
+		return historySyncCandidate{}, false
+	}
+
+	timestamp := webMessage.GetMessageTimestamp()
+	if timestamp == 0 || !m.isRecentHistoryWebMessage(timestamp) {
+		return historySyncCandidate{}, false
+	}
+
+	return historySyncCandidate{
+		chatJID:   chatJID,
+		message:   historyMessage,
+		timestamp: timestamp,
+	}, true
 }
 
 func (m *WhatsAppManager) isRecentHistoryWebMessage(timestamp uint64) bool {

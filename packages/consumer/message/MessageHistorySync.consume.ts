@@ -31,7 +31,7 @@ export class MessageHistorySyncConsume {
     process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
   private readonly HISTORY_WINDOW_MS = this.readPositiveIntEnv(
     'HISTORY_RECONCILIATION_MAX_AGE_MS',
-    6 * 60 * 60 * 1000
+    60 * 60 * 1000
   );
   private readonly WORKER_DATES_CACHE_TTL_MS = 60 * 1000;
   private workerDatesCache: Map<string, ICachedWorkerDates> = new Map();

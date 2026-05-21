@@ -70,9 +70,10 @@ const HISTORY_RECONCILIATION_MESSAGE_LIMIT = readPositiveIntEnv(
   'HISTORY_RECONCILIATION_MESSAGE_LIMIT',
   100
 );
+const HISTORY_RECONCILIATION_DEFAULT_MAX_AGE_MS = 60 * 60 * 1000;
 const HISTORY_RECONCILIATION_MAX_AGE_MS = readPositiveIntEnv(
   'HISTORY_RECONCILIATION_MAX_AGE_MS',
-  6 * 60 * 60 * 1000
+  HISTORY_RECONCILIATION_DEFAULT_MAX_AGE_MS
 );
 
 interface ProcessIncomingOptions {
@@ -742,19 +743,7 @@ export class BaileysIncomingMessageService {
     m: WAMessage,
     upsertType: string | null
   ): void {
-    if (!HISTORY_RECONCILIATION_ENABLED) {
-      return;
-    }
-
-    if (m.key?.fromMe) {
-      return;
-    }
-
-    const timestampMs = getWAMessageTimestampMs(m);
-    if (
-      !timestampMs ||
-      Date.now() - timestampMs > HISTORY_RECONCILIATION_MAX_AGE_MS
-    ) {
+    if (!this.isHistoryMessageCandidate(m)) {
       return;
     }
 
@@ -772,7 +761,9 @@ export class BaileysIncomingMessageService {
 
   private selectLatestHistoryMessages(messages: WAMessage[]): WAMessage[] {
     return messages
-      .filter((message): message is WAMessage => Boolean(message))
+      .filter((message): message is WAMessage =>
+        this.isHistoryMessageCandidate(message)
+      )
       .sort(
         (a, b) =>
           (getWAMessageTimestampMs(b) ?? 0) - (getWAMessageTimestampMs(a) ?? 0)
@@ -782,6 +773,30 @@ export class BaileysIncomingMessageService {
         (a, b) =>
           (getWAMessageTimestampMs(a) ?? 0) - (getWAMessageTimestampMs(b) ?? 0)
       );
+  }
+
+  private isHistoryMessageCandidate(m: WAMessage | null | undefined): boolean {
+    if (!HISTORY_RECONCILIATION_ENABLED || !m) {
+      return false;
+    }
+
+    if (m.category === 'peer' || m.key?.fromMe) {
+      return false;
+    }
+
+    if (getChatKind(m) !== EChatKind.user) {
+      return false;
+    }
+
+    const timestampMs = getWAMessageTimestampMs(m);
+    if (
+      !timestampMs ||
+      Date.now() - timestampMs > HISTORY_RECONCILIATION_MAX_AGE_MS
+    ) {
+      return false;
+    }
+
+    return Boolean(mapIncomingToType(m));
   }
 
   private processIncomingMessage(

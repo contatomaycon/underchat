@@ -7,9 +7,20 @@ jest.mock('@whiskeysockets/baileys', () => ({
     Message: {
       decode: jest.fn(),
       encode: jest.fn(() => ({ finish: () => Buffer.from('') })),
+      ProtocolMessage: {
+        Type: {
+          REVOKE: 0,
+          MESSAGE_EDIT: 1,
+          EPHEMERAL_SETTING: 2,
+          EPHEMERAL_SYNC_RESPONSE: 3,
+        },
+      },
     },
     WebMessageInfo: {
       Status: {},
+      StubType: {
+        CIPHERTEXT: 1,
+      },
     },
   },
   isJidBroadcast: (jid?: string) => jid?.endsWith('@broadcast') ?? false,
@@ -380,27 +391,94 @@ describe('BaileysIncomingMessageService', () => {
   });
 
   it('selects the latest 100 historical messages globally and returns them chronologically', () => {
-    const { service } = makeService();
-    const sut = service as unknown as {
-      selectLatestHistoryMessages: (messages: unknown[]) => Array<{
-        key?: { id?: string };
-      }>;
-    };
+    jest.useFakeTimers({
+      now: new Date('2026-05-21T12:00:00.000Z'),
+    });
 
-    const messages = Array.from({ length: 105 }, (_, index) => ({
-      key: {
-        id: `history-${index}`,
-        remoteJid: '5511999999999@s.whatsapp.net',
-        fromMe: false,
-      },
-      messageTimestamp: 1000 + index,
-      message: { conversation: `history ${index}` },
-    }));
+    try {
+      const { service } = makeService();
+      const sut = service as unknown as {
+        selectLatestHistoryMessages: (messages: unknown[]) => Array<{
+          key?: { id?: string };
+        }>;
+      };
+      const nowSeconds = Math.floor(Date.now() / 1000);
 
-    const selected = sut.selectLatestHistoryMessages(messages);
+      const messages = Array.from({ length: 105 }, (_, index) => ({
+        key: {
+          id: `history-${index}`,
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: false,
+        },
+        messageTimestamp: nowSeconds - 200 + index,
+        message: { conversation: `history ${index}` },
+      }));
 
-    expect(selected).toHaveLength(100);
-    expect(selected[0].key?.id).toBe('history-5');
-    expect(selected[selected.length - 1].key?.id).toBe('history-104');
+      const selected = sut.selectLatestHistoryMessages(messages);
+
+      expect(selected).toHaveLength(100);
+      expect(selected[0].key?.id).toBe('history-5');
+      expect(selected[selected.length - 1].key?.id).toBe('history-104');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('filters non-receivable Baileys history before enforcing the 100 message limit', () => {
+    jest.useFakeTimers({
+      now: new Date('2026-05-21T12:00:00.000Z'),
+    });
+
+    try {
+      const { service } = makeService();
+      const sut = service as unknown as {
+        selectLatestHistoryMessages: (messages: unknown[]) => Array<{
+          key?: { id?: string };
+        }>;
+      };
+      const nowSeconds = Math.floor(Date.now() / 1000);
+
+      const ownMessages = Array.from({ length: 100 }, (_, index) => ({
+        key: {
+          id: `own-${index}`,
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: true,
+        },
+        messageTimestamp: nowSeconds - index,
+        message: { conversation: `own ${index}` },
+      }));
+      const eligibleMessages = [11, 12, 13].map((value, index) => ({
+        key: {
+          id: `history-${value}`,
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: false,
+        },
+        messageTimestamp: nowSeconds - 200 + index,
+        message: { conversation: String(value) },
+      }));
+      const oldMessage = {
+        key: {
+          id: 'history-too-old',
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: false,
+        },
+        messageTimestamp: nowSeconds - 61 * 60,
+        message: { conversation: 'too old' },
+      };
+
+      const selected = sut.selectLatestHistoryMessages([
+        ...ownMessages,
+        oldMessage,
+        ...eligibleMessages,
+      ]);
+
+      expect(selected.map((message) => message.key?.id)).toEqual([
+        'history-11',
+        'history-12',
+        'history-13',
+      ]);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
