@@ -19,6 +19,12 @@ interface HolidayData {
 
 const HOLIDAY_IS_OPTION_ID = 'is-holiday';
 const HOLIDAY_NOT_OPTION_ID = 'not-holiday';
+const HOLIDAY_NAMES_VARIABLE = '{{ holiday_names }}';
+const HOLIDAY_TAGS_VARIABLE = '{{ holiday_tags }}';
+const holidayPlaceholderParams = {
+  holiday_names: HOLIDAY_NAMES_VARIABLE,
+  holiday_tags: HOLIDAY_TAGS_VARIABLE,
+};
 
 const props = defineProps<NodeProps>();
 const { t } = useI18n();
@@ -120,12 +126,16 @@ watch(
           <VLabel class="text-body-2">{{ t('chatbot_holiday_message') }}</VLabel>
           <AppInfoTooltip
             :title="t('chatbot_holiday_placeholders_title')"
-            :text="t('chatbot_holiday_placeholders_help')"
+            :text="
+              t('chatbot_holiday_placeholders_help', holidayPlaceholderParams)
+            "
           />
         </div>
         <VTextarea
           v-model="holidayData.holidayMessage"
-          :placeholder="t('chatbot_holiday_message_placeholder')"
+          :placeholder="
+            t('chatbot_holiday_message_placeholder', holidayPlaceholderParams)
+          "
           variant="outlined"
           density="comfortable"
           rows="3"
