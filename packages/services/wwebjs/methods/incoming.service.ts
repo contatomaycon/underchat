@@ -645,6 +645,7 @@ export class WwebjsIncomingMessageService {
   private historyEventSequence = 0;
   private historyEventPublishedCount = 0;
   private listenerAttachedAtSeconds = 0;
+  private connectionReady = false;
   private readonly PIN_MESSAGE_CACHE_TTL_MS = 15000;
   private readonly INCOMING_MESSAGE_CACHE_TTL_MS = 30000;
   private readonly INCOMING_MESSAGE_CACHE_MAX_SIZE = 100000;
@@ -935,6 +936,7 @@ export class WwebjsIncomingMessageService {
 
     this.currentClient = client;
     this.listenerAttachedAtSeconds = Math.floor(Date.now() / 1000);
+    this.connectionReady = false;
     this.clearHistoryEventBuffer();
     this.processedHistoryMessages.clear();
     this.historyEventSequence = 0;
@@ -1169,6 +1171,18 @@ export class WwebjsIncomingMessageService {
     );
   }
 
+  public markConnectionReady(): void {
+    if (!this.currentClient) {
+      return;
+    }
+
+    this.connectionReady = true;
+    this.listenerAttachedAtSeconds = Math.floor(Date.now() / 1000);
+    if (this.historyEventBuffer.size > 0) {
+      void this.flushHistoryEventBuffer();
+    }
+  }
+
   private shouldSkipChat(remoteJid: string): boolean {
     const normalized = getNonEmptyString(remoteJid);
     if (!normalized) return true;
@@ -1368,6 +1382,10 @@ export class WwebjsIncomingMessageService {
       return false;
     }
 
+    if (!this.connectionReady) {
+      return true;
+    }
+
     if (this.getMessageIsNewMsg(msg) === false) {
       return true;
     }
@@ -1444,6 +1462,10 @@ export class WwebjsIncomingMessageService {
   }
 
   private scheduleHistoryEventFlush(): void {
+    if (!this.connectionReady) {
+      return;
+    }
+
     if (this.historyEventFlushTimer) {
       clearTimeout(this.historyEventFlushTimer);
     }
@@ -3706,6 +3728,7 @@ export class WwebjsIncomingMessageService {
     this.clearHistoryEventBuffer();
     this.currentClient = undefined;
     this.listenerAttachedAtSeconds = 0;
+    this.connectionReady = false;
     this.historyEventSequence = 0;
     this.historyEventPublishedCount = 0;
     this.processedCalls.clear();

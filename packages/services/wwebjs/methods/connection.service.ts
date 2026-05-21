@@ -933,6 +933,7 @@ export class WwebjsConnectionService {
       const client = new ClientCtor(clientOptions);
 
       this.client = client;
+      this.incomingMessageService.bindTo(client);
       this.startConnectionStateProbe(client, attemptId, proxy);
       this.logConnectionEvent('client_initialized', {
         attempt_id: attemptId,
@@ -1633,7 +1634,7 @@ export class WwebjsConnectionService {
     this.clearDisconnectRetryTimer();
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
     this.connectionEstablished = true;
-    this.incomingMessageService.bindTo(client);
+    this.incomingMessageService.markConnectionReady();
     const phone = this.getClientPhone(client);
 
     const payload: IBaileysConnectionState = {

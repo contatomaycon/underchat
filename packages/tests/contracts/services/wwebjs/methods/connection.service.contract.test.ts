@@ -89,6 +89,7 @@ describe('WwebjsConnectionService', () => {
     };
     const incomingMessageService = {
       bindTo: jest.fn(),
+      markConnectionReady: jest.fn(),
       unbind: jest.fn(),
     };
     const healthCheckService = {

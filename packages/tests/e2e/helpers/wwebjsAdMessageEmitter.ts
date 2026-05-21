@@ -797,6 +797,7 @@ async function main(): Promise<void> {
     );
     const client = new FakeWwebjsClient(replay);
     service.bindTo(client as never);
+    service.markConnectionReady();
 
     const historyEvents = buildHistoryEvents(replay);
     assertHistorySequence(historyEvents, replay.historySequence);

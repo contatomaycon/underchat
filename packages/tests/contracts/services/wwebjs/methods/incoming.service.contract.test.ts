@@ -493,6 +493,7 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
       const { service, streamProducerService } = makeService();
       const client = new FakeWwebjsClient();
       service.bindTo(client as never);
+      service.markConnectionReady();
 
       const historyEvents = [
         { seq: 9272, event: 'message_create', args: [makeE2ENotification()] },
@@ -656,6 +657,7 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
       const { service, streamProducerService } = makeService();
       const client = new FakeWwebjsClient();
       service.bindTo(client as never);
+      service.markConnectionReady();
 
       client.emit(
         'message_ciphertext_failed',
@@ -701,6 +703,7 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
       const { service, streamProducerService } = makeService();
       const client = new FakeWwebjsClient();
       service.bindTo(client as never);
+      service.markConnectionReady();
 
       const nowSeconds = Math.floor(Date.now() / 1000);
       const serializedId = `false_${lidJid}_history-1`;
@@ -837,6 +840,56 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
     }
   });
 
+  it('keeps startup historical events buffered until the connection is marked ready', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-05-21T12:00:00.000Z'),
+    });
+    const consoleLogSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+    const consoleDirSpy = jest
+      .spyOn(console, 'dir')
+      .mockImplementation(() => undefined);
+
+    try {
+      const { service, streamProducerService } = makeService();
+      const client = new FakeWwebjsClient();
+      service.bindTo(client as never);
+
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      client.emit(
+        'message',
+        makeLogMessage({
+          serializedId: `false_${lidJid}_startup-history`,
+          fromMe: false,
+          type: 'chat',
+          body: 'startup history',
+          from: lidJid,
+          to: selfJid,
+          timestamp: nowSeconds,
+          isNewMsg: true,
+        })
+      );
+
+      await jest.advanceTimersByTimeAsync(5000);
+      await flushMicrotasks();
+
+      expect(streamProducerService.send).not.toHaveBeenCalled();
+
+      service.markConnectionReady();
+      await flushMicrotasks();
+
+      const historySends = streamProducerService.send.mock.calls.filter(
+        ([topic]) => topic === 'upsert-message-history'
+      );
+      expect(historySends).toHaveLength(1);
+    } finally {
+      consoleLogSpy.mockRestore();
+      consoleDirSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
   it('buffers only the latest 100 historical WWebJS messages and flushes them chronologically', async () => {
     jest.useFakeTimers({
       now: new Date('2026-05-21T12:00:00.000Z'),
@@ -852,6 +905,7 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
       const { service, streamProducerService } = makeService();
       const client = new FakeWwebjsClient();
       service.bindTo(client as never);
+      service.markConnectionReady();
 
       const nowSeconds = Math.floor(Date.now() / 1000);
       for (let index = 0; index < 105; index += 1) {
