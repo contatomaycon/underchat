@@ -5,6 +5,7 @@ import { DataTableHeader } from 'vuetify';
 import { VForm } from 'vuetify/components/VForm';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EHolidayPermissions } from '@core/common/enums/EPermissions/holiday';
+import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { useHolidayStore } from '@/@webcore/stores/holiday';
 import {
   betweenValidator,
@@ -567,6 +568,11 @@ onMounted(async () => {
           max-width="720"
           persistent
         >
+          <DialogCloseBtn
+            :disabled="isSavingLocalHoliday"
+            @click="closeLocalHolidayDialog"
+          />
+
           <VOverlay
             :model-value="isSavingLocalHoliday"
             class="align-center justify-center"
@@ -575,20 +581,7 @@ onMounted(async () => {
             <VProgressCircular color="primary" indeterminate size="64" />
           </VOverlay>
 
-          <VCard>
-            <VCardTitle class="d-flex align-center justify-space-between pa-4">
-              <span>{{ localHolidayDialogTitle }}</span>
-              <VBtn
-                icon
-                size="small"
-                variant="text"
-                :disabled="isSavingLocalHoliday"
-                @click="closeLocalHolidayDialog"
-              >
-                <VIcon icon="tabler-x" />
-              </VBtn>
-            </VCardTitle>
-
+          <VCard :title="localHolidayDialogTitle">
             <VDivider />
 
             <VCardText class="pa-4">
