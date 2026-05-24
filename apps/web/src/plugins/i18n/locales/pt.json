@@ -2686,7 +2686,7 @@
   "available_tags": "Tags Disponíveis",
   "tag_greeting_description": "Saudação baseada no horário (Bom dia, Boa tarde, Boa noite)",
   "tag_name_description": "Nome do contato salvo ou nome que vem do WhatsApp",
-  "tag_nickname_description": "Apelido do contato salvo; se não existir, usa o nome do contato salvo e, por fim, o nome que vem do WhatsApp",
+  "tag_nickname_description": "Apelido do contato; se não houver, usamos o nome do contato ou o nome do WhatsApp.",
   "tag_protocol_description": "Protocolo de atendimento",
   "tag_sector_description": "Setor que irá receber a transferência",
   "tag_user_description": "Atendente que irá receber a transferência",
