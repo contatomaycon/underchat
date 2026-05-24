@@ -1590,6 +1590,47 @@ const sortModalFilterType = ref<
 const sortModalField = ref<string | null>('summary.last_message');
 const sortModalOrder = ref<string | null>('desc');
 
+const normalizePhoneFilterValue = (
+  value: string | null | undefined
+): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const digits = value.replace(/\D+/g, '');
+  return digits.length > 0 ? digits : undefined;
+};
+
+const isPhoneLikeSearchTerm = (value: string): boolean => {
+  const digits = value.replace(/\D+/g, '');
+  if (!digits.length) {
+    return false;
+  }
+
+  const hasOnlyPhoneCharacters = /^[\d\s()+-]+$/.test(value);
+  if (!hasOnlyPhoneCharacters) {
+    return false;
+  }
+
+  const hasExplicitPhoneMask = /[()+]/.test(value);
+  return hasExplicitPhoneMask || digits.length >= 8;
+};
+
+const normalizeSearchTermForRequest = (
+  value: string | null | undefined
+): string => {
+  const trimmedValue = value?.trim() ?? '';
+  if (!trimmedValue) {
+    return '';
+  }
+
+  if (!isPhoneLikeSearchTerm(trimmedValue)) {
+    return trimmedValue;
+  }
+
+  return trimmedValue.replace(/\D+/g, '');
+};
+
 const getChatUserFilters = () => {
   return {
     filter_label_template_id: currentFilterLabelTemplateId.value ?? undefined,
@@ -1597,7 +1638,7 @@ const getChatUserFilters = () => {
     filter_user_id: currentFilterUserId.value ?? undefined,
     filter_sector_id: currentFilterSectorId.value ?? undefined,
     filter_name: currentFilterName.value ?? undefined,
-    filter_phone: currentFilterPhone.value ?? undefined,
+    filter_phone: normalizePhoneFilterValue(currentFilterPhone.value),
     filter_protocol: currentFilterProtocol.value ?? undefined,
     filter_date_start: currentFilterDateStart.value ?? undefined,
     filter_date_end: currentFilterDateEnd.value ?? undefined,
@@ -1607,7 +1648,11 @@ const getChatUserFilters = () => {
 };
 
 const getSearchTerm = () => {
-  return debouncedSearchQuery.value?.trim() || '';
+  return normalizeSearchTermForRequest(debouncedSearchQuery.value);
+};
+
+const handleFilterPhoneUpdate = (value: string | null) => {
+  currentFilterPhone.value = normalizePhoneFilterValue(value) ?? null;
 };
 
 const applyCounts = (counts: {
@@ -2103,6 +2148,138 @@ const loadScheduledChats = async (append = false) => {
   }
 };
 
+const FILTERED_REALTIME_REFRESH_DEBOUNCE_MS = 350;
+let filteredRealtimeRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
+let inFlightFilteredRealtimeRefresh: Promise<void> | null = null;
+
+const refreshFilteredChatsAcrossTabs = async (): Promise<void> => {
+  if (!hasActiveFilters.value) {
+    return;
+  }
+
+  if (inFlightFilteredRealtimeRefresh) {
+    return inFlightFilteredRealtimeRefresh;
+  }
+
+  const runRefresh = async () => {
+    const filters = getChatUserFilters();
+    const searchTerm = getSearchTerm();
+
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
+    chatStore.chatbotPagings.current_page = 1;
+    chatStore.scheduledPagings.current_page = 1;
+    chatStore.closedPagings.current_page = 1;
+
+    const [
+      queueAndInChatResponse,
+      chatbotResponse,
+      scheduledResponse,
+      closedResponse,
+    ] = await Promise.all([
+      chatStore.resolveChatEndpoint(
+        [EChatStatus.in_chat, EChatStatus.queue],
+        filters,
+        hasAppliedAdvancedFilters.value,
+        {
+          current_page: 1,
+          per_page: perPageInChat.value + perPageQueue.value,
+        },
+        false,
+        searchTerm
+      ),
+      chatStore.resolveChatEndpoint(
+        EChatStatus.ura,
+        filters,
+        hasAppliedAdvancedFilters.value,
+        {
+          current_page: 1,
+          per_page: chatStore.chatbotPagings.per_page,
+        },
+        false,
+        searchTerm
+      ),
+      chatStore.resolveChatEndpoint(
+        EChatStatus.ura_schedule,
+        filters,
+        hasAppliedAdvancedFilters.value,
+        {
+          current_page: 1,
+          per_page: chatStore.scheduledPagings.per_page,
+        },
+        false,
+        searchTerm
+      ),
+      chatStore.resolveChatEndpoint(
+        EChatStatus.closed,
+        filters,
+        hasAppliedAdvancedFilters.value,
+        {
+          current_page: 1,
+          per_page: chatStore.closedPagings.per_page,
+        },
+        false,
+        searchTerm
+      ),
+    ]);
+
+    const resolvedCounts =
+      queueAndInChatResponse.counts ??
+      chatbotResponse.counts ??
+      scheduledResponse.counts ??
+      closedResponse.counts;
+
+    if (resolvedCounts) {
+      applyCounts(resolvedCounts);
+    }
+
+    if (searchTerm.length > 0) {
+      allChatsWithFiltersPagings.value = {
+        ...chatStore.queuePagings,
+      };
+    }
+
+    listClosed.value = chatStore.listClosed;
+
+    const chatsToProcess = [
+      ...chatStore.listInChat,
+      ...chatStore.listQueue,
+      ...chatStore.listChatbot,
+      ...chatStore.listScheduled,
+      ...chatStore.listClosed,
+    ];
+
+    await Promise.all([
+      loadWorkerConfigs(chatsToProcess),
+      loadChatContacts(chatsToProcess),
+    ]);
+  };
+
+  const nextPromise = runRefresh().finally(() => {
+    if (inFlightFilteredRealtimeRefresh === nextPromise) {
+      inFlightFilteredRealtimeRefresh = null;
+    }
+  });
+
+  inFlightFilteredRealtimeRefresh = nextPromise;
+  return nextPromise;
+};
+
+const scheduleFilteredRealtimeRefresh = () => {
+  if (!hasActiveFilters.value) {
+    return;
+  }
+
+  if (filteredRealtimeRefreshTimeout) {
+    clearTimeout(filteredRealtimeRefreshTimeout);
+  }
+
+  filteredRealtimeRefreshTimeout = setTimeout(() => {
+    filteredRealtimeRefreshTimeout = null;
+    void refreshFilteredChatsAcrossTabs();
+  }, FILTERED_REALTIME_REFRESH_DEBOUNCE_MS);
+};
+
 const hasMoreContacts = computed(() => {
   return currentPageContacts.value < contactsTotalPages.value;
 });
@@ -2437,14 +2614,14 @@ const buildBulkActionBasePayload = (): Omit<
   | 'close_payload'
 > => {
   return {
-    search: debouncedSearchQuery.value?.trim() || '',
+    search: getSearchTerm(),
     has_applied_advanced_filters: hasAppliedAdvancedFilters.value,
     filter_label_template_id: currentFilterLabelTemplateId.value,
     filter_worker_id: currentFilterWorkerId.value,
     filter_user_id: currentFilterUserId.value,
     filter_sector_id: currentFilterSectorId.value,
     filter_name: currentFilterName.value,
-    filter_phone: currentFilterPhone.value,
+    filter_phone: normalizePhoneFilterValue(currentFilterPhone.value) ?? null,
     filter_protocol: currentFilterProtocol.value,
     filter_date_start: currentFilterDateStart.value,
     filter_date_end: currentFilterDateEnd.value,
@@ -2788,7 +2965,7 @@ const performSearch = async (append = false) => {
     const request: SearchChatsQuery = {
       current_page: currentPage,
       per_page: 50,
-      search: debouncedSearchQuery.value.trim(),
+      search: getSearchTerm(),
       filter_label_template_id: filters.filter_label_template_id,
       filter_worker_id: filters.filter_worker_id,
       filter_user_id: filters.filter_user_id,
@@ -2948,6 +3125,13 @@ const performSearch = async (append = false) => {
 };
 
 let hasInitializedSearchWatcher = false;
+watch(searchQuery, (newValue) => {
+  const normalizedValue = normalizeSearchTermForRequest(newValue);
+  if (normalizedValue && normalizedValue !== newValue?.trim()) {
+    searchQuery.value = normalizedValue;
+  }
+});
+
 watch(debouncedSearchQuery, (newValue) => {
   if (!hasInitializedSearchWatcher) {
     hasInitializedSearchWatcher = true;
@@ -3187,6 +3371,8 @@ const handleChatStatusChanged = async (event: Event) => {
         loadWorkerConfigs(chatsToLoad),
         loadChatContacts(chatsToLoad),
       ]);
+
+      scheduleFilteredRealtimeRefresh();
     } finally {
       isHandlingChatStatusChanged = false;
       chatStatusChangedTimeout = null;
@@ -3201,6 +3387,15 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  if (chatStatusChangedTimeout) {
+    clearTimeout(chatStatusChangedTimeout);
+    chatStatusChangedTimeout = null;
+  }
+  if (filteredRealtimeRefreshTimeout) {
+    clearTimeout(filteredRealtimeRefreshTimeout);
+    filteredRealtimeRefreshTimeout = null;
+  }
+
   globalThis.removeEventListener(
     'chat-status-changed',
     handleChatStatusChanged
@@ -4837,7 +5032,7 @@ defineExpose({
     @update:filter-user="currentFilterUserId = $event"
     @update:filter-sector="currentFilterSectorId = $event"
     @update:filter-name="currentFilterName = $event"
-    @update:filter-phone="currentFilterPhone = $event"
+    @update:filter-phone="handleFilterPhoneUpdate"
     @update:filter-protocol="currentFilterProtocol = $event"
     @update:filter-date-start="currentFilterDateStart = $event"
     @update:filter-date-end="currentFilterDateEnd = $event"

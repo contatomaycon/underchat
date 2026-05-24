@@ -13,7 +13,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
-import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { buildPhoneSearchClause } from '@core/common/functions/buildPhoneSearchClause';
 import { ChatUserService } from '@core/services/chatUser.service';
 import { extractUserChannelIds } from '@core/common/functions/extractUserChannelIds';
 
@@ -480,60 +480,6 @@ export class ChatSearcherUseCase {
     } as unknown as IElasticsearchBoolClause;
   }
 
-  private buildPhoneFilter(phoneFilter: string): IElasticsearchBoolClause {
-    return {
-      bool: {
-        should: [
-          {
-            wildcard: {
-              phone: {
-                value: `*${phoneFilter}*`,
-                case_insensitive: true,
-              },
-            },
-          },
-          {
-            wildcard: {
-              'phone.keyword': {
-                value: `*${phoneFilter}*`,
-                case_insensitive: true,
-              },
-            },
-          },
-          {
-            nested: {
-              path: 'contact',
-              query: {
-                bool: {
-                  should: [
-                    {
-                      wildcard: {
-                        'contact.phone': {
-                          value: `*${phoneFilter}*`,
-                          case_insensitive: true,
-                        },
-                      },
-                    },
-                    {
-                      wildcard: {
-                        'contact.phone.keyword': {
-                          value: `*${phoneFilter}*`,
-                          case_insensitive: true,
-                        },
-                      },
-                    },
-                  ],
-                  minimum_should_match: 1,
-                },
-              },
-            },
-          },
-        ],
-        minimum_should_match: 1,
-      },
-    } as unknown as IElasticsearchBoolClause;
-  }
-
   private buildProtocolFilter(
     filterProtocol: string
   ): IElasticsearchBoolClause {
@@ -637,52 +583,9 @@ export class ChatSearcherUseCase {
       } as unknown as IElasticsearchBoolClause,
     ];
 
-    const phoneCandidates = buildCandidates(searchTerm);
-    if (phoneCandidates.length > 0) {
-      shouldClauses.push(
-        {
-          terms: {
-            phone: phoneCandidates,
-          },
-        } as unknown as IElasticsearchBoolClause,
-        {
-          nested: {
-            path: 'contact',
-            query: {
-              terms: {
-                'contact.phone': phoneCandidates,
-              },
-            },
-          },
-        } as unknown as IElasticsearchBoolClause
-      );
-    }
-
-    const phoneDigits = searchTerm.replaceAll(/\D/g, '');
-    if (phoneDigits.length >= 3) {
-      shouldClauses.push(
-        {
-          wildcard: {
-            phone: {
-              value: `*${phoneDigits}*`,
-              case_insensitive: true,
-            },
-          },
-        } as unknown as IElasticsearchBoolClause,
-        {
-          nested: {
-            path: 'contact',
-            query: {
-              wildcard: {
-                'contact.phone': {
-                  value: `*${phoneDigits}*`,
-                  case_insensitive: true,
-                },
-              },
-            },
-          },
-        } as unknown as IElasticsearchBoolClause
-      );
+    const phoneSearchClause = buildPhoneSearchClause(searchTerm);
+    if (phoneSearchClause) {
+      shouldClauses.push(phoneSearchClause);
     }
 
     return shouldClauses;
@@ -752,9 +655,8 @@ export class ChatSearcherUseCase {
     }
 
     if (query.filter_phone) {
-      const phoneFilter = query.filter_phone.replace(/\D/g, '');
-      if (phoneFilter.length > 0) {
-        const phoneFilterClause = this.buildPhoneFilter(phoneFilter);
+      const phoneFilterClause = buildPhoneSearchClause(query.filter_phone);
+      if (phoneFilterClause) {
         filterClauses.push(phoneFilterClause);
         baseFiltersForCounts.push(phoneFilterClause);
       }

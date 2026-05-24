@@ -2890,6 +2890,9 @@ export const useChatStore = defineStore('chat', {
       search?: string | null
     ): Promise<ResolveChatEndpointResult> {
       const statusArray = Array.isArray(status) ? status : [status];
+      const isMyChats =
+        status === MY_CHATS_STATUS ||
+        (statusArray.length === 1 && statusArray[0] === MY_CHATS_STATUS);
       const normalizedSearch = typeof search === 'string' ? search.trim() : '';
       const shouldUseSearchEndpoint =
         hasAppliedAdvancedFilters || normalizedSearch.length > 0;
@@ -2910,18 +2913,13 @@ export const useChatStore = defineStore('chat', {
         }
 
         return this.handleSearchEndpoint(
-          statusArray as EChatStatus[],
+          isMyChats ? MY_CHATS_STATUS : (statusArray as EChatStatus[]),
           normalizedSearch,
           searchFilters,
           pagination,
-          append,
-          hasAppliedAdvancedFilters
+          append
         );
       }
-
-      const isMyChats =
-        status === MY_CHATS_STATUS ||
-        (statusArray.length === 1 && statusArray[0] === MY_CHATS_STATUS);
 
       if (isMyChats) {
         return this.handleMyChatsListEndpoint(baseFilters, pagination, append);
@@ -2991,13 +2989,17 @@ export const useChatStore = defineStore('chat', {
     },
 
     async handleSearchEndpoint(
-      statusArray: EChatStatus[],
+      statusFilter: EChatStatus[] | typeof MY_CHATS_STATUS,
       search: string,
       filters: Partial<ChatFilters>,
       pagination: { current_page: number; per_page: number },
-      append: boolean,
-      hasAppliedAdvancedFilters: boolean
+      append: boolean
     ): Promise<ResolveChatEndpointResult> {
+      const isMyChatsSearch = statusFilter === MY_CHATS_STATUS;
+      const statusArray = isMyChatsSearch
+        ? [EChatStatus.queue, EChatStatus.in_chat]
+        : statusFilter;
+
       const request: SearchChatsQuery = {
         current_page: pagination.current_page,
         per_page: pagination.per_page,
@@ -3005,12 +3007,12 @@ export const useChatStore = defineStore('chat', {
         ...pickDefinedFilters(filters, [...FILTER_KEYS]),
       };
 
-      if (hasAppliedAdvancedFilters) {
-        if (statusArray.length === 1) {
-          request.status = statusArray[0];
-        } else {
-          request.status = statusArray;
-        }
+      if (isMyChatsSearch) {
+        request.status = MY_CHATS_STATUS;
+      } else if (statusArray.length === 1) {
+        request.status = statusArray[0];
+      } else {
+        request.status = statusArray;
       }
 
       if (filters.sort_field !== null && filters.sort_field !== undefined) {

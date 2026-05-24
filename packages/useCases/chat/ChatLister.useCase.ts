@@ -17,6 +17,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
+import { buildPhoneSearchClause } from '@core/common/functions/buildPhoneSearchClause';
 import { ChatUserService } from '@core/services/chatUser.service';
 import { extractUserChannelIds } from '@core/common/functions/extractUserChannelIds';
 
@@ -776,59 +777,8 @@ export class ChatListerUseCase {
     }
 
     if (query.filter_phone) {
-      const phoneFilter = query.filter_phone.replace(/\D/g, '');
-      if (phoneFilter.length > 0) {
-        const phoneFilterClause = {
-          bool: {
-            should: [
-              {
-                wildcard: {
-                  phone: {
-                    value: `*${phoneFilter}*`,
-                    case_insensitive: true,
-                  },
-                },
-              },
-              {
-                wildcard: {
-                  'phone.keyword': {
-                    value: `*${phoneFilter}*`,
-                    case_insensitive: true,
-                  },
-                },
-              },
-              {
-                nested: {
-                  path: 'contact',
-                  query: {
-                    bool: {
-                      should: [
-                        {
-                          wildcard: {
-                            'contact.phone': {
-                              value: `*${phoneFilter}*`,
-                              case_insensitive: true,
-                            },
-                          },
-                        },
-                        {
-                          wildcard: {
-                            'contact.phone.keyword': {
-                              value: `*${phoneFilter}*`,
-                              case_insensitive: true,
-                            },
-                          },
-                        },
-                      ],
-                      minimum_should_match: 1,
-                    },
-                  },
-                },
-              },
-            ],
-            minimum_should_match: 1,
-          },
-        } as unknown as IElasticsearchBoolClause;
+      const phoneFilterClause = buildPhoneSearchClause(query.filter_phone);
+      if (phoneFilterClause) {
         filterClauses.push(phoneFilterClause);
         baseFiltersForCounts.push(phoneFilterClause);
       }

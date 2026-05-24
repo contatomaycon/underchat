@@ -4,6 +4,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { MY_CHATS_STATUS } from '@core/schema/chat/listChats/request.schema';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import type { ChatUserService } from '@core/services/chatUser.service';
 import type { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -389,5 +390,198 @@ describe('ChatSearcherUseCase', () => {
     ]);
     expect(result.pagings.total).toBe(2);
     expect(result.counts.in_chat).toBe(2);
+  });
+
+  it('finds a full formatted phone with BR normalization (with/without DDI and 9th digit)', async () => {
+    const formattedPhoneChat = buildChat({
+      chat_id: 'formatted-phone-chat',
+      name: 'Contato Telefone',
+      phone: '5561993399580',
+      contact: {
+        id: 'contact-formatted-phone',
+        name: 'Contato Telefone',
+        phone: '5561993399580',
+        phone_ddi: '55',
+        photo: null,
+      },
+    });
+
+    const useCase = buildUseCase([formattedPhoneChat]);
+
+    const result = await useCase.execute(
+      'account-1',
+      {
+        current_page: 1,
+        per_page: 20,
+        search: '(61) 9339-9580',
+      },
+      'user-1',
+      [buildAction(EGeneralPermissions.full_access)],
+      [],
+      []
+    );
+
+    expect(result.results.map((chat) => chat.chat_id)).toEqual([
+      'formatted-phone-chat',
+    ]);
+  });
+
+  it('applies filter_phone with formatted full phone consistently', async () => {
+    const matchingChat = buildChat({
+      chat_id: 'matching-filter-phone',
+      name: 'Match Phone',
+      phone: '5561993399580',
+      contact: {
+        id: 'contact-matching-filter-phone',
+        name: 'Match Phone',
+        phone: '5561993399580',
+        phone_ddi: '55',
+        photo: null,
+      },
+    });
+    const nonMatchingChat = buildChat({
+      chat_id: 'non-matching-filter-phone',
+      name: 'Other Phone',
+      phone: '5511999999999',
+      contact: {
+        id: 'contact-non-matching-filter-phone',
+        name: 'Other Phone',
+        phone: '5511999999999',
+        phone_ddi: '55',
+        photo: null,
+      },
+    });
+
+    const useCase = buildUseCase([matchingChat, nonMatchingChat]);
+
+    const result = await useCase.execute(
+      'account-1',
+      {
+        current_page: 1,
+        per_page: 20,
+        search: '',
+        status: EChatStatus.in_chat,
+        filter_phone: '(61) 9339-9580',
+      },
+      'user-1',
+      [buildAction(EGeneralPermissions.full_access)],
+      [],
+      []
+    );
+
+    expect(result.results.map((chat) => chat.chat_id)).toEqual([
+      'matching-filter-phone',
+    ]);
+  });
+
+  it('returns only closed chats when search uses status=closed', async () => {
+    const closedChat = buildChat({
+      chat_id: 'closed-chat-only',
+      name: 'Contato Fechado',
+      status: EChatStatus.closed,
+    });
+    const inChat = buildChat({
+      chat_id: 'in-chat-not-closed',
+      name: 'Contato Fechado',
+      status: EChatStatus.in_chat,
+    });
+
+    const useCase = buildUseCase([closedChat, inChat]);
+
+    const result = await useCase.execute(
+      'account-1',
+      {
+        current_page: 1,
+        per_page: 20,
+        search: 'contato fechado',
+        status: EChatStatus.closed,
+      },
+      'user-1',
+      [buildAction(EGeneralPermissions.full_access)],
+      [],
+      []
+    );
+
+    expect(result.results.map((chat) => chat.chat_id)).toEqual([
+      'closed-chat-only',
+    ]);
+    expect(
+      result.results.every((chat) => chat.status === EChatStatus.closed)
+    ).toBe(true);
+  });
+
+  it('returns only queue and in_chat participants when status=my_chats', async () => {
+    const myInChat = buildChat({
+      chat_id: 'my-in-chat',
+      name: 'Meu Atendimento In Chat',
+      status: EChatStatus.in_chat,
+      user: {
+        id: 'user-1',
+        name: 'User One',
+        photo: null,
+        entered_at: null,
+      },
+    });
+    const myQueue = buildChat({
+      chat_id: 'my-queue',
+      name: 'Meu Atendimento Fila',
+      status: EChatStatus.queue,
+      user: {
+        id: 'user-1',
+        name: 'User One',
+        photo: null,
+        entered_at: null,
+      },
+    });
+    const myClosed = buildChat({
+      chat_id: 'my-closed',
+      name: 'Meu Atendimento Fechado',
+      status: EChatStatus.closed,
+      user: {
+        id: 'user-1',
+        name: 'User One',
+        photo: null,
+        entered_at: null,
+      },
+    });
+    const otherQueue = buildChat({
+      chat_id: 'other-queue',
+      name: 'Outro Atendimento Fila',
+      status: EChatStatus.queue,
+      user: {
+        id: 'user-2',
+        name: 'User Two',
+        photo: null,
+        entered_at: null,
+      },
+    });
+
+    const useCase = buildUseCase([myInChat, myQueue, myClosed, otherQueue]);
+
+    const result = await useCase.execute(
+      'account-1',
+      {
+        current_page: 1,
+        per_page: 20,
+        search: 'atendimento',
+        status: MY_CHATS_STATUS,
+      },
+      'user-1',
+      [buildAction(EGeneralPermissions.full_access)],
+      [],
+      []
+    );
+
+    expect(result.results).toHaveLength(2);
+    expect(result.results.map((chat) => chat.chat_id)).toEqual(
+      expect.arrayContaining(['my-in-chat', 'my-queue'])
+    );
+    expect(
+      result.results.every((chat) =>
+        [EChatStatus.in_chat, EChatStatus.queue].includes(
+          chat.status as EChatStatus
+        )
+      )
+    ).toBe(true);
   });
 });

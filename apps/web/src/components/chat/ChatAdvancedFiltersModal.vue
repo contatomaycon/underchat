@@ -152,6 +152,17 @@ const formatDateForApi = (
   return dateMoment.utc().toISOString();
 };
 
+const normalizePhoneFilterValue = (
+  value: string | null | undefined
+): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const digits = value.replace(/\D+/g, '');
+  return digits.length > 0 ? digits : null;
+};
+
 const loadTags = async () => {
   if (isLoadingTags.value) return;
 
@@ -228,7 +239,7 @@ const handleSave = async () => {
       canUseUserAndSectorFilters.value ? filterSectorId.value : null
     );
     emit('update:filterName', filterName.value);
-    emit('update:filterPhone', filterPhone.value);
+    emit('update:filterPhone', normalizePhoneFilterValue(filterPhone.value));
     emit('update:filterProtocol', filterProtocol.value);
     emit(
       'update:filterDateStart',
