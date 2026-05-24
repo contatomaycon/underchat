@@ -309,6 +309,23 @@ const hasSearchTerm = computed(() => !!debouncedSearchQuery.value?.trim());
 const shouldApplyPerFilterSort = computed(
   () => !hasAppliedAdvancedFilters.value && !hasSearchTerm.value
 );
+const hiddenRealtimeNewChatIds = ref<Set<string>>(new Set());
+
+const removeRealtimeHiddenChatsFromList = (
+  chats: ListChatsResult[]
+): ListChatsResult[] => {
+  if (
+    activeFilter.value !== 'all' ||
+    !hasActiveFilters.value ||
+    hiddenRealtimeNewChatIds.value.size === 0
+  ) {
+    return chats;
+  }
+
+  return chats.filter(
+    (chat) => !hiddenRealtimeNewChatIds.value.has(chat.chat_id)
+  );
+};
 
 const isChatForCurrentUser = (
   chat: ListChatsResult,
@@ -349,11 +366,14 @@ const filteredInChat = computed(() => {
     );
   }
   if (activeFilter.value === 'all' && hasActiveFilters.value) {
+    const visibleChats = removeRealtimeHiddenChatsFromList(
+      chatStore.listInChat
+    );
     if (!shouldApplyPerFilterSort.value) {
-      return chatStore.listInChat;
+      return visibleChats;
     }
     return sortChatsByField(
-      chatStore.listInChat,
+      visibleChats,
       inChatSortFieldForModal.value,
       inChatSortOrderForModal.value
     );
@@ -383,11 +403,12 @@ const filteredQueue = computed(() => {
     );
   }
   if (activeFilter.value === 'all' && hasActiveFilters.value) {
+    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listQueue);
     if (!shouldApplyPerFilterSort.value) {
-      return chatStore.listQueue;
+      return visibleChats;
     }
     return sortChatsByField(
-      chatStore.listQueue,
+      visibleChats,
       queueSortFieldForModal.value,
       queueSortOrderForModal.value
     );
@@ -1437,6 +1458,12 @@ const currentFilterDateStart = ref<string | null>(null);
 const currentFilterDateEnd = ref<string | null>(null);
 const currentSortField = ref<string | null>('summary.last_message');
 const currentSortOrder = ref<string | null>('desc');
+
+watch(hasActiveFilters, (isActive) => {
+  if (!isActive) {
+    hiddenRealtimeNewChatIds.value.clear();
+  }
+});
 
 watch(
   [
@@ -3344,7 +3371,16 @@ const handleChatStatusChanged = async (event: Event) => {
   }
 
   if (detail.chat?.chat_id) {
-    pendingNewChats.set(detail.chat.chat_id, detail.chat);
+    const incomingChatId = detail.chat.chat_id;
+    pendingNewChats.set(incomingChatId, detail.chat);
+
+    if (
+      activeFilter.value === 'all' &&
+      hasActiveFilters.value &&
+      chatStore.activeChat?.chat_id !== incomingChatId
+    ) {
+      hiddenRealtimeNewChatIds.value.add(incomingChatId);
+    }
   }
 
   if (isHandlingChatStatusChanged) {
@@ -3387,6 +3423,8 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  hiddenRealtimeNewChatIds.value.clear();
+
   if (chatStatusChangedTimeout) {
     clearTimeout(chatStatusChangedTimeout);
     chatStatusChangedTimeout = null;
