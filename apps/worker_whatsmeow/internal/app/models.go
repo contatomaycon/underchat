@@ -230,6 +230,7 @@ type MarkReadRequest struct {
 type UpsertMessage struct {
 	WorkerID             string         `json:"worker_id"`
 	AccountID            string         `json:"account_id"`
+	SourceProvider       string         `json:"source_provider,omitempty"`
 	Type                 string         `json:"type"`
 	Message              map[string]any `json:"message"`
 	Content              map[string]any `json:"content,omitempty"`

@@ -11,12 +11,66 @@ import type {
   IElasticBulkUpdateItem,
 } from '@core/common/interfaces/IElasticBulk';
 import { incrementCounter } from '@core/plugins/telemetry/observability';
+import {
+  getMessageLifecycleContext,
+  recordMessageLifecycle,
+} from '@core/plugins/telemetry/messageLifecycleDebug';
 
 @injectable()
 export class ElasticDatabaseService {
   constructor(
     @inject('DatabaseElasticClient') private readonly client: Client
   ) {}
+
+  private async withLifecycleElastic<T>(
+    operation: string,
+    index: string,
+    documentId: string | undefined,
+    callback: () => Promise<T>
+  ): Promise<T> {
+    const lifecycleContext = getMessageLifecycleContext();
+    if (!lifecycleContext) {
+      return callback();
+    }
+
+    const start = Date.now();
+    recordMessageLifecycle({
+      stage: 'message_lifecycle.elastic.start',
+      decision: 'elastic_operation',
+      outcome: 'started',
+      elastic_operation: operation,
+      elastic_index: index,
+      elastic_document_id: documentId,
+    });
+
+    try {
+      const result = await callback();
+      recordMessageLifecycle({
+        stage: 'message_lifecycle.elastic.success',
+        decision: 'elastic_operation',
+        outcome: 'success',
+        elastic_operation: operation,
+        elastic_index: index,
+        elastic_document_id: documentId,
+        duration_ms: Date.now() - start,
+      });
+      return result;
+    } catch (error) {
+      recordMessageLifecycle({
+        stage: 'message_lifecycle.elastic.error',
+        decision: 'elastic_operation',
+        outcome: 'error',
+        reason: 'elastic_operation_failed',
+        level: 'error',
+        elastic_operation: operation,
+        elastic_index: index,
+        elastic_document_id: documentId,
+        duration_ms: Date.now() - start,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
 
   private normalizeErrorMessage(error: unknown): string {
     if (error instanceof Error) {
@@ -57,16 +111,18 @@ export class ElasticDatabaseService {
       AggregationsAggregate
     >,
   >(index: string, query: object): Promise<SearchResponse<TDoc, TAggs> | null> {
-    try {
-      const response = await this.client.search<TDoc, TAggs>({
-        index,
-        body: query,
-      });
+    return this.withLifecycleElastic('select', index, undefined, async () => {
+      try {
+        const response = await this.client.search<TDoc, TAggs>({
+          index,
+          body: query,
+        });
 
-      return response;
-    } catch {
-      return null;
-    }
+        return response;
+      } catch {
+        return null;
+      }
+    });
   }
 
   create = async (
@@ -74,35 +130,37 @@ export class ElasticDatabaseService {
     document: object,
     id: string
   ): Promise<boolean> => {
-    try {
-      const result = await this.client.index({
-        index,
-        id,
-        document,
-        op_type: 'create',
-      });
-
-      return result.result === 'created';
-    } catch (error: unknown) {
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'statusCode' in error &&
-        error.statusCode === 409
-      ) {
-        return false;
-      }
-
-      if (this.isReadOnlyAllowDeleteBlockError(error)) {
-        incrementCounter('elastic.write.read_only_allow_delete', 1, {
+    return this.withLifecycleElastic('create', index, id, async () => {
+      try {
+        const result = await this.client.index({
           index,
-          operation: 'create',
+          id,
+          document,
+          op_type: 'create',
         });
-        throw this.buildReadOnlyAllowDeleteBlockError(index, error);
-      }
 
-      throw new Error(`Failed to create document with ID: ${error}`);
-    }
+        return result.result === 'created';
+      } catch (error: unknown) {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'statusCode' in error &&
+          error.statusCode === 409
+        ) {
+          return false;
+        }
+
+        if (this.isReadOnlyAllowDeleteBlockError(error)) {
+          incrementCounter('elastic.write.read_only_allow_delete', 1, {
+            index,
+            operation: 'create',
+          });
+          throw this.buildReadOnlyAllowDeleteBlockError(index, error);
+        }
+
+        throw new Error(`Failed to create document with ID: ${error}`);
+      }
+    });
   };
 
   createDocument = async <T extends object>(
@@ -110,95 +168,106 @@ export class ElasticDatabaseService {
     id: string,
     document: T
   ): Promise<'created' | 'conflict'> => {
-    try {
-      const result = await this.client.index({
-        index,
-        id,
-        document,
-        op_type: 'create',
-      });
-
-      if (result.result === 'created') {
-        return 'created';
-      }
-
-      return 'conflict';
-    } catch (error: unknown) {
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'statusCode' in error &&
-        error.statusCode === 409
-      ) {
-        return 'conflict';
-      }
-
-      if (this.isReadOnlyAllowDeleteBlockError(error)) {
-        incrementCounter('elastic.write.read_only_allow_delete', 1, {
+    return this.withLifecycleElastic('create_document', index, id, async () => {
+      try {
+        const result = await this.client.index({
           index,
-          operation: 'create_document',
+          id,
+          document,
+          op_type: 'create',
         });
-        throw this.buildReadOnlyAllowDeleteBlockError(index, error);
-      }
 
-      throw new Error(`Failed to create document with ID: ${error}`);
-    }
+        if (result.result === 'created') {
+          return 'created';
+        }
+
+        return 'conflict';
+      } catch (error: unknown) {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'statusCode' in error &&
+          error.statusCode === 409
+        ) {
+          return 'conflict';
+        }
+
+        if (this.isReadOnlyAllowDeleteBlockError(error)) {
+          incrementCounter('elastic.write.read_only_allow_delete', 1, {
+            index,
+            operation: 'create_document',
+          });
+          throw this.buildReadOnlyAllowDeleteBlockError(index, error);
+        }
+
+        throw new Error(`Failed to create document with ID: ${error}`);
+      }
+    });
   };
 
   view = async (index: string, id: string): Promise<object | null> => {
-    try {
-      const result = await this.client.get({
-        index,
-        id,
-      });
-      return result._source ?? null;
-    } catch (error: unknown) {
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'statusCode' in error &&
-        error.statusCode === 404
-      ) {
-        return null;
-      }
+    return this.withLifecycleElastic('view', index, id, async () => {
+      try {
+        const result = await this.client.get({
+          index,
+          id,
+        });
+        return result._source ?? null;
+      } catch (error: unknown) {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'statusCode' in error &&
+          error.statusCode === 404
+        ) {
+          return null;
+        }
 
-      throw new Error(`Failed to retrieve document with ID: ${error}`);
-    }
+        throw new Error(`Failed to retrieve document with ID: ${error}`);
+      }
+    });
   };
 
   getDocumentMeta = async (
     index: string,
     id: string
   ): Promise<{ seqNo: number; primaryTerm: number } | null> => {
-    try {
-      const result = await this.client.get({
-        index,
-        id,
-      });
+    return this.withLifecycleElastic(
+      'get_document_meta',
+      index,
+      id,
+      async () => {
+        try {
+          const result = await this.client.get({
+            index,
+            id,
+          });
 
-      if (
-        typeof result._seq_no === 'number' &&
-        typeof result._primary_term === 'number'
-      ) {
-        return {
-          seqNo: result._seq_no,
-          primaryTerm: result._primary_term,
-        };
+          if (
+            typeof result._seq_no === 'number' &&
+            typeof result._primary_term === 'number'
+          ) {
+            return {
+              seqNo: result._seq_no,
+              primaryTerm: result._primary_term,
+            };
+          }
+
+          return null;
+        } catch (error: unknown) {
+          if (
+            typeof error === 'object' &&
+            error !== null &&
+            'statusCode' in error &&
+            error.statusCode === 404
+          ) {
+            return null;
+          }
+
+          throw new Error(`Failed to get document meta with ID: ${error}`);
+        }
       }
-
-      return null;
-    } catch (error: unknown) {
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'statusCode' in error &&
-        error.statusCode === 404
-      ) {
-        return null;
-      }
-
-      throw new Error(`Failed to get document meta with ID: ${error}`);
-    }
+    );
   };
 
   private async getBulkDocumentMeta(
@@ -244,56 +313,58 @@ export class ElasticDatabaseService {
     id: string,
     retryOnConflict?: number
   ): Promise<boolean> => {
-    const maxRetries = retryOnConflict ?? 5;
-    let attempt = 0;
+    return this.withLifecycleElastic('update', index, id, async () => {
+      const maxRetries = retryOnConflict ?? 5;
+      let attempt = 0;
 
-    while (attempt < maxRetries) {
-      try {
-        const meta = await this.getDocumentMeta(index, id);
+      while (attempt < maxRetries) {
+        try {
+          const meta = await this.getDocumentMeta(index, id);
 
-        if (!meta) {
-          const createResult = await this.tryCreateDocument(
+          if (!meta) {
+            const createResult = await this.tryCreateDocument(
+              index,
+              id,
+              document
+            );
+
+            if (createResult === 'created') {
+              return true;
+            }
+
+            attempt++;
+            continue;
+          }
+
+          const updateResult = await this.tryUpdateWithMeta(
             index,
             id,
+            document,
+            meta,
             document
           );
 
-          if (createResult === 'created') {
-            return true;
+          if (updateResult === 'conflict') {
+            attempt++;
+            continue;
+          }
+
+          return (
+            updateResult === 'updated' ||
+            updateResult === 'created' ||
+            updateResult === 'noop'
+          );
+        } catch (error) {
+          if (attempt >= maxRetries - 1) {
+            throw new Error(`Failed to update document with ID: ${error}`);
           }
 
           attempt++;
-          continue;
         }
-
-        const updateResult = await this.tryUpdateWithMeta(
-          index,
-          id,
-          document,
-          meta,
-          document
-        );
-
-        if (updateResult === 'conflict') {
-          attempt++;
-          continue;
-        }
-
-        return (
-          updateResult === 'updated' ||
-          updateResult === 'created' ||
-          updateResult === 'noop'
-        );
-      } catch (error) {
-        if (attempt >= maxRetries - 1) {
-          throw new Error(`Failed to update document with ID: ${error}`);
-        }
-
-        attempt++;
       }
-    }
 
-    return false;
+      return false;
+    });
   };
 
   private async tryCreateDocument<T extends Record<string, unknown>>(
@@ -386,45 +457,54 @@ export class ElasticDatabaseService {
     doc: T,
     options?: { upsert?: boolean; maxRetries?: number }
   ): Promise<'updated' | 'created' | 'noop' | 'conflict' | 'not_found'> => {
-    const maxRetries = options?.maxRetries ?? 5;
-    let attempt = 0;
+    return this.withLifecycleElastic('update_with_occ', index, id, async () => {
+      const maxRetries = options?.maxRetries ?? 5;
+      let attempt = 0;
 
-    while (attempt < maxRetries) {
-      try {
-        const meta = await this.getDocumentMeta(index, id);
+      while (attempt < maxRetries) {
+        try {
+          const meta = await this.getDocumentMeta(index, id);
 
-        if (!meta) {
-          if (options?.upsert !== true) {
-            return 'not_found';
+          if (!meta) {
+            if (options?.upsert !== true) {
+              return 'not_found';
+            }
+
+            const createResult = await this.tryCreateDocument(index, id, doc);
+
+            if (createResult === 'created') {
+              return 'created';
+            }
+
+            attempt++;
+            continue;
           }
 
-          const createResult = await this.tryCreateDocument(index, id, doc);
+          const updateResult = await this.tryUpdateWithMeta(
+            index,
+            id,
+            doc,
+            meta
+          );
 
-          if (createResult === 'created') {
-            return 'created';
+          if (updateResult !== 'conflict') {
+            return updateResult;
           }
 
           attempt++;
-          continue;
+        } catch (error) {
+          if (attempt >= maxRetries - 1) {
+            throw new Error(
+              `Failed to update with OCC after retries: ${error}`
+            );
+          }
+
+          attempt++;
         }
-
-        const updateResult = await this.tryUpdateWithMeta(index, id, doc, meta);
-
-        if (updateResult !== 'conflict') {
-          return updateResult;
-        }
-
-        attempt++;
-      } catch (error) {
-        if (attempt >= maxRetries - 1) {
-          throw new Error(`Failed to update with OCC after retries: ${error}`);
-        }
-
-        attempt++;
       }
-    }
 
-    return 'conflict';
+      return 'conflict';
+    });
   };
 
   private async tryIndexWithMeta<T extends Record<string, unknown>>(
@@ -471,45 +551,47 @@ export class ElasticDatabaseService {
     doc: T,
     options?: { upsert?: boolean; maxRetries?: number }
   ): Promise<'updated' | 'created' | 'conflict' | 'not_found'> => {
-    const maxRetries = options?.maxRetries ?? 5;
-    let attempt = 0;
+    return this.withLifecycleElastic('index_with_occ', index, id, async () => {
+      const maxRetries = options?.maxRetries ?? 5;
+      let attempt = 0;
 
-    while (attempt < maxRetries) {
-      try {
-        const meta = await this.getDocumentMeta(index, id);
+      while (attempt < maxRetries) {
+        try {
+          const meta = await this.getDocumentMeta(index, id);
 
-        if (!meta) {
-          if (options?.upsert !== true) {
-            return 'not_found';
+          if (!meta) {
+            if (options?.upsert !== true) {
+              return 'not_found';
+            }
+
+            const createResult = await this.tryCreateDocument(index, id, doc);
+
+            if (createResult === 'created') {
+              return 'created';
+            }
+
+            attempt++;
+            continue;
           }
 
-          const createResult = await this.tryCreateDocument(index, id, doc);
+          const indexResult = await this.tryIndexWithMeta(index, id, doc, meta);
 
-          if (createResult === 'created') {
-            return 'created';
+          if (indexResult !== 'conflict') {
+            return indexResult;
           }
 
           attempt++;
-          continue;
+        } catch (error) {
+          if (attempt >= maxRetries - 1) {
+            throw new Error(`Failed to index with OCC after retries: ${error}`);
+          }
+
+          attempt++;
         }
-
-        const indexResult = await this.tryIndexWithMeta(index, id, doc, meta);
-
-        if (indexResult !== 'conflict') {
-          return indexResult;
-        }
-
-        attempt++;
-      } catch (error) {
-        if (attempt >= maxRetries - 1) {
-          throw new Error(`Failed to index with OCC after retries: ${error}`);
-        }
-
-        attempt++;
       }
-    }
 
-    return 'conflict';
+      return 'conflict';
+    });
   };
 
   updateArrayField = async (
@@ -519,59 +601,66 @@ export class ElasticDatabaseService {
     value: string,
     retryOnConflict?: number
   ): Promise<boolean> => {
-    const maxRetries = retryOnConflict ?? 5;
-    let attempt = 0;
+    return this.withLifecycleElastic(
+      'update_array_field',
+      index,
+      id,
+      async () => {
+        const maxRetries = retryOnConflict ?? 5;
+        let attempt = 0;
 
-    while (attempt < maxRetries) {
-      const meta = await this.getDocumentMeta(index, id);
+        while (attempt < maxRetries) {
+          const meta = await this.getDocumentMeta(index, id);
 
-      if (!meta) {
-        return false;
-      }
+          if (!meta) {
+            return false;
+          }
 
-      try {
-        const result = await this.client.update({
-          index,
-          id,
-          if_seq_no: meta.seqNo,
-          if_primary_term: meta.primaryTerm,
-          script: {
-            source: `
+          try {
+            const result = await this.client.update({
+              index,
+              id,
+              if_seq_no: meta.seqNo,
+              if_primary_term: meta.primaryTerm,
+              script: {
+                source: `
               if (ctx._source.${field} == null) {
                 ctx._source.${field} = [params.value];
               } else if (!ctx._source.${field}.contains(params.value)) {
                 ctx._source.${field}.add(params.value);
               }
             `,
-            params: {
-              value,
-            },
-          },
-        });
+                params: {
+                  value,
+                },
+              },
+            });
 
-        if (
-          result.result === 'updated' ||
-          result.result === 'created' ||
-          result.result === 'noop'
-        ) {
-          return true;
-        }
-      } catch (error: unknown) {
-        if (
-          typeof error === 'object' &&
-          error !== null &&
-          'statusCode' in error &&
-          error.statusCode === 409
-        ) {
-          attempt++;
-          continue;
+            if (
+              result.result === 'updated' ||
+              result.result === 'created' ||
+              result.result === 'noop'
+            ) {
+              return true;
+            }
+          } catch (error: unknown) {
+            if (
+              typeof error === 'object' &&
+              error !== null &&
+              'statusCode' in error &&
+              error.statusCode === 409
+            ) {
+              attempt++;
+              continue;
+            }
+
+            throw new Error(`Failed to update array field: ${error}`);
+          }
         }
 
-        throw new Error(`Failed to update array field: ${error}`);
+        return false;
       }
-    }
-
-    return false;
+    );
   };
 
   updateField = async (
@@ -581,53 +670,55 @@ export class ElasticDatabaseService {
     value: any,
     retryOnConflict?: number
   ): Promise<boolean> => {
-    const maxRetries = retryOnConflict ?? 5;
-    let attempt = 0;
+    return this.withLifecycleElastic('update_field', index, id, async () => {
+      const maxRetries = retryOnConflict ?? 5;
+      let attempt = 0;
 
-    while (attempt < maxRetries) {
-      const meta = await this.getDocumentMeta(index, id);
+      while (attempt < maxRetries) {
+        const meta = await this.getDocumentMeta(index, id);
 
-      if (!meta) {
-        return false;
-      }
+        if (!meta) {
+          return false;
+        }
 
-      try {
-        const result = await this.client.update({
-          index,
-          id,
-          if_seq_no: meta.seqNo,
-          if_primary_term: meta.primaryTerm,
-          script: {
-            source: `ctx._source.${field} = params.value`,
-            params: {
-              value,
+        try {
+          const result = await this.client.update({
+            index,
+            id,
+            if_seq_no: meta.seqNo,
+            if_primary_term: meta.primaryTerm,
+            script: {
+              source: `ctx._source.${field} = params.value`,
+              params: {
+                value,
+              },
             },
-          },
-        });
+          });
 
-        if (
-          result.result === 'updated' ||
-          result.result === 'created' ||
-          result.result === 'noop'
-        ) {
-          return true;
-        }
-      } catch (error: unknown) {
-        if (
-          typeof error === 'object' &&
-          error !== null &&
-          'statusCode' in error &&
-          error.statusCode === 409
-        ) {
-          attempt++;
-          continue;
-        }
+          if (
+            result.result === 'updated' ||
+            result.result === 'created' ||
+            result.result === 'noop'
+          ) {
+            return true;
+          }
+        } catch (error: unknown) {
+          if (
+            typeof error === 'object' &&
+            error !== null &&
+            'statusCode' in error &&
+            error.statusCode === 409
+          ) {
+            attempt++;
+            continue;
+          }
 
-        throw new Error(`Failed to update field: ${error}`);
+          throw new Error(`Failed to update field: ${error}`);
+        }
       }
-    }
 
-    return false;
+      return false;
+    });
   };
 
   updateWithScript = async <TParams extends Record<string, unknown>>(
@@ -641,86 +732,95 @@ export class ElasticDatabaseService {
     },
     options?: { retryOnConflict?: number; refresh?: boolean }
   ): Promise<'updated' | 'created' | 'noop'> => {
-    const maxRetries = options?.retryOnConflict ?? 5;
-    let attempt = 0;
+    return this.withLifecycleElastic(
+      'update_with_script',
+      index,
+      id,
+      async () => {
+        const maxRetries = options?.retryOnConflict ?? 5;
+        let attempt = 0;
 
-    while (attempt < maxRetries) {
-      const meta = await this.getDocumentMeta(index, id);
+        while (attempt < maxRetries) {
+          const meta = await this.getDocumentMeta(index, id);
 
-      if (!meta) {
-        if (!input.upsert) {
-          throw new Error(`Failed to update with script: document not found`);
-        }
+          if (!meta) {
+            if (!input.upsert) {
+              throw new Error(
+                `Failed to update with script: document not found`
+              );
+            }
 
-        try {
-          const createResult = await this.tryCreateWithScript(
-            index,
-            id,
-            input,
-            options?.refresh
-          );
+            try {
+              const createResult = await this.tryCreateWithScript(
+                index,
+                id,
+                input,
+                options?.refresh
+              );
 
-          if (createResult !== 'conflict') {
-            return createResult;
+              if (createResult !== 'conflict') {
+                return createResult;
+              }
+
+              attempt++;
+              continue;
+            } catch (error: unknown) {
+              if (
+                typeof error === 'object' &&
+                error !== null &&
+                'statusCode' in error &&
+                error.statusCode === 409
+              ) {
+                attempt++;
+                continue;
+              }
+
+              if (attempt >= maxRetries - 1) {
+                throw new Error(`Failed to update with script: ${error}`);
+              }
+
+              attempt++;
+              continue;
+            }
           }
 
-          attempt++;
-          continue;
-        } catch (error: unknown) {
-          if (
-            typeof error === 'object' &&
-            error !== null &&
-            'statusCode' in error &&
-            error.statusCode === 409
-          ) {
+          try {
+            const updateResult = await this.tryUpdateWithScriptAndMeta(
+              index,
+              id,
+              input,
+              meta,
+              options?.refresh
+            );
+
+            if (updateResult !== 'conflict') {
+              return updateResult;
+            }
+
             attempt++;
-            continue;
-          }
+          } catch (error: unknown) {
+            if (
+              typeof error === 'object' &&
+              error !== null &&
+              'statusCode' in error &&
+              error.statusCode === 409
+            ) {
+              attempt++;
+              continue;
+            }
 
-          if (attempt >= maxRetries - 1) {
-            throw new Error(`Failed to update with script: ${error}`);
-          }
+            if (attempt >= maxRetries - 1) {
+              throw new Error(`Failed to update with script: ${error}`);
+            }
 
-          attempt++;
-          continue;
+            attempt++;
+          }
         }
-      }
 
-      try {
-        const updateResult = await this.tryUpdateWithScriptAndMeta(
-          index,
-          id,
-          input,
-          meta,
-          options?.refresh
+        throw new Error(
+          `Failed to update with script after ${maxRetries} attempts: conflict`
         );
-
-        if (updateResult !== 'conflict') {
-          return updateResult;
-        }
-
-        attempt++;
-      } catch (error: unknown) {
-        if (
-          typeof error === 'object' &&
-          error !== null &&
-          'statusCode' in error &&
-          error.statusCode === 409
-        ) {
-          attempt++;
-          continue;
-        }
-
-        if (attempt >= maxRetries - 1) {
-          throw new Error(`Failed to update with script: ${error}`);
-        }
-
-        attempt++;
       }
-    }
-
-    throw new Error(
-      `Failed to update with script after ${maxRetries} attempts: conflict`
     );
   };
 
@@ -866,88 +966,99 @@ export class ElasticDatabaseService {
     },
     options?: { upsert?: boolean; maxRetries?: number; refresh?: boolean }
   ): Promise<'updated' | 'created' | 'noop' | 'conflict' | 'not_found'> => {
-    const maxRetries = options?.maxRetries ?? 5;
-    let attempt = 0;
+    return this.withLifecycleElastic(
+      'update_with_script_occ',
+      index,
+      id,
+      async () => {
+        const maxRetries = options?.maxRetries ?? 5;
+        let attempt = 0;
 
-    while (attempt < maxRetries) {
-      try {
-        const meta = await this.getDocumentMeta(index, id);
+        while (attempt < maxRetries) {
+          try {
+            const meta = await this.getDocumentMeta(index, id);
 
-        if (!meta) {
-          if (options?.upsert !== true && !input.upsert) {
-            return 'not_found';
+            if (!meta) {
+              if (options?.upsert !== true && !input.upsert) {
+                return 'not_found';
+              }
+
+              const createResult = await this.tryCreateWithScript(
+                index,
+                id,
+                input,
+                options?.refresh
+              );
+
+              if (createResult !== 'conflict') {
+                return createResult;
+              }
+
+              attempt++;
+              continue;
+            }
+
+            const updateResult = await this.tryUpdateWithScriptAndMeta(
+              index,
+              id,
+              input,
+              meta,
+              options?.refresh
+            );
+
+            if (updateResult !== 'conflict') {
+              if (attempt > 0) {
+                incrementCounter('elastic.update.script.occ.retry', attempt, {
+                  index,
+                  result: updateResult,
+                });
+              }
+              return updateResult;
+            }
+
+            attempt++;
+          } catch (error) {
+            if (this.isReadOnlyAllowDeleteBlockError(error)) {
+              incrementCounter(
+                'elastic.update.script.occ.read_only_allow_delete',
+                1,
+                {
+                  index,
+                }
+              );
+              throw this.buildReadOnlyAllowDeleteBlockError(index, error);
+            }
+
+            if (attempt >= maxRetries - 1) {
+              incrementCounter(
+                'elastic.update.script.occ.max_retries_exceeded',
+                1,
+                {
+                  index,
+                  max_retries: maxRetries,
+                }
+              );
+              throw new Error(
+                `Failed to update with script OCC after retries: ${error}`
+              );
+            }
+
+            attempt++;
           }
-
-          const createResult = await this.tryCreateWithScript(
-            index,
-            id,
-            input,
-            options?.refresh
-          );
-
-          if (createResult !== 'conflict') {
-            return createResult;
-          }
-
-          attempt++;
-          continue;
         }
 
-        const updateResult = await this.tryUpdateWithScriptAndMeta(
-          index,
-          id,
-          input,
-          meta,
-          options?.refresh
+        incrementCounter(
+          'elastic.update.script.occ.conflict_after_retries',
+          1,
+          {
+            index,
+            max_retries: maxRetries,
+          }
         );
 
-        if (updateResult !== 'conflict') {
-          if (attempt > 0) {
-            incrementCounter('elastic.update.script.occ.retry', attempt, {
-              index,
-              result: updateResult,
-            });
-          }
-          return updateResult;
-        }
-
-        attempt++;
-      } catch (error) {
-        if (this.isReadOnlyAllowDeleteBlockError(error)) {
-          incrementCounter(
-            'elastic.update.script.occ.read_only_allow_delete',
-            1,
-            {
-              index,
-            }
-          );
-          throw this.buildReadOnlyAllowDeleteBlockError(index, error);
-        }
-
-        if (attempt >= maxRetries - 1) {
-          incrementCounter(
-            'elastic.update.script.occ.max_retries_exceeded',
-            1,
-            {
-              index,
-              max_retries: maxRetries,
-            }
-          );
-          throw new Error(
-            `Failed to update with script OCC after retries: ${error}`
-          );
-        }
-
-        attempt++;
+        return 'conflict';
       }
-    }
-
-    incrementCounter('elastic.update.script.occ.conflict_after_retries', 1, {
-      index,
-      max_retries: maxRetries,
-    });
-
-    return 'conflict';
+    );
   };
 
   updateByQueryWithScript = async <TParams extends Record<string, unknown>>(
@@ -969,133 +1080,140 @@ export class ElasticDatabaseService {
     versionConflicts: number;
     failures: Array<{ id?: string; cause: string }>;
   }> => {
-    const conflictsPolicy = options?.conflicts ?? 'abort';
-    const maxRetries = options?.maxRetries ?? 5;
-    const batchSize = options?.batchSize ?? 100;
+    return this.withLifecycleElastic(
+      'update_by_query_with_script',
+      index,
+      undefined,
+      async () => {
+        const conflictsPolicy = options?.conflicts ?? 'abort';
+        const maxRetries = options?.maxRetries ?? 5;
+        const batchSize = options?.batchSize ?? 100;
 
-    let total = 0;
-    let updated = 0;
-    let versionConflicts = 0;
-    const failures: Array<{ id?: string; cause: string }> = [];
+        let total = 0;
+        let updated = 0;
+        let versionConflicts = 0;
+        const failures: Array<{ id?: string; cause: string }> = [];
 
-    try {
-      let scrollId: string | undefined;
-      let hasMore = true;
+        try {
+          let scrollId: string | undefined;
+          let hasMore = true;
 
-      while (hasMore) {
-        const searchResponse = scrollId
-          ? await this.client.scroll({
-              scroll_id: scrollId,
-              scroll: '1m',
-            })
-          : await this.client.search({
-              index,
-              body: { query } as any,
-              scroll: '1m',
-              size: batchSize,
-              _source: false,
+          while (hasMore) {
+            const searchResponse = scrollId
+              ? await this.client.scroll({
+                  scroll_id: scrollId,
+                  scroll: '1m',
+                })
+              : await this.client.search({
+                  index,
+                  body: { query } as any,
+                  scroll: '1m',
+                  size: batchSize,
+                  _source: false,
+                });
+
+            const hits = searchResponse.hits.hits ?? [];
+            total += hits.length;
+
+            if (hits.length === 0) {
+              hasMore = false;
+              if (scrollId) {
+                await this.client.clearScroll({ scroll_id: scrollId });
+              }
+              break;
+            }
+
+            const ids = hits
+              .map((hit) => hit._id)
+              .filter((id): id is string => !!id);
+
+            if (ids.length === 0) {
+              scrollId = (searchResponse as any)._scroll_id;
+              hasMore = !!scrollId && hits.length === batchSize;
+              continue;
+            }
+
+            const updatePromises = ids.map(async (id) => {
+              const result = await this.updateWithScriptOCC(
+                index,
+                id,
+                {
+                  source: script.source,
+                  params: script.params as Record<string, unknown>,
+                },
+                { maxRetries }
+              );
+
+              if (result === 'updated' || result === 'created') {
+                return { id, success: true };
+              }
+
+              if (result === 'conflict') {
+                return { id, success: false, conflict: true };
+              }
+
+              return { id, success: false, conflict: false };
             });
 
-        const hits = searchResponse.hits.hits ?? [];
-        total += hits.length;
+            const results = await Promise.all(updatePromises);
 
-        if (hits.length === 0) {
-          hasMore = false;
-          if (scrollId) {
-            await this.client.clearScroll({ scroll_id: scrollId });
+            for (const result of results) {
+              if (result.success) {
+                updated++;
+                continue;
+              }
+
+              if (result.conflict) {
+                versionConflicts++;
+                failures.push({
+                  id: result.id,
+                  cause: 'Version conflict',
+                });
+                continue;
+              }
+
+              failures.push({
+                id: result.id,
+                cause: 'Update failed',
+              });
+            }
+
+            if (options?.requestsPerSecond && options.requestsPerSecond > 0) {
+              const delay = Math.ceil(
+                (ids.length / options.requestsPerSecond) * 1000
+              );
+              await new Promise((resolve) => setTimeout(resolve, delay));
+            }
+
+            scrollId = (searchResponse as any)._scroll_id;
+            hasMore = !!scrollId && hits.length === batchSize;
           }
-          break;
+
+          if (conflictsPolicy === 'abort' && versionConflicts > 0) {
+            throw new Error(
+              `Update by query failed with ${versionConflicts} version conflicts. Updated: ${updated}, Total: ${total}`
+            );
+          }
+
+          if (options?.refresh) {
+            await this.client.indices.refresh({ index });
+          }
+
+          return {
+            updated,
+            total,
+            versionConflicts,
+            failures,
+          };
+        } catch (error: unknown) {
+          if (error instanceof Error) {
+            throw error;
+          }
+
+          throw new Error(`Failed to update by query with script: ${error}`);
         }
-
-        const ids = hits
-          .map((hit) => hit._id)
-          .filter((id): id is string => !!id);
-
-        if (ids.length === 0) {
-          scrollId = (searchResponse as any)._scroll_id;
-          hasMore = !!scrollId && hits.length === batchSize;
-          continue;
-        }
-
-        const updatePromises = ids.map(async (id) => {
-          const result = await this.updateWithScriptOCC(
-            index,
-            id,
-            {
-              source: script.source,
-              params: script.params as Record<string, unknown>,
-            },
-            { maxRetries }
-          );
-
-          if (result === 'updated' || result === 'created') {
-            return { id, success: true };
-          }
-
-          if (result === 'conflict') {
-            return { id, success: false, conflict: true };
-          }
-
-          return { id, success: false, conflict: false };
-        });
-
-        const results = await Promise.all(updatePromises);
-
-        for (const result of results) {
-          if (result.success) {
-            updated++;
-            continue;
-          }
-
-          if (result.conflict) {
-            versionConflicts++;
-            failures.push({
-              id: result.id,
-              cause: 'Version conflict',
-            });
-            continue;
-          }
-
-          failures.push({
-            id: result.id,
-            cause: 'Update failed',
-          });
-        }
-
-        if (options?.requestsPerSecond && options.requestsPerSecond > 0) {
-          const delay = Math.ceil(
-            (ids.length / options.requestsPerSecond) * 1000
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-
-        scrollId = (searchResponse as any)._scroll_id;
-        hasMore = !!scrollId && hits.length === batchSize;
       }
-
-      if (conflictsPolicy === 'abort' && versionConflicts > 0) {
-        throw new Error(
-          `Update by query failed with ${versionConflicts} version conflicts. Updated: ${updated}, Total: ${total}`
-        );
-      }
-
-      if (options?.refresh) {
-        await this.client.indices.refresh({ index });
-      }
-
-      return {
-        updated,
-        total,
-        versionConflicts,
-        failures,
-      };
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        throw error;
-      }
-
-      throw new Error(`Failed to update by query with script: ${error}`);
-    }
+    );
   };
 
   bulkCreateIdempotent = async <T extends object>(
@@ -1103,65 +1221,72 @@ export class ElasticDatabaseService {
     documents: T[],
     getId: (doc: T) => string | null
   ): Promise<{ created: number; conflicts: number; failed: number }> => {
-    const body = documents.flatMap((doc) => {
-      const id = getId(doc);
-      if (!id) return [];
+    return this.withLifecycleElastic(
+      'bulk_create_idempotent',
+      index,
+      undefined,
+      async () => {
+        const body = documents.flatMap((doc) => {
+          const id = getId(doc);
+          if (!id) return [];
 
-      return [{ create: { _index: index, _id: id } }, doc];
-    });
+          return [{ create: { _index: index, _id: id } }, doc];
+        });
 
-    if (body.length === 0) {
-      return { created: 0, conflicts: 0, failed: 0 };
-    }
+        if (body.length === 0) {
+          return { created: 0, conflicts: 0, failed: 0 };
+        }
 
-    try {
-      const response = (await this.client.bulk({
-        body,
-      })) as IElasticBulkResponse;
+        try {
+          const response = (await this.client.bulk({
+            body,
+          })) as IElasticBulkResponse;
 
-      let created = 0;
-      let conflicts = 0;
-      let failed = 0;
-      const errorMessages: string[] = [];
+          let created = 0;
+          let conflicts = 0;
+          let failed = 0;
+          const errorMessages: string[] = [];
 
-      for (const item of response.items) {
-        const createItem = item as IElasticBulkCreateItem;
-        if (!createItem.create) continue;
+          for (const item of response.items) {
+            const createItem = item as IElasticBulkCreateItem;
+            if (!createItem.create) continue;
 
-        if (createItem.create.error) {
-          if (createItem.create.status === 409) {
-            conflicts++;
-            continue;
+            if (createItem.create.error) {
+              if (createItem.create.status === 409) {
+                conflicts++;
+                continue;
+              }
+
+              failed++;
+              if (errorMessages.length < 5) {
+                errorMessages.push(
+                  `${createItem.create.error.type}: ${createItem.create.error.reason}`
+                );
+              }
+              continue;
+            }
+
+            if (createItem.create.result === 'created') {
+              created++;
+            }
           }
 
-          failed++;
-          if (errorMessages.length < 5) {
-            errorMessages.push(
-              `${createItem.create.error.type}: ${createItem.create.error.reason}`
+          if (failed > 0) {
+            throw new Error(
+              `Bulk create failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
             );
           }
-          continue;
+
+          return { created, conflicts, failed };
+        } catch (error) {
+          if (error instanceof Error) {
+            throw error;
+          }
+
+          throw new Error(`Failed to bulk create documents: ${error}`);
         }
-
-        if (createItem.create.result === 'created') {
-          created++;
-        }
       }
-
-      if (failed > 0) {
-        throw new Error(
-          `Bulk create failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
-        );
-      }
-
-      return { created, conflicts, failed };
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-
-      throw new Error(`Failed to bulk create documents: ${error}`);
-    }
+    );
   };
 
   bulkUpdateWithScript = async <TParams extends Record<string, unknown>>(
@@ -1173,123 +1298,130 @@ export class ElasticDatabaseService {
       retryOnConflict?: number;
     }>
   ): Promise<{ updated: number; noop: number; failed: number }> => {
-    if (operations.length === 0) {
-      return { updated: 0, noop: 0, failed: 0 };
-    }
+    return this.withLifecycleElastic(
+      'bulk_update_with_script',
+      index,
+      undefined,
+      async () => {
+        if (operations.length === 0) {
+          return { updated: 0, noop: 0, failed: 0 };
+        }
 
-    const ids = operations.map((op) => op.id);
-    const metaMap = await this.getBulkDocumentMeta(index, ids);
+        const ids = operations.map((op) => op.id);
+        const metaMap = await this.getBulkDocumentMeta(index, ids);
 
-    const body = operations.flatMap((op): any => {
-      const meta = metaMap.get(op.id);
+        const body = operations.flatMap((op): any => {
+          const meta = metaMap.get(op.id);
 
-      const payload: {
-        script: { source: string; params: TParams };
-        scripted_upsert?: boolean;
-        upsert?: Record<string, unknown>;
-      } = {
-        script: {
-          source: op.script.source,
-          params: op.script.params,
-        },
-      };
-
-      if (op.upsert) {
-        payload.scripted_upsert = true;
-        payload.upsert = op.upsert;
-      }
-
-      if (meta) {
-        return [
-          {
-            update: {
-              _index: index,
-              _id: op.id,
-              if_seq_no: meta.seqNo,
-              if_primary_term: meta.primaryTerm,
+          const payload: {
+            script: { source: string; params: TParams };
+            scripted_upsert?: boolean;
+            upsert?: Record<string, unknown>;
+          } = {
+            script: {
+              source: op.script.source,
+              params: op.script.params,
             },
-          },
-          payload,
-        ];
-      }
+          };
 
-      const createPayload: {
-        script: { source: string; params: TParams };
-        scripted_upsert: boolean;
-        upsert: Record<string, unknown>;
-      } = {
-        script: {
-          source: op.script.source,
-          params: op.script.params,
-        },
-        scripted_upsert: true,
-        upsert: op.upsert ?? {},
-      };
+          if (op.upsert) {
+            payload.scripted_upsert = true;
+            payload.upsert = op.upsert;
+          }
 
-      return [
-        {
-          update: {
-            _index: index,
-            _id: op.id,
-          },
-        },
-        createPayload,
-      ];
-    }) as any;
+          if (meta) {
+            return [
+              {
+                update: {
+                  _index: index,
+                  _id: op.id,
+                  if_seq_no: meta.seqNo,
+                  if_primary_term: meta.primaryTerm,
+                },
+              },
+              payload,
+            ];
+          }
 
-    try {
-      const response = (await this.client.bulk({
-        body: body as any,
-      })) as IElasticBulkResponse;
+          const createPayload: {
+            script: { source: string; params: TParams };
+            scripted_upsert: boolean;
+            upsert: Record<string, unknown>;
+          } = {
+            script: {
+              source: op.script.source,
+              params: op.script.params,
+            },
+            scripted_upsert: true,
+            upsert: op.upsert ?? {},
+          };
 
-      let updated = 0;
-      let noop = 0;
-      let failed = 0;
-      const errorMessages: string[] = [];
+          return [
+            {
+              update: {
+                _index: index,
+                _id: op.id,
+              },
+            },
+            createPayload,
+          ];
+        }) as any;
 
-      for (const item of response.items) {
-        const updateItem = item as IElasticBulkUpdateItem;
-        if (!updateItem.update) continue;
+        try {
+          const response = (await this.client.bulk({
+            body: body as any,
+          })) as IElasticBulkResponse;
 
-        if (updateItem.update.error) {
-          failed++;
-          if (errorMessages.length < 5) {
-            errorMessages.push(
-              `${updateItem.update.error.type}: ${updateItem.update.error.reason}`
+          let updated = 0;
+          let noop = 0;
+          let failed = 0;
+          const errorMessages: string[] = [];
+
+          for (const item of response.items) {
+            const updateItem = item as IElasticBulkUpdateItem;
+            if (!updateItem.update) continue;
+
+            if (updateItem.update.error) {
+              failed++;
+              if (errorMessages.length < 5) {
+                errorMessages.push(
+                  `${updateItem.update.error.type}: ${updateItem.update.error.reason}`
+                );
+              }
+              continue;
+            }
+
+            if (updateItem.update.result === 'updated') {
+              updated++;
+              continue;
+            }
+
+            if (updateItem.update.result === 'noop') {
+              noop++;
+              continue;
+            }
+
+            if (updateItem.update.result === 'created') {
+              updated++;
+            }
+          }
+
+          if (failed > 0) {
+            throw new Error(
+              `Bulk update with script failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
             );
           }
-          continue;
-        }
 
-        if (updateItem.update.result === 'updated') {
-          updated++;
-          continue;
-        }
+          return { updated, noop, failed };
+        } catch (error) {
+          if (error instanceof Error) {
+            throw error;
+          }
 
-        if (updateItem.update.result === 'noop') {
-          noop++;
-          continue;
-        }
-
-        if (updateItem.update.result === 'created') {
-          updated++;
+          throw new Error(`Failed to bulk update with script: ${error}`);
         }
       }
-
-      if (failed > 0) {
-        throw new Error(
-          `Bulk update with script failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
-        );
-      }
-
-      return { updated, noop, failed };
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-
-      throw new Error(`Failed to bulk update with script: ${error}`);
-    }
+    );
   };
 
   private processBulkUpdateResponse(
@@ -1343,119 +1475,143 @@ export class ElasticDatabaseService {
     updates: Array<{ id: string; document: object }>,
     options?: { maxRetries?: number }
   ): Promise<boolean> => {
-    if (updates.length === 0) {
-      return true;
-    }
-
-    const maxRetries = options?.maxRetries ?? 5;
-    let remainingUpdates = [...updates];
-    let attempt = 0;
-
-    while (remainingUpdates.length > 0 && attempt < maxRetries) {
-      const ids = remainingUpdates.map((update) => update.id);
-      const metaMap = await this.getBulkDocumentMeta(index, ids);
-
-      const body = remainingUpdates.flatMap((update) => {
-        const meta = metaMap.get(update.id);
-
-        if (meta) {
-          return [
-            {
-              update: {
-                _index: index,
-                _id: update.id,
-                if_seq_no: meta.seqNo,
-                if_primary_term: meta.primaryTerm,
-              },
-            },
-            { doc: update.document },
-          ];
-        }
-
-        return [{ create: { _index: index, _id: update.id } }, update.document];
-      });
-
-      try {
-        const response = (await this.client.bulk({
-          body,
-        })) as IElasticBulkResponse;
-
-        if (!response.errors) {
+    return this.withLifecycleElastic(
+      'bulk_update_fields',
+      index,
+      undefined,
+      async () => {
+        if (updates.length === 0) {
           return true;
         }
 
-        const { failedUpdates, errorMessages } = this.processBulkUpdateResponse(
-          response,
-          remainingUpdates
-        );
+        const maxRetries = options?.maxRetries ?? 5;
+        let remainingUpdates = [...updates];
+        let attempt = 0;
 
-        if (errorMessages.length > 0) {
+        while (remainingUpdates.length > 0 && attempt < maxRetries) {
+          const ids = remainingUpdates.map((update) => update.id);
+          const metaMap = await this.getBulkDocumentMeta(index, ids);
+
+          const body = remainingUpdates.flatMap((update) => {
+            const meta = metaMap.get(update.id);
+
+            if (meta) {
+              return [
+                {
+                  update: {
+                    _index: index,
+                    _id: update.id,
+                    if_seq_no: meta.seqNo,
+                    if_primary_term: meta.primaryTerm,
+                  },
+                },
+                { doc: update.document },
+              ];
+            }
+
+            return [
+              { create: { _index: index, _id: update.id } },
+              update.document,
+            ];
+          });
+
+          try {
+            const response = (await this.client.bulk({
+              body,
+            })) as IElasticBulkResponse;
+
+            if (!response.errors) {
+              return true;
+            }
+
+            const { failedUpdates, errorMessages } =
+              this.processBulkUpdateResponse(response, remainingUpdates);
+
+            if (errorMessages.length > 0) {
+              throw new Error(
+                `Bulk update fields failed: ${JSON.stringify(errorMessages)}`
+              );
+            }
+
+            if (failedUpdates.length === 0) {
+              return true;
+            }
+
+            remainingUpdates = failedUpdates;
+            attempt++;
+          } catch (error) {
+            if (attempt >= maxRetries - 1) {
+              throw new Error(`Failed to bulk update fields: ${error}`);
+            }
+
+            attempt++;
+          }
+        }
+
+        if (remainingUpdates.length > 0) {
           throw new Error(
-            `Bulk update fields failed: ${JSON.stringify(errorMessages)}`
+            `Bulk update fields failed: ${remainingUpdates.length} documents could not be updated after ${maxRetries} retries`
           );
         }
 
-        if (failedUpdates.length === 0) {
-          return true;
-        }
-
-        remainingUpdates = failedUpdates;
-        attempt++;
-      } catch (error) {
-        if (attempt >= maxRetries - 1) {
-          throw new Error(`Failed to bulk update fields: ${error}`);
-        }
-
-        attempt++;
+        return true;
       }
-    }
-
-    if (remainingUpdates.length > 0) {
-      throw new Error(
-        `Bulk update fields failed: ${remainingUpdates.length} documents could not be updated after ${maxRetries} retries`
-      );
-    }
-
-    return true;
+    );
   };
 
   deleteIndex = async (index: string): Promise<boolean> => {
-    try {
-      const result = await this.client.indices.delete({ index });
+    return this.withLifecycleElastic(
+      'delete_index',
+      index,
+      undefined,
+      async () => {
+        try {
+          const result = await this.client.indices.delete({ index });
 
-      return result.acknowledged;
-    } catch (error) {
-      throw new Error(`Failed to delete index: ${error}`);
-    }
+          return result.acknowledged;
+        } catch (error) {
+          throw new Error(`Failed to delete index: ${error}`);
+        }
+      }
+    );
   };
 
   deleteAllByQuery = async (
     index: string,
     query: QueryDslQueryContainer
   ): Promise<boolean> => {
-    try {
-      const { deleted = 0 } = await this.client.deleteByQuery({
-        index,
-        query,
-      });
+    return this.withLifecycleElastic(
+      'delete_all_by_query',
+      index,
+      undefined,
+      async () => {
+        try {
+          const { deleted = 0 } = await this.client.deleteByQuery({
+            index,
+            query,
+          });
 
-      return deleted > 0;
-    } catch {
-      return false;
-    }
+          return deleted > 0;
+        } catch {
+          return false;
+        }
+      }
+    );
   };
 
   delete = async (index: string, id: string): Promise<boolean> => {
-    try {
-      const result = await this.client.delete({
-        index,
-        id,
-      });
+    return this.withLifecycleElastic('delete', index, id, async () => {
+      try {
+        const result = await this.client.delete({
+          index,
+          id,
+        });
 
-      return result.result === 'deleted';
-    } catch (error) {
-      throw new Error(`Failed to delete document with ID: ${error}`);
-    }
+        return result.result === 'deleted';
+      } catch (error) {
+        throw new Error(`Failed to delete document with ID: ${error}`);
+      }
+    });
   };
 
   private asRecord(value: unknown): Record<string, unknown> | null {
@@ -1666,60 +1822,62 @@ export class ElasticDatabaseService {
   }
 
   indices = async (index: string, mappings: object): Promise<boolean> => {
-    const exists = await this.client.indices.exists({ index });
-    const mappingBody = (
-      mappings as {
-        mappings?: Record<string, unknown>;
-      }
-    )?.mappings;
-    const desiredProperties = this.getProperties(mappingBody);
+    return this.withLifecycleElastic('indices', index, undefined, async () => {
+      const exists = await this.client.indices.exists({ index });
+      const mappingBody = (
+        mappings as {
+          mappings?: Record<string, unknown>;
+        }
+      )?.mappings;
+      const desiredProperties = this.getProperties(mappingBody);
 
-    if (!exists) {
-      try {
-        const result = await this.client.indices.create(
-          {
-            index,
-            body: mappings,
-          },
-          { ignore: [400] }
+      if (!exists) {
+        try {
+          const result = await this.client.indices.create(
+            {
+              index,
+              body: mappings,
+            },
+            { ignore: [400] }
+          );
+
+          if (!result.acknowledged) {
+            return false;
+          }
+        } catch (error) {
+          throw new Error(`Failed to create index: ${error}`);
+        }
+      }
+
+      if (exists && Object.keys(desiredProperties).length > 0) {
+        const currentProperties = await this.getCurrentIndexProperties(index);
+        const additiveProperties = this.buildAdditiveProperties(
+          desiredProperties,
+          currentProperties
         );
 
-        if (!result.acknowledged) {
-          return false;
-        }
-      } catch (error) {
-        throw new Error(`Failed to create index: ${error}`);
-      }
-    }
-
-    if (exists && Object.keys(desiredProperties).length > 0) {
-      const currentProperties = await this.getCurrentIndexProperties(index);
-      const additiveProperties = this.buildAdditiveProperties(
-        desiredProperties,
-        currentProperties
-      );
-
-      if (Object.keys(additiveProperties).length === 0) {
-        return true;
-      }
-
-      try {
-        await this.client.indices.putMapping({
-          index,
-          properties: additiveProperties as any,
-        });
-      } catch (error) {
-        if (this.isMappingConflictError(error)) {
-          incrementCounter('elastic.indices.put_mapping.conflict', 1, {
-            index,
-          });
+        if (Object.keys(additiveProperties).length === 0) {
           return true;
         }
 
-        throw new Error(`Failed to update index mapping: ${error}`);
-      }
-    }
+        try {
+          await this.client.indices.putMapping({
+            index,
+            properties: additiveProperties as any,
+          });
+        } catch (error) {
+          if (this.isMappingConflictError(error)) {
+            incrementCounter('elastic.indices.put_mapping.conflict', 1, {
+              index,
+            });
+            return true;
+          }
 
-    return true;
+          throw new Error(`Failed to update index mapping: ${error}`);
+        }
+      }
+
+      return true;
+    });
   };
 }

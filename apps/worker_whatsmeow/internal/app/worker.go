@@ -387,9 +387,10 @@ func (w *Worker) handleWebhookIntegration(ctx context.Context, msg kafka.Message
 	}
 
 	upsert := UpsertMessage{
-		AccountID: firstNonEmpty(accountID, w.cfg.AccountID),
-		WorkerID:  w.cfg.WorkerID,
-		Type:      MessageTypeText,
+		AccountID:      firstNonEmpty(accountID, w.cfg.AccountID),
+		WorkerID:       w.cfg.WorkerID,
+		SourceProvider: "webhook",
+		Type:           MessageTypeText,
 		Message: map[string]any{
 			"key": map[string]any{
 				"remoteJid": resp.JID,
@@ -408,7 +409,39 @@ func (w *Worker) handleWebhookIntegration(ctx context.Context, msg kafka.Message
 	upsert.TransferSectorID = stringValue(mapped["transfer_sector_id"])
 	upsert.TransferSectorUserID = stringValue(mapped["transfer_sector_user_id"])
 	upsert.TransferUserID = stringValue(mapped["transfer_user_id"])
-	return w.kafka.SendJSON(ctx, topicUpsertMessage, valueString(upsert.Message["key"], "id"), upsert)
+	lifecycleCtx, finishLifecycleSpan := startMessageLifecycleSpan(ctx, w.cfg, messageLifecycleFromUpsert(w.cfg, &upsert))
+	defer func() {
+		finishLifecycleSpan(err)
+	}()
+	recordMessageLifecycle(lifecycleCtx, w.cfg, map[string]any{
+		"stage":     "whatsmeow.webhook.kafka.publish.start",
+		"decision":  "publish_webhook_upsert",
+		"outcome":   "started",
+		"topic":     topicUpsertMessage,
+		"kafka_key": valueString(upsert.Message["key"], "id"),
+	})
+	err = w.kafka.SendJSON(lifecycleCtx, topicUpsertMessage, valueString(upsert.Message["key"], "id"), upsert)
+	if err != nil {
+		recordMessageLifecycle(lifecycleCtx, w.cfg, map[string]any{
+			"stage":     "whatsmeow.webhook.kafka.publish.error",
+			"decision":  "publish_webhook_upsert",
+			"outcome":   "error",
+			"reason":    "producer_send_failed",
+			"level":     "error",
+			"topic":     topicUpsertMessage,
+			"kafka_key": valueString(upsert.Message["key"], "id"),
+			"error":     err.Error(),
+		})
+		return err
+	}
+	recordMessageLifecycle(lifecycleCtx, w.cfg, map[string]any{
+		"stage":     "whatsmeow.webhook.kafka.publish.success",
+		"decision":  "publish_webhook_upsert",
+		"outcome":   "published",
+		"topic":     topicUpsertMessage,
+		"kafka_key": valueString(upsert.Message["key"], "id"),
+	})
+	return nil
 }
 
 func (w *Worker) handleMarkRead(ctx context.Context, msg kafka.Message) error {

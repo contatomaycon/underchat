@@ -7,8 +7,10 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -53,7 +55,31 @@ func InitTelemetry(ctx context.Context, cfg Config) (func(context.Context) error
 	))
 	log.Printf("opentelemetry initialized service=%s", firstNonEmpty(cfg.OTELServiceName, "whatsmeow"))
 
-	return provider.Shutdown, nil
+	shutdowns := []func(context.Context) error{provider.Shutdown}
+	if cfg.MessageLifecycleDebugEnabled {
+		logExporter, logErr := otlploghttp.New(ctx)
+		if logErr != nil {
+			log.Printf("opentelemetry logs exporter init failed; lifecycle logs will use stdout fallback: %v", logErr)
+		} else {
+			logProvider := sdklog.NewLoggerProvider(
+				sdklog.WithResource(res),
+				sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
+			)
+			configureMessageLifecycleLoggerProvider(logProvider)
+			shutdowns = append(shutdowns, logProvider.Shutdown)
+			log.Printf("opentelemetry logs initialized service=%s", firstNonEmpty(cfg.OTELServiceName, "whatsmeow"))
+		}
+	}
+
+	return func(shutdownCtx context.Context) error {
+		var firstErr error
+		for _, shutdown := range shutdowns {
+			if err := shutdown(shutdownCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		return firstErr
+	}, nil
 }
 
 func parseOTELResourceAttributes(raw string) []attribute.KeyValue {

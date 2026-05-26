@@ -31,6 +31,12 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { WwebjsDeliveryConfirmationService } from './deliveryConfirmation.service';
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
+import {
+  buildMessageLifecycleContext,
+  isMessageLifecycleDebugEnabled,
+  recordMessageLifecycle,
+  type MessageLifecycleEvent,
+} from '@core/plugins/telemetry/messageLifecycleDebug';
 
 const ACK_ERROR = -1;
 const ACK_SERVER = 1;
@@ -661,6 +667,17 @@ function buildScopedStanzaDedupeKey(msg: Message): string | undefined {
   return `stanza:${fromMeTag}:${remoteJid}:${stanzaId}`;
 }
 
+function isUpsertMessagePayload(value: unknown): value is IUpsertMessage {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'worker_id' in value &&
+    'account_id' in value &&
+    'type' in value &&
+    'message' in value
+  );
+}
+
 @singleton()
 export class WwebjsIncomingMessageService {
   private currentClient: Client | undefined;
@@ -733,7 +750,109 @@ export class WwebjsIncomingMessageService {
   ) {}
 
   private logEvent(eventName: string, payload: Record<string, unknown>): void {
-    console.log(`[wwebjs] event:${eventName}`, payload);
+    if (!isMessageLifecycleDebugEnabled()) {
+      return;
+    }
+
+    const { raw_payload: rawPayload, ...payloadFields } = payload;
+    const messageId =
+      getNonEmptyString(payloadFields.messageKeyId) ??
+      getNonEmptyString(payloadFields.messageId) ??
+      getNonEmptyString(payloadFields.id) ??
+      getNonEmptyString(payloadFields.afterId) ??
+      getNonEmptyString(payloadFields.beforeId);
+    const from = getNonEmptyString(payloadFields.from);
+    const to = getNonEmptyString(payloadFields.to);
+    const fromMe = payloadFields.fromMe === true;
+    const remoteJid =
+      getNonEmptyString(payloadFields.remoteJid) ??
+      (fromMe ? to : from) ??
+      to ??
+      from;
+    const remoteJidAlt = getNonEmptyString(payloadFields.remoteJidAlt);
+
+    const contextData = buildMessageLifecycleContext(
+      {
+        worker_id: wwebjsEnvironment.wwebjsWorkerId,
+        account_id: wwebjsEnvironment.wwebjsAccountId,
+        source_provider: 'wwebjs',
+        type: EMessageType.text,
+        message: {
+          key: {
+            id: messageId,
+            remoteJid,
+            remoteJidAlt,
+            fromMe,
+          },
+        },
+      },
+      'wwebjs'
+    );
+
+    recordMessageLifecycle({
+      ...contextData,
+      ...payloadFields,
+      stage: `wwebjs.event.${eventName}`,
+      decision: 'provider_event',
+      outcome: 'received',
+      raw_payload: rawPayload ?? payloadFields,
+    });
+  }
+
+  private logLifecycleForMessage(
+    msg: Message | null | undefined,
+    event: MessageLifecycleEvent
+  ): void {
+    if (!isMessageLifecycleDebugEnabled()) {
+      return;
+    }
+
+    const remoteJid =
+      getMessageRemoteFromId(msg as Message) ??
+      getNonEmptyString(msg?.from) ??
+      getNonEmptyString(msg?.to);
+    const contextData = buildMessageLifecycleContext(
+      {
+        worker_id: wwebjsEnvironment.wwebjsWorkerId,
+        account_id: wwebjsEnvironment.wwebjsAccountId,
+        source_provider: 'wwebjs',
+        type: EMessageType.text,
+        message: {
+          key: {
+            id: getMessageIdSerialized(msg ?? {}),
+            remoteJid,
+            fromMe: msg?.fromMe,
+          },
+        },
+      },
+      'wwebjs'
+    );
+
+    recordMessageLifecycle({
+      ...contextData,
+      ...event,
+      provider_message_type: msg?.type,
+      message_text: msg?.body,
+    });
+  }
+
+  private logLifecycleForUpsert(
+    upsert: IUpsertMessage | null | undefined,
+    event: MessageLifecycleEvent
+  ): void {
+    if (!isMessageLifecycleDebugEnabled()) {
+      return;
+    }
+
+    const contextData = buildMessageLifecycleContext(
+      upsert ?? undefined,
+      'wwebjs'
+    );
+    recordMessageLifecycle({
+      ...contextData,
+      ...event,
+      source_provider: 'wwebjs',
+    });
   }
 
   private async waitMs(ms: number): Promise<void> {
@@ -780,6 +899,9 @@ export class WwebjsIncomingMessageService {
   }
 
   private enqueueKafkaRetry(item: IKafkaRetryQueueItem): boolean {
+    const lifecyclePayload = isUpsertMessagePayload(item.payload)
+      ? item.payload
+      : undefined;
     if (this.kafkaRetryQueue.length >= this.KAFKA_RETRY_QUEUE_MAX_SIZE) {
       this.logEvent('kafka_send_retry_queue_full', {
         queueSize: this.kafkaRetryQueue.length,
@@ -788,6 +910,23 @@ export class WwebjsIncomingMessageService {
         messageId: item.metadata.messageId,
         messageKeyId: item.metadata.messageKeyId,
       });
+      if (lifecyclePayload) {
+        this.logLifecycleForUpsert(lifecyclePayload, {
+          stage: 'wwebjs.kafka.retry_queue.full',
+          decision: 'queue_retry',
+          outcome: 'dropped',
+          reason: 'retry_queue_full',
+          level: 'error',
+          topic: item.topic,
+          kafka_key:
+            typeof item.kafkaKey === 'string'
+              ? item.kafkaKey
+              : item.metadata.messageId,
+          metadata_event: item.metadata.event,
+          queue_size: this.kafkaRetryQueue.length,
+          max_queue_size: this.KAFKA_RETRY_QUEUE_MAX_SIZE,
+        });
+      }
       return false;
     }
 
@@ -800,6 +939,24 @@ export class WwebjsIncomingMessageService {
       nextAttemptAt: new Date(item.nextAttemptAt).toISOString(),
       attempts: item.attempts,
     });
+    if (lifecyclePayload) {
+      lifecyclePayload.source_provider = 'wwebjs';
+      this.logLifecycleForUpsert(lifecyclePayload, {
+        stage: 'wwebjs.kafka.retry_queue.enqueue',
+        decision: 'queue_retry',
+        outcome: 'queued',
+        reason: 'immediate_publish_failed',
+        level: 'warn',
+        topic: item.topic,
+        kafka_key:
+          typeof item.kafkaKey === 'string'
+            ? item.kafkaKey
+            : item.metadata.messageId,
+        metadata_event: item.metadata.event,
+        queue_size: this.kafkaRetryQueue.length,
+        attempts: item.attempts,
+      });
+    }
     this.scheduleKafkaRetryProcessing(0);
     return true;
   }
@@ -844,6 +1001,25 @@ export class WwebjsIncomingMessageService {
             item.payload,
             item.kafkaKey
           );
+          const lifecyclePayload = isUpsertMessagePayload(item.payload)
+            ? item.payload
+            : undefined;
+          if (lifecyclePayload) {
+            lifecyclePayload.source_provider = 'wwebjs';
+            this.logLifecycleForUpsert(lifecyclePayload, {
+              stage: 'wwebjs.kafka.retry_queue.publish_success',
+              decision: 'retry_publish_upsert',
+              outcome: 'published',
+              topic: item.topic,
+              kafka_key:
+                typeof item.kafkaKey === 'string'
+                  ? item.kafkaKey
+                  : item.metadata.messageId,
+              metadata_event: item.metadata.event,
+              attempts: item.attempts + 1,
+              queue_size: this.kafkaRetryQueue.length,
+            });
+          }
           this.logEvent('kafka_send_retry_succeeded', {
             event: item.metadata.event,
             messageId: item.metadata.messageId,
@@ -865,6 +1041,28 @@ export class WwebjsIncomingMessageService {
             earliestNextAttemptAt,
             nextAttemptAt
           );
+          const lifecyclePayload = isUpsertMessagePayload(item.payload)
+            ? item.payload
+            : undefined;
+          if (lifecyclePayload) {
+            lifecyclePayload.source_provider = 'wwebjs';
+            this.logLifecycleForUpsert(lifecyclePayload, {
+              stage: 'wwebjs.kafka.retry_queue.publish_error',
+              decision: 'retry_publish_upsert',
+              outcome: 'retrying',
+              reason: 'producer_send_failed',
+              level: 'warn',
+              topic: item.topic,
+              kafka_key:
+                typeof item.kafkaKey === 'string'
+                  ? item.kafkaKey
+                  : item.metadata.messageId,
+              metadata_event: item.metadata.event,
+              attempts: nextAttempts,
+              next_attempt_at: new Date(nextAttemptAt).toISOString(),
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
 
           this.logEvent('kafka_send_retry_failed_attempt', {
             event: item.metadata.event,
@@ -901,6 +1099,22 @@ export class WwebjsIncomingMessageService {
     metadata: IKafkaSendMetadata,
     kafkaKey?: string | Buffer
   ): Promise<boolean> {
+    const lifecyclePayload = isUpsertMessagePayload(payload)
+      ? payload
+      : undefined;
+
+    if (lifecyclePayload) {
+      lifecyclePayload.source_provider = 'wwebjs';
+      this.logLifecycleForUpsert(lifecyclePayload, {
+        stage: 'wwebjs.kafka.publish.start',
+        decision: 'publish_upsert',
+        outcome: 'started',
+        topic,
+        kafka_key: typeof kafkaKey === 'string' ? kafkaKey : metadata.messageId,
+        metadata_event: metadata.event,
+      });
+    }
+
     for (
       let attempt = 1;
       attempt <= this.KAFKA_IMMEDIATE_SEND_ATTEMPTS;
@@ -908,6 +1122,18 @@ export class WwebjsIncomingMessageService {
     ) {
       try {
         await this.streamProducerService.send(topic, payload, kafkaKey);
+        if (lifecyclePayload) {
+          this.logLifecycleForUpsert(lifecyclePayload, {
+            stage: 'wwebjs.kafka.publish.success',
+            decision: 'publish_upsert',
+            outcome: 'published',
+            topic,
+            kafka_key:
+              typeof kafkaKey === 'string' ? kafkaKey : metadata.messageId,
+            metadata_event: metadata.event,
+            attempts: attempt,
+          });
+        }
 
         if (attempt > 1) {
           this.logEvent('kafka_send_recovered', {
@@ -934,6 +1160,22 @@ export class WwebjsIncomingMessageService {
           willQueueRetry: isLastAttempt,
           nextRetryDelayMs,
         });
+        if (lifecyclePayload) {
+          this.logLifecycleForUpsert(lifecyclePayload, {
+            stage: 'wwebjs.kafka.publish.error',
+            decision: 'publish_upsert',
+            outcome: isLastAttempt ? 'queue_retry' : 'retrying',
+            reason: 'producer_send_failed',
+            level: isLastAttempt ? 'warn' : 'info',
+            topic,
+            kafka_key:
+              typeof kafkaKey === 'string' ? kafkaKey : metadata.messageId,
+            metadata_event: metadata.event,
+            attempts: attempt,
+            error: error instanceof Error ? error.message : String(error),
+            next_retry_delay_ms: nextRetryDelayMs ?? undefined,
+          });
+        }
 
         if (!isLastAttempt && nextRetryDelayMs !== null) {
           await this.waitMs(nextRetryDelayMs);
@@ -983,6 +1225,13 @@ export class WwebjsIncomingMessageService {
         to: msg.to,
         type: msg.type,
       });
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.received_raw',
+        decision: 'receive_provider_message',
+        outcome: 'received',
+        event_source: 'message',
+        raw_payload: msg,
+      });
 
       if (this.enqueueHistoricalMessageIfNeeded(msg, 'message')) {
         return;
@@ -992,8 +1241,12 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
-      console.log('Messages upsert');
-      console.dir(msg, { depth: null, colors: true });
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.received',
+        decision: 'receive_provider_message',
+        outcome: 'received',
+        raw_payload: msg,
+      });
 
       void this.handleIncomingMessage(msg);
     });
@@ -1004,6 +1257,13 @@ export class WwebjsIncomingMessageService {
         from: msg.from,
         to: msg.to,
         type: msg.type,
+      });
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.received_raw',
+        decision: 'receive_provider_message',
+        outcome: 'received',
+        event_source: 'message_ciphertext',
+        raw_payload: msg,
       });
 
       if (!this.shouldHandleCiphertextMessage(msg)) {
@@ -1021,10 +1281,6 @@ export class WwebjsIncomingMessageService {
       void this.handleIncomingMessage(msg);
     });
     client.on('message_ciphertext_failed', (msg: Message) => {
-      if (this.shouldSkipCiphertextFailedMessage(msg)) {
-        return;
-      }
-
       this.logEvent('message_ciphertext_failed', {
         id: getMessageIdSerialized(msg),
         fromMe: msg.fromMe,
@@ -1032,6 +1288,18 @@ export class WwebjsIncomingMessageService {
         to: msg.to,
         type: msg.type,
       });
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.received_raw',
+        decision: 'receive_provider_message',
+        outcome: 'received',
+        event_source: 'message_ciphertext_failed',
+        raw_payload: msg,
+      });
+
+      if (this.shouldSkipCiphertextFailedMessage(msg)) {
+        return;
+      }
+
       this.handleCiphertextFailed(msg);
 
       if (
@@ -1054,6 +1322,13 @@ export class WwebjsIncomingMessageService {
         to: msg.to,
         type: msg.type,
       });
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.received_raw',
+        decision: 'receive_provider_message',
+        outcome: 'received',
+        event_source: 'message_create',
+        raw_payload: msg,
+      });
 
       if (this.enqueueHistoricalMessageIfNeeded(msg, 'message_create')) {
         return;
@@ -1067,8 +1342,13 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
-      console.log('Messages upsert (fromMe external)');
-      console.dir(msg, { depth: null, colors: true });
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.received',
+        decision: 'receive_provider_message',
+        outcome: 'received',
+        reason: 'from_me_external',
+        raw_payload: msg,
+      });
 
       void this.handleIncomingMessage(msg);
     });
@@ -1080,6 +1360,7 @@ export class WwebjsIncomingMessageService {
         from: after.from,
         to: after.to,
         type: after.type,
+        raw_payload: { after, before },
       });
 
       if (this.shouldSkipIncomingEventMessage(after)) {
@@ -1095,6 +1376,7 @@ export class WwebjsIncomingMessageService {
         from: msg.from,
         to: msg.to,
         type: msg.type,
+        raw_payload: msg,
       });
 
       if (this.shouldSkipIncomingEventMessage(msg)) {
@@ -1114,6 +1396,7 @@ export class WwebjsIncomingMessageService {
           type: message.type,
           hasNewBody: Boolean(getNonEmptyString(newBody)),
           hasPrevBody: Boolean(getNonEmptyString(prevBody)),
+          raw_payload: { message, newBody, prevBody },
         });
 
         if (this.shouldSkipIncomingEventMessage(message)) {
@@ -1132,6 +1415,7 @@ export class WwebjsIncomingMessageService {
         parentMsgId,
         senderId: getReactionSenderId(reaction),
         emoji: getReactionEmoji(reaction),
+        raw_payload: reaction,
       });
 
       const reactionRemote = getRemoteFromSerializedMessageId(reactionId);
@@ -1160,6 +1444,7 @@ export class WwebjsIncomingMessageService {
           fromMe: call.fromMe,
           timestamp: call.timestamp,
           isVideo: call.isVideo,
+          raw_payload: call,
         });
 
         void this.handleCall(call);
@@ -1173,6 +1458,7 @@ export class WwebjsIncomingMessageService {
         to: msg.to,
         type: msg.type,
         ack,
+        raw_payload: msg,
       });
 
       if (this.shouldSkipIncomingEventMessage(msg)) {
@@ -1194,6 +1480,7 @@ export class WwebjsIncomingMessageService {
           isPinned: pinData?.isPinned,
           chatId: pinData?.chatId,
           parentMessageId: pinData?.parentMessageId,
+          raw_payload: { message, pinData },
         });
 
         if (this.shouldSkipIncomingEventMessage(message)) {
@@ -1455,13 +1742,28 @@ export class WwebjsIncomingMessageService {
   }
 
   private shouldSkipIncomingEventMessage(msg: Message): boolean {
-    return this.shouldSkipIncomingEventByJids(
+    const shouldSkip = this.shouldSkipIncomingEventByJids(
       this.getMessageJidCandidates(msg)
     );
+    if (shouldSkip) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming_event.skip',
+        decision: 'jid_filter',
+        outcome: 'skipped',
+        reason: 'unsupported_group_status_or_broadcast_jid',
+      });
+    }
+    return shouldSkip;
   }
 
   private shouldSkipCiphertextFailedMessage(msg: Message): boolean {
     if (this.isUnsupportedSystemNotification(msg)) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.ciphertext_failed.skip',
+        decision: 'system_notification_filter',
+        outcome: 'skipped',
+        reason: 'unsupported_system_notification',
+      });
       return true;
     }
 
@@ -2247,18 +2549,46 @@ export class WwebjsIncomingMessageService {
     source: WwebjsIncomingEventSource
   ): boolean {
     if (this.isUnsupportedSystemNotification(msg)) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.skip',
+        decision: 'system_notification_filter',
+        outcome: 'skipped',
+        reason: 'unsupported_system_notification',
+        event_source: source,
+      });
       return true;
     }
 
     if (this.isGroupMessage(msg)) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.skip',
+        decision: 'chat_kind_filter',
+        outcome: 'skipped',
+        reason: 'group_message',
+        event_source: source,
+      });
       return true;
     }
 
     if (this.isStatusOrBroadcastMessage(msg)) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.skip',
+        decision: 'chat_kind_filter',
+        outcome: 'skipped',
+        reason: 'status_or_broadcast_message',
+        event_source: source,
+      });
       return true;
     }
 
     if (source !== 'message_ciphertext' && this.shouldSkipPinMessage(msg)) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.skip',
+        decision: 'pin_message_filter',
+        outcome: 'skipped',
+        reason: 'pin_message',
+        event_source: source,
+      });
       return true;
     }
 
@@ -2280,6 +2610,14 @@ export class WwebjsIncomingMessageService {
           type: msg.type,
           source,
           dedupeKey,
+        });
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.skip',
+          decision: 'dedupe',
+          outcome: 'skipped',
+          reason: 'duplicate_incoming_message',
+          event_source: source,
+          dedupe_key: dedupeKey,
         });
         return true;
       }
@@ -2438,6 +2776,12 @@ export class WwebjsIncomingMessageService {
 
   private shouldHandleFromMeCreatedMessage(msg: Message): boolean {
     if (!msg.fromMe) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.message_create.skip',
+        decision: 'from_me_filter',
+        outcome: 'skipped',
+        reason: 'message_not_from_me',
+      });
       return false;
     }
 
@@ -2456,16 +2800,39 @@ export class WwebjsIncomingMessageService {
       ?.toUpperCase()
       ?.trim();
     if (associationType === 'MEDIA_ALBUM' || viewMode === 'MEDIA_ALBUM') {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.message_create.skip',
+        decision: 'album_filter',
+        outcome: 'skipped',
+        reason: 'media_album',
+      });
       return false;
     }
 
     const ackRaw =
       msg.ack ?? (msg as unknown as { _data?: { ack?: number } })._data?.ack;
     if (typeof ackRaw === 'number' && ackRaw < 1) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.message_create.skip',
+        decision: 'ack_filter',
+        outcome: 'skipped',
+        reason: 'ack_before_server',
+        ack: ackRaw,
+      });
       return false;
     }
 
-    return !!this.getMessageAuthor(msg);
+    const hasAuthor = !!this.getMessageAuthor(msg);
+    if (!hasAuthor) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.message_create.skip',
+        decision: 'author_filter',
+        outcome: 'skipped',
+        reason: 'missing_author',
+      });
+    }
+
+    return hasAuthor;
   }
 
   private shouldHandleCiphertextMessage(msg: Message): boolean {
@@ -2860,6 +3227,12 @@ export class WwebjsIncomingMessageService {
   ): Promise<void> {
     const client = this.currentClient;
     if (!client) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.skip',
+        decision: 'client_available',
+        outcome: 'skipped',
+        reason: 'client_not_available',
+      });
       return;
     }
 
@@ -2869,15 +3242,67 @@ export class WwebjsIncomingMessageService {
         (this.isMessageFromMe(msg) ||
           !this.isHistoryMessageWithinAllowedAge(msg))
       ) {
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.history.skip',
+          decision: 'history_message_filter',
+          outcome: 'skipped',
+          reason: this.isMessageFromMe(msg)
+            ? 'message_from_me'
+            : 'message_outside_allowed_age',
+        });
         return;
       }
 
       const resolvedJids = await this.resolveRemoteJids(client, msg);
-      if (!resolvedJids) return;
-      if (this.shouldSkipResolvedJids(resolvedJids)) return;
-      if (this.isUnsupportedSystemNotification(msg)) return;
-      if (await this.shouldSkipE2ENotification(msg, resolvedJids)) return;
-      if (await this.shouldSkipCiphertextFanout(msg)) return;
+      if (!resolvedJids) {
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.skip',
+          decision: 'resolve_remote_jids',
+          outcome: 'skipped',
+          reason: 'remote_jid_not_resolved',
+        });
+        return;
+      }
+      if (this.shouldSkipResolvedJids(resolvedJids)) {
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.skip',
+          decision: 'resolved_jid_filter',
+          outcome: 'skipped',
+          reason: 'unsupported_or_system_jid',
+          remote_jid: resolvedJids.remoteJid,
+          remote_jid_alt: resolvedJids.remoteJidAlt,
+        });
+        return;
+      }
+      if (this.isUnsupportedSystemNotification(msg)) {
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.skip',
+          decision: 'system_notification_filter',
+          outcome: 'skipped',
+          reason: 'unsupported_system_notification',
+        });
+        return;
+      }
+      if (await this.shouldSkipE2ENotification(msg, resolvedJids)) {
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.skip',
+          decision: 'e2e_notification_filter',
+          outcome: 'skipped',
+          reason: 'e2e_notification_deduped_or_unsupported',
+          remote_jid: resolvedJids.remoteJid,
+          remote_jid_alt: resolvedJids.remoteJidAlt,
+        });
+        return;
+      }
+      if (await this.shouldSkipCiphertextFanout(msg)) {
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.skip',
+          decision: 'ciphertext_fanout_filter',
+          outcome: 'skipped',
+          reason: 'ciphertext_fanout_deduped',
+        });
+        return;
+      }
 
       const [pushName, photo] = await Promise.all([
         this.resolvePushName(client, msg, resolvedJids),
@@ -2885,7 +3310,18 @@ export class WwebjsIncomingMessageService {
       ]);
 
       const upsert = await wwebjsMessageToUpsert(msg, resolvedJids, pushName);
-      if (!upsert) return;
+      if (!upsert) {
+        this.logLifecycleForMessage(msg, {
+          stage: 'wwebjs.incoming.skip',
+          decision: 'map_to_upsert',
+          outcome: 'skipped',
+          reason: 'upsert_mapping_returned_null',
+          remote_jid: resolvedJids.remoteJid,
+          remote_jid_alt: resolvedJids.remoteJidAlt,
+        });
+        return;
+      }
+      upsert.source_provider = 'wwebjs';
       if (options.fromHistorySync) {
         upsert.from_history_sync = true;
         if (!upsert.message.messageTimestamp) {
@@ -2896,7 +3332,22 @@ export class WwebjsIncomingMessageService {
       }
       upsert.photo = photo ?? null;
 
+      this.logLifecycleForUpsert(upsert, {
+        stage: 'wwebjs.incoming.mapped',
+        decision: 'map_to_upsert',
+        outcome: 'mapped',
+        provider_message_type: msg.type,
+        from_history_sync: options.fromHistorySync === true,
+        photo_resolved: Boolean(photo),
+      });
+
       await this.upsertMediaEnricher.enrich(upsert, msg);
+      this.logLifecycleForUpsert(upsert, {
+        stage: 'wwebjs.media.enrich',
+        decision: 'media_enrichment',
+        outcome: 'completed',
+        provider_message_type: msg.type,
+      });
 
       const topic =
         options.topic ?? this.kafkaServiceQueueService.upsertMessage();
@@ -2927,6 +3378,14 @@ export class WwebjsIncomingMessageService {
         dispatchMode: sentNow ? 'immediate' : 'retry_queue',
       });
     } catch (error) {
+      this.logLifecycleForMessage(msg, {
+        stage: 'wwebjs.incoming.error',
+        decision: 'process_incoming_message',
+        outcome: 'error',
+        reason: 'exception',
+        level: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      });
       console.error('[wwebjs] handleIncomingMessage failed:', {
         id: getMessageIdSerialized(msg),
         fromMe: msg.fromMe,

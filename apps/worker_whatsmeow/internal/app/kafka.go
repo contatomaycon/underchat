@@ -15,6 +15,8 @@ import (
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/plain"
 	"github.com/segmentio/kafka-go/sasl/scram"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type KafkaClient struct {
@@ -132,10 +134,23 @@ func (k *KafkaClient) SendJSON(ctx context.Context, topic string, key string, va
 	if err != nil {
 		return err
 	}
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	headers := make([]kafka.Header, 0, len(carrier))
+	for headerKey, headerValue := range carrier {
+		if headerValue == "" {
+			continue
+		}
+		headers = append(headers, kafka.Header{
+			Key:   headerKey,
+			Value: []byte(headerValue),
+		})
+	}
 	msg := kafka.Message{
-		Topic: topic,
-		Value: payload,
-		Time:  time.Now(),
+		Topic:   topic,
+		Value:   payload,
+		Time:    time.Now(),
+		Headers: headers,
 	}
 	if key != "" {
 		msg.Key = []byte(key)
@@ -180,7 +195,13 @@ func (k *KafkaClient) StartConsumer(ctx context.Context, topic, groupID string, 
 				continue
 			}
 
-			if err := handler(ctx, msg); err != nil {
+			carrier := propagation.MapCarrier{}
+			for _, header := range msg.Headers {
+				carrier.Set(header.Key, string(header.Value))
+			}
+			messageCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
+
+			if err := handler(messageCtx, msg); err != nil {
 				log.Printf("kafka handler error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
 			}
 

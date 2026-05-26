@@ -1175,9 +1175,18 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 
 func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events.Message) {
 	skipReason := incomingSkipReason(evt)
-	m.logIncomingMessageDebug(evt, skipReason)
+	var finishLifecycleSpan func(error)
+	ctx, finishLifecycleSpan = startMessageLifecycleSpan(ctx, m.cfg, messageLifecycleFromEvent(m.cfg, incomingLifecycleMessageLike(evt)))
+	defer finishLifecycleSpan(nil)
+	m.logIncomingMessageDebug(ctx, evt, skipReason)
 
 	if skipReason != "" {
+		recordMessageLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "whatsmeow.incoming.skip",
+			"decision": "incoming_skip_filter",
+			"outcome":  "skipped",
+			"reason":   skipReason,
+		})
 		log.Printf(
 			"whatsmeow incoming message skipped worker_id=%s reason=%s chat=%s sender=%s id=%s from_me=%t category=%s source_web_msg=%t",
 			m.cfg.WorkerID,
@@ -1193,10 +1202,24 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 	}
 	upsert, err := m.buildIncomingUpsert(ctx, evt)
 	if err != nil {
+		recordMessageLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "whatsmeow.incoming.map_error",
+			"decision": "map_to_upsert",
+			"outcome":  "error",
+			"reason":   "mapping_failed",
+			"level":    "error",
+			"error":    err.Error(),
+		})
 		log.Printf("failed to map incoming message: %v", err)
 		return
 	}
 	if upsert == nil {
+		recordMessageLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "whatsmeow.incoming.skip",
+			"decision": "map_to_upsert",
+			"outcome":  "skipped",
+			"reason":   "unmapped_message",
+		})
 		log.Printf(
 			"whatsmeow incoming message ignored worker_id=%s reason=unmapped_message chat=%s sender=%s id=%s from_me=%t category=%s source_web_msg=%t",
 			m.cfg.WorkerID,
@@ -1209,12 +1232,53 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 		)
 		return
 	}
+	upsert.SourceProvider = messageLifecycleProvider
+	ctx = contextWithMessageLifecycle(ctx, messageLifecycleFromUpsert(m.cfg, upsert))
+	recordMessageLifecycle(ctx, m.cfg, map[string]any{
+		"stage":                 "whatsmeow.incoming.mapped",
+		"decision":              "map_to_upsert",
+		"outcome":               "mapped",
+		"provider_message_type": incomingInfoType(evt),
+		"message_type":          upsert.Type,
+		"has_quoted":            upsert.HasQuoted,
+		"photo_resolved":        upsert.Photo != "",
+		"from_history_sync":     upsert.FromHistorySync,
+		"message_text":          incomingTextPreview(evt),
+	})
 	key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
+	recordMessageLifecycle(ctx, m.cfg, map[string]any{
+		"stage":     "whatsmeow.kafka.publish.start",
+		"decision":  "publish_upsert",
+		"outcome":   "started",
+		"topic":     topicUpsertMessage,
+		"kafka_key": key,
+	})
 	if err := m.kafka.SendJSON(ctx, topicUpsertMessage, key, upsert); err != nil {
+		recordMessageLifecycle(ctx, m.cfg, map[string]any{
+			"stage":     "whatsmeow.kafka.publish.error",
+			"decision":  "publish_upsert",
+			"outcome":   "error",
+			"reason":    "producer_send_failed",
+			"level":     "error",
+			"topic":     topicUpsertMessage,
+			"kafka_key": key,
+			"error":     err.Error(),
+		})
 		log.Printf("failed to publish incoming message: %v", err)
 		return
 	}
 	hasMediaURL, mediaFailed := mediaContentPublishStatus(upsert.Content, upsert.Type)
+	recordMessageLifecycle(ctx, m.cfg, map[string]any{
+		"stage":                 "whatsmeow.kafka.publish.success",
+		"decision":              "publish_upsert",
+		"outcome":               "published",
+		"topic":                 topicUpsertMessage,
+		"kafka_key":             key,
+		"message_type":          upsert.Type,
+		"has_photo":             upsert.Photo != "",
+		"has_media_url":         hasMediaURL,
+		"media_download_failed": mediaFailed,
+	})
 	log.Printf(
 		"whatsmeow incoming message published worker_id=%s topic=%s key=%s type=%s chat=%s remote_jid_alt=%s sender=%s id=%s from_me=%t has_photo=%t has_media_url=%t media_download_failed=%t",
 		m.cfg.WorkerID,
@@ -1287,18 +1351,64 @@ func (m *WhatsAppManager) handleHistorySync(ctx context.Context, evt *events.His
 
 		upsert, err := m.buildIncomingUpsert(ctx, messageEvent, true)
 		if err != nil {
+			historyCtx, finishHistorySpan := startMessageLifecycleSpan(ctx, m.cfg, messageLifecycleFromEvent(m.cfg, incomingLifecycleMessageLike(messageEvent)))
+			recordMessageLifecycle(historyCtx, m.cfg, map[string]any{
+				"stage":    "whatsmeow.history.map_error",
+				"decision": "map_history_upsert",
+				"outcome":  "error",
+				"reason":   "mapping_failed",
+				"level":    "error",
+				"error":    err.Error(),
+			})
+			finishHistorySpan(err)
 			log.Printf("whatsmeow history sync map failed worker_id=%s chat=%s id=%s error=%v", m.cfg.WorkerID, chatJID.String(), incomingMessageID(messageEvent), err)
 			continue
 		}
 		if upsert == nil {
+			historyCtx, finishHistorySpan := startMessageLifecycleSpan(ctx, m.cfg, messageLifecycleFromEvent(m.cfg, incomingLifecycleMessageLike(messageEvent)))
+			recordMessageLifecycle(historyCtx, m.cfg, map[string]any{
+				"stage":    "whatsmeow.history.skip",
+				"decision": "map_history_upsert",
+				"outcome":  "skipped",
+				"reason":   "unmapped_message",
+			})
+			finishHistorySpan(nil)
 			continue
 		}
+		upsert.SourceProvider = messageLifecycleProvider
 
 		key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
-		if err := m.kafka.SendJSON(ctx, topicUpsertMessageHistory, key, upsert); err != nil {
+		historyCtx, finishHistorySpan := startMessageLifecycleSpan(ctx, m.cfg, messageLifecycleFromUpsert(m.cfg, upsert))
+		recordMessageLifecycle(historyCtx, m.cfg, map[string]any{
+			"stage":     "whatsmeow.history.kafka.publish.start",
+			"decision":  "publish_history_upsert",
+			"outcome":   "started",
+			"topic":     topicUpsertMessageHistory,
+			"kafka_key": key,
+		})
+		if err := m.kafka.SendJSON(historyCtx, topicUpsertMessageHistory, key, upsert); err != nil {
+			recordMessageLifecycle(historyCtx, m.cfg, map[string]any{
+				"stage":     "whatsmeow.history.kafka.publish.error",
+				"decision":  "publish_history_upsert",
+				"outcome":   "error",
+				"reason":    "producer_send_failed",
+				"level":     "error",
+				"topic":     topicUpsertMessageHistory,
+				"kafka_key": key,
+				"error":     err.Error(),
+			})
+			finishHistorySpan(err)
 			log.Printf("whatsmeow history sync publish failed worker_id=%s chat=%s key=%s error=%v", m.cfg.WorkerID, chatJID.String(), key, err)
 			continue
 		}
+		recordMessageLifecycle(historyCtx, m.cfg, map[string]any{
+			"stage":     "whatsmeow.history.kafka.publish.success",
+			"decision":  "publish_history_upsert",
+			"outcome":   "published",
+			"topic":     topicUpsertMessageHistory,
+			"kafka_key": key,
+		})
+		finishHistorySpan(nil)
 		published++
 	}
 
@@ -1405,22 +1515,52 @@ func (m *WhatsAppManager) handleCallOffer(ctx context.Context, callFrom types.JI
 		key["remoteJidAlt"] = callJIDAlt
 	}
 	upsert := UpsertMessage{
-		WorkerID:    m.cfg.WorkerID,
-		AccountID:   m.cfg.AccountID,
-		Type:        MessageTypeSystem,
-		Photo:       m.profilePhotoForJIDs(ctx, []types.JID{callFrom, creator}),
-		HasQuoted:   false,
-		IsCallEvent: true,
-		CallPhone:   callPhone,
-		CallJID:     callJID,
-		CallJIDAlt:  callJIDAlt,
+		WorkerID:       m.cfg.WorkerID,
+		AccountID:      m.cfg.AccountID,
+		SourceProvider: messageLifecycleProvider,
+		Type:           MessageTypeSystem,
+		Photo:          m.profilePhotoForJIDs(ctx, []types.JID{callFrom, creator}),
+		HasQuoted:      false,
+		IsCallEvent:    true,
+		CallPhone:      callPhone,
+		CallJID:        callJID,
+		CallJIDAlt:     callJIDAlt,
 		Message: map[string]any{
 			"key":              key,
 			"message":          map[string]any{"conversation": callText},
 			"messageTimestamp": time.Now().Unix(),
 		},
 	}
-	_ = m.kafka.SendJSON(ctx, topicUpsertMessage, m.cfg.AccountID+":"+callID, upsert)
+	callCtx, finishCallSpan := startMessageLifecycleSpan(ctx, m.cfg, messageLifecycleFromUpsert(m.cfg, &upsert))
+	defer finishCallSpan(nil)
+	kafkaKey := m.cfg.AccountID + ":" + callID
+	recordMessageLifecycle(callCtx, m.cfg, map[string]any{
+		"stage":     "whatsmeow.call.kafka.publish.start",
+		"decision":  "publish_call_upsert",
+		"outcome":   "started",
+		"topic":     topicUpsertMessage,
+		"kafka_key": kafkaKey,
+	})
+	if err := m.kafka.SendJSON(callCtx, topicUpsertMessage, kafkaKey, upsert); err != nil {
+		recordMessageLifecycle(callCtx, m.cfg, map[string]any{
+			"stage":     "whatsmeow.call.kafka.publish.error",
+			"decision":  "publish_call_upsert",
+			"outcome":   "error",
+			"reason":    "producer_send_failed",
+			"level":     "error",
+			"topic":     topicUpsertMessage,
+			"kafka_key": kafkaKey,
+			"error":     err.Error(),
+		})
+	} else {
+		recordMessageLifecycle(callCtx, m.cfg, map[string]any{
+			"stage":     "whatsmeow.call.kafka.publish.success",
+			"decision":  "publish_call_upsert",
+			"outcome":   "published",
+			"topic":     topicUpsertMessage,
+			"kafka_key": kafkaKey,
+		})
+	}
 
 	reject, showMessage, text, err := m.balance.ResolveIncomingCallAction(ctx, m.cfg.WorkerID, m.cfg.AccountID, callJID, callPhone, isVideo)
 	if err != nil {
@@ -1559,9 +1699,10 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 	_, hasQuoted := content["quoted"]
 
 	return &UpsertMessage{
-		WorkerID:  m.cfg.WorkerID,
-		AccountID: m.cfg.AccountID,
-		Type:      messageType,
+		WorkerID:       m.cfg.WorkerID,
+		AccountID:      m.cfg.AccountID,
+		SourceProvider: messageLifecycleProvider,
+		Type:           messageType,
 		Message: map[string]any{
 			"key":              key,
 			"message":          messageMap,
@@ -1982,43 +2123,61 @@ func incomingProfilePhotoNoPhotoCacheKey(jid types.JID) string {
 
 const incomingMessageRawLogLimit = 12000
 
-func (m *WhatsAppManager) logIncomingMessageDebug(evt *events.Message, skipReason string) {
-	rawJSON, rawTruncated, rawErr := incomingRawMessageJSON(evt, incomingMessageRawLogLimit)
-	log.Printf(
-		"whatsmeow incoming message received worker_id=%s skip_reason=%s chat=%s chat_server=%s sender=%s sender_alt=%s recipient_alt=%s id=%s server_id=%d from_me=%t category=%s info_type=%s media_type=%s edit=%s multicast=%t timestamp=%s retry_count=%d unavailable_request_id=%s source_web_msg=%t is_ephemeral=%t is_view_once=%t is_view_once_v2=%t is_view_once_v2_extension=%t is_document_with_caption=%t is_lottie_sticker=%t is_bot_invoke=%t is_edit=%t kinds=%s text_preview=%q raw_truncated=%t raw_error=%q raw_message_json=%s",
-		m.cfg.WorkerID,
-		firstNonEmpty(skipReason, "none"),
-		incomingChatString(evt),
-		incomingChatServer(evt),
-		incomingSenderString(evt),
-		incomingSenderAltString(evt),
-		incomingRecipientAltString(evt),
-		incomingMessageID(evt),
-		incomingServerID(evt),
-		incomingFromMe(evt),
-		incomingCategory(evt),
-		incomingInfoType(evt),
-		incomingMediaType(evt),
-		incomingEdit(evt),
-		incomingMulticast(evt),
-		incomingTimestamp(evt),
-		incomingRetryCount(evt),
-		incomingUnavailableRequestID(evt),
-		evt != nil && evt.SourceWebMsg != nil,
-		evt != nil && evt.IsEphemeral,
-		evt != nil && evt.IsViewOnce,
-		evt != nil && evt.IsViewOnceV2,
-		evt != nil && evt.IsViewOnceV2Extension,
-		evt != nil && evt.IsDocumentWithCaption,
-		evt != nil && evt.IsLottieSticker,
-		evt != nil && evt.IsBotInvoke,
-		evt != nil && evt.IsEdit,
-		strings.Join(incomingMessageKinds(evt), ","),
-		incomingTextPreview(evt),
-		rawTruncated,
-		rawErr,
-		rawJSON,
-	)
+func incomingLifecycleMessageLike(evt *events.Message) *eventsMessageLike {
+	if evt == nil {
+		return &eventsMessageLike{}
+	}
+	return &eventsMessageLike{
+		chat:         incomingChatString(evt),
+		remoteJIDAlt: incomingRemoteJIDAlt(evt),
+		sender:       incomingSenderString(evt),
+		senderAlt:    incomingSenderAltString(evt),
+		id:           incomingMessageID(evt),
+		fromMe:       incomingFromMe(evt),
+	}
+}
+
+func (m *WhatsAppManager) logIncomingMessageDebug(ctx context.Context, evt *events.Message, skipReason string) {
+	if !m.cfg.MessageLifecycleDebugEnabled {
+		return
+	}
+
+	rawJSON, rawTruncated, rawErr := incomingRawMessageJSON(evt, m.cfg.MessageLifecycleDebugRawLimit)
+	recordMessageLifecycle(ctx, m.cfg, map[string]any{
+		"stage":                        "whatsmeow.incoming.received",
+		"decision":                     "receive_provider_message",
+		"outcome":                      "received",
+		"reason":                       firstNonEmpty(skipReason, "none"),
+		"skip_reason":                  firstNonEmpty(skipReason, "none"),
+		"chat_server":                  incomingChatServer(evt),
+		"sender":                       incomingSenderString(evt),
+		"sender_alt":                   incomingSenderAltString(evt),
+		"recipient_alt":                incomingRecipientAltString(evt),
+		"server_id":                    incomingServerID(evt),
+		"from_me":                      incomingFromMe(evt),
+		"category":                     incomingCategory(evt),
+		"info_type":                    incomingInfoType(evt),
+		"media_type":                   incomingMediaType(evt),
+		"edit":                         incomingEdit(evt),
+		"multicast":                    incomingMulticast(evt),
+		"timestamp":                    incomingTimestamp(evt),
+		"retry_count":                  incomingRetryCount(evt),
+		"unavailable_request_id":       incomingUnavailableRequestID(evt),
+		"source_web_msg":               evt != nil && evt.SourceWebMsg != nil,
+		"is_ephemeral":                 evt != nil && evt.IsEphemeral,
+		"is_view_once":                 evt != nil && evt.IsViewOnce,
+		"is_view_once_v2":              evt != nil && evt.IsViewOnceV2,
+		"is_view_once_v2_extension":    evt != nil && evt.IsViewOnceV2Extension,
+		"is_document_with_caption":     evt != nil && evt.IsDocumentWithCaption,
+		"is_lottie_sticker":            evt != nil && evt.IsLottieSticker,
+		"is_bot_invoke":                evt != nil && evt.IsBotInvoke,
+		"is_edit":                      evt != nil && evt.IsEdit,
+		"kinds":                        strings.Join(incomingMessageKinds(evt), ","),
+		"message_text":                 incomingTextPreview(evt),
+		"raw_payload":                  rawJSON,
+		"raw_payload_source_truncated": rawTruncated,
+		"raw_error":                    rawErr,
+	})
 }
 
 func incomingRawMessageJSON(evt *events.Message, limit int) (string, bool, string) {

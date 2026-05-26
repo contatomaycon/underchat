@@ -63,6 +63,10 @@ type Config struct {
 	HistoryReconciliationEnabled      bool
 	HistoryReconciliationMessageLimit int
 	HistoryReconciliationMaxAge       time.Duration
+
+	MessageLifecycleDebugEnabled   bool
+	MessageLifecycleDebugBodyLimit int
+	MessageLifecycleDebugRawLimit  int
 }
 
 func LoadConfig() (Config, error) {
@@ -113,6 +117,9 @@ func LoadConfig() (Config, error) {
 		HistoryReconciliationEnabled:      envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
 		HistoryReconciliationMessageLimit: envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
 		HistoryReconciliationMaxAge:       envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", time.Hour),
+		MessageLifecycleDebugEnabled:      envBoolDefault("MESSAGE_LIFECYCLE_DEBUG_ENABLED", false),
+		MessageLifecycleDebugBodyLimit:    envIntDefault("MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT", 500),
+		MessageLifecycleDebugRawLimit:     envIntDefault("MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT", 4000),
 	}
 
 	if cfg.WorkerID == "" {
@@ -132,6 +139,12 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.HistoryReconciliationMessageLimit <= 0 {
 		cfg.HistoryReconciliationMessageLimit = 100
+	}
+	if cfg.MessageLifecycleDebugBodyLimit <= 0 {
+		cfg.MessageLifecycleDebugBodyLimit = 500
+	}
+	if cfg.MessageLifecycleDebugRawLimit <= 0 {
+		cfg.MessageLifecycleDebugRawLimit = 4000
 	}
 
 	return cfg, nil

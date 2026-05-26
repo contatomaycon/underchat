@@ -1,5 +1,9 @@
 import { singleton, inject } from 'tsyringe';
-import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
+import type {
+  KafkaConsumer,
+  LibrdKafkaError,
+  MessageHeader,
+} from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -94,6 +98,13 @@ import {
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
 import { ActiveWhatsappValidationService } from '@core/services/activeWhatsappValidation.service';
 import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
+import {
+  buildMessageLifecycleContext,
+  recordMessageLifecycle,
+  runWithKafkaTraceContext,
+  runWithMessageLifecycleContext,
+  type MessageLifecycleEvent,
+} from '@core/plugins/telemetry/messageLifecycleDebug';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -117,6 +128,15 @@ interface IEditMessagePayload {
   targetMessageId?: string;
   editedContent?: Record<string, unknown>;
 }
+
+interface KafkaConsumerMessage {
+  value: Buffer | null;
+  partition: number;
+  offset: number;
+  headers?: MessageHeader[];
+}
+
+type MessageLifecycleContext = ReturnType<typeof buildMessageLifecycleContext>;
 
 function isReactionInactivityTypeUser(
   typeUser: ETypeUserChat
@@ -242,6 +262,13 @@ export class MessageUpsertConsume {
             message_key_id: data.message?.key?.id,
             error: error instanceof Error ? error.message : String(error),
           });
+          this.logLifecycle(data, {
+            stage: 'message_upsert.dlq.skip',
+            decision: 'dlq_dedupe',
+            outcome: 'skipped',
+            reason: 'duplicate_dlq_message',
+            error: error instanceof Error ? error.message : String(error),
+          });
           return true;
         }
       } catch (dedupeError) {
@@ -258,6 +285,15 @@ export class MessageUpsertConsume {
 
     for (let attempt = 0; attempt < maxDlqRetries; attempt++) {
       try {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.dlq.publish_start',
+          decision: 'publish_dlq',
+          outcome: 'started',
+          topic: dlqTopic,
+          attempts: attempt + 1,
+          retry_count: retryCount,
+          error: error instanceof Error ? error.message : String(error),
+        });
         await this.streamProducerService.send(dlqTopic, {
           ...data,
           dlq_error: error instanceof Error ? error.message : String(error),
@@ -266,8 +302,29 @@ export class MessageUpsertConsume {
           dlq_retry_count: retryCount,
           dlq_pod: process.env.HOSTNAME || 'unknown',
         });
+        this.logLifecycle(data, {
+          stage: 'message_upsert.dlq.publish_success',
+          decision: 'publish_dlq',
+          outcome: 'published',
+          topic: dlqTopic,
+          attempts: attempt + 1,
+          retry_count: retryCount,
+        });
         return true;
       } catch (dlqError) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.dlq.publish_error',
+          decision: 'publish_dlq',
+          outcome:
+            attempt < maxDlqRetries - 1 ? 'retrying' : 'failed_exhausted',
+          reason: 'dlq_publish_failed',
+          level: 'error',
+          topic: dlqTopic,
+          attempts: attempt + 1,
+          retry_count: retryCount,
+          error:
+            dlqError instanceof Error ? dlqError.message : String(dlqError),
+        });
         console.error(
           `[DLQ] Attempt ${attempt + 1}/${maxDlqRetries} failed:`,
           dlqError
@@ -290,6 +347,15 @@ export class MessageUpsertConsume {
         message_key_id: data.message?.key?.id,
       })
     );
+    this.logLifecycle(data, {
+      stage: 'message_upsert.dlq.failed',
+      decision: 'publish_dlq',
+      outcome: 'failed',
+      reason: 'dlq_retries_exhausted',
+      level: 'error',
+      topic: dlqTopic,
+      retry_count: retryCount,
+    });
     return false;
   }
 
@@ -327,7 +393,23 @@ export class MessageUpsertConsume {
 
     for (let attempt = 0; attempt < this.MAX_RETRIES; attempt++) {
       try {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.retry.attempt_start',
+          decision: 'process_with_retry',
+          outcome: 'started',
+          attempts: attempt + 1,
+          max_retries: this.MAX_RETRIES,
+          phone,
+        });
         await this.createOrUpdateChat(t, data, phone);
+        this.logLifecycle(data, {
+          stage: 'message_upsert.retry.attempt_success',
+          decision: 'process_with_retry',
+          outcome: 'processed',
+          attempts: attempt + 1,
+          max_retries: this.MAX_RETRIES,
+          phone,
+        });
         return;
       } catch (error) {
         lastError = error;
@@ -351,11 +433,34 @@ export class MessageUpsertConsume {
             attempt: attempt + 1,
           });
           incrementCounter('message_upsert_elastic_read_only_allow_delete');
+          this.logLifecycle(data, {
+            stage: 'message_upsert.retry.elastic_read_only',
+            decision: 'process_with_retry',
+            outcome: 'failed',
+            reason: 'elastic_read_only_allow_delete',
+            level: 'error',
+            attempts: attempt + 1,
+            max_retries: this.MAX_RETRIES,
+            phone,
+            error: error instanceof Error ? error.message : String(error),
+          });
           throw error instanceof Error ? error : new Error(String(error));
         }
 
         if (!isLastAttempt) {
           const delayMs = this.RETRY_DELAYS[attempt] ?? 1000;
+          this.logLifecycle(data, {
+            stage: 'message_upsert.retry.attempt_error',
+            decision: 'process_with_retry',
+            outcome: 'retrying',
+            reason: 'exception',
+            level: 'warn',
+            attempts: attempt + 1,
+            max_retries: this.MAX_RETRIES,
+            next_retry_delay_ms: delayMs,
+            phone,
+            error: error instanceof Error ? error.message : String(error),
+          });
           await delay(delayMs);
         }
       }
@@ -371,6 +476,16 @@ export class MessageUpsertConsume {
       retry_count: this.MAX_RETRIES,
       error: lastError instanceof Error ? lastError.message : lastError,
     });
+    this.logLifecycle(data, {
+      stage: 'message_upsert.retry.exhausted',
+      decision: 'process_with_retry',
+      outcome: 'failed',
+      reason: 'retry_exhausted',
+      level: 'error',
+      retry_count: this.MAX_RETRIES,
+      phone,
+      error: lastError instanceof Error ? lastError.message : String(lastError),
+    });
     incrementCounter('message_upsert_retry_exhausted_no_commit');
 
     throw lastError instanceof Error
@@ -381,12 +496,45 @@ export class MessageUpsertConsume {
   private centrifugoChatPublish(
     dataPublish: IChatMessage
   ): Promise<PublishResult> {
+    recordMessageLifecycle({
+      stage: 'message_upsert.centrifugo.message_publish_start',
+      decision: 'publish_centrifugo',
+      outcome: 'started',
+      channel: chatAccountCentrifugo(dataPublish.account.id),
+      chat_id: dataPublish.chat_id,
+      chat_message_id: dataPublish.message_id,
+    });
     const promise = this.centrifugoService.publishSub(
       chatAccountCentrifugo(dataPublish.account.id),
       dataPublish
     );
 
-    return promise;
+    return promise
+      .then((result) => {
+        recordMessageLifecycle({
+          stage: 'message_upsert.centrifugo.message_publish_success',
+          decision: 'publish_centrifugo',
+          outcome: 'published',
+          channel: chatAccountCentrifugo(dataPublish.account.id),
+          chat_id: dataPublish.chat_id,
+          chat_message_id: dataPublish.message_id,
+        });
+        return result;
+      })
+      .catch((error) => {
+        recordMessageLifecycle({
+          stage: 'message_upsert.centrifugo.message_publish_error',
+          decision: 'publish_centrifugo',
+          outcome: 'error',
+          reason: 'publish_failed',
+          level: 'error',
+          channel: chatAccountCentrifugo(dataPublish.account.id),
+          chat_id: dataPublish.chat_id,
+          chat_message_id: dataPublish.message_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      });
   }
 
   private centrifugoChatQueuePublish(
@@ -394,12 +542,33 @@ export class MessageUpsertConsume {
   ): Promise<PublishResult> {
     const accountChannel = chatAccountCentrifugo(dataPublish.account.id);
     const queueChannel = chatQueueAccountCentrifugo(dataPublish.account.id);
+    recordMessageLifecycle({
+      stage: 'message_upsert.centrifugo.queue_publish_start',
+      decision: 'publish_centrifugo_queue',
+      outcome: 'started',
+      chat_id: dataPublish.chat_id,
+      account_channel: accountChannel,
+      queue_channel: queueChannel,
+    });
 
     return Promise.allSettled([
       this.centrifugoService.publishSub(accountChannel, dataPublish),
       this.centrifugoService.publishSub(queueChannel, dataPublish),
     ]).then(([accountResult, queueResult]) => {
       if (accountResult.status === 'rejected') {
+        recordMessageLifecycle({
+          stage: 'message_upsert.centrifugo.queue_publish_error',
+          decision: 'publish_centrifugo_queue',
+          outcome: 'partial_error',
+          reason: 'account_channel_failed',
+          level: 'error',
+          chat_id: dataPublish.chat_id,
+          channel: accountChannel,
+          error:
+            accountResult.reason instanceof Error
+              ? accountResult.reason.message
+              : String(accountResult.reason),
+        });
         logger.error({
           type: 'centrifugo_queue_publish_account_channel_failed',
           message: 'Failed to publish to account channel in queue publish',
@@ -413,9 +582,30 @@ export class MessageUpsertConsume {
       }
 
       if (queueResult.status === 'rejected') {
+        recordMessageLifecycle({
+          stage: 'message_upsert.centrifugo.queue_publish_error',
+          decision: 'publish_centrifugo_queue',
+          outcome: 'error',
+          reason: 'queue_channel_failed',
+          level: 'error',
+          chat_id: dataPublish.chat_id,
+          channel: queueChannel,
+          error:
+            queueResult.reason instanceof Error
+              ? queueResult.reason.message
+              : String(queueResult.reason),
+        });
         throw queueResult.reason;
       }
 
+      recordMessageLifecycle({
+        stage: 'message_upsert.centrifugo.queue_publish_success',
+        decision: 'publish_centrifugo_queue',
+        outcome: 'published',
+        chat_id: dataPublish.chat_id,
+        account_channel: accountChannel,
+        queue_channel: queueChannel,
+      });
       return queueResult.value;
     });
   }
@@ -534,10 +724,28 @@ export class MessageUpsertConsume {
       keys: [key],
     };
 
+    recordMessageLifecycle({
+      stage: 'message_upsert.mark_read.publish_start',
+      decision: 'publish_mark_read',
+      outcome: 'started',
+      topic: this.kafkaServiceQueueService.markMessageRead(),
+      account_id: accountId,
+      worker_id: workerId,
+      message_key_id: key.id,
+    });
     await this.streamProducerService.send(
       this.kafkaServiceQueueService.markMessageRead(),
       markReadData
     );
+    recordMessageLifecycle({
+      stage: 'message_upsert.mark_read.publish_success',
+      decision: 'publish_mark_read',
+      outcome: 'published',
+      topic: this.kafkaServiceQueueService.markMessageRead(),
+      account_id: accountId,
+      worker_id: workerId,
+      message_key_id: key.id,
+    });
   }
 
   private async shouldMarkAsRead(workerId: string): Promise<boolean> {
@@ -2754,6 +2962,14 @@ export class MessageUpsertConsume {
       const ignoreStatus = existingContact.ignore ?? 'not_ignore';
 
       if (ignoreStatus === EContactIgnore.ignore_totally) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.contact.ignore',
+          decision: 'contact_ignore_status',
+          outcome: 'ignore_totally',
+          reason: 'existing_contact_ignore_totally',
+          contact_id: existingContact.contact_id,
+          phone,
+        });
         return 'ignore_totally';
       }
 
@@ -2792,6 +3008,14 @@ export class MessageUpsertConsume {
           inputChatMessage.user = responsibleAttendant;
         }
 
+        this.logLifecycle(data, {
+          stage: 'message_upsert.contact.ignore',
+          decision: 'contact_ignore_status',
+          outcome: 'ignore_automation',
+          reason: 'existing_contact_ignore_automation',
+          contact_id: existingContact.contact_id,
+          phone,
+        });
         return 'ignore_automation';
       }
 
@@ -2817,6 +3041,14 @@ export class MessageUpsertConsume {
       const ignoreStatus = createdContact.ignore ?? 'not_ignore';
 
       if (ignoreStatus === EContactIgnore.ignore_totally) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.contact.ignore',
+          decision: 'contact_ignore_status',
+          outcome: 'ignore_totally',
+          reason: 'created_contact_ignore_totally',
+          contact_id: createdContact.contact_id,
+          phone,
+        });
         return 'ignore_totally';
       }
 
@@ -2855,6 +3087,14 @@ export class MessageUpsertConsume {
           inputChatMessage.user = responsibleAttendant;
         }
 
+        this.logLifecycle(data, {
+          stage: 'message_upsert.contact.ignore',
+          decision: 'contact_ignore_status',
+          outcome: 'ignore_automation',
+          reason: 'created_contact_ignore_automation',
+          contact_id: createdContact.contact_id,
+          phone,
+        });
         return 'ignore_automation';
       }
     }
@@ -2992,10 +3232,23 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<ICreateChatMessageResult> {
     try {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.start',
+        decision: 'create_or_update_message',
+        outcome: 'started',
+        chat_id: getChat.chat_id,
+        chat_status: getChat.status,
+      });
       await this.updateChatPhotoIfNeeded(getChat, data);
 
       const reactionResult = await this.handleReactionMessage(getChat, data);
       if (reactionResult !== null) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.reaction',
+          decision: 'reaction_handler',
+          outcome: reactionResult.handled ? 'handled' : 'not_handled',
+          chat_id: getChat.chat_id,
+        });
         return {
           handled: reactionResult.handled,
           reactionInactivityInteraction: reactionResult.inactivityInteraction,
@@ -3005,11 +3258,24 @@ export class MessageUpsertConsume {
       const editCreateFallback =
         await this.buildMissingEditMessageCreateFallback(getChat, data);
       if (editCreateFallback) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.edit_fallback',
+          decision: 'missing_edit_target',
+          outcome: 'converted_to_create',
+          reason: 'edit_target_not_found',
+          chat_id: getChat.chat_id,
+        });
         data = editCreateFallback;
       }
 
       const editResult = await this.handleEditMessage(getChat, data);
       if (editResult !== null) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.edit',
+          decision: 'edit_handler',
+          outcome: editResult ? 'handled' : 'not_handled',
+          chat_id: getChat.chat_id,
+        });
         return {
           handled: editResult,
           reactionInactivityInteraction: null,
@@ -3018,19 +3284,44 @@ export class MessageUpsertConsume {
 
       const deleteResult = await this.handleDeleteMessage(getChat, data);
       if (deleteResult !== null) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.delete',
+          decision: 'delete_handler',
+          outcome: deleteResult ? 'handled' : 'not_handled',
+          chat_id: getChat.chat_id,
+        });
         return {
           handled: deleteResult,
           reactionInactivityInteraction: null,
         };
       }
 
+      const hasPinPayload =
+        data.type === EMessageType.system &&
+        !!(this.getBaseMessage(data)?.message as Record<string, unknown>)
+          ?.pinInChatMessage;
       await this.handlePinMessage(getChat, data);
+      if (hasPinPayload) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.pin',
+          decision: 'pin_handler',
+          outcome: 'handled',
+          chat_id: getChat.chat_id,
+        });
+      }
 
       const jid = remoteJid(data.message?.key);
       const jidAlt = remoteJidAlt(data.message?.key);
 
       const content = this.buildMessageContent(data);
       if (this.isEmptyTextContent(content)) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.empty',
+          decision: 'content_validation',
+          outcome: 'skipped',
+          reason: 'empty_text_content',
+          chat_id: getChat.chat_id,
+        });
         return {
           handled: true,
           reactionInactivityInteraction: null,
@@ -3095,6 +3386,14 @@ export class MessageUpsertConsume {
 
       const messageId = data.message?.key?.id;
       if (!messageId) {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.invalid',
+          decision: 'message_key_validation',
+          outcome: 'failed',
+          reason: 'missing_message_key_id',
+          level: 'warn',
+          chat_id: getChat.chat_id,
+        });
         return {
           handled: false,
           reactionInactivityInteraction: null,
@@ -3178,6 +3477,14 @@ export class MessageUpsertConsume {
             message_key_id: messageId,
             source_message_id: existingMessageByKey.message_id,
           });
+          this.logLifecycle(data, {
+            stage: 'message_upsert.chat_message.existing',
+            decision: 'existing_message_by_key',
+            outcome: 'replaced',
+            reason: 'existing_message_required_replacement',
+            chat_id: getChat.chat_id,
+            chat_message_id: existingMessageByKey.message_id,
+          });
 
           return {
             handled: true,
@@ -3190,6 +3497,14 @@ export class MessageUpsertConsume {
           inputChatMessage
         );
         await this.markHistoryReceiptKnown(data);
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.existing',
+          decision: 'existing_message_by_key',
+          outcome: 'patched',
+          reason: 'message_already_exists',
+          chat_id: getChat.chat_id,
+          chat_message_id: existingMessageByKey.message_id,
+        });
         return {
           handled: true,
           reactionInactivityInteraction: null,
@@ -3204,6 +3519,17 @@ export class MessageUpsertConsume {
           await this.markHistoryReceiptKnown(data);
         }
 
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.create',
+          decision: 'create_message_idempotent',
+          outcome: 'failed',
+          reason: createResult.attempted
+            ? 'create_attempted_without_result'
+            : 'create_not_attempted',
+          level: 'warn',
+          chat_id: getChat.chat_id,
+          chat_message_id: createResult.id,
+        });
         return {
           handled: false,
           reactionInactivityInteraction: null,
@@ -3218,6 +3544,14 @@ export class MessageUpsertConsume {
 
         await this.markHistoryReceiptKnown(data);
 
+        this.logLifecycle(data, {
+          stage: 'message_upsert.chat_message.create',
+          decision: 'create_message_idempotent',
+          outcome: 'conflict_patched',
+          reason: 'idempotency_conflict',
+          chat_id: getChat.chat_id,
+          chat_message_id: createResult.id,
+        });
         return {
           handled: true,
           reactionInactivityInteraction: null,
@@ -3237,6 +3571,20 @@ export class MessageUpsertConsume {
             data.worker_id,
             data.message.key
           );
+          this.logLifecycle(data, {
+            stage: 'message_upsert.chat_message.mark_read',
+            decision: 'mark_as_read',
+            outcome: 'published',
+            chat_id: getChat.chat_id,
+          });
+        } else {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.chat_message.mark_read',
+            decision: 'mark_as_read',
+            outcome: 'skipped',
+            reason: 'worker_config_disabled',
+            chat_id: getChat.chat_id,
+          });
         }
       }
 
@@ -3326,11 +3674,27 @@ export class MessageUpsertConsume {
         { ttlMs: 30000, retryMs: 50, maxWaitMs: 45000 }
       );
 
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.create',
+        decision: 'create_message_idempotent',
+        outcome: 'created',
+        chat_id: getChat.chat_id,
+        chat_message_id: inputChatMessage.message_id,
+      });
       return {
         handled: true,
         reactionInactivityInteraction: null,
       };
     } catch (error) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chat_message.error',
+        decision: 'create_or_update_message',
+        outcome: 'error',
+        reason: 'exception',
+        level: 'error',
+        chat_id: getChat.chat_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
       logger.error({
         type: 'message_upsert_create_chat_message_error',
         message: `Error in createChatMessage for chat ${getChat.chat_id}`,
@@ -3851,6 +4215,12 @@ export class MessageUpsertConsume {
     data: IUpsertMessage,
     status: EChatStatus
   ): Promise<IChat> {
+    this.logLifecycle(data, {
+      stage: 'message_upsert.chat.create_start',
+      decision: 'create_chat',
+      outcome: 'started',
+      chat_status: status,
+    });
     const [viewAccountName, viewWorkerNameAndId] = await Promise.all([
       this.accountService.viewAccountName(data.account_id),
       this.workerService.viewWorkerNameAndId(data.account_id, data.worker_id),
@@ -3969,6 +4339,14 @@ export class MessageUpsertConsume {
       await this.chatService.ensureProtocolForNewChat(inputChatMessage);
 
     await this.saveChatWithCaches(chatWithProtocol);
+    this.logLifecycle(data, {
+      stage: 'message_upsert.chat.create_success',
+      decision: 'create_chat',
+      outcome: 'created',
+      chat_id: chatWithProtocol.chat_id,
+      chat_status: chatWithProtocol.status,
+      phone,
+    });
 
     if (chatWithProtocol.status === EChatStatus.in_chat) {
       await this.attendanceInactivityService.startTrackingOnInChatEntry(
@@ -4002,6 +4380,21 @@ export class MessageUpsertConsume {
     }
   }
 
+  private logLifecycle(
+    data: IUpsertMessage | null | undefined,
+    event: MessageLifecycleEvent
+  ): void {
+    const contextData = buildMessageLifecycleContext(
+      data ?? undefined,
+      data?.source_provider
+    );
+
+    recordMessageLifecycle({
+      ...contextData,
+      ...event,
+    });
+  }
+
   private async createOrUpdateChatBotFlow(
     t: TFunction<'translation', undefined>,
     getChat: IChat | null,
@@ -4018,6 +4411,14 @@ export class MessageUpsertConsume {
         chatbotId
       );
     if (!canTrigger) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chatbot.skip',
+        decision: 'can_trigger_chatbot',
+        outcome: 'skipped',
+        reason: 'chatbot_event_cannot_trigger',
+        chatbot_id: chatbotId,
+        chat_id: getChat?.chat_id,
+      });
       return;
     }
 
@@ -4035,6 +4436,13 @@ export class MessageUpsertConsume {
 
     const chat = await this.ensureChatAndHandleMessage(data, getChat);
     if (!chat) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chatbot.skip',
+        decision: 'ensure_chat',
+        outcome: 'skipped',
+        reason: 'chat_not_available_after_contact_rules',
+        chatbot_id: chatbotId,
+      });
       return;
     }
 
@@ -4043,6 +4451,14 @@ export class MessageUpsertConsume {
       'chatbot_flow'
     );
     if (!canExecuteFlow) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.chatbot.skip',
+        decision: 'automation_dedupe',
+        outcome: 'skipped',
+        reason: 'chatbot_flow_dedupe_not_acquired',
+        chatbot_id: chatbotId,
+        chat_id: chat.chat_id,
+      });
       return;
     }
 
@@ -4062,7 +4478,27 @@ export class MessageUpsertConsume {
       );
     }
 
-    return this.chatbotFlowRunnerService.execute(t, data, chat, chatbotId);
+    this.logLifecycle(data, {
+      stage: 'message_upsert.chatbot.execute',
+      decision: 'execute_chatbot',
+      outcome: 'started',
+      chatbot_id: chatbotId,
+      chat_id: chat.chat_id,
+    });
+    const result = await this.chatbotFlowRunnerService.execute(
+      t,
+      data,
+      chat,
+      chatbotId
+    );
+    this.logLifecycle(data, {
+      stage: 'message_upsert.chatbot.execute',
+      decision: 'execute_chatbot',
+      outcome: 'completed',
+      chatbot_id: chatbotId,
+      chat_id: chat.chat_id,
+    });
+    return result;
   }
 
   private resolveInitialStatusForNewChat(
@@ -4086,6 +4522,12 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<void> {
     if (!getChat) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.queue.new_chat_start',
+        decision: 'queue_route',
+        outcome: 'started',
+        reason: 'chat_not_found',
+      });
       const isFromMe = data.message?.key?.fromMe ?? false;
       const initialStatus = this.resolveInitialStatusForNewChat(
         data.from_history_sync,
@@ -4128,6 +4570,13 @@ export class MessageUpsertConsume {
             createChat
           );
 
+          this.logLifecycle(data, {
+            stage: 'message_upsert.queue.new_chat_closed',
+            decision: 'contact_ignore_status',
+            outcome: 'closed',
+            reason: 'ignore_totally',
+            chat_id: createChat.chat_id,
+          });
           return;
         }
       }
@@ -4141,12 +4590,32 @@ export class MessageUpsertConsume {
       if (shouldSkipMessageCreation) {
         await this.saveChatWithCaches(createChat);
         await this.centrifugoChatQueuePublish(createChat);
+        this.logLifecycle(data, {
+          stage: 'message_upsert.queue.empty_webhook',
+          decision: 'empty_message_filter',
+          outcome: 'chat_saved_without_message',
+          reason: 'empty_webhook_message',
+          chat_id: createChat.chat_id,
+        });
         return;
       }
 
+      this.logLifecycle(data, {
+        stage: 'message_upsert.queue.new_chat_message',
+        decision: 'create_message_for_new_chat',
+        outcome: 'started',
+        chat_id: createChat.chat_id,
+      });
       return this.handleNewChatMessageAndPublish(createChat, data);
     }
 
+    this.logLifecycle(data, {
+      stage: 'message_upsert.queue.existing_chat_start',
+      decision: 'queue_route',
+      outcome: 'started',
+      chat_id: getChat.chat_id,
+      chat_status: getChat.status,
+    });
     const shouldDiscardEmptyText = this.shouldDiscardEmptyText(data);
     const shouldSkipMessageCreation =
       shouldDiscardEmptyText && data.webhook_message_type === 'message';
@@ -4161,6 +4630,16 @@ export class MessageUpsertConsume {
       Boolean(data.transfer_sector_id) || Boolean(data.transfer_user_id);
 
     await this.processTransferIfNeeded(t, getChat, data);
+    if (hasTransfer) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.queue.transfer',
+        decision: 'transfer_route',
+        outcome: 'processed',
+        chat_id: getChat.chat_id,
+        transfer_sector_id: data.transfer_sector_id,
+        transfer_user_id: data.transfer_user_id,
+      });
+    }
 
     let currentStatusAfterTransfer: IChat['status'] | null = getChat.status;
     if (wasInChat && hasTransfer) {
@@ -4180,6 +4659,14 @@ export class MessageUpsertConsume {
     let createMessageResult: ICreateChatMessageResult | null = null;
     if (!shouldSkipMessageCreation) {
       createMessageResult = await this.createChatMessage(getChat, data);
+    } else {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.queue.empty_webhook',
+        decision: 'empty_message_filter',
+        outcome: 'message_creation_skipped',
+        reason: 'empty_webhook_message',
+        chat_id: getChat.chat_id,
+      });
     }
 
     const reactionInactivityInteraction =
@@ -4197,6 +4684,12 @@ export class MessageUpsertConsume {
       reactionInactivityInteraction.targetTypeUser === ETypeUserChat.operator
     ) {
       await this.attendanceInactivityService.resetOnContactMessage(getChat);
+      this.logLifecycle(data, {
+        stage: 'message_upsert.inactivity.reset',
+        decision: 'attendance_inactivity',
+        outcome: 'reset_contact',
+        chat_id: getChat.chat_id,
+      });
     } else if (
       wasInChat &&
       canResetByStatus &&
@@ -4204,6 +4697,12 @@ export class MessageUpsertConsume {
       reactionInactivityInteraction.targetTypeUser === ETypeUserChat.client
     ) {
       await this.attendanceInactivityService.resetOnOperatorMessage(getChat);
+      this.logLifecycle(data, {
+        stage: 'message_upsert.inactivity.reset',
+        decision: 'attendance_inactivity',
+        outcome: 'reset_operator',
+        chat_id: getChat.chat_id,
+      });
     } else if (
       wasInChat &&
       typeUserForInactivity === ETypeUserChat.client &&
@@ -4211,6 +4710,12 @@ export class MessageUpsertConsume {
       canResetByStatus
     ) {
       await this.attendanceInactivityService.resetOnContactMessage(getChat);
+      this.logLifecycle(data, {
+        stage: 'message_upsert.inactivity.reset',
+        decision: 'attendance_inactivity',
+        outcome: 'reset_contact',
+        chat_id: getChat.chat_id,
+      });
     } else if (
       wasInChat &&
       typeUserForInactivity === ETypeUserChat.operator &&
@@ -4221,6 +4726,12 @@ export class MessageUpsertConsume {
       await this.attendanceInactivityService.resetOnOperatorAnnotationMessage(
         getChat
       );
+      this.logLifecycle(data, {
+        stage: 'message_upsert.inactivity.reset',
+        decision: 'attendance_inactivity',
+        outcome: 'reset_operator_annotation',
+        chat_id: getChat.chat_id,
+      });
     } else if (
       wasInChat &&
       typeUserForInactivity === ETypeUserChat.operator &&
@@ -4231,6 +4742,12 @@ export class MessageUpsertConsume {
       canResetByStatus
     ) {
       await this.attendanceInactivityService.resetOnOperatorMessage(getChat);
+      this.logLifecycle(data, {
+        stage: 'message_upsert.inactivity.reset',
+        decision: 'attendance_inactivity',
+        outcome: 'reset_operator',
+        chat_id: getChat.chat_id,
+      });
     }
   }
 
@@ -4240,11 +4757,26 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<void> {
     if (data.transfer_sector_id) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.transfer.sector_start',
+        decision: 'transfer_sector',
+        outcome: 'started',
+        chat_id: chat.chat_id,
+        transfer_sector_id: data.transfer_sector_id,
+        transfer_user_id: data.transfer_sector_user_id,
+      });
       await this.transferToSector(t, chat, data);
       return;
     }
 
     if (data.transfer_user_id) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.transfer.user_start',
+        decision: 'transfer_user',
+        outcome: 'started',
+        chat_id: chat.chat_id,
+        transfer_user_id: data.transfer_user_id,
+      });
       await this.transferToUser(t, chat, data);
     }
   }
@@ -4264,6 +4796,14 @@ export class MessageUpsertConsume {
     );
 
     if (!sectorData) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.transfer.sector_skip',
+        decision: 'transfer_sector',
+        outcome: 'skipped',
+        reason: 'sector_not_found',
+        chat_id: chat.chat_id,
+        transfer_sector_id: data.transfer_sector_id,
+      });
       return;
     }
 
@@ -4290,6 +4830,14 @@ export class MessageUpsertConsume {
     }
 
     await this.chatService.updateChatUserAndSector(chat.chat_id, user, sector);
+    this.logLifecycle(data, {
+      stage: 'message_upsert.transfer.sector_success',
+      decision: 'transfer_sector',
+      outcome: 'transferred',
+      chat_id: chat.chat_id,
+      transfer_sector_id: data.transfer_sector_id,
+      transfer_user_id: data.transfer_sector_user_id,
+    });
   }
 
   private async transferToUser(
@@ -4306,6 +4854,14 @@ export class MessageUpsertConsume {
     );
 
     if (!userData) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.transfer.user_skip',
+        decision: 'transfer_user',
+        outcome: 'skipped',
+        reason: 'user_not_found',
+        chat_id: chat.chat_id,
+        transfer_user_id: data.transfer_user_id,
+      });
       return;
     }
 
@@ -4316,6 +4872,13 @@ export class MessageUpsertConsume {
     };
 
     await this.chatService.updateChatUserAndSector(chat.chat_id, user, null);
+    this.logLifecycle(data, {
+      stage: 'message_upsert.transfer.user_success',
+      decision: 'transfer_user',
+      outcome: 'transferred',
+      chat_id: chat.chat_id,
+      transfer_user_id: data.transfer_user_id,
+    });
   }
 
   private getEffectiveInputChatbotId(
@@ -4492,6 +5055,13 @@ export class MessageUpsertConsume {
       chat.contact?.ignore === EContactIgnore.ignore_automation ||
       chat.contact?.ignore === EContactIgnore.ignore_totally
     ) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.outside_hours.skip',
+        decision: 'contact_ignore_status',
+        outcome: 'skipped',
+        reason: 'contact_ignores_automation',
+        chat_id: chat.chat_id,
+      });
       return;
     }
 
@@ -4500,6 +5070,13 @@ export class MessageUpsertConsume {
       'outside_hours'
     );
     if (!canSendOutsideHours) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.outside_hours.skip',
+        decision: 'automation_dedupe',
+        outcome: 'skipped',
+        reason: 'outside_hours_dedupe_not_acquired',
+        chat_id: chat.chat_id,
+      });
       return;
     }
 
@@ -4517,6 +5094,13 @@ export class MessageUpsertConsume {
     );
 
     if (lock !== 'OK') {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.outside_hours.skip',
+        decision: 'outside_hours_debounce',
+        outcome: 'skipped',
+        reason: 'debounce_lock_not_acquired',
+        chat_id: chat.chat_id,
+      });
       return;
     }
 
@@ -4538,6 +5122,13 @@ export class MessageUpsertConsume {
     }).trim();
 
     if (!formattedMessage) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.outside_hours.skip',
+        decision: 'message_template',
+        outcome: 'skipped',
+        reason: 'formatted_message_empty',
+        chat_id: chat.chat_id,
+      });
       return;
     }
 
@@ -4547,6 +5138,12 @@ export class MessageUpsertConsume {
       type: EMessageType.text,
       message: formattedMessage,
       typeUser: ETypeUserChat.system,
+    });
+    this.logLifecycle(data, {
+      stage: 'message_upsert.outside_hours.send',
+      decision: 'send_outside_hours_message',
+      outcome: 'sent',
+      chat_id: chat.chat_id,
     });
   }
 
@@ -4575,6 +5172,13 @@ export class MessageUpsertConsume {
       ));
 
     if (!currentChat) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.outside_hours.message_only',
+        decision: 'load_current_chat',
+        outcome: 'skipped',
+        reason: 'current_chat_not_found',
+        phone,
+      });
       return;
     }
 
@@ -4596,6 +5200,13 @@ export class MessageUpsertConsume {
         undefined,
         new Date().toISOString()
       );
+      this.logLifecycle(data, {
+        stage: 'message_upsert.outside_hours.message_only',
+        decision: 'outside_hours_destination',
+        outcome: 'closed',
+        reason: 'destination_status_closed',
+        chat_id: currentChat.chat_id,
+      });
     } else {
       let outsideHoursSector: IChat['sector'] | null = null;
       const outsideHoursSectorId =
@@ -4633,6 +5244,14 @@ export class MessageUpsertConsume {
         null,
         outsideHoursSector
       );
+      this.logLifecycle(data, {
+        stage: 'message_upsert.outside_hours.message_only',
+        decision: 'outside_hours_destination',
+        outcome: 'queued',
+        reason: 'destination_status_queue',
+        chat_id: currentChat.chat_id,
+        transfer_sector_id: outsideHoursSector?.id,
+      });
     }
 
     const updatedChat = await this.chatService.findChatByChatId(
@@ -4659,6 +5278,13 @@ export class MessageUpsertConsume {
         message_key_id: data.message?.key?.id,
         reason: discardReason,
       });
+      this.logLifecycle(data, {
+        stage: 'message_upsert.route.discard',
+        decision: 'discard_filter',
+        outcome: 'discarded',
+        reason: discardReason,
+        phone,
+      });
       return;
     }
 
@@ -4669,12 +5295,28 @@ export class MessageUpsertConsume {
       this.redis,
       lockKey,
       async () => {
+        this.logLifecycle(data, {
+          stage: 'message_upsert.route.lock_acquired',
+          decision: 'chat_lock',
+          outcome: 'locked',
+          phone,
+          lock_key: lockKey,
+        });
         const jid = remoteJid(data.message?.key);
         const jidAlt = remoteJidAlt(data.message?.key);
 
         const existingMessage =
           await this.findExistingMessageForIncomingData(data);
         if (existingMessage?.message_id) {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.route.existing_message',
+            decision: 'existing_message_lookup',
+            outcome: 'handled',
+            reason: 'message_already_exists',
+            phone,
+            chat_message_id: existingMessage.message_id,
+            chat_id: existingMessage.chat_id,
+          });
           await this.handleExistingMessageInOriginalChat(data, existingMessage);
           return;
         }
@@ -4700,6 +5342,15 @@ export class MessageUpsertConsume {
             });
 
           if (existingRelatedMessage?.message_id) {
+            this.logLifecycle(data, {
+              stage: 'message_upsert.route.existing_related_message',
+              decision: 'existing_related_message_lookup',
+              outcome: 'handled',
+              reason: 'related_message_already_exists',
+              phone,
+              chat_message_id: existingRelatedMessage.message_id,
+              chat_id: existingRelatedMessage.chat_id,
+            });
             await this.handleExistingMessageInOriginalChat(
               data,
               existingRelatedMessage
@@ -4712,6 +5363,14 @@ export class MessageUpsertConsume {
           ? await this.buildMissingEditMessageCreateFallback(getChat, data)
           : await this.buildMissingEditMessageCreateFallbackWithoutChat(data);
         if (editCreateFallback) {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.route.edit_fallback',
+            decision: 'missing_edit_target',
+            outcome: 'converted_to_create',
+            reason: 'edit_target_not_found',
+            phone,
+            chat_id: getChat?.chat_id,
+          });
           data = editCreateFallback;
         }
 
@@ -4743,10 +5402,25 @@ export class MessageUpsertConsume {
             'message_only'
         ) {
           if (!isFirstOutsideHoursInteraction) {
+            this.logLifecycle(data, {
+              stage: 'message_upsert.route.outside_hours',
+              decision: 'attendance_hours',
+              outcome: 'queue_message_only_existing_chat',
+              reason: 'outside_hours_message_only',
+              phone,
+              chat_id: getChat?.chat_id,
+            });
             await this.createOrUpdateChatQueue(t, getChat, data);
             return;
           }
 
+          this.logLifecycle(data, {
+            stage: 'message_upsert.route.outside_hours',
+            decision: 'attendance_hours',
+            outcome: 'message_only',
+            reason: 'outside_hours_message_only',
+            phone,
+          });
           await this.handleOutsideHoursMessageOnly(
             t,
             data,
@@ -4765,11 +5439,27 @@ export class MessageUpsertConsume {
             'continue_flow';
 
         if (data.from_history_sync) {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.route.history_sync',
+            decision: 'history_sync_route',
+            outcome: 'queue',
+            reason: 'from_history_sync',
+            phone,
+            chat_id: getChat?.chat_id,
+          });
           await this.createOrUpdateChatQueue(t, getChat, data);
           return;
         }
 
         if (data.webhook_message_type === 'message') {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.route.webhook_message',
+            decision: 'webhook_route',
+            outcome: 'queue',
+            reason: 'webhook_message_type_message',
+            phone,
+            chat_id: getChat?.chat_id,
+          });
           await this.createOrUpdateChatQueue(t, getChat, data);
           return;
         }
@@ -4778,6 +5468,15 @@ export class MessageUpsertConsume {
           data.webhook_message_type === 'chatbot' &&
           data.webhook_chatbot_id
         ) {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.route.webhook_chatbot',
+            decision: 'webhook_route',
+            outcome: 'chatbot',
+            reason: 'webhook_message_type_chatbot',
+            phone,
+            chat_id: getChat?.chat_id,
+            chatbot_id: data.webhook_chatbot_id,
+          });
           await this.createOrUpdateChatBotFlow(
             t,
             getChat,
@@ -4806,6 +5505,15 @@ export class MessageUpsertConsume {
           getChat.status === EChatStatus.ura_output &&
           !isFromMe
         ) {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.route.output_chatbot',
+            decision: 'chatbot_route',
+            outcome: 'chatbot',
+            reason: 'chat_in_output_ura',
+            phone,
+            chat_id: getChat.chat_id,
+            chatbot_id: outputChatbotId,
+          });
           await this.createOrUpdateChatBotFlow(
             t,
             getChat,
@@ -4841,6 +5549,15 @@ export class MessageUpsertConsume {
             getChat.status === EChatStatus.ura_webhook) &&
           !isFromMe
         ) {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.route.input_chatbot',
+            decision: 'chatbot_route',
+            outcome: 'chatbot',
+            reason: getChat ? 'chat_status_allows_chatbot' : 'new_chat',
+            phone,
+            chat_id: getChat?.chat_id,
+            chatbot_id: effectiveInputChatbotId,
+          });
           await this.createOrUpdateChatBotFlow(
             t,
             getChat,
@@ -4863,6 +5580,13 @@ export class MessageUpsertConsume {
           return;
         }
 
+        this.logLifecycle(data, {
+          stage: 'message_upsert.route.queue',
+          decision: 'default_queue_route',
+          outcome: 'queue',
+          phone,
+          chat_id: getChat?.chat_id,
+        });
         await this.createOrUpdateChatQueue(t, getChat, data);
 
         if (shouldSendOutsideHoursAndContinue && outsideHoursContext) {
@@ -4877,6 +5601,14 @@ export class MessageUpsertConsume {
             ));
 
           if (currentChat) {
+            this.logLifecycle(data, {
+              stage: 'message_upsert.route.outside_hours_continue',
+              decision: 'attendance_hours',
+              outcome: 'send_outside_hours_and_continue',
+              reason: 'outside_hours_continue_flow',
+              phone,
+              chat_id: currentChat.chat_id,
+            });
             await this.sendOutsideHoursMessageWithDebounce(
               t,
               data,
@@ -4895,6 +5627,13 @@ export class MessageUpsertConsume {
     phone: string
   ): Promise<boolean> {
     if (data.message?.key?.fromMe === true) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.active_validation.skip',
+        decision: 'active_whatsapp_validation',
+        outcome: 'skipped',
+        reason: 'message_from_me',
+        phone,
+      });
       return false;
     }
 
@@ -4902,17 +5641,33 @@ export class MessageUpsertConsume {
       data.type !== EMessageType.text &&
       data.type !== EMessageType.edit_text
     ) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.active_validation.skip',
+        decision: 'active_whatsapp_validation',
+        outcome: 'skipped',
+        reason: 'unsupported_message_type',
+        phone,
+        message_type: data.type,
+      });
       return false;
     }
 
     const content = this.buildMessageContent(data);
     const messageText = extractMessageTextFromContent(content);
 
-    return this.activeWhatsappValidationService.handleIncomingMessage({
-      workerId: data.worker_id,
-      fromPhone: phone,
-      messageText,
+    const handled =
+      await this.activeWhatsappValidationService.handleIncomingMessage({
+        workerId: data.worker_id,
+        fromPhone: phone,
+        messageText,
+      });
+    this.logLifecycle(data, {
+      stage: 'message_upsert.active_validation.result',
+      decision: 'active_whatsapp_validation',
+      outcome: handled ? 'handled' : 'not_handled',
+      phone,
     });
+    return handled;
   }
 
   public async execute(t: TFunction<'translation', undefined>): Promise<void> {
@@ -4932,168 +5687,18 @@ export class MessageUpsertConsume {
       'group-underchat-message-upsert'
     );
 
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const partition = message.partition;
-      const offset = message.offset;
-
-      const previousChain =
-        this.partitionChains.get(partition) ?? Promise.resolve();
-
-      const currentChain = previousChain
-        .then(async () => {
-          const processMessage = async (): Promise<boolean> => {
-            const discardReason = this.getDiscardUpsertReason(data);
-            if (discardReason) {
-              logger.info({
-                type: 'message_upsert_discarded',
-                account_id: data.account_id,
-                worker_id: data.worker_id,
-                message_key_id: data.message?.key?.id,
-                partition,
-                offset,
-                reason: discardReason,
-              });
-              return true;
-            }
-
-            const jid = remoteJid(data.message?.key);
-            const jidAlt = remoteJidAlt(data.message?.key);
-
-            if (!jid && !jidAlt) {
-              const dlqSent = await this.sendToDlq(
-                data,
-                new Error('Received message without remoteJid'),
-                0
-              );
-              return dlqSent;
-            }
-
-            const phone = getPhoneFromJid(jid, jidAlt);
-
-            if (!phone) {
-              const dlqSent = await this.sendToDlq(
-                data,
-                new Error('Received message without valid phone'),
-                0
-              );
-              return dlqSent;
-            }
-
-            const handledActiveValidation =
-              await this.handleActiveWhatsappValidation(data, phone);
-
-            if (handledActiveValidation) {
-              return true;
-            }
-
-            await this.processWithRetry(t, data, phone);
-            return true;
-          };
-
-          while (true) {
-            let timeoutLogged = false;
-            const timeout = setTimeout(() => {
-              timeoutLogged = true;
-              logger.error({
-                type: 'message_upsert_timeout',
-                message: `Message processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms. Offset will not be committed.`,
-                partition,
-                offset,
-                account_id: data.account_id,
-                worker_id: data.worker_id,
-                message_key_id: data.message?.key?.id,
-              });
-              incrementCounter('message_upsert_timeout');
-            }, this.MESSAGE_PROCESSING_TIMEOUT_MS);
-            timeout.unref?.();
-
-            try {
-              const processed = await processMessage();
-              clearTimeout(timeout);
-
-              if (!processed) {
-                throw new Error('Message processing returned false');
-              }
-
-              this.partitionFailureCounts.set(partition, 0);
-              await this.commitNext(topic, partition, offset);
-              return;
-            } catch (error) {
-              clearTimeout(timeout);
-
-              if (
-                this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(
-                  error
-                )
-              ) {
-                logger.error({
-                  type: 'message_upsert_elastic_read_only_allow_delete',
-                  message:
-                    'Elasticsearch flood-stage read-only block detected. Offset not committed; retrying after backoff.',
-                  partition,
-                  offset,
-                  account_id: data.account_id,
-                  worker_id: data.worker_id,
-                  message_key_id: data.message?.key?.id,
-                });
-                incrementCounter(
-                  'message_upsert_elastic_read_only_allow_delete'
-                );
-                await delay(3000);
-                continue;
-              }
-
-              logger.error({
-                type: timeoutLogged
-                  ? 'message_upsert_timeout_retry'
-                  : 'message_upsert_processing_error',
-                message:
-                  'Error processing message. Offset will not be committed; retrying after backoff.',
-                error: error instanceof Error ? error.message : error,
-                partition,
-                offset,
-                account_id: data.account_id,
-                worker_id: data.worker_id,
-                message_key_id: data.message?.key?.id,
-              });
-              recordException(error, {
-                type: 'message_upsert_processing_error',
-                partition: String(partition),
-              });
-              incrementCounter(
-                timeoutLogged
-                  ? 'message_upsert_timeout_retry'
-                  : 'message_upsert_processing_error'
-              );
-
-              this.incrementPartitionFailure(partition);
-              await delay(timeoutLogged ? 5000 : 3000);
-            }
-          }
-        })
-        .catch((error) => {
-          logger.error({
-            type: 'message_upsert_unhandled_error',
-            message: `Unhandled error in partition ${partition}, offset ${offset}`,
-            error: error instanceof Error ? error.message : error,
-            partition,
-            offset,
-          });
-          recordException(error, {
-            type: 'message_upsert_unhandled_error',
-            partition: String(partition),
-          });
-          incrementCounter('message_upsert_unhandled_error');
-          this.incrementPartitionFailure(partition);
+    this.consumer.on('data', (message) => {
+      void this.handleKafkaMessage(
+        t,
+        topic,
+        message as KafkaConsumerMessage
+      ).catch((error) => {
+        logger.error({
+          type: 'message_upsert_consumer_handler_error',
+          message: 'Unhandled error before partition chain registration',
+          error: error instanceof Error ? error.message : error,
         });
-
-      this.partitionChains.set(partition, currentChain);
+      });
     });
 
     this.consumer.on('event.error', (err) => {
@@ -5108,6 +5713,379 @@ export class MessageUpsertConsume {
     connectConsumer(consumer, topic, () => {
       this.isRunning = true;
     });
+  }
+
+  private async handleKafkaMessage(
+    t: TFunction<'translation', undefined>,
+    topic: string,
+    message: KafkaConsumerMessage
+  ): Promise<void> {
+    await runWithKafkaTraceContext(message.headers, () =>
+      this.handleKafkaMessageWithTrace(t, topic, message)
+    );
+  }
+
+  private async handleKafkaMessageWithTrace(
+    t: TFunction<'translation', undefined>,
+    topic: string,
+    message: KafkaConsumerMessage
+  ): Promise<void> {
+    const { partition, offset } = message;
+    const data = this.parseMessage(message.value);
+    if (!data) {
+      recordMessageLifecycle({
+        stage: 'message_upsert.consume.parse',
+        decision: 'parse_kafka_payload',
+        outcome: 'skipped',
+        reason: 'invalid_or_empty_payload',
+        level: 'warn',
+        topic,
+        partition,
+        offset,
+      });
+      await this.commitNext(topic, partition, offset);
+      return;
+    }
+
+    const contextData = buildMessageLifecycleContext(
+      data,
+      data.source_provider
+    );
+    const previousChain =
+      this.partitionChains.get(partition) ?? Promise.resolve();
+
+    const currentChain = previousChain
+      .then(() =>
+        this.processKafkaMessageInPartition(
+          t,
+          topic,
+          data,
+          partition,
+          offset,
+          contextData,
+          message.headers
+        )
+      )
+      .catch((error) => {
+        this.handlePartitionChainError(data, partition, offset, error);
+      });
+
+    this.partitionChains.set(partition, currentChain);
+  }
+
+  private async processKafkaMessageInPartition(
+    t: TFunction<'translation', undefined>,
+    topic: string,
+    data: IUpsertMessage,
+    partition: number,
+    offset: number,
+    contextData: MessageLifecycleContext,
+    kafkaHeaders?: MessageHeader[]
+  ): Promise<void> {
+    await runWithKafkaTraceContext(kafkaHeaders, () =>
+      runWithMessageLifecycleContext(contextData, () =>
+        this.processMessageWithLifecycle(t, topic, data, partition, offset)
+      )
+    );
+  }
+
+  private async processMessageWithLifecycle(
+    t: TFunction<'translation', undefined>,
+    topic: string,
+    data: IUpsertMessage,
+    partition: number,
+    offset: number
+  ): Promise<void> {
+    this.logLifecycle(data, {
+      stage: 'message_upsert.consume.received',
+      decision: 'consume_kafka_payload',
+      outcome: 'received',
+      topic,
+      partition,
+      offset,
+    });
+
+    while (true) {
+      let timeoutLogged = false;
+      const timeout = this.startMessageProcessingTimeout(
+        data,
+        partition,
+        offset,
+        () => {
+          timeoutLogged = true;
+        }
+      );
+
+      try {
+        const processed = await this.processKafkaUpsertOnce(
+          t,
+          data,
+          partition,
+          offset
+        );
+        clearTimeout(timeout);
+
+        if (!processed) {
+          throw new Error('Message processing returned false');
+        }
+
+        this.partitionFailureCounts.set(partition, 0);
+        await this.commitNext(topic, partition, offset);
+        return;
+      } catch (error) {
+        clearTimeout(timeout);
+        await this.handleProcessRetry(
+          data,
+          partition,
+          offset,
+          timeoutLogged,
+          error
+        );
+      }
+    }
+  }
+
+  private startMessageProcessingTimeout(
+    data: IUpsertMessage,
+    partition: number,
+    offset: number,
+    markTimeout: () => void
+  ): ReturnType<typeof setTimeout> {
+    const timeout = setTimeout(() => {
+      markTimeout();
+      logger.error({
+        type: 'message_upsert_timeout',
+        message: `Message processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms. Offset will not be committed.`,
+        partition,
+        offset,
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_key_id: data.message?.key?.id,
+      });
+      this.logLifecycle(data, {
+        stage: 'message_upsert.process.timeout',
+        decision: 'process_message',
+        outcome: 'timeout',
+        reason: 'processing_timeout',
+        level: 'error',
+        partition,
+        offset,
+        timeout_ms: this.MESSAGE_PROCESSING_TIMEOUT_MS,
+      });
+      incrementCounter('message_upsert_timeout');
+    }, this.MESSAGE_PROCESSING_TIMEOUT_MS);
+    timeout.unref?.();
+
+    return timeout;
+  }
+
+  private async processKafkaUpsertOnce(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    partition: number,
+    offset: number
+  ): Promise<boolean> {
+    const discardReason = this.getDiscardUpsertReason(data);
+    if (discardReason) {
+      logger.info({
+        type: 'message_upsert_discarded',
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_key_id: data.message?.key?.id,
+        partition,
+        offset,
+        reason: discardReason,
+      });
+      this.logLifecycle(data, {
+        stage: 'message_upsert.consume.discard',
+        decision: 'discard_filter',
+        outcome: 'discarded',
+        reason: discardReason,
+        partition,
+        offset,
+      });
+      return true;
+    }
+
+    const jid = remoteJid(data.message?.key);
+    const jidAlt = remoteJidAlt(data.message?.key);
+
+    if (!jid && !jidAlt) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.consume.dlq',
+        decision: 'remote_jid_validation',
+        outcome: 'dlq',
+        reason: 'missing_remote_jid',
+        level: 'warn',
+        partition,
+        offset,
+      });
+      return this.sendToDlq(
+        data,
+        new Error('Received message without remoteJid'),
+        0
+      );
+    }
+
+    const phone = getPhoneFromJid(jid, jidAlt);
+
+    if (!phone) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.consume.dlq',
+        decision: 'phone_validation',
+        outcome: 'dlq',
+        reason: 'missing_valid_phone',
+        level: 'warn',
+        partition,
+        offset,
+        jid,
+        remote_jid_alt: jidAlt,
+      });
+      return this.sendToDlq(
+        data,
+        new Error('Received message without valid phone'),
+        0
+      );
+    }
+
+    const handledActiveValidation = await this.handleActiveWhatsappValidation(
+      data,
+      phone
+    );
+
+    if (handledActiveValidation) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.consume.active_validation',
+        decision: 'active_whatsapp_validation',
+        outcome: 'handled',
+        reason: 'active_validation_message',
+        phone,
+        partition,
+        offset,
+      });
+      return true;
+    }
+
+    this.logLifecycle(data, {
+      stage: 'message_upsert.process.start',
+      decision: 'process_message',
+      outcome: 'started',
+      phone,
+      partition,
+      offset,
+    });
+    await this.processWithRetry(t, data, phone);
+    this.logLifecycle(data, {
+      stage: 'message_upsert.process.success',
+      decision: 'process_message',
+      outcome: 'processed',
+      phone,
+      partition,
+      offset,
+    });
+    return true;
+  }
+
+  private async handleProcessRetry(
+    data: IUpsertMessage,
+    partition: number,
+    offset: number,
+    timeoutLogged: boolean,
+    error: unknown
+  ): Promise<void> {
+    if (this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(error)) {
+      logger.error({
+        type: 'message_upsert_elastic_read_only_allow_delete',
+        message:
+          'Elasticsearch flood-stage read-only block detected. Offset not committed; retrying after backoff.',
+        partition,
+        offset,
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_key_id: data.message?.key?.id,
+      });
+      this.logLifecycle(data, {
+        stage: 'message_upsert.process.retry',
+        decision: 'process_message',
+        outcome: 'retrying',
+        reason: 'elastic_read_only_allow_delete',
+        level: 'error',
+        partition,
+        offset,
+      });
+      incrementCounter('message_upsert_elastic_read_only_allow_delete');
+      await delay(3000);
+      return;
+    }
+
+    logger.error({
+      type: timeoutLogged
+        ? 'message_upsert_timeout_retry'
+        : 'message_upsert_processing_error',
+      message:
+        'Error processing message. Offset will not be committed; retrying after backoff.',
+      error: error instanceof Error ? error.message : error,
+      partition,
+      offset,
+      account_id: data.account_id,
+      worker_id: data.worker_id,
+      message_key_id: data.message?.key?.id,
+    });
+    this.logLifecycle(data, {
+      stage: timeoutLogged
+        ? 'message_upsert.process.timeout_retry'
+        : 'message_upsert.process.error',
+      decision: 'process_message',
+      outcome: 'retrying',
+      reason: timeoutLogged ? 'timeout' : 'exception',
+      level: 'error',
+      partition,
+      offset,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    recordException(error, {
+      type: 'message_upsert_processing_error',
+      partition: String(partition),
+    });
+    incrementCounter(
+      timeoutLogged
+        ? 'message_upsert_timeout_retry'
+        : 'message_upsert_processing_error'
+    );
+
+    this.incrementPartitionFailure(partition);
+    await delay(timeoutLogged ? 5000 : 3000);
+  }
+
+  private handlePartitionChainError(
+    data: IUpsertMessage,
+    partition: number,
+    offset: number,
+    error: unknown
+  ): void {
+    logger.error({
+      type: 'message_upsert_unhandled_error',
+      message: `Unhandled error in partition ${partition}, offset ${offset}`,
+      error: error instanceof Error ? error.message : error,
+      partition,
+      offset,
+    });
+    this.logLifecycle(data, {
+      stage: 'message_upsert.process.unhandled_error',
+      decision: 'partition_chain',
+      outcome: 'error',
+      reason: 'unhandled_exception',
+      level: 'error',
+      partition,
+      offset,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    recordException(error, {
+      type: 'message_upsert_unhandled_error',
+      partition: String(partition),
+    });
+    incrementCounter('message_upsert_unhandled_error');
+    this.incrementPartitionFailure(partition);
   }
 
   public async close(): Promise<void> {
@@ -5158,11 +6136,40 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     try {
       await commitOffset(this.consumerOrThrow, topic, partition, offset);
+      recordMessageLifecycle({
+        stage: 'message_upsert.kafka.commit',
+        decision: 'commit_offset',
+        outcome: 'committed',
+        topic,
+        partition,
+        offset,
+      });
     } catch (error: unknown) {
       if (MessageUpsertConsume.isLibrdKafkaError(error) && error.code === 22) {
+        recordMessageLifecycle({
+          stage: 'message_upsert.kafka.commit',
+          decision: 'commit_offset',
+          outcome: 'ignored',
+          reason: 'local_state_error',
+          level: 'warn',
+          topic,
+          partition,
+          offset,
+        });
         return;
       }
 
+      recordMessageLifecycle({
+        stage: 'message_upsert.kafka.commit',
+        decision: 'commit_offset',
+        outcome: 'error',
+        reason: 'commit_failed',
+        level: 'error',
+        topic,
+        partition,
+        offset,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }

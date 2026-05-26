@@ -1,11 +1,18 @@
 import { injectable, inject } from 'tsyringe';
-import type { Producer, LibrdKafkaError } from 'node-rdkafka';
+import type { Producer, LibrdKafkaError, MessageHeader } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { toError, getErrorMessage } from '@core/common/functions/toError';
 import { ulid } from 'ulid';
 import { IPendingMessageWithTimestamp } from '@core/common/interfaces/IPendingMessageWithTimestamp';
 import { IQueuedMessage } from '@core/common/interfaces/IQueuedMessage';
 import { IDeferred } from '@core/common/interfaces/IDeferred';
+import {
+  buildMessageLifecycleContext,
+  getMessageLifecycleContext,
+  injectKafkaTraceHeaders,
+  isMessageLifecycleDebugEnabled,
+  runWithMessageLifecycleContext,
+} from '@core/plugins/telemetry/messageLifecycleDebug';
 
 @injectable()
 export class StreamProducerService {
@@ -71,6 +78,16 @@ export class StreamProducerService {
   private static readonly RECONNECT_TIMEOUT_MS = 10000;
 
   constructor(@inject('Kafka') private readonly kafka: KafkaClient) {}
+
+  private isMessageLifecyclePayload(payload: unknown): boolean {
+    return (
+      typeof payload === 'object' &&
+      payload !== null &&
+      'worker_id' in payload &&
+      'account_id' in payload &&
+      'message' in payload
+    );
+  }
 
   private readonly deliveryReportHandler = (
     err: LibrdKafkaError | null,
@@ -586,7 +603,8 @@ export class StreamProducerService {
     producer: Producer,
     topic: string,
     value: Buffer,
-    keyBuffer: Buffer | undefined
+    keyBuffer: Buffer | undefined,
+    headers?: MessageHeader[]
   ): Promise<void> {
     if (this.closing) {
       throw new Error('Cannot produce message during shutdown');
@@ -667,7 +685,8 @@ export class StreamProducerService {
           value,
           keyBuffer,
           Date.now(),
-          correlationId
+          correlationId,
+          headers
         );
       } catch (error) {
         const pending = this.pendingMessages.get(correlationId);
@@ -779,6 +798,7 @@ export class StreamProducerService {
     topic: string,
     value: Buffer,
     keyBuffer: Buffer | undefined,
+    headers: MessageHeader[] | undefined,
     attempt = 0
   ): Promise<void> {
     if (this.closing) {
@@ -786,7 +806,7 @@ export class StreamProducerService {
     }
 
     try {
-      await this.produceMessage(producer, topic, value, keyBuffer);
+      await this.produceMessage(producer, topic, value, keyBuffer, headers);
     } catch (error) {
       if (this.closing) {
         throw new Error('Producer is closing');
@@ -825,6 +845,7 @@ export class StreamProducerService {
         topic,
         value,
         keyBuffer,
+        headers,
         attempt + 1
       );
     }
@@ -898,7 +919,8 @@ export class StreamProducerService {
   private enqueueSend(
     topic: string,
     value: Buffer,
-    keyBuffer: Buffer | undefined
+    keyBuffer: Buffer | undefined,
+    headers?: MessageHeader[]
   ): Promise<void> {
     if (!topic || typeof topic !== 'string' || topic.trim().length === 0) {
       return Promise.reject(
@@ -924,7 +946,14 @@ export class StreamProducerService {
         return;
       }
 
-      this.sendQueue.push({ topic, value, keyBuffer, resolve, reject });
+      this.sendQueue.push({
+        topic,
+        value,
+        keyBuffer,
+        headers,
+        resolve,
+        reject,
+      });
       this.scheduleFlush();
     });
   }
@@ -1082,6 +1111,7 @@ export class StreamProducerService {
           message.topic,
           message.value,
           message.keyBuffer,
+          message.headers,
           0,
           producer
         )
@@ -1122,6 +1152,7 @@ export class StreamProducerService {
           message.topic,
           message.value,
           message.keyBuffer,
+          message.headers,
           0,
           producer
         )
@@ -1144,6 +1175,7 @@ export class StreamProducerService {
     topic: string,
     value: Buffer,
     keyBuffer: Buffer | undefined,
+    headers: MessageHeader[] | undefined,
     attempt = 0,
     producer?: Producer
   ): Promise<void> {
@@ -1163,7 +1195,8 @@ export class StreamProducerService {
         resolvedProducer,
         topic,
         value,
-        keyBuffer
+        keyBuffer,
+        headers
       );
     } catch (error) {
       if (this.closing) {
@@ -1201,6 +1234,7 @@ export class StreamProducerService {
         topic,
         value,
         keyBuffer,
+        headers,
         attempt + 1,
         reconnectedProducer
       );
@@ -1210,11 +1244,28 @@ export class StreamProducerService {
   async send(
     topic: string,
     payload: unknown,
-    key?: string | Buffer
+    key?: string | Buffer,
+    headers?: MessageHeader[]
   ): Promise<void> {
-    const value = this.serializePayload(payload);
-    const keyBuffer = this.serializeKey(key);
-    return this.enqueueSend(topic, value, keyBuffer);
+    const enqueue = () => {
+      const value = this.serializePayload(payload);
+      const keyBuffer = this.serializeKey(key);
+      const kafkaHeaders = injectKafkaTraceHeaders(headers);
+      return this.enqueueSend(topic, value, keyBuffer, kafkaHeaders);
+    };
+
+    if (
+      isMessageLifecycleDebugEnabled() &&
+      !getMessageLifecycleContext() &&
+      this.isMessageLifecyclePayload(payload)
+    ) {
+      return runWithMessageLifecycleContext(
+        buildMessageLifecycleContext(payload as never),
+        enqueue
+      ) as Promise<void>;
+    }
+
+    return enqueue();
   }
 
   async close(): Promise<boolean[]> {

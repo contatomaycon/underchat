@@ -1,5 +1,9 @@
 import { singleton, inject } from 'tsyringe';
-import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
+import type {
+  KafkaConsumer,
+  LibrdKafkaError,
+  MessageHeader,
+} from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -20,6 +24,22 @@ import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
 import { WAMessage } from '@whiskeysockets/baileys';
 import Redis from 'ioredis';
+import {
+  buildMessageLifecycleContext,
+  recordMessageLifecycle,
+  runWithKafkaTraceContext,
+  runWithMessageLifecycleContext,
+  type MessageLifecycleEvent,
+} from '@core/plugins/telemetry/messageLifecycleDebug';
+
+interface KafkaConsumerMessage {
+  value: Buffer | null;
+  partition: number;
+  offset: number;
+  headers?: MessageHeader[];
+}
+
+type MessageLifecycleContext = ReturnType<typeof buildMessageLifecycleContext>;
 
 @singleton()
 export class MessageHistorySyncConsume {
@@ -83,6 +103,21 @@ export class MessageHistorySyncConsume {
     }
   }
 
+  private logLifecycle(
+    data: IUpsertMessage | null | undefined,
+    event: MessageLifecycleEvent
+  ): void {
+    const contextData = buildMessageLifecycleContext(
+      data ?? undefined,
+      data?.source_provider
+    );
+
+    recordMessageLifecycle({
+      ...contextData,
+      ...event,
+    });
+  }
+
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
@@ -100,41 +135,13 @@ export class MessageHistorySyncConsume {
       'group-underchat-message-history-sync'
     );
 
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const partition = message.partition;
-      const offset = message.offset;
-
-      const previousChain =
-        this.partitionChains.get(partition) ?? Promise.resolve();
-
-      const currentChain = previousChain.then(async () => {
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
-
-        const stop = startHeartbeat(heartbeat);
-        try {
-          await this.handleHistoryMessage(data);
-        } catch (error) {
-          console.error('[HistorySync] Error processing message:', {
-            error,
-            account_id: data.account_id,
-            worker_id: data.worker_id,
-            message_key_id: data.message?.key?.id,
-          });
-        } finally {
-          stop();
-          await this.commitNext(topic, partition, offset);
-        }
+    this.consumer.on('data', (message) => {
+      void this.handleKafkaMessage(
+        topic,
+        message as KafkaConsumerMessage
+      ).catch((error) => {
+        console.error('[HistorySync] Error handling Kafka message:', error);
       });
-
-      this.partitionChains.set(partition, currentChain);
     });
 
     this.consumer.on('event.error', (err) => {
@@ -149,6 +156,119 @@ export class MessageHistorySyncConsume {
     connectConsumer(consumer, topic, () => {
       this.isRunning = true;
     });
+  }
+
+  private async handleKafkaMessage(
+    topic: string,
+    message: KafkaConsumerMessage
+  ): Promise<void> {
+    await runWithKafkaTraceContext(message.headers, () =>
+      this.handleKafkaMessageWithTrace(topic, message)
+    );
+  }
+
+  private async handleKafkaMessageWithTrace(
+    topic: string,
+    message: KafkaConsumerMessage
+  ): Promise<void> {
+    const { partition, offset } = message;
+    const data = this.parseMessage(message.value);
+
+    if (!data) {
+      recordMessageLifecycle({
+        stage: 'message_history_sync.consume.parse',
+        decision: 'parse_kafka_payload',
+        outcome: 'skipped',
+        reason: 'invalid_or_empty_payload',
+        level: 'warn',
+        topic,
+        partition,
+        offset,
+      });
+      await this.commitNext(topic, partition, offset);
+      return;
+    }
+
+    const contextData = buildMessageLifecycleContext(
+      data,
+      data.source_provider
+    );
+    const previousChain =
+      this.partitionChains.get(partition) ?? Promise.resolve();
+
+    const currentChain = previousChain.then(() =>
+      this.processKafkaMessageInPartition(
+        topic,
+        data,
+        partition,
+        offset,
+        contextData,
+        message.headers
+      )
+    );
+
+    this.partitionChains.set(partition, currentChain);
+  }
+
+  private async processKafkaMessageInPartition(
+    topic: string,
+    data: IUpsertMessage,
+    partition: number,
+    offset: number,
+    contextData: MessageLifecycleContext,
+    kafkaHeaders?: MessageHeader[]
+  ): Promise<void> {
+    await runWithKafkaTraceContext(kafkaHeaders, () =>
+      runWithMessageLifecycleContext(contextData, () =>
+        this.processHistoryMessageWithLifecycle(topic, data, partition, offset)
+      )
+    );
+  }
+
+  private async processHistoryMessageWithLifecycle(
+    topic: string,
+    data: IUpsertMessage,
+    partition: number,
+    offset: number
+  ): Promise<void> {
+    this.logLifecycle(data, {
+      stage: 'message_history_sync.consume.received',
+      decision: 'consume_kafka_payload',
+      outcome: 'received',
+      topic,
+      partition,
+      offset,
+    });
+
+    const heartbeat = async () => {
+      this.consumer?.commit();
+    };
+
+    const stop = startHeartbeat(heartbeat);
+    try {
+      await this.handleHistoryMessage(data);
+    } catch (error) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.process.error',
+        decision: 'process_history_message',
+        outcome: 'error',
+        reason: 'exception',
+        level: 'error',
+        topic,
+        partition,
+        offset,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      console.error('[HistorySync] Error processing message:', {
+        error,
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_key_id: data.message?.key?.id,
+      });
+    } finally {
+      stop();
+      await this.commitNext(topic, partition, offset);
+    }
   }
 
   public async close(): Promise<void> {
@@ -177,23 +297,55 @@ export class MessageHistorySyncConsume {
 
   private async handleHistoryMessage(data: IUpsertMessage): Promise<void> {
     if (!this.HISTORY_RECONCILIATION_ENABLED) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'history_reconciliation_enabled',
+        outcome: 'skipped',
+        reason: 'disabled',
+      });
       return;
     }
 
     if (data.is_call_event) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'history_event_filter',
+        outcome: 'skipped',
+        reason: 'call_event',
+      });
       return;
     }
 
     if (!data?.message?.key?.id) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'message_key_validation',
+        outcome: 'skipped',
+        reason: 'missing_message_key_id',
+        level: 'warn',
+      });
       return;
     }
 
     if (this.isMessageFromMe(data.message)) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'history_direction_filter',
+        outcome: 'skipped',
+        reason: 'message_from_me',
+      });
       return;
     }
 
     const messageTimestampMs = this.getMessageTimestampMs(data.message);
     if (!messageTimestampMs) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'timestamp_validation',
+        outcome: 'skipped',
+        reason: 'missing_message_timestamp',
+        level: 'warn',
+      });
       return;
     }
 
@@ -202,20 +354,46 @@ export class MessageHistorySyncConsume {
       data.worker_id
     );
     if (messageTimestampMs < minTimestampMs) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'history_window_filter',
+        outcome: 'skipped',
+        reason: 'older_than_min_allowed_timestamp',
+        message_timestamp_ms: messageTimestampMs,
+        min_timestamp_ms: minTimestampMs,
+      });
       return;
     }
 
     if (await this.receiptCache.isKnown(data)) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'receipt_cache_known',
+        outcome: 'skipped',
+        reason: 'already_known',
+      });
       return;
     }
 
     const acquired = await this.receiptCache.acquireInflight(data);
     if (!acquired) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'receipt_cache_inflight',
+        outcome: 'skipped',
+        reason: 'already_inflight',
+      });
       return;
     }
 
     const exists = await this.messageExistsInElastic(data);
     if (exists) {
+      this.logLifecycle(data, {
+        stage: 'message_history_sync.skip',
+        decision: 'elastic_existing_message',
+        outcome: 'skipped',
+        reason: 'message_already_exists',
+      });
       await this.receiptCache.markKnown(data);
       await this.receiptCache.releaseInflight(data);
       return;
@@ -231,6 +409,13 @@ export class MessageHistorySyncConsume {
       payload,
       data.message.key.id
     );
+    this.logLifecycle(payload, {
+      stage: 'message_history_sync.kafka.publish',
+      decision: 'publish_history_upsert',
+      outcome: 'published',
+      topic: this.kafkaServiceQueueService.upsertMessage(),
+      kafka_key: data.message.key.id,
+    });
   }
 
   private getMessageTimestampMs(
@@ -577,14 +762,43 @@ export class MessageHistorySyncConsume {
   ): Promise<void> {
     try {
       await commitOffset(this.consumerOrThrow, topic, partition, offset);
+      recordMessageLifecycle({
+        stage: 'message_history_sync.kafka.commit',
+        decision: 'commit_offset',
+        outcome: 'committed',
+        topic,
+        partition,
+        offset,
+      });
     } catch (error: unknown) {
       if (
         MessageHistorySyncConsume.isLibrdKafkaError(error) &&
         error.code === 22
       ) {
+        recordMessageLifecycle({
+          stage: 'message_history_sync.kafka.commit',
+          decision: 'commit_offset',
+          outcome: 'ignored',
+          reason: 'local_state_error',
+          level: 'warn',
+          topic,
+          partition,
+          offset,
+        });
         return;
       }
 
+      recordMessageLifecycle({
+        stage: 'message_history_sync.kafka.commit',
+        decision: 'commit_offset',
+        outcome: 'error',
+        reason: 'commit_failed',
+        level: 'error',
+        topic,
+        partition,
+        offset,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   }

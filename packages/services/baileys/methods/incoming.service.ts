@@ -7,6 +7,12 @@ import {
   recordException,
 } from '@core/plugins/telemetry/observability';
 import {
+  buildMessageLifecycleContext,
+  isMessageLifecycleDebugEnabled,
+  recordMessageLifecycle,
+  type MessageLifecycleEvent,
+} from '@core/plugins/telemetry/messageLifecycleDebug';
+import {
   AnyMessageContent,
   Contact,
   MessageUserReceiptUpdate,
@@ -180,6 +186,45 @@ export class BaileysIncomingMessageService {
     if (!jidToUse) return null;
 
     return `${jidToUse}:${id}:${fromMe}`;
+  }
+
+  private logLifecycle(
+    m: WAMessage | null | undefined,
+    event: MessageLifecycleEvent
+  ): void {
+    if (!isMessageLifecycleDebugEnabled()) {
+      return;
+    }
+
+    const contextData = buildMessageLifecycleContext(
+      {
+        worker_id: baileysEnvironment.baileysWorkerId,
+        account_id: baileysEnvironment.baileysAccountId,
+        source_provider: 'baileys',
+        type: mapIncomingToType(m ?? ({} as WAMessage)) ?? EMessageType.text,
+        message: {
+          key: {
+            id: m?.key?.id ?? undefined,
+            remoteJid: remoteJid(m?.key) ?? undefined,
+            remoteJidAlt: remoteJidAlt(m?.key) ?? undefined,
+            fromMe: m?.key?.fromMe ?? undefined,
+            participant: m?.key?.participant ?? undefined,
+            participantAlt: m?.key?.participantAlt ?? undefined,
+          },
+        },
+        has_quoted: m ? messageHasQuoted(m) : false,
+      },
+      'baileys'
+    );
+
+    recordMessageLifecycle({
+      ...contextData,
+      ...event,
+      provider_message_type: mapIncomingToType(m ?? ({} as WAMessage)),
+      provider_upsert_type: (event.provider_upsert_type ?? undefined) as
+        | string
+        | undefined,
+    });
   }
 
   private isPhoneLikeName(value: string): boolean {
@@ -603,11 +648,43 @@ export class BaileysIncomingMessageService {
       await this.ensurePhotoResolved(item);
     }
 
-    await this.streamProducerService.send(
-      item.topic,
-      item.inputUpsert,
-      item.messageKey
-    );
+    this.logLifecycle(item.inputUpsert.message as WAMessage, {
+      stage: 'baileys.kafka.publish.start',
+      decision: 'publish_to_kafka',
+      outcome: 'start',
+      topic: item.topic,
+      kafka_key: item.messageKey,
+      retry_count: item.retries,
+    });
+
+    try {
+      await this.streamProducerService.send(
+        item.topic,
+        item.inputUpsert,
+        item.messageKey
+      );
+
+      this.logLifecycle(item.inputUpsert.message as WAMessage, {
+        stage: 'baileys.kafka.publish.success',
+        decision: 'publish_to_kafka',
+        outcome: 'published',
+        topic: item.topic,
+        kafka_key: item.messageKey,
+        retry_count: item.retries,
+      });
+    } catch (error) {
+      this.logLifecycle(item.inputUpsert.message as WAMessage, {
+        stage: 'baileys.kafka.publish.error',
+        decision: 'publish_to_kafka',
+        outcome: 'error',
+        level: 'error',
+        topic: item.topic,
+        kafka_key: item.messageKey,
+        retry_count: item.retries,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   private enqueueMessage(
@@ -616,6 +693,14 @@ export class BaileysIncomingMessageService {
     topic: string = this.kafkaServiceQueueService.upsertMessage()
   ): IBaileysPendingMessage | null {
     if (this.isDestroying) {
+      this.logLifecycle(inputUpsert.message as WAMessage, {
+        stage: 'baileys.queue.enqueue',
+        decision: 'enqueue',
+        outcome: 'skipped',
+        reason: 'destroying',
+        topic,
+        kafka_key: messageKey,
+      });
       return null;
     }
 
@@ -625,6 +710,16 @@ export class BaileysIncomingMessageService {
       );
       const dropCount = Math.floor(this.MAX_QUEUE_SIZE * 0.1);
       this.pendingQueue.splice(0, dropCount);
+      this.logLifecycle(inputUpsert.message as WAMessage, {
+        stage: 'baileys.queue.full',
+        decision: 'drop_oldest',
+        outcome: 'dropped',
+        reason: 'queue_full',
+        topic,
+        kafka_key: messageKey,
+        drop_count: dropCount,
+        queue_size: this.pendingQueue.length,
+      });
     }
 
     const item: IBaileysPendingMessage = {
@@ -635,6 +730,14 @@ export class BaileysIncomingMessageService {
       addedAt: Date.now(),
     };
     this.pendingQueue.push(item);
+    this.logLifecycle(inputUpsert.message as WAMessage, {
+      stage: 'baileys.queue.enqueue',
+      decision: 'enqueue',
+      outcome: 'queued',
+      topic,
+      kafka_key: messageKey,
+      queue_size: this.pendingQueue.length,
+    });
     return item;
   }
 
@@ -657,9 +760,23 @@ export class BaileysIncomingMessageService {
     this.currentSocket = socket;
 
     socket.ev.on('messages.upsert', (e) => {
-      console.log('Messages upsert');
-      console.dir(e, { depth: null, colors: true });
-
+      recordMessageLifecycle({
+        ...buildMessageLifecycleContext(
+          {
+            worker_id: baileysEnvironment.baileysWorkerId,
+            account_id: baileysEnvironment.baileysAccountId,
+            source_provider: 'baileys',
+            type: EMessageType.text,
+          },
+          'baileys'
+        ),
+        stage: 'baileys.event.messages_upsert.received_raw',
+        decision: 'receive_provider_event',
+        outcome: 'received',
+        provider_upsert_type: e?.type,
+        messages_count: Array.isArray(e?.messages) ? e.messages.length : 0,
+        raw_payload: e,
+      });
       if (!e?.messages?.length) return;
 
       const isHistoryUpsert = e.type && e.type !== EMessageUpsertType.notify;
@@ -669,6 +786,13 @@ export class BaileysIncomingMessageService {
         : e.messages;
 
       for (const m of messages) {
+        this.logLifecycle(m, {
+          stage: 'baileys.event.messages_upsert',
+          decision: 'receive_provider_event',
+          outcome: 'received',
+          provider_upsert_type: e.type,
+          raw_payload: e,
+        });
         void this.cacheMessage(m);
         if (isHistoryUpsert) {
           this.processHistoryMessage(socket, m, e.type);
@@ -679,8 +803,58 @@ export class BaileysIncomingMessageService {
     });
 
     socket.ev.on('messaging-history.set', (event) => {
-      if (!HISTORY_RECONCILIATION_ENABLED) return;
+      recordMessageLifecycle({
+        ...buildMessageLifecycleContext(
+          {
+            worker_id: baileysEnvironment.baileysWorkerId,
+            account_id: baileysEnvironment.baileysAccountId,
+            source_provider: 'baileys',
+            type: EMessageType.text,
+          },
+          'baileys'
+        ),
+        stage: 'baileys.event.messaging_history.received_raw',
+        decision: 'receive_history_event',
+        outcome: 'received',
+        messages_count: Array.isArray(event?.messages)
+          ? event.messages.length
+          : 0,
+        raw_payload: event,
+      });
+      if (!HISTORY_RECONCILIATION_ENABLED) {
+        recordMessageLifecycle({
+          ...buildMessageLifecycleContext(
+            {
+              worker_id: baileysEnvironment.baileysWorkerId,
+              account_id: baileysEnvironment.baileysAccountId,
+              source_provider: 'baileys',
+              type: EMessageType.text,
+            },
+            'baileys'
+          ),
+          stage: 'baileys.history.skip',
+          decision: 'history_reconciliation_enabled',
+          outcome: 'skipped',
+          reason: 'disabled',
+        });
+        return;
+      }
       if (!Array.isArray(event?.messages) || event.messages.length === 0) {
+        recordMessageLifecycle({
+          ...buildMessageLifecycleContext(
+            {
+              worker_id: baileysEnvironment.baileysWorkerId,
+              account_id: baileysEnvironment.baileysAccountId,
+              source_provider: 'baileys',
+              type: EMessageType.text,
+            },
+            'baileys'
+          ),
+          stage: 'baileys.history.skip',
+          decision: 'history_messages_present',
+          outcome: 'skipped',
+          reason: 'empty_history_messages',
+        });
         return;
       }
 
@@ -744,6 +918,13 @@ export class BaileysIncomingMessageService {
     upsertType: string | null
   ): void {
     if (!this.isHistoryMessageCandidate(m)) {
+      this.logLifecycle(m, {
+        stage: 'baileys.history.candidate',
+        decision: 'history_candidate',
+        outcome: 'skipped',
+        reason: 'not_history_candidate',
+        provider_upsert_type: upsertType ?? undefined,
+      });
       return;
     }
 
@@ -807,16 +988,46 @@ export class BaileysIncomingMessageService {
     options: ProcessIncomingOptions = {}
   ): void {
     try {
-      if (m.category === 'peer') return;
+      this.logLifecycle(m, {
+        stage: 'baileys.incoming.received',
+        decision: 'receive',
+        outcome: 'received',
+        provider_upsert_type: upsertType ?? undefined,
+        from_history_sync: options.fromHistorySync === true,
+        raw_payload: m,
+      });
+
+      if (m.category === 'peer') {
+        this.logLifecycle(m, {
+          stage: 'baileys.incoming.skip',
+          decision: 'category_filter',
+          outcome: 'skipped',
+          reason: 'peer_category',
+        });
+        return;
+      }
 
       const chatKind = getChatKind(m);
       if (chatKind !== EChatKind.user) {
+        this.logLifecycle(m, {
+          stage: 'baileys.incoming.skip',
+          decision: 'chat_kind_filter',
+          outcome: 'skipped',
+          reason: 'non_user_chat',
+          chat_kind: chatKind,
+        });
         return;
       }
 
       const messageKey = this.getMessageKey(m);
       if (!messageKey) {
         console.warn('[WARN] Message without key, skipping:', m.key?.id);
+        this.logLifecycle(m, {
+          stage: 'baileys.incoming.skip',
+          decision: 'message_key',
+          outcome: 'skipped',
+          reason: 'missing_message_key',
+        });
         return;
       }
 
@@ -824,12 +1035,26 @@ export class BaileysIncomingMessageService {
         ? `history:${messageKey}`
         : messageKey;
       if (this.isDuplicate(localDuplicateKey)) {
+        this.logLifecycle(m, {
+          stage: 'baileys.incoming.skip',
+          decision: 'dedupe',
+          outcome: 'skipped',
+          reason: 'duplicate',
+          dedupe_key: localDuplicateKey,
+        });
         return;
       }
 
       const type = mapIncomingToType(m);
       if (!type) {
         console.warn('[WARN] Unknown message type, skipping:', messageKey);
+        this.logLifecycle(m, {
+          stage: 'baileys.incoming.skip',
+          decision: 'message_type_mapping',
+          outcome: 'skipped',
+          reason: 'unknown_message_type',
+          kafka_key: messageKey,
+        });
         return;
       }
 
@@ -839,6 +1064,14 @@ export class BaileysIncomingMessageService {
         !options.allowHistoricalUpsert &&
         type !== EMessageType.view_once
       ) {
+        this.logLifecycle(m, {
+          stage: 'baileys.incoming.skip',
+          decision: 'upsert_type_filter',
+          outcome: 'skipped',
+          reason: 'non_notify_upsert',
+          provider_upsert_type: upsertType,
+          message_type: type,
+        });
         return;
       }
 
@@ -854,6 +1087,7 @@ export class BaileysIncomingMessageService {
       const inputUpsert: IUpsertMessage = {
         worker_id: baileysEnvironment.baileysWorkerId,
         account_id: baileysEnvironment.baileysAccountId,
+        source_provider: 'baileys',
         type,
         message: m as unknown as IUpsertMessage['message'],
         photo: null,
@@ -865,8 +1099,25 @@ export class BaileysIncomingMessageService {
 
       const pendingItem = this.enqueueMessage(inputUpsert, messageKey, topic);
       if (!pendingItem) return;
+
+      this.logLifecycle(m, {
+        stage: 'baileys.incoming.mapped',
+        decision: 'map_to_upsert',
+        outcome: 'mapped',
+        message_type: type,
+        has_quoted: hasQuoted,
+        topic,
+        kafka_key: messageKey,
+      });
     } catch (error) {
       console.error('[CRITICAL] Error processing message:', error, m.key?.id);
+      this.logLifecycle(m, {
+        stage: 'baileys.incoming.error',
+        decision: 'process_incoming',
+        outcome: 'error',
+        level: 'error',
+        reason: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
