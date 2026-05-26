@@ -56,7 +56,7 @@ func InitTelemetry(ctx context.Context, cfg Config) (func(context.Context) error
 	log.Printf("opentelemetry initialized service=%s", firstNonEmpty(cfg.OTELServiceName, "whatsmeow"))
 
 	shutdowns := []func(context.Context) error{provider.Shutdown}
-	if cfg.MessageLifecycleDebugEnabled {
+	if cfg.MessageLifecycleDebugEnabled || cfg.ConnectionLifecycleDebugEnabled {
 		logExporter, logErr := otlploghttp.New(ctx)
 		if logErr != nil {
 			log.Printf("opentelemetry logs exporter init failed; lifecycle logs will use stdout fallback: %v", logErr)
@@ -66,6 +66,7 @@ func InitTelemetry(ctx context.Context, cfg Config) (func(context.Context) error
 				sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
 			)
 			configureMessageLifecycleLoggerProvider(logProvider)
+			configureConnectionLifecycleLoggerProvider(logProvider)
 			shutdowns = append(shutdowns, logProvider.Shutdown)
 			log.Printf("opentelemetry logs initialized service=%s", firstNonEmpty(cfg.OTELServiceName, "whatsmeow"))
 		}

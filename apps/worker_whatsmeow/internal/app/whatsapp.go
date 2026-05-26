@@ -230,7 +230,24 @@ func (m *WhatsAppManager) currentConnectionState() ConnectionState {
 	}
 }
 
-func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConnectionRequest) (ConnectionState, error) {
+func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConnectionRequest) (state ConnectionState, err error) {
+	if _, ok := connectionLifecycleFromContext(ctx); !ok {
+		lifecycle := connectionLifecycleFromRequest(m.cfg, req, "request_connection")
+		var finishLifecycleSpan func(error)
+		ctx, finishLifecycleSpan = startConnectionLifecycleSpan(ctx, m.cfg, lifecycle)
+		defer func() {
+			finishLifecycleSpan(err)
+		}()
+	}
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":                "connection.whatsmeow.manager.request_received",
+		"decision":             "request_connection",
+		"outcome":              "received",
+		"status":               req.Status,
+		"connection_type":      req.Type,
+		"remove_session":       req.RemoveSession,
+		"has_phone_connection": req.PhoneConnection != "",
+	})
 	log.Printf(
 		"whatsmeow RequestConnection worker_id=%s status=%s type=%s remove_session=%t phone_connection_set=%t",
 		req.WorkerID,
@@ -240,19 +257,50 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 		req.PhoneConnection != "",
 	)
 	if req.WorkerID != "" && req.WorkerID != m.cfg.WorkerID {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.manager.request_rejected",
+			"decision": "worker_id_validation",
+			"outcome":  "error",
+			"reason":   "worker_id_mismatch",
+			"level":    "warn",
+			"value":    req.WorkerID,
+		})
 		return ConnectionState{}, fmt.Errorf("request worker_id %s does not match %s", req.WorkerID, m.cfg.WorkerID)
 	}
 
 	connectionType := strings.ToLower(req.Type)
 	if connectionType == "phone" {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":           "connection.whatsmeow.manager.request_rejected",
+			"decision":        "connection_type_validation",
+			"outcome":         "error",
+			"reason":          "phone_connection_disabled",
+			"level":           "warn",
+			"connection_type": connectionType,
+		})
 		return ConnectionState{}, fmt.Errorf("phone connection is disabled; use qrcode")
 	}
 
 	if req.RemoveSession || req.Status == WorkerStatusDisponible {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":          "connection.whatsmeow.manager.remove_session_branch",
+			"decision":       "remove_session_or_disponible",
+			"outcome":        "entered",
+			"status":         req.Status,
+			"remove_session": req.RemoveSession,
+		})
 		if err := m.removeSession(ctx); err != nil {
+			recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+				"stage":    "connection.whatsmeow.manager.remove_session_error",
+				"decision": "remove_session",
+				"outcome":  "error",
+				"reason":   "remove_session_failed",
+				"level":    "error",
+				"error":    err.Error(),
+			})
 			return ConnectionState{}, err
 		}
-		return ConnectionState{
+		state = ConnectionState{
 			Code:             CodeConnectionClosed,
 			Status:           "disconnected",
 			WorkerID:         m.cfg.WorkerID,
@@ -260,17 +308,47 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 			DisconnectedUser: true,
 			Time:             time.Now().Unix(),
 			WorkerStatusID:   WorkerStatusDisponible,
-		}, nil
+		}
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":             "connection.whatsmeow.manager.remove_session_success",
+			"decision":          "remove_session",
+			"outcome":           "success",
+			"status":            state.Status,
+			"code":              state.Code,
+			"worker_status_id":  state.WorkerStatusID,
+			"disconnected_user": state.DisconnectedUser,
+		})
+		return state, nil
 	}
 
 	if m.publishConnectedIfAuthenticated(ctx, "request-connection-already-authenticated") {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.manager.short_circuit",
+			"decision": "publish_connected_if_authenticated",
+			"outcome":  "success",
+			"reason":   "already_authenticated",
+		})
 		return m.currentConnectionState(), nil
 	}
 
 	switch connectionType {
 	case "qrcode", "":
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":           "connection.whatsmeow.manager.qrcode_branch",
+			"decision":        "connection_type_route",
+			"outcome":         "entered",
+			"connection_type": connectionType,
+		})
 		return m.connectWithQRCode(ctx)
 	default:
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":           "connection.whatsmeow.manager.request_rejected",
+			"decision":        "connection_type_route",
+			"outcome":         "error",
+			"reason":          "unsupported_connection_type",
+			"level":           "warn",
+			"connection_type": connectionType,
+		})
 		return ConnectionState{}, fmt.Errorf("unsupported connection type %q", req.Type)
 	}
 }
@@ -575,6 +653,14 @@ func qrCodeDataURL(raw string) string {
 
 func (m *WhatsAppManager) connectClient(ctx context.Context, client *whatsmeow.Client, stage string) error {
 	startedAt := time.Now()
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":        "connection.whatsmeow.client.connect_start",
+		"decision":     "connect_client",
+		"outcome":      "started",
+		"reason":       stage,
+		"has_store_id": client != nil && client.Store != nil && client.Store.ID != nil,
+		"deadline_ms":  m.cfg.WhatsAppConnectTimeout.Milliseconds(),
+	})
 	log.Printf(
 		"whatsmeow connect start worker_id=%s stage=%s has_store_id=%t timeout=%s",
 		m.cfg.WorkerID,
@@ -596,20 +682,54 @@ func (m *WhatsAppManager) connectClient(ctx context.Context, client *whatsmeow.C
 	select {
 	case err := <-errCh:
 		if err != nil {
+			recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+				"stage":       "connection.whatsmeow.client.connect_error",
+				"decision":    "connect_client",
+				"outcome":     "error",
+				"reason":      stage,
+				"level":       "error",
+				"duration_ms": time.Since(startedAt).Milliseconds(),
+				"error":       err.Error(),
+			})
 			log.Printf("whatsmeow connect failed worker_id=%s stage=%s elapsed=%s error=%v", m.cfg.WorkerID, stage, time.Since(startedAt), err)
 			return err
 		}
 	case <-timeout:
 		client.Disconnect()
 		err := fmt.Errorf("whatsmeow connect timeout after %s", m.cfg.WhatsAppConnectTimeout)
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":       "connection.whatsmeow.client.connect_error",
+			"decision":    "connect_client",
+			"outcome":     "error",
+			"reason":      "timeout",
+			"level":       "error",
+			"duration_ms": time.Since(startedAt).Milliseconds(),
+			"error":       err.Error(),
+		})
 		log.Printf("whatsmeow connect failed worker_id=%s stage=%s elapsed=%s error=%v", m.cfg.WorkerID, stage, time.Since(startedAt), err)
 		return err
 	case <-ctx.Done():
 		err := ctx.Err()
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":       "connection.whatsmeow.client.connect_error",
+			"decision":    "connect_client",
+			"outcome":     "error",
+			"reason":      "context_done",
+			"level":       "error",
+			"duration_ms": time.Since(startedAt).Milliseconds(),
+			"error":       err.Error(),
+		})
 		log.Printf("whatsmeow connect failed worker_id=%s stage=%s elapsed=%s error=%v", m.cfg.WorkerID, stage, time.Since(startedAt), err)
 		return err
 	}
 
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":       "connection.whatsmeow.client.connect_success",
+		"decision":    "connect_client",
+		"outcome":     "success",
+		"reason":      stage,
+		"duration_ms": time.Since(startedAt).Milliseconds(),
+	})
 	log.Printf("whatsmeow connect returned worker_id=%s stage=%s elapsed=%s", m.cfg.WorkerID, stage, time.Since(startedAt))
 	return nil
 }
@@ -619,13 +739,32 @@ func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) (ConnectionStat
 }
 
 func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDeletedStoreRetry bool) (ConnectionState, error) {
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":    "connection.whatsmeow.qrcode.start",
+		"decision": "connect_with_qrcode",
+		"outcome":  "started",
+	})
 	client, err := m.ensureUsableClientForLogin(ctx, "qrcode-request")
 	if err != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.qrcode.ensure_client_error",
+			"decision": "ensure_usable_client",
+			"outcome":  "error",
+			"reason":   "client_not_usable",
+			"level":    "error",
+			"error":    err.Error(),
+		})
 		m.publishState(ctx, "disconnected", CodeConnectionLost, WorkerStatusDisponible, "", "", false)
 		return ConnectionState{}, err
 	}
 	connectCtx := m.connectionContext()
 	if m.isAuthenticated(client) {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.qrcode.short_circuit",
+			"decision": "is_authenticated",
+			"outcome":  "success",
+			"reason":   "already_authenticated",
+		})
 		log.Printf("whatsmeow qrcode request already authenticated worker_id=%s", m.cfg.WorkerID)
 		m.clearFreshLoginFallback()
 		m.clearLoginArtifacts()
@@ -637,14 +776,32 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 	m.resetQRCodeReadSession(true)
 	if client.IsConnected() {
 		if client.Store.ID != nil {
+			recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+				"stage":    "connection.whatsmeow.qrcode.short_circuit",
+				"decision": "active_connection_check",
+				"outcome":  "skipped",
+				"reason":   "authentication_in_progress",
+			})
 			log.Printf("whatsmeow qrcode request authentication in progress worker_id=%s", m.cfg.WorkerID)
 			return m.currentConnectionState(), nil
 		}
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.qrcode.active_scan_restart",
+			"decision": "active_connection_check",
+			"outcome":  "entered",
+			"reason":   "connected_without_store_id",
+		})
 		log.Printf("whatsmeow qrcode request restarting active scan worker_id=%s", m.cfg.WorkerID)
 		client.Disconnect()
 		m.clearLoginArtifacts()
 	}
 	if client.Store.ID != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":        "connection.whatsmeow.qrcode.stored_session_branch",
+			"decision":     "store_id_check",
+			"outcome":      "entered",
+			"has_store_id": true,
+		})
 		log.Printf("whatsmeow qrcode request using stored session worker_id=%s", m.cfg.WorkerID)
 		m.armFreshLoginFallback(freshLoginRequest{Type: "qrcode"})
 		m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
@@ -655,11 +812,24 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 	}
 
 	log.Printf("whatsmeow qrcode request starting new login worker_id=%s", m.cfg.WorkerID)
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":    "connection.whatsmeow.qrcode.new_login_branch",
+		"decision": "store_id_check",
+		"outcome":  "entered",
+	})
 	m.clearFreshLoginFallback()
 	m.clearLoginArtifacts()
 	m.resetQRCodeReadSession(true)
 	qrChan, err := client.GetQRChannel(connectCtx)
 	if err != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.qrcode.channel_error",
+			"decision": "get_qr_channel",
+			"outcome":  "error",
+			"reason":   "get_qr_channel_failed",
+			"level":    "error",
+			"error":    err.Error(),
+		})
 		log.Printf("whatsmeow GetQRChannel failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 		if err := m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "qrcode"}, err, allowDeletedStoreRetry); err != nil {
 			return ConnectionState{}, err
@@ -688,9 +858,26 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 			case "code":
 				attempt, allowed, duplicate := m.recordQRCodeGeneration(evt.Code)
 				if duplicate {
+					recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+						"stage":        "connection.whatsmeow.qrcode.duplicate",
+						"decision":     "record_qr_generation",
+						"outcome":      "skipped",
+						"reason":       "duplicate_or_locked",
+						"attempt":      attempt,
+						"max_attempts": maxQRCodeGenerations,
+					})
 					continue
 				}
 				if !allowed {
+					recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+						"stage":        "connection.whatsmeow.qrcode.limit_reached",
+						"decision":     "record_qr_generation",
+						"outcome":      "error",
+						"reason":       "qr_generation_limit_reached",
+						"level":        "warn",
+						"attempt":      attempt,
+						"max_attempts": maxQRCodeGenerations,
+					})
 					log.Printf("whatsmeow qr generation limit reached worker_id=%s attempt=%d max_attempts=%d", m.cfg.WorkerID, attempt, maxQRCodeGenerations)
 					client.Disconnect()
 					m.publishStateWithAttempts(context.Background(), "disconnected", CodeConnectionClosed, WorkerStatusDisponible, "", "", true, attempt, maxQRCodeGenerations)
@@ -709,6 +896,15 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 				}
 				qrImage := qrCodeDataURL(evt.Code)
 				m.setCurrentQRCode(qrImage)
+				recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+					"stage":        "connection.whatsmeow.qrcode.generated",
+					"decision":     "qr_channel_event",
+					"outcome":      "success",
+					"qrcode":       evt.Code,
+					"attempt":      attempt,
+					"max_attempts": maxQRCodeGenerations,
+					"deadline_ms":  evt.Timeout.Milliseconds(),
+				})
 				log.Printf("whatsmeow qr code received worker_id=%s timeout=%s attempt=%d max_attempts=%d", m.cfg.WorkerID, evt.Timeout, attempt, maxQRCodeGenerations)
 				m.publishStateWithAttempts(context.Background(), "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", qrImage, true, attempt, maxQRCodeGenerations)
 				sendResult(ConnectionState{
@@ -726,6 +922,13 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 			case "success":
 				m.clearLoginArtifacts()
 				m.resetQRCodeReadSession(true)
+				recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+					"stage":    "connection.whatsmeow.qrcode.scanned",
+					"decision": "qr_channel_event",
+					"outcome":  "success",
+					"status":   "connecting",
+					"code":     CodePairingInProgress,
+				})
 				log.Printf("whatsmeow qr scanned, pairing in progress worker_id=%s", m.cfg.WorkerID)
 				m.publishState(context.Background(), "connecting", CodePairingInProgress, WorkerStatusDisponible, "", "", true)
 				sendResult(ConnectionState{
@@ -740,6 +943,15 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 			case "timeout":
 				m.clearLoginArtifacts()
 				m.resetQRCodeReadSession(true)
+				recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+					"stage":    "connection.whatsmeow.qrcode.timeout",
+					"decision": "qr_channel_event",
+					"outcome":  "error",
+					"reason":   "qr_timeout",
+					"level":    "warn",
+					"status":   "disconnected",
+					"code":     CodeConnectionClosed,
+				})
 				log.Printf("whatsmeow qr timeout worker_id=%s", m.cfg.WorkerID)
 				m.publishState(context.Background(), "disconnected", CodeConnectionClosed, WorkerStatusDisponible, "", "", true)
 				sendResult(ConnectionState{
@@ -753,8 +965,23 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 				})
 			default:
 				if evt.Error != nil {
+					recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+						"stage":    "connection.whatsmeow.qrcode.event_error",
+						"decision": "qr_channel_event",
+						"outcome":  "error",
+						"reason":   evt.Event,
+						"level":    "error",
+						"error":    evt.Error.Error(),
+					})
 					log.Printf("qr event error: %v", evt.Error)
 				} else {
+					recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+						"stage":    "connection.whatsmeow.qrcode.unexpected_event",
+						"decision": "qr_channel_event",
+						"outcome":  "skipped",
+						"reason":   evt.Event,
+						"level":    "warn",
+					})
 					log.Printf("whatsmeow qr unexpected event worker_id=%s event=%s", m.cfg.WorkerID, evt.Event)
 				}
 			}
@@ -764,10 +991,35 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 
 	select {
 	case state := <-resultCh:
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":            "connection.whatsmeow.qrcode.result",
+			"decision":         "qrcode_result",
+			"outcome":          "success",
+			"status":           state.Status,
+			"code":             state.Code,
+			"worker_status_id": state.WorkerStatusID,
+			"qrcode":           state.QRCode,
+		})
 		return state, nil
 	case <-ctx.Done():
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.qrcode.result_error",
+			"decision": "qrcode_result",
+			"outcome":  "error",
+			"reason":   "context_done",
+			"level":    "error",
+			"error":    ctx.Err().Error(),
+		})
 		return ConnectionState{}, ctx.Err()
 	case <-time.After(30 * time.Second):
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":       "connection.whatsmeow.qrcode.result_error",
+			"decision":    "qrcode_result",
+			"outcome":     "error",
+			"reason":      "request_timeout",
+			"level":       "error",
+			"deadline_ms": int64(30000),
+		})
 		return ConnectionState{}, fmt.Errorf("qrcode request timeout")
 	}
 }
@@ -777,16 +1029,44 @@ func (m *WhatsAppManager) connectWithPhonePairing(ctx context.Context, phone str
 }
 
 func (m *WhatsAppManager) connectWithPhonePairingInternal(ctx context.Context, phone string, allowDeletedStoreRetry bool) error {
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":        "connection.whatsmeow.phone_pairing.start",
+		"decision":     "connect_with_phone_pairing",
+		"outcome":      "started",
+		"has_phone":    strings.TrimSpace(phone) != "",
+		"phone_digits": len(digits(phone)),
+	})
 	client, err := m.ensureUsableClientForLogin(ctx, "phone-pairing-request")
 	if err != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.phone_pairing.ensure_client_error",
+			"decision": "ensure_usable_client",
+			"outcome":  "error",
+			"reason":   "client_not_usable",
+			"level":    "error",
+			"error":    err.Error(),
+		})
 		m.publishState(ctx, "disconnected", CodeConnectionLost, WorkerStatusDisponible, "", "", false)
 		return err
 	}
 	connectCtx := m.connectionContext()
 	if phone = digits(phone); phone == "" {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.phone_pairing.rejected",
+			"decision": "phone_validation",
+			"outcome":  "error",
+			"reason":   "phone_connection_required",
+			"level":    "warn",
+		})
 		return fmt.Errorf("phone_connection is required")
 	}
 	if m.isAuthenticated(client) {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.phone_pairing.short_circuit",
+			"decision": "is_authenticated",
+			"outcome":  "success",
+			"reason":   "already_authenticated",
+		})
 		log.Printf("whatsmeow phone pairing request already authenticated worker_id=%s", m.cfg.WorkerID)
 		m.clearFreshLoginFallback()
 		m.clearLoginArtifacts()
@@ -796,16 +1076,35 @@ func (m *WhatsAppManager) connectWithPhonePairingInternal(ctx context.Context, p
 	}
 	if client.IsConnected() && client.Store.ID == nil {
 		currentPairingCode := m.getCurrentPairingCode()
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":        "connection.whatsmeow.phone_pairing.short_circuit",
+			"decision":     "active_connection_check",
+			"outcome":      "skipped",
+			"reason":       "already_awaiting_pairing",
+			"pairing_code": currentPairingCode,
+		})
 		log.Printf("whatsmeow phone pairing request already awaiting pairing worker_id=%s has_pairing_code=%t", m.cfg.WorkerID, currentPairingCode != "")
 		m.publishState(ctx, "connecting", CodeAwaitingPairingCode, WorkerStatusDisponible, "", currentPairingCode, true)
 		return nil
 	}
 	if client.IsConnected() && client.Store.ID != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.phone_pairing.short_circuit",
+			"decision": "active_connection_check",
+			"outcome":  "skipped",
+			"reason":   "authentication_in_progress",
+		})
 		log.Printf("whatsmeow phone pairing request authentication in progress worker_id=%s", m.cfg.WorkerID)
 		m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
 		return nil
 	}
 	if client.Store.ID != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":        "connection.whatsmeow.phone_pairing.stored_session_branch",
+			"decision":     "store_id_check",
+			"outcome":      "entered",
+			"has_store_id": true,
+		})
 		log.Printf("whatsmeow phone pairing request using stored session worker_id=%s", m.cfg.WorkerID)
 		m.armFreshLoginFallback(freshLoginRequest{Type: "phone", Phone: phone})
 		if err := m.connectClient(connectCtx, client, "phone-stored-session"); err != nil {
@@ -823,16 +1122,35 @@ func (m *WhatsAppManager) connectWithPhonePairingInternal(ctx context.Context, p
 	}
 	pairingCode, err := client.PairPhone(ctx, phone, true, whatsmeowPairClientDesktop, whatsmeowPairClientDisplayName)
 	if err != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.phone_pairing.code_error",
+			"decision": "pair_phone",
+			"outcome":  "error",
+			"reason":   "pair_phone_failed",
+			"level":    "error",
+			"error":    err.Error(),
+		})
 		log.Printf("whatsmeow phone pairing failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 		return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "phone", Phone: phone}, err, allowDeletedStoreRetry)
 	}
 	m.setCurrentPairingCode(pairingCode)
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":        "connection.whatsmeow.phone_pairing.code_generated",
+		"decision":     "pair_phone",
+		"outcome":      "success",
+		"pairing_code": pairingCode,
+	})
 	log.Printf("whatsmeow phone pairing code generated worker_id=%s", m.cfg.WorkerID)
 	m.publishState(ctx, "connecting", CodeAwaitingPairingCode, WorkerStatusDisponible, "", pairingCode, true)
 	return nil
 }
 
 func (m *WhatsAppManager) removeSession(ctx context.Context) error {
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":    "connection.whatsmeow.remove_session.start",
+		"decision": "remove_session",
+		"outcome":  "started",
+	})
 	log.Printf("whatsmeow remove session requested worker_id=%s", m.cfg.WorkerID)
 	m.publishState(ctx, "connecting", CodeLogoutInProgress, "", "", "", false)
 	m.clearFreshLoginFallback()
@@ -840,14 +1158,35 @@ func (m *WhatsAppManager) removeSession(ctx context.Context) error {
 	client := m.getClient()
 	if client != nil {
 		if err := m.logoutAndDeleteDevice(client); err != nil {
+			recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+				"stage":    "connection.whatsmeow.remove_session.logout_error",
+				"decision": "logout_and_delete_device",
+				"outcome":  "error",
+				"reason":   "logout_failed",
+				"level":    "warn",
+				"error":    err.Error(),
+			})
 			log.Printf("whatsmeow remove session logout failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 			client.Disconnect()
 			if client.Store != nil && client.Store.ID != nil && !client.Store.Deleted {
 				if deleteErr := client.Store.Delete(context.Background()); deleteErr != nil {
+					recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+						"stage":    "connection.whatsmeow.remove_session.store_delete_error",
+						"decision": "delete_local_store",
+						"outcome":  "error",
+						"reason":   "store_delete_failed",
+						"level":    "warn",
+						"error":    deleteErr.Error(),
+					})
 					log.Printf("whatsmeow remove session local store delete failed worker_id=%s error=%v", m.cfg.WorkerID, deleteErr)
 				}
 			}
 		} else {
+			recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+				"stage":    "connection.whatsmeow.remove_session.logout_success",
+				"decision": "logout_and_delete_device",
+				"outcome":  "success",
+			})
 			log.Printf("whatsmeow remove session logout sent worker_id=%s", m.cfg.WorkerID)
 		}
 	}
@@ -859,14 +1198,39 @@ func (m *WhatsAppManager) removeSession(ctx context.Context) error {
 
 	m.sessionMu.Lock()
 	if err := m.clearLocalSessionFiles(); err != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.remove_session.files_cleanup_error",
+			"decision": "clear_local_session_files",
+			"outcome":  "error",
+			"reason":   "cleanup_failed",
+			"level":    "warn",
+			"error":    err.Error(),
+		})
 		log.Printf("whatsmeow remove session local files cleanup failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 	}
 	if err := m.initClient(context.Background()); err != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.remove_session.client_reinit_error",
+			"decision": "init_client",
+			"outcome":  "error",
+			"reason":   "client_reinit_failed",
+			"level":    "error",
+			"error":    err.Error(),
+		})
 		log.Printf("whatsmeow remove session client reinit failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 	}
 	m.sessionMu.Unlock()
 
 	m.publishStateDisconnectedByUser(ctx, CodeLoggedOut, WorkerStatusDisponible)
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":             "connection.whatsmeow.remove_session.success",
+		"decision":          "remove_session",
+		"outcome":           "success",
+		"status":            "disconnected",
+		"code":              CodeLoggedOut,
+		"worker_status_id":  WorkerStatusDisponible,
+		"disconnected_user": true,
+	})
 	return nil
 }
 
@@ -899,6 +1263,13 @@ func (m *WhatsAppManager) logoutAndDeleteDevice(client *whatsmeow.Client) error 
 func (m *WhatsAppManager) handleEvent(evt any) {
 	switch event := evt.(type) {
 	case *events.Connected:
+		recordConnectionLifecycle(context.Background(), m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.event.connected",
+			"decision": "handle_event",
+			"outcome":  "received",
+			"status":   "connected",
+			"code":     CodeConnectionEstablished,
+		})
 		log.Printf("whatsmeow event connected worker_id=%s", m.cfg.WorkerID)
 		m.clearFreshLoginFallback()
 		m.clearLoginArtifacts()
@@ -915,8 +1286,21 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		go m.markPresenceAvailable(context.Background(), "connected-event")
 		m.publishState(context.Background(), "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", false)
 	case *events.Disconnected:
+		recordConnectionLifecycle(context.Background(), m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.event.disconnected",
+			"decision": "handle_event",
+			"outcome":  "received",
+			"status":   "disconnected",
+			"code":     CodeConnectionLost,
+		})
 		log.Printf("whatsmeow event disconnected worker_id=%s", m.cfg.WorkerID)
 		if m.isQRCodeReadSessionLocked() {
+			recordConnectionLifecycle(context.Background(), m.cfg, map[string]any{
+				"stage":    "connection.whatsmeow.event.disconnected_ignored",
+				"decision": "qr_limit_guard",
+				"outcome":  "skipped",
+				"reason":   "qr_read_session_locked",
+			})
 			log.Printf("whatsmeow disconnected event ignored after qr limit worker_id=%s", m.cfg.WorkerID)
 			return
 		}
@@ -928,6 +1312,15 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.mu.Unlock()
 		m.publishState(context.Background(), "disconnected", CodeConnectionLost, WorkerStatusOffline, "", "", false)
 	case *events.LoggedOut:
+		recordConnectionLifecycle(context.Background(), m.cfg, map[string]any{
+			"stage":      "connection.whatsmeow.event.logged_out",
+			"decision":   "handle_event",
+			"outcome":    "received",
+			"status":     "disconnected",
+			"code":       CodeLoggedOut,
+			"on_connect": event.OnConnect,
+			"reason":     event.Reason.String(),
+		})
 		log.Printf("whatsmeow event logged_out worker_id=%s on_connect=%t reason=%s", m.cfg.WorkerID, event.OnConnect, event.Reason.String())
 		m.clearLoginArtifacts()
 		if m.startFreshLoginAfterStoredSessionLogout() {
@@ -940,6 +1333,16 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.mu.Unlock()
 		m.publishStateDisconnectedByUser(context.Background(), CodeLoggedOut, WorkerStatusDisponible)
 	case *events.ConnectFailure:
+		recordConnectionLifecycle(context.Background(), m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.event.connect_failure",
+			"decision": "handle_event",
+			"outcome":  "error",
+			"reason":   event.Reason.String(),
+			"level":    "warn",
+			"status":   "disconnected",
+			"code":     CodeConnectionLost,
+			"error":    event.Message,
+		})
 		log.Printf("whatsmeow event connect_failure worker_id=%s reason=%s message=%s", m.cfg.WorkerID, event.Reason.String(), event.Message)
 		m.clearLoginArtifacts()
 		if event.Reason.IsLoggedOut() && m.startFreshLoginAfterStoredSessionLogout() {
@@ -948,6 +1351,13 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.clearFreshLoginFallback()
 		m.publishState(context.Background(), "disconnected", CodeConnectionLost, WorkerStatusOffline, "", "", false)
 	case *events.StreamReplaced:
+		recordConnectionLifecycle(context.Background(), m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.event.stream_replaced",
+			"decision": "handle_event",
+			"outcome":  "received",
+			"status":   "disconnected",
+			"code":     CodeConnectionReplaced,
+		})
 		log.Printf("whatsmeow event stream_replaced worker_id=%s", m.cfg.WorkerID)
 		m.clearLoginArtifacts()
 		m.clearFreshLoginFallback()
@@ -1122,6 +1532,21 @@ func (m *WhatsAppManager) publishStateWithAttempts(ctx context.Context, status s
 	if code == CodeAwaitingPairingCode {
 		state.PairingCode = qrOrPair
 	}
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":             "connection.whatsmeow.publish_state.start",
+		"decision":          "publish_state",
+		"outcome":           "started",
+		"status":            status,
+		"code":              code,
+		"worker_status_id":  workerStatusID,
+		"is_new_login":      isNewLogin,
+		"attempt":           state.Attempt,
+		"max_attempts":      state.MaxAttempts,
+		"qrcode":            state.QRCode,
+		"pairing_code":      state.PairingCode,
+		"has_phone":         phone != "",
+		"disconnected_user": state.DisconnectedUser,
+	})
 	log.Printf(
 		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s has_qr=%t has_pairing_code=%t is_new_login=%t attempt=%d max_attempts=%d",
 		m.cfg.WorkerID,
@@ -1135,9 +1560,49 @@ func (m *WhatsAppManager) publishStateWithAttempts(ctx context.Context, status s
 		state.MaxAttempts,
 	)
 	if code != CodeAwaitingReadQRCode {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":            "connection.whatsmeow.centrifugo.publish_start",
+			"decision":         "publish_centrifugo",
+			"outcome":          "started",
+			"status":           status,
+			"code":             code,
+			"worker_status_id": workerStatusID,
+			"qrcode":           state.QRCode,
+			"pairing_code":     state.PairingCode,
+		})
 		if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
+			recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+				"stage":            "connection.whatsmeow.centrifugo.publish_error",
+				"decision":         "publish_centrifugo",
+				"outcome":          "error",
+				"reason":           "centrifugo_publish_failed",
+				"level":            "error",
+				"status":           status,
+				"code":             code,
+				"worker_status_id": workerStatusID,
+				"error":            err.Error(),
+			})
 			log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, status, code, err)
+		} else {
+			recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+				"stage":            "connection.whatsmeow.centrifugo.publish_success",
+				"decision":         "publish_centrifugo",
+				"outcome":          "success",
+				"status":           status,
+				"code":             code,
+				"worker_status_id": workerStatusID,
+			})
 		}
+	} else {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":    "connection.whatsmeow.centrifugo.publish_skipped",
+			"decision": "publish_centrifugo",
+			"outcome":  "skipped",
+			"reason":   "qrcode_state_not_published_to_centrifugo",
+			"status":   status,
+			"code":     code,
+			"qrcode":   state.QRCode,
+		})
 	}
 	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
@@ -1156,6 +1621,15 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		Time:             time.Now().Unix(),
 		WorkerStatusID:   workerStatusID,
 	}
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":             "connection.whatsmeow.publish_state.disconnected_user_start",
+		"decision":          "publish_state_disconnected_user",
+		"outcome":           "started",
+		"status":            state.Status,
+		"code":              code,
+		"worker_status_id":  workerStatusID,
+		"disconnected_user": true,
+	})
 	log.Printf(
 		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s disconnected_user=true has_qr=false has_pairing_code=false is_new_login=false",
 		m.cfg.WorkerID,
@@ -1164,7 +1638,27 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		workerStatusID,
 	)
 	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":            "connection.whatsmeow.centrifugo.publish_error",
+			"decision":         "publish_centrifugo",
+			"outcome":          "error",
+			"reason":           "centrifugo_publish_failed",
+			"level":            "error",
+			"status":           state.Status,
+			"code":             code,
+			"worker_status_id": workerStatusID,
+			"error":            err.Error(),
+		})
 		log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, state.Status, code, err)
+	} else {
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":            "connection.whatsmeow.centrifugo.publish_success",
+			"decision":         "publish_centrifugo",
+			"outcome":          "success",
+			"status":           state.Status,
+			"code":             code,
+			"worker_status_id": workerStatusID,
+		})
 	}
 	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {

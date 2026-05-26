@@ -12,6 +12,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { logger } from '@core/plugins/telemetry/logger';
+import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -515,6 +516,19 @@ export class WorkerConnectionStatusConsume {
       account_id: baileysEnvironment.baileysAccountId,
       ...details,
     };
+
+    recordConnectionLifecycle({
+      stage: `connection.worker_baileys.status_consume.${event}`,
+      decision: event,
+      outcome: level === 'error' ? 'error' : 'logged',
+      level,
+      source_provider: 'baileys',
+      worker_type: 'baileys',
+      worker_id: baileysEnvironment.baileysWorkerId,
+      channel_id: baileysEnvironment.baileysWorkerId,
+      account_id: baileysEnvironment.baileysAccountId,
+      ...details,
+    });
 
     if (level === 'error') {
       logger.error(payload, 'Baileys worker connection status event');

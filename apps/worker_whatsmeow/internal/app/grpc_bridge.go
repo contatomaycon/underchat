@@ -21,9 +21,10 @@ type WorkerConnectionGRPCServer struct {
 	handler WorkerConnectionHandler
 	server  *grpc.Server
 	addr    string
+	cfg     Config
 }
 
-func NewWorkerConnectionGRPCServer(addr string, handler WorkerConnectionHandler) (*WorkerConnectionGRPCServer, error) {
+func NewWorkerConnectionGRPCServer(addr string, handler WorkerConnectionHandler, cfg Config) (*WorkerConnectionGRPCServer, error) {
 	if _, err := getDescriptors(); err != nil {
 		return nil, err
 	}
@@ -31,6 +32,7 @@ func NewWorkerConnectionGRPCServer(addr string, handler WorkerConnectionHandler)
 		handler: handler,
 		server:  grpc.NewServer(),
 		addr:    addr,
+		cfg:     cfg,
 	}, nil
 }
 
@@ -68,6 +70,25 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		PhoneConnection: dynamicString(msg, "phone_connection"),
 		RemoveSession:   dynamicBool(msg, "remove_session"),
 	}
+	ctx = extractIncomingConnectionLifecycleContext(ctx, s.cfg, req, "request_connection")
+	lifecycle, _ := connectionLifecycleFromContext(ctx)
+	ctx, finishLifecycleSpan := startConnectionLifecycleSpan(ctx, s.cfg, lifecycle)
+	var finalErr error
+	defer func() {
+		finishLifecycleSpan(finalErr)
+	}()
+	recordConnectionLifecycle(ctx, s.cfg, map[string]any{
+		"stage":                    "connection.whatsmeow.grpc.request_received",
+		"decision":                 "request_connection",
+		"outcome":                  "received",
+		"grpc_method":              "RequestConnection",
+		"status":                   req.Status,
+		"connection_type":          req.Type,
+		"remove_session":           req.RemoveSession,
+		"has_phone_connection":     req.PhoneConnection != "",
+		"has_connection_metadata":  incomingConnectionLifecycleID(ctx) != "",
+		"connection_metadata_type": "grpc",
+	})
 	log.Printf(
 		"grpc RequestConnection received worker_id=%s status=%s type=%s remove_session=%t phone_connection_set=%t",
 		req.WorkerID,
@@ -78,9 +99,32 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 	)
 	resp, err := s.handler.RequestConnection(ctx, req)
 	if err != nil {
+		finalErr = err
+		recordConnectionLifecycle(ctx, s.cfg, map[string]any{
+			"stage":           "connection.whatsmeow.grpc.request_error",
+			"decision":        "request_connection",
+			"outcome":         "error",
+			"reason":          "handler_error",
+			"level":           "error",
+			"grpc_method":     "RequestConnection",
+			"status":          req.Status,
+			"connection_type": req.Type,
+			"error":           err.Error(),
+		})
 		log.Printf("grpc RequestConnection failed worker_id=%s type=%s error=%v", req.WorkerID, req.Type, err)
 		return nil, err
 	}
+	recordConnectionLifecycle(ctx, s.cfg, map[string]any{
+		"stage":            "connection.whatsmeow.grpc.request_success",
+		"decision":         "request_connection",
+		"outcome":          "success",
+		"grpc_method":      "RequestConnection",
+		"status":           resp.Status,
+		"code":             resp.Code,
+		"worker_status_id": resp.WorkerStatusID,
+		"qrcode":           resp.QRCode,
+		"pairing_code":     resp.PairingCode,
+	})
 	log.Printf("grpc RequestConnection completed worker_id=%s type=%s has_qr=%t", req.WorkerID, req.Type, resp.QRCode != "")
 	out := newDynamicMessage(descs.workerConnectionResponse)
 	setConnectionStateMessage(out, resp)
@@ -225,7 +269,51 @@ func (c *BalanceGRPCClient) NotifyWorkerStatus(ctx context.Context, state Connec
 	setDynamicString(req, "phone", state.Phone)
 	setDynamicBool(req, "disconnected_user", state.DisconnectedUser)
 
-	return c.invoke(ctx, "/worker_command.WorkerCommand/NotifyWorkerStatus", req, newDynamicMessage(descs.commandResponse))
+	recordConnectionLifecycle(ctx, c.cfg, map[string]any{
+		"stage":             "connection.whatsmeow.balance.notify_start",
+		"decision":          "notify_worker_status",
+		"outcome":           "started",
+		"grpc_method":       "NotifyWorkerStatus",
+		"grpc_address":      c.cfg.BalanceGRPCAddress(),
+		"account_id":        state.AccountID,
+		"worker_id":         state.WorkerID,
+		"status":            state.Status,
+		"code":              state.Code,
+		"worker_status_id":  state.WorkerStatusID,
+		"disconnected_user": state.DisconnectedUser,
+	})
+	err = c.invoke(ctx, "/worker_command.WorkerCommand/NotifyWorkerStatus", req, newDynamicMessage(descs.commandResponse))
+	if err != nil {
+		recordConnectionLifecycle(ctx, c.cfg, map[string]any{
+			"stage":            "connection.whatsmeow.balance.notify_error",
+			"decision":         "notify_worker_status",
+			"outcome":          "error",
+			"reason":           "grpc_error",
+			"level":            "error",
+			"grpc_method":      "NotifyWorkerStatus",
+			"grpc_address":     c.cfg.BalanceGRPCAddress(),
+			"account_id":       state.AccountID,
+			"worker_id":        state.WorkerID,
+			"status":           state.Status,
+			"code":             state.Code,
+			"worker_status_id": state.WorkerStatusID,
+			"error":            err.Error(),
+		})
+		return err
+	}
+	recordConnectionLifecycle(ctx, c.cfg, map[string]any{
+		"stage":            "connection.whatsmeow.balance.notify_success",
+		"decision":         "notify_worker_status",
+		"outcome":          "success",
+		"grpc_method":      "NotifyWorkerStatus",
+		"grpc_address":     c.cfg.BalanceGRPCAddress(),
+		"account_id":       state.AccountID,
+		"worker_id":        state.WorkerID,
+		"status":           state.Status,
+		"code":             state.Code,
+		"worker_status_id": state.WorkerStatusID,
+	})
+	return nil
 }
 
 func (c *BalanceGRPCClient) RegisterS3BackupFallbackUpload(ctx context.Context, payload S3BackupFallbackUpload) error {
@@ -295,5 +383,6 @@ func (c *BalanceGRPCClient) invoke(ctx context.Context, method string, req *dyna
 		return err
 	}
 	defer conn.Close()
+	callCtx = injectOutgoingConnectionLifecycleContext(callCtx)
 	return conn.Invoke(callCtx, method, req, resp)
 }

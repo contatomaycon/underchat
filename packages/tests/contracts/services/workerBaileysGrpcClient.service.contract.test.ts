@@ -30,6 +30,7 @@ describe('WorkerBaileysGrpcClientService', () => {
     expect(source).toContain(
       '(client as any).RequestConnection(\n' +
         '        protoPayload,\n' +
+        '        metadata,\n' +
         '        { deadline },'
     );
   });

@@ -54,7 +54,7 @@ func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	grpcServer, err := NewWorkerConnectionGRPCServer(cfg.GRPCAddr, whatsApp)
+	grpcServer, err := NewWorkerConnectionGRPCServer(cfg.GRPCAddr, whatsApp, cfg)
 	if err != nil {
 		return nil, err
 	}

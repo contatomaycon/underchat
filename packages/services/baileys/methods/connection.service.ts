@@ -37,6 +37,7 @@ import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { logger } from '@core/plugins/telemetry/logger';
+import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
@@ -1346,31 +1347,160 @@ export class BaileysConnectionService {
 
   private publishSub(payload: IBaileysConnectionState, force = false): void {
     if (!this.initialConnection && !force) {
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.centrifugo.publish_skipped',
+        decision: 'publish_sub_initial_connection_gate',
+        outcome: 'skipped',
+        reason: 'initial_connection_false',
+        source_provider: 'baileys',
+        worker_type: 'baileys',
+        worker_id: WORKER,
+        channel_id: WORKER,
+        account_id: ACCOUNT,
+        status: payload.status,
+        code: payload.code,
+      });
       return;
     }
 
     const data = JSON.stringify(payload);
     if (data === this.lastPayload && !force) {
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.centrifugo.publish_skipped',
+        decision: 'publish_sub_dedupe',
+        outcome: 'skipped',
+        reason: 'payload_duplicated',
+        source_provider: 'baileys',
+        worker_type: 'baileys',
+        worker_id: WORKER,
+        channel_id: WORKER,
+        account_id: ACCOUNT,
+        status: payload.status,
+        code: payload.code,
+      });
       return;
     }
 
     this.lastPayload = data;
-    void this.centrifugo.publishSub(CHANNEL, payload).catch((error) => {
-      console.error('[BaileysConnection] publishSub - Failed', error);
+    const startedAt = Date.now();
+    recordConnectionLifecycle({
+      stage: 'connection.baileys.centrifugo.publish_start',
+      decision: 'publish_sub',
+      outcome: 'started',
+      source_provider: 'baileys',
+      worker_type: 'baileys',
+      worker_id: WORKER,
+      channel_id: WORKER,
+      account_id: ACCOUNT,
+      status: payload.status,
+      code: payload.code,
+      worker_status_id: payload.worker_status_id,
+      has_qr: Boolean(payload.qrcode),
+      has_pairing_code: Boolean(payload.pairing_code),
+      force,
     });
+    void this.centrifugo
+      .publishSub(CHANNEL, payload)
+      .then(() => {
+        recordConnectionLifecycle({
+          stage: 'connection.baileys.centrifugo.publish_success',
+          decision: 'publish_sub',
+          outcome: 'success',
+          source_provider: 'baileys',
+          worker_type: 'baileys',
+          worker_id: WORKER,
+          channel_id: WORKER,
+          account_id: ACCOUNT,
+          status: payload.status,
+          code: payload.code,
+          worker_status_id: payload.worker_status_id,
+          duration_ms: Date.now() - startedAt,
+        });
+      })
+      .catch((error) => {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        recordConnectionLifecycle({
+          stage: 'connection.baileys.centrifugo.publish_error',
+          decision: 'publish_sub',
+          outcome: 'error',
+          reason: 'centrifugo_publish_failed',
+          level: 'error',
+          source_provider: 'baileys',
+          worker_type: 'baileys',
+          worker_id: WORKER,
+          channel_id: WORKER,
+          account_id: ACCOUNT,
+          status: payload.status,
+          code: payload.code,
+          worker_status_id: payload.worker_status_id,
+          duration_ms: Date.now() - startedAt,
+          error: errorMessage,
+        });
+        console.error('[BaileysConnection] publishSub - Failed', error);
+      });
   }
 
   private async notifyWorkerStatusSafely(
     payload: IBaileysConnectionState,
     context: string
   ): Promise<void> {
+    const startedAt = Date.now();
+    recordConnectionLifecycle({
+      stage: 'connection.baileys.balance.notify_start',
+      decision: 'notify_worker_status',
+      outcome: 'started',
+      source_provider: 'baileys',
+      worker_type: 'baileys',
+      worker_id: WORKER,
+      channel_id: WORKER,
+      account_id: ACCOUNT,
+      status: payload.status,
+      code: payload.code,
+      worker_status_id: payload.worker_status_id,
+      reason: context,
+      has_qr: Boolean(payload.qrcode),
+      has_pairing_code: Boolean(payload.pairing_code),
+    });
     try {
       await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
         payload
       );
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.balance.notify_success',
+        decision: 'notify_worker_status',
+        outcome: 'success',
+        source_provider: 'baileys',
+        worker_type: 'baileys',
+        worker_id: WORKER,
+        channel_id: WORKER,
+        account_id: ACCOUNT,
+        status: payload.status,
+        code: payload.code,
+        worker_status_id: payload.worker_status_id,
+        reason: context,
+        duration_ms: Date.now() - startedAt,
+      });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.balance.notify_error',
+        decision: 'notify_worker_status',
+        outcome: 'error',
+        reason: context,
+        level: 'error',
+        source_provider: 'baileys',
+        worker_type: 'baileys',
+        worker_id: WORKER,
+        channel_id: WORKER,
+        account_id: ACCOUNT,
+        status: payload.status,
+        code: payload.code,
+        worker_status_id: payload.worker_status_id,
+        duration_ms: Date.now() - startedAt,
+        error: errorMessage,
+      });
       console.error('[BaileysConnection] NotifyWorkerStatus failed', {
         context,
         worker_id: payload.worker_id,
@@ -1677,6 +1807,21 @@ export class BaileysConnectionService {
       ...details,
     };
 
+    recordConnectionLifecycle({
+      stage: `connection.baileys.service.${event}`,
+      decision: event,
+      outcome: level === 'error' ? 'error' : 'logged',
+      level,
+      source_provider: 'baileys',
+      worker_type: 'baileys',
+      worker_id: WORKER,
+      channel_id: WORKER,
+      account_id: ACCOUNT,
+      status: this.status,
+      code: this.code,
+      ...details,
+    });
+
     if (level === 'error') {
       logger.error(payload, 'Baileys connection event');
       return;
@@ -1693,6 +1838,20 @@ export class BaileysConnectionService {
   private readonly saveLogWppConnection = async (
     wppLog: EWppConnection
   ): Promise<boolean> => {
+    const startedAt = Date.now();
+    recordConnectionLifecycle({
+      stage: 'connection.baileys.elastic.wpp_connection_start',
+      decision: 'save_wpp_connection',
+      outcome: 'started',
+      source_provider: 'baileys',
+      worker_type: 'baileys',
+      worker_id: WORKER,
+      channel_id: WORKER,
+      account_id: ACCOUNT,
+      status: wppLog?.status,
+      code: wppLog?.code,
+      elastic_index: EElasticIndex.wpp_connection,
+    });
     const mappings = wppConnectionMappings();
 
     const result = await this.elasticDatabaseService.indices(
@@ -1701,25 +1860,84 @@ export class BaileysConnectionService {
     );
 
     if (!result || !wppLog) {
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.elastic.wpp_connection_skipped',
+        decision: 'save_wpp_connection',
+        outcome: 'skipped',
+        reason: !wppLog ? 'missing_wpp_log' : 'index_creation_failed',
+        level: 'warn',
+        source_provider: 'baileys',
+        worker_type: 'baileys',
+        worker_id: WORKER,
+        channel_id: WORKER,
+        account_id: ACCOUNT,
+        elastic_index: EElasticIndex.wpp_connection,
+        duration_ms: Date.now() - startedAt,
+      });
       return false;
     }
 
     const documentId = buildWppConnectionDocumentId(ACCOUNT, wppLog.worker_id);
 
-    const updateResult = await this.elasticDatabaseService.updateWithOCC(
-      EElasticIndex.wpp_connection,
-      documentId,
-      wppLog as unknown as Record<string, unknown>,
-      {
-        upsert: true,
-        maxRetries: 5,
-      }
-    );
+    try {
+      const updateResult = await this.elasticDatabaseService.updateWithOCC(
+        EElasticIndex.wpp_connection,
+        documentId,
+        wppLog as unknown as Record<string, unknown>,
+        {
+          upsert: true,
+          maxRetries: 5,
+        }
+      );
 
-    return (
-      updateResult === 'updated' ||
-      updateResult === 'created' ||
-      updateResult === 'noop'
-    );
+      const success =
+        updateResult === 'updated' ||
+        updateResult === 'created' ||
+        updateResult === 'noop';
+
+      recordConnectionLifecycle({
+        stage: success
+          ? 'connection.baileys.elastic.wpp_connection_success'
+          : 'connection.baileys.elastic.wpp_connection_unexpected_result',
+        decision: 'save_wpp_connection',
+        outcome: success ? 'success' : 'error',
+        level: success ? 'info' : 'warn',
+        reason: updateResult,
+        source_provider: 'baileys',
+        worker_type: 'baileys',
+        worker_id: WORKER,
+        channel_id: WORKER,
+        account_id: ACCOUNT,
+        status: wppLog.status,
+        code: wppLog.code,
+        elastic_index: EElasticIndex.wpp_connection,
+        document_id: documentId,
+        duration_ms: Date.now() - startedAt,
+      });
+
+      return success;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.elastic.wpp_connection_error',
+        decision: 'save_wpp_connection',
+        outcome: 'error',
+        reason: 'elastic_update_failed',
+        level: 'error',
+        source_provider: 'baileys',
+        worker_type: 'baileys',
+        worker_id: WORKER,
+        channel_id: WORKER,
+        account_id: ACCOUNT,
+        status: wppLog.status,
+        code: wppLog.code,
+        elastic_index: EElasticIndex.wpp_connection,
+        document_id: documentId,
+        duration_ms: Date.now() - startedAt,
+        error: errorMessage,
+      });
+      throw error;
+    }
   };
 }

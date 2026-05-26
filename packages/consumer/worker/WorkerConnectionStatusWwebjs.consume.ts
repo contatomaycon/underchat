@@ -12,6 +12,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { logger } from '@core/plugins/telemetry/logger';
+import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 @singleton()
 export class WorkerConnectionStatusWwebjsConsume {
@@ -533,6 +534,19 @@ export class WorkerConnectionStatusWwebjsConsume {
       account_id: wwebjsEnvironment.wwebjsAccountId,
       ...details,
     };
+
+    recordConnectionLifecycle({
+      stage: `connection.worker_wwebjs.status_consume.${event}`,
+      decision: event,
+      outcome: level === 'error' ? 'error' : 'logged',
+      level,
+      source_provider: 'wwebjs',
+      worker_type: 'wwebjs',
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      channel_id: wwebjsEnvironment.wwebjsWorkerId,
+      account_id: wwebjsEnvironment.wwebjsAccountId,
+      ...details,
+    });
 
     if (level === 'error') {
       logger.error(payload, 'Wwebjs worker connection status event');

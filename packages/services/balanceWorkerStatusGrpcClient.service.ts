@@ -5,6 +5,7 @@ import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
   credentials,
+  Metadata,
   ServiceError,
 } from '@grpc/grpc-js';
 import { balanceEnvironment } from '@core/config/environments';
@@ -15,6 +16,10 @@ import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interf
 import { IGetTypingSimulationConfigRequestProto } from '@core/common/interfaces/IGetTypingSimulationConfigRequestProto';
 import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces/IGetTypingSimulationConfigResponseProto';
 import { normalizeTypingSimulationConfig } from '@core/common/functions/typingSimulationConfig';
+import {
+  injectGrpcConnectionMetadata,
+  recordConnectionLifecycle,
+} from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -65,17 +70,61 @@ export class BalanceWorkerStatusGrpcClientService {
     };
 
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const metadata = injectGrpcConnectionMetadata(new Metadata());
+    const address = `${balanceEnvironment.grpcHost}:${balanceEnvironment.grpcPort}`;
+
+    recordConnectionLifecycle({
+      stage: 'connection.worker.balance_grpc.notify_status_start',
+      decision: 'notify_worker_status',
+      outcome: 'started',
+      grpc_method: 'NotifyWorkerStatus',
+      grpc_address: address,
+      deadline_ms: GRPC_DEADLINE_MS,
+      account_id: accountId,
+      worker_id: workerId,
+      worker_status_id: workerStatusId,
+      status: payload.status,
+      code: payload.code,
+      has_qr: Boolean(payload.qrcode),
+      has_pairing_code: Boolean(payload.pairing_code),
+    });
 
     await new Promise<void>((resolve, reject) => {
       (client as any).NotifyWorkerStatus(
         protoPayload,
+        metadata,
         { deadline },
         (err: ServiceError | null) => {
           client.close();
           if (err) {
+            recordConnectionLifecycle({
+              stage: 'connection.worker.balance_grpc.notify_status_error',
+              decision: 'notify_worker_status',
+              outcome: 'error',
+              reason: 'grpc_error',
+              level: 'error',
+              grpc_method: 'NotifyWorkerStatus',
+              grpc_address: address,
+              deadline_ms: GRPC_DEADLINE_MS,
+              account_id: accountId,
+              worker_id: workerId,
+              worker_status_id: workerStatusId,
+              error: err.message,
+            });
             reject(err);
             return;
           }
+          recordConnectionLifecycle({
+            stage: 'connection.worker.balance_grpc.notify_status_success',
+            decision: 'notify_worker_status',
+            outcome: 'success',
+            grpc_method: 'NotifyWorkerStatus',
+            grpc_address: address,
+            deadline_ms: GRPC_DEADLINE_MS,
+            account_id: accountId,
+            worker_id: workerId,
+            worker_status_id: workerStatusId,
+          });
           resolve();
         }
       );

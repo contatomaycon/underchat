@@ -11,10 +11,8 @@ describe('WorkerGrpcClientService', () => {
     expect(source).toContain(
       'const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);'
     );
-    expect(source).toContain(
-      '(client as any).ChangeConnectionStatus(\n' +
-        '        protoPayload,\n' +
-        '        { deadline },'
+    expect(source).toMatch(
+      /\(client as any\)\.ChangeConnectionStatus\(\s*protoPayload,\s*metadata,\s*\{ deadline \},/u
     );
   });
 

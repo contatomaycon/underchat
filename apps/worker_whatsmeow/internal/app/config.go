@@ -67,6 +67,10 @@ type Config struct {
 	MessageLifecycleDebugEnabled   bool
 	MessageLifecycleDebugBodyLimit int
 	MessageLifecycleDebugRawLimit  int
+
+	ConnectionLifecycleDebugEnabled    bool
+	ConnectionLifecycleDebugValueLimit int
+	ConnectionLifecycleDebugRawLimit   int
 }
 
 func LoadConfig() (Config, error) {
@@ -120,6 +124,15 @@ func LoadConfig() (Config, error) {
 		MessageLifecycleDebugEnabled:      envBoolDefault("MESSAGE_LIFECYCLE_DEBUG_ENABLED", false),
 		MessageLifecycleDebugBodyLimit:    envIntDefault("MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT", 500),
 		MessageLifecycleDebugRawLimit:     envIntDefault("MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT", 4000),
+		ConnectionLifecycleDebugEnabled:   envBoolDefault("CONNECTION_LIFECYCLE_DEBUG_ENABLED", false),
+		ConnectionLifecycleDebugValueLimit: envIntDefault(
+			"CONNECTION_LIFECYCLE_DEBUG_VALUE_LIMIT",
+			500,
+		),
+		ConnectionLifecycleDebugRawLimit: envIntDefault(
+			"CONNECTION_LIFECYCLE_DEBUG_RAW_LIMIT",
+			4000,
+		),
 	}
 
 	if cfg.WorkerID == "" {
@@ -145,6 +158,12 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.MessageLifecycleDebugRawLimit <= 0 {
 		cfg.MessageLifecycleDebugRawLimit = 4000
+	}
+	if cfg.ConnectionLifecycleDebugValueLimit <= 0 {
+		cfg.ConnectionLifecycleDebugValueLimit = 500
+	}
+	if cfg.ConnectionLifecycleDebugRawLimit <= 0 {
+		cfg.ConnectionLifecycleDebugRawLimit = 4000
 	}
 
 	return cfg, nil

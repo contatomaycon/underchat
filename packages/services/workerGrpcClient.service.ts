@@ -5,6 +5,7 @@ import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
   credentials,
+  Metadata,
   ServiceError,
 } from '@grpc/grpc-js';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
@@ -20,6 +21,12 @@ import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidati
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
 import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
+import {
+  buildConnectionLifecycleContext,
+  injectGrpcConnectionMetadata,
+  recordConnectionLifecycle,
+  runWithConnectionLifecycleContext,
+} from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,31 +80,79 @@ export class WorkerGrpcClientService {
     payload: StatusConnectionWorkerRequest,
     accountId: string
   ): Promise<void> {
-    const { host, port } =
-      await this.workerGrpcRegistryService.getAddress(serverId);
-    const address = `${host}:${port}`;
-    const client = new WorkerCommandClient(
-      address,
-      credentials.createInsecure()
-    );
+    const contextData = buildConnectionLifecycleContext({
+      account_id: accountId,
+      worker_id: payload.worker_id,
+      channel_id: payload.worker_id,
+      source_provider: 'manager',
+      connection_type: payload.type,
+      connection_action: 'change_status',
+    });
 
-    const protoPayload = statusConnectionRequestToProto(payload, accountId);
-
-    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
-
-    await new Promise<void>((resolve, reject) => {
-      (client as any).ChangeConnectionStatus(
-        protoPayload,
-        { deadline },
-        (err: ServiceError | null) => {
-          client.close();
-          if (err) {
-            reject(err);
-            return;
-          }
-          resolve();
-        }
+    await runWithConnectionLifecycleContext(contextData, async () => {
+      const { host, port } =
+        await this.workerGrpcRegistryService.getAddress(serverId);
+      const address = `${host}:${port}`;
+      const client = new WorkerCommandClient(
+        address,
+        credentials.createInsecure()
       );
+
+      const protoPayload = statusConnectionRequestToProto(payload, accountId);
+      const metadata = injectGrpcConnectionMetadata(
+        new Metadata(),
+        contextData
+      );
+      const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_command_grpc.change_status_start',
+        decision: 'grpc_change_connection_status',
+        outcome: 'started',
+        grpc_method: 'ChangeConnectionStatus',
+        grpc_address: address,
+        deadline_ms: GRPC_DEADLINE_MS,
+        server_id: serverId,
+        status: payload.status,
+        connection_type: payload.type,
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        (client as any).ChangeConnectionStatus(
+          protoPayload,
+          metadata,
+          { deadline },
+          (err: ServiceError | null) => {
+            client.close();
+            if (err) {
+              recordConnectionLifecycle({
+                stage:
+                  'connection.manager.worker_command_grpc.change_status_error',
+                decision: 'grpc_change_connection_status',
+                outcome: 'error',
+                reason: 'grpc_error',
+                level: 'error',
+                grpc_method: 'ChangeConnectionStatus',
+                grpc_address: address,
+                deadline_ms: GRPC_DEADLINE_MS,
+                error: err.message,
+              });
+              reject(err);
+              return;
+            }
+            recordConnectionLifecycle({
+              stage:
+                'connection.manager.worker_command_grpc.change_status_success',
+              decision: 'grpc_change_connection_status',
+              outcome: 'success',
+              grpc_method: 'ChangeConnectionStatus',
+              grpc_address: address,
+              deadline_ms: GRPC_DEADLINE_MS,
+            });
+            resolve();
+          }
+        );
+      });
     });
   }
 
@@ -106,34 +161,86 @@ export class WorkerGrpcClientService {
     payload: StatusConnectionWorkerRequest,
     accountId: string
   ): Promise<IBaileysConnectionState> {
-    const { host, port } =
-      await this.workerGrpcRegistryService.getAddress(serverId);
-    const address = `${host}:${port}`;
-    const client = new WorkerCommandClient(
-      address,
-      credentials.createInsecure()
-    );
+    const contextData = buildConnectionLifecycleContext({
+      account_id: accountId,
+      worker_id: payload.worker_id,
+      channel_id: payload.worker_id,
+      source_provider: 'manager',
+      connection_type: payload.type,
+      connection_action: 'request_qrcode',
+    });
 
-    const protoPayload = statusConnectionRequestToProto(payload, accountId);
-    const deadline = new Date(Date.now() + CONNECTION_QR_GRPC_DEADLINE_MS);
-
-    return new Promise<IBaileysConnectionState>((resolve, reject) => {
-      (client as any).RequestConnectionQrCode(
-        protoPayload,
-        { deadline },
-        (
-          err: ServiceError | null,
-          response?: IWorkerConnectionStateProto
-        ): void => {
-          client.close();
-          if (err) {
-            reject(err);
-            return;
-          }
-
-          resolve(protoToConnectionState(response ?? {}));
-        }
+    return runWithConnectionLifecycleContext(contextData, async () => {
+      const { host, port } =
+        await this.workerGrpcRegistryService.getAddress(serverId);
+      const address = `${host}:${port}`;
+      const client = new WorkerCommandClient(
+        address,
+        credentials.createInsecure()
       );
+
+      const protoPayload = statusConnectionRequestToProto(payload, accountId);
+      const metadata = injectGrpcConnectionMetadata(
+        new Metadata(),
+        contextData
+      );
+      const deadline = new Date(Date.now() + CONNECTION_QR_GRPC_DEADLINE_MS);
+
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_command_grpc.qrcode_start',
+        decision: 'grpc_request_connection_qrcode',
+        outcome: 'started',
+        grpc_method: 'RequestConnectionQrCode',
+        grpc_address: address,
+        deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+        server_id: serverId,
+        status: payload.status,
+        connection_type: payload.type,
+      });
+
+      return new Promise<IBaileysConnectionState>((resolve, reject) => {
+        (client as any).RequestConnectionQrCode(
+          protoPayload,
+          metadata,
+          { deadline },
+          (
+            err: ServiceError | null,
+            response?: IWorkerConnectionStateProto
+          ): void => {
+            client.close();
+            if (err) {
+              recordConnectionLifecycle({
+                stage: 'connection.manager.worker_command_grpc.qrcode_error',
+                decision: 'grpc_request_connection_qrcode',
+                outcome: 'error',
+                reason: 'grpc_error',
+                level: 'error',
+                grpc_method: 'RequestConnectionQrCode',
+                grpc_address: address,
+                deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+                error: err.message,
+              });
+              reject(err);
+              return;
+            }
+
+            const state = protoToConnectionState(response ?? {});
+            recordConnectionLifecycle({
+              stage: 'connection.manager.worker_command_grpc.qrcode_success',
+              decision: 'grpc_request_connection_qrcode',
+              outcome: 'success',
+              grpc_method: 'RequestConnectionQrCode',
+              grpc_address: address,
+              deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+              status: state.status,
+              code: state.code,
+              has_qr: Boolean(state.qrcode),
+              has_pairing_code: Boolean(state.pairing_code),
+            });
+            resolve(state);
+          }
+        );
+      });
     });
   }
 

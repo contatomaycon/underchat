@@ -5,6 +5,7 @@ import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
   credentials,
+  Metadata,
   ServiceError,
   status,
 } from '@grpc/grpc-js';
@@ -16,6 +17,12 @@ import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidati
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
 import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
+import {
+  buildConnectionLifecycleContext,
+  injectGrpcConnectionMetadata,
+  recordConnectionLifecycle,
+  runWithConnectionLifecycleContext,
+} from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -121,17 +128,50 @@ export class WorkerBaileysGrpcClientService {
       credentials.createInsecure()
     );
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const metadata = injectGrpcConnectionMetadata(new Metadata());
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.worker_connection_grpc.request_start',
+      decision: 'grpc_request_connection',
+      outcome: 'started',
+      grpc_method: 'RequestConnection',
+      grpc_address: address,
+      deadline_ms: GRPC_DEADLINE_MS,
+      status: protoPayload.status,
+      connection_type: protoPayload.type,
+      remove_session: protoPayload.remove_session === true,
+    });
 
     await new Promise<void>((resolve, reject) => {
       (client as any).RequestConnection(
         protoPayload,
+        metadata,
         { deadline },
         (err: ServiceError | null) => {
           client.close();
           if (err) {
+            recordConnectionLifecycle({
+              stage: 'connection.balancer.worker_connection_grpc.request_error',
+              decision: 'grpc_request_connection',
+              outcome: 'error',
+              reason: 'grpc_error',
+              level: 'error',
+              grpc_method: 'RequestConnection',
+              grpc_address: address,
+              deadline_ms: GRPC_DEADLINE_MS,
+              error: err.message,
+            });
             reject(err);
             return;
           }
+          recordConnectionLifecycle({
+            stage: 'connection.balancer.worker_connection_grpc.request_success',
+            decision: 'grpc_request_connection',
+            outcome: 'success',
+            grpc_method: 'RequestConnection',
+            grpc_address: address,
+            deadline_ms: GRPC_DEADLINE_MS,
+          });
           resolve();
         }
       );
@@ -153,10 +193,23 @@ export class WorkerBaileysGrpcClientService {
       credentials.createInsecure()
     );
     const deadline = new Date(Date.now() + CONNECTION_QR_GRPC_DEADLINE_MS);
+    const metadata = injectGrpcConnectionMetadata(new Metadata());
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.worker_connection_grpc.qrcode_start',
+      decision: 'grpc_request_connection_qrcode',
+      outcome: 'started',
+      grpc_method: 'RequestConnection',
+      grpc_address: address,
+      deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+      status: protoPayload.status,
+      connection_type: protoPayload.type,
+    });
 
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
       (client as any).RequestConnection(
         protoPayload,
+        metadata,
         { deadline },
         (
           err: ServiceError | null,
@@ -164,11 +217,35 @@ export class WorkerBaileysGrpcClientService {
         ): void => {
           client.close();
           if (err) {
+            recordConnectionLifecycle({
+              stage: 'connection.balancer.worker_connection_grpc.qrcode_error',
+              decision: 'grpc_request_connection_qrcode',
+              outcome: 'error',
+              reason: 'grpc_error',
+              level: 'error',
+              grpc_method: 'RequestConnection',
+              grpc_address: address,
+              deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+              error: err.message,
+            });
             reject(err);
             return;
           }
 
-          resolve(protoToConnectionState(response ?? {}));
+          const state = protoToConnectionState(response ?? {});
+          recordConnectionLifecycle({
+            stage: 'connection.balancer.worker_connection_grpc.qrcode_success',
+            decision: 'grpc_request_connection_qrcode',
+            outcome: 'success',
+            grpc_method: 'RequestConnection',
+            grpc_address: address,
+            deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+            status: state.status,
+            code: state.code,
+            has_qr: Boolean(state.qrcode),
+            has_pairing_code: Boolean(state.pairing_code),
+          });
+          resolve(state);
         }
       );
     });
@@ -226,12 +303,45 @@ export class WorkerBaileysGrpcClientService {
       const address = `${workerId}:${port}`;
 
       try {
+        recordConnectionLifecycle({
+          stage: 'connection.balancer.worker_connection_grpc.fallback_attempt',
+          decision: 'grpc_port_fallback',
+          outcome: 'started',
+          grpc_address: address,
+          attempt: index + 1,
+          max_attempts: ports.length,
+          worker_type: workerType,
+        });
         return await callByAddress(address);
       } catch (error) {
         lastError = error;
         if (isLastPort || !this.isRetryableConnectionError(error)) {
+          recordConnectionLifecycle({
+            stage: 'connection.balancer.worker_connection_grpc.fallback_error',
+            decision: 'grpc_port_fallback',
+            outcome: 'error',
+            reason: isLastPort ? 'last_port_failed' : 'non_retryable_error',
+            level: 'error',
+            grpc_address: address,
+            attempt: index + 1,
+            max_attempts: ports.length,
+            worker_type: workerType,
+            error: error instanceof Error ? error.message : String(error),
+          });
           throw error;
         }
+        recordConnectionLifecycle({
+          stage: 'connection.balancer.worker_connection_grpc.fallback_retry',
+          decision: 'grpc_port_fallback',
+          outcome: 'retrying',
+          reason: 'retryable_error',
+          level: 'warn',
+          grpc_address: address,
+          attempt: index + 1,
+          max_attempts: ports.length,
+          worker_type: workerType,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
@@ -249,9 +359,20 @@ export class WorkerBaileysGrpcClientService {
   ): Promise<void> {
     const protoPayload = this.buildConnectionProtoPayload(payload);
 
-    await this.callWithFallback(workerId, workerType, (address) =>
-      this.requestConnectionByAddress(address, protoPayload)
-    );
+    const contextData = buildConnectionLifecycleContext({
+      worker_id: workerId,
+      channel_id: workerId,
+      worker_type: workerType,
+      source_provider: 'balancer',
+      connection_type: payload.type,
+      connection_action: 'request_connection',
+    });
+
+    await runWithConnectionLifecycleContext(contextData, async () => {
+      await this.callWithFallback(workerId, workerType, (address) =>
+        this.requestConnectionByAddress(address, protoPayload)
+      );
+    });
   }
 
   async requestConnectionQrCode(
@@ -261,8 +382,19 @@ export class WorkerBaileysGrpcClientService {
   ): Promise<IBaileysConnectionState> {
     const protoPayload = this.buildConnectionProtoPayload(payload);
 
-    return this.callWithFallback(workerId, workerType, (address) =>
-      this.requestConnectionQrCodeByAddress(address, protoPayload)
+    const contextData = buildConnectionLifecycleContext({
+      worker_id: workerId,
+      channel_id: workerId,
+      worker_type: workerType,
+      source_provider: 'balancer',
+      connection_type: payload.type,
+      connection_action: 'request_qrcode',
+    });
+
+    return runWithConnectionLifecycleContext(contextData, () =>
+      this.callWithFallback(workerId, workerType, (address) =>
+        this.requestConnectionQrCodeByAddress(address, protoPayload)
+      )
     );
   }
 
