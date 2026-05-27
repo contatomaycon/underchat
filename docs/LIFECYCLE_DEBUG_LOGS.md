@@ -5,7 +5,11 @@ Este documento explica os logs temporarios de investigacao para:
 - ciclo de vida de mensagens: `debug_index="message_lifecycle"`
 - ciclo de vida de conexoes: `debug_index="connection_lifecycle"`
 
-Esses logs existem para diagnosticar onde uma mensagem ou uma conexao parou no fluxo ponta a ponta. Eles emitem apenas excecoes do fluxo: erro, retry, DLQ, descarte, skip, ignored/dropped ou outro ponto que encerra o fluxo sem continuidade. Eventos de sucesso/progresso nao sao enviados.
+Esses logs existem para diagnosticar onde uma mensagem ou uma conexao parou no fluxo ponta a ponta.
+
+Para mensagens, o debug continua emitindo apenas excecoes do fluxo: erro, retry, DLQ, descarte, skip, ignored/dropped ou outro ponto que encerra o fluxo sem continuidade.
+
+Para conexoes, quando `CONNECTION_LIFECYCLE_DEBUG_ENABLED=true`, o debug emite progresso e erros do fluxo completo. Isso inclui entrada de request, validacao, container, health, readiness gRPC, chamada ao worker, publish e resposta final. O objetivo e enxergar exatamente em qual etapa a conexao/QR parou.
 
 ## Ativacao
 
@@ -32,13 +36,27 @@ CONNECTION_LIFECYCLE_DEBUG_ENABLED=false
 
 ## O Que E Emitido
 
-Com os flags ligados, o lifecycle debug registra apenas eventos problematicos:
+Com `MESSAGE_LIFECYCLE_DEBUG_ENABLED=true`, o lifecycle debug de mensagem registra apenas eventos problematicos:
 
 - `level="warn"` ou `level="error"`
 - `outcome` em `error`, `failed`, `partial_error`, `timeout`, `dlq`, `discarded`, `dropped`, `skipped`, `ignored`, `ignore_totally`, `ignore_automation`, `retrying`, `closed`, `message_creation_skipped` ou `chat_saved_without_message`
 - qualquer evento que tenha `error`, `err`, `exception`, `stack` ou `error_message`
 
-Eventos normais como `received`, `started`, `success`, `published`, `committed`, `completed`, `created`, `mapped`, `queued` e `chatbot` sao descartados no helper antes de serializar payload, truncar raw ou capturar arquivo/linha.
+Eventos normais de mensagem como `received`, `started`, `success`, `published`, `committed`, `completed`, `created`, `mapped`, `queued` e `chatbot` sao descartados no helper de mensagem antes de serializar payload, truncar raw ou capturar arquivo/linha.
+
+Com `CONNECTION_LIFECYCLE_DEBUG_ENABLED=true`, o lifecycle debug de conexao registra tambem eventos de progresso, como:
+
+- `received`
+- `started`
+- `exists` / `missing`
+- `healthy` / `unhealthy`
+- `ready` / `not_ready`
+- `created`
+- `success`
+- `published`
+- `completed`
+
+Mesmo em eventos de progresso, QR code e codigo de pareamento continuam sanitizados.
 
 ## Onde Fica Salvo
 

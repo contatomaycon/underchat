@@ -81,6 +81,16 @@ function buildHandler(
     })),
     viewWorkerForMonitor: jest.fn(async () => null),
     existsContainerWorkerById: jest.fn(async () => true),
+    inspectContainerWorkerById: jest.fn(async () => ({
+      exists: true,
+      container_id: 'container-1',
+      container_name: 'worker-1',
+      container_state: 'running',
+      container_status: 'running',
+      container_started_at: '2026-01-01T00:00:00Z',
+      container_finished_at: '0001-01-01T00:00:00Z',
+      running: true,
+    })),
     createContainerWorker: jest.fn(async () => 'container-1'),
   };
 
@@ -96,9 +106,20 @@ function buildHandler(
   };
   const containerHealthService = {
     isServiceHealthy: jest.fn(async () => true),
+    checkServiceHealth: jest.fn(async () => ({
+      healthy: true,
+      container_id: 'container-1',
+      health_url: 'http://127.0.0.1:3005/v1/health/check',
+      health_attempt: 1,
+      health_max_attempts: 1,
+      health_delay_ms: 0,
+      health_status_code: '200',
+      attempts: [],
+    })),
   };
   const workerBaileysGrpcClientService = {
     requestConnection: jest.fn(async () => undefined),
+    waitForReady: jest.fn(async () => 'worker-1:50053'),
     requestConnectionQrCode: jest.fn(async () => ({
       status: 'connecting',
       code: 202,
@@ -223,7 +244,16 @@ describe('WorkerCommandHandlerService connection', () => {
     deps.workerBaileysGrpcClientService.requestConnection
       .mockRejectedValueOnce(new Error('worker not ready'))
       .mockResolvedValueOnce(undefined);
-    deps.containerHealthService.isServiceHealthy.mockResolvedValueOnce(true);
+    deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce({
+      healthy: true,
+      container_id: 'worker-1',
+      health_url: 'http://127.0.0.1:3005/v1/health/check',
+      health_attempt: 1,
+      health_max_attempts: 3,
+      health_delay_ms: 1000,
+      health_status_code: '200',
+      attempts: [],
+    });
 
     await deps.handler.handleChangeConnectionStatus(
       {
@@ -237,7 +267,7 @@ describe('WorkerCommandHandlerService connection', () => {
     await flushPromises();
     await flushPromises();
 
-    expect(deps.containerHealthService.isServiceHealthy).toHaveBeenCalledWith(
+    expect(deps.containerHealthService.checkServiceHealth).toHaveBeenCalledWith(
       'worker-1',
       { maxAttempts: 3, delayMs: 1000 }
     );
@@ -308,7 +338,134 @@ describe('WorkerCommandHandlerService connection', () => {
       }),
       EWorkerType.wwebjs
     );
+    expect(deps.containerHealthService.checkServiceHealth).toHaveBeenCalledWith(
+      'container-1',
+      { maxAttempts: 10, delayMs: 1000 }
+    );
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady
+    ).toHaveBeenCalledWith('worker-1', EWorkerType.wwebjs, undefined);
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady.mock
+        .invocationCallOrder[0]
+    ).toBeLessThan(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode.mock
+        .invocationCallOrder[0]
+    );
     expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
+  });
+
+  it('recreates an existing unhealthy container before requesting QR', async () => {
+    const deps = buildHandler();
+    deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce({
+      healthy: false,
+      container_id: 'container-1',
+      health_url: 'http://127.0.0.1:3005/v1/health/check',
+      health_attempt: 10,
+      health_max_attempts: 10,
+      health_delay_ms: 1000,
+      health_status_code: '500',
+      attempts: [],
+    });
+
+    await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
+      expect.any(String),
+      'worker-1',
+      'account-1',
+      true,
+      expect.any(String),
+      expect.any(Number),
+      undefined
+    );
+    expect(
+      deps.workerService.createContainerWorker.mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode.mock
+        .invocationCallOrder[0]
+    );
+  });
+
+  it('creates a missing container synchronously before requesting QR', async () => {
+    const deps = buildHandler();
+    deps.workerService.inspectContainerWorkerById
+      .mockResolvedValueOnce({
+        exists: false,
+        container_name: 'worker-1',
+      })
+      .mockResolvedValue({
+        exists: true,
+        container_id: 'container-created',
+        container_name: 'worker-1',
+        container_state: 'running',
+        container_status: 'running',
+        running: true,
+      });
+
+    await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalled();
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady.mock
+        .invocationCallOrder[0]
+    ).toBeLessThan(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode.mock
+        .invocationCallOrder[0]
+    );
+  });
+
+  it('fails clearly when gRPC readiness never completes and does not request QR', async () => {
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.waitForReady.mockRejectedValue(
+      new Error('not ready')
+    );
+
+    await expect(
+      deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      )
+    ).rejects.toThrow('not ready');
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode
+    ).not.toHaveBeenCalled();
+  });
+
+  it('does not schedule background connection retries for QR requests', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).not.toHaveBeenCalled();
   });
 
   it('does not request a QR code in background after recreating a worker', async () => {

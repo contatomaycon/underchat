@@ -49,6 +49,7 @@ if (!WorkerConnectionClient) {
 
 const GRPC_DEADLINE_MS = 10_000;
 const CONNECTION_QR_GRPC_DEADLINE_MS = 30_000;
+const GRPC_READY_DEADLINE_MS = 10_000;
 
 @injectable()
 export class WorkerBaileysGrpcClientService {
@@ -242,6 +243,8 @@ export class WorkerBaileysGrpcClientService {
             deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
             status: state.status,
             code: state.code,
+            qrcode: state.qrcode,
+            pairing_code: state.pairing_code,
             has_qr: Boolean(state.qrcode),
             has_pairing_code: Boolean(state.pairing_code),
           });
@@ -286,6 +289,60 @@ export class WorkerBaileysGrpcClientService {
           );
         }
       );
+    });
+  }
+
+  private async waitForReadyByAddress(
+    address: string,
+    timeoutMs: number
+  ): Promise<string> {
+    const client = new WorkerConnectionClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + timeoutMs);
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.worker_connection_grpc.readiness_start',
+      decision: 'grpc_wait_for_ready',
+      outcome: 'started',
+      grpc_address: address,
+      grpc_probe_address: address,
+      deadline_ms: timeoutMs,
+      grpc_ready: false,
+    });
+
+    return new Promise<string>((resolve, reject) => {
+      client.waitForReady(deadline, (err?: Error) => {
+        client.close();
+        if (err) {
+          recordConnectionLifecycle({
+            stage: 'connection.balancer.worker_connection_grpc.readiness_error',
+            decision: 'grpc_wait_for_ready',
+            outcome: 'not_ready',
+            reason: 'grpc_wait_for_ready_failed',
+            level: 'warn',
+            grpc_address: address,
+            grpc_probe_address: address,
+            grpc_probe_error: err.message,
+            deadline_ms: timeoutMs,
+            grpc_ready: false,
+          });
+          reject(err);
+          return;
+        }
+
+        recordConnectionLifecycle({
+          stage: 'connection.balancer.worker_connection_grpc.readiness_success',
+          decision: 'grpc_wait_for_ready',
+          outcome: 'ready',
+          grpc_address: address,
+          grpc_probe_address: address,
+          deadline_ms: timeoutMs,
+          grpc_ready: true,
+        });
+        resolve(address);
+      });
     });
   }
 
@@ -394,6 +451,26 @@ export class WorkerBaileysGrpcClientService {
     return runWithConnectionLifecycleContext(contextData, () =>
       this.callWithFallback(workerId, workerType, (address) =>
         this.requestConnectionQrCodeByAddress(address, protoPayload)
+      )
+    );
+  }
+
+  async waitForReady(
+    workerId: string,
+    workerType?: EWorkerType,
+    timeoutMs: number = GRPC_READY_DEADLINE_MS
+  ): Promise<string> {
+    const contextData = buildConnectionLifecycleContext({
+      worker_id: workerId,
+      channel_id: workerId,
+      worker_type: workerType,
+      source_provider: 'balancer',
+      connection_action: 'grpc_readiness',
+    });
+
+    return runWithConnectionLifecycleContext(contextData, () =>
+      this.callWithFallback(workerId, workerType, (address) =>
+        this.waitForReadyByAddress(address, timeoutMs)
       )
     );
   }

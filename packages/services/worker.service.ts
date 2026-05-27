@@ -49,6 +49,23 @@ import { WorkerUpdatedAtUpdaterRepository } from '@core/repositories/worker/Work
 import { WorkerLastConnectionCheckUpdaterRepository } from '@core/repositories/worker/WorkerLastConnectionCheckUpdater.repository';
 import Redis from 'ioredis';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
+import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
+
+export interface WorkerContainerInspection {
+  exists: boolean;
+  container_id?: string;
+  container_name?: string;
+  container_state?: string;
+  container_status?: string;
+  container_started_at?: string;
+  container_finished_at?: string;
+  running?: boolean;
+  error?: string;
+}
+
+function dockerErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 @injectable()
 export class WorkerService {
@@ -161,23 +178,92 @@ export class WorkerService {
   }
 
   public async existsContainerWorkerById(workerId: string): Promise<boolean> {
+    const inspection = await this.inspectContainerWorkerById(workerId);
+    return inspection.exists;
+  }
+
+  public async inspectContainerWorkerById(
+    workerId: string
+  ): Promise<WorkerContainerInspection> {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.container_inspect_start',
+      decision: 'inspect_container_worker_by_id',
+      outcome: 'started',
+      container_name: workerId,
+    });
+
     try {
       const container = this.docker.getContainer(workerId);
-      await container.inspect();
+      const info = await container.inspect();
+      const state = info.State ?? {};
+      const inspection: WorkerContainerInspection = {
+        exists: true,
+        container_id: info.Id,
+        container_name: info.Name?.replace(/^\//u, '') || workerId,
+        container_state: state.Status,
+        container_status: (info as { Status?: string }).Status ?? state.Status,
+        container_started_at: state.StartedAt,
+        container_finished_at: state.FinishedAt,
+        running: state.Running === true,
+      };
 
-      return true;
-    } catch {
-      return false;
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.container_inspect_success',
+        decision: 'inspect_container_worker_by_id',
+        outcome: 'success',
+        ...inspection,
+      });
+
+      return inspection;
+    } catch (error) {
+      const inspection: WorkerContainerInspection = {
+        exists: false,
+        container_name: workerId,
+        error: dockerErrorMessage(error),
+      };
+
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.container_inspect_missing',
+        decision: 'inspect_container_worker_by_id',
+        outcome: 'missing',
+        container_name: workerId,
+        docker_error: inspection.error,
+      });
+
+      return inspection;
     }
   }
 
   public async removeContainerWorkerById(workerId: string): Promise<boolean> {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.container_remove_start',
+      decision: 'remove_container_worker_by_id',
+      outcome: 'started',
+      container_name: workerId,
+    });
+
     try {
       const container = this.docker.getContainer(workerId);
       await container.remove({ force: true });
 
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.container_remove_success',
+        decision: 'remove_container_worker_by_id',
+        outcome: 'success',
+        container_name: workerId,
+      });
+
       return true;
-    } catch {
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.container_remove_error',
+        decision: 'remove_container_worker_by_id',
+        outcome: 'error',
+        reason: 'docker_remove_failed',
+        level: 'error',
+        container_name: workerId,
+        error: dockerErrorMessage(error),
+      });
       throw new Error('The worker removal failed');
     }
   }
@@ -278,25 +364,60 @@ export class WorkerService {
       }
     }
 
-    const container = await this.docker.createContainer({
-      Image: imageName,
-      name: workerId,
-      HostConfig: {
-        Binds: [`${workerId}:/app/data`],
-        NetworkMode: 'underchat',
-        RestartPolicy: {
-          Name: 'unless-stopped',
-        },
-      },
-      Volumes: {
-        '/app/data': {},
-      },
-      Env: this.buildContainerEnv(envOverrides),
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.container_create_start',
+      decision: 'create_container_worker',
+      outcome: 'started',
+      container_name: workerId,
+      worker_type: imageName,
+      grpc_address:
+        grpcHost !== undefined && grpcPort !== undefined
+          ? `${grpcHost}:${grpcPort}`
+          : undefined,
     });
 
-    await container.start();
+    try {
+      const container = await this.docker.createContainer({
+        Image: imageName,
+        name: workerId,
+        HostConfig: {
+          Binds: [`${workerId}:/app/data`],
+          NetworkMode: 'underchat',
+          RestartPolicy: {
+            Name: 'unless-stopped',
+          },
+        },
+        Volumes: {
+          '/app/data': {},
+        },
+        Env: this.buildContainerEnv(envOverrides),
+      });
 
-    return container.id;
+      await container.start();
+
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.container_create_success',
+        decision: 'create_container_worker',
+        outcome: 'created',
+        container_id: container.id,
+        container_name: workerId,
+        worker_type: imageName,
+      });
+
+      return container.id;
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.container_create_error',
+        decision: 'create_container_worker',
+        outcome: 'error',
+        reason: 'docker_create_failed',
+        level: 'error',
+        container_name: workerId,
+        worker_type: imageName,
+        error: dockerErrorMessage(error),
+      });
+      throw error;
+    }
   }
 
   public async existsImage(imageName: string): Promise<boolean> {

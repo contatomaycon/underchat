@@ -32,6 +32,43 @@ describe('ContainerHealthService', () => {
     expect(getHttpStatusCode).toHaveBeenCalled();
   });
 
+  it('returns detailed service health attempts', async () => {
+    const service = new ContainerHealthService();
+
+    jest
+      .spyOn(service as any, 'getHttpStatusCode')
+      .mockResolvedValueOnce('')
+      .mockResolvedValueOnce('200');
+    jest.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
+
+    await expect(
+      service.checkServiceHealth('container-1', {
+        maxAttempts: 2,
+        delayMs: 1,
+      })
+    ).resolves.toEqual(
+      expect.objectContaining({
+        healthy: true,
+        container_id: 'container-1',
+        health_url: 'http://127.0.0.1:3005/v1/health/check',
+        health_attempt: 2,
+        health_max_attempts: 2,
+        health_delay_ms: 1,
+        health_status_code: '200',
+        attempts: [
+          expect.objectContaining({
+            health_attempt: 1,
+            health_status_code: '',
+          }),
+          expect.objectContaining({
+            health_attempt: 2,
+            health_status_code: '200',
+          }),
+        ],
+      })
+    );
+  });
+
   it('returns http status code from docker exec stream and handles errors', async () => {
     const service = new ContainerHealthService();
     const execStream = new EventEmitter();

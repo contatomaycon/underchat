@@ -54,15 +54,15 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       accountId,
       workerId
     );
+    recordConnectionLifecycle({
+      stage: 'connection.manager.qrcode_request.worker_validation',
+      decision: 'exists_worker_by_id',
+      outcome: existsWorkerAccountById ? 'success' : 'error',
+      reason: existsWorkerAccountById ? undefined : 'worker_not_found',
+      level: existsWorkerAccountById ? 'info' : 'warn',
+    });
 
     if (!existsWorkerAccountById) {
-      recordConnectionLifecycle({
-        stage: 'connection.manager.qrcode_request.worker_validation',
-        decision: 'exists_worker_by_id',
-        outcome: 'error',
-        reason: 'worker_not_found',
-        level: 'warn',
-      });
       throw new Error(t('worker_not_found'));
     }
 
@@ -78,6 +78,16 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       });
       throw new Error(t('worker_not_found'));
     }
+    recordConnectionLifecycle({
+      stage: 'connection.manager.qrcode_request.server_resolved',
+      decision: 'view_worker_server',
+      outcome: 'success',
+      server_id: serverId,
+      server_name: view?.server?.name,
+      worker_type: view?.type?.id,
+      worker_type_name: view?.type?.name,
+      worker_status_id: view?.status?.id,
+    });
 
     try {
       recordConnectionLifecycle({
@@ -103,6 +113,20 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         server_id: serverId,
         status: response.status,
         code: response.code,
+        qrcode: response.qrcode,
+        pairing_code: response.pairing_code,
+        has_qr: Boolean(response.qrcode),
+        has_pairing_code: Boolean(response.pairing_code),
+      });
+      recordConnectionLifecycle({
+        stage: 'connection.manager.qrcode_request.http_response_ready',
+        decision: 'return_connection_qrcode_response',
+        outcome: 'completed',
+        server_id: serverId,
+        status: response.status,
+        code: response.code,
+        qrcode: response.qrcode,
+        pairing_code: response.pairing_code,
         has_qr: Boolean(response.qrcode),
         has_pairing_code: Boolean(response.pairing_code),
       });

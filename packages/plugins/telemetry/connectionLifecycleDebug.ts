@@ -60,23 +60,6 @@ const GRPC_CONNECTION_LIFECYCLE_ID_HEADER = 'x-connection-lifecycle-id';
 const DEFAULT_VALUE_LIMIT = 500;
 const DEFAULT_RAW_LIMIT = 4000;
 const lifecycleTracer = trace.getTracer('connection-lifecycle');
-const EXCEPTION_OUTCOMES = new Set([
-  'error',
-  'failed',
-  'partial_error',
-  'timeout',
-  'dlq',
-  'discarded',
-  'dropped',
-  'skipped',
-  'ignored',
-  'ignore_totally',
-  'ignore_automation',
-  'retrying',
-  'closed',
-  'message_creation_skipped',
-  'chat_saved_without_message',
-]);
 const ERROR_OUTCOMES = new Set([
   'error',
   'failed',
@@ -413,13 +396,7 @@ function eventHasErrorField(event: ConnectionLifecycleEvent): boolean {
 }
 
 function shouldRecordLifecycleEvent(event: ConnectionLifecycleEvent): boolean {
-  const level = normalizeToken(event.level);
-  if (level === 'warn' || level === 'error') return true;
-
-  const outcome = normalizeToken(event.outcome);
-  if (outcome && EXCEPTION_OUTCOMES.has(outcome)) return true;
-
-  return eventHasErrorField(event);
+  return Boolean(toNonEmptyString(event.stage));
 }
 
 function isErrorLifecycleEvent(event: ConnectionLifecycleEvent): boolean {
@@ -454,12 +431,13 @@ function spanAttributes(
   );
 }
 
-function recordLifecycleExceptionSpan(
+function recordLifecycleSpan(
   payload: Record<string, PrimitiveLogValue>,
   event: ConnectionLifecycleEvent
 ): void {
+  const spanType = isErrorLifecycleEvent(event) ? 'exception' : 'event';
   const span = lifecycleTracer.startSpan(
-    `connection_lifecycle.exception.${event.stage}`,
+    `connection_lifecycle.${spanType}.${event.stage}`,
     { attributes: spanAttributes(payload) }
   );
   const spanContext = span.spanContext();
@@ -490,7 +468,7 @@ export function recordConnectionLifecycle(
 
   const level = event.level ?? 'info';
   const payload = normalizeEventPayload(event);
-  recordLifecycleExceptionSpan(payload, event);
+  recordLifecycleSpan(payload, event);
   logger[level](payload, event.message ?? 'Connection lifecycle event');
 }
 

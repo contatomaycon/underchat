@@ -241,6 +241,8 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
             grpc_method: 'RequestConnectionQrCode',
             status: response.status,
             code: response.code,
+            qrcode: response.qrcode,
+            pairing_code: response.pairing_code,
             has_qr: Boolean(response.qrcode),
             has_pairing_code: Boolean(response.pairing_code),
           });

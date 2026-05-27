@@ -47,7 +47,7 @@ if (!WorkerCommandClient) {
 }
 
 const GRPC_DEADLINE_MS = 10_000;
-const CONNECTION_QR_GRPC_DEADLINE_MS = 30_000;
+const CONNECTION_QR_GRPC_DEADLINE_MS = 90_000;
 
 @injectable()
 export class WorkerGrpcClientService {
@@ -234,6 +234,8 @@ export class WorkerGrpcClientService {
               deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
               status: state.status,
               code: state.code,
+              qrcode: state.qrcode,
+              pairing_code: state.pairing_code,
               has_qr: Boolean(state.qrcode),
               has_pairing_code: Boolean(state.pairing_code),
             });

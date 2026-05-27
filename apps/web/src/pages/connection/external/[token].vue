@@ -384,6 +384,9 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
   if (hasExceededQrAttempts(data)) {
     qrcode.value = undefined;
     isRequestingQr.value = false;
+  } else if (data.qrcode) {
+    qrcode.value = data.qrcode;
+    isRequestingQr.value = false;
   } else if (
     incomingCode === ECodeMessage.awaitConnection ||
     incomingCode === ECodeMessage.logoutInProgress ||

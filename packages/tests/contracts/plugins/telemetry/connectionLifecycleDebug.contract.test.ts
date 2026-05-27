@@ -121,21 +121,21 @@ describe('connectionLifecycleDebug', () => {
     expect(JSON.stringify(payload)).not.toContain('raw-qr-secret');
   });
 
-  it('drops non-exception outcomes when env is enabled', () => {
+  it('emits progress outcomes when env is enabled', () => {
     process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'true';
 
     recordConnectionLifecycle({
       stage: 'test.success',
-      decision: 'drop',
+      decision: 'emit',
       outcome: 'success',
     });
     recordConnectionLifecycle({
       stage: 'test.published',
-      decision: 'drop',
+      decision: 'emit',
       outcome: 'published',
     });
 
-    expect(mockedLogger.info).not.toHaveBeenCalled();
+    expect(mockedLogger.info).toHaveBeenCalledTimes(2);
   });
 
   it('emits retrying and explicit error events', () => {

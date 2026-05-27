@@ -1,5 +1,8 @@
 import { injectable, inject } from 'tsyringe';
-import { WorkerService } from '@core/services/worker.service';
+import {
+  WorkerContainerInspection,
+  WorkerService,
+} from '@core/services/worker.service';
 import { getImageWorker } from '@core/common/functions/getImageWorker';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -51,6 +54,17 @@ import {
   recordConnectionLifecycle,
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
+
+interface ResolvedWorkerDataForContainer {
+  accountIdResolved: string;
+  serverId: string;
+  serverName?: string;
+  serverWebDomain?: string;
+  workerTypeId: EWorkerType;
+  workerTypeName?: string;
+  workerStatusId?: EWorkerStatus;
+  containerId?: string | null;
+}
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -812,86 +826,6 @@ export class WorkerCommandHandlerService {
       workerId,
       accountId
     );
-    const workerType =
-      workerData?.workerTypeId ??
-      (await this.resolveWorkerTypeForConnection(workerId, accountId));
-
-    const existsContainer =
-      await this.workerService.existsContainerWorkerById(workerId);
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.command_handler.qrcode_container_check',
-      decision: 'exists_container_worker_by_id',
-      outcome: existsContainer ? 'exists' : 'missing',
-      worker_type: workerType,
-    });
-    if (existsContainer) {
-      try {
-        const response =
-          await this.workerBaileysGrpcClientService.requestConnectionQrCode(
-            workerId,
-            payload,
-            workerType
-          );
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.command_handler.qrcode_worker_success',
-          decision: 'request_worker_qrcode',
-          outcome: 'success',
-          worker_type: workerType,
-          status: response.status,
-          code: response.code,
-          has_qr: Boolean(response.qrcode),
-          has_pairing_code: Boolean(response.pairing_code),
-        });
-        return response;
-      } catch (err) {
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.command_handler.qrcode_worker_error',
-          decision: 'request_worker_qrcode',
-          outcome: 'error',
-          reason: 'initial_request_failed',
-          level: 'warn',
-          worker_type: workerType,
-          error: getErrorMessage(err),
-        });
-        console.error('Initial worker QR request failed:', {
-          workerId,
-          workerType,
-          error: getErrorMessage(err),
-        });
-
-        const healthy = await this.isExistingContainerHealthy(workerId, {
-          maxAttempts: 3,
-          delayMs: 1000,
-        });
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.command_handler.qrcode_container_health',
-          decision: 'is_existing_container_healthy',
-          outcome: healthy ? 'healthy' : 'unhealthy',
-          worker_type: workerType,
-        });
-
-        if (healthy) {
-          const response =
-            await this.workerBaileysGrpcClientService.requestConnectionQrCode(
-              workerId,
-              payload,
-              workerType
-            );
-          recordConnectionLifecycle({
-            stage:
-              'connection.balancer.command_handler.qrcode_worker_retry_success',
-            decision: 'request_worker_qrcode',
-            outcome: 'success',
-            worker_type: workerType,
-            status: response.status,
-            code: response.code,
-            has_qr: Boolean(response.qrcode),
-            has_pairing_code: Boolean(response.pairing_code),
-          });
-          return response;
-        }
-      }
-    }
 
     if (!workerData) {
       recordConnectionLifecycle({
@@ -906,24 +840,29 @@ export class WorkerCommandHandlerService {
     }
 
     recordConnectionLifecycle({
-      stage:
-        'connection.balancer.command_handler.qrcode_container_create_start',
-      decision: 'create_worker_with_payload',
-      outcome: 'started',
-      worker_type: workerData.workerTypeId,
-    });
-    await this.createWorkerWithPayload(workerId, workerData, undefined, {
-      maxAttempts: 10,
-      delayMs: 1000,
-    });
-    recordConnectionLifecycle({
-      stage:
-        'connection.balancer.command_handler.qrcode_container_create_success',
-      decision: 'create_worker_with_payload',
+      stage: 'connection.balancer.command_handler.qrcode_worker_data_resolved',
+      decision: 'resolve_worker_data_for_container',
       outcome: 'success',
+      account_id: workerData.accountIdResolved,
+      server_id: workerData.serverId,
+      server_name: workerData.serverName,
+      server_web_domain: workerData.serverWebDomain,
       worker_type: workerData.workerTypeId,
+      worker_type_name: workerData.workerTypeName,
+      worker_status_id: workerData.workerStatusId,
+      container_id: workerData.containerId,
     });
 
+    await this.ensureQrContainerReady(workerId, workerData);
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.qrcode_worker_request_start',
+      decision: 'request_worker_qrcode',
+      outcome: 'started',
+      worker_type: workerData.workerTypeId,
+      status: payload.status,
+      connection_type: payload.type,
+    });
     const response =
       await this.workerBaileysGrpcClientService.requestConnectionQrCode(
         workerId,
@@ -937,10 +876,278 @@ export class WorkerCommandHandlerService {
       worker_type: workerData.workerTypeId,
       status: response.status,
       code: response.code,
+      qrcode: response.qrcode,
+      pairing_code: response.pairing_code,
       has_qr: Boolean(response.qrcode),
       has_pairing_code: Boolean(response.pairing_code),
     });
     return response;
+  }
+
+  private async ensureQrContainerReady(
+    workerId: string,
+    workerData: ResolvedWorkerDataForContainer
+  ): Promise<void> {
+    if (
+      workerData.workerStatusId === EWorkerStatus.creating ||
+      workerData.workerStatusId === EWorkerStatus.recreating
+    ) {
+      const ready = await this.waitForExistingQrContainerReady(
+        workerId,
+        workerData,
+        { maxAttempts: 10, delayMs: 2000, grpcReadyTimeoutMs: 2000 }
+      );
+      if (ready) {
+        return;
+      }
+    }
+
+    const inspection = await this.inspectWorkerContainerForQr(
+      workerId,
+      workerData
+    );
+    let recreateReason = this.qrContainerRecreateReason(inspection);
+
+    if (inspection.exists && inspection.running === true) {
+      const containerId = inspection.container_id ?? workerId;
+      const healthy = await this.isExistingContainerHealthy(containerId, {
+        maxAttempts: 10,
+        delayMs: 1000,
+      });
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.qrcode_existing_container_health',
+        decision: 'is_existing_container_healthy',
+        outcome: healthy ? 'healthy' : 'unhealthy',
+        worker_type: workerData.workerTypeId,
+        ...this.lifecycleFieldsFromInspection(inspection),
+      });
+
+      if (healthy) {
+        try {
+          await this.waitForWorkerGrpcReady(workerId, workerData.workerTypeId);
+          return;
+        } catch (err) {
+          recordConnectionLifecycle({
+            stage:
+              'connection.balancer.command_handler.qrcode_existing_container_grpc_unready',
+            decision: 'wait_worker_grpc_ready',
+            outcome: 'not_ready',
+            reason: 'healthy_container_grpc_not_ready',
+            level: 'warn',
+            worker_type: workerData.workerTypeId,
+            error: getErrorMessage(err),
+            ...this.lifecycleFieldsFromInspection(inspection),
+          });
+          recreateReason = 'container_grpc_not_ready';
+        }
+      }
+    }
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.qrcode_container_recreate',
+      decision: 'create_worker_with_payload',
+      outcome: 'started',
+      reason: recreateReason,
+      worker_type: workerData.workerTypeId,
+      worker_status_id: workerData.workerStatusId,
+      ...this.lifecycleFieldsFromInspection(inspection),
+    });
+
+    await this.createWorkerWithPayload(workerId, workerData, undefined, {
+      maxAttempts: 30,
+      delayMs: 1000,
+    });
+
+    const createdInspection = await this.inspectWorkerContainerForQr(
+      workerId,
+      workerData
+    );
+    recordConnectionLifecycle({
+      stage:
+        'connection.balancer.command_handler.qrcode_container_recreate_success',
+      decision: 'create_worker_with_payload',
+      outcome: 'success',
+      worker_type: workerData.workerTypeId,
+      worker_status_id: workerData.workerStatusId,
+      ...this.lifecycleFieldsFromInspection(createdInspection),
+    });
+
+    await this.waitForWorkerGrpcReady(workerId, workerData.workerTypeId);
+  }
+
+  private async waitForExistingQrContainerReady(
+    workerId: string,
+    workerData: ResolvedWorkerDataForContainer,
+    options: {
+      maxAttempts: number;
+      delayMs: number;
+      grpcReadyTimeoutMs: number;
+    }
+  ): Promise<boolean> {
+    recordConnectionLifecycle({
+      stage:
+        'connection.balancer.command_handler.qrcode_wait_existing_container_start',
+      decision: 'wait_existing_container_ready',
+      outcome: 'started',
+      worker_type: workerData.workerTypeId,
+      worker_status_id: workerData.workerStatusId,
+      max_attempts: options.maxAttempts,
+      health_delay_ms: options.delayMs,
+    });
+
+    for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
+      const inspection = await this.inspectWorkerContainerForQr(
+        workerId,
+        workerData
+      );
+      const containerId = inspection.container_id ?? workerId;
+      const healthy =
+        inspection.exists && inspection.running === true
+          ? await this.isExistingContainerHealthy(containerId, {
+              maxAttempts: 1,
+              delayMs: 0,
+            })
+          : false;
+
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.qrcode_wait_existing_container_attempt',
+        decision: 'wait_existing_container_ready',
+        outcome: healthy ? 'healthy' : 'unhealthy',
+        worker_type: workerData.workerTypeId,
+        worker_status_id: workerData.workerStatusId,
+        attempt,
+        max_attempts: options.maxAttempts,
+        health_delay_ms: options.delayMs,
+        ...this.lifecycleFieldsFromInspection(inspection),
+      });
+
+      if (healthy) {
+        try {
+          await this.workerBaileysGrpcClientService.waitForReady(
+            workerId,
+            workerData.workerTypeId,
+            options.grpcReadyTimeoutMs
+          );
+          return true;
+        } catch {
+          // Keep waiting while another recreate/create request is still booting.
+        }
+      }
+
+      if (attempt < options.maxAttempts) {
+        await this.sleep(options.delayMs);
+      }
+    }
+
+    recordConnectionLifecycle({
+      stage:
+        'connection.balancer.command_handler.qrcode_wait_existing_container_timeout',
+      decision: 'wait_existing_container_ready',
+      outcome: 'timeout',
+      reason: 'container_not_ready_during_worker_create_or_recreate',
+      level: 'warn',
+      worker_type: workerData.workerTypeId,
+      worker_status_id: workerData.workerStatusId,
+      max_attempts: options.maxAttempts,
+      health_delay_ms: options.delayMs,
+    });
+
+    return false;
+  }
+
+  private async inspectWorkerContainerForQr(
+    workerId: string,
+    workerData: ResolvedWorkerDataForContainer
+  ): Promise<WorkerContainerInspection> {
+    const inspection =
+      await this.workerService.inspectContainerWorkerById(workerId);
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.qrcode_container_inspected',
+      decision: 'inspect_container_worker_by_id',
+      outcome: inspection.exists ? 'exists' : 'missing',
+      worker_type: workerData.workerTypeId,
+      worker_status_id: workerData.workerStatusId,
+      ...this.lifecycleFieldsFromInspection(inspection),
+    });
+
+    return inspection;
+  }
+
+  private lifecycleFieldsFromInspection(
+    inspection: WorkerContainerInspection
+  ): Record<string, string | boolean | undefined> {
+    return {
+      container_id: inspection.container_id,
+      container_name: inspection.container_name,
+      container_state: inspection.container_state,
+      container_status: inspection.container_status,
+      container_started_at: inspection.container_started_at,
+      container_finished_at: inspection.container_finished_at,
+      container_running: inspection.running,
+    };
+  }
+
+  private qrContainerRecreateReason(
+    inspection: WorkerContainerInspection
+  ): string {
+    if (!inspection.exists) {
+      return 'container_missing';
+    }
+    if (inspection.running !== true) {
+      return 'container_not_running';
+    }
+    return 'container_unhealthy';
+  }
+
+  private async waitForWorkerGrpcReady(
+    workerId: string,
+    workerType: EWorkerType,
+    timeoutMs?: number
+  ): Promise<string> {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.qrcode_grpc_readiness_start',
+      decision: 'wait_worker_grpc_ready',
+      outcome: 'started',
+      worker_type: workerType,
+      deadline_ms: timeoutMs,
+    });
+
+    try {
+      const grpcAddress =
+        await this.workerBaileysGrpcClientService.waitForReady(
+          workerId,
+          workerType,
+          timeoutMs
+        );
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.qrcode_grpc_readiness_success',
+        decision: 'wait_worker_grpc_ready',
+        outcome: 'ready',
+        worker_type: workerType,
+        grpc_address: grpcAddress,
+        grpc_probe_address: grpcAddress,
+        grpc_ready: true,
+        deadline_ms: timeoutMs,
+      });
+      return grpcAddress;
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.qrcode_grpc_readiness_error',
+        decision: 'wait_worker_grpc_ready',
+        outcome: 'error',
+        reason: 'worker_grpc_not_ready',
+        level: 'error',
+        worker_type: workerType,
+        grpc_ready: false,
+        deadline_ms: timeoutMs,
+        error: getErrorMessage(err),
+      });
+      throw err;
+    }
   }
 
   private async tryRequestConnection(
@@ -993,14 +1200,26 @@ export class WorkerCommandHandlerService {
   }
 
   private async isExistingContainerHealthy(
-    workerId: string,
+    containerId: string,
     options: { maxAttempts: number; delayMs: number }
   ): Promise<boolean> {
     try {
-      return await this.containerHealthService.isServiceHealthy(
-        workerId,
+      const result = await this.containerHealthService.checkServiceHealth(
+        containerId,
         options
       );
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.command_handler.container_health_result',
+        decision: 'is_existing_container_healthy',
+        outcome: result.healthy ? 'healthy' : 'unhealthy',
+        container_id: containerId,
+        health_url: result.health_url,
+        health_status_code: result.health_status_code || 'none',
+        health_attempt: result.health_attempt,
+        health_max_attempts: result.health_max_attempts,
+        health_delay_ms: result.health_delay_ms,
+      });
+      return result.healthy;
     } catch (err) {
       recordConnectionLifecycle({
         stage: 'connection.balancer.command_handler.container_health_error',
@@ -1011,7 +1230,7 @@ export class WorkerCommandHandlerService {
         error: getErrorMessage(err),
       });
       console.error('Failed to check worker container health:', {
-        workerId,
+        containerId,
         error: getErrorMessage(err),
       });
       return false;
@@ -1037,11 +1256,7 @@ export class WorkerCommandHandlerService {
   private async resolveWorkerDataForContainer(
     workerId: string,
     accountId?: string
-  ): Promise<{
-    accountIdResolved: string;
-    serverId: string;
-    workerTypeId: EWorkerType;
-  } | null> {
+  ): Promise<ResolvedWorkerDataForContainer | null> {
     if (accountId) {
       const fromView = await this.resolveWorkerDataFromView(
         accountId,
@@ -1058,11 +1273,7 @@ export class WorkerCommandHandlerService {
   private async resolveWorkerDataFromView(
     accountId: string,
     workerId: string
-  ): Promise<{
-    accountIdResolved: string;
-    serverId: string;
-    workerTypeId: EWorkerType;
-  } | null> {
+  ): Promise<ResolvedWorkerDataForContainer | null> {
     const view = await this.workerService.viewWorker(accountId, workerId);
     if (!view?.server?.id || !view?.type?.id) {
       return null;
@@ -1071,15 +1282,16 @@ export class WorkerCommandHandlerService {
     return {
       accountIdResolved: accountId,
       serverId: view.server.id,
+      serverName: view.server.name ?? undefined,
       workerTypeId: view.type.id as EWorkerType,
+      workerTypeName: view.type.name ?? undefined,
+      workerStatusId: view.status?.id as EWorkerStatus | undefined,
     };
   }
 
-  private async resolveWorkerDataFromMonitor(workerId: string): Promise<{
-    accountIdResolved: string;
-    serverId: string;
-    workerTypeId: EWorkerType;
-  } | null> {
+  private async resolveWorkerDataFromMonitor(
+    workerId: string
+  ): Promise<ResolvedWorkerDataForContainer | null> {
     const monitorView = await this.workerService.viewWorkerForMonitor(workerId);
     if (
       !monitorView?.account_id ||
@@ -1093,16 +1305,14 @@ export class WorkerCommandHandlerService {
       accountIdResolved: monitorView.account_id,
       serverId: monitorView.server_id,
       workerTypeId: monitorView.worker_type_id as EWorkerType,
+      workerStatusId: monitorView.worker_status_id as EWorkerStatus,
+      containerId: monitorView.container_id,
     };
   }
 
   private async createWorkerWithPayload(
     workerId: string,
-    workerData: {
-      accountIdResolved: string;
-      serverId: string;
-      workerTypeId: EWorkerType;
-    },
+    workerData: ResolvedWorkerDataForContainer,
     connectionRequest?: StatusConnectionWorkerRequest,
     healthOptions?: { maxAttempts: number; delayMs: number }
   ): Promise<void> {
@@ -1353,11 +1563,61 @@ export class WorkerCommandHandlerService {
     }
   }
 
-  private centrifugoPublish(
+  private async centrifugoPublish(
     dataPublish: IBaileysConnectionState
   ): Promise<PublishResult> {
     const channel = workerCentrifugoQueue(dataPublish.account_id);
-    return this.centrifugoService.publishSub(channel, dataPublish);
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.centrifugo.publish_start',
+      decision: 'publish_connection_state',
+      outcome: 'started',
+      centrifugo_channel: channel,
+      status: dataPublish.status,
+      code: dataPublish.code,
+      worker_status_id: dataPublish.worker_status_id,
+      qrcode: dataPublish.qrcode,
+      pairing_code: dataPublish.pairing_code,
+      has_qr: Boolean(dataPublish.qrcode),
+      has_pairing_code: Boolean(dataPublish.pairing_code),
+    });
+
+    try {
+      const result = await this.centrifugoService.publishSub(
+        channel,
+        dataPublish
+      );
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.centrifugo.publish_success',
+        decision: 'publish_connection_state',
+        outcome: 'success',
+        centrifugo_channel: channel,
+        publish_result: 'success',
+        status: dataPublish.status,
+        code: dataPublish.code,
+        worker_status_id: dataPublish.worker_status_id,
+        qrcode: dataPublish.qrcode,
+        pairing_code: dataPublish.pairing_code,
+        has_qr: Boolean(dataPublish.qrcode),
+        has_pairing_code: Boolean(dataPublish.pairing_code),
+        value: result,
+      });
+      return result;
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.centrifugo.publish_error',
+        decision: 'publish_connection_state',
+        outcome: 'error',
+        reason: 'centrifugo_publish_failed',
+        level: 'error',
+        centrifugo_channel: channel,
+        publish_result: 'error',
+        status: dataPublish.status,
+        code: dataPublish.code,
+        worker_status_id: dataPublish.worker_status_id,
+        error: getErrorMessage(err),
+      });
+      throw err;
+    }
   }
 
   private async updateWorkerErrorStatus(
