@@ -80,7 +80,6 @@ Ha tambem um problema no fluxo externo da tela: `apps/web/src/pages/connection/e
 2. Nao confiar apenas em `existsContainerWorkerById`.
 
    Container existente nao significa worker pronto. O fluxo precisa diferenciar:
-
    - container inexistente
    - container existe mas parado
    - container existe mas sem HTTP health
@@ -598,4 +597,190 @@ Container recriado:
 {service_name="balance"}
 | debug_index="connection_lifecycle"
 | container_id="270e370df6276125f707ef6e32d99724d54ff923d32cec663392ef49f440a56e"
+```
+
+## Adendo 2026-05-27: Criacao Lenta E Erro Do Canal `Vasco`
+
+### Contexto Do Caso
+
+- Worker: `019e6a6b-5103-72b3-90fd-3599264bd132`
+- Nome: `Vasco`
+- `worker_type`: `baileys`
+- Server: `Servidor 2`
+- Account: `UnderChat`
+- `created_at`: `2026-05-27T17:11:18.532835Z`
+- Sintoma observado:
+  - ao criar canal, o modal fica carregando por muito tempo
+  - depois de `F5`, o canal aparece como `error`
+  - ao clicar em `Recriar Canal`, o canal sobe rapido e fica `disponible`
+- Container inicial que falhou: `be87ea524b52a81ae159a0428e18f994bf33b1a4533d55611c5e2b694ce25ee8`
+- Container apos recriar: `5aee8bebc00854105f42e77b72319a722f2b770c97c90dcc264ab09902b44b95`
+
+### Linha Do Tempo Da Criacao Inicial
+
+- `2026-05-27T17:11:18.221Z`: `POST /v1/worker` entrou no Manager.
+- `2026-05-27T17:11:19.094Z`: Balancer iniciou o lifecycle `create_worker`.
+- `2026-05-27T17:11:19.321Z`: Balancer criou container com imagem `under-worker-baileys:latest`.
+- `2026-05-27T17:11:19.507Z`: container inicial foi criado:
+  - `container_id=be87ea524b52a81ae159a0428e18f994bf33b1a4533d55611c5e2b694ce25ee8`
+- Health HTTP do container inicial:
+  - tentativas `1/30` a `5/30`: `health_status_code=000`
+  - tentativa `6/30`: `health_status_code=200`, mas apenas `healthy_waiting_for_stability`
+  - tentativas `7/30` a `30/30`: `health_status_code=000`
+- O health exigia `required_consecutive_successes=3`.
+- A tentativa final teve:
+  - `health_status_code=000`
+  - `health_error=curl_exit_code=28`
+  - `health_duration_ms=3060`
+  - `reason=http_health_not_ready`
+- `2026-05-27T17:13:02.385Z`: health falhou em definitivo.
+- `2026-05-27T17:13:02.451Z`: Balancer publicou status `error`.
+- `2026-05-27T17:13:02.546Z`: Manager respondeu `500`.
+- Duracao do `POST /v1/worker`: `104324ms`.
+- Erro final: `Worker service is not healthy`.
+
+### Linha Do Tempo Da Recriacao
+
+- `2026-05-27T17:13:52.970Z`: `PATCH /v1/worker/019e6a6b-5103-72b3-90fd-3599264bd132` entrou no Manager.
+- `2026-05-27T17:13:53.181Z`: Balancer iniciou lifecycle `recreate_worker`.
+- `2026-05-27T17:13:53.472Z`: Balancer inspecionou o container antigo `be87...` como `running`.
+- `2026-05-27T17:13:53.644Z`: removeu o container antigo.
+- `2026-05-27T17:13:54.145Z`: criou novo container:
+  - `container_id=5aee8bebc00854105f42e77b72319a722f2b770c97c90dcc264ab09902b44b95`
+- Health HTTP do container novo:
+  - tentativas `1/30` a `4/30`: `health_status_code=000`
+  - tentativa `5/30`: `200`, ainda aguardando estabilidade
+  - tentativa `6/30`: `200`, ainda aguardando estabilidade
+  - tentativa `7/30`: `200`, `healthy`
+- `2026-05-27T17:14:00.599Z`: readiness gRPC passou em `019e6a6b-5103-72b3-90fd-3599264bd132:50052`.
+- `2026-05-27T17:14:00.687Z`: status `disponible` publicado.
+- Duracao do `PATCH`: `208ms` no Manager; o trabalho assincrono do Balancer levou cerca de `7s`.
+
+### Causa Do Problema
+
+O problema nao foi o banco nem o frontend. O backend ficou preso esperando a criacao inicial terminar.
+
+O container inicial `be87...` iniciou, chegou a responder um unico health `200`, mas nao conseguiu manter `3` sucessos consecutivos. Depois disso, todas as chamadas de health deram `000` com `curl_exit_code=28`, ou seja, o `curl` dentro do container estourou timeout ao chamar `http://127.0.0.1:3005/v1/health/check`.
+
+Como a criacao inicial espera `30` tentativas com deadline HTTP de `3000ms` e delay de `1000ms`, o request ficou bloqueado por cerca de `104s`. Ao final, o worker foi marcado como `error`. Quando o usuario clicou em recriar, o container ruim foi removido e um novo container subiu normalmente.
+
+Em termos praticos: a primeira criacao sofreu um container de boot instavel/flapping. O sistema detectou a falha, mas demorou demais e nao tentou automaticamente o mesmo remedio que o usuario aplicou manualmente: remover e recriar o container.
+
+### Lacuna De Telemetria Encontrada
+
+Os logs foram suficientes para ver onde o tempo foi gasto, mas nao foram suficientes para explicar por que o container `be87...` parou de responder internamente.
+
+Nao apareceram logs do app `baileys` para o container `be87...` no Loki. So apareceram os health checks feitos pelo Balancer. Ja o container recriado `5aee...` emitiu logs normais de Kafka/notify.
+
+Isso indica que, quando o container falha cedo antes de emitir logs, a investigacao depende de `docker inspect` e `docker logs --tail` coletados pelo Balancer antes de marcar erro/remover.
+
+### Telemetria Implementada
+
+Foi adicionada telemetria defensiva em `packages/services/workerCommandHandler.service.ts`:
+
+- novo helper `recordContainerDiagnosticsSafely(workerId, reason)`
+- antes de marcar erro por falha de health na criacao:
+  - `reason=create_health_failed`
+- antes de marcar erro por falha de readiness gRPC na criacao:
+  - `reason=create_grpc_readiness_failed`
+- antes de marcar erro por falha de health na recriacao:
+  - `reason=recreate_health_failed`
+- antes de marcar erro por falha de readiness gRPC na recriacao:
+  - `reason=recreate_grpc_readiness_failed`
+- o caminho de QR que registra diagnostico antes de recriar agora usa o helper seguro, para diagnostico nao quebrar o fluxo principal.
+
+Tambem foram adicionados testes em:
+
+- `packages/tests/contracts/services/workerCommandHandler.service.test.ts`
+
+Teste executado:
+
+```bash
+pnpm test -- packages/tests/contracts/services/workerCommandHandler.service.test.ts
+```
+
+Resultado:
+
+- `19` testes passaram.
+
+### Correcao Recomendada Para Resolver O Fluxo
+
+1. Automatizar a recriacao uma vez durante `create_worker`.
+   - Se a criacao inicial falhar health, registrar diagnostico, remover o container e tentar criar novamente uma unica vez antes de retornar `500`.
+   - Isso espelha o que o usuario fez manualmente e que funcionou.
+   - Usar `create_attempt=1/2`, `create_attempt=2/2` nos logs.
+
+2. Detectar health flapping e falhar mais cedo.
+   - Se houve pelo menos um `200`, mas em seguida ocorrerem `2` ou `3` timeouts `curl_exit_code=28`, classificar como `health_flapping_after_success`.
+   - Nao aguardar todas as `30` tentativas nesse caso.
+   - Registrar diagnostico e recriar.
+
+3. Separar timeout de criacao sincronica do tempo de provisionamento.
+   - O `POST /v1/worker` nao deve ficar preso por `104s` no modal.
+   - Opcoes:
+     - manter o request sincrono, mas com retry automatico e limite menor
+     - ou retornar rapido com status `creating` e finalizar por evento assincrono
+   - Se a UI continuar sincrona, o backend precisa ter limite previsivel, por exemplo `30s` a `45s`.
+
+4. Garantir que erro de criacao publique detalhes operacionais sanitizados.
+   - Quando `CONNECTION_LIFECYCLE_DEBUG_ENABLED=true`, logs devem incluir:
+     - `worker_id`
+     - `account_id`
+     - `server_id`
+     - `worker_type`
+     - `container_id`
+     - `create_attempt`
+     - `health_attempt`
+     - `health_status_code`
+     - `health_error`
+     - `consecutive_successes`
+     - `required_consecutive_successes`
+     - `container_diagnostics`
+
+5. Manter a regra: so marcar `disponible` depois de health estavel e gRPC ready.
+   - Essa parte esta correta.
+   - O problema e que, quando o container nao estabiliza, o sistema deve se recuperar automaticamente em vez de deixar o usuario descobrir e clicar em recriar.
+
+### Resolucao Esperada
+
+Com a correcao completa:
+
+1. Usuario cria canal.
+2. Balancer cria container.
+3. Se o container fica estavel, marca `disponible`.
+4. Se o container flapa ou nao fica saudavel:
+   - registra diagnostico
+   - remove container ruim
+   - cria outro automaticamente uma vez
+5. Se a segunda criacao funciona, o usuario ve `disponible` sem precisar dar `F5` nem clicar em `Recriar Canal`.
+6. Se a segunda criacao falhar, marca `error`, mas com diagnostico suficiente para saber se foi Docker, health HTTP, gRPC, proxy, Kafka ou startup do worker.
+
+### Consultas Loki Usadas
+
+Trace da criacao inicial:
+
+```logql
+{service_name=~"balance|baileys|manager"}
+| trace_id="c0caa392f98dd915b428fb1a45c39a10"
+```
+
+Trace da recriacao:
+
+```logql
+{service_name=~"balance|baileys|manager"}
+| trace_id="165352eda18765cd0b86cb785f8db7eb"
+```
+
+HTTP do Manager:
+
+```logql
+{service_name="manager"}
+|= "/v1/worker"
+```
+
+Logs do worker Baileys:
+
+```logql
+{service_name="baileys"}
+|= "019e6a6b-5103-72b3-90fd-3599264bd132"
 ```

@@ -137,6 +137,76 @@ describe('ContainerHealthService', () => {
     );
   });
 
+  it('fails fast when health flaps after a first successful response', async () => {
+    const service = new ContainerHealthService();
+
+    const getHttpStatusCode = jest
+      .spyOn(service as any, 'getHttpStatusCode')
+      .mockResolvedValueOnce({ statusCode: '200', durationMs: 1 })
+      .mockResolvedValueOnce({
+        statusCode: '000',
+        durationMs: 3000,
+        error: 'curl_exit_code=28',
+      })
+      .mockResolvedValueOnce({
+        statusCode: '',
+        durationMs: 3000,
+        error: 'empty_status_code; curl_exit_code=28',
+      })
+      .mockResolvedValueOnce({
+        statusCode: '000',
+        durationMs: 3000,
+        error: 'curl_exit_code=28',
+      });
+    jest.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
+
+    await expect(
+      service.checkServiceHealth('container-1', {
+        maxAttempts: 10,
+        delayMs: 1,
+        requiredConsecutiveSuccesses: 3,
+        failFastAfterFirstSuccessFailures: 3,
+      })
+    ).resolves.toEqual(
+      expect.objectContaining({
+        healthy: false,
+        health_attempt: 4,
+        consecutive_successes: 0,
+        health_failure_reason: 'health_flapping_after_success',
+      })
+    );
+    expect(getHttpStatusCode).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not fail fast before the first successful response', async () => {
+    const service = new ContainerHealthService();
+
+    const getHttpStatusCode = jest
+      .spyOn(service as any, 'getHttpStatusCode')
+      .mockResolvedValue({
+        statusCode: '000',
+        durationMs: 3000,
+        error: 'curl_exit_code=28',
+      });
+    jest.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
+
+    await expect(
+      service.checkServiceHealth('container-1', {
+        maxAttempts: 4,
+        delayMs: 1,
+        requiredConsecutiveSuccesses: 3,
+        failFastAfterFirstSuccessFailures: 3,
+      })
+    ).resolves.toEqual(
+      expect.objectContaining({
+        healthy: false,
+        health_attempt: 4,
+        health_failure_reason: 'http_health_not_ready',
+      })
+    );
+    expect(getHttpStatusCode).toHaveBeenCalledTimes(4);
+  });
+
   it('returns http status code from docker exec stream and handles errors', async () => {
     const service = new ContainerHealthService();
     const execStream = new EventEmitter();

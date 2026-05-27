@@ -27,4 +27,15 @@ describe('WorkerGrpcClientService', () => {
       "await this.call('RecreateWorker', payload, timeoutMs);"
     );
   });
+
+  it('uses a bounded create dispatch by default', () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), 'packages/services/workerGrpcClient.service.ts'),
+      'utf8'
+    );
+
+    expect(source).toContain(
+      "await this.call('CreateWorker', payload, timeoutMs);"
+    );
+  });
 });

@@ -56,8 +56,11 @@ export class WorkerGrpcClientService {
     private readonly workerGrpcRegistryService: WorkerGrpcRegistryService
   ) {}
 
-  async createWorker(payload: IWorkerPayload): Promise<void> {
-    await this.call('CreateWorker', payload);
+  async createWorker(
+    payload: IWorkerPayload,
+    timeoutMs: number = GRPC_DEADLINE_MS
+  ): Promise<void> {
+    await this.call('CreateWorker', payload, timeoutMs);
   }
 
   async deleteWorker(payload: IWorkerPayload): Promise<void> {

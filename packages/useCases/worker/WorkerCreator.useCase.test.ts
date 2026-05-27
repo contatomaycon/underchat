@@ -34,6 +34,10 @@ jest.mock('uuid', () => ({
 
 const t = ((key: string) => key) as never;
 
+const flushPromises = async (): Promise<void> => {
+  await new Promise((resolve) => setImmediate(resolve));
+};
+
 function buildUseCase() {
   const callOrder: string[] = [];
 
@@ -44,10 +48,19 @@ function buildUseCase() {
       callOrder.push('create-worker');
       return true;
     }),
-    updateWorkerById: jest.fn(async () => {
-      callOrder.push('mark-disponible');
-      return true;
-    }),
+    updateWorkerById: jest.fn(
+      async (
+        _accountId: string,
+        input: { worker_status_id?: EWorkerStatus }
+      ) => {
+        callOrder.push(
+          input?.worker_status_id === EWorkerStatus.error
+            ? 'mark-error'
+            : 'update-worker'
+        );
+        return true;
+      }
+    ),
   };
 
   const accountService = {
@@ -114,7 +127,7 @@ describe('WorkerCreatorUseCase', () => {
     jest.clearAllMocks();
   });
 
-  it('creates active security and typing defaults immediately after creating a channel', async () => {
+  it('creates active security and typing defaults before dispatching channel creation', async () => {
     const deps = buildUseCase();
 
     await expect(
@@ -127,7 +140,7 @@ describe('WorkerCreatorUseCase', () => {
 
     expect(deps.workerService.createWorker).toHaveBeenCalledWith({
       worker_id: 'worker-created-id',
-      worker_status_id: EWorkerStatus.new,
+      worker_status_id: EWorkerStatus.creating,
       worker_type_id: EWorkerType.baileys,
       server_id: 'server-1',
       account_id: 'account-1',
@@ -144,6 +157,7 @@ describe('WorkerCreatorUseCase', () => {
         action: EWorkerAction.create,
         worker_id: 'worker-created-id',
         account_id: 'account-1',
+        worker_status_id: EWorkerStatus.creating,
       })
     );
     expect(deps.callOrder).toEqual([
@@ -152,7 +166,77 @@ describe('WorkerCreatorUseCase', () => {
       'security-key-default',
       'publish',
       'grpc-create',
-      'mark-disponible',
     ]);
+    expect(deps.workerService.updateWorkerById).not.toHaveBeenCalled();
+  });
+
+  it('returns after publishing creating status without waiting for gRPC completion', async () => {
+    const deps = buildUseCase();
+    let resolveCreate!: () => void;
+    deps.workerGrpcClientService.createWorker.mockImplementationOnce(() => {
+      deps.callOrder.push('grpc-create');
+      return new Promise<undefined>((resolve) => {
+        resolveCreate = () => resolve(undefined);
+      });
+    });
+
+    await expect(
+      deps.useCase.execute(t, 'account-1', {
+        name: 'Canal principal',
+        server_id: 'server-1',
+        worker_type: EWorkerType.baileys,
+      })
+    ).resolves.toBe(true);
+
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        action: EWorkerAction.create,
+        worker_id: 'worker-created-id',
+        worker_status_id: EWorkerStatus.creating,
+      })
+    );
+    expect(deps.callOrder).toContain('grpc-create');
+    expect(deps.workerService.updateWorkerById).not.toHaveBeenCalled();
+
+    resolveCreate();
+    await flushPromises();
+  });
+
+  it('marks and publishes error when async gRPC dispatch fails', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deps = buildUseCase();
+    deps.workerGrpcClientService.createWorker.mockImplementationOnce(
+      async () => {
+        deps.callOrder.push('grpc-create');
+        throw new Error('grpc failed');
+      }
+    );
+
+    await expect(
+      deps.useCase.execute(t, 'account-1', {
+        name: 'Canal principal',
+        server_id: 'server-1',
+        worker_type: EWorkerType.baileys,
+      })
+    ).resolves.toBe(true);
+    await flushPromises();
+
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      {
+        worker_id: 'worker-created-id',
+        worker_status_id: EWorkerStatus.error,
+      }
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenLastCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-created-id',
+        worker_status_id: EWorkerStatus.error,
+      })
+    );
+
+    jest.restoreAllMocks();
   });
 });

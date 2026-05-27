@@ -97,7 +97,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       return { code: status.INTERNAL, message: msg, details: msg };
     };
 
-    if (action === 'recreate') {
+    if (action === 'create' || action === 'recreate') {
       void handler.handle(payload).catch(handleError);
       callback(null, {});
       return;

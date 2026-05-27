@@ -530,14 +530,16 @@ describe('WorkerCommandHandlerService connection', () => {
       'account-1'
     );
 
-    expect(
-      deps.containerHealthService.checkServiceHealth
-    ).not.toHaveBeenCalled();
     expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
       'worker-1',
       'image_mismatch'
     );
     expect(deps.workerService.createContainerWorker).toHaveBeenCalled();
+    expect(
+      deps.workerService.createContainerWorker.mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      deps.containerHealthService.checkServiceHealth.mock.invocationCallOrder[0]
+    );
   });
 
   it('fails clearly when gRPC readiness never completes and does not request QR', async () => {
@@ -590,9 +592,14 @@ describe('WorkerCommandHandlerService connection', () => {
       worker_type_id: EWorkerType.wwebjs,
     });
 
-    expect(deps.containerHealthService.isServiceHealthy).toHaveBeenCalledWith(
+    expect(deps.containerHealthService.checkServiceHealth).toHaveBeenCalledWith(
       'container-1',
-      { maxAttempts: 30, delayMs: 1000, requiredConsecutiveSuccesses: 3 }
+      {
+        maxAttempts: 30,
+        delayMs: 1000,
+        requiredConsecutiveSuccesses: 3,
+        failFastAfterFirstSuccessFailures: 3,
+      }
     );
     expect(
       deps.workerBaileysGrpcClientService.waitForReady
@@ -614,6 +621,138 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
+  it('retries created workers once when the first container health fails', async () => {
+    const deps = buildHandler();
+    deps.workerService.createContainerWorker
+      .mockResolvedValueOnce('container-bad')
+      .mockResolvedValueOnce('container-good');
+    deps.containerHealthService.checkServiceHealth
+      .mockResolvedValueOnce(
+        buildContainerHealthResult({
+          healthy: false,
+          container_id: 'container-bad',
+          health_failure_reason: 'http_health_not_ready',
+        })
+      )
+      .mockResolvedValueOnce(
+        buildContainerHealthResult({
+          healthy: true,
+          container_id: 'container-good',
+        })
+      );
+
+    await deps.handler.handle({
+      action: EWorkerAction.create,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+    });
+
+    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
+      'worker-1',
+      'create_health_failed'
+    );
+    expect(deps.workerService.removeContainerWorker).toHaveBeenCalledWith(
+      'worker-1',
+      false
+    );
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledTimes(2);
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady
+    ).toHaveBeenCalledWith('worker-1', EWorkerType.wwebjs, undefined);
+  });
+
+  it('marks created workers as error only after both health attempts fail', async () => {
+    const deps = buildHandler();
+    deps.containerHealthService.checkServiceHealth.mockResolvedValue(
+      buildContainerHealthResult({
+        healthy: false,
+        health_failure_reason: 'health_flapping_after_success',
+      })
+    );
+
+    await expect(
+      deps.handler.handle({
+        action: EWorkerAction.create,
+        worker_id: 'worker-1',
+        server_id: 'server-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+      })
+    ).rejects.toThrow('Worker service is not healthy');
+
+    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
+      'worker-1',
+      'create_health_flapping_after_success'
+    );
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledTimes(2);
+    expect(deps.workerService.removeContainerWorker).toHaveBeenCalledTimes(1);
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.workerService.updateWorkerById.mock.calls.some(
+        ([, input]) =>
+          getWorkerStatusFromUpdateInput(input) === EWorkerStatus.error
+      )
+    ).toBe(true);
+  });
+
+  it('retries created workers once when gRPC readiness fails', async () => {
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.waitForReady
+      .mockRejectedValueOnce(new Error('gRPC unavailable'))
+      .mockResolvedValueOnce('worker-1:50053');
+
+    await deps.handler.handle({
+      action: EWorkerAction.create,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+    });
+
+    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
+      'worker-1',
+      'create_grpc_readiness_failed'
+    );
+    expect(deps.workerService.removeContainerWorker).toHaveBeenCalledWith(
+      'worker-1',
+      false
+    );
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks created workers as error after both gRPC readiness attempts fail', async () => {
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.waitForReady.mockRejectedValue(
+      new Error('gRPC unavailable')
+    );
+
+    await expect(
+      deps.handler.handle({
+        action: EWorkerAction.create,
+        worker_id: 'worker-1',
+        server_id: 'server-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+      })
+    ).rejects.toThrow('gRPC unavailable');
+
+    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
+      'worker-1',
+      'create_grpc_readiness_failed'
+    );
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledTimes(2);
+    expect(
+      deps.workerService.updateWorkerById.mock.calls.some(
+        ([, input]) =>
+          getWorkerStatusFromUpdateInput(input) === EWorkerStatus.error
+      )
+    ).toBe(true);
+  });
+
   it('marks recreated workers available only after stable health and gRPC readiness', async () => {
     const deps = buildHandler();
 
@@ -626,7 +765,12 @@ describe('WorkerCommandHandlerService connection', () => {
 
     expect(deps.containerHealthService.isServiceHealthy).toHaveBeenCalledWith(
       'container-1',
-      { maxAttempts: 30, delayMs: 1000, requiredConsecutiveSuccesses: 3 }
+      {
+        maxAttempts: 30,
+        delayMs: 1000,
+        requiredConsecutiveSuccesses: 3,
+        failFastAfterFirstSuccessFailures: 3,
+      }
     );
     expect(
       deps.workerBaileysGrpcClientService.waitForReady

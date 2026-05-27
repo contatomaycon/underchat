@@ -16,6 +16,7 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import {
   ContainerHealthService,
   type ContainerHealthCheckOptions,
+  type ContainerHealthResult,
 } from '@core/services/containerHealth.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { WorkerBaileysGrpcClientService } from '@core/services/workerBaileysGrpcClient.service';
@@ -67,6 +68,27 @@ interface ResolvedWorkerDataForContainer {
   workerTypeName?: string;
   workerStatusId?: EWorkerStatus;
   containerId?: string | null;
+}
+
+interface ResolvedWorkerProxyConfig {
+  protocol: EProxyProtocol;
+  host: string;
+  port: number;
+  username?: string | null;
+  password?: string | null;
+}
+
+class WorkerCreateAttemptError extends Error {
+  constructor(
+    message: string,
+    readonly reason: string,
+    readonly containerId?: string,
+    readonly healthResult?: ContainerHealthResult
+  ) {
+    super(message);
+    this.name = 'WorkerCreateAttemptError';
+    Object.setPrototypeOf(this, WorkerCreateAttemptError.prototype);
+  }
 }
 
 @injectable()
@@ -1096,10 +1118,7 @@ export class WorkerCommandHandlerService {
     }
 
     if (inspection.exists) {
-      await this.workerService.recordContainerDiagnostics(
-        workerId,
-        recreateReason
-      );
+      await this.recordContainerDiagnosticsSafely(workerId, recreateReason);
     }
 
     recordConnectionLifecycle({
@@ -1512,6 +1531,7 @@ export class WorkerCommandHandlerService {
         required_consecutive_successes: result.required_consecutive_successes,
         health_duration_ms: result.health_duration_ms,
         health_error: result.health_error,
+        health_failure_reason: result.health_failure_reason,
       });
       return result.healthy;
     } catch (err) {
@@ -1710,16 +1730,7 @@ export class WorkerCommandHandlerService {
   private async resolveWorkerProxyConfig(
     workerId: string,
     serverId: string
-  ): Promise<
-    | {
-        protocol: EProxyProtocol;
-        host: string;
-        port: number;
-        username?: string | null;
-        password?: string | null;
-      }
-    | undefined
-  > {
+  ): Promise<ResolvedWorkerProxyConfig | undefined> {
     try {
       const channelProxy = await this.resolveChannelProxyConfig(workerId);
       if (channelProxy) {
@@ -2070,14 +2081,14 @@ export class WorkerCommandHandlerService {
 
     const healthy = await this.containerHealthService.isServiceHealthy(
       containerId,
-      {
-        maxAttempts: 30,
-        delayMs: 1000,
-        requiredConsecutiveSuccesses: 3,
-      }
+      this.buildNewContainerHealthOptions()
     );
 
     if (!healthy) {
+      await this.recordContainerDiagnosticsSafely(
+        data.worker_id,
+        'recreate_health_failed'
+      );
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
@@ -2096,6 +2107,10 @@ export class WorkerCommandHandlerService {
           'recreate'
         );
       } catch (err) {
+        await this.recordContainerDiagnosticsSafely(
+          data.worker_id,
+          'recreate_grpc_readiness_failed'
+        );
         await this.updateWorkerErrorStatus(
           data.worker_id,
           data.account_id,
@@ -2328,11 +2343,7 @@ export class WorkerCommandHandlerService {
   private async createWorker(
     data: IWorkerPayload,
     connectionRequest?: StatusConnectionWorkerRequest,
-    healthOptions: ContainerHealthCheckOptions = {
-      maxAttempts: 30,
-      delayMs: 1000,
-      requiredConsecutiveSuccesses: 3,
-    }
+    healthOptions: ContainerHealthCheckOptions = {}
   ): Promise<PublishResult> {
     if (!data?.worker_type_id) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
@@ -2340,6 +2351,9 @@ export class WorkerCommandHandlerService {
     }
 
     const workerType = data.worker_type_id;
+    const createMaxAttempts = 2;
+    const resolvedHealthOptions =
+      this.buildNewContainerHealthOptions(healthOptions);
 
     const inputUpdateCreating: IUpdateWorker = {
       worker_id: data.worker_id,
@@ -2379,48 +2393,67 @@ export class WorkerCommandHandlerService {
       data.server_id
     );
 
-    const containerId = await this.retryOperation(
-      async () =>
-        this.workerService.createContainerWorker(
-          imageName,
-          data.worker_id,
-          data.account_id,
-          true,
-          balanceEnvironment.grpcHost,
-          balanceEnvironment.grpcPort,
-          proxy,
-          {
-            workerTypeId: workerType,
-            workerGrpcPort: this.getExpectedWorkerGrpcPort(workerType),
-          }
-        ),
-      (r) => !r
-    );
+    let containerId: string | undefined;
+    let lastError: unknown;
 
-    if (!containerId) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
-      throw new Error('Failed to create worker container');
-    }
-
-    const healthy = await this.containerHealthService.isServiceHealthy(
-      containerId,
-      healthOptions
-    );
-
-    if (!healthy) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
-      throw new Error('Worker service is not healthy');
-    }
-
-    if (this.isWorkerGrpcReadinessRequired(workerType)) {
+    for (
+      let createAttempt = 1;
+      createAttempt <= createMaxAttempts;
+      createAttempt++
+    ) {
       try {
-        await this.waitForWorkerGrpcReady(
-          data.worker_id,
+        containerId = await this.runCreateWorkerProvisionAttempt(
+          data,
           workerType,
-          undefined,
-          'create'
+          imageName,
+          proxy,
+          resolvedHealthOptions,
+          createAttempt,
+          createMaxAttempts
         );
+        break;
       } catch (err) {
+        lastError = err;
+        const reason =
+          err instanceof WorkerCreateAttemptError
+            ? err.reason
+            : 'create_attempt_failed';
+
+        if (createAttempt < createMaxAttempts) {
+          await this.prepareCreateWorkerRetry(
+            data,
+            reason,
+            createAttempt,
+            createMaxAttempts
+          );
+          continue;
+        }
+
+        recordConnectionLifecycle({
+          stage:
+            'connection.balancer.command_handler.create_attempts_exhausted',
+          decision: 'create_worker',
+          outcome: 'error',
+          reason,
+          recreate_reason: reason,
+          level: 'error',
+          worker_type: workerType,
+          create_attempt: createAttempt,
+          create_max_attempts: createMaxAttempts,
+          error: getErrorMessage(err),
+          ...(err instanceof WorkerCreateAttemptError
+            ? {
+                container_id: err.containerId,
+                health_status_code: err.healthResult?.health_status_code,
+                health_error: err.healthResult?.health_error,
+                consecutive_successes: err.healthResult?.consecutive_successes,
+                required_consecutive_successes:
+                  err.healthResult?.required_consecutive_successes,
+                health_failure_reason: err.healthResult?.health_failure_reason,
+              }
+            : {}),
+        });
+
         await this.updateWorkerErrorStatus(
           data.worker_id,
           data.account_id,
@@ -2429,6 +2462,18 @@ export class WorkerCommandHandlerService {
         );
         throw err;
       }
+    }
+
+    if (!containerId) {
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
+      throw lastError instanceof Error
+        ? lastError
+        : new Error('Failed to create worker container');
     }
 
     const inputUpdate: IUpdateWorker = {
@@ -2485,6 +2530,249 @@ export class WorkerCommandHandlerService {
     }
 
     return {} as PublishResult;
+  }
+
+  private buildNewContainerHealthOptions(
+    overrides: ContainerHealthCheckOptions = {}
+  ): ContainerHealthCheckOptions {
+    return {
+      maxAttempts: 30,
+      delayMs: 1000,
+      requiredConsecutiveSuccesses: 3,
+      failFastAfterFirstSuccessFailures: 3,
+      ...overrides,
+    };
+  }
+
+  private async runCreateWorkerProvisionAttempt(
+    data: IWorkerPayload,
+    workerType: EWorkerType,
+    imageName: ReturnType<typeof getImageWorker>,
+    proxy: ResolvedWorkerProxyConfig | undefined,
+    healthOptions: ContainerHealthCheckOptions,
+    createAttempt: number,
+    createMaxAttempts: number
+  ): Promise<string> {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.create_attempt_started',
+      decision: 'create_worker',
+      outcome: 'started',
+      worker_type: workerType,
+      create_attempt: createAttempt,
+      create_max_attempts: createMaxAttempts,
+    });
+
+    const containerId = await this.retryOperation(
+      async () =>
+        this.workerService.createContainerWorker(
+          imageName,
+          data.worker_id,
+          data.account_id,
+          createAttempt === 1,
+          balanceEnvironment.grpcHost,
+          balanceEnvironment.grpcPort,
+          proxy,
+          {
+            workerTypeId: workerType,
+            workerGrpcPort: this.getExpectedWorkerGrpcPort(workerType),
+          }
+        ),
+      (r) => !r
+    );
+
+    if (!containerId) {
+      throw new WorkerCreateAttemptError(
+        'Failed to create worker container',
+        'create_container_failed'
+      );
+    }
+
+    let healthResult: ContainerHealthResult;
+    try {
+      healthResult = await this.containerHealthService.checkServiceHealth(
+        containerId,
+        healthOptions
+      );
+    } catch (err) {
+      await this.recordContainerDiagnosticsSafely(
+        data.worker_id,
+        'create_health_failed'
+      );
+      throw new WorkerCreateAttemptError(
+        getErrorMessage(err),
+        'create_health_failed',
+        containerId
+      );
+    }
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.create_health_result',
+      decision: 'check_created_container_health',
+      outcome: healthResult.healthy ? 'healthy' : 'unhealthy',
+      reason: healthResult.health_failure_reason,
+      worker_type: workerType,
+      container_id: containerId,
+      create_attempt: createAttempt,
+      create_max_attempts: createMaxAttempts,
+      health_status_code: healthResult.health_status_code || 'none',
+      health_attempt: healthResult.health_attempt,
+      health_max_attempts: healthResult.health_max_attempts,
+      health_delay_ms: healthResult.health_delay_ms,
+      health_error: healthResult.health_error,
+      consecutive_successes: healthResult.consecutive_successes,
+      required_consecutive_successes:
+        healthResult.required_consecutive_successes,
+      health_duration_ms: healthResult.health_duration_ms,
+      health_failure_reason: healthResult.health_failure_reason,
+    });
+
+    if (!healthResult.healthy) {
+      const reason = this.getCreateHealthFailureReason(healthResult);
+
+      if (reason === 'create_health_flapping_after_success') {
+        recordConnectionLifecycle({
+          stage:
+            'connection.balancer.command_handler.create_health_flapping_after_success',
+          decision: 'check_created_container_health',
+          outcome: 'failed',
+          reason,
+          recreate_reason: reason,
+          level: 'warn',
+          worker_type: workerType,
+          container_id: containerId,
+          create_attempt: createAttempt,
+          create_max_attempts: createMaxAttempts,
+          health_status_code: healthResult.health_status_code || 'none',
+          health_error: healthResult.health_error,
+          consecutive_successes: healthResult.consecutive_successes,
+          required_consecutive_successes:
+            healthResult.required_consecutive_successes,
+        });
+      }
+
+      await this.recordContainerDiagnosticsSafely(data.worker_id, reason);
+      throw new WorkerCreateAttemptError(
+        'Worker service is not healthy',
+        reason,
+        containerId,
+        healthResult
+      );
+    }
+
+    if (this.isWorkerGrpcReadinessRequired(workerType)) {
+      try {
+        await this.waitForWorkerGrpcReady(
+          data.worker_id,
+          workerType,
+          undefined,
+          'create'
+        );
+      } catch (err) {
+        await this.recordContainerDiagnosticsSafely(
+          data.worker_id,
+          'create_grpc_readiness_failed'
+        );
+        throw new WorkerCreateAttemptError(
+          getErrorMessage(err),
+          'create_grpc_readiness_failed',
+          containerId,
+          healthResult
+        );
+      }
+    }
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.create_attempt_success',
+      decision: 'create_worker',
+      outcome: 'success',
+      worker_type: workerType,
+      container_id: containerId,
+      create_attempt: createAttempt,
+      create_max_attempts: createMaxAttempts,
+      health_status_code: healthResult.health_status_code || 'none',
+      consecutive_successes: healthResult.consecutive_successes,
+      required_consecutive_successes:
+        healthResult.required_consecutive_successes,
+    });
+
+    return containerId;
+  }
+
+  private getCreateHealthFailureReason(
+    healthResult: ContainerHealthResult
+  ): string {
+    if (
+      healthResult.health_failure_reason === 'health_flapping_after_success'
+    ) {
+      return 'create_health_flapping_after_success';
+    }
+
+    return 'create_health_failed';
+  }
+
+  private async prepareCreateWorkerRetry(
+    data: IWorkerPayload,
+    reason: string,
+    createAttempt: number,
+    createMaxAttempts: number
+  ): Promise<void> {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.create_attempt_retrying',
+      decision: 'create_worker',
+      outcome: 'retrying',
+      reason,
+      recreate_reason: reason,
+      worker_type: data.worker_type_id,
+      create_attempt: createAttempt,
+      create_max_attempts: createMaxAttempts,
+    });
+
+    try {
+      const removed = await this.workerService.removeContainerWorker(
+        data.worker_id,
+        false
+      );
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.create_retry_container_removed',
+        decision: 'remove_failed_created_container',
+        outcome: removed ? 'removed' : 'not_removed',
+        reason,
+        recreate_reason: reason,
+        worker_type: data.worker_type_id,
+        create_attempt: createAttempt,
+        create_max_attempts: createMaxAttempts,
+      });
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.create_retry_container_remove_error',
+        decision: 'remove_failed_created_container',
+        outcome: 'error',
+        reason,
+        recreate_reason: reason,
+        level: 'warn',
+        worker_type: data.worker_type_id,
+        create_attempt: createAttempt,
+        create_max_attempts: createMaxAttempts,
+        error: getErrorMessage(err),
+      });
+    }
+  }
+
+  private async recordContainerDiagnosticsSafely(
+    workerId: string,
+    reason: string
+  ): Promise<void> {
+    try {
+      await this.workerService.recordContainerDiagnostics(workerId, reason);
+    } catch (err) {
+      console.error('Failed to record worker container diagnostics', {
+        workerId,
+        reason,
+        error: getErrorMessage(err),
+      });
+    }
   }
 
   private readonly sleep = (ms: number): Promise<void> =>

@@ -57,6 +57,51 @@ export class WorkerCreatorUseCase {
     }
   }
 
+  private dispatchWorkerCreated(
+    t: TFunction<'translation', undefined>,
+    payload: IWorkerPayload
+  ): void {
+    void this.onWorkerCreated(t, payload).catch((err) => {
+      void this.publishWorkerCreateDispatchError(payload, err).catch(
+        (publishErr) => {
+          console.error('Failed to publish worker creation dispatch error:', {
+            workerId: payload.worker_id,
+            accountId: payload.account_id,
+            error:
+              publishErr instanceof Error
+                ? publishErr.message
+                : String(publishErr),
+          });
+        }
+      );
+    });
+  }
+
+  private async publishWorkerCreateDispatchError(
+    payload: IWorkerPayload,
+    error: unknown
+  ): Promise<void> {
+    console.error('Failed to dispatch worker creation:', {
+      workerId: payload.worker_id,
+      accountId: payload.account_id,
+      serverId: payload.server_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    await this.workerService.updateWorkerById(payload.account_id, {
+      worker_id: payload.worker_id,
+      worker_status_id: EWorkerStatus.error,
+    });
+
+    await this.centrifugoService.publishSub(
+      workerCentrifugoQueue(payload.account_id),
+      {
+        ...payload,
+        worker_status_id: EWorkerStatus.error,
+      }
+    );
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -102,7 +147,7 @@ export class WorkerCreatorUseCase {
 
     const createWorkerPayload: ICreateWorker = {
       worker_id: workerId,
-      worker_status_id: EWorkerStatus.new,
+      worker_status_id: EWorkerStatus.creating,
       worker_type_id: workerType,
       server_id: serverId,
       account_id: accountId,
@@ -124,7 +169,7 @@ export class WorkerCreatorUseCase {
     const payloadCreate: IWorkerPayload = {
       action: EWorkerAction.create,
       worker_id: workerId,
-      worker_status_id: EWorkerStatus.new,
+      worker_status_id: EWorkerStatus.creating,
       worker_type_id: workerType,
       server_id: serverId,
       account_id: accountId,
@@ -136,12 +181,7 @@ export class WorkerCreatorUseCase {
       payloadCreate
     );
 
-    await this.onWorkerCreated(t, payloadCreate);
-
-    await this.workerService.updateWorkerById(accountId, {
-      worker_id: workerId,
-      worker_status_id: EWorkerStatus.disponible,
-    });
+    this.dispatchWorkerCreated(t, payloadCreate);
 
     return isCreated;
   }
