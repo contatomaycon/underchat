@@ -11,6 +11,7 @@ const HEALTH_HTTP_DEADLINE_MS = 3000;
 export interface ContainerHealthCheckOptions {
   maxAttempts?: number;
   delayMs?: number;
+  requiredConsecutiveSuccesses?: number;
 }
 
 export interface ContainerHealthAttempt {
@@ -20,6 +21,10 @@ export interface ContainerHealthAttempt {
   health_max_attempts: number;
   health_delay_ms: number;
   health_status_code: string;
+  consecutive_successes: number;
+  required_consecutive_successes: number;
+  health_duration_ms: number;
+  health_error?: string;
 }
 
 export interface ContainerHealthResult {
@@ -30,7 +35,17 @@ export interface ContainerHealthResult {
   health_max_attempts: number;
   health_delay_ms: number;
   health_status_code: string;
+  consecutive_successes: number;
+  required_consecutive_successes: number;
+  health_duration_ms: number;
+  health_error?: string;
   attempts: ContainerHealthAttempt[];
+}
+
+interface ContainerHttpStatusResult {
+  statusCode: string;
+  durationMs: number;
+  error?: string;
 }
 
 @injectable()
@@ -100,8 +115,18 @@ export class ContainerHealthService {
   ): Promise<ContainerHealthResult> {
     const maxAttempts = overrides?.maxAttempts ?? defaultMaxAttempts;
     const delayMs = overrides?.delayMs ?? defaultDelayMs;
+    const configuredRequiredConsecutiveSuccesses =
+      overrides?.requiredConsecutiveSuccesses ?? 1;
+    const requiredConsecutiveSuccesses =
+      Number.isFinite(configuredRequiredConsecutiveSuccesses) &&
+      configuredRequiredConsecutiveSuccesses > 0
+        ? Math.floor(configuredRequiredConsecutiveSuccesses)
+        : 1;
     const attempts: ContainerHealthAttempt[] = [];
     let lastStatusCode = '';
+    let lastHealthError: string | undefined;
+    let lastHealthDurationMs = 0;
+    let consecutiveSuccesses = 0;
 
     recordConnectionLifecycle({
       stage: `connection.balancer.container_health.${healthType}_start`,
@@ -111,12 +136,20 @@ export class ContainerHealthService {
       health_url: url,
       health_max_attempts: maxAttempts,
       health_delay_ms: delayMs,
+      required_consecutive_successes: requiredConsecutiveSuccesses,
       deadline_ms: HEALTH_HTTP_DEADLINE_MS,
     });
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const code = await this.getHttpStatusCode(containerId, url);
+      const probe = this.normalizeHttpStatusProbe(
+        await this.getHttpStatusCode(containerId, url)
+      );
+      const code = probe.statusCode;
       lastStatusCode = code;
+      lastHealthError = probe.error;
+      lastHealthDurationMs = probe.durationMs;
+      const hasHealthyStatus = Number(code) === 200;
+      consecutiveSuccesses = hasHealthyStatus ? consecutiveSuccesses + 1 : 0;
       const attemptResult: ContainerHealthAttempt = {
         container_id: containerId,
         health_url: url,
@@ -124,20 +157,32 @@ export class ContainerHealthService {
         health_max_attempts: maxAttempts,
         health_delay_ms: delayMs,
         health_status_code: code,
+        consecutive_successes: consecutiveSuccesses,
+        required_consecutive_successes: requiredConsecutiveSuccesses,
+        health_duration_ms: probe.durationMs,
+        ...(probe.error ? { health_error: probe.error } : {}),
       };
       attempts.push(attemptResult);
 
-      const healthy = Number(code) === 200;
+      const healthy = consecutiveSuccesses >= requiredConsecutiveSuccesses;
       recordConnectionLifecycle({
         stage: `connection.balancer.container_health.${healthType}_attempt`,
         decision: 'http_health_check',
-        outcome: healthy ? 'healthy' : 'unhealthy',
+        outcome: healthy
+          ? 'healthy'
+          : hasHealthyStatus
+            ? 'healthy_waiting_for_stability'
+            : 'unhealthy',
         container_id: containerId,
         health_url: url,
         health_status_code: code || 'none',
         health_attempt: attempt,
         health_max_attempts: maxAttempts,
         health_delay_ms: delayMs,
+        consecutive_successes: consecutiveSuccesses,
+        required_consecutive_successes: requiredConsecutiveSuccesses,
+        health_duration_ms: probe.durationMs,
+        health_error: probe.error,
         deadline_ms: HEALTH_HTTP_DEADLINE_MS,
       });
 
@@ -152,6 +197,10 @@ export class ContainerHealthService {
           health_attempt: attempt,
           health_max_attempts: maxAttempts,
           health_delay_ms: delayMs,
+          consecutive_successes: consecutiveSuccesses,
+          required_consecutive_successes: requiredConsecutiveSuccesses,
+          health_duration_ms: probe.durationMs,
+          health_error: probe.error,
           deadline_ms: HEALTH_HTTP_DEADLINE_MS,
         });
 
@@ -163,6 +212,10 @@ export class ContainerHealthService {
           health_max_attempts: maxAttempts,
           health_delay_ms: delayMs,
           health_status_code: code,
+          consecutive_successes: consecutiveSuccesses,
+          required_consecutive_successes: requiredConsecutiveSuccesses,
+          health_duration_ms: probe.durationMs,
+          ...(probe.error ? { health_error: probe.error } : {}),
           attempts,
         };
       }
@@ -184,6 +237,10 @@ export class ContainerHealthService {
       health_attempt: maxAttempts,
       health_max_attempts: maxAttempts,
       health_delay_ms: delayMs,
+      consecutive_successes: consecutiveSuccesses,
+      required_consecutive_successes: requiredConsecutiveSuccesses,
+      health_duration_ms: lastHealthDurationMs,
+      health_error: lastHealthError,
       deadline_ms: HEALTH_HTTP_DEADLINE_MS,
     });
 
@@ -195,6 +252,10 @@ export class ContainerHealthService {
       health_max_attempts: maxAttempts,
       health_delay_ms: delayMs,
       health_status_code: lastStatusCode,
+      consecutive_successes: consecutiveSuccesses,
+      required_consecutive_successes: requiredConsecutiveSuccesses,
+      health_duration_ms: lastHealthDurationMs,
+      ...(lastHealthError ? { health_error: lastHealthError } : {}),
       attempts,
     };
   }
@@ -202,7 +263,8 @@ export class ContainerHealthService {
   private async getHttpStatusCode(
     containerId: string,
     url: string
-  ): Promise<string> {
+  ): Promise<ContainerHttpStatusResult> {
+    const startedAt = Date.now();
     try {
       const container = this.docker.getContainer(containerId);
 
@@ -235,15 +297,69 @@ export class ContainerHealthService {
       this.docker.modem.demuxStream(execStream, stdoutStream, stderrStream);
 
       const chunks: string[] = [];
+      const errorChunks: string[] = [];
 
       stdoutStream.on('data', (chunk) => chunks.push(chunk.toString()));
+      stderrStream.on('data', (chunk) => errorChunks.push(chunk.toString()));
 
-      await new Promise<void>((resolve) => execStream.on('end', resolve));
+      await new Promise<void>((resolve, reject) => {
+        execStream.on('end', resolve);
+        execStream.on('error', reject);
+      });
 
-      return chunks.join('').trim();
-    } catch {
-      return '';
+      const statusCode = chunks.join('').trim();
+      const stderr = this.sanitizeHealthError(errorChunks.join(''));
+      const execInspection = (await execInstance.inspect().catch(() => {
+        return undefined;
+      })) as { ExitCode?: number } | undefined;
+      const exitCode = execInspection?.ExitCode;
+      const errorParts = [
+        statusCode ? undefined : 'empty_status_code',
+        exitCode !== undefined && exitCode !== 0
+          ? `curl_exit_code=${exitCode}`
+          : undefined,
+        stderr,
+      ].filter((part): part is string => Boolean(part));
+
+      return {
+        statusCode,
+        durationMs: Date.now() - startedAt,
+        ...(errorParts.length > 0 ? { error: errorParts.join('; ') } : {}),
+      };
+    } catch (error) {
+      return {
+        statusCode: '',
+        durationMs: Date.now() - startedAt,
+        error: this.sanitizeHealthError(
+          error instanceof Error ? error.message : String(error)
+        ),
+      };
     }
+  }
+
+  private normalizeHttpStatusProbe(
+    result: ContainerHttpStatusResult | string
+  ): ContainerHttpStatusResult {
+    if (typeof result === 'string') {
+      return {
+        statusCode: result,
+        durationMs: 0,
+        ...(result ? {} : { error: 'empty_status_code' }),
+      };
+    }
+
+    return result;
+  }
+
+  private sanitizeHealthError(value: string | undefined): string | undefined {
+    const normalized = value?.replace(/\s+/gu, ' ').trim();
+    if (!normalized) {
+      return undefined;
+    }
+
+    return normalized.length > 240
+      ? `${normalized.slice(0, 240)}...`
+      : normalized;
   }
 
   private sleep(ms: number): Promise<void> {

@@ -3,8 +3,12 @@ import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionTyp
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import type { ContainerHealthResult } from '@core/services/containerHealth.service';
 import { WorkerCommandHandlerService } from '@core/services/workerCommandHandler.service';
-import type { WorkerService } from '@core/services/worker.service';
+import type {
+  WorkerContainerInspection,
+  WorkerService,
+} from '@core/services/worker.service';
 
 jest.mock('@core/services/worker.service', () => ({
   WorkerService: class WorkerService {},
@@ -54,6 +58,57 @@ jest.mock('uuid', () => ({
   v7: jest.fn(() => 'uuid-v7'),
 }));
 
+const buildWorkerContainerInspection = (
+  overrides: Partial<WorkerContainerInspection> = {}
+): WorkerContainerInspection => ({
+  exists: true,
+  container_id: 'container-1',
+  container_name: 'worker-1',
+  container_image: 'under-worker-wwebjs:latest',
+  container_labels: {
+    'underchat.worker_id': 'worker-1',
+    'underchat.account_id': 'account-1',
+    'underchat.worker_type_id': EWorkerType.wwebjs,
+    'underchat.worker_image': 'under-worker-wwebjs:latest',
+    'underchat.worker_grpc_port': '50053',
+  },
+  container_env: {
+    WORKER_ID: 'worker-1',
+    ACCOUNT_ID: 'account-1',
+    WORKER_TYPE_ID: EWorkerType.wwebjs,
+    WORKER_IMAGE: 'under-worker-wwebjs:latest',
+    WORKER_GRPC_PORT: '50053',
+  },
+  container_state: 'running',
+  container_status: 'running',
+  container_started_at: '2026-01-01T00:00:00Z',
+  container_finished_at: '0001-01-01T00:00:00Z',
+  running: true,
+  ...overrides,
+});
+
+const getWorkerStatusFromUpdateInput = (
+  input: unknown
+): EWorkerStatus | undefined =>
+  (input as { worker_status_id?: EWorkerStatus } | undefined)?.worker_status_id;
+
+const buildContainerHealthResult = (
+  overrides: Partial<ContainerHealthResult> = {}
+): ContainerHealthResult => ({
+  healthy: true,
+  container_id: 'container-1',
+  health_url: 'http://127.0.0.1:3005/v1/health/check',
+  health_attempt: 1,
+  health_max_attempts: 1,
+  health_delay_ms: 0,
+  health_status_code: '200',
+  consecutive_successes: 1,
+  required_consecutive_successes: 1,
+  health_duration_ms: 1,
+  attempts: [],
+  ...overrides,
+});
+
 function buildHandler(
   overrides: {
     cleanupError?: unknown;
@@ -68,7 +123,9 @@ function buildHandler(
 
       return overrides.cleanupResult ?? true;
     }),
-    updateWorkerById: jest.fn(async () => true),
+    updateWorkerById: jest.fn<Promise<boolean>, [string, unknown]>(
+      async () => true
+    ),
     deleteWorkerById: jest.fn(async () => true),
     existsWorkerById: jest.fn(async () => true),
     removeContainerWorker: jest.fn(async () => true),
@@ -78,19 +135,21 @@ function buildHandler(
     viewWorker: jest.fn(async () => ({
       server: { id: 'server-1' },
       type: { id: EWorkerType.wwebjs },
+      status: { id: EWorkerStatus.disponible },
     })),
+    viewWorkerPhoneConnectionDate: jest.fn(async () => ({
+      id: 'worker-1',
+      number: null,
+      connection_date: null,
+    })),
+    updateWorkerPhoneStatusConnectionDate: jest.fn(async () => true),
     viewWorkerForMonitor: jest.fn(async () => null),
     existsContainerWorkerById: jest.fn(async () => true),
-    inspectContainerWorkerById: jest.fn(async () => ({
-      exists: true,
-      container_id: 'container-1',
-      container_name: 'worker-1',
-      container_state: 'running',
-      container_status: 'running',
-      container_started_at: '2026-01-01T00:00:00Z',
-      container_finished_at: '0001-01-01T00:00:00Z',
-      running: true,
-    })),
+    inspectContainerWorkerById: jest.fn<
+      Promise<WorkerContainerInspection>,
+      [string]
+    >(async () => buildWorkerContainerInspection()),
+    recordContainerDiagnostics: jest.fn(async () => undefined),
     createContainerWorker: jest.fn(async () => 'container-1'),
   };
 
@@ -106,16 +165,10 @@ function buildHandler(
   };
   const containerHealthService = {
     isServiceHealthy: jest.fn(async () => true),
-    checkServiceHealth: jest.fn(async () => ({
-      healthy: true,
-      container_id: 'container-1',
-      health_url: 'http://127.0.0.1:3005/v1/health/check',
-      health_attempt: 1,
-      health_max_attempts: 1,
-      health_delay_ms: 0,
-      health_status_code: '200',
-      attempts: [],
-    })),
+    checkServiceHealth: jest.fn<
+      Promise<ContainerHealthResult>,
+      [string, unknown?]
+    >(async () => buildContainerHealthResult()),
   };
   const workerBaileysGrpcClientService = {
     requestConnection: jest.fn(async () => undefined),
@@ -244,16 +297,15 @@ describe('WorkerCommandHandlerService connection', () => {
     deps.workerBaileysGrpcClientService.requestConnection
       .mockRejectedValueOnce(new Error('worker not ready'))
       .mockResolvedValueOnce(undefined);
-    deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce({
-      healthy: true,
-      container_id: 'worker-1',
-      health_url: 'http://127.0.0.1:3005/v1/health/check',
-      health_attempt: 1,
-      health_max_attempts: 3,
-      health_delay_ms: 1000,
-      health_status_code: '200',
-      attempts: [],
-    });
+    deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce(
+      buildContainerHealthResult({
+        healthy: true,
+        container_id: 'worker-1',
+        health_attempt: 1,
+        health_max_attempts: 3,
+        health_delay_ms: 1000,
+      })
+    );
 
     await deps.handler.handleChangeConnectionStatus(
       {
@@ -308,6 +360,26 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
+  it('defers disponible worker notifications while lifecycle readiness is pending', async () => {
+    const deps = buildHandler();
+    deps.workerService.viewWorker.mockResolvedValueOnce({
+      server: { id: 'server-1' },
+      type: { id: EWorkerType.wwebjs },
+      status: { id: EWorkerStatus.creating },
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_status_id: EWorkerStatus.disponible,
+    });
+
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publish).not.toHaveBeenCalled();
+  });
+
   it('returns a QR code through the synchronous worker request without publishing a connection intent', async () => {
     const deps = buildHandler();
 
@@ -340,7 +412,7 @@ describe('WorkerCommandHandlerService connection', () => {
     );
     expect(deps.containerHealthService.checkServiceHealth).toHaveBeenCalledWith(
       'container-1',
-      { maxAttempts: 10, delayMs: 1000 }
+      { maxAttempts: 2, delayMs: 1000, requiredConsecutiveSuccesses: 1 }
     );
     expect(
       deps.workerBaileysGrpcClientService.waitForReady
@@ -357,16 +429,17 @@ describe('WorkerCommandHandlerService connection', () => {
 
   it('recreates an existing unhealthy container before requesting QR', async () => {
     const deps = buildHandler();
-    deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce({
-      healthy: false,
-      container_id: 'container-1',
-      health_url: 'http://127.0.0.1:3005/v1/health/check',
-      health_attempt: 10,
-      health_max_attempts: 10,
-      health_delay_ms: 1000,
-      health_status_code: '500',
-      attempts: [],
-    });
+    deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce(
+      buildContainerHealthResult({
+        healthy: false,
+        health_attempt: 2,
+        health_max_attempts: 2,
+        health_delay_ms: 1000,
+        health_status_code: '500',
+        consecutive_successes: 0,
+        health_duration_ms: 3000,
+      })
+    );
 
     await deps.handler.handleRequestConnectionQrCode(
       {
@@ -384,7 +457,19 @@ describe('WorkerCommandHandlerService connection', () => {
       true,
       expect.any(String),
       expect.any(Number),
-      undefined
+      undefined,
+      expect.objectContaining({
+        workerTypeId: EWorkerType.wwebjs,
+        workerGrpcPort: expect.any(Number),
+      })
+    );
+    expect(deps.containerHealthService.checkServiceHealth).toHaveBeenCalledWith(
+      'container-1',
+      { maxAttempts: 2, delayMs: 1000, requiredConsecutiveSuccesses: 1 }
+    );
+    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
+      'worker-1',
+      'existing_container_health_failed'
     );
     expect(
       deps.workerService.createContainerWorker.mock.invocationCallOrder[0]
@@ -397,18 +482,17 @@ describe('WorkerCommandHandlerService connection', () => {
   it('creates a missing container synchronously before requesting QR', async () => {
     const deps = buildHandler();
     deps.workerService.inspectContainerWorkerById
-      .mockResolvedValueOnce({
-        exists: false,
-        container_name: 'worker-1',
-      })
-      .mockResolvedValue({
-        exists: true,
-        container_id: 'container-created',
-        container_name: 'worker-1',
-        container_state: 'running',
-        container_status: 'running',
-        running: true,
-      });
+      .mockResolvedValueOnce(
+        buildWorkerContainerInspection({
+          exists: false,
+          container_name: 'worker-1',
+        })
+      )
+      .mockResolvedValue(
+        buildWorkerContainerInspection({
+          container_id: 'container-created',
+        })
+      );
 
     await deps.handler.handleRequestConnectionQrCode(
       {
@@ -427,6 +511,33 @@ describe('WorkerCommandHandlerService connection', () => {
       deps.workerBaileysGrpcClientService.requestConnectionQrCode.mock
         .invocationCallOrder[0]
     );
+  });
+
+  it('recreates an incompatible existing container before health checks', async () => {
+    const deps = buildHandler();
+    deps.workerService.inspectContainerWorkerById.mockResolvedValue(
+      buildWorkerContainerInspection({
+        container_image: 'under-worker-baileys:latest',
+      })
+    );
+
+    await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    expect(
+      deps.containerHealthService.checkServiceHealth
+    ).not.toHaveBeenCalled();
+    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
+      'worker-1',
+      'image_mismatch'
+    );
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalled();
   });
 
   it('fails clearly when gRPC readiness never completes and does not request QR', async () => {
@@ -466,6 +577,75 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(
       deps.workerBaileysGrpcClientService.requestConnection
     ).not.toHaveBeenCalled();
+  });
+
+  it('marks created workers available only after stable health and gRPC readiness', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handle({
+      action: EWorkerAction.create,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+    });
+
+    expect(deps.containerHealthService.isServiceHealthy).toHaveBeenCalledWith(
+      'container-1',
+      { maxAttempts: 30, delayMs: 1000, requiredConsecutiveSuccesses: 3 }
+    );
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady
+    ).toHaveBeenCalledWith('worker-1', EWorkerType.wwebjs, undefined);
+
+    const availableUpdateIndex =
+      deps.workerService.updateWorkerById.mock.calls.findIndex(
+        ([, input]) =>
+          getWorkerStatusFromUpdateInput(input) === EWorkerStatus.disponible
+      );
+    expect(availableUpdateIndex).toBeGreaterThan(-1);
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady.mock
+        .invocationCallOrder[0]
+    ).toBeLessThan(
+      deps.workerService.updateWorkerById.mock.invocationCallOrder[
+        availableUpdateIndex
+      ]
+    );
+  });
+
+  it('marks recreated workers available only after stable health and gRPC readiness', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+    });
+
+    expect(deps.containerHealthService.isServiceHealthy).toHaveBeenCalledWith(
+      'container-1',
+      { maxAttempts: 30, delayMs: 1000, requiredConsecutiveSuccesses: 3 }
+    );
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady
+    ).toHaveBeenCalledWith('worker-1', EWorkerType.wwebjs, undefined);
+
+    const availableUpdateIndex =
+      deps.workerService.updateWorkerById.mock.calls.findIndex(
+        ([, input]) =>
+          getWorkerStatusFromUpdateInput(input) === EWorkerStatus.disponible
+      );
+    expect(availableUpdateIndex).toBeGreaterThan(-1);
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady.mock
+        .invocationCallOrder[0]
+    ).toBeLessThan(
+      deps.workerService.updateWorkerById.mock.invocationCallOrder[
+        availableUpdateIndex
+      ]
+    );
   });
 
   it('does not request a QR code in background after recreating a worker', async () => {

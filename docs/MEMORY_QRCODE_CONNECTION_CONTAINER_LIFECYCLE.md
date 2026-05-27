@@ -285,3 +285,317 @@ A correcao deve ser considerada pronta quando:
 - se o QR chegar por evento assincrono, a tela externa tambem exibe o QR
 - os logs `connection_lifecycle` mostram a sequencia completa de Manager, Balancer, container, health, gRPC, worker e publish
 - nao ha QR completo nem pairing code completo nos logs
+
+## Adendo 2026-05-27: Diagnostico WWebJS
+
+### Contexto Do Teste
+
+- Worker: `019e6753-3945-75d2-a1d4-3e2de147a725`
+- Nome: `vas`
+- `worker_type`: `wwebjs`
+- Request lento observado: `POST /connection/qrcode`
+- Inicio aproximado: `2026-05-27T15:36:45Z`
+- Resposta: `2026-05-27T15:37:36Z`
+- Duracao no Manager: `50272ms`
+- Trace id principal: `a3dd66a28bb03809b8de13217060844b`
+
+### Linha Do Tempo Observada
+
+- `2026-05-27T15:36:46Z`: o Balancer recebeu o pedido de QR e resolveu o worker como `worker_type_name=wwebjs`.
+- `2026-05-27T15:36:46Z`: a inspecao Docker encontrou um container existente:
+  - `container_id=6f901a056636cdb8c544b26c03032be446f6dd03de3fd6d8a82ac69b47c0ef45`
+  - `container_name=019e6753-3945-75d2-a1d4-3e2de147a725`
+  - `container_state=running`
+  - `container_status=running`
+  - `container_started_at=2026-05-27T15:36:25.139076908Z`
+- `2026-05-27T15:36:49Z` ate `2026-05-27T15:37:25Z`: o health HTTP do container existente falhou em todas as `10/10` tentativas com `status_code=000`.
+- Cada tentativa do container existente consumiu cerca de `3000ms` de timeout HTTP mais `1000ms` de intervalo.
+- `2026-05-27T15:37:25Z`: o container existente foi considerado `unhealthy`, com motivo `http_health_not_ready`.
+- `2026-05-27T15:37:25Z`: o Balancer decidiu recriar o container com `reason=container_unhealthy`.
+- `2026-05-27T15:37:26Z`: o container antigo foi removido e um novo container foi criado com imagem `under-worker-wwebjs:latest`.
+- Novo container:
+  - `container_id=7bbc038e4cc5561a3b6a92a122961ec12f6e4384e0aae0b59a2f5857d8dd62a8`
+  - `worker_type=wwebjs`
+- `2026-05-27T15:37:31Z`: o novo container ficou saudavel na tentativa `6/30`.
+- `2026-05-27T15:37:31Z`: a readiness gRPC para `019e6753-3945-75d2-a1d4-3e2de147a725:50053` passou.
+- `2026-05-27T15:37:31Z`: o Balancer chamou `RequestConnection` no worker WWebJS.
+- `2026-05-27T15:37:36Z`: o worker WWebJS gerou QR:
+  - `status=connecting`
+  - `code=202`
+  - `has_qr=true`
+  - `qr_length=6282`
+  - `qr_hash=8ee870e8f3b0fbd4`
+- `2026-05-27T15:37:36Z`: o Manager respondeu `200`.
+
+### Causa Do Atraso
+
+O atraso nao ocorreu na geracao do QR pelo WWebJS. Depois que o novo container ficou pronto, o worker gerou QR em cerca de `5s`.
+
+O atraso ocorreu antes, no caminho de reaproveitamento de container existente. O Balancer encontrou um container antigo em estado `running`, mas o health HTTP nunca respondeu. Mesmo assim, o fluxo aguardou o budget completo de `10` tentativas antes de remover e recriar o container. Esse trecho consumiu cerca de `39s` do request.
+
+Hipotese provavel: o worker havia acabado de mudar de tipo para `wwebjs`, mas ainda existia um container nomeado pelo mesmo `worker_id` que estava `running` e nao estava saudavel para o tipo atual. O fluxo validou apenas existencia/estado/health, sem decidir recriacao imediata por divergencia de tipo, imagem, label ou configuracao esperada.
+
+### Diferenca Em Relacao Ao Baileys
+
+O Baileys ja foi corrigido e passou a abrir rapidamente porque o fluxo chega ao worker correto sem pagar o custo de recuperar um container antigo que falha no health.
+
+No teste WWebJS, o novo container tambem respondeu rapido depois de criado:
+
+- container novo saudavel em cerca de `5s`
+- readiness gRPC passou imediatamente depois do health
+- QR gerado cerca de `5s` depois do `RequestConnection`
+
+Portanto, o gargalo especifico deste teste foi o container existente/stale, nao o motor WWebJS em si.
+
+### Risco Na Tela
+
+Os logs mostram que o backend gerou e publicou QR com `has_qr=true`. Se a tela continuar parada em `Iniciando conexao`, investigar o frontend/evento assincrono:
+
+- confirmar se o componente aplica `data.qrcode` vindo do evento de status/conexao
+- garantir que o handler assincrono atualize o mesmo estado usado pela resposta direta do endpoint
+- nao depender apenas da resposta direta quando o QR chegar por evento de publish
+
+Esse ponto permanece importante porque o backend pode gerar QR corretamente e ainda assim a UI ficar presa em loading se ignorar o payload assincrono com QR.
+
+### Correcao Recomendada Para WWebJS
+
+Implementar deteccao de incompatibilidade antes do health longo do container existente:
+
+- Ao inspecionar um container existente, logar e validar:
+  - imagem atual do container
+  - labels do container
+  - envs relevantes, especialmente `WORKER_TYPE`, portas HTTP/gRPC e identificadores do worker
+  - porta gRPC esperada para o tipo atual
+  - imagem esperada para o tipo atual
+- Se o banco diz `worker_type=wwebjs`, mas o container existente nao for claramente `under-worker-wwebjs:latest` ou nao tiver label/env compativel, remover e recriar imediatamente.
+- Separar o budget de health em dois modos:
+  - container existente: health curto, por exemplo `2` ou `3` tentativas, suficiente para detectar container realmente pronto
+  - container recem-criado: health completo, por exemplo `30` tentativas, porque startup real pode levar alguns segundos
+- Para requests de QR, nao gastar o budget longo tentando recuperar container antigo que ja falhou no health basico.
+- Incluir `recreate_reason=worker_type_mismatch`, `image_mismatch`, `label_mismatch` ou `existing_container_health_failed` nos logs.
+
+### Requisito De Debug Quando `CONNECTION_LIFECYCLE_DEBUG_ENABLED=true`
+
+Quando `CONNECTION_LIFECYCLE_DEBUG_ENABLED` estiver ativo, o debug precisa cobrir o ciclo inteiro da conexao, do comeco ao fim:
+
+- entrada do request no Manager
+- validacao do worker/account
+- resolucao de server, worker status e worker type
+- decisao de criar, reaproveitar, remover ou recriar container
+- inspecao do container existente, incluindo imagem, labels e envs sanitizadas
+- criacao do container, incluindo imagem, portas, network, labels e resultado Docker
+- health HTTP do container, com tentativa, status, erro e duracao
+- readiness gRPC, com endereco, deadline e erro quando houver
+- chamada `RequestConnection`
+- resposta do worker, com `has_qr`, `qr_hash`, `qr_length`, status e code
+- publish para eventos assincronos
+- resposta HTTP final do Manager
+
+Nao logar QR completo, pairing code completo, token, senha ou segredo. Usar somente flags, hash e length.
+
+## Adendo 2026-05-27: Diagnostico Worker Novo Baileys `teste`
+
+### Contexto Do Teste
+
+- Worker: `019e6a1c-0f41-7418-a6b4-180868d714fb`
+- Nome: `teste`
+- `worker_type`: `baileys`
+- Status atual no banco: `disponible`
+- Server: `Servidor 2`
+- Account: `UnderChat`
+- `created_at`: `2026-05-27T15:44:44.352109Z`
+- `container_id` atual no banco: `270e370df6276125f707ef6e32d99724d54ff923d32cec663392ef49f440a56e`
+- Request lento observado: `POST /v1/worker/019e6a1c-0f41-7418-a6b4-180868d714fb/connection/qrcode`
+- Inicio do request no Manager: `2026-05-27T15:44:53.863Z`
+- Resposta do Manager: `2026-05-27T15:45:39.572Z`
+- Duracao do request: `45709ms`
+- Trace id principal do QR: `0fdf94298910557d0853d91d590491b0`
+
+### Linha Do Tempo Observada
+
+Criacao do worker:
+
+- `2026-05-27T15:44:44.102Z`: `POST /v1/worker` entrou no Manager.
+- `2026-05-27T15:44:44.352Z`: registro do worker foi criado no banco.
+- `2026-05-27T15:44:44.765Z`: Balancer iniciou criacao de container com imagem `under-worker-baileys:latest`.
+- `2026-05-27T15:44:44.982Z`: container inicial foi criado:
+  - `container_id=adb0861e8f3d5c797c6aed885981de9c00cd30030ab8df90819d696cdfb66711`
+- Health da criacao inicial:
+  - `2026-05-27T15:44:45.039Z`: tentativa `1/30`, `health_status_code=000`
+  - `2026-05-27T15:44:47.110Z`: tentativa `2/30`, `health_status_code=000`
+  - `2026-05-27T15:44:49.175Z`: tentativa `3/30`, `health_status_code=200`
+- `2026-05-27T15:44:48.931Z`: Balancer recebeu `NotifyWorkerStatus` para o worker.
+- `2026-05-27T15:44:49.185Z`: `POST /v1/worker` respondeu `200` apos `5083ms`.
+
+Pedido de QR logo depois da criacao:
+
+- `2026-05-27T15:44:53.863Z`: `POST /connection/qrcode` entrou no Manager.
+- `2026-05-27T15:44:54.035Z`: Balancer resolveu o worker como `worker_type_name=baileys`.
+- `2026-05-27T15:44:54.037Z`: Balancer inspecionou o container inicial:
+  - `container_id=adb0861e8f3d5c797c6aed885981de9c00cd30030ab8df90819d696cdfb66711`
+  - `container_state=running`
+  - `container_status=running`
+  - `container_started_at=2026-05-27T15:44:44.851211663Z`
+- Health do container inicial durante o QR:
+  - `2026-05-27T15:44:57.093Z`: tentativa `1/10`, `health_status_code=000`
+  - `2026-05-27T15:45:01.150Z`: tentativa `2/10`, `health_status_code=000`
+  - `2026-05-27T15:45:05.206Z`: tentativa `3/10`, `health_status_code=000`
+  - `2026-05-27T15:45:09.264Z`: tentativa `4/10`, `health_status_code=000`
+  - `2026-05-27T15:45:13.322Z`: tentativa `5/10`, `health_status_code=000`
+  - `2026-05-27T15:45:17.379Z`: tentativa `6/10`, `health_status_code=000`
+  - `2026-05-27T15:45:21.436Z`: tentativa `7/10`, `health_status_code=000`
+  - `2026-05-27T15:45:25.490Z`: tentativa `8/10`, `health_status_code=000`
+  - `2026-05-27T15:45:29.586Z`: tentativa `9/10`, `health_status_code=000`
+  - `2026-05-27T15:45:33.711Z`: tentativa `10/10`, `health_status_code=000`
+- `2026-05-27T15:45:33.712Z`: health falhou com `reason=http_health_not_ready`.
+- `2026-05-27T15:45:33.713Z`: Balancer decidiu recriar com `reason=container_unhealthy`.
+- `2026-05-27T15:45:34.126Z`: container inicial foi removido.
+- `2026-05-27T15:45:34.128Z`: Balancer iniciou nova criacao com imagem `under-worker-baileys:latest`.
+- `2026-05-27T15:45:34.302Z`: novo container foi criado:
+  - `container_id=270e370df6276125f707ef6e32d99724d54ff923d32cec663392ef49f440a56e`
+- Health do container novo:
+  - `2026-05-27T15:45:34.363Z`: tentativa `1/30`, `health_status_code=000`
+  - `2026-05-27T15:45:35.421Z`: tentativa `2/30`, `health_status_code=000`
+  - `2026-05-27T15:45:36.482Z`: tentativa `3/30`, `health_status_code=000`
+  - `2026-05-27T15:45:37.545Z`: tentativa `4/30`, `health_status_code=000`
+  - `2026-05-27T15:45:38.613Z`: tentativa `5/30`, `health_status_code=200`
+- `2026-05-27T15:45:38.651Z`: readiness gRPC passou em `019e6a1c-0f41-7418-a6b4-180868d714fb:50052`.
+- `2026-05-27T15:45:38.652Z`: Balancer chamou `RequestConnection`.
+- `2026-05-27T15:45:39.509Z`: worker Baileys gerou QR.
+- `2026-05-27T15:45:39.564Z`: worker respondeu sucesso:
+  - `status=connecting`
+  - `code=202`
+  - `has_qr=true`
+  - `qr_length=6378`
+  - `qr_hash=88e0347b803200ab`
+- `2026-05-27T15:45:39.572Z`: Balancer retornou sucesso e o Manager respondeu `200`.
+
+### Causa Do Atraso
+
+O atraso nao ocorreu na geracao do QR pelo Baileys. Depois que o container novo ficou saudavel e gRPC ready, o QR foi gerado em menos de `1s`.
+
+O atraso ocorreu porque a criacao inicial marcou o worker como pronto depois de um unico health `200`, mas o mesmo container passou a retornar `000` poucos segundos depois, quando o QR foi solicitado.
+
+Na pratica, houve um falso positivo de readiness na criacao:
+
+- `createWorker` considerou o container inicial pronto com `isServiceHealthy`.
+- O worker foi atualizado para `disponible`.
+- O frontend solicitou QR cerca de `4s` depois.
+- O Balancer encontrou o container `running`, mas o health HTTP nao respondia.
+- O fluxo de QR gastou `10` tentativas com deadline HTTP de `3000ms` e intervalo de `1000ms`, consumindo cerca de `39s`.
+- So depois disso removeu o container e criou outro.
+
+O container recriado funcionou corretamente. O problema principal e o caminho entre criacao e primeiro QR: a aplicacao publica/retorna `disponible` antes de garantir que o container esta estavel e pronto para receber conexao.
+
+### Evidencias Importantes
+
+- O `POST /v1/worker` demorou `5083ms` e respondeu `200`.
+- O container inicial `adb086...` teve health `200` na tentativa `3/30`.
+- O mesmo container `adb086...`, cinco segundos depois, falhou `10/10` no health durante o QR com `health_status_code=000`.
+- Nao apareceram logs de startup do worker Baileys para o container inicial `adb086...` na janela analisada; os logs de consumidores Kafka apareceram para o container recriado `270e370...`.
+- O container novo `270e370...` ficou saudavel na tentativa `5/30`, passou readiness gRPC e gerou QR normalmente.
+
+### Correcao Recomendada
+
+1. Nao marcar worker como `disponible` apenas com um unico HTTP health `200`.
+   - Em `packages/services/workerCommandHandler.service.ts`, no metodo `createWorker`, apos `containerHealthService.isServiceHealthy`, aguardar tambem readiness gRPC do worker pelo tipo correto.
+   - Para Baileys, validar `waitForReady(worker_id, worker_type_id, timeout)` em `:50052`.
+   - So atualizar `worker_status_id=disponible` depois de HTTP health e gRPC readiness passarem.
+
+2. Exigir health estavel antes de finalizar criacao.
+   - Alterar `ContainerHealthService` para aceitar uma opcao como `requiredConsecutiveSuccesses`.
+   - Na criacao, exigir pelo menos `2` ou `3` sucessos HTTP `200` consecutivos antes de considerar o container saudavel.
+   - Isso evita o caso observado: um unico `200` momentaneo seguido de varios `000`.
+
+3. Reduzir o custo de falha para container existente no fluxo de QR.
+   - Em `ensureQrContainerReady`, o caminho de container existente usa `maxAttempts: 10` e `delayMs: 1000`.
+   - Para QR, usar health curto em container existente, por exemplo `2` ou `3` tentativas.
+   - Manter budget longo apenas para container recem-criado.
+   - Se um container `disponible` falha health curto, recriar rapido em vez de bloquear a tela por `40s`.
+
+4. Manter status `creating` ate readiness real.
+   - Se o container ainda esta bootando, o QR deve cair no caminho `waitForExistingQrContainerReady`, nao no caminho de container `disponible` que espera `10` health checks e so depois recria.
+   - O status `disponible` deve significar "HTTP health estavel + gRPC ready", nao apenas "Docker running + um health 200".
+
+5. Capturar diagnostico do container que sera removido.
+   - Quando `CONNECTION_LIFECYCLE_DEBUG_ENABLED=true` e um container falhar health antes de remocao, registrar:
+     - `docker inspect` com imagem, estado, exit code, started_at, finished_at, restart_count, health se existir
+     - ultimas linhas de `docker logs --tail`, sanitizadas
+     - erro do `curl` no health, nao apenas `000`
+   - Isso e necessario porque neste teste o container inicial falhou depois de parecer saudavel, mas nao deixou logs de app visiveis no Loki antes da remocao.
+
+6. Corrigir lacuna de contexto nos logs da criacao.
+   - No trace inicial `aee168604303da15918b10f806b135a8`, varios eventos de criacao/health nao carregaram `worker_id`, `account_id` e `worker_type` como labels/campos.
+   - Todos os eventos `container_create_*` e `container_health_*` devem incluir esses campos quando o debug estiver ativo.
+
+### Resolucao Esperada
+
+Com a correcao, o fluxo de criar worker e abrir QR deve ficar assim:
+
+1. `POST /v1/worker` cria o container.
+2. Balancer aguarda HTTP health estavel.
+3. Balancer aguarda readiness gRPC.
+4. So entao marca o worker como `disponible`.
+5. Ao clicar QR, o Balancer encontra container realmente pronto.
+6. `RequestConnection` e chamado sem recriar container.
+7. QR deve aparecer em poucos segundos.
+
+Se o container cair entre a criacao e o QR:
+
+1. QR faz health curto no container existente.
+2. Se falhar, registra diagnostico completo.
+3. Remove/recria imediatamente.
+4. Aguarda readiness do container novo.
+5. Retorna QR na resposta direta.
+
+### Arquivos Provaveis Para Alterar
+
+- `packages/services/workerCommandHandler.service.ts`
+  - `createWorker`
+  - `ensureQrContainerReady`
+  - `waitForExistingQrContainerReady`
+- `packages/services/containerHealth.service.ts`
+  - adicionar suporte a `requiredConsecutiveSuccesses`
+  - registrar erro detalhado do `curl`/exec quando `health_status_code=000`
+- `packages/services/worker.service.ts`
+  - incluir labels/envs de worker em container inspect/create
+  - logar imagem, labels e envs sanitizadas
+- `packages/tests/contracts/services/workerCommandHandler.service.test.ts`
+  - cobrir criacao que so marca `disponible` depois de health estavel + gRPC ready
+  - cobrir QR com container existente unhealthy recriando rapido
+- `packages/tests/contracts/services/containerHealth.service.contract.test.ts`
+  - cobrir sucessos consecutivos exigidos
+  - cobrir `000` com detalhe de erro sanitizado
+
+### Consultas Loki Usadas
+
+Por worker:
+
+```logql
+{service_name=~".+"}
+|= "019e6a1c-0f41-7418-a6b4-180868d714fb"
+```
+
+Lifecycle de QR:
+
+```logql
+{service_name=~".+"}
+| debug_index="connection_lifecycle"
+| worker_id="019e6a1c-0f41-7418-a6b4-180868d714fb"
+```
+
+Container inicial:
+
+```logql
+{service_name="balance"}
+| debug_index="connection_lifecycle"
+| container_id="adb0861e8f3d5c797c6aed885981de9c00cd30030ab8df90819d696cdfb66711"
+```
+
+Container recriado:
+
+```logql
+{service_name="balance"}
+| debug_index="connection_lifecycle"
+| container_id="270e370df6276125f707ef6e32d99724d54ff923d32cec663392ef49f440a56e"
+```

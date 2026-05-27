@@ -13,7 +13,10 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ChatService } from '@core/services/chat.service';
 import { PublishResult } from 'centrifuge';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
-import { ContainerHealthService } from '@core/services/containerHealth.service';
+import {
+  ContainerHealthService,
+  type ContainerHealthCheckOptions,
+} from '@core/services/containerHealth.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { WorkerBaileysGrpcClientService } from '@core/services/workerBaileysGrpcClient.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
@@ -72,6 +75,7 @@ export class WorkerCommandHandlerService {
   private readonly retryIntervalMs = 30 * 1000;
   private readonly connectionRequestRetryIntervalMs = 15_000;
   private readonly connectionRequestMinAttempts = 10;
+  private readonly workerLifecycleLocks = new Map<string, Promise<void>>();
   private connectionRequestTimers = new Map<string, NodeJS.Timeout>();
   private connectionRequestAttempts = new Map<string, number>();
   private connectionRequestPayloads = new Map<
@@ -135,7 +139,11 @@ export class WorkerCommandHandlerService {
 
   async handle(data: IWorkerPayload): Promise<void> {
     if (data.action === EWorkerAction.create) {
-      await this.createWorker(data);
+      await this.runWithWorkerLifecycleLock(
+        data.worker_id,
+        'create_worker',
+        () => this.createWorker(data)
+      );
       return;
     }
 
@@ -157,10 +165,64 @@ export class WorkerCommandHandlerService {
     }
 
     if (data.action === EWorkerAction.recreate) {
-      try {
-        await this.kafkaBaileysQueueService.delete(data.worker_id);
-      } catch {}
-      await this.recreateWorker(data);
+      await this.runWithWorkerLifecycleLock(
+        data.worker_id,
+        'recreate_worker',
+        async () => {
+          try {
+            await this.kafkaBaileysQueueService.delete(data.worker_id);
+          } catch {}
+          await this.recreateWorker(data);
+        }
+      );
+    }
+  }
+
+  private async runWithWorkerLifecycleLock<T>(
+    workerId: string,
+    operation: string,
+    callback: () => Promise<T>
+  ): Promise<T> {
+    const previous =
+      this.workerLifecycleLocks.get(workerId) ?? Promise.resolve();
+    let releaseLock: () => void = () => undefined;
+    const current = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    const next = previous.catch(() => undefined).then(() => current);
+    this.workerLifecycleLocks.set(workerId, next);
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.worker_lifecycle_lock_wait',
+      decision: operation,
+      outcome: 'waiting',
+      worker_id: workerId,
+    });
+
+    await previous.catch(() => undefined);
+
+    recordConnectionLifecycle({
+      stage:
+        'connection.balancer.command_handler.worker_lifecycle_lock_acquired',
+      decision: operation,
+      outcome: 'acquired',
+      worker_id: workerId,
+    });
+
+    try {
+      return await callback();
+    } finally {
+      releaseLock();
+      if (this.workerLifecycleLocks.get(workerId) === next) {
+        this.workerLifecycleLocks.delete(workerId);
+      }
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.worker_lifecycle_lock_released',
+        decision: operation,
+        outcome: 'released',
+        worker_id: workerId,
+      });
     }
   }
 
@@ -325,7 +387,11 @@ export class WorkerCommandHandlerService {
     };
 
     this.stopConnectionRequestRetry(payload.worker_id);
-    return this.runConnectionQrCodeWorkflow(payload, accountId);
+    return this.runWithWorkerLifecycleLock(
+      payload.worker_id,
+      'request_qrcode',
+      () => this.runConnectionQrCodeWorkflow(payload, accountId)
+    );
   }
 
   private publishConnectionIntent(
@@ -448,6 +514,23 @@ export class WorkerCommandHandlerService {
       return;
     }
 
+    if (
+      await this.shouldDeferDisponibleWorkerNotification(
+        accountId,
+        workerId,
+        workerStatusId
+      )
+    ) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.command_handler.notify_status_deferred',
+        decision: 'notify_worker_status',
+        outcome: 'deferred',
+        reason: 'worker_lifecycle_readiness_pending',
+        worker_status_id: workerStatusId,
+      });
+      return;
+    }
+
     const view =
       await this.workerService.viewWorkerPhoneConnectionDate(workerId);
 
@@ -477,6 +560,38 @@ export class WorkerCommandHandlerService {
       worker_status_id: workerStatusId,
       has_phone: Boolean(phoneNumber),
     });
+  }
+
+  private async shouldDeferDisponibleWorkerNotification(
+    accountId: string,
+    workerId: string,
+    workerStatusId: EWorkerStatus
+  ): Promise<boolean> {
+    if (workerStatusId !== EWorkerStatus.disponible) {
+      return false;
+    }
+
+    let currentStatus: EWorkerStatus | undefined;
+    try {
+      const worker = await this.workerService.viewWorker(accountId, workerId);
+      currentStatus = worker?.status?.id as EWorkerStatus | undefined;
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.notify_status_defer_check_error',
+        decision: 'notify_worker_status',
+        outcome: 'error',
+        reason: 'worker_status_lookup_failed',
+        level: 'warn',
+        error: getErrorMessage(err),
+      });
+      return false;
+    }
+
+    return (
+      currentStatus === EWorkerStatus.creating ||
+      currentStatus === EWorkerStatus.recreating
+    );
   }
 
   async resolveIncomingCallAction(
@@ -909,39 +1024,82 @@ export class WorkerCommandHandlerService {
     let recreateReason = this.qrContainerRecreateReason(inspection);
 
     if (inspection.exists && inspection.running === true) {
-      const containerId = inspection.container_id ?? workerId;
-      const healthy = await this.isExistingContainerHealthy(containerId, {
-        maxAttempts: 10,
-        delayMs: 1000,
-      });
-      recordConnectionLifecycle({
-        stage:
-          'connection.balancer.command_handler.qrcode_existing_container_health',
-        decision: 'is_existing_container_healthy',
-        outcome: healthy ? 'healthy' : 'unhealthy',
-        worker_type: workerData.workerTypeId,
-        ...this.lifecycleFieldsFromInspection(inspection),
-      });
+      const compatibilityIssue = this.qrContainerCompatibilityIssue(
+        workerId,
+        workerData,
+        inspection
+      );
 
-      if (healthy) {
-        try {
-          await this.waitForWorkerGrpcReady(workerId, workerData.workerTypeId);
-          return;
-        } catch (err) {
-          recordConnectionLifecycle({
-            stage:
-              'connection.balancer.command_handler.qrcode_existing_container_grpc_unready',
-            decision: 'wait_worker_grpc_ready',
-            outcome: 'not_ready',
-            reason: 'healthy_container_grpc_not_ready',
-            level: 'warn',
-            worker_type: workerData.workerTypeId,
-            error: getErrorMessage(err),
-            ...this.lifecycleFieldsFromInspection(inspection),
-          });
-          recreateReason = 'container_grpc_not_ready';
+      if (compatibilityIssue) {
+        recreateReason = compatibilityIssue;
+        recordConnectionLifecycle({
+          stage:
+            'connection.balancer.command_handler.qrcode_container_incompatible',
+          decision: 'validate_existing_container_compatibility',
+          outcome: 'incompatible',
+          reason: compatibilityIssue,
+          recreate_reason: compatibilityIssue,
+          level: 'warn',
+          worker_type: workerData.workerTypeId,
+          expected_image: getImageWorker(workerData.workerTypeId),
+          expected_grpc_port: this.getExpectedWorkerGrpcPort(
+            workerData.workerTypeId
+          ),
+          ...this.lifecycleFieldsFromInspection(inspection),
+        });
+      } else {
+        const containerId = inspection.container_id ?? workerId;
+        const healthy = await this.isExistingContainerHealthy(containerId, {
+          maxAttempts: 2,
+          delayMs: 1000,
+          requiredConsecutiveSuccesses: 1,
+        });
+        recordConnectionLifecycle({
+          stage:
+            'connection.balancer.command_handler.qrcode_existing_container_health',
+          decision: 'is_existing_container_healthy',
+          outcome: healthy ? 'healthy' : 'unhealthy',
+          reason: healthy ? undefined : 'existing_container_health_failed',
+          recreate_reason: healthy
+            ? undefined
+            : 'existing_container_health_failed',
+          worker_type: workerData.workerTypeId,
+          ...this.lifecycleFieldsFromInspection(inspection),
+        });
+
+        if (healthy) {
+          try {
+            await this.waitForWorkerGrpcReady(
+              workerId,
+              workerData.workerTypeId
+            );
+            return;
+          } catch (err) {
+            recordConnectionLifecycle({
+              stage:
+                'connection.balancer.command_handler.qrcode_existing_container_grpc_unready',
+              decision: 'wait_worker_grpc_ready',
+              outcome: 'not_ready',
+              reason: 'healthy_container_grpc_not_ready',
+              recreate_reason: 'container_grpc_not_ready',
+              level: 'warn',
+              worker_type: workerData.workerTypeId,
+              error: getErrorMessage(err),
+              ...this.lifecycleFieldsFromInspection(inspection),
+            });
+            recreateReason = 'container_grpc_not_ready';
+          }
+        } else {
+          recreateReason = 'existing_container_health_failed';
         }
       }
+    }
+
+    if (inspection.exists) {
+      await this.workerService.recordContainerDiagnostics(
+        workerId,
+        recreateReason
+      );
     }
 
     recordConnectionLifecycle({
@@ -949,6 +1107,7 @@ export class WorkerCommandHandlerService {
       decision: 'create_worker_with_payload',
       outcome: 'started',
       reason: recreateReason,
+      recreate_reason: recreateReason,
       worker_type: workerData.workerTypeId,
       worker_status_id: workerData.workerStatusId,
       ...this.lifecycleFieldsFromInspection(inspection),
@@ -957,6 +1116,7 @@ export class WorkerCommandHandlerService {
     await this.createWorkerWithPayload(workerId, workerData, undefined, {
       maxAttempts: 30,
       delayMs: 1000,
+      requiredConsecutiveSuccesses: 3,
     });
 
     const createdInspection = await this.inspectWorkerContainerForQr(
@@ -972,8 +1132,6 @@ export class WorkerCommandHandlerService {
       worker_status_id: workerData.workerStatusId,
       ...this.lifecycleFieldsFromInspection(createdInspection),
     });
-
-    await this.waitForWorkerGrpcReady(workerId, workerData.workerTypeId);
   }
 
   private async waitForExistingQrContainerReady(
@@ -1077,14 +1235,37 @@ export class WorkerCommandHandlerService {
 
   private lifecycleFieldsFromInspection(
     inspection: WorkerContainerInspection
-  ): Record<string, string | boolean | undefined> {
+  ): Record<string, string | number | boolean | undefined> {
     return {
       container_id: inspection.container_id,
       container_name: inspection.container_name,
+      container_image: inspection.container_image,
+      container_image_id: inspection.container_image_id,
       container_state: inspection.container_state,
       container_status: inspection.container_status,
       container_started_at: inspection.container_started_at,
       container_finished_at: inspection.container_finished_at,
+      container_restart_count: inspection.container_restart_count,
+      container_exit_code: inspection.container_exit_code,
+      container_health_status: inspection.container_health_status,
+      container_health_failing_streak:
+        inspection.container_health_failing_streak,
+      container_label_worker_id:
+        inspection.container_labels?.['underchat.worker_id'],
+      container_label_account_id:
+        inspection.container_labels?.['underchat.account_id'],
+      container_label_worker_type_id:
+        inspection.container_labels?.['underchat.worker_type_id'],
+      container_label_worker_image:
+        inspection.container_labels?.['underchat.worker_image'],
+      container_label_worker_grpc_port:
+        inspection.container_labels?.['underchat.worker_grpc_port'],
+      container_env_worker_id: inspection.container_env?.WORKER_ID,
+      container_env_account_id: inspection.container_env?.ACCOUNT_ID,
+      container_env_worker_type_id: inspection.container_env?.WORKER_TYPE_ID,
+      container_env_worker_image: inspection.container_env?.WORKER_IMAGE,
+      container_env_worker_grpc_port:
+        inspection.container_env?.WORKER_GRPC_PORT,
       container_running: inspection.running,
     };
   }
@@ -1101,13 +1282,124 @@ export class WorkerCommandHandlerService {
     return 'container_unhealthy';
   }
 
+  private qrContainerCompatibilityIssue(
+    workerId: string,
+    workerData: ResolvedWorkerDataForContainer,
+    inspection: WorkerContainerInspection
+  ): string | undefined {
+    const expectedImage = getImageWorker(workerData.workerTypeId);
+    const expectedGrpcPort = this.getExpectedWorkerGrpcPort(
+      workerData.workerTypeId
+    );
+    const expectedGrpcPortValue =
+      expectedGrpcPort === undefined ? undefined : String(expectedGrpcPort);
+    const labels = inspection.container_labels ?? {};
+    const env = inspection.container_env ?? {};
+
+    if (
+      inspection.container_image &&
+      inspection.container_image !== expectedImage
+    ) {
+      return 'image_mismatch';
+    }
+
+    if (
+      labels['underchat.worker_image'] &&
+      labels['underchat.worker_image'] !== expectedImage
+    ) {
+      return 'image_mismatch';
+    }
+
+    if (env.WORKER_IMAGE && env.WORKER_IMAGE !== expectedImage) {
+      return 'image_mismatch';
+    }
+
+    if (
+      labels['underchat.worker_id'] &&
+      labels['underchat.worker_id'] !== workerId
+    ) {
+      return 'worker_id_mismatch';
+    }
+
+    if (env.WORKER_ID && env.WORKER_ID !== workerId) {
+      return 'worker_id_mismatch';
+    }
+
+    if (
+      labels['underchat.account_id'] &&
+      labels['underchat.account_id'] !== workerData.accountIdResolved
+    ) {
+      return 'account_id_mismatch';
+    }
+
+    if (env.ACCOUNT_ID && env.ACCOUNT_ID !== workerData.accountIdResolved) {
+      return 'account_id_mismatch';
+    }
+
+    if (
+      labels['underchat.worker_type_id'] &&
+      labels['underchat.worker_type_id'] !== workerData.workerTypeId
+    ) {
+      return 'worker_type_mismatch';
+    }
+
+    if (env.WORKER_TYPE_ID && env.WORKER_TYPE_ID !== workerData.workerTypeId) {
+      return 'worker_type_mismatch';
+    }
+
+    if (
+      labels['underchat.worker_grpc_port'] &&
+      expectedGrpcPortValue !== undefined &&
+      labels['underchat.worker_grpc_port'] !== expectedGrpcPortValue
+    ) {
+      return 'worker_grpc_port_mismatch';
+    }
+
+    if (
+      env.WORKER_GRPC_PORT &&
+      expectedGrpcPortValue !== undefined &&
+      env.WORKER_GRPC_PORT !== expectedGrpcPortValue
+    ) {
+      return 'worker_grpc_port_mismatch';
+    }
+
+    return undefined;
+  }
+
+  private isWorkerGrpcReadinessRequired(workerType: EWorkerType): boolean {
+    return (
+      workerType === EWorkerType.baileys ||
+      workerType === EWorkerType.wwebjs ||
+      workerType === EWorkerType.whatsmeow
+    );
+  }
+
+  private getExpectedWorkerGrpcPort(
+    workerType: EWorkerType
+  ): number | undefined {
+    if (workerType === EWorkerType.wwebjs) {
+      return balanceEnvironment.workerWwebjsGrpcPort;
+    }
+
+    if (workerType === EWorkerType.whatsmeow) {
+      return balanceEnvironment.workerWhatsmeowGrpcPort;
+    }
+
+    if (workerType === EWorkerType.baileys) {
+      return balanceEnvironment.workerBaileysGrpcPort;
+    }
+
+    return undefined;
+  }
+
   private async waitForWorkerGrpcReady(
     workerId: string,
     workerType: EWorkerType,
-    timeoutMs?: number
+    timeoutMs?: number,
+    stageScope: 'qrcode' | 'create' | 'recreate' = 'qrcode'
   ): Promise<string> {
     recordConnectionLifecycle({
-      stage: 'connection.balancer.command_handler.qrcode_grpc_readiness_start',
+      stage: `connection.balancer.command_handler.${stageScope}_grpc_readiness_start`,
       decision: 'wait_worker_grpc_ready',
       outcome: 'started',
       worker_type: workerType,
@@ -1122,8 +1414,7 @@ export class WorkerCommandHandlerService {
           timeoutMs
         );
       recordConnectionLifecycle({
-        stage:
-          'connection.balancer.command_handler.qrcode_grpc_readiness_success',
+        stage: `connection.balancer.command_handler.${stageScope}_grpc_readiness_success`,
         decision: 'wait_worker_grpc_ready',
         outcome: 'ready',
         worker_type: workerType,
@@ -1135,8 +1426,7 @@ export class WorkerCommandHandlerService {
       return grpcAddress;
     } catch (err) {
       recordConnectionLifecycle({
-        stage:
-          'connection.balancer.command_handler.qrcode_grpc_readiness_error',
+        stage: `connection.balancer.command_handler.${stageScope}_grpc_readiness_error`,
         decision: 'wait_worker_grpc_ready',
         outcome: 'error',
         reason: 'worker_grpc_not_ready',
@@ -1201,7 +1491,7 @@ export class WorkerCommandHandlerService {
 
   private async isExistingContainerHealthy(
     containerId: string,
-    options: { maxAttempts: number; delayMs: number }
+    options: ContainerHealthCheckOptions
   ): Promise<boolean> {
     try {
       const result = await this.containerHealthService.checkServiceHealth(
@@ -1218,6 +1508,10 @@ export class WorkerCommandHandlerService {
         health_attempt: result.health_attempt,
         health_max_attempts: result.health_max_attempts,
         health_delay_ms: result.health_delay_ms,
+        consecutive_successes: result.consecutive_successes,
+        required_consecutive_successes: result.required_consecutive_successes,
+        health_duration_ms: result.health_duration_ms,
+        health_error: result.health_error,
       });
       return result.healthy;
     } catch (err) {
@@ -1314,7 +1608,7 @@ export class WorkerCommandHandlerService {
     workerId: string,
     workerData: ResolvedWorkerDataForContainer,
     connectionRequest?: StatusConnectionWorkerRequest,
-    healthOptions?: { maxAttempts: number; delayMs: number }
+    healthOptions?: ContainerHealthCheckOptions
   ): Promise<void> {
     const createPayload: IWorkerPayload = {
       action: EWorkerAction.create,
@@ -1755,7 +2049,11 @@ export class WorkerCommandHandlerService {
           false,
           balanceEnvironment.grpcHost,
           balanceEnvironment.grpcPort,
-          proxy
+          proxy,
+          {
+            workerTypeId: workerType,
+            workerGrpcPort: this.getExpectedWorkerGrpcPort(workerType),
+          }
         ),
       (r) => !r
     );
@@ -1770,9 +2068,13 @@ export class WorkerCommandHandlerService {
       throw new Error('Worker creation failed');
     }
 
-    const healthy = await this.retryOperation(
-      async () => this.containerHealthService.isServiceHealthy(containerId),
-      (r) => !r
+    const healthy = await this.containerHealthService.isServiceHealthy(
+      containerId,
+      {
+        maxAttempts: 30,
+        delayMs: 1000,
+        requiredConsecutiveSuccesses: 3,
+      }
     );
 
     if (!healthy) {
@@ -1783,6 +2085,25 @@ export class WorkerCommandHandlerService {
         data.server_id
       );
       throw new Error('Worker service is not healthy');
+    }
+
+    if (this.isWorkerGrpcReadinessRequired(workerType)) {
+      try {
+        await this.waitForWorkerGrpcReady(
+          data.worker_id,
+          workerType,
+          undefined,
+          'recreate'
+        );
+      } catch (err) {
+        await this.updateWorkerErrorStatus(
+          data.worker_id,
+          data.account_id,
+          data.action,
+          data.server_id
+        );
+        throw err;
+      }
     }
 
     const inputUpdate: IUpdateWorker = {
@@ -2007,15 +2328,18 @@ export class WorkerCommandHandlerService {
   private async createWorker(
     data: IWorkerPayload,
     connectionRequest?: StatusConnectionWorkerRequest,
-    healthOptions: { maxAttempts: number; delayMs: number } = {
+    healthOptions: ContainerHealthCheckOptions = {
       maxAttempts: 30,
-      delayMs: 2000,
+      delayMs: 1000,
+      requiredConsecutiveSuccesses: 3,
     }
   ): Promise<PublishResult> {
     if (!data?.worker_type_id) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
       throw new Error('Worker type ID is required');
     }
+
+    const workerType = data.worker_type_id;
 
     const inputUpdateCreating: IUpdateWorker = {
       worker_id: data.worker_id,
@@ -2039,7 +2363,7 @@ export class WorkerCommandHandlerService {
       console.error('Failed to publish worker creating status:', err);
     });
 
-    const imageName = getImageWorker(data.worker_type_id);
+    const imageName = getImageWorker(workerType);
 
     try {
       await this.kafkaBaileysQueueService.ensure(data.worker_id);
@@ -2064,7 +2388,11 @@ export class WorkerCommandHandlerService {
           true,
           balanceEnvironment.grpcHost,
           balanceEnvironment.grpcPort,
-          proxy
+          proxy,
+          {
+            workerTypeId: workerType,
+            workerGrpcPort: this.getExpectedWorkerGrpcPort(workerType),
+          }
         ),
       (r) => !r
     );
@@ -2082,6 +2410,25 @@ export class WorkerCommandHandlerService {
     if (!healthy) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
       throw new Error('Worker service is not healthy');
+    }
+
+    if (this.isWorkerGrpcReadinessRequired(workerType)) {
+      try {
+        await this.waitForWorkerGrpcReady(
+          data.worker_id,
+          workerType,
+          undefined,
+          'create'
+        );
+      } catch (err) {
+        await this.updateWorkerErrorStatus(
+          data.worker_id,
+          data.account_id,
+          data.action,
+          data.server_id
+        );
+        throw err;
+      }
     }
 
     const inputUpdate: IUpdateWorker = {
@@ -2118,9 +2465,9 @@ export class WorkerCommandHandlerService {
 
     if (
       connectionRequest &&
-      (data.worker_type_id === EWorkerType.baileys ||
-        data.worker_type_id === EWorkerType.wwebjs ||
-        data.worker_type_id === EWorkerType.whatsmeow)
+      (workerType === EWorkerType.baileys ||
+        workerType === EWorkerType.wwebjs ||
+        workerType === EWorkerType.whatsmeow)
     ) {
       const payload: StatusConnectionWorkerRequest = {
         worker_id: data.worker_id,
