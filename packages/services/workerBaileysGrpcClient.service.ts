@@ -103,6 +103,10 @@ export class WorkerBaileysGrpcClientService {
 
     const grpcError = error as ServiceError;
     const details = (grpcError.details ?? '').toLowerCase();
+    const message =
+      error instanceof Error
+        ? error.message.toLowerCase()
+        : String(error).toLowerCase();
 
     return (
       grpcError.code === status.UNAVAILABLE ||
@@ -110,7 +114,8 @@ export class WorkerBaileysGrpcClientService {
       details.includes('econnrefused') ||
       details.includes('no connection established') ||
       details.includes('name resolution') ||
-      details.includes('enotfound')
+      details.includes('enotfound') ||
+      message.includes('failed to connect before the deadline')
     );
   }
 

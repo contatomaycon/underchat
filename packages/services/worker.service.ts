@@ -195,16 +195,23 @@ export class WorkerService {
     try {
       const container = this.docker.getContainer(workerId);
       const info = await container.inspect();
-      const state = info.State ?? {};
+      const state = info.State as
+        | {
+            Status?: string;
+            StartedAt?: string;
+            FinishedAt?: string;
+            Running?: boolean;
+          }
+        | undefined;
       const inspection: WorkerContainerInspection = {
         exists: true,
         container_id: info.Id,
         container_name: info.Name?.replace(/^\//u, '') || workerId,
-        container_state: state.Status,
-        container_status: (info as { Status?: string }).Status ?? state.Status,
-        container_started_at: state.StartedAt,
-        container_finished_at: state.FinishedAt,
-        running: state.Running === true,
+        container_state: state?.Status,
+        container_status: (info as { Status?: string }).Status ?? state?.Status,
+        container_started_at: state?.StartedAt,
+        container_finished_at: state?.FinishedAt,
+        running: state?.Running === true,
       };
 
       recordConnectionLifecycle({
