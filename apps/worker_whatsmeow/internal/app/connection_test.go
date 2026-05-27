@@ -77,6 +77,41 @@ func TestConnectionLifecycleConfigEnvParse(t *testing.T) {
 	}
 }
 
+func TestLifecycleDebugFiltersOnlyExceptionEvents(t *testing.T) {
+	if shouldRecordLifecycleDebugEvent(map[string]any{
+		"stage":   "test.success",
+		"outcome": "success",
+	}) {
+		t.Fatal("expected success lifecycle event to be dropped")
+	}
+	if shouldRecordLifecycleDebugEvent(map[string]any{
+		"stage":   "test.published",
+		"outcome": "published",
+	}) {
+		t.Fatal("expected published lifecycle event to be dropped")
+	}
+	if !shouldRecordLifecycleDebugEvent(map[string]any{
+		"stage":   "test.skipped",
+		"outcome": "skipped",
+	}) {
+		t.Fatal("expected skipped lifecycle event to be emitted")
+	}
+	if !shouldRecordLifecycleDebugEvent(map[string]any{
+		"stage":   "test.retrying",
+		"outcome": "retrying",
+	}) {
+		t.Fatal("expected retrying lifecycle event to be emitted")
+	}
+	if !shouldRecordLifecycleDebugEvent(map[string]any{
+		"stage":   "test.error",
+		"outcome": "success",
+		"level":   "error",
+		"error":   "forced error",
+	}) {
+		t.Fatal("expected explicit error lifecycle event to be emitted")
+	}
+}
+
 func TestConnectionLifecyclePayloadRedactsQRCodeAndPairingCode(t *testing.T) {
 	cfg := Config{
 		AccountID:                          "account-1",
@@ -99,7 +134,7 @@ func TestConnectionLifecyclePayloadRedactsQRCodeAndPairingCode(t *testing.T) {
 	payload := normalizeConnectionLifecyclePayload(ctx, cfg, map[string]any{
 		"stage":        "test.redaction",
 		"decision":     "redact",
-		"outcome":      "logged",
+		"outcome":      "skipped",
 		"qrcode":       "qr-secret-value",
 		"pairing_code": "pair-secret-value",
 		"raw_payload": map[string]any{

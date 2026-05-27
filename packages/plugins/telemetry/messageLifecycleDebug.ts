@@ -49,6 +49,42 @@ const DEBUG_INDEX = 'message_lifecycle';
 const DEFAULT_BODY_LIMIT = 500;
 const DEFAULT_RAW_LIMIT = 4000;
 const lifecycleTracer = trace.getTracer('message-lifecycle');
+const EXCEPTION_OUTCOMES = new Set([
+  'error',
+  'failed',
+  'partial_error',
+  'timeout',
+  'dlq',
+  'discarded',
+  'dropped',
+  'skipped',
+  'ignored',
+  'ignore_totally',
+  'ignore_automation',
+  'retrying',
+  'closed',
+  'message_creation_skipped',
+  'chat_saved_without_message',
+]);
+const ERROR_OUTCOMES = new Set([
+  'error',
+  'failed',
+  'partial_error',
+  'timeout',
+  'dlq',
+]);
+const ERROR_FIELD_KEYS = [
+  'error',
+  'err',
+  'exception',
+  'stack',
+  'error_message',
+];
+const SPAN_ATTRIBUTE_OMIT_KEYS = new Set([
+  'message',
+  'message_text',
+  'raw_payload',
+]);
 
 function readPositiveIntEnv(key: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[key] ?? '', 10);
@@ -168,63 +204,7 @@ export function runWithMessageLifecycleContext<T>(
   contextData: MessageLifecycleContext,
   callback: () => T | Promise<T>
 ): T | Promise<T> {
-  const runCallback = () => lifecycleStorage.run(contextData, callback);
-  if (!isMessageLifecycleDebugEnabled()) {
-    return runCallback();
-  }
-
-  return lifecycleTracer.startActiveSpan(
-    `message_lifecycle.${contextData.source_provider ?? 'unknown'}`,
-    {
-      attributes: Object.fromEntries(
-        Object.entries(contextData).filter(
-          ([, value]) =>
-            typeof value === 'string' ||
-            typeof value === 'number' ||
-            typeof value === 'boolean'
-        )
-      ),
-    },
-    (span) => {
-      try {
-        const result = runCallback();
-
-        if (result instanceof Promise) {
-          return result
-            .then((resolved) => {
-              span.setStatus({ code: SpanStatusCode.OK });
-              span.end();
-              return resolved;
-            })
-            .catch((error) => {
-              const normalizedError =
-                error instanceof Error ? error : new Error(String(error));
-              span.recordException(normalizedError);
-              span.setStatus({
-                code: SpanStatusCode.ERROR,
-                message: normalizedError.message,
-              });
-              span.end();
-              throw error;
-            });
-        }
-
-        span.setStatus({ code: SpanStatusCode.OK });
-        span.end();
-        return result;
-      } catch (error) {
-        const normalizedError =
-          error instanceof Error ? error : new Error(String(error));
-        span.recordException(normalizedError);
-        span.setStatus({
-          code: SpanStatusCode.ERROR,
-          message: normalizedError.message,
-        });
-        span.end();
-        throw error;
-      }
-    }
-  );
+  return lifecycleStorage.run(contextData, callback);
 }
 
 function sourceLocation(): {
@@ -235,7 +215,11 @@ function sourceLocation(): {
   const stack = new Error().stack?.split('\n').slice(2) ?? [];
   const frame = stack.find(
     (line) =>
-      !line.includes('messageLifecycleDebug') && !line.includes('node:internal')
+      !line.includes('messageLifecycleDebug') &&
+      !line.includes('.logLifecycle') &&
+      !line.includes('.logLifecycleForMessage') &&
+      !line.includes('.logLifecycleForUpsert') &&
+      !line.includes('node:internal')
   );
 
   if (!frame) {
@@ -325,19 +309,110 @@ function normalizeEventPayload(
     payload.raw_truncated = rawPayload.truncated;
   }
 
+  const spanContext = trace.getSpan(context.active())?.spanContext();
+  if (spanContext) {
+    payload.trace_id = spanContext.traceId;
+    payload.span_id = spanContext.spanId;
+  }
+
   return payload;
 }
 
+function normalizeToken(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  return true;
+}
+
+function eventHasErrorField(event: MessageLifecycleEvent): boolean {
+  return ERROR_FIELD_KEYS.some(
+    (key) =>
+      Object.prototype.hasOwnProperty.call(event, key) &&
+      hasMeaningfulValue(event[key])
+  );
+}
+
+function shouldRecordLifecycleEvent(event: MessageLifecycleEvent): boolean {
+  const level = normalizeToken(event.level);
+  if (level === 'warn' || level === 'error') return true;
+
+  const outcome = normalizeToken(event.outcome);
+  if (outcome && EXCEPTION_OUTCOMES.has(outcome)) return true;
+
+  return eventHasErrorField(event);
+}
+
+function isErrorLifecycleEvent(event: MessageLifecycleEvent): boolean {
+  if (normalizeToken(event.level) === 'error') return true;
+
+  const outcome = normalizeToken(event.outcome);
+  if (outcome && ERROR_OUTCOMES.has(outcome)) return true;
+
+  return eventHasErrorField(event);
+}
+
+function errorFromLifecycleEvent(event: MessageLifecycleEvent): Error {
+  const value = ERROR_FIELD_KEYS.map((key) => event[key]).find(
+    hasMeaningfulValue
+  );
+  if (value instanceof Error) return value;
+
+  const message =
+    toNonEmptyString(value) ??
+    toNonEmptyString(event.reason) ??
+    `${event.stage}:${event.outcome ?? 'exception'}`;
+  return new Error(message);
+}
+
+function spanAttributes(
+  payload: Record<string, PrimitiveLogValue>
+): Record<string, PrimitiveLogValue> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(
+      ([key]) => !SPAN_ATTRIBUTE_OMIT_KEYS.has(key)
+    )
+  );
+}
+
+function recordLifecycleExceptionSpan(
+  payload: Record<string, PrimitiveLogValue>,
+  event: MessageLifecycleEvent
+): void {
+  const span = lifecycleTracer.startSpan(
+    `message_lifecycle.exception.${event.stage}`,
+    { attributes: spanAttributes(payload) }
+  );
+  const spanContext = span.spanContext();
+  payload.trace_id = spanContext.traceId;
+  payload.span_id = spanContext.spanId;
+
+  if (isErrorLifecycleEvent(event)) {
+    const error = errorFromLifecycleEvent(event);
+    span.recordException(error);
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: error.message,
+    });
+  }
+
+  span.end();
+}
+
 export function recordMessageLifecycle(event: MessageLifecycleEvent): void {
-  if (!isMessageLifecycleDebugEnabled()) {
+  if (!isMessageLifecycleDebugEnabled() || !shouldRecordLifecycleEvent(event)) {
     return;
   }
 
   const level = event.level ?? 'info';
-  logger[level](
-    normalizeEventPayload(event),
-    event.message ?? 'Message lifecycle event'
-  );
+  const payload = normalizeEventPayload(event);
+  recordLifecycleExceptionSpan(payload, event);
+  logger[level](payload, event.message ?? 'Message lifecycle event');
 }
 
 function headersToCarrier(headers?: MessageHeader[]): Record<string, string> {

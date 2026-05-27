@@ -5,7 +5,7 @@ Este documento explica os logs temporarios de investigacao para:
 - ciclo de vida de mensagens: `debug_index="message_lifecycle"`
 - ciclo de vida de conexoes: `debug_index="connection_lifecycle"`
 
-Esses logs existem para diagnosticar onde uma mensagem ou uma conexao parou no fluxo ponta a ponta. Eles sao detalhados de proposito e devem ficar desligados fora de investigacoes.
+Esses logs existem para diagnosticar onde uma mensagem ou uma conexao parou no fluxo ponta a ponta. Eles emitem apenas excecoes do fluxo: erro, retry, DLQ, descarte, skip, ignored/dropped ou outro ponto que encerra o fluxo sem continuidade. Eventos de sucesso/progresso nao sao enviados.
 
 ## Ativacao
 
@@ -30,9 +30,19 @@ MESSAGE_LIFECYCLE_DEBUG_ENABLED=false
 CONNECTION_LIFECYCLE_DEBUG_ENABLED=false
 ```
 
+## O Que E Emitido
+
+Com os flags ligados, o lifecycle debug registra apenas eventos problematicos:
+
+- `level="warn"` ou `level="error"`
+- `outcome` em `error`, `failed`, `partial_error`, `timeout`, `dlq`, `discarded`, `dropped`, `skipped`, `ignored`, `ignore_totally`, `ignore_automation`, `retrying`, `closed`, `message_creation_skipped` ou `chat_saved_without_message`
+- qualquer evento que tenha `error`, `err`, `exception`, `stack` ou `error_message`
+
+Eventos normais como `received`, `started`, `success`, `published`, `committed`, `completed`, `created`, `mapped`, `queued` e `chatbot` sao descartados no helper antes de serializar payload, truncar raw ou capturar arquivo/linha.
+
 ## Onde Fica Salvo
 
-Os eventos sao emitidos como logs OpenTelemetry e seguem o pipeline OTLP configurado pelo ambiente. No fluxo esperado, eles chegam ao OTel Collector e sao armazenados no Loki. Eles nao criam indice Elasticsearch.
+Os eventos de excecao sao emitidos como logs OpenTelemetry e seguem o pipeline OTLP configurado pelo ambiente. No fluxo esperado, eles chegam ao OTel Collector e sao armazenados no Loki. Eles nao criam indice Elasticsearch.
 
 O "indice unico" citado na implementacao e um indice logico via campo:
 
@@ -41,7 +51,7 @@ O "indice unico" citado na implementacao e um indice logico via campo:
 
 Tambem existe `log_type` com o mesmo valor, para facilitar filtros em backends que exibem atributos de forma diferente.
 
-Os spans criados durante a investigacao vao para Tempo via OpenTelemetry. Quando o log tiver `trace_id` e `span_id`, da para sair do log no Loki/Grafana e abrir a trace correspondente no Tempo.
+Para reduzir custo, os spans de lifecycle sao curtos e criados apenas para eventos emitidos. Quando o log tiver `trace_id` e `span_id`, da para sair do log no Loki/Grafana e abrir a trace correspondente no Tempo.
 
 No Whatsmeow, se o exporter OTLP de logs nao estiver disponivel, existe fallback operacional em stdout. Nesse caso os logs podem aparecer no stdout/container e tambem chegar ao Loki pelo coletor de logs do ambiente, se houver.
 
@@ -159,12 +169,12 @@ Filtros uteis:
 | message_key_id="MESSAGE_KEY_ID"
 ```
 
-Para achar descartes/paradas:
+Para achar descartes, retries, DLQ e falhas:
 
 ```logql
 {service_name=~".+"}
 | debug_index="message_lifecycle"
-| outcome=~"skipped|discarded|error"
+| outcome=~"skipped|discarded|dropped|ignored|retrying|dlq|failed|partial_error|timeout|error"
 ```
 
 ### Conexao Especifica
@@ -193,12 +203,12 @@ Filtros uteis:
 | source_provider=~"baileys|wwebjs|whatsmeow"
 ```
 
-Para achar falhas de QR, gRPC, reconnect ou notify:
+Para achar skips, retries e falhas de QR, gRPC, reconnect ou notify:
 
 ```logql
 {service_name=~".+"}
 | debug_index="connection_lifecycle"
-| outcome=~"error|skipped|retrying"
+| outcome=~"skipped|retrying|failed|partial_error|timeout|error"
 ```
 
 ## Ordem De Investigacao
@@ -207,16 +217,16 @@ Para mensagem:
 
 1. Busque pelo `message_key_id`, `jid`, `phone` ou `message_lifecycle_id`.
 2. Ordene os logs do mais antigo para o mais novo.
-3. Siga a coluna `stage`.
-4. Procure o primeiro evento com `outcome="skipped"`, `outcome="discarded"` ou `outcome="error"`.
+3. O primeiro evento encontrado ja representa um ponto de excecao/interrupcao do fluxo.
+4. Use `stage`, `decision`, `outcome` e `reason` para entender a causa.
 5. Use `source_file`, `source_line` e `source_function` para ir direto ao branch do codigo.
-6. Se houver `trace_id`, abra a trace no Tempo e confira os spans entre worker, Kafka, service API, Elastic e Centrifugo.
+6. Se houver `trace_id`, abra a trace no Tempo para ver o span curto do ponto problematico e qualquer trace pai ativa.
 
 Para conexao:
 
 1. Busque pelo `worker_id`, `account_id` ou `connection_lifecycle_id`.
-2. Siga os stages desde manager/balancer ate o worker.
-3. Verifique branches como validacao, fallback gRPC, health check, QR gerado, auth, ready, disconnect, reconnect, notify e publish.
+2. O primeiro evento encontrado ja representa um ponto de excecao/interrupcao do fluxo.
+3. Verifique branches como validacao, fallback gRPC, health check, QR/auth, disconnect, reconnect, notify e publish.
 4. Use `grpc_method`, `grpc_address`, `attempt`, `max_attempts`, `status` e `code` para identificar timeout, rota errada, reconnect ou falha de autenticacao.
 5. Abra o `trace_id` no Tempo quando disponivel.
 

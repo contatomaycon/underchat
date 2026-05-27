@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -97,42 +96,16 @@ func extractIncomingConnectionLifecycleContext(ctx context.Context, cfg Config, 
 
 func startConnectionLifecycleSpan(ctx context.Context, cfg Config, lifecycle connectionLifecycleContext) (context.Context, func(error)) {
 	ctx = contextWithConnectionLifecycle(ctx, lifecycle)
-	if !cfg.ConnectionLifecycleDebugEnabled {
-		return ctx, func(error) {}
-	}
-
-	attrs := []attribute.KeyValue{
-		attribute.String("debug_index", connectionLifecycleDebugIndex),
-		attribute.String("log_type", connectionLifecycleDebugIndex),
-		attribute.String("connection_lifecycle_id", lifecycle.ConnectionLifecycleID),
-		attribute.String("account_id", lifecycle.AccountID),
-		attribute.String("worker_id", lifecycle.WorkerID),
-		attribute.String("channel_id", lifecycle.ChannelID),
-		attribute.String("worker_type", lifecycle.WorkerType),
-		attribute.String("source_provider", lifecycle.SourceProvider),
-		attribute.String("connection_type", lifecycle.ConnectionType),
-		attribute.String("connection_action", lifecycle.ConnectionAction),
-	}
-	tracer := otel.Tracer("connection-lifecycle")
-	spanCtx, span := tracer.Start(ctx, "connection_lifecycle."+firstNonEmpty(lifecycle.SourceProvider, "unknown"), trace.WithAttributes(attrs...))
-
-	return spanCtx, func(err error) {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		} else {
-			span.SetStatus(codes.Ok, "")
-		}
-		span.End()
-	}
+	return ctx, func(error) {}
 }
 
 func recordConnectionLifecycle(ctx context.Context, cfg Config, event map[string]any) {
-	if !cfg.ConnectionLifecycleDebugEnabled {
+	if !cfg.ConnectionLifecycleDebugEnabled || !shouldRecordLifecycleDebugEvent(event) {
 		return
 	}
 
 	payload := normalizeConnectionLifecyclePayload(ctx, cfg, event)
+	recordConnectionLifecycleExceptionSpan(ctx, payload, event)
 	connectionLifecycleLoggerMu.RLock()
 	logger := connectionLifecycleLogger
 	connectionLifecycleLoggerMu.RUnlock()
@@ -209,6 +182,27 @@ func normalizeConnectionLifecyclePayload(ctx context.Context, cfg Config, event 
 		payload["raw_truncated"] = truncated
 	}
 	return payload
+}
+
+func recordConnectionLifecycleExceptionSpan(ctx context.Context, payload map[string]any, event map[string]any) {
+	stage := firstNonEmpty(lifecycleString(payload["stage"]), "unknown")
+	tracer := otel.Tracer("connection-lifecycle")
+	_, span := tracer.Start(
+		ctx,
+		"connection_lifecycle.exception."+stage,
+		trace.WithAttributes(lifecycleSpanAttributes(payload)...),
+	)
+	spanContext := span.SpanContext()
+	if spanContext.IsValid() {
+		payload["trace_id"] = spanContext.TraceID().String()
+		payload["span_id"] = spanContext.SpanID().String()
+	}
+	if lifecycleEventIsError(event) {
+		err := lifecycleErrorFromEvent(event)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
 }
 
 func addConnectionSensitiveMetadata(payload map[string]any, key string, value any) bool {

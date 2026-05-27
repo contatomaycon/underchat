@@ -60,6 +60,38 @@ const GRPC_CONNECTION_LIFECYCLE_ID_HEADER = 'x-connection-lifecycle-id';
 const DEFAULT_VALUE_LIMIT = 500;
 const DEFAULT_RAW_LIMIT = 4000;
 const lifecycleTracer = trace.getTracer('connection-lifecycle');
+const EXCEPTION_OUTCOMES = new Set([
+  'error',
+  'failed',
+  'partial_error',
+  'timeout',
+  'dlq',
+  'discarded',
+  'dropped',
+  'skipped',
+  'ignored',
+  'ignore_totally',
+  'ignore_automation',
+  'retrying',
+  'closed',
+  'message_creation_skipped',
+  'chat_saved_without_message',
+]);
+const ERROR_OUTCOMES = new Set([
+  'error',
+  'failed',
+  'partial_error',
+  'timeout',
+  'dlq',
+]);
+const ERROR_FIELD_KEYS = [
+  'error',
+  'err',
+  'exception',
+  'stack',
+  'error_message',
+];
+const SPAN_ATTRIBUTE_OMIT_KEYS = new Set(['message', 'value', 'raw_payload']);
 
 function readPositiveIntEnv(key: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[key] ?? '', 10);
@@ -160,63 +192,7 @@ export function runWithConnectionLifecycleContext<T>(
   contextData: ConnectionLifecycleContext,
   callback: () => T | Promise<T>
 ): T | Promise<T> {
-  const runCallback = () => lifecycleStorage.run(contextData, callback);
-  if (!isConnectionLifecycleDebugEnabled()) {
-    return runCallback();
-  }
-
-  return lifecycleTracer.startActiveSpan(
-    `connection_lifecycle.${contextData.source_provider ?? 'unknown'}`,
-    {
-      attributes: Object.fromEntries(
-        Object.entries(contextData).filter(
-          ([, value]) =>
-            typeof value === 'string' ||
-            typeof value === 'number' ||
-            typeof value === 'boolean'
-        )
-      ),
-    },
-    (span) => {
-      try {
-        const result = runCallback();
-
-        if (result instanceof Promise) {
-          return result
-            .then((resolved) => {
-              span.setStatus({ code: SpanStatusCode.OK });
-              span.end();
-              return resolved;
-            })
-            .catch((error) => {
-              const normalizedError =
-                error instanceof Error ? error : new Error(String(error));
-              span.recordException(normalizedError);
-              span.setStatus({
-                code: SpanStatusCode.ERROR,
-                message: normalizedError.message,
-              });
-              span.end();
-              throw error;
-            });
-        }
-
-        span.setStatus({ code: SpanStatusCode.OK });
-        span.end();
-        return result;
-      } catch (error) {
-        const normalizedError =
-          error instanceof Error ? error : new Error(String(error));
-        span.recordException(normalizedError);
-        span.setStatus({
-          code: SpanStatusCode.ERROR,
-          message: normalizedError.message,
-        });
-        span.end();
-        throw error;
-      }
-    }
-  );
+  return lifecycleStorage.run(contextData, callback);
 }
 
 function sourceLocation(): {
@@ -229,6 +205,7 @@ function sourceLocation(): {
     (line) =>
       !line.includes('connectionLifecycleDebug') &&
       !line.includes('.logConnectionEvent') &&
+      !line.includes('.logLifecycle') &&
       !line.includes('node:internal')
   );
 
@@ -415,18 +392,106 @@ function normalizeEventPayload(
   return payload;
 }
 
+function normalizeToken(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  return true;
+}
+
+function eventHasErrorField(event: ConnectionLifecycleEvent): boolean {
+  return ERROR_FIELD_KEYS.some(
+    (key) =>
+      Object.prototype.hasOwnProperty.call(event, key) &&
+      hasMeaningfulValue(event[key])
+  );
+}
+
+function shouldRecordLifecycleEvent(event: ConnectionLifecycleEvent): boolean {
+  const level = normalizeToken(event.level);
+  if (level === 'warn' || level === 'error') return true;
+
+  const outcome = normalizeToken(event.outcome);
+  if (outcome && EXCEPTION_OUTCOMES.has(outcome)) return true;
+
+  return eventHasErrorField(event);
+}
+
+function isErrorLifecycleEvent(event: ConnectionLifecycleEvent): boolean {
+  if (normalizeToken(event.level) === 'error') return true;
+
+  const outcome = normalizeToken(event.outcome);
+  if (outcome && ERROR_OUTCOMES.has(outcome)) return true;
+
+  return eventHasErrorField(event);
+}
+
+function errorFromLifecycleEvent(event: ConnectionLifecycleEvent): Error {
+  const value = ERROR_FIELD_KEYS.map((key) => event[key]).find(
+    hasMeaningfulValue
+  );
+  if (value instanceof Error) return value;
+
+  const message =
+    toNonEmptyString(value) ??
+    toNonEmptyString(event.reason) ??
+    `${event.stage}:${event.outcome ?? 'exception'}`;
+  return new Error(message);
+}
+
+function spanAttributes(
+  payload: Record<string, PrimitiveLogValue>
+): Record<string, PrimitiveLogValue> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(
+      ([key]) => !SPAN_ATTRIBUTE_OMIT_KEYS.has(key)
+    )
+  );
+}
+
+function recordLifecycleExceptionSpan(
+  payload: Record<string, PrimitiveLogValue>,
+  event: ConnectionLifecycleEvent
+): void {
+  const span = lifecycleTracer.startSpan(
+    `connection_lifecycle.exception.${event.stage}`,
+    { attributes: spanAttributes(payload) }
+  );
+  const spanContext = span.spanContext();
+  payload.trace_id = spanContext.traceId;
+  payload.span_id = spanContext.spanId;
+
+  if (isErrorLifecycleEvent(event)) {
+    const error = errorFromLifecycleEvent(event);
+    span.recordException(error);
+    span.setStatus({
+      code: SpanStatusCode.ERROR,
+      message: error.message,
+    });
+  }
+
+  span.end();
+}
+
 export function recordConnectionLifecycle(
   event: ConnectionLifecycleEvent
 ): void {
-  if (!isConnectionLifecycleDebugEnabled()) {
+  if (
+    !isConnectionLifecycleDebugEnabled() ||
+    !shouldRecordLifecycleEvent(event)
+  ) {
     return;
   }
 
   const level = event.level ?? 'info';
-  logger[level](
-    normalizeEventPayload(event),
-    event.message ?? 'Connection lifecycle event'
-  );
+  const payload = normalizeEventPayload(event);
+  recordLifecycleExceptionSpan(payload, event);
+  logger[level](payload, event.message ?? 'Connection lifecycle event');
 }
 
 function metadataToCarrier(metadata?: Metadata): Record<string, string> {

@@ -79,7 +79,7 @@ describe('connectionLifecycleDebug', () => {
       recordConnectionLifecycle({
         stage: 'test.enabled',
         decision: 'emit',
-        outcome: 'logged',
+        outcome: 'skipped',
         qrcode: 'qr-secret-value',
         pairing_code: 'pair-secret',
         value: 'abcdef',
@@ -98,7 +98,7 @@ describe('connectionLifecycleDebug', () => {
         log_type: 'connection_lifecycle',
         stage: 'test.enabled',
         decision: 'emit',
-        outcome: 'logged',
+        outcome: 'skipped',
         connection_lifecycle_id: 'connection-1',
         account_id: 'account-1',
         worker_id: 'worker-1',
@@ -119,6 +119,43 @@ describe('connectionLifecycleDebug', () => {
     expect(JSON.stringify(payload)).not.toContain('qr-secret-value');
     expect(JSON.stringify(payload)).not.toContain('pair-secret');
     expect(JSON.stringify(payload)).not.toContain('raw-qr-secret');
+  });
+
+  it('drops non-exception outcomes when env is enabled', () => {
+    process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'true';
+
+    recordConnectionLifecycle({
+      stage: 'test.success',
+      decision: 'drop',
+      outcome: 'success',
+    });
+    recordConnectionLifecycle({
+      stage: 'test.published',
+      decision: 'drop',
+      outcome: 'published',
+    });
+
+    expect(mockedLogger.info).not.toHaveBeenCalled();
+  });
+
+  it('emits retrying and explicit error events', () => {
+    process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'true';
+
+    recordConnectionLifecycle({
+      stage: 'test.retrying',
+      decision: 'emit',
+      outcome: 'retrying',
+    });
+    recordConnectionLifecycle({
+      stage: 'test.error',
+      decision: 'emit',
+      outcome: 'success',
+      level: 'error',
+      error: 'forced error',
+    });
+
+    expect(mockedLogger.info).toHaveBeenCalledTimes(1);
+    expect(mockedLogger.error).toHaveBeenCalledTimes(1);
   });
 
   it('propagates connection lifecycle id through grpc metadata', () => {
@@ -143,7 +180,7 @@ describe('connectionLifecycleDebug', () => {
       recordConnectionLifecycle({
         stage: 'test.grpc',
         decision: 'extract',
-        outcome: 'logged',
+        outcome: 'skipped',
       });
     });
 
@@ -152,7 +189,7 @@ describe('connectionLifecycleDebug', () => {
       recordConnectionLifecycle({
         stage: 'test.grpc.enabled',
         decision: 'extract',
-        outcome: 'logged',
+        outcome: 'skipped',
       });
     });
 

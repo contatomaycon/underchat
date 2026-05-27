@@ -2632,17 +2632,17 @@ func incomingLifecycleMessageLike(evt *events.Message) *eventsMessageLike {
 }
 
 func (m *WhatsAppManager) logIncomingMessageDebug(ctx context.Context, evt *events.Message, skipReason string) {
-	if !m.cfg.MessageLifecycleDebugEnabled {
+	if !m.cfg.MessageLifecycleDebugEnabled || strings.TrimSpace(skipReason) == "" {
 		return
 	}
 
 	rawJSON, rawTruncated, rawErr := incomingRawMessageJSON(evt, m.cfg.MessageLifecycleDebugRawLimit)
 	recordMessageLifecycle(ctx, m.cfg, map[string]any{
-		"stage":                        "whatsmeow.incoming.received",
+		"stage":                        "whatsmeow.incoming.skip_raw",
 		"decision":                     "receive_provider_message",
-		"outcome":                      "received",
-		"reason":                       firstNonEmpty(skipReason, "none"),
-		"skip_reason":                  firstNonEmpty(skipReason, "none"),
+		"outcome":                      "skipped",
+		"reason":                       skipReason,
+		"skip_reason":                  skipReason,
 		"chat_server":                  incomingChatServer(evt),
 		"sender":                       incomingSenderString(evt),
 		"sender_alt":                   incomingSenderAltString(evt),

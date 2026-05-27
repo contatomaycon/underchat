@@ -47,6 +47,47 @@ var (
 	messageLifecycleLogger   otellog.Logger
 )
 
+var lifecycleExceptionOutcomes = map[string]struct{}{
+	"error":                      {},
+	"failed":                     {},
+	"partial_error":              {},
+	"timeout":                    {},
+	"dlq":                        {},
+	"discarded":                  {},
+	"dropped":                    {},
+	"skipped":                    {},
+	"ignored":                    {},
+	"ignore_totally":             {},
+	"ignore_automation":          {},
+	"retrying":                   {},
+	"closed":                     {},
+	"message_creation_skipped":   {},
+	"chat_saved_without_message": {},
+}
+
+var lifecycleErrorOutcomes = map[string]struct{}{
+	"error":         {},
+	"failed":        {},
+	"partial_error": {},
+	"timeout":       {},
+	"dlq":           {},
+}
+
+var lifecycleErrorFieldKeys = []string{
+	"error",
+	"err",
+	"exception",
+	"stack",
+	"error_message",
+}
+
+var lifecycleSpanAttributeOmitKeys = map[string]struct{}{
+	"message":      {},
+	"message_text": {},
+	"raw_payload":  {},
+	"value":        {},
+}
+
 func configureMessageLifecycleLoggerProvider(provider *sdklog.LoggerProvider) {
 	messageLifecycleLoggerMu.Lock()
 	defer messageLifecycleLoggerMu.Unlock()
@@ -135,37 +176,7 @@ func contextWithMessageLifecycle(ctx context.Context, lifecycle messageLifecycle
 
 func startMessageLifecycleSpan(ctx context.Context, cfg Config, lifecycle messageLifecycleContext) (context.Context, func(error)) {
 	ctx = contextWithMessageLifecycle(ctx, lifecycle)
-	if !cfg.MessageLifecycleDebugEnabled {
-		return ctx, func(error) {}
-	}
-
-	attrs := []attribute.KeyValue{
-		attribute.String("debug_index", messageLifecycleDebugIndex),
-		attribute.String("log_type", messageLifecycleDebugIndex),
-		attribute.String("message_lifecycle_id", lifecycle.MessageLifecycleID),
-		attribute.String("account_id", lifecycle.AccountID),
-		attribute.String("worker_id", lifecycle.WorkerID),
-		attribute.String("channel_id", lifecycle.ChannelID),
-		attribute.String("source_provider", lifecycle.SourceProvider),
-		attribute.String("message_key_id", lifecycle.MessageKeyID),
-		attribute.String("phone", lifecycle.Phone),
-		attribute.String("jid", lifecycle.JID),
-		attribute.String("lid", lifecycle.LID),
-		attribute.String("remote_jid", lifecycle.RemoteJID),
-		attribute.String("remote_jid_alt", lifecycle.RemoteJIDAlt),
-	}
-	tracer := otel.Tracer("message-lifecycle")
-	spanCtx, span := tracer.Start(ctx, "message_lifecycle."+firstNonEmpty(lifecycle.SourceProvider, "unknown"), trace.WithAttributes(attrs...))
-
-	return spanCtx, func(err error) {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		} else {
-			span.SetStatus(codes.Ok, "")
-		}
-		span.End()
-	}
+	return ctx, func(error) {}
 }
 
 func messageLifecycleFromContext(ctx context.Context) (messageLifecycleContext, bool) {
@@ -174,10 +185,11 @@ func messageLifecycleFromContext(ctx context.Context) (messageLifecycleContext, 
 }
 
 func recordMessageLifecycle(ctx context.Context, cfg Config, event map[string]any) {
-	if !cfg.MessageLifecycleDebugEnabled {
+	if !cfg.MessageLifecycleDebugEnabled || !shouldRecordLifecycleDebugEvent(event) {
 		return
 	}
 	payload := normalizeMessageLifecyclePayload(ctx, cfg, event)
+	recordMessageLifecycleExceptionSpan(ctx, payload, event)
 	messageLifecycleLoggerMu.RLock()
 	logger := messageLifecycleLogger
 	messageLifecycleLoggerMu.RUnlock()
@@ -252,6 +264,128 @@ func normalizeMessageLifecyclePayload(ctx context.Context, cfg Config, event map
 		payload["raw_truncated"] = truncated
 	}
 	return payload
+}
+
+func lifecycleToken(value any) string {
+	return strings.ToLower(strings.TrimSpace(stringValue(value)))
+}
+
+func lifecycleHasMeaningfulValue(value any) bool {
+	if value == nil {
+		return false
+	}
+	if typed, ok := value.(string); ok {
+		return strings.TrimSpace(typed) != ""
+	}
+	return true
+}
+
+func lifecycleEventHasErrorField(event map[string]any) bool {
+	for _, key := range lifecycleErrorFieldKeys {
+		value, ok := event[key]
+		if ok && lifecycleHasMeaningfulValue(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldRecordLifecycleDebugEvent(event map[string]any) bool {
+	level := lifecycleToken(event["level"])
+	if level == "warn" || level == "warning" || level == "error" {
+		return true
+	}
+
+	if _, ok := lifecycleExceptionOutcomes[lifecycleToken(event["outcome"])]; ok {
+		return true
+	}
+
+	return lifecycleEventHasErrorField(event)
+}
+
+func lifecycleEventIsError(event map[string]any) bool {
+	if lifecycleToken(event["level"]) == "error" {
+		return true
+	}
+	if _, ok := lifecycleErrorOutcomes[lifecycleToken(event["outcome"])]; ok {
+		return true
+	}
+	return lifecycleEventHasErrorField(event)
+}
+
+func lifecycleString(value any) string {
+	if text := stringValue(value); text != "" {
+		return text
+	}
+	return strings.TrimSpace(stringifyLifecycleValue(value))
+}
+
+func lifecycleErrorFromEvent(event map[string]any) error {
+	for _, key := range lifecycleErrorFieldKeys {
+		value, ok := event[key]
+		if !ok || !lifecycleHasMeaningfulValue(value) {
+			continue
+		}
+		if err, ok := value.(error); ok {
+			return err
+		}
+		if message := lifecycleString(value); message != "" {
+			return fmt.Errorf("%s", message)
+		}
+	}
+
+	message := firstNonEmpty(
+		lifecycleString(event["reason"]),
+		fmt.Sprintf("%s:%s", lifecycleString(event["stage"]), lifecycleString(event["outcome"])),
+	)
+	return fmt.Errorf("%s", message)
+}
+
+func lifecycleSpanAttributes(payload map[string]any) []attribute.KeyValue {
+	attrs := make([]attribute.KeyValue, 0, len(payload))
+	for key, value := range payload {
+		if _, omit := lifecycleSpanAttributeOmitKeys[key]; omit {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			attrs = append(attrs, attribute.String(key, typed))
+		case bool:
+			attrs = append(attrs, attribute.Bool(key, typed))
+		case int:
+			attrs = append(attrs, attribute.Int(key, typed))
+		case int64:
+			attrs = append(attrs, attribute.Int64(key, typed))
+		case float64:
+			attrs = append(attrs, attribute.Float64(key, typed))
+		case nil:
+			continue
+		default:
+			attrs = append(attrs, attribute.String(key, stringifyLifecycleValue(typed)))
+		}
+	}
+	return attrs
+}
+
+func recordMessageLifecycleExceptionSpan(ctx context.Context, payload map[string]any, event map[string]any) {
+	stage := firstNonEmpty(lifecycleString(payload["stage"]), "unknown")
+	tracer := otel.Tracer("message-lifecycle")
+	_, span := tracer.Start(
+		ctx,
+		"message_lifecycle.exception."+stage,
+		trace.WithAttributes(lifecycleSpanAttributes(payload)...),
+	)
+	spanContext := span.SpanContext()
+	if spanContext.IsValid() {
+		payload["trace_id"] = spanContext.TraceID().String()
+		payload["span_id"] = spanContext.SpanID().String()
+	}
+	if lifecycleEventIsError(event) {
+		err := lifecycleErrorFromEvent(event)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
 }
 
 func messageLifecycleAttributes(payload map[string]any) []otellog.KeyValue {

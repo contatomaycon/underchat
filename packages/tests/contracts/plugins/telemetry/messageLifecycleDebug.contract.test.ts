@@ -83,7 +83,7 @@ describe('messageLifecycleDebug', () => {
       recordMessageLifecycle({
         stage: 'test.enabled',
         decision: 'emit',
-        outcome: 'logged',
+        outcome: 'skipped',
         message_text: 'abcdef',
         raw_payload: { value: 'abcdefghijklmnop' },
       });
@@ -100,7 +100,7 @@ describe('messageLifecycleDebug', () => {
         log_type: 'message_lifecycle',
         stage: 'test.enabled',
         decision: 'emit',
-        outcome: 'logged',
+        outcome: 'skipped',
         account_id: 'account-1',
         worker_id: 'worker-1',
         channel_id: 'worker-1',
@@ -113,6 +113,48 @@ describe('messageLifecycleDebug', () => {
     );
     expect(payload.source_file).toEqual(expect.any(String));
     expect(payload.source_line).toEqual(expect.any(Number));
+  });
+
+  it('drops non-exception outcomes when env is enabled', () => {
+    process.env.MESSAGE_LIFECYCLE_DEBUG_ENABLED = 'true';
+
+    recordMessageLifecycle({
+      stage: 'test.success',
+      decision: 'drop',
+      outcome: 'success',
+    });
+    recordMessageLifecycle({
+      stage: 'test.published',
+      decision: 'drop',
+      outcome: 'published',
+    });
+
+    expect(mockedLogger.info).not.toHaveBeenCalled();
+  });
+
+  it('emits discarded, retrying and explicit error events', () => {
+    process.env.MESSAGE_LIFECYCLE_DEBUG_ENABLED = 'true';
+
+    recordMessageLifecycle({
+      stage: 'test.discarded',
+      decision: 'emit',
+      outcome: 'discarded',
+    });
+    recordMessageLifecycle({
+      stage: 'test.retrying',
+      decision: 'emit',
+      outcome: 'retrying',
+    });
+    recordMessageLifecycle({
+      stage: 'test.error',
+      decision: 'emit',
+      outcome: 'success',
+      level: 'error',
+      error: 'forced error',
+    });
+
+    expect(mockedLogger.info).toHaveBeenCalledTimes(2);
+    expect(mockedLogger.error).toHaveBeenCalledTimes(1);
   });
 
   it('builds a stable lifecycle id for the same message', () => {
