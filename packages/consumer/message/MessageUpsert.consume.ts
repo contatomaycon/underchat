@@ -3581,7 +3581,7 @@ export class MessageUpsertConsume {
           this.logLifecycle(data, {
             stage: 'message_upsert.chat_message.mark_read',
             decision: 'mark_as_read',
-            outcome: 'skipped',
+            outcome: 'disabled',
             reason: 'worker_config_disabled',
             chat_id: getChat.chat_id,
           });
@@ -5311,7 +5311,7 @@ export class MessageUpsertConsume {
           this.logLifecycle(data, {
             stage: 'message_upsert.route.existing_message',
             decision: 'existing_message_lookup',
-            outcome: 'handled',
+            outcome: 'skipped',
             reason: 'message_already_exists',
             phone,
             chat_message_id: existingMessage.message_id,
@@ -5345,7 +5345,7 @@ export class MessageUpsertConsume {
             this.logLifecycle(data, {
               stage: 'message_upsert.route.existing_related_message',
               decision: 'existing_related_message_lookup',
-              outcome: 'handled',
+              outcome: 'skipped',
               reason: 'related_message_already_exists',
               phone,
               chat_message_id: existingRelatedMessage.message_id,
@@ -5630,7 +5630,7 @@ export class MessageUpsertConsume {
       this.logLifecycle(data, {
         stage: 'message_upsert.active_validation.skip',
         decision: 'active_whatsapp_validation',
-        outcome: 'skipped',
+        outcome: 'not_applicable',
         reason: 'message_from_me',
         phone,
       });
@@ -5644,7 +5644,7 @@ export class MessageUpsertConsume {
       this.logLifecycle(data, {
         stage: 'message_upsert.active_validation.skip',
         decision: 'active_whatsapp_validation',
-        outcome: 'skipped',
+        outcome: 'not_applicable',
         reason: 'unsupported_message_type',
         phone,
         message_type: data.type,
@@ -5957,7 +5957,7 @@ export class MessageUpsertConsume {
       this.logLifecycle(data, {
         stage: 'message_upsert.consume.active_validation',
         decision: 'active_whatsapp_validation',
-        outcome: 'handled',
+        outcome: 'skipped',
         reason: 'active_validation_message',
         phone,
         partition,
