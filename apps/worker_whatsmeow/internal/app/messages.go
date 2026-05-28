@@ -37,6 +37,9 @@ func (e UnsupportedFeatureError) Error() string {
 }
 
 func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage) (map[string]any, error) {
+	opCtx, cancel := m.sendOperationContext(ctx)
+	defer cancel()
+
 	client := m.getClient()
 	if client == nil {
 		return nil, fmt.Errorf("client is not initialized")
@@ -45,20 +48,18 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 	if err != nil {
 		return nil, err
 	}
-	msg, err := m.buildOutgoingMessage(ctx, client, target, data)
+	msg, err := m.buildOutgoingMessage(opCtx, client, target, data)
 	if err != nil {
 		return nil, err
 	}
 	if text, ok := typingSimulationText(data); ok {
-		m.simulateTypingBeforeSend(ctx, client, target, text)
+		m.simulateTypingBeforeSend(opCtx, client, target, text)
 	}
-	sendCtx, cancel := context.WithTimeout(ctx, m.cfg.SendTimeout)
-	defer cancel()
-	resp, err := client.SendMessage(sendCtx, target, msg)
+	resp, err := client.SendMessage(opCtx, target, msg)
 	if err != nil {
 		return nil, err
 	}
-	m.markChatAsReadAppState(ctx, client, sentChatReadMessageKey(data, target, string(resp.ID)), target, time.Now())
+	m.markChatAsReadAppState(opCtx, client, sentChatReadMessageKey(data, target, string(resp.ID)), target, time.Now())
 	return map[string]any{
 		"key": map[string]any{
 			"id":        string(resp.ID),
@@ -69,6 +70,9 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 }
 
 func (m *WhatsAppManager) SendProfileStatus(ctx context.Context, data ProfileStatusMessage) (string, error) {
+	opCtx, cancel := m.sendOperationContext(ctx)
+	defer cancel()
+
 	client := m.getClient()
 	if client == nil {
 		return "", fmt.Errorf("client is not initialized")
@@ -76,13 +80,11 @@ func (m *WhatsAppManager) SendProfileStatus(ctx context.Context, data ProfileSta
 	if len(data.StatusJIDList) > 0 {
 		return "", UnsupportedFeatureError{Feature: "status_custom_audience"}
 	}
-	msg, err := m.buildProfileStatusMessage(ctx, client, data)
+	msg, err := m.buildProfileStatusMessage(opCtx, client, data)
 	if err != nil {
 		return "", err
 	}
-	sendCtx, cancel := context.WithTimeout(ctx, m.cfg.SendTimeout)
-	defer cancel()
-	resp, err := client.SendMessage(sendCtx, types.StatusBroadcastJID, msg)
+	resp, err := client.SendMessage(opCtx, types.StatusBroadcastJID, msg)
 	if err != nil {
 		return "", err
 	}
@@ -90,6 +92,9 @@ func (m *WhatsAppManager) SendProfileStatus(ctx context.Context, data ProfileSta
 }
 
 func (m *WhatsAppManager) DeleteProfileStatus(ctx context.Context, data ProfileStatusDeleteMessage) error {
+	opCtx, cancel := m.sendOperationContext(ctx)
+	defer cancel()
+
 	client := m.getClient()
 	if client == nil {
 		return fmt.Errorf("client is not initialized")
@@ -100,13 +105,14 @@ func (m *WhatsAppManager) DeleteProfileStatus(ctx context.Context, data ProfileS
 	if len(data.StatusJIDList) > 0 {
 		return UnsupportedFeatureError{Feature: "status_custom_audience"}
 	}
-	sendCtx, cancel := context.WithTimeout(ctx, m.cfg.SendTimeout)
-	defer cancel()
-	_, err := client.SendMessage(sendCtx, types.StatusBroadcastJID, client.BuildRevoke(types.StatusBroadcastJID, types.EmptyJID, types.MessageID(data.ExternalID)))
+	_, err := client.SendMessage(opCtx, types.StatusBroadcastJID, client.BuildRevoke(types.StatusBroadcastJID, types.EmptyJID, types.MessageID(data.ExternalID)))
 	return err
 }
 
 func (m *WhatsAppManager) UpdateProfileInfo(ctx context.Context, data ProfileInfoMessage) error {
+	opCtx, cancel := m.sendOperationContext(ctx)
+	defer cancel()
+
 	client := m.getClient()
 	if client == nil {
 		return fmt.Errorf("client is not initialized")
@@ -114,18 +120,18 @@ func (m *WhatsAppManager) UpdateProfileInfo(ctx context.Context, data ProfileInf
 	if strings.TrimSpace(data.Name) != "" {
 		name := strings.TrimSpace(data.Name)
 		log.Printf("whatsmeow profile info updating name worker_id=%s", m.cfg.WorkerID)
-		if err := client.SendAppState(ctx, appstate.BuildSettingPushName(name)); err != nil {
+		if err := client.SendAppState(opCtx, appstate.BuildSettingPushName(name)); err != nil {
 			return fmt.Errorf("update profile name: %w", err)
 		}
 		client.Store.PushName = name
-		if err := client.Store.Save(ctx); err != nil {
+		if err := client.Store.Save(opCtx); err != nil {
 			log.Printf("whatsmeow profile info local push name save failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 		}
 		log.Printf("whatsmeow profile info name updated worker_id=%s", m.cfg.WorkerID)
 	}
 	if strings.TrimSpace(data.Message) != "" {
 		log.Printf("whatsmeow profile info updating status worker_id=%s", m.cfg.WorkerID)
-		if err := client.SetStatusMessage(ctx, data.Message); err != nil {
+		if err := client.SetStatusMessage(opCtx, data.Message); err != nil {
 			return fmt.Errorf("update profile status: %w", err)
 		}
 		log.Printf("whatsmeow profile info status updated worker_id=%s", m.cfg.WorkerID)
@@ -136,7 +142,7 @@ func (m *WhatsAppManager) UpdateProfileInfo(ctx context.Context, data ProfileInf
 		}
 		if data.PhotoRemove {
 			log.Printf("whatsmeow profile info removing picture worker_id=%s jid=%s", m.cfg.WorkerID, client.Store.ID.String())
-			_, err := client.SetProfilePhoto(ctx, nil)
+			_, err := client.SetProfilePhoto(opCtx, nil)
 			if err != nil {
 				return fmt.Errorf("remove profile picture: %w", err)
 			}
@@ -144,7 +150,7 @@ func (m *WhatsAppManager) UpdateProfileInfo(ctx context.Context, data ProfileInf
 			return err
 		}
 		log.Printf("whatsmeow profile info updating picture worker_id=%s jid=%s", m.cfg.WorkerID, client.Store.ID.String())
-		body, contentType, _, err := downloadURL(ctx, data.Photo)
+		body, contentType, _, err := downloadURL(opCtx, data.Photo)
 		if err != nil {
 			return fmt.Errorf("download profile picture: %w", err)
 		}
@@ -152,13 +158,20 @@ func (m *WhatsAppManager) UpdateProfileInfo(ctx context.Context, data ProfileInf
 		if err != nil {
 			return fmt.Errorf("normalize profile picture: %w", err)
 		}
-		pictureID, err := client.SetProfilePhoto(ctx, avatar)
+		pictureID, err := client.SetProfilePhoto(opCtx, avatar)
 		if err != nil {
 			return fmt.Errorf("update profile picture: %w", err)
 		}
 		log.Printf("whatsmeow profile info picture updated worker_id=%s picture_id=%s bytes=%d", m.cfg.WorkerID, pictureID, len(avatar))
 	}
 	return nil
+}
+
+func (m *WhatsAppManager) sendOperationContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if m.cfg.SendTimeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, m.cfg.SendTimeout)
 }
 
 func normalizeProfilePhotoJPEG(body []byte, contentType string) ([]byte, error) {
@@ -409,7 +422,7 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 	}
 	body, contentType, fileName, err := downloadURL(ctx, url)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("download media %s: %w", contentKey, err)
 	}
 	if mimeType := stringValue(media["mimetype"]); mimeType != "" {
 		contentType = mimeType
@@ -419,7 +432,7 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 	}
 	upload, err := client.Upload(ctx, body, mediaType)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("upload media %s: %w", contentKey, err)
 	}
 	now := time.Now().Unix()
 	caption := firstNonEmpty(stringValue(media["caption"]), stringValue(data.Content["message"]))

@@ -196,18 +196,21 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 
 func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) error {
 	if statusDelete, ok, err := mapToProfileStatusDeleteMessage(msg.Value); err != nil {
+		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
 		return nil
 	} else if ok {
 		return w.handleProfileStatusDelete(ctx, msg, statusDelete)
 	}
 
 	if status, ok, err := mapToProfileStatusMessage(msg.Value); err != nil {
+		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
 		return nil
 	} else if ok {
 		return w.handleProfileStatus(ctx, msg, status)
 	}
 
 	if profileInfo, ok, err := mapToProfileInfoMessage(msg.Value); err != nil {
+		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
 		return nil
 	} else if ok {
 		return w.handleProfileInfo(ctx, msg, profileInfo)
@@ -215,16 +218,41 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) error
 
 	data, err := mapToChatMessage(msg.Value)
 	if err != nil {
+		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
 		return nil
 	}
 	if ok := w.claimMessage(ctx, chatMessageClaimID(data)); !ok {
 		return nil
 	}
+	startedAt := time.Now()
 	result, err := w.whatsapp.SendChatMessage(ctx, data)
 	if err != nil {
-		return w.markSendAsNotSent(ctx, data.MessageID, data.ChatID, stringValue(data.Account["id"]), err)
+		return w.markSendAsNotSent(ctx, data.MessageID, data.ChatID, stringValue(data.Account["id"]), err, sendFailureLogContext{
+			Topic:        msg.Topic,
+			Partition:    msg.Partition,
+			Offset:       msg.Offset,
+			MessageType:  chatMessageType(data),
+			Elapsed:      time.Since(startedAt),
+			SendTimeout:  w.cfg.SendTimeout,
+			HandlerScope: "send_message",
+		})
 	}
-	return w.kafka.SendJSON(ctx, topicUpdateMessage, data.MessageID, UpdateMessage{Message: result, Data: data})
+	if err := w.kafka.SendJSON(ctx, topicUpdateMessage, data.MessageID, UpdateMessage{Message: result, Data: data}); err != nil {
+		log.Printf(
+			"whatsmeow send update publish failed worker_id=%s source_topic=%s partition=%d offset=%d message_id=%s chat_id=%s message_type=%s topic=%s error=%v",
+			w.cfg.WorkerID,
+			msg.Topic,
+			msg.Partition,
+			msg.Offset,
+			data.MessageID,
+			data.ChatID,
+			chatMessageType(data),
+			topicUpdateMessage,
+			err,
+		)
+		return err
+	}
+	return nil
 }
 
 func (w *Worker) handleProfileStatus(ctx context.Context, msg kafka.Message, data ProfileStatusMessage) error {
@@ -235,17 +263,30 @@ func (w *Worker) handleProfileStatus(ctx context.Context, msg kafka.Message, dat
 	if ok := w.claimMessage(ctx, messageID); !ok {
 		return nil
 	}
+	startedAt := time.Now()
 	externalID, err := w.whatsapp.SendProfileStatus(ctx, data)
 	if err != nil {
-		return w.markSendAsNotSent(ctx, messageID, "", data.AccountID, err)
+		return w.markSendAsNotSent(ctx, messageID, "", data.AccountID, err, sendFailureLogContext{
+			Topic:        msg.Topic,
+			Partition:    msg.Partition,
+			Offset:       msg.Offset,
+			MessageType:  "profile_status",
+			Elapsed:      time.Since(startedAt),
+			SendTimeout:  w.cfg.SendTimeout,
+			HandlerScope: "profile_status",
+		})
 	}
 	if externalID == "" {
 		return nil
 	}
-	return w.kafka.SendJSON(ctx, topicUpdateProfileStatusExternalID, data.WorkerProfileStatusID, map[string]any{
+	if err := w.kafka.SendJSON(ctx, topicUpdateProfileStatusExternalID, data.WorkerProfileStatusID, map[string]any{
 		"worker_profile_status_id": data.WorkerProfileStatusID,
 		"external_id":              externalID,
-	})
+	}); err != nil {
+		log.Printf("whatsmeow profile status external id publish failed worker_id=%s source_topic=%s partition=%d offset=%d profile_status_id=%s topic=%s error=%v", w.cfg.WorkerID, msg.Topic, msg.Partition, msg.Offset, data.WorkerProfileStatusID, topicUpdateProfileStatusExternalID, err)
+		return err
+	}
+	return nil
 }
 
 func (w *Worker) handleProfileStatusDelete(ctx context.Context, msg kafka.Message, data ProfileStatusDeleteMessage) error {
@@ -256,8 +297,17 @@ func (w *Worker) handleProfileStatusDelete(ctx context.Context, msg kafka.Messag
 	if ok := w.claimMessage(ctx, "delete:"+messageID+":"+data.ExternalID); !ok {
 		return nil
 	}
+	startedAt := time.Now()
 	if err := w.whatsapp.DeleteProfileStatus(ctx, data); err != nil {
-		return w.markSendAsNotSent(ctx, messageID, "", data.AccountID, err)
+		return w.markSendAsNotSent(ctx, messageID, "", data.AccountID, err, sendFailureLogContext{
+			Topic:        msg.Topic,
+			Partition:    msg.Partition,
+			Offset:       msg.Offset,
+			MessageType:  "profile_status_delete",
+			Elapsed:      time.Since(startedAt),
+			SendTimeout:  w.cfg.SendTimeout,
+			HandlerScope: "profile_status_delete",
+		})
 	}
 	return nil
 }
@@ -270,8 +320,17 @@ func (w *Worker) handleProfileInfo(ctx context.Context, msg kafka.Message, data 
 	if ok := w.claimMessage(ctx, messageID+":"+hashRaw(data.Raw)); !ok {
 		return nil
 	}
+	startedAt := time.Now()
 	if err := w.whatsapp.UpdateProfileInfo(ctx, data); err != nil {
-		return w.markSendAsNotSent(ctx, messageID, "", data.AccountID, err)
+		return w.markSendAsNotSent(ctx, messageID, "", data.AccountID, err, sendFailureLogContext{
+			Topic:        msg.Topic,
+			Partition:    msg.Partition,
+			Offset:       msg.Offset,
+			MessageType:  "profile_info",
+			Elapsed:      time.Since(startedAt),
+			SendTimeout:  w.cfg.SendTimeout,
+			HandlerScope: "profile_info",
+		})
 	}
 	return nil
 }
@@ -279,17 +338,35 @@ func (w *Worker) handleProfileInfo(ctx context.Context, msg kafka.Message, data 
 func (w *Worker) handleScheduleSend(ctx context.Context, msg kafka.Message) error {
 	var data ScheduleMessage
 	if err := json.Unmarshal(msg.Value, &data); err != nil {
+		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
 		return nil
 	}
 	if !data.IsValidated {
 		return w.publishScheduleStatus(ctx, data, "ignored")
 	}
+	startedAt := time.Now()
 	result, err := w.whatsapp.SendChatMessage(ctx, data.Message)
 	if err != nil {
+		log.Printf(
+			"whatsmeow schedule send failed worker_id=%s topic=%s partition=%d offset=%d schedule_id=%s contact_id=%s message_id=%s chat_id=%s message_type=%s elapsed_ms=%d timeout=%s error=%v",
+			w.cfg.WorkerID,
+			msg.Topic,
+			msg.Partition,
+			msg.Offset,
+			data.ScheduleID,
+			data.ContactID,
+			data.Message.MessageID,
+			data.Message.ChatID,
+			chatMessageType(data.Message),
+			time.Since(startedAt).Milliseconds(),
+			w.cfg.SendTimeout,
+			err,
+		)
 		_ = w.publishScheduleStatus(ctx, data, "failed")
 		return err
 	}
 	if err := w.kafka.SendJSON(ctx, topicUpdateMessage, data.Message.MessageID, UpdateMessage{Message: result, Data: data.Message}); err != nil {
+		log.Printf("whatsmeow schedule update publish failed worker_id=%s source_topic=%s partition=%d offset=%d schedule_id=%s message_id=%s topic=%s error=%v", w.cfg.WorkerID, msg.Topic, msg.Partition, msg.Offset, data.ScheduleID, data.Message.MessageID, topicUpdateMessage, err)
 		return err
 	}
 	return w.publishScheduleStatus(ctx, data, "sent")
@@ -316,6 +393,7 @@ func (w *Worker) handlePhoneValidation(ctx context.Context, msg kafka.Message) e
 func (w *Worker) handleNotification(ctx context.Context, msg kafka.Message) error {
 	var data NotificationMessage
 	if err := json.Unmarshal(msg.Value, &data); err != nil {
+		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
 		return nil
 	}
 	if strings.TrimSpace(data.MessageWhatsApp) == "" {
@@ -340,7 +418,7 @@ func (w *Worker) handleNotification(ctx context.Context, msg kafka.Message) erro
 			})
 		}
 	}
-	_, err := w.whatsapp.SendChatMessage(ctx, ChatMessage{
+	notificationMessage := ChatMessage{
 		MessageID: "notification_" + data.NotificationID,
 		MessageKey: &MessageKey{
 			RemoteJID: target,
@@ -349,7 +427,23 @@ func (w *Worker) handleNotification(ctx context.Context, msg kafka.Message) erro
 			"type":    MessageTypeText,
 			"message": data.MessageWhatsApp,
 		},
-	})
+	}
+	startedAt := time.Now()
+	_, err := w.whatsapp.SendChatMessage(ctx, notificationMessage)
+	if err != nil {
+		log.Printf(
+			"whatsmeow notification send failed worker_id=%s topic=%s partition=%d offset=%d notification_id=%s message_id=%s elapsed_ms=%d timeout=%s error=%v",
+			w.cfg.WorkerID,
+			msg.Topic,
+			msg.Partition,
+			msg.Offset,
+			data.NotificationID,
+			notificationMessage.MessageID,
+			time.Since(startedAt).Milliseconds(),
+			w.cfg.SendTimeout,
+			err,
+		)
+	}
 	return err
 }
 
@@ -520,10 +614,39 @@ func chatMessageClaimID(data ChatMessage) string {
 	return ""
 }
 
-func (w *Worker) markSendAsNotSent(ctx context.Context, messageID, chatID, accountID string, err error) error {
+type sendFailureLogContext struct {
+	Topic        string
+	Partition    int
+	Offset       int64
+	MessageType  string
+	Elapsed      time.Duration
+	SendTimeout  time.Duration
+	HandlerScope string
+}
+
+func (w *Worker) markSendAsNotSent(ctx context.Context, messageID, chatID, accountID string, sendErr error, details ...sendFailureLogContext) error {
 	messageID = strings.TrimSpace(messageID)
 	accountID = firstNonEmpty(accountID, w.cfg.AccountID)
-	log.Printf("whatsmeow send terminal failure message_id=%s chat_id=%s error=%v", messageID, chatID, err)
+	if len(details) > 0 {
+		detail := details[0]
+		log.Printf(
+			"whatsmeow send terminal failure worker_id=%s scope=%s topic=%s partition=%d offset=%d message_id=%s chat_id=%s account_id=%s message_type=%s elapsed_ms=%d timeout=%s error=%v",
+			w.cfg.WorkerID,
+			detail.HandlerScope,
+			detail.Topic,
+			detail.Partition,
+			detail.Offset,
+			messageID,
+			chatID,
+			accountID,
+			detail.MessageType,
+			detail.Elapsed.Milliseconds(),
+			detail.SendTimeout,
+			sendErr,
+		)
+	} else {
+		log.Printf("whatsmeow send terminal failure worker_id=%s message_id=%s chat_id=%s account_id=%s error=%v", w.cfg.WorkerID, messageID, chatID, accountID, sendErr)
+	}
 	if messageID == "" {
 		return nil
 	}
@@ -543,7 +666,23 @@ func (w *Worker) markSendAsNotSent(ctx context.Context, messageID, chatID, accou
 	if strings.TrimSpace(chatID) != "" {
 		update.Key["remoteJid"] = chatID
 	}
-	return w.kafka.SendJSON(ctx, topicUpdateMessageStatus, accountID+":"+messageID, update)
+	if err := w.kafka.SendJSON(ctx, topicUpdateMessageStatus, accountID+":"+messageID, update); err != nil {
+		log.Printf("whatsmeow send status publish failed worker_id=%s message_id=%s chat_id=%s account_id=%s topic=%s error=%v", w.cfg.WorkerID, messageID, chatID, accountID, topicUpdateMessageStatus, err)
+		return err
+	}
+	return nil
+}
+
+func logKafkaPayloadDecodeError(workerID string, msg kafka.Message, err error) {
+	log.Printf("whatsmeow kafka payload decode failed worker_id=%s topic=%s partition=%d offset=%d error=%v", workerID, msg.Topic, msg.Partition, msg.Offset, err)
+}
+
+func chatMessageType(data ChatMessage) string {
+	messageType := strings.TrimSpace(stringValue(data.Content["type"]))
+	if messageType == "" {
+		return MessageTypeText
+	}
+	return messageType
 }
 
 func (w *Worker) publishScheduleStatus(ctx context.Context, data ScheduleMessage, status string) error {
