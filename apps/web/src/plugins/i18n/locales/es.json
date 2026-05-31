@@ -738,6 +738,7 @@
   "filter_by_channel": "Filtrar por canal",
   "filter_by_attendant": "Filtrar por atendente",
   "select_tag_filter": "Seleccione una etiqueta",
+  "without_tag": "Sin etiqueta",
   "select_sector_filter": "Seleccione un sector",
   "select_channel_filter": "Seleccione un canal",
   "select_attendant_filter": "Seleccione un atendente",

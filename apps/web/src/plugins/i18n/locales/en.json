@@ -738,6 +738,7 @@
   "filter_by_channel": "Filter by channel",
   "filter_by_attendant": "Filter by attendant",
   "select_tag_filter": "Select a tag",
+  "without_tag": "Without tag",
   "select_sector_filter": "Select a sector",
   "select_channel_filter": "Select a channel",
   "select_attendant_filter": "Select an attendant",

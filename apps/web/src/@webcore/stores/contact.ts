@@ -71,6 +71,8 @@ export const useContactStore = defineStore('contact', {
               search: input.search,
               user_id: input.user_id,
               filter_label_template_id: input.filter_label_template_id,
+              filter_without_label_template:
+                input.filter_without_label_template,
             }
           : undefined;
 

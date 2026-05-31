@@ -12,6 +12,9 @@ export const listContactRequestSchema = Type.Object({
   filter_label_template_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),
+  filter_without_label_template: Type.Optional(
+    Type.Union([Type.Boolean(), Type.Null()])
+  ),
 });
 
 export type ListContactRequest = Static<typeof listContactRequestSchema>;

@@ -256,9 +256,13 @@
 
   const selectedUserId = ref<string | null>(null);
   const selectedLabelTemplateId = ref<string | null>(null);
+  const WITHOUT_LABEL_TEMPLATE_SENTINEL = '__without_label_template__';
   const labelTemplates = ref<
     Array<{ value: string; title: string; color: string }>
   >([]);
+  const isWithoutLabelTemplateSelected = computed(
+    () => selectedLabelTemplateId.value === WITHOUT_LABEL_TEMPLATE_SENTINEL
+  );
   
   const debouncedSearch = refDebounced(
     computed(() => options.value.search),
@@ -271,7 +275,12 @@
     sort_by: options.value.sortBy,
     search: debouncedSearch.value,
     user_id: selectedUserId.value,
-    filter_label_template_id: selectedLabelTemplateId.value,
+    filter_label_template_id: isWithoutLabelTemplateSelected.value
+      ? null
+      : selectedLabelTemplateId.value,
+    filter_without_label_template: isWithoutLabelTemplateSelected.value
+      ? true
+      : undefined,
   }));
 
   const users = ref<Array<{ id: string | null; text: string }>>([]);
@@ -293,11 +302,18 @@
     }
 
     if (labelsList) {
-      labelTemplates.value = labelsList.map((labelTemplate) => ({
-        value: labelTemplate.label_template_id,
-        title: labelTemplate.label,
-        color: labelTemplate.color,
-      }));
+      labelTemplates.value = [
+        {
+          value: WITHOUT_LABEL_TEMPLATE_SENTINEL,
+          title: t('without_tag'),
+          color: '',
+        },
+        ...labelsList.map((labelTemplate) => ({
+          value: labelTemplate.label_template_id,
+          title: labelTemplate.label,
+          color: labelTemplate.color,
+        })),
+      ];
     }
   });
   

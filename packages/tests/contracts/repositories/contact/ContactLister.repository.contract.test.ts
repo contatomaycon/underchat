@@ -51,6 +51,49 @@ describe('ContactListerRepository', () => {
     expect(filters).toHaveLength(0);
   });
 
+  it('setFilters applies filter_without_label_template when provided', () => {
+    const repository = new ContactListerRepository({
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          innerJoin: jest.fn(() => ({
+            where: jest.fn(() => ({ subquery: true })),
+          })),
+        })),
+      })),
+    } as never);
+
+    const filters = (repository as any).setFilters(
+      {
+        filter_without_label_template: true,
+      },
+      null
+    );
+
+    expect(filters).toHaveLength(1);
+  });
+
+  it('setFilters prioritizes filter_without_label_template over filter_label_template_id', () => {
+    const repository = new ContactListerRepository({
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          innerJoin: jest.fn(() => ({
+            where: jest.fn(() => ({ subquery: true })),
+          })),
+        })),
+      })),
+    } as never);
+
+    const filters = (repository as any).setFilters(
+      {
+        filter_without_label_template: true,
+        filter_label_template_id: '11111111-1111-1111-1111-111111111111',
+      },
+      null
+    );
+
+    expect(filters).toHaveLength(1);
+  });
+
   it('returns empty array when contact list is empty', async () => {
     const repository = new ContactListerRepository({} as never);
     (repository as any).findContacts = jest.fn(async () => []);

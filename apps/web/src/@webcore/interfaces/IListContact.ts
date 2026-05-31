@@ -7,4 +7,5 @@ export interface IListContact {
   search?: string | null;
   user_id?: string | null;
   filter_label_template_id?: string | null;
+  filter_without_label_template?: boolean | null;
 }
