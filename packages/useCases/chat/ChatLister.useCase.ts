@@ -706,7 +706,8 @@ export class ChatListerUseCase {
 
     if (
       query.filter_sector_id &&
-      this.canListAllChatsWithoutSectorLimit(actions)
+      (this.canListAllChatsWithoutSectorLimit(actions) ||
+        this.canViewChatsInSector(actions))
     ) {
       const sectorFilter = {
         nested: {

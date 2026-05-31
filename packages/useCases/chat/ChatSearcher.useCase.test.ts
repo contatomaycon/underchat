@@ -392,6 +392,100 @@ describe('ChatSearcherUseCase', () => {
     expect(result.counts.in_chat).toBe(2);
   });
 
+  it('applies filter_sector_id for users with list_all_chats_in_sector permission', async () => {
+    const sectorOneChat = buildChat({
+      chat_id: 'sector-one-chat',
+      name: 'Atendimento Setor',
+      sector: {
+        id: 'sector-1',
+        name: 'Setor 1',
+        color: '#111111',
+      },
+      status: EChatStatus.in_chat,
+    });
+    const sectorTwoChat = buildChat({
+      chat_id: 'sector-two-chat',
+      name: 'Atendimento Setor',
+      sector: {
+        id: 'sector-2',
+        name: 'Setor 2',
+        color: '#222222',
+      },
+      status: EChatStatus.in_chat,
+    });
+
+    const useCase = buildUseCase([sectorOneChat, sectorTwoChat]);
+
+    const result = await useCase.execute(
+      'account-1',
+      {
+        current_page: 1,
+        per_page: 20,
+        search: 'atendimento setor',
+        status: EChatStatus.in_chat,
+        filter_sector_id: 'sector-1',
+      },
+      'user-1',
+      [
+        buildAction(EChatPermissions.chat_access),
+        buildAction(EChatPermissions.list_all_chats_in_sector),
+      ],
+      ['sector-1'],
+      []
+    );
+
+    expect(result.results.map((chat) => chat.chat_id)).toEqual([
+      'sector-one-chat',
+    ]);
+    expect(result.pagings.total).toBe(1);
+  });
+
+  it('does not leak chats from other sectors when filtering with sector-scoped permission', async () => {
+    const sectorOneChat = buildChat({
+      chat_id: 'sector-one-safe-chat',
+      name: 'Filtro Seguro',
+      sector: {
+        id: 'sector-1',
+        name: 'Setor 1',
+        color: '#111111',
+      },
+      status: EChatStatus.in_chat,
+    });
+    const sectorTwoChat = buildChat({
+      chat_id: 'sector-two-forbidden-chat',
+      name: 'Filtro Seguro',
+      sector: {
+        id: 'sector-2',
+        name: 'Setor 2',
+        color: '#222222',
+      },
+      status: EChatStatus.in_chat,
+    });
+
+    const useCase = buildUseCase([sectorOneChat, sectorTwoChat]);
+
+    const result = await useCase.execute(
+      'account-1',
+      {
+        current_page: 1,
+        per_page: 20,
+        search: 'filtro seguro',
+        status: EChatStatus.in_chat,
+        filter_sector_id: 'sector-2',
+      },
+      'user-1',
+      [
+        buildAction(EChatPermissions.chat_access),
+        buildAction(EChatPermissions.list_all_chats_in_sector),
+      ],
+      ['sector-1'],
+      []
+    );
+
+    expect(result.results).toEqual([]);
+    expect(result.pagings.total).toBe(0);
+  });
+
   it('finds a full formatted phone with BR normalization (with/without DDI and 9th digit)', async () => {
     const formattedPhoneChat = buildChat({
       chat_id: 'formatted-phone-chat',

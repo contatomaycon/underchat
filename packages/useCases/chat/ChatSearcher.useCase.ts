@@ -641,7 +641,8 @@ export class ChatSearcherUseCase {
 
     if (
       query.filter_sector_id &&
-      this.canListAllChatsWithoutSectorLimit(actions)
+      (this.canListAllChatsWithoutSectorLimit(actions) ||
+        this.canViewChatsInSector(actions))
     ) {
       const sectorFilter = this.buildSectorFilter(query.filter_sector_id);
       filterClauses.push(sectorFilter);

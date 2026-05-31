@@ -263,6 +263,22 @@ type FilterType =
   | 'closed';
 
 type ChatExtrasSource = Pick<ListChatsResult, 'worker' | 'contact'>;
+type RealtimeFilterType = Exclude<FilterType, 'new'>;
+type ChatStatusChangedReason = 'new' | 'update';
+type ChatStatusChangedDetail = {
+  chat: IChat;
+  reason?: ChatStatusChangedReason;
+};
+
+const REALTIME_FILTER_TYPES: readonly RealtimeFilterType[] = [
+  'all',
+  'in_chat',
+  'queue',
+  'my_chats',
+  'chatbot',
+  'scheduled',
+  'closed',
+];
 
 const sortChatsByField = (
   chats: ListChatsResult[],
@@ -311,11 +327,17 @@ const shouldApplyPerFilterSort = computed(
 );
 const hiddenRealtimeNewChatIds = ref<Set<string>>(new Set());
 
+const isRealtimeFilterType = (
+  filter: FilterType
+): filter is RealtimeFilterType => {
+  return REALTIME_FILTER_TYPES.includes(filter as RealtimeFilterType);
+};
+
 const removeRealtimeHiddenChatsFromList = (
   chats: ListChatsResult[]
 ): ListChatsResult[] => {
   if (
-    activeFilter.value !== 'all' ||
+    !isRealtimeFilterType(activeFilter.value) ||
     !hasActiveFilters.value ||
     hiddenRealtimeNewChatIds.value.size === 0
   ) {
@@ -346,21 +368,23 @@ const isChatForCurrentUser = (
 
 const filteredInChat = computed(() => {
   if (activeFilter.value === 'in_chat') {
+    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listInChat);
     if (!shouldApplyPerFilterSort.value) {
-      return chatStore.listInChat;
+      return visibleChats;
     }
     return sortChatsByField(
-      chatStore.listInChat,
+      visibleChats,
       inChatSortFieldForModal.value,
       inChatSortOrderForModal.value
     );
   }
   if (activeFilter.value === 'all' && !hasActiveFilters.value) {
+    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listInChat);
     if (!shouldApplyPerFilterSort.value) {
-      return chatStore.listInChat;
+      return visibleChats;
     }
     return sortChatsByField(
-      chatStore.listInChat,
+      visibleChats,
       inChatSortFieldForModal.value,
       inChatSortOrderForModal.value
     );
@@ -383,21 +407,23 @@ const filteredInChat = computed(() => {
 
 const filteredQueue = computed(() => {
   if (activeFilter.value === 'queue') {
+    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listQueue);
     if (!shouldApplyPerFilterSort.value) {
-      return chatStore.listQueue;
+      return visibleChats;
     }
     return sortChatsByField(
-      chatStore.listQueue,
+      visibleChats,
       queueSortFieldForModal.value,
       queueSortOrderForModal.value
     );
   }
   if (activeFilter.value === 'all' && !hasActiveFilters.value) {
+    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listQueue);
     if (!shouldApplyPerFilterSort.value) {
-      return chatStore.listQueue;
+      return visibleChats;
     }
     return sortChatsByField(
-      chatStore.listQueue,
+      visibleChats,
       queueSortFieldForModal.value,
       queueSortOrderForModal.value
     );
@@ -432,24 +458,26 @@ const filteredMyChats = computed(() => {
       const myChats = allChats.filter((chat) =>
         isChatForCurrentUser(chat, userId)
       );
+      const visibleChats = removeRealtimeHiddenChatsFromList(myChats);
       const sortField = sortMyChatsField.value ?? 'summary.last_message';
       const sortOrder = sortMyChatsOrder.value ?? 'desc';
       if (!shouldApplyPerFilterSort.value) {
-        return myChats;
+        return visibleChats;
       }
-      return sortChatsByField(myChats, sortField, sortOrder);
+      return sortChatsByField(visibleChats, sortField, sortOrder);
     }
 
     const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
     const myChats = allChats.filter((chat) =>
       isChatForCurrentUser(chat, userId)
     );
+    const visibleChats = removeRealtimeHiddenChatsFromList(myChats);
     const sortField = sortMyChatsField.value ?? 'summary.last_message';
     const sortOrder = sortMyChatsOrder.value ?? 'desc';
     if (!shouldApplyPerFilterSort.value) {
-      return myChats;
+      return visibleChats;
     }
-    return sortChatsByField(myChats, sortField, sortOrder);
+    return sortChatsByField(visibleChats, sortField, sortOrder);
   }
   return [];
 });
@@ -477,14 +505,15 @@ const filteredChatbot = computed(() => {
     !hasAppliedAdvancedFilters.value &&
     !hasSearchTerm.value
   ) {
-    return chatStore.listChatbot;
+    return removeRealtimeHiddenChatsFromList(chatStore.listChatbot);
   }
   if (activeFilter.value === 'chatbot') {
+    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listChatbot);
     if (!shouldApplyPerFilterSort.value) {
-      return chatStore.listChatbot;
+      return visibleChats;
     }
     return sortChatsByField(
-      chatStore.listChatbot,
+      visibleChats,
       sortChatbotField.value ?? 'summary.last_message',
       sortChatbotOrder.value ?? 'desc'
     );
@@ -508,7 +537,7 @@ const filteredClosed = computed(() => {
     !hasAppliedAdvancedFilters.value &&
     !hasSearchTerm.value
   ) {
-    return chatStore.listClosed;
+    return removeRealtimeHiddenChatsFromList(chatStore.listClosed);
   }
   return [];
 });
@@ -520,10 +549,10 @@ const filteredScheduled = computed(() => {
     !hasAppliedAdvancedFilters.value &&
     !hasSearchTerm.value
   ) {
-    return chatStore.listScheduled;
+    return removeRealtimeHiddenChatsFromList(chatStore.listScheduled);
   }
   if (activeFilter.value === 'scheduled') {
-    return chatStore.listScheduled;
+    return removeRealtimeHiddenChatsFromList(chatStore.listScheduled);
   }
   return [];
 });
@@ -1276,6 +1305,7 @@ const handleSortSave = async (status?: 'in_chat' | 'queue') => {
 
 const handleFiltersUpdated = async () => {
   hasAppliedAdvancedFilters.value = true;
+  hiddenRealtimeNewChatIds.value.clear();
 
   if (
     activeFilter.value !== 'all' &&
@@ -1335,6 +1365,7 @@ const handleClearFilters = async () => {
   currentSortField.value = 'summary.last_message';
   currentSortOrder.value = 'desc';
   hasAppliedAdvancedFilters.value = false;
+  hiddenRealtimeNewChatIds.value.clear();
 
   allChatsWithFiltersPagings.value = {
     current_page: 1,
@@ -1388,6 +1419,7 @@ const clearAdvancedFilters = async () => {
   currentFilterDateStart.value = null;
   currentFilterDateEnd.value = null;
   hasAppliedAdvancedFilters.value = false;
+  hiddenRealtimeNewChatIds.value.clear();
 
   await loadChatsByFilter();
 };
@@ -2179,8 +2211,11 @@ const FILTERED_REALTIME_REFRESH_DEBOUNCE_MS = 350;
 let filteredRealtimeRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
 let inFlightFilteredRealtimeRefresh: Promise<void> | null = null;
 
-const refreshFilteredChatsAcrossTabs = async (): Promise<void> => {
+const refreshFilteredChatsForActiveFilter = async (): Promise<void> => {
   if (!hasActiveFilters.value) {
+    return;
+  }
+  if (!isRealtimeFilterType(activeFilter.value)) {
     return;
   }
 
@@ -2189,97 +2224,56 @@ const refreshFilteredChatsAcrossTabs = async (): Promise<void> => {
   }
 
   const runRefresh = async () => {
-    const filters = getChatUserFilters();
-    const searchTerm = getSearchTerm();
+    try {
+      if (
+        activeFilter.value === 'all' &&
+        debouncedSearchQuery.value?.trim().length
+      ) {
+        allChatsWithFiltersPagings.value.current_page = 1;
+        await performSearch();
+        return;
+      }
 
-    currentPageQueue.value = 1;
-    currentPageInChat.value = 1;
-    chatStore.chatbotPagings.current_page = 1;
-    chatStore.scheduledPagings.current_page = 1;
-    chatStore.closedPagings.current_page = 1;
+      if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
+        currentPageQueue.value = 1;
+        currentPageInChat.value = 1;
+        await loadChatsByFilter();
+        return;
+      }
 
-    const [
-      queueAndInChatResponse,
-      chatbotResponse,
-      scheduledResponse,
-      closedResponse,
-    ] = await Promise.all([
-      chatStore.resolveChatEndpoint(
-        [EChatStatus.in_chat, EChatStatus.queue],
-        filters,
-        hasAppliedAdvancedFilters.value,
-        {
-          current_page: 1,
-          per_page: perPageInChat.value + perPageQueue.value,
-        },
-        false,
-        searchTerm
-      ),
-      chatStore.resolveChatEndpoint(
-        EChatStatus.ura,
-        filters,
-        hasAppliedAdvancedFilters.value,
-        {
-          current_page: 1,
-          per_page: chatStore.chatbotPagings.per_page,
-        },
-        false,
-        searchTerm
-      ),
-      chatStore.resolveChatEndpoint(
-        EChatStatus.ura_schedule,
-        filters,
-        hasAppliedAdvancedFilters.value,
-        {
-          current_page: 1,
-          per_page: chatStore.scheduledPagings.per_page,
-        },
-        false,
-        searchTerm
-      ),
-      chatStore.resolveChatEndpoint(
-        EChatStatus.closed,
-        filters,
-        hasAppliedAdvancedFilters.value,
-        {
-          current_page: 1,
-          per_page: chatStore.closedPagings.per_page,
-        },
-        false,
-        searchTerm
-      ),
-    ]);
+      if (activeFilter.value === 'in_chat') {
+        currentPageInChat.value = 1;
+        await loadChatsByFilter();
+        return;
+      }
 
-    const resolvedCounts =
-      queueAndInChatResponse.counts ??
-      chatbotResponse.counts ??
-      scheduledResponse.counts ??
-      closedResponse.counts;
+      if (activeFilter.value === 'queue') {
+        currentPageQueue.value = 1;
+        await loadChatsByFilter();
+        return;
+      }
 
-    if (resolvedCounts) {
-      applyCounts(resolvedCounts);
+      if (activeFilter.value === 'chatbot') {
+        chatStore.chatbotPagings.current_page = 1;
+        await loadChatbotChats();
+        return;
+      }
+
+      if (activeFilter.value === 'scheduled') {
+        chatStore.scheduledPagings.current_page = 1;
+        await loadScheduledChats();
+        return;
+      }
+
+      if (activeFilter.value === 'closed') {
+        chatStore.closedPagings.current_page = 1;
+        closedPagings.value.current_page = 1;
+        await loadClosedChats();
+        listClosed.value = chatStore.listClosed;
+      }
+    } finally {
+      hiddenRealtimeNewChatIds.value.clear();
     }
-
-    if (searchTerm.length > 0) {
-      allChatsWithFiltersPagings.value = {
-        ...chatStore.queuePagings,
-      };
-    }
-
-    listClosed.value = chatStore.listClosed;
-
-    const chatsToProcess = [
-      ...chatStore.listInChat,
-      ...chatStore.listQueue,
-      ...chatStore.listChatbot,
-      ...chatStore.listScheduled,
-      ...chatStore.listClosed,
-    ];
-
-    await Promise.all([
-      loadWorkerConfigs(chatsToProcess),
-      loadChatContacts(chatsToProcess),
-    ]);
   };
 
   const nextPromise = runRefresh().finally(() => {
@@ -2296,6 +2290,9 @@ const scheduleFilteredRealtimeRefresh = () => {
   if (!hasActiveFilters.value) {
     return;
   }
+  if (!isRealtimeFilterType(activeFilter.value)) {
+    return;
+  }
 
   if (filteredRealtimeRefreshTimeout) {
     clearTimeout(filteredRealtimeRefreshTimeout);
@@ -2303,7 +2300,7 @@ const scheduleFilteredRealtimeRefresh = () => {
 
   filteredRealtimeRefreshTimeout = setTimeout(() => {
     filteredRealtimeRefreshTimeout = null;
-    void refreshFilteredChatsAcrossTabs();
+    void refreshFilteredChatsForActiveFilter();
   }, FILTERED_REALTIME_REFRESH_DEBOUNCE_MS);
 };
 
@@ -3361,21 +3358,22 @@ watch(
 
 let isHandlingChatStatusChanged = false;
 let chatStatusChangedTimeout: ReturnType<typeof setTimeout> | null = null;
-const pendingNewChats = new Map<string, ChatExtrasSource>();
+const pendingRealtimeChats = new Map<string, ChatExtrasSource>();
 
 const handleChatStatusChanged = async (event: Event) => {
-  const detail = (event as CustomEvent<{ chat: IChat; reason?: string }>)
-    .detail;
-  if (!detail || detail.reason !== 'new') {
+  const detail = (event as CustomEvent<ChatStatusChangedDetail>).detail;
+  const reason = detail?.reason ?? 'update';
+  if (!detail?.chat || (reason !== 'new' && reason !== 'update')) {
     return;
   }
 
   if (detail.chat?.chat_id) {
     const incomingChatId = detail.chat.chat_id;
-    pendingNewChats.set(incomingChatId, detail.chat);
+    pendingRealtimeChats.set(incomingChatId, detail.chat);
 
     if (
-      activeFilter.value === 'all' &&
+      reason === 'new' &&
+      isRealtimeFilterType(activeFilter.value) &&
       hasActiveFilters.value &&
       chatStore.activeChat?.chat_id !== incomingChatId
     ) {
@@ -3396,8 +3394,8 @@ const handleChatStatusChanged = async (event: Event) => {
 
   chatStatusChangedTimeout = setTimeout(async () => {
     try {
-      const chatsToLoad = Array.from(pendingNewChats.values());
-      pendingNewChats.clear();
+      const chatsToLoad = Array.from(pendingRealtimeChats.values());
+      pendingRealtimeChats.clear();
 
       if (chatsToLoad.length === 0) {
         return;

@@ -1212,11 +1212,12 @@ export const useChatStore = defineStore('chat', {
         nextIsParticipant
       );
 
-      if (!shouldSkipEvents && !wasInAnyList) {
+      if (!shouldSkipEvents) {
+        const reason = wasInAnyList ? 'update' : 'new';
         this.markSkipChatStatusEvents(resolvedChat.chat_id);
         globalThis.dispatchEvent(
           new CustomEvent('chat-status-changed', {
-            detail: { chat: resolvedChat, reason: 'new' },
+            detail: { chat: resolvedChat, reason },
           })
         );
       }
