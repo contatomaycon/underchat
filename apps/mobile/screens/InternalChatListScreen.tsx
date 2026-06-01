@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -13,7 +14,7 @@ import {
   View,
   type ListRenderItem,
 } from 'react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,9 +23,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { AppAvatar } from '../components/AppAvatar';
 import { useInternalChat } from '../context/InternalChatContext';
 import { getPermissions } from '../storage/authStorage';
-import {
-  canCreateInternalChatGroup,
-} from '../constants/chatAuthorization';
+import { canCreateInternalChatGroup } from '../constants/chatAuthorization';
 import type { InternalChatStackParamList } from '../navigation/types';
 import type {
   InternalChatConversation,
@@ -53,7 +52,11 @@ const OPTIONS: Array<{
 }> = [
   { tab: INTERNAL_CHAT_TAB.users, label: 'Nova conversa', icon: 'add' },
   { tab: INTERNAL_CHAT_TAB.all, label: 'Todos', icon: 'list' },
-  { tab: INTERNAL_CHAT_TAB.direct, label: 'Diretas', icon: 'chatbubble-outline' },
+  {
+    tab: INTERNAL_CHAT_TAB.direct,
+    label: 'Diretas',
+    icon: 'chatbubble-outline',
+  },
   { tab: INTERNAL_CHAT_TAB.group, label: 'Grupos', icon: 'people-outline' },
 ];
 
@@ -107,6 +110,120 @@ function resolveAssetName(asset: ImagePicker.ImagePickerAsset): string {
   return `grupo-${Date.now()}.${extension}`;
 }
 
+function useSkeletonOpacity() {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const useNativeDriver = Platform.OS !== 'web';
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.7,
+          duration: 600,
+          useNativeDriver,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 600,
+          useNativeDriver,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  return opacity;
+}
+
+function InternalChatListSkeleton({ rows = 8 }: { rows?: number }) {
+  const opacity = useSkeletonOpacity();
+
+  return (
+    <View style={styles.skeletonList}>
+      {Array.from({ length: rows }, (_, index) => (
+        <View key={`internal-list-skeleton-${index}`} style={styles.row}>
+          <Animated.View style={[styles.skeletonAvatar, { opacity }]} />
+          <View style={styles.skeletonContent}>
+            <View style={styles.skeletonRowTop}>
+              <Animated.View
+                style={[styles.skeletonLine, styles.skeletonName, { opacity }]}
+              />
+              <Animated.View
+                style={[styles.skeletonLine, styles.skeletonDate, { opacity }]}
+              />
+            </View>
+            <Animated.View
+              style={[styles.skeletonLine, styles.skeletonMessage, { opacity }]}
+            />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function InternalChatLoadMoreSkeleton() {
+  const opacity = useSkeletonOpacity();
+
+  return (
+    <View style={styles.loadMoreSkeletonList}>
+      {Array.from({ length: 3 }, (_, index) => (
+        <View key={`internal-load-more-skeleton-${index}`} style={styles.row}>
+          <Animated.View style={[styles.skeletonAvatar, { opacity }]} />
+          <View style={styles.skeletonContent}>
+            <View style={styles.skeletonRowTop}>
+              <Animated.View
+                style={[styles.skeletonLine, styles.skeletonName, { opacity }]}
+              />
+              <Animated.View
+                style={[styles.skeletonLine, styles.skeletonDate, { opacity }]}
+              />
+            </View>
+            <Animated.View
+              style={[styles.skeletonLine, styles.skeletonMessage, { opacity }]}
+            />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function InternalChatMemberSkeleton({ rows = 5 }: { rows?: number }) {
+  const opacity = useSkeletonOpacity();
+
+  return (
+    <View style={styles.memberSkeletonList}>
+      {Array.from({ length: rows }, (_, index) => (
+        <View
+          key={`internal-member-skeleton-${index}`}
+          style={styles.memberRow}
+        >
+          <Animated.View style={[styles.memberSkeletonAvatar, { opacity }]} />
+          <View style={styles.skeletonContent}>
+            <Animated.View
+              style={[
+                styles.skeletonLine,
+                styles.memberSkeletonName,
+                { opacity },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.skeletonLine,
+                styles.memberSkeletonSub,
+                { opacity },
+              ]}
+            />
+          </View>
+          <Animated.View style={[styles.memberSkeletonIcon, { opacity }]} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function InternalChatListScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<Navigation>();
@@ -141,6 +258,10 @@ export function InternalChatListScreen() {
     string | null
   >(null);
   const [openingUserId, setOpeningUserId] = useState<string | null>(null);
+  const [listLoadMode, setListLoadMode] = useState<'full' | 'page' | null>(
+    'full'
+  );
+  const listLoadTokenRef = useRef(0);
 
   const openingChat = !!openingConversationId || !!openingUserId;
 
@@ -157,17 +278,30 @@ export function InternalChatListScreen() {
   }, []);
 
   useEffect(() => {
+    const token = ++listLoadTokenRef.current;
+    setListLoadMode('full');
+
     const timer = setTimeout(() => {
-      if (activeTab === INTERNAL_CHAT_TAB.users) {
-        void loadUsers({ search, page: 1, append: false });
-        return;
-      }
-      void loadConversations({
-        tab: activeTab,
-        search,
-        page: 1,
-        append: false,
-      });
+      const run = async () => {
+        try {
+          if (activeTab === INTERNAL_CHAT_TAB.users) {
+            await loadUsers({ search, page: 1, append: false });
+            return;
+          }
+          await loadConversations({
+            tab: activeTab,
+            search,
+            page: 1,
+            append: false,
+          });
+        } finally {
+          if (listLoadTokenRef.current === token) {
+            setListLoadMode(null);
+          }
+        }
+      };
+
+      void run().catch(() => undefined);
     }, 250);
 
     return () => clearTimeout(timer);
@@ -175,10 +309,45 @@ export function InternalChatListScreen() {
 
   const conversations = state.conversations;
   const users = state.users;
+  const showingUsers = activeTab === INTERNAL_CHAT_TAB.users;
+  const listLoading = showingUsers ? loadingUsers : loadingConversations;
+  const listItemsCount = showingUsers ? users.length : conversations.length;
+  const showListSkeleton =
+    listLoadMode === 'full' ||
+    (listLoading && listItemsCount === 0 && listLoadMode !== 'page');
+  const showListFooterSkeleton = listLoadMode === 'page';
 
   const optionTitle = useMemo(() => {
     return OPTIONS.find((item) => item.tab === activeTab)?.label ?? 'Todos';
   }, [activeTab]);
+
+  const startFullListLoading = useCallback(() => {
+    listLoadTokenRef.current += 1;
+    setListLoadMode('full');
+  }, []);
+
+  const handleTabChange = useCallback(
+    (tab: InternalChatTab) => {
+      if (tab === activeTab) return;
+      startFullListLoading();
+      setActiveTab(tab);
+    },
+    [activeTab, startFullListLoading]
+  );
+
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      startFullListLoading();
+      setSearch(value);
+    },
+    [startFullListLoading]
+  );
+
+  const clearSearch = useCallback(() => {
+    if (!search) return;
+    startFullListLoading();
+    setSearch('');
+  }, [search, startFullListLoading]);
 
   const handleOpenConversation = useCallback(
     async (conversation: InternalChatConversation) => {
@@ -221,17 +390,26 @@ export function InternalChatListScreen() {
   );
 
   const loadMoreConversations = useCallback(() => {
-    if (loadingConversations) return;
+    if (loadingConversations || listLoadMode !== null) return;
     const paging = state.conversationsPaging;
     if (paging.current_page >= paging.total_pages) return;
+    const token = ++listLoadTokenRef.current;
+    setListLoadMode('page');
     void loadConversations({
       tab: activeTab,
       search,
       page: paging.current_page + 1,
       append: true,
-    });
+    })
+      .catch(() => undefined)
+      .finally(() => {
+        if (listLoadTokenRef.current === token) {
+          setListLoadMode(null);
+        }
+      });
   }, [
     activeTab,
+    listLoadMode,
     loadConversations,
     loadingConversations,
     search,
@@ -239,15 +417,23 @@ export function InternalChatListScreen() {
   ]);
 
   const loadMoreUsers = useCallback(() => {
-    if (loadingUsers) return;
+    if (loadingUsers || listLoadMode !== null) return;
     const paging = state.usersPaging;
     if (paging.current_page >= paging.total_pages) return;
+    const token = ++listLoadTokenRef.current;
+    setListLoadMode('page');
     void loadUsers({
       search,
       page: paging.current_page + 1,
       append: true,
-    });
-  }, [loadUsers, loadingUsers, search, state.usersPaging]);
+    })
+      .catch(() => undefined)
+      .finally(() => {
+        if (listLoadTokenRef.current === token) {
+          setListLoadMode(null);
+        }
+      });
+  }, [listLoadMode, loadUsers, loadingUsers, search, state.usersPaging]);
 
   const toggleMember = useCallback((userId: string) => {
     setSelectedMemberIds((current) =>
@@ -387,7 +573,12 @@ export function InternalChatListScreen() {
           </Pressable>
         );
       },
-      [currentUserId, handleOpenConversation, openingChat, openingConversationId]
+      [
+        currentUserId,
+        handleOpenConversation,
+        openingChat,
+        openingConversationId,
+      ]
     );
 
   const renderUser: ListRenderItem<InternalChatUser> = useCallback(
@@ -494,7 +685,7 @@ export function InternalChatListScreen() {
           <TextInput
             style={styles.searchInput}
             value={search}
-            onChangeText={setSearch}
+            onChangeText={handleSearchChange}
             placeholder={
               activeTab === INTERNAL_CHAT_TAB.users
                 ? 'Pesquisar usuários'
@@ -504,7 +695,7 @@ export function InternalChatListScreen() {
             returnKeyType="search"
           />
           {search.trim() ? (
-            <Pressable onPress={() => setSearch('')} hitSlop={10}>
+            <Pressable onPress={clearSearch} hitSlop={10}>
               <Ionicons name="close-circle" size={18} color={colors.grey500} />
             </Pressable>
           ) : null}
@@ -517,7 +708,7 @@ export function InternalChatListScreen() {
               <Pressable
                 key={option.tab}
                 style={[styles.optionBtn, active && styles.optionBtnActive]}
-                onPress={() => setActiveTab(option.tab)}
+                onPress={() => handleTabChange(option.tab)}
               >
                 <Ionicons
                   name={option.icon}
@@ -525,10 +716,7 @@ export function InternalChatListScreen() {
                   color={active ? colors.onPrimary : colors.primary}
                 />
                 <Text
-                  style={[
-                    styles.optionText,
-                    active && styles.optionTextActive,
-                  ]}
+                  style={[styles.optionText, active && styles.optionTextActive]}
                   numberOfLines={1}
                 >
                   {option.label}
@@ -539,7 +727,9 @@ export function InternalChatListScreen() {
         </View>
       </View>
 
-      {activeTab === INTERNAL_CHAT_TAB.users ? (
+      {showListSkeleton ? (
+        <InternalChatListSkeleton />
+      ) : activeTab === INTERNAL_CHAT_TAB.users ? (
         <FlatList
           data={users}
           keyExtractor={(item) => item.user_id}
@@ -550,7 +740,7 @@ export function InternalChatListScreen() {
           onEndReachedThreshold={0.35}
           ListEmptyComponent={!loadingUsers ? listEmpty : null}
           ListFooterComponent={
-            loadingUsers ? <ActivityIndicator style={styles.listLoader} /> : null
+            showListFooterSkeleton ? <InternalChatLoadMoreSkeleton /> : null
           }
         />
       ) : (
@@ -564,9 +754,7 @@ export function InternalChatListScreen() {
           onEndReachedThreshold={0.35}
           ListEmptyComponent={!loadingConversations ? listEmpty : null}
           ListFooterComponent={
-            loadingConversations ? (
-              <ActivityIndicator style={styles.listLoader} />
-            ) : null
+            showListFooterSkeleton ? <InternalChatLoadMoreSkeleton /> : null
           }
         />
       )}
@@ -634,26 +822,30 @@ export function InternalChatListScreen() {
                   {selectedMemberIds.length === 1 ? '' : 's'}
                 </Text>
               </View>
-              {users.map((user) => {
-                const selected = selectedMemberIds.includes(user.user_id);
-                return (
-                  <Pressable
-                    key={user.user_id}
-                    style={styles.memberRow}
-                    onPress={() => toggleMember(user.user_id)}
-                  >
-                    <AppAvatar uri={user.photo} size={40} />
-                    <Text style={styles.memberName} numberOfLines={1}>
-                      {user.name}
-                    </Text>
-                    <Ionicons
-                      name={selected ? 'checkbox' : 'square-outline'}
-                      size={24}
-                      color={selected ? colors.primary : colors.grey500}
-                    />
-                  </Pressable>
-                );
-              })}
+              {loadingUsers && users.length === 0 ? (
+                <InternalChatMemberSkeleton />
+              ) : (
+                users.map((user) => {
+                  const selected = selectedMemberIds.includes(user.user_id);
+                  return (
+                    <Pressable
+                      key={user.user_id}
+                      style={styles.memberRow}
+                      onPress={() => toggleMember(user.user_id)}
+                    >
+                      <AppAvatar uri={user.photo} size={40} />
+                      <Text style={styles.memberName} numberOfLines={1}>
+                        {user.name}
+                      </Text>
+                      <Ionicons
+                        name={selected ? 'checkbox' : 'square-outline'}
+                        size={24}
+                        color={selected ? colors.primary : colors.grey500}
+                      />
+                    </Pressable>
+                  );
+                })
+              )}
             </ScrollView>
             <View style={styles.modalActions}>
               <Pressable style={styles.cancelBtn} onPress={closeGroupModal}>
@@ -848,8 +1040,47 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  listLoader: {
-    paddingVertical: 18,
+  skeletonList: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    paddingVertical: 8,
+  },
+  loadMoreSkeletonList: {
+    backgroundColor: colors.surface,
+    paddingBottom: 8,
+  },
+  skeletonAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.grey300,
+  },
+  skeletonContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  skeletonRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 8,
+  },
+  skeletonLine: {
+    backgroundColor: colors.grey300,
+    borderRadius: 4,
+  },
+  skeletonName: {
+    height: 14,
+    width: '56%',
+  },
+  skeletonDate: {
+    height: 12,
+    width: 58,
+  },
+  skeletonMessage: {
+    height: 12,
+    width: '78%',
   },
   emptyWrap: {
     flex: 1,
@@ -978,6 +1209,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 18,
     gap: 10,
+  },
+  memberSkeletonList: {
+    paddingTop: 2,
+  },
+  memberSkeletonAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.grey300,
+  },
+  memberSkeletonName: {
+    height: 13,
+    width: '46%',
+    marginBottom: 7,
+  },
+  memberSkeletonSub: {
+    height: 11,
+    width: '66%',
+  },
+  memberSkeletonIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: colors.grey300,
   },
   memberName: {
     flex: 1,

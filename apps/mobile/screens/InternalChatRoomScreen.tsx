@@ -234,7 +234,9 @@ function splitTextChunksWithLinks(text: string): TextChunk[] {
   const chunks: TextChunk[] = [];
   let lastIndex = 0;
 
-  for (const match of text.matchAll(/((?:https?:\/\/|www\.)[^\s<>()]+[^\s<>().,;:!?])/gi)) {
+  for (const match of text.matchAll(
+    /((?:https?:\/\/|www\.)[^\s<>()]+[^\s<>().,;:!?])/gi
+  )) {
     const urlText = match[0];
     const index = match.index ?? 0;
 
@@ -449,7 +451,11 @@ function assertFileSize(size: number | undefined | null, max: number): boolean {
   return false;
 }
 
-function createBaseFormData(type: string, hash: string, replyId?: string | null) {
+function createBaseFormData(
+  type: string,
+  hash: string,
+  replyId?: string | null
+) {
   const formData = new FormData();
   formData.append('type', type);
   formData.append('hash', hash);
@@ -527,7 +533,9 @@ function resolveDocumentExtensionLabel(
   return 'FILE';
 }
 
-function resolveVideoMeta(video: MessageContentVideo | null | undefined): string {
+function resolveVideoMeta(
+  video: MessageContentVideo | null | undefined
+): string {
   if (!video) return '';
   const ext =
     (video.extension ?? '').replace(/^\./, '').toUpperCase() || 'VIDEO';
@@ -742,7 +750,8 @@ function useInternalChatAudio() {
     (messageId: string, player: AudioPlayer, durationHint: number) => {
       finishedPlaybackRef.current[messageId] = true;
       pendingAutoPlayRef.current[messageId] = false;
-      const durationSec = durationHint > 0 ? durationHint : player.duration || 0;
+      const durationSec =
+        durationHint > 0 ? durationHint : player.duration || 0;
 
       const applyReset = () => {
         const patch: Partial<InternalAudioState> = {
@@ -1327,7 +1336,9 @@ function InternalLinkPreviewMessage({
             ellipsizeMode="tail"
             textBreakStrategy="highQuality"
           >
-            {insertSoftWrapOpportunities(formatPreviewUrlForDisplay(previewUrl))}
+            {insertSoftWrapOpportunities(
+              formatPreviewUrlForDisplay(previewUrl)
+            )}
           </Text>
         </View>
       ) : null}
@@ -1456,18 +1467,27 @@ function resolveQuotedMeta(
     const ext = quoted.image?.extension
       ? quoted.image.extension.replace(/^\./, '').toUpperCase()
       : 'IMG';
-    return [ext, formatFileSize(quoted.image?.size)].filter(Boolean).join(' • ');
+    return [ext, formatFileSize(quoted.image?.size)]
+      .filter(Boolean)
+      .join(' • ');
   }
   if (quotedType === INTERNAL_MESSAGE_TYPE.video) {
     const ext = quoted.video?.extension
       ? quoted.video.extension.replace(/^\./, '').toUpperCase()
       : 'VIDEO';
-    return [ext, formatFileSize(quoted.video?.size), formatAudioTime(quoted.video?.duration ?? 0)]
+    return [
+      ext,
+      formatFileSize(quoted.video?.size),
+      formatAudioTime(quoted.video?.duration ?? 0),
+    ]
       .filter((value) => value && value !== '0:00')
       .join(' • ');
   }
   if (quotedType === INTERNAL_MESSAGE_TYPE.audio) {
-    return [formatFileSize(quoted.audio?.size), formatAudioTime(quoted.audio?.duration ?? 0)]
+    return [
+      formatFileSize(quoted.audio?.size),
+      formatAudioTime(quoted.audio?.duration ?? 0),
+    ]
       .filter((value) => value && value !== '0:00')
       .join(' • ');
   }
@@ -1532,10 +1552,7 @@ function InternalQuotedReplyPreview({
     <View style={[styles.quotedBlock, fromMe && styles.quotedBlockRight]}>
       <View style={[styles.quotedBar, fromMe && styles.quotedBarRight]} />
       <View
-        style={[
-          styles.quotedBody,
-          isContactType && styles.quotedBodyContact,
-        ]}
+        style={[styles.quotedBody, isContactType && styles.quotedBodyContact]}
       >
         <Text
           style={[
@@ -1654,10 +1671,10 @@ function InternalMessageContent({
   const linkPreview = content?.link_preview;
   const hasLinkPreview = Boolean(
     linkPreview &&
-      (readNonEmptyString(linkPreview.title) ||
-        readNonEmptyString(linkPreview.description) ||
-        resolvePreviewImage(linkPreview) ||
-        resolvePreviewUrl(linkPreview))
+    (readNonEmptyString(linkPreview.title) ||
+      readNonEmptyString(linkPreview.description) ||
+      resolvePreviewImage(linkPreview) ||
+      resolvePreviewUrl(linkPreview))
   );
   const renderWithContextCards = (child: ReactElement | null) => {
     if (!hasLinkPreview || !linkPreview) return child;
@@ -2121,6 +2138,85 @@ function InternalContactCard({
   );
 }
 
+function InternalChatRoomSkeleton({ compact = false }: { compact?: boolean }) {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const useNativeDriver = Platform.OS !== 'web';
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.7,
+          duration: 600,
+          useNativeDriver,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 600,
+          useNativeDriver,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  const bubble = (align: 'left' | 'right', index: number) => (
+    <View
+      key={`internal-room-skeleton-${align}-${index}`}
+      style={[
+        styles.skeletonBubbleWrap,
+        align === 'right' && styles.skeletonBubbleWrapRight,
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.skeletonBubble,
+          align === 'right' && styles.skeletonBubbleRight,
+          { opacity },
+        ]}
+      >
+        <Animated.View
+          style={[
+            styles.skeletonBubbleLine,
+            styles.skeletonBubbleLineWide,
+            { opacity },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.skeletonBubbleLine,
+            styles.skeletonBubbleLineShort,
+            { opacity },
+          ]}
+        />
+      </Animated.View>
+    </View>
+  );
+
+  const sequence: Array<'left' | 'right'> = compact
+    ? ['left', 'right']
+    : ['left', 'right', 'left', 'right', 'left', 'right'];
+
+  return (
+    <View
+      style={[
+        styles.skeletonRoomContainer,
+        compact && styles.skeletonRoomContainerCompact,
+      ]}
+    >
+      {!compact ? (
+        <View style={styles.skeletonDateRow}>
+          <View style={styles.skeletonDateLine} />
+          <Animated.View style={[styles.skeletonDatePill, { opacity }]} />
+          <View style={styles.skeletonDateLine} />
+        </View>
+      ) : null}
+      {sequence.map((align, index) => bubble(align, index))}
+    </View>
+  );
+}
+
 function InternalMessageBubble({
   msg,
   fromMe,
@@ -2173,7 +2269,9 @@ function InternalMessageBubble({
         styles.messageBubbleWrap,
         isSystem && styles.messageBubbleWrapCenter,
         !isSystem &&
-          (fromMe ? styles.messageBubbleWrapRight : styles.messageBubbleWrapLeft),
+          (fromMe
+            ? styles.messageBubbleWrapRight
+            : styles.messageBubbleWrapLeft),
       ]}
     >
       <View
@@ -2218,7 +2316,10 @@ function InternalMessageBubble({
               {resolveInternalChatSenderName(msg)}
             </Text>
           ) : null}
-          <InternalQuotedReplyPreview quoted={content?.quoted} fromMe={fromMe} />
+          <InternalQuotedReplyPreview
+            quoted={content?.quoted}
+            fromMe={fromMe}
+          />
           <InternalMessageContent
             msg={msg}
             fromMe={fromMe}
@@ -2336,7 +2437,8 @@ export function InternalChatRoomScreen() {
 
   const routeConversation = route.params.conversation;
   const activeConversation =
-    state.activeConversation?.conversation_id === routeConversation.conversation_id
+    state.activeConversation?.conversation_id ===
+    routeConversation.conversation_id
       ? state.activeConversation
       : routeConversation;
   const conversationId = activeConversation.conversation_id;
@@ -2345,9 +2447,8 @@ export function InternalChatRoomScreen() {
 
   const [composerText, setComposerText] = useState('');
   const [replyTo, setReplyTo] = useState<InternalChatMessage | null>(null);
-  const [editingMessage, setEditingMessage] = useState<InternalChatMessage | null>(
-    null
-  );
+  const [editingMessage, setEditingMessage] =
+    useState<InternalChatMessage | null>(null);
   const [actionMessage, setActionMessage] =
     useState<InternalChatMessage | null>(null);
   const [attachmentVisible, setAttachmentVisible] = useState(false);
@@ -2751,7 +2852,11 @@ export function InternalChatRoomScreen() {
           message_quoted_id: replyTo?.message_id ?? null,
         },
       });
-      const sent = await sendFormDataMessage(conversationId, formData, optimistic);
+      const sent = await sendFormDataMessage(
+        conversationId,
+        formData,
+        optimistic
+      );
       if (!sent) Alert.alert(pt.error_title, pt.send_error);
       setReplyTo(null);
       scrollToEnd();
@@ -2771,8 +2876,10 @@ export function InternalChatRoomScreen() {
       if (!asset.uri) return;
       if (!assertFileSize(asset.fileSize, MAX_IMAGE_SIZE_BYTES)) return;
       const name =
-        asset.fileName || getFileNameFromUri(asset.uri, `imagem-${Date.now()}.jpg`);
-      const mimeType = asset.mimeType || getMimeTypeFromName(name, 'image/jpeg');
+        asset.fileName ||
+        getFileNameFromUri(asset.uri, `imagem-${Date.now()}.jpg`);
+      const mimeType =
+        asset.mimeType || getMimeTypeFromName(name, 'image/jpeg');
       await sendUpload({
         type: INTERNAL_MESSAGE_TYPE.image,
         field: 'images',
@@ -2795,7 +2902,8 @@ export function InternalChatRoomScreen() {
       if (!asset.uri) return;
       if (!assertFileSize(asset.fileSize, MAX_VIDEO_SIZE_BYTES)) return;
       const name =
-        asset.fileName || getFileNameFromUri(asset.uri, `video-${Date.now()}.mp4`);
+        asset.fileName ||
+        getFileNameFromUri(asset.uri, `video-${Date.now()}.mp4`);
       const mimeType = asset.mimeType || getMimeTypeFromName(name, 'video/mp4');
       await sendUpload({
         type: INTERNAL_MESSAGE_TYPE.video,
@@ -2875,14 +2983,20 @@ export function InternalChatRoomScreen() {
     const asset = result.assets[0];
     if (!assertFileSize(asset.size, MAX_DOCUMENT_SIZE_BYTES)) return;
     const name = asset.name || getFileNameFromUri(asset.uri, 'documento');
-    const mimeType = asset.mimeType || getMimeTypeFromName(name, 'application/octet-stream');
+    const mimeType =
+      asset.mimeType || getMimeTypeFromName(name, 'application/octet-stream');
     await sendUpload({
       type: INTERNAL_MESSAGE_TYPE.document,
       field: 'documents',
       file: { uri: asset.uri, name, mimeType },
       content: {
         type: INTERNAL_MESSAGE_TYPE.document,
-        document: { url: asset.uri, name, mimetype: mimeType, size: asset.size },
+        document: {
+          url: asset.uri,
+          name,
+          mimetype: mimeType,
+          size: asset.size,
+        },
       },
     });
   }, [sendUpload]);
@@ -2935,7 +3049,10 @@ export function InternalChatRoomScreen() {
     setAttachmentVisible(false);
     setComposerEmojiPickerVisible(false);
     setContactsVisible(true);
-    const data = await listInternalChatContacts({ currentPage: 1, perPage: 50 });
+    const data = await listInternalChatContacts({
+      currentPage: 1,
+      perPage: 50,
+    });
     setContacts(data.results);
   }, []);
 
@@ -3103,7 +3220,10 @@ export function InternalChatRoomScreen() {
 
     const recorded = await stopRecording();
     resetRecordingComposerState();
-    void publishActivity(conversationId, INTERNAL_CHAT_ACTIVITY_STATE.available);
+    void publishActivity(
+      conversationId,
+      INTERNAL_CHAT_ACTIVITY_STATE.available
+    );
 
     try {
       if (!recorded) return;
@@ -3154,7 +3274,10 @@ export function InternalChatRoomScreen() {
 
     await applyRecordingAudioMode(false);
     resetRecordingComposerState();
-    void publishActivity(conversationId, INTERNAL_CHAT_ACTIVITY_STATE.available);
+    void publishActivity(
+      conversationId,
+      INTERNAL_CHAT_ACTIVITY_STATE.available
+    );
   }, [
     applyRecordingAudioMode,
     conversationId,
@@ -3214,7 +3337,10 @@ export function InternalChatRoomScreen() {
       setShowRecordingHint(true);
       setRecordingWaveform([]);
       recordingStartedAtRef.current = Date.now();
-      void publishActivity(conversationId, INTERNAL_CHAT_ACTIVITY_STATE.recording);
+      void publishActivity(
+        conversationId,
+        INTERNAL_CHAT_ACTIVITY_STATE.recording
+      );
 
       if (pendingReleaseBeforeReadyRef.current) {
         pendingReleaseBeforeReadyRef.current = false;
@@ -3385,10 +3511,7 @@ export function InternalChatRoomScreen() {
         onMoveShouldSetPanResponderCapture: () => true,
         onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: (event) => {
-          handleMicPressGrant(
-            event.nativeEvent.pageX,
-            event.nativeEvent.pageY
-          );
+          handleMicPressGrant(event.nativeEvent.pageX, event.nativeEvent.pageY);
         },
         onPanResponderMove: (event) => {
           handleMicPressMove(event.nativeEvent.pageX, event.nativeEvent.pageY);
@@ -3406,7 +3529,11 @@ export function InternalChatRoomScreen() {
   );
 
   const loadOlder = useCallback(() => {
-    if (loadingMessages || !paging || paging.current_page >= paging.total_pages) {
+    if (
+      loadingMessages ||
+      !paging ||
+      paging.current_page >= paging.total_pages
+    ) {
       return;
     }
     void loadMessages(conversationId, {
@@ -3440,7 +3567,10 @@ export function InternalChatRoomScreen() {
         return;
       }
       if (action === 'history') {
-        const items = await viewMessageHistory(conversationId, target.message_id);
+        const items = await viewMessageHistory(
+          conversationId,
+          target.message_id
+        );
         setHistoryItems(items);
         setHistoryVisible(true);
         return;
@@ -3584,7 +3714,8 @@ export function InternalChatRoomScreen() {
     const normalized = groupNameDraft.trim();
     if (!normalized) return;
     const updated = await updateGroup(conversationId, { name: normalized });
-    if (!updated) Alert.alert(pt.error_title, 'Não foi possível atualizar o grupo.');
+    if (!updated)
+      Alert.alert(pt.error_title, 'Não foi possível atualizar o grupo.');
   }, [conversationId, groupNameDraft, updateGroup]);
 
   const openDirectFromMember = useCallback(
@@ -3653,7 +3784,10 @@ export function InternalChatRoomScreen() {
         <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
           <Ionicons name="chevron-back" size={28} color={colors.onSurface} />
         </Pressable>
-        <Pressable style={styles.headerContact} onPress={() => setInfoVisible(true)}>
+        <Pressable
+          style={styles.headerContact}
+          onPress={() => setInfoVisible(true)}
+        >
           <AppAvatar
             uri={conversationPhoto}
             size={42}
@@ -3684,36 +3818,29 @@ export function InternalChatRoomScreen() {
         </Pressable>
       </View>
 
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(item) => item.message_id}
-        renderItem={renderMessage}
-        contentContainerStyle={styles.messagesContent}
-        onContentSizeChange={scrollToEnd}
-        ListHeaderComponent={
-          paging && paging.current_page < paging.total_pages ? (
-            <Pressable style={styles.loadOlderBtn} onPress={loadOlder}>
-              {loadingMessages ? (
-                <ActivityIndicator color={colors.primary} />
-              ) : (
-                <Text style={styles.loadOlderText}>Carregar anteriores</Text>
-              )}
-            </Pressable>
-          ) : null
-        }
-      />
-
       {initialMessagesLoading ? (
-        <View pointerEvents="none" style={styles.initialMessagesLoading}>
-          <View style={styles.initialMessagesLoadingCard}>
-            <ActivityIndicator size="small" color={colors.onPrimary} />
-            <Text style={styles.initialMessagesLoadingText}>
-              Abrindo conversa...
-            </Text>
-          </View>
-        </View>
-      ) : null}
+        <InternalChatRoomSkeleton />
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={(item) => item.message_id}
+          renderItem={renderMessage}
+          contentContainerStyle={styles.messagesContent}
+          onContentSizeChange={scrollToEnd}
+          ListHeaderComponent={
+            paging && paging.current_page < paging.total_pages ? (
+              loadingMessages ? (
+                <InternalChatRoomSkeleton compact />
+              ) : (
+                <Pressable style={styles.loadOlderBtn} onPress={loadOlder}>
+                  <Text style={styles.loadOlderText}>Carregar anteriores</Text>
+                </Pressable>
+              )
+            ) : null
+          }
+        />
+      )}
 
       {replyTo || editingMessage ? (
         <View style={styles.replyBar}>
@@ -3788,9 +3915,7 @@ export function InternalChatRoomScreen() {
                   style={styles.recordActionBtn}
                   onPress={togglePauseRecording}
                   accessibilityLabel={
-                    isRecordingPaused
-                      ? pt.resume_recording
-                      : pt.pause_recording
+                    isRecordingPaused ? pt.resume_recording : pt.pause_recording
                   }
                 >
                   <Ionicons
@@ -3980,11 +4105,7 @@ export function InternalChatRoomScreen() {
                     }}
                     accessibilityLabel={pt.open_camera}
                   >
-                    <Ionicons
-                      name="camera-outline"
-                      size={21}
-                      color="#FFFFFF"
-                    />
+                    <Ionicons name="camera-outline" size={21} color="#FFFFFF" />
                   </Pressable>
                 ) : null}
                 <View style={styles.micGestureWrap} collapsable={false}>
@@ -4109,7 +4230,10 @@ export function InternalChatRoomScreen() {
         animationType="fade"
         onRequestClose={() => setActionMessage(null)}
       >
-        <Pressable style={styles.centerOverlay} onPress={() => setActionMessage(null)}>
+        <Pressable
+          style={styles.centerOverlay}
+          onPress={() => setActionMessage(null)}
+        >
           <View style={styles.actionCard}>
             <View style={styles.quickReactions}>
               {QUICK_REACTIONS.map((emoji) => (
@@ -4132,7 +4256,8 @@ export function InternalChatRoomScreen() {
             ].map(([icon, label, action]) => {
               const target = actionMessage;
               const own = !!target && target.user?.id === currentUserId;
-              if ((action === 'edit' || action === 'delete') && !own) return null;
+              if ((action === 'edit' || action === 'delete') && !own)
+                return null;
               if (action === 'download' && (!target || !getMediaUrl(target))) {
                 return null;
               }
@@ -4164,7 +4289,11 @@ export function InternalChatRoomScreen() {
         </Pressable>
       </Modal>
 
-      <Modal visible={contactsVisible} animationType="slide" onRequestClose={() => setContactsVisible(false)}>
+      <Modal
+        visible={contactsVisible}
+        animationType="slide"
+        onRequestClose={() => setContactsVisible(false)}
+      >
         <View style={[styles.fullModal, { paddingTop: insets.top + 12 }]}>
           <View style={styles.fullModalHeader}>
             <Text style={styles.fullModalTitle}>Selecionar contato</Text>
@@ -4176,7 +4305,10 @@ export function InternalChatRoomScreen() {
             data={contacts}
             keyExtractor={(item) => item.contact_id}
             renderItem={({ item }) => (
-              <Pressable style={styles.memberRow} onPress={() => void sendContact(item)}>
+              <Pressable
+                style={styles.memberRow}
+                onPress={() => void sendContact(item)}
+              >
                 <AppAvatar uri={item.photo ?? null} size={42} />
                 <View style={styles.memberInfo}>
                   <Text style={styles.memberName} numberOfLines={1}>
@@ -4192,7 +4324,11 @@ export function InternalChatRoomScreen() {
         </View>
       </Modal>
 
-      <Modal visible={infoVisible} animationType="slide" onRequestClose={() => setInfoVisible(false)}>
+      <Modal
+        visible={infoVisible}
+        animationType="slide"
+        onRequestClose={() => setInfoVisible(false)}
+      >
         <View style={[styles.fullModal, { paddingTop: insets.top + 12 }]}>
           <View style={styles.fullModalHeader}>
             <Text style={styles.fullModalTitle}>
@@ -4219,8 +4355,15 @@ export function InternalChatRoomScreen() {
                   placeholder="Nome do grupo"
                   placeholderTextColor={colors.grey500}
                 />
-                <Pressable style={styles.groupSaveBtn} onPress={updateGroupName}>
-                  <Ionicons name="checkmark" size={22} color={colors.onPrimary} />
+                <Pressable
+                  style={styles.groupSaveBtn}
+                  onPress={updateGroupName}
+                >
+                  <Ionicons
+                    name="checkmark"
+                    size={22}
+                    color={colors.onPrimary}
+                  />
                 </Pressable>
               </View>
             ) : null}
@@ -4242,7 +4385,8 @@ export function InternalChatRoomScreen() {
                 {groupMembers.map((member) => {
                   const removing = removingMemberId === member.user_id;
                   const transferring = transferringLeaderId === member.user_id;
-                  const openingDirect = openingMemberDirectId === member.user_id;
+                  const openingDirect =
+                    openingMemberDirectId === member.user_id;
                   const actionDisabled = infoActionLoading;
 
                   return (
@@ -4292,7 +4436,10 @@ export function InternalChatRoomScreen() {
                           disabled={actionDisabled}
                         >
                           {removing ? (
-                            <ActivityIndicator size="small" color={colors.error} />
+                            <ActivityIndicator
+                              size="small"
+                              color={colors.error}
+                            />
                           ) : (
                             <Ionicons
                               name="person-remove-outline"
@@ -4465,7 +4612,11 @@ export function InternalChatRoomScreen() {
         ) : null}
       </BottomSheetModal>
 
-      <Modal visible={searchVisible} animationType="slide" onRequestClose={() => setSearchVisible(false)}>
+      <Modal
+        visible={searchVisible}
+        animationType="slide"
+        onRequestClose={() => setSearchVisible(false)}
+      >
         <View style={[styles.fullModal, { paddingTop: insets.top + 12 }]}>
           <View style={styles.fullModalHeader}>
             <Text style={styles.fullModalTitle}>Buscar mensagens</Text>
@@ -4491,7 +4642,10 @@ export function InternalChatRoomScreen() {
             data={searchResults}
             keyExtractor={(item) => item.message_id}
             renderItem={({ item }) => (
-              <Pressable style={styles.searchResultRow} onPress={() => setSearchVisible(false)}>
+              <Pressable
+                style={styles.searchResultRow}
+                onPress={() => setSearchVisible(false)}
+              >
                 <Text style={styles.searchResultText} numberOfLines={2}>
                   {resolveInternalChatTextTag(item.message) || 'Mensagem'}
                 </Text>
@@ -4504,7 +4658,11 @@ export function InternalChatRoomScreen() {
         </View>
       </Modal>
 
-      <Modal visible={historyVisible} animationType="slide" onRequestClose={() => setHistoryVisible(false)}>
+      <Modal
+        visible={historyVisible}
+        animationType="slide"
+        onRequestClose={() => setHistoryVisible(false)}
+      >
         <View style={[styles.fullModal, { paddingTop: insets.top + 12 }]}>
           <View style={styles.fullModalHeader}>
             <Text style={styles.fullModalTitle}>Histórico</Text>
@@ -4520,7 +4678,8 @@ export function InternalChatRoomScreen() {
                 <Text style={styles.historyKind}>{item.kind}</Text>
                 <Text style={styles.historyText}>{item.message || '-'}</Text>
                 <Text style={styles.searchResultDate}>
-                  {formatDateSeparator(item.date)} {formatMessageTime(item.date)}
+                  {formatDateSeparator(item.date)}{' '}
+                  {formatMessageTime(item.date)}
                 </Text>
               </View>
             )}
@@ -4574,6 +4733,66 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     flexGrow: 1,
   },
+  skeletonRoomContainer: {
+    flex: 1,
+    padding: 12,
+    paddingBottom: 8,
+  },
+  skeletonRoomContainerCompact: {
+    flex: 0,
+    paddingVertical: 8,
+  },
+  skeletonDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginVertical: 8,
+  },
+  skeletonDateLine: {
+    flex: 0.25,
+    height: 1,
+    backgroundColor: 'rgba(47, 43, 61, 0.12)',
+  },
+  skeletonDatePill: {
+    width: 80,
+    height: 20,
+    borderRadius: 7.5,
+    backgroundColor: colors.grey300,
+  },
+  skeletonBubbleWrap: {
+    marginVertical: 3,
+    alignItems: 'flex-start',
+  },
+  skeletonBubbleWrapRight: {
+    alignItems: 'flex-end',
+  },
+  skeletonBubble: {
+    maxWidth: '80%',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderBottomLeftRadius: 4,
+    backgroundColor: colors.grey300,
+  },
+  skeletonBubbleRight: {
+    backgroundColor: colors.grey300,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 4,
+  },
+  skeletonBubbleLine: {
+    height: 12,
+    borderRadius: 4,
+    backgroundColor: colors.grey400,
+    marginBottom: 6,
+  },
+  skeletonBubbleLineWide: {
+    width: 180,
+  },
+  skeletonBubbleLineShort: {
+    width: 80,
+    marginBottom: 0,
+  },
   loadOlderBtn: {
     alignSelf: 'center',
     minHeight: 34,
@@ -4588,33 +4807,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '800',
     fontSize: 12,
-  },
-  initialMessagesLoading: {
-    position: 'absolute',
-    top: 78,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 20,
-  },
-  initialMessagesLoadingCard: {
-    minHeight: 34,
-    borderRadius: 17,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.primary,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  initialMessagesLoadingText: {
-    color: colors.onPrimary,
-    fontSize: 12,
-    fontWeight: '700',
   },
   dateSeparator: {
     alignSelf: 'center',
