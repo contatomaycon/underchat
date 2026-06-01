@@ -30,7 +30,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentType,
   type ReactElement,
 } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -55,9 +54,9 @@ import {
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import Constants from 'expo-constants';
 import { AppAvatar } from '../components/AppAvatar';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { LocationMessagePreview } from '../components/LocationMessagePreview';
 import {
   ContactFormModal,
   type ContactFormInitialValues,
@@ -127,6 +126,7 @@ import {
   resolveInternalChatTextTag,
 } from '../utils/internalChatText';
 import { addSessionUpdatedListener } from '../utils/appResumeBus';
+import { normalizeLocationCoordinate } from '../utils/locationPreview';
 
 type Navigation = NativeStackNavigationProp<InternalChatStackParamList>;
 type ScreenRoute = RouteProp<InternalChatStackParamList, 'InternalChatRoom'>;
@@ -164,51 +164,6 @@ type InternalAttachmentAction = {
   color: string;
   onPress: () => void;
 };
-
-type MapLibreModule = {
-  MapView?: ComponentType<Record<string, unknown>>;
-  Camera?: ComponentType<Record<string, unknown>>;
-  PointAnnotation?: ComponentType<Record<string, unknown>>;
-};
-
-const mapLibreModule = (() => {
-  try {
-    return require('@maplibre/maplibre-react-native') as MapLibreModule;
-  } catch {
-    return null;
-  }
-})();
-
-const NativeMapView = mapLibreModule?.MapView ?? null;
-const NativeMapCamera = mapLibreModule?.Camera ?? null;
-const NativeMapPointAnnotation = mapLibreModule?.PointAnnotation ?? null;
-
-const isExpoGoStoreClient =
-  (Constants as { executionEnvironment?: string | null })
-    .executionEnvironment === 'storeClient';
-
-const MAPLIBRE_DEFAULT_STYLE_URL =
-  'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
-
-const mapLibreStyleUrl = (() => {
-  const expoConfig = (
-    Constants as {
-      expoConfig?: {
-        extra?: {
-          mapLibreStyleUrl?: unknown;
-        };
-      };
-    }
-  ).expoConfig;
-  const styleUrl = expoConfig?.extra?.mapLibreStyleUrl;
-  if (typeof styleUrl === 'string' && styleUrl.trim().length > 0) {
-    return styleUrl.trim();
-  }
-  return MAPLIBRE_DEFAULT_STYLE_URL;
-})();
-
-const hasNativeMapSupport =
-  NativeMapView != null && Platform.OS !== 'web' && !isExpoGoStoreClient;
 
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
@@ -1420,59 +1375,6 @@ function useInternalChatAudio() {
 
 type InternalAudioCtrl = ReturnType<typeof useInternalChatAudio>;
 
-function buildLocationPreviewCandidates(
-  latitude: number,
-  longitude: number
-): string[] {
-  const previewZoom = 18;
-  const lat = Number(latitude.toFixed(6));
-  const lng = Number(longitude.toFixed(6));
-  const center = `${lat},${lng}`;
-  const osm = `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(
-    center
-  )}&zoom=${previewZoom}&size=600x340`;
-  const yandex = `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lng},${lat}&z=${previewZoom}&l=map&size=600,340`;
-  const google = `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(
-    center
-  )}&zoom=${previewZoom}&size=600x340`;
-  return [osm, yandex, google];
-}
-
-async function openLocationInMaps(
-  latitude: number,
-  longitude: number,
-  label: string | null | undefined
-): Promise<void> {
-  const name = (label ?? pt.location).trim() || pt.location;
-  const webUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    `${latitude},${longitude}`
-  )}`;
-
-  if (Platform.OS === 'android') {
-    const geoUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodeURIComponent(
-      name
-    )})`;
-    try {
-      await Linking.openURL(geoUrl);
-      return;
-    } catch {}
-  }
-
-  if (Platform.OS === 'ios') {
-    const appleMapsUrl = `http://maps.apple.com/?ll=${latitude},${longitude}&q=${encodeURIComponent(
-      name
-    )}`;
-    try {
-      await Linking.openURL(appleMapsUrl);
-      return;
-    } catch {}
-  }
-
-  try {
-    await Linking.openURL(webUrl);
-  } catch {}
-}
-
 function InternalVideoMessagePreview({
   sourceUri,
   thumbnailUri,
@@ -1558,116 +1460,6 @@ function InternalVideoMessagePreview({
       )}
       <View style={styles.videoOverlay}>
         <Ionicons name="play-circle" size={48} color="#fff" />
-      </View>
-    </Pressable>
-  );
-}
-
-function InternalLocationMessagePreview({
-  latitude,
-  longitude,
-  name,
-  address,
-  onLongPress,
-}: {
-  latitude: number;
-  longitude: number;
-  name: string | null | undefined;
-  address: string | null | undefined;
-  onLongPress?: () => void;
-}) {
-  const [previewSourceIndex, setPreviewSourceIndex] = useState(0);
-  const [previewLoadError, setPreviewLoadError] = useState(false);
-  const previewCandidates = useMemo(
-    () => buildLocationPreviewCandidates(latitude, longitude),
-    [latitude, longitude]
-  );
-  const previewUri =
-    previewCandidates[
-      Math.min(previewSourceIndex, previewCandidates.length - 1)
-    ];
-  const previewCoordinateLngLat = useMemo<[number, number]>(
-    () => [longitude, latitude],
-    [latitude, longitude]
-  );
-  const title = name?.trim() || pt.location;
-
-  const handleOpen = useCallback(() => {
-    void openLocationInMaps(latitude, longitude, title || address);
-  }, [address, latitude, longitude, title]);
-
-  return (
-    <Pressable
-      style={styles.locationBubble}
-      onPress={handleOpen}
-      onLongPress={onLongPress}
-      delayLongPress={220}
-    >
-      <View style={styles.locationMapPreview}>
-        {hasNativeMapSupport && NativeMapView && NativeMapCamera ? (
-          <NativeMapView
-            style={styles.locationMapImage}
-            mapStyle={mapLibreStyleUrl}
-            scrollEnabled={false}
-            zoomEnabled={false}
-            rotateEnabled={false}
-            pitchEnabled={false}
-            pointerEvents="none"
-          >
-            <NativeMapCamera
-              centerCoordinate={previewCoordinateLngLat}
-              zoomLevel={15}
-              animationDuration={0}
-            />
-            {NativeMapPointAnnotation ? (
-              <NativeMapPointAnnotation
-                id={`internal-location-preview-${latitude}-${longitude}`}
-                coordinate={previewCoordinateLngLat}
-              >
-                <View style={styles.locationMapMarker}>
-                  <Ionicons name="location-sharp" size={30} color="#EF4444" />
-                </View>
-              </NativeMapPointAnnotation>
-            ) : (
-              <View style={styles.locationPinOverlay}>
-                <Ionicons name="location-sharp" size={36} color="#EF4444" />
-              </View>
-            )}
-          </NativeMapView>
-        ) : previewLoadError ? (
-          <View style={styles.locationMapFallback}>
-            <Ionicons name="location" size={28} color={colors.primary} />
-          </View>
-        ) : (
-          <>
-            <Image
-              key={previewUri}
-              source={{ uri: previewUri }}
-              style={styles.locationMapImage}
-              resizeMode="cover"
-              onError={() => {
-                if (previewSourceIndex < previewCandidates.length - 1) {
-                  setPreviewSourceIndex((current) => current + 1);
-                  return;
-                }
-                setPreviewLoadError(true);
-              }}
-            />
-            <View style={styles.locationPinOverlay}>
-              <Ionicons name="location-sharp" size={36} color="#EF4444" />
-            </View>
-          </>
-        )}
-      </View>
-      <View style={styles.locationInfo}>
-        <Text style={styles.locationName} numberOfLines={1}>
-          {title}
-        </Text>
-        {address ? (
-          <Text style={styles.locationAddress} numberOfLines={2}>
-            {address}
-          </Text>
-        ) : null}
       </View>
     </Pressable>
   );
@@ -2186,14 +1978,16 @@ function InternalMessageContent({
   }
 
   if (type === INTERNAL_MESSAGE_TYPE.location && content?.location) {
-    const latitude = Number(content.location.latitude);
-    const longitude = Number(content.location.longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    const coordinate = normalizeLocationCoordinate(
+      content.location.latitude,
+      content.location.longitude
+    );
+    if (!coordinate) return null;
 
     return renderWithContextCards(
-      <InternalLocationMessagePreview
-        latitude={latitude}
-        longitude={longitude}
+      <LocationMessagePreview
+        latitude={coordinate.latitude}
+        longitude={coordinate.longitude}
         name={content.location.name}
         address={content.location.address}
         onLongPress={() => onOpenActions(msg)}
@@ -6660,60 +6454,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.grey600,
     marginTop: 4,
-  },
-  locationBubble: {
-    width: 200,
-    maxWidth: '100%',
-    minWidth: 0,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-  },
-  locationMapPreview: {
-    width: '100%',
-    height: 112,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(47, 43, 61, 0.08)',
-  },
-  locationMapImage: {
-    width: '100%',
-    height: '100%',
-  },
-  locationMapFallback: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  locationPinOverlay: {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    transform: [{ translateX: -18 }, { translateY: -32 }],
-    shadowColor: '#000',
-    shadowOpacity: 0.28,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  locationMapMarker: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  locationInfo: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    minWidth: 0,
-  },
-  locationName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(17, 27, 33, 0.95)',
-  },
-  locationAddress: {
-    fontSize: 12,
-    color: colors.grey700,
-    marginTop: 3,
   },
   linkPreviewCard: {
     borderRadius: 8,
