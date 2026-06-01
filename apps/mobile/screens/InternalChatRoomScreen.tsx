@@ -28,6 +28,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
   type ReactElement,
 } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -50,6 +51,7 @@ import {
   useAudioRecorderState,
 } from 'expo-audio';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import Constants from 'expo-constants';
 import { AppAvatar } from '../components/AppAvatar';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import {
@@ -138,6 +140,51 @@ type InternalAttachmentAction = {
   color: string;
   onPress: () => void;
 };
+
+type MapLibreModule = {
+  MapView?: ComponentType<Record<string, unknown>>;
+  Camera?: ComponentType<Record<string, unknown>>;
+  PointAnnotation?: ComponentType<Record<string, unknown>>;
+};
+
+const mapLibreModule = (() => {
+  try {
+    return require('@maplibre/maplibre-react-native') as MapLibreModule;
+  } catch {
+    return null;
+  }
+})();
+
+const NativeMapView = mapLibreModule?.MapView ?? null;
+const NativeMapCamera = mapLibreModule?.Camera ?? null;
+const NativeMapPointAnnotation = mapLibreModule?.PointAnnotation ?? null;
+
+const isExpoGoStoreClient =
+  (Constants as { executionEnvironment?: string | null })
+    .executionEnvironment === 'storeClient';
+
+const MAPLIBRE_DEFAULT_STYLE_URL =
+  'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
+
+const mapLibreStyleUrl = (() => {
+  const expoConfig = (
+    Constants as {
+      expoConfig?: {
+        extra?: {
+          mapLibreStyleUrl?: unknown;
+        };
+      };
+    }
+  ).expoConfig;
+  const styleUrl = expoConfig?.extra?.mapLibreStyleUrl;
+  if (typeof styleUrl === 'string' && styleUrl.trim().length > 0) {
+    return styleUrl.trim();
+  }
+  return MAPLIBRE_DEFAULT_STYLE_URL;
+})();
+
+const hasNativeMapSupport =
+  NativeMapView != null && Platform.OS !== 'web' && !isExpoGoStoreClient;
 
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
@@ -1214,19 +1261,55 @@ function InternalLocationMessagePreview({
     previewCandidates[
       Math.min(previewSourceIndex, previewCandidates.length - 1)
     ];
+  const previewCoordinateLngLat = useMemo<[number, number]>(
+    () => [longitude, latitude],
+    [latitude, longitude]
+  );
   const title = name?.trim() || pt.location;
+
+  const handleOpen = useCallback(() => {
+    void openLocationInMaps(latitude, longitude, title || address);
+  }, [address, latitude, longitude, title]);
 
   return (
     <Pressable
       style={styles.locationBubble}
-      onPress={() => {
-        void openLocationInMaps(latitude, longitude, title || address);
-      }}
+      onPress={handleOpen}
       onLongPress={onLongPress}
       delayLongPress={220}
     >
       <View style={styles.locationMapPreview}>
-        {previewLoadError ? (
+        {hasNativeMapSupport && NativeMapView && NativeMapCamera ? (
+          <NativeMapView
+            style={styles.locationMapImage}
+            mapStyle={mapLibreStyleUrl}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            rotateEnabled={false}
+            pitchEnabled={false}
+            pointerEvents="none"
+          >
+            <NativeMapCamera
+              centerCoordinate={previewCoordinateLngLat}
+              zoomLevel={15}
+              animationDuration={0}
+            />
+            {NativeMapPointAnnotation ? (
+              <NativeMapPointAnnotation
+                id={`internal-location-preview-${latitude}-${longitude}`}
+                coordinate={previewCoordinateLngLat}
+              >
+                <View style={styles.locationMapMarker}>
+                  <Ionicons name="location-sharp" size={30} color="#EF4444" />
+                </View>
+              </NativeMapPointAnnotation>
+            ) : (
+              <View style={styles.locationPinOverlay}>
+                <Ionicons name="location-sharp" size={36} color="#EF4444" />
+              </View>
+            )}
+          </NativeMapView>
+        ) : previewLoadError ? (
           <View style={styles.locationMapFallback}>
             <Ionicons name="location" size={28} color={colors.primary} />
           </View>
@@ -5116,8 +5199,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   locationBubble: {
-    width: '100%',
-    maxWidth: 200,
+    width: 200,
+    maxWidth: '100%',
     minWidth: 0,
     borderRadius: 8,
     overflow: 'hidden',
@@ -5149,6 +5232,10 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
+  },
+  locationMapMarker: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   locationInfo: {
     paddingHorizontal: 12,
@@ -5458,6 +5545,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
     backgroundColor: '#FFFFFF',
+    width: 220,
     minWidth: 0,
     maxWidth: '100%',
   },
