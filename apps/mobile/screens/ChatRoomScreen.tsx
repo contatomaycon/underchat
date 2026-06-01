@@ -10141,7 +10141,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         if (!result.ok) {
           markMessageAsFailedByHash(messageHash);
           if (options?.showFailureAlert !== false) {
-            Alert.alert(pt.error_title, pt.send_error);
+            Alert.alert(pt.error_title, result.error ?? pt.send_error);
           }
           return false;
         }
@@ -11236,7 +11236,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         );
         if (!result.ok) {
           markMessageAsFailedByHash(draft.hash);
-          Alert.alert(pt.error_title, pt.send_error);
+          Alert.alert(pt.error_title, result.error ?? pt.send_error);
           return false;
         }
 

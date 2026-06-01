@@ -77,6 +77,13 @@ describe('ChatMessageService', () => {
     const centrifugoService = {
       publishSub: jest.fn().mockResolvedValue(undefined),
     };
+    const storageService = {
+      uploadAudioFromBuffer: jest.fn(),
+    };
+    const converterService = {
+      convertAudio: jest.fn(),
+      generateWaveformWithFfmpeg: jest.fn(),
+    };
     const service = new ChatMessageService(
       {} as never,
       chatService as never,
@@ -84,8 +91,8 @@ describe('ChatMessageService', () => {
       kafkaBaileysQueueService as never,
       streamProducerService as never,
       centrifugoService as never,
-      {} as never,
-      {} as never,
+      storageService as never,
+      converterService as never,
       {} as never,
       {} as never,
       {} as never,
@@ -94,8 +101,10 @@ describe('ChatMessageService', () => {
 
     return {
       chatService,
+      converterService,
       kafkaBaileysQueueService,
       service,
+      storageService,
       streamProducerService,
     };
   };
@@ -165,5 +174,35 @@ describe('ChatMessageService', () => {
       ETypeUserChat.operator,
       false
     );
+  });
+
+  it('propagates audio conversion failures instead of silently dropping upload', async () => {
+    const { converterService, service, storageService } = makeService(true);
+    const consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const audioUpload = {
+      filename: 'voice.m4a',
+      mimetype: 'audio/mp4',
+      encoding: '7bit',
+      file: {},
+      toBuffer: jest.fn().mockResolvedValue(Buffer.from('original-audio')),
+    };
+
+    converterService.convertAudio.mockRejectedValue(
+      new Error('Arquivo de áudio convertido fora do perfil de voz WhatsApp.')
+    );
+
+    try {
+      await expect(
+        (service as any).uploadAudios([audioUpload], 'acc-1', true)
+      ).rejects.toThrow(
+        'Falha ao converter áudio para um formato compatível: Arquivo de áudio convertido fora do perfil de voz WhatsApp.'
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+
+    expect(storageService.uploadAudioFromBuffer).not.toHaveBeenCalled();
   });
 });

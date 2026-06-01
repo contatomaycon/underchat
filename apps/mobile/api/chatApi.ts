@@ -544,15 +544,23 @@ export async function deletePushSubscription(
 export async function createMessageWithFormData(
   chatId: string,
   formData: FormData
-): Promise<{ ok: boolean; message: ListMessageResult | null }> {
-  const res = await apiPostForm<ListMessageResult | null>(
+): Promise<{
+  ok: boolean;
+  message: ListMessageResult | null;
+  error: string | null;
+}> {
+  const res = await apiPostFormWithMessage<ListMessageResult | null>(
     `/chat/${chatId}`,
     formData
   );
   if (!res) {
-    return { ok: false, message: null };
+    return { ok: false, message: null, error: null };
   }
-  return { ok: true, message: res.data ?? null };
+  return {
+    ok: !!res.status,
+    message: res.data ?? null,
+    error: res.status ? null : (res.message ?? null),
+  };
 }
 
 export async function clearChatSummary(chatId: string): Promise<boolean> {

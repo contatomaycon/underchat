@@ -37,6 +37,10 @@ jest.mock('@core/services/storage.service', () => ({
   StorageService: class StorageService {},
 }));
 
+jest.mock('@core/services/converter', () => ({
+  ConverterService: class ConverterService {},
+}));
+
 jest.mock('@core/services/centrifugo.service', () => ({
   CentrifugoService: class CentrifugoService {},
 }));
@@ -125,6 +129,14 @@ const makeService = (options?: {
     getConversationById: jest.fn().mockResolvedValue(makeGroupConversation()),
   };
 
+  const userRepository = {
+    viewUserNamePhoto: jest.fn().mockResolvedValue({
+      user_id: authorUserId,
+      name: 'Author',
+      photo: null,
+    }),
+  };
+
   const messageRepository = {
     getMessageById: jest.fn().mockResolvedValue(clone(storedMessage)),
     updateMessage: jest.fn().mockResolvedValue(true),
@@ -142,13 +154,34 @@ const makeService = (options?: {
     publishSub: jest.fn().mockResolvedValue(undefined),
   };
 
+  const streamProducerService = {
+    send: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const kafkaServiceQueueService = {
+    internalChatDirectMessage: jest.fn(() => 'internal-chat-direct'),
+    internalChatGroupMessage: jest.fn(() => 'internal-chat-group'),
+  };
+
+  const storageService = {
+    uploadAudioFromBuffer: jest.fn(),
+    uploadVideoFromBuffer: jest.fn(),
+  };
+
+  const converterService = {
+    convertAudio: jest.fn(),
+    convertVideo: jest.fn(),
+    generateWaveformWithFfmpeg: jest.fn(),
+  };
+
   const service = new InternalChatService(
     conversationRepository as never,
-    {} as never,
+    userRepository as never,
     messageRepository as never,
-    {} as never,
-    {} as never,
-    {} as never,
+    streamProducerService as never,
+    kafkaServiceQueueService as never,
+    storageService as never,
+    converterService as never,
     centrifugoService as never,
     {} as never
   );
@@ -156,7 +189,12 @@ const makeService = (options?: {
   return {
     service,
     conversationRepository,
+    userRepository,
     messageRepository,
+    streamProducerService,
+    kafkaServiceQueueService,
+    storageService,
+    converterService,
     centrifugoService,
   };
 };
@@ -494,5 +532,146 @@ describe('InternalChatService', () => {
       perPage: 100,
       search: 'needle',
     });
+  });
+
+  it('converts internal ptt audio and dispatches canonical metadata', async () => {
+    const { service, converterService, storageService, streamProducerService } =
+      makeService();
+    const originalBuffer = Buffer.from('original-audio');
+    const convertedBuffer = Buffer.from('converted-ogg-opus');
+    const audioUpload = {
+      filename: 'voice.m4a',
+      encoding: '7bit',
+      mimetype: 'audio/mp4',
+      file: {},
+      toBuffer: jest.fn().mockResolvedValue(originalBuffer),
+    };
+
+    converterService.convertAudio.mockResolvedValue({
+      buffer: convertedBuffer,
+      mimetype: 'audio/ogg; codecs=opus',
+      extension: 'ogg',
+      duration: 8,
+    });
+    converterService.generateWaveformWithFfmpeg.mockResolvedValue(
+      'waveform-base64'
+    );
+    storageService.uploadAudioFromBuffer.mockResolvedValue({
+      url: 'https://cdn.example.com/voice.ogg',
+      name: 'voice.ogg',
+      mimetype: 'audio/mp4',
+      extension: 'm4a',
+      size: 1234,
+    });
+
+    await expect(
+      service.createMessage(accountId, authorUserId, conversationId, {
+        type: EMessageType.audio,
+        hash: 'voice-hash',
+        audios: audioUpload,
+        audio_ptt: 'true',
+        audio_duration: '3',
+      } as never)
+    ).resolves.toEqual({
+      message_id: 'uuid-v7',
+      queued: true,
+    });
+
+    expect(converterService.convertAudio).toHaveBeenCalledWith(
+      originalBuffer,
+      'audio/mp4',
+      true
+    );
+    expect(storageService.uploadAudioFromBuffer).toHaveBeenCalledWith(
+      convertedBuffer,
+      'voice.ogg',
+      'audio/ogg; codecs=opus',
+      accountId
+    );
+    const payload = streamProducerService.send.mock.calls[0][1] as any;
+    expect(payload.message.content.audio).toEqual(
+      expect.objectContaining({
+        url: 'https://cdn.example.com/voice.ogg',
+        name: 'voice.ogg',
+        mimetype: 'audio/ogg; codecs=opus',
+        extension: 'ogg',
+        size: 1234,
+        duration: 8,
+        ptt: true,
+        view_once: false,
+        waveform: 'waveform-base64',
+      })
+    );
+    expect(payload.sender_user_id).toBe(authorUserId);
+  });
+
+  it('converts internal video and dispatches final converted metadata', async () => {
+    const { service, converterService, storageService, streamProducerService } =
+      makeService();
+    const originalBuffer = Buffer.from('original-video');
+    const convertedBuffer = Buffer.from('converted-video');
+    const videoUpload = {
+      filename: 'clip.mov',
+      encoding: '7bit',
+      mimetype: 'video/quicktime',
+      file: {},
+      toBuffer: jest.fn().mockResolvedValue(originalBuffer),
+    };
+
+    converterService.convertVideo.mockResolvedValue({
+      buffer: convertedBuffer,
+      mimetype: 'video/mp4',
+      extension: 'mp4',
+      duration: 12,
+      width: 720,
+      height: 1280,
+    });
+    storageService.uploadVideoFromBuffer.mockResolvedValue({
+      url: 'https://cdn.example.com/clip.mp4',
+      name: 'clip.mp4',
+      mimetype: 'video/quicktime',
+      extension: 'mov',
+      size: 4567,
+      width: null,
+      height: null,
+    });
+
+    await expect(
+      service.createMessage(accountId, authorUserId, conversationId, {
+        type: EMessageType.video,
+        hash: 'video-hash',
+        videos: videoUpload,
+        video_duration: '2',
+      } as never)
+    ).resolves.toEqual({
+      message_id: 'uuid-v7',
+      queued: true,
+    });
+
+    expect(converterService.convertVideo).toHaveBeenCalledWith(
+      originalBuffer,
+      'video/quicktime'
+    );
+    expect(storageService.uploadVideoFromBuffer).toHaveBeenCalledWith(
+      convertedBuffer,
+      'clip.mp4',
+      'video/mp4',
+      accountId,
+      720,
+      1280
+    );
+    const payload = streamProducerService.send.mock.calls[0][1] as any;
+    expect(payload.message.content.video).toEqual(
+      expect.objectContaining({
+        url: 'https://cdn.example.com/clip.mp4',
+        name: 'clip.mp4',
+        mimetype: 'video/mp4',
+        extension: 'mp4',
+        size: 4567,
+        duration: 12,
+        width: 720,
+        height: 1280,
+      })
+    );
   });
 });

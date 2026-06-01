@@ -26,6 +26,11 @@ describe('AudioProbeService', () => {
     expect(execAsyncMock).toHaveBeenCalledWith(
       expect.stringContaining('ffprobe')
     );
+    expect(execAsyncMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'format=duration,format_name:stream=codec_type,codec_name,channels,sample_rate,bit_rate'
+      )
+    );
   });
 
   it('extracts duration and handles invalid values', () => {

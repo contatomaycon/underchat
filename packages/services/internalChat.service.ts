@@ -21,8 +21,10 @@ import { IInternalChatDispatchMessage } from '@core/common/interfaces/internalCh
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { StorageService } from '@core/services/storage.service';
+import { ConverterService } from '@core/services/converter';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ChatContactService } from '@core/services/chatContact.service';
+import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { ListConversationsQuery } from '@core/schema/internalChat/listConversations/request.schema';
 import { ListUsersQuery } from '@core/schema/internalChat/listUsers/request.schema';
 import { ListInternalChatContactsRequest } from '@core/schema/internalChat/listContacts/request.schema';
@@ -109,6 +111,8 @@ export class InternalChatService {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ConverterService)
+    private readonly converterService: ConverterService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(ChatContactService)
@@ -371,6 +375,88 @@ export class InternalChatService {
     return normalizedPhoto.length > 0 ? normalizedPhoto : null;
   }
 
+  private async uploadVideoForMessage(
+    video: UploadFileRequest,
+    accountId: string
+  ): Promise<
+    | (UploadFileResponse & {
+        duration?: number;
+        width?: number | null;
+        height?: number | null;
+      })
+    | null
+  > {
+    const originalBuffer = await video.toBuffer();
+    const converted = await this.converterService.convertVideo(
+      originalBuffer,
+      video.mimetype ?? null
+    );
+    const filename = video.filename.replace(/\.[^.]+$/, '') || 'video';
+    const newFilename = `${filename}.${converted.extension}`;
+    const uploaded = await this.storageService.uploadVideoFromBuffer(
+      converted.buffer,
+      newFilename,
+      converted.mimetype,
+      accountId,
+      converted.width,
+      converted.height
+    );
+
+    if (!uploaded) return null;
+
+    return {
+      ...uploaded,
+      mimetype: converted.mimetype,
+      extension: converted.extension,
+      duration: converted.duration,
+      width: converted.width ?? uploaded.width ?? null,
+      height: converted.height ?? uploaded.height ?? null,
+    };
+  }
+
+  private async uploadAudioForMessage(
+    audio: UploadFileRequest,
+    accountId: string,
+    isPtt: boolean
+  ): Promise<
+    | (UploadFileResponse & {
+        duration?: number;
+        waveform?: string;
+      })
+    | null
+  > {
+    const originalBuffer = await audio.toBuffer();
+    const converted = await this.converterService.convertAudio(
+      originalBuffer,
+      audio.mimetype ?? null,
+      isPtt
+    );
+    const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
+    const newFilename = `${filename}.${converted.extension}`;
+
+    const [uploaded, waveform] = await Promise.all([
+      this.storageService.uploadAudioFromBuffer(
+        converted.buffer,
+        newFilename,
+        converted.mimetype,
+        accountId
+      ),
+      this.converterService
+        .generateWaveformWithFfmpeg(converted.buffer)
+        .catch(() => undefined),
+    ]);
+
+    if (!uploaded) return null;
+
+    return {
+      ...uploaded,
+      mimetype: converted.mimetype,
+      extension: converted.extension,
+      duration: converted.duration,
+      waveform,
+    };
+  }
+
   private normalizeStringArray(
     field:
       | string[]
@@ -432,6 +518,22 @@ export class InternalChatService {
       return this.normalizeNumberField(value.value);
     }
     return null;
+  }
+
+  private normalizeBooleanField(value: unknown, fallback = false): boolean {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', '1', 'on', 'yes'].includes(normalized)) return true;
+      if (['false', '0', 'off', 'no'].includes(normalized)) return false;
+      return fallback;
+    }
+    if (typeof value === 'object' && 'value' in value) {
+      return this.normalizeBooleanField(value.value, fallback);
+    }
+    return fallback;
   }
 
   private normalizeLinkPreview(value: unknown): Record<string, unknown> | null {
@@ -589,6 +691,20 @@ export class InternalChatService {
     const locationAddress = extractFieldValue(
       input.body.location_address as any
     );
+    const audioDuration = this.normalizeNumberField(
+      (input.body as { audio_duration?: unknown }).audio_duration as any
+    );
+    const audioPtt = this.normalizeBooleanField(
+      (input.body as { audio_ptt?: unknown }).audio_ptt,
+      false
+    );
+    const audioViewOnce = this.normalizeBooleanField(
+      (input.body as { audio_view_once?: unknown }).audio_view_once,
+      false
+    );
+    const videoDuration = this.normalizeNumberField(
+      (input.body as { video_duration?: unknown }).video_duration as any
+    );
 
     const images = this.normalizeUploads(input.body.images as any);
     const videos = this.normalizeUploads(input.body.videos as any);
@@ -643,7 +759,7 @@ export class InternalChatService {
 
     if (type === EMessageType.video && videos.length > 0) {
       for (const video of videos) {
-        const uploaded = await this.storageService.uploadVideo(
+        const uploaded = await this.uploadVideoForMessage(
           video,
           input.accountId
         );
@@ -657,6 +773,9 @@ export class InternalChatService {
           mimetype: uploaded.mimetype,
           extension: uploaded.extension,
           size: uploaded.size,
+          duration: uploaded.duration ?? videoDuration ?? null,
+          width: uploaded.width ?? null,
+          height: uploaded.height ?? null,
         };
         messages.push(msg);
       }
@@ -664,9 +783,10 @@ export class InternalChatService {
 
     if (type === EMessageType.audio && audios.length > 0) {
       for (const audio of audios) {
-        const uploaded = await this.storageService.uploadAudio(
+        const uploaded = await this.uploadAudioForMessage(
           audio,
-          input.accountId
+          input.accountId,
+          audioPtt
         );
         if (!uploaded) continue;
 
@@ -677,6 +797,10 @@ export class InternalChatService {
           mimetype: uploaded.mimetype,
           extension: uploaded.extension,
           size: uploaded.size,
+          duration: uploaded.duration ?? audioDuration ?? null,
+          ptt: audioPtt,
+          view_once: audioViewOnce,
+          waveform: uploaded.waveform ?? null,
         };
         messages.push(msg);
       }

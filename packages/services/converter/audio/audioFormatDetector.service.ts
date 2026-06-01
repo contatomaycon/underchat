@@ -39,7 +39,7 @@ export class AudioFormatDetector {
       return 'webm';
     }
 
-    if (lower.includes('mp3')) {
+    if (lower.includes('mp3') || lower.includes('mpeg')) {
       return 'mp3';
     }
 
@@ -51,7 +51,7 @@ export class AudioFormatDetector {
       return 'amr';
     }
 
-    if (lower.includes('mp4')) {
+    if (lower.includes('mp4') || lower.includes('m4a')) {
       return 'mp4';
     }
 

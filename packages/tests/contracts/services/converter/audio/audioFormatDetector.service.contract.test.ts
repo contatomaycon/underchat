@@ -47,9 +47,11 @@ describe('AudioFormatDetector', () => {
     expect(service.getExtensionFromMimetype('audio/opus')).toBe('ogg');
     expect(service.getExtensionFromMimetype('audio/webm')).toBe('webm');
     expect(service.getExtensionFromMimetype('audio/mp3')).toBe('mp3');
+    expect(service.getExtensionFromMimetype('audio/mpeg')).toBe('mp3');
     expect(service.getExtensionFromMimetype('audio/aac')).toBe('aac');
     expect(service.getExtensionFromMimetype('audio/amr')).toBe('amr');
     expect(service.getExtensionFromMimetype('audio/mp4')).toBe('mp4');
+    expect(service.getExtensionFromMimetype('audio/x-m4a')).toBe('mp4');
     expect(service.getExtensionFromMimetype(null)).toBe('');
     expect(service.getExtensionFromMimetype('audio/unknown')).toBe('');
   });

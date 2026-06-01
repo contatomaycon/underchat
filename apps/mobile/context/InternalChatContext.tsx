@@ -113,7 +113,7 @@ type InternalChatContextValue = {
     conversationId: string,
     formData: FormData,
     optimisticMessage?: InternalChatMessage | null
-  ) => Promise<InternalChatMessage | null>;
+  ) => Promise<{ message: InternalChatMessage | null; error: string | null }>;
   reactMessage: (
     conversationId: string,
     messageId: string,
@@ -543,8 +543,11 @@ export function InternalChatProvider({
       conversationId: string,
       formData: FormData,
       optimisticMessage?: InternalChatMessage | null
-    ): Promise<InternalChatMessage | null> => {
-      if (!enabled) return null;
+    ): Promise<{
+      message: InternalChatMessage | null;
+      error: string | null;
+    }> => {
+      if (!enabled) return { message: null, error: null };
       if (optimisticMessage) {
         dispatch({
           type: 'upsertMessage',
@@ -563,8 +566,21 @@ export function InternalChatProvider({
             message: result.message,
             currentUserId: currentUserIdRef.current,
           });
-          return result.message;
+          return { message: result.message, error: null };
         }
+        const backendError = result.error ?? 'Erro ao enviar mensagem.';
+        if (optimisticMessage) {
+          dispatch({
+            type: 'upsertMessage',
+            message: {
+              ...optimisticMessage,
+              local_status: 'error',
+              local_error: backendError,
+            },
+            currentUserId: currentUserIdRef.current,
+          });
+        }
+        return { message: null, error: backendError };
       } catch {
         // The optimistic message below must not remain stuck as "sending".
       }
@@ -579,7 +595,7 @@ export function InternalChatProvider({
           currentUserId: currentUserIdRef.current,
         });
       }
-      return null;
+      return { message: null, error: 'Erro ao enviar mensagem.' };
     },
     [enabled]
   );

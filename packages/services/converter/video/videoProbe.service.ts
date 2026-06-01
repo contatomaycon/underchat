@@ -12,7 +12,7 @@ export class VideoProbeService {
       '-v',
       'error',
       '-show_entries',
-      'format=duration:stream=codec_name,stream=width,stream=height',
+      'format=duration:stream=codec_type,codec_name,width,height',
       '-of',
       'json',
       `"${filePath}"`,

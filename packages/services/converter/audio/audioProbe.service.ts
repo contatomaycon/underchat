@@ -12,7 +12,7 @@ export class AudioProbeService {
       '-v',
       'error',
       '-show_entries',
-      'format=duration,stream=codec_name,stream=channels,stream=sample_rate,stream=bit_rate',
+      'format=duration,format_name:stream=codec_type,codec_name,channels,sample_rate,bit_rate',
       '-of',
       'json',
       `"${filePath}"`,

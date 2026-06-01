@@ -101,9 +101,46 @@ jest.mock('@core/services/converter/audio/audioProbe.service', () => ({
 import { AudioFfmpegConverter } from '@core/services/converter/audio/audioFfmpegConverter.service';
 
 describe('AudioFfmpegConverter', () => {
+  const mp3Metadata = {
+    format: {
+      duration: '12.2',
+      format_name: 'mp3',
+    },
+    streams: [
+      {
+        codec_type: 'audio',
+        codec_name: 'mp3',
+      },
+    ],
+  };
+
+  const pttMetadata = {
+    format: {
+      duration: '9.2',
+      format_name: 'ogg',
+    },
+    streams: [
+      {
+        codec_type: 'audio',
+        codec_name: 'opus',
+        channels: 1,
+        sample_rate: '48000',
+      },
+    ],
+  };
+
   const makeService = () => {
     const audioProbeService = {
       probeDuration: jest.fn<Promise<number>, [string]>(async () => 0),
+      probeMetadata: jest.fn<Promise<any>, [string]>(async () => mp3Metadata),
+      extractDuration: jest.fn<number | undefined, [any]>((metadata) => {
+        const parsedDuration = Number.parseFloat(
+          metadata?.format?.duration ?? ''
+        );
+        return Number.isFinite(parsedDuration)
+          ? Math.round(parsedDuration)
+          : undefined;
+      }),
     };
 
     const service = new AudioFfmpegConverter(audioProbeService as never);
@@ -133,9 +170,8 @@ describe('AudioFfmpegConverter', () => {
   it('converts regular audio to mp3 format and returns output metadata', async () => {
     const { service, audioProbeService } = makeService();
 
-    audioProbeService.probeDuration
-      .mockResolvedValueOnce(3)
-      .mockResolvedValueOnce(12);
+    audioProbeService.probeDuration.mockResolvedValueOnce(3);
+    audioProbeService.probeMetadata.mockResolvedValueOnce(mp3Metadata);
 
     await expect(
       service.convert(Buffer.from('audio'), 'wav', false)
@@ -156,6 +192,8 @@ describe('AudioFfmpegConverter', () => {
     expect(ffmpegCommands[0].audioFrequency).toHaveBeenCalledWith(44100);
     expect(ffmpegCommands[0].audioChannels).toHaveBeenCalledWith(2);
     expect(ffmpegCommands[0].audioBitrate).toHaveBeenCalledWith('128k');
+    expect(audioProbeService.probeMetadata).toHaveBeenCalledTimes(1);
+    expect(audioProbeService.extractDuration).toHaveBeenCalledWith(mp3Metadata);
 
     expect(mockSafeUnlink).toHaveBeenCalledTimes(2);
     const safeUnlinkCalls = mockSafeUnlink.mock.calls as unknown as unknown[][];
@@ -166,26 +204,60 @@ describe('AudioFfmpegConverter', () => {
   it('converts ptt audio using opus configuration', async () => {
     const { service, audioProbeService } = makeService();
 
-    audioProbeService.probeDuration
-      .mockResolvedValueOnce(2)
-      .mockResolvedValueOnce(9);
+    audioProbeService.probeDuration.mockResolvedValueOnce(2);
+    audioProbeService.probeMetadata.mockResolvedValueOnce(pttMetadata);
 
     await expect(
       service.convert(Buffer.from('audio'), 'mp3', true)
     ).resolves.toEqual({
       buffer: Buffer.from('converted-audio'),
       mimetype: 'audio/ogg; codecs=opus',
-      extension: 'opus',
+      extension: 'ogg',
       duration: 9,
     });
 
     expect(ffmpegCommands[0].audioCodec).toHaveBeenCalledWith('libopus');
     expect(ffmpegCommands[0].format).toHaveBeenCalledWith('ogg');
+    expect(ffmpegCommands[0].audioFrequency).toHaveBeenCalledWith(48000);
     expect(ffmpegCommands[0].audioChannels).toHaveBeenCalledWith(1);
+    expect(ffmpegCommands[0].audioBitrate).toHaveBeenCalledWith('32k');
     expect(ffmpegCommands[0].outputOptions).toHaveBeenCalledWith([
+      '-application',
+      'voip',
+      '-frame_duration',
+      '20',
       '-avoid_negative_ts',
       'make_zero',
     ]);
+    expect(audioProbeService.probeMetadata).toHaveBeenCalledTimes(1);
+    expect(audioProbeService.extractDuration).toHaveBeenCalledWith(pttMetadata);
+  });
+
+  it('rejects converted ptt audio outside the WhatsApp voice profile', async () => {
+    const { service, audioProbeService } = makeService();
+
+    audioProbeService.probeDuration.mockResolvedValueOnce(2);
+    audioProbeService.probeMetadata.mockResolvedValueOnce({
+      format: {
+        duration: '9.2',
+        format_name: 'ogg',
+      },
+      streams: [
+        {
+          codec_type: 'audio',
+          codec_name: 'aac',
+          channels: 2,
+          sample_rate: '44100',
+        },
+      ],
+    });
+
+    await expect(
+      service.convert(Buffer.from('audio'), 'm4a', true)
+    ).rejects.toThrow('perfil de voz WhatsApp');
+
+    expect(mockReadFile).not.toHaveBeenCalled();
+    expect(mockSafeUnlink).toHaveBeenCalledTimes(2);
   });
 
   it('maps invalid conversion errors to domain-specific message', async () => {

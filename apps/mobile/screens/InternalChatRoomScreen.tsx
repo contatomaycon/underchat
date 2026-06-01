@@ -170,6 +170,11 @@ type InternalAttachmentAction = {
   onPress: () => void;
 };
 
+type InternalUploadFormFields = Record<
+  string,
+  string | number | boolean | null | undefined
+>;
+
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
@@ -502,6 +507,17 @@ function createBaseFormData(
   formData.append('hash', hash);
   if (replyId) formData.append('message_quoted_id', replyId);
   return formData;
+}
+
+function appendUploadFields(
+  formData: FormData,
+  fields?: InternalUploadFormFields
+): void {
+  if (!fields) return;
+  Object.entries(fields).forEach(([key, value]) => {
+    if (value == null) return;
+    formData.append(key, String(value));
+  });
 }
 
 function resolveMediaUri(url: string | null | undefined): string | null {
@@ -3731,6 +3747,7 @@ export function InternalChatRoomScreen() {
       field: 'images' | 'videos' | 'documents' | 'audios';
       file: InternalChatUploadFile;
       content: InternalChatMessage['content'];
+      fields?: InternalUploadFormFields;
     }) => {
       const hash = createInternalChatMessageHash();
       const formData = createBaseFormData(
@@ -3738,6 +3755,7 @@ export function InternalChatRoomScreen() {
         hash,
         replyTo?.message_id ?? null
       );
+      appendUploadFields(formData, input.fields);
       await appendInternalChatFile(formData, input.field, input.file);
       const optimistic = buildInternalOptimisticFileMessage({
         conversation: activeConversation,
@@ -3750,12 +3768,14 @@ export function InternalChatRoomScreen() {
           message_quoted_id: replyTo?.message_id ?? null,
         },
       });
-      const sent = await sendFormDataMessage(
+      const result = await sendFormDataMessage(
         conversationId,
         formData,
         optimistic
       );
-      if (!sent) Alert.alert(pt.error_title, pt.send_error);
+      if (!result.message) {
+        Alert.alert(pt.error_title, result.error ?? pt.send_error);
+      }
       setReplyTo(null);
       scrollToEnd();
     },
@@ -3803,13 +3823,25 @@ export function InternalChatRoomScreen() {
         asset.fileName ||
         getFileNameFromUri(asset.uri, `video-${Date.now()}.mp4`);
       const mimeType = asset.mimeType || getMimeTypeFromName(name, 'video/mp4');
+      const durationSec =
+        typeof asset.duration === 'number' && Number.isFinite(asset.duration)
+          ? Math.max(1, Math.round(asset.duration / 1000))
+          : null;
       await sendUpload({
         type: INTERNAL_MESSAGE_TYPE.video,
         field: 'videos',
         file: { uri: asset.uri, name, mimeType },
+        fields: {
+          video_duration: durationSec,
+        },
         content: {
           type: INTERNAL_MESSAGE_TYPE.video,
-          video: { url: asset.uri, name, mimetype: mimeType },
+          video: {
+            url: asset.uri,
+            name,
+            mimetype: mimeType,
+            duration: durationSec,
+          },
         },
       });
     },
@@ -3916,9 +3948,17 @@ export function InternalChatRoomScreen() {
       type: INTERNAL_MESSAGE_TYPE.audio,
       field: 'audios',
       file: { uri: asset.uri, name, mimeType },
+      fields: {
+        audio_ptt: false,
+      },
       content: {
         type: INTERNAL_MESSAGE_TYPE.audio,
-        audio: { url: asset.uri, name, mimetype: mimeType },
+        audio: {
+          url: asset.uri,
+          name,
+          mimetype: mimeType,
+          ptt: false,
+        },
       },
     });
   }, [sendUpload]);
@@ -4132,6 +4172,10 @@ export function InternalChatRoomScreen() {
           uri: recorded.uri,
           name: recorded.name,
           mimeType: recorded.mimeType,
+        },
+        fields: {
+          audio_ptt: true,
+          audio_duration: recorded.durationSec,
         },
         content: {
           type: INTERNAL_MESSAGE_TYPE.audio,

@@ -42,9 +42,8 @@ export class AudioFfmpegConverter {
       await this.validateInputFile(inputPath, currentFormat);
 
       await this.runConversion(inputPath, outputPath, ptt);
+      const duration = await this.validateOutputFile(outputPath, ptt);
       const outputBuffer = await readFile(outputPath);
-
-      const duration = await this.audioProbeService.probeDuration(outputPath);
 
       return {
         buffer: outputBuffer,
@@ -78,7 +77,7 @@ export class AudioFfmpegConverter {
       return {
         format: 'ogg',
         mimetype: 'audio/ogg; codecs=opus',
-        extension: 'opus',
+        extension: 'ogg',
       };
     }
 
@@ -145,8 +144,17 @@ export class AudioFfmpegConverter {
       .noVideo()
       .audioCodec('libopus')
       .format('ogg')
+      .audioFrequency(48000)
       .audioChannels(1)
-      .outputOptions(['-avoid_negative_ts', 'make_zero']);
+      .audioBitrate('32k')
+      .outputOptions([
+        '-application',
+        'voip',
+        '-frame_duration',
+        '20',
+        '-avoid_negative_ts',
+        'make_zero',
+      ]);
   }
 
   private configureRegularAudioCommand(
@@ -180,6 +188,60 @@ export class AudioFfmpegConverter {
             `O arquivo pode estar corrompido ou em um formato não suportado.`
         );
       }
+    }
+  }
+
+  private async validateOutputFile(
+    outputPath: string,
+    ptt: boolean
+  ): Promise<number | undefined> {
+    const metadata = await this.audioProbeService.probeMetadata(outputPath);
+    const duration = this.audioProbeService.extractDuration(metadata);
+    const audioStream = Array.isArray(metadata?.streams)
+      ? metadata.streams.find((stream: any) => stream?.codec_type === 'audio')
+      : null;
+
+    if (!audioStream) {
+      throw new Error('Arquivo de áudio convertido sem trilha de áudio.');
+    }
+
+    if (ptt) {
+      this.validatePttOutput(metadata, audioStream);
+      return duration;
+    }
+
+    this.validateRegularOutput(metadata, audioStream);
+    return duration;
+  }
+
+  private validatePttOutput(metadata: any, audioStream: any): void {
+    const formatName = String(
+      metadata?.format?.format_name ?? ''
+    ).toLowerCase();
+    const codecName = String(audioStream?.codec_name ?? '').toLowerCase();
+    const channels = Number(audioStream?.channels);
+    const sampleRate = Number(audioStream?.sample_rate);
+
+    if (
+      !formatName.includes('ogg') ||
+      codecName !== 'opus' ||
+      channels !== 1 ||
+      sampleRate !== 48000
+    ) {
+      throw new Error(
+        'Arquivo de áudio convertido fora do perfil de voz WhatsApp.'
+      );
+    }
+  }
+
+  private validateRegularOutput(metadata: any, audioStream: any): void {
+    const formatName = String(
+      metadata?.format?.format_name ?? ''
+    ).toLowerCase();
+    const codecName = String(audioStream?.codec_name ?? '').toLowerCase();
+
+    if (!formatName.includes('mp3') || codecName !== 'mp3') {
+      throw new Error('Arquivo de áudio convertido fora do perfil MP3.');
     }
   }
 }

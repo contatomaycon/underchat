@@ -73,10 +73,32 @@ export const createMessageBodySchema = Type.Object({
       Type.Null(),
     ])
   ),
+  video_duration: Type.Optional(optionalNumberFieldSchema),
   audios: Type.Optional(
     Type.Union([
       uploadFileRequestSchema,
       Type.Array(uploadFileRequestSchema),
+      Type.Null(),
+    ])
+  ),
+  audio_duration: Type.Optional(optionalNumberFieldSchema),
+  audio_view_once: Type.Optional(
+    Type.Union([
+      Type.Boolean(),
+      Type.String(),
+      Type.Object({
+        value: Type.Union([Type.Boolean(), Type.String(), Type.Null()]),
+      }),
+      Type.Null(),
+    ])
+  ),
+  audio_ptt: Type.Optional(
+    Type.Union([
+      Type.Boolean(),
+      Type.String(),
+      Type.Object({
+        value: Type.Union([Type.Boolean(), Type.String(), Type.Null()]),
+      }),
       Type.Null(),
     ])
   ),

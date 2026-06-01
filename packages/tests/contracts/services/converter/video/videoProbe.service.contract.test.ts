@@ -23,6 +23,11 @@ describe('VideoProbeService', () => {
     await expect(service.probeMetadata('/tmp/a.mp4')).resolves.toEqual({
       format: { duration: '12.3' },
     });
+    expect(execAsyncMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'format=duration:stream=codec_type,codec_name,width,height'
+      )
+    );
   });
 
   it('extracts duration and dimensions', () => {

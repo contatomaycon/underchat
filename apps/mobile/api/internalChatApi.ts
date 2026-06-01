@@ -6,6 +6,7 @@ import {
   apiPatchForm,
   apiPost,
   apiPostForm,
+  apiPostFormWithMessage,
 } from './client';
 import type {
   InternalChatActivityState,
@@ -85,7 +86,11 @@ async function appendFileToFormData(
   } as unknown as Blob);
 }
 
-function appendJsonArray(formData: FormData, fieldName: string, value: string[]) {
+function appendJsonArray(
+  formData: FormData,
+  fieldName: string,
+  value: string[]
+) {
   formData.append(fieldName, JSON.stringify(value));
 }
 
@@ -234,7 +239,8 @@ export async function listInternalChatMessages(
 ): Promise<InternalChatPagedResponse<InternalChatMessage>> {
   const page = options?.currentPage ?? 1;
   const perPage = options?.perPage ?? 20;
-  if (!conversationId.trim()) return normalizePagedResponse(null, page, perPage);
+  if (!conversationId.trim())
+    return normalizePagedResponse(null, page, perPage);
 
   const res = await apiGet<RawPagedResponse<InternalChatMessage>>(
     `/internal-chat/${conversationId}/messages`,
@@ -262,13 +268,26 @@ export async function createInternalChatMessage(
 export async function createInternalChatMessageWithFormData(
   conversationId: string,
   formData: FormData
-): Promise<{ ok: boolean; message: InternalChatMessage | null }> {
-  if (!conversationId.trim()) return { ok: false, message: null };
-  const res = await apiPostForm<InternalChatMessage | null>(
+): Promise<{
+  ok: boolean;
+  message: InternalChatMessage | null;
+  error: string | null;
+}> {
+  if (!conversationId.trim()) {
+    return { ok: false, message: null, error: null };
+  }
+  const res = await apiPostFormWithMessage<InternalChatMessage | null>(
     `/internal-chat/${conversationId}/messages`,
     formData
   );
-  return { ok: !!res?.status, message: res?.data ?? null };
+  if (!res) {
+    return { ok: false, message: null, error: null };
+  }
+  return {
+    ok: !!res.status,
+    message: res.data ?? null,
+    error: res.status ? null : (res.message ?? null),
+  };
 }
 
 export async function appendInternalChatFile(

@@ -855,6 +855,7 @@ export class ChatMessageService {
       return {
         ...uploadResult,
         mimetype: converted.mimetype,
+        extension: converted.extension,
         duration: converted.duration,
         width: converted.width ?? null,
         height: converted.height ?? null,
@@ -917,6 +918,7 @@ export class ChatMessageService {
         return {
           ...uploadResult,
           mimetype: converted.mimetype,
+          extension: converted.extension,
           duration: converted.duration,
           waveform: waveformBase64 ?? undefined,
         };
@@ -928,13 +930,17 @@ export class ChatMessageService {
           errorMessage.includes('inválido') ||
           errorMessage.includes('corrompido') ||
           errorMessage.includes('Invalid data') ||
-          errorMessage.includes('code 1')
+          errorMessage.includes('code 1') ||
+          errorMessage.includes('perfil de voz WhatsApp') ||
+          errorMessage.includes('perfil MP3')
         ) {
           console.error(
             `Erro ao converter áudio ${audio.filename}:`,
             errorMessage
           );
-          return null;
+          throw new Error(
+            `Falha ao converter áudio para um formato compatível: ${errorMessage}`
+          );
         }
 
         throw error;
@@ -1426,7 +1432,7 @@ export class ChatMessageService {
     }
 
     const finalDuration =
-      audioOptions.audioDuration ?? audioData.duration ?? null;
+      audioData.duration ?? audioOptions.audioDuration ?? null;
 
     const formattedMessage = await this.formatOperatorTextWithAttendeeName(
       chatData,
