@@ -5890,6 +5890,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [isLoadingTransferSectorUsers, setIsLoadingTransferSectorUsers] =
     useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
+  const [isClosingService, setIsClosingService] = useState(false);
   const [isLeavingConversation, setIsLeavingConversation] = useState(false);
   const [isTogglingForwardToOutput, setIsTogglingForwardToOutput] =
     useState(false);
@@ -6409,6 +6410,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setAttendanceHistoryVisible(false);
     setTransferModalVisible(false);
     setCloseServiceModalVisible(false);
+    setIsTransferring(false);
+    setIsClosingService(false);
     setCloseServiceBackendRequiresClosureReason(false);
     setCloseServiceClosureError(null);
     setAttendanceInactivityDisabledForActiveChat(false);
@@ -7991,7 +7994,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const confirmCloseService = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
-    if (!chatId) return;
+    if (!chatId || isClosingService) return;
 
     if (isInChatStatus && !canManageInChatLifecycle) {
       Alert.alert(pt.warning_title, pt.only_primary_can_close);
@@ -8015,6 +8018,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       return;
     }
 
+    setIsClosingService(true);
     try {
       const result = await updateChatStatusDetailed(
         chatId,
@@ -8052,6 +8056,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       navigation.goBack();
     } catch {
       Alert.alert(pt.error_title, pt.chat_status_update_error);
+    } finally {
+      setIsClosingService(false);
     }
   }, [
     canToggleOptionalClosureReasonAction,
@@ -8062,12 +8068,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     closeServiceSendMessageOnFinishAttendance,
     canManageInChatLifecycle,
     focusCloseServiceClosureInput,
+    isClosingService,
     isInChatStatus,
     navigation,
     shouldShowCloseServiceSendMessageToggle,
   ]);
 
   const handleCloseService = useCallback(() => {
+    setIsClosingService(false);
     setCloseServiceSendMessageOnFinishAttendance(true);
     setCloseServiceClosureComment('');
     setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
@@ -8077,12 +8085,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [canToggleOptionalClosureReasonAction]);
 
   const dismissCloseServiceModal = useCallback(() => {
+    if (isClosingService) return;
     setCloseServiceModalVisible(false);
     setCloseServiceClosureComment('');
     setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
     setCloseServiceBackendRequiresClosureReason(false);
     setCloseServiceClosureError(null);
-  }, [canToggleOptionalClosureReasonAction]);
+  }, [canToggleOptionalClosureReasonAction, isClosingService]);
+
+  const dismissTransferModal = useCallback(() => {
+    if (isTransferring) return;
+    setTransferModalVisible(false);
+  }, [isTransferring]);
 
   const confirmLeaveConversation = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
@@ -8884,7 +8898,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const submitTransfer = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
-    if (!chatId) return;
+    if (!chatId || isTransferring) return;
 
     if (!canManageInChatLifecycle) {
       Alert.alert(pt.warning_title, pt.only_primary_can_transfer);
@@ -8933,19 +8947,24 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
 
     setIsTransferring(true);
-    const transferResult = await transferChat(chatId, payload);
-    setIsTransferring(false);
-    if (!transferResult.ok) {
-      Alert.alert(
-        pt.error_title,
-        transferResult.message ?? pt.chat_transfer_error
-      );
-      return;
-    }
+    try {
+      const transferResult = await transferChat(chatId, payload);
+      if (!transferResult.ok) {
+        Alert.alert(
+          pt.error_title,
+          transferResult.message ?? pt.chat_transfer_error
+        );
+        return;
+      }
 
-    Alert.alert(pt.success_title, pt.transfer_successfully);
-    setTransferModalVisible(false);
-    navigation.goBack();
+      Alert.alert(pt.success_title, pt.transfer_successfully);
+      setTransferModalVisible(false);
+      navigation.goBack();
+    } catch {
+      Alert.alert(pt.error_title, pt.chat_transfer_error);
+    } finally {
+      setIsTransferring(false);
+    }
   }, [
     chatInfo.chat_id,
     navigation,
@@ -8959,6 +8978,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     transferSendMessageOnTransfer,
     transferType,
     shouldShowTransferSendMessageToggle,
+    isTransferring,
   ]);
 
   const menuActions = useMemo<ChatMenuAction[]>(() => {
@@ -15051,14 +15071,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             <Pressable
               style={styles.secondaryBtn}
               onPress={dismissCloseServiceModal}
+              disabled={isClosingService}
             >
               <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
             </Pressable>
             <Pressable
-              style={styles.closeServiceConfirmBtn}
+              style={[
+                styles.closeServiceConfirmBtn,
+                isClosingService && styles.sendBtnDisabled,
+              ]}
               onPress={dismissKeyboardAnd(() => void confirmCloseService())}
+              disabled={isClosingService}
             >
-              <Text style={styles.primaryBtnText}>{pt.close_service}</Text>
+              {isClosingService ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>{pt.close_service}</Text>
+              )}
             </Pressable>
           </>
         }
@@ -15382,7 +15411,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
       <BottomSheetModal
         visible={transferModalVisible}
-        onClose={() => setTransferModalVisible(false)}
+        onClose={dismissTransferModal}
         title={pt.transfer}
         cardStyle={styles.transferSheetCard}
         noScroll
@@ -15406,7 +15435,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           <>
             <Pressable
               style={styles.secondaryBtn}
-              onPress={dismissKeyboardAnd(() => setTransferModalVisible(false))}
+              onPress={dismissKeyboardAnd(dismissTransferModal)}
+              disabled={isTransferring}
             >
               <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
             </Pressable>

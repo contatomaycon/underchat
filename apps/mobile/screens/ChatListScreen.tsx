@@ -751,6 +751,8 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [isLoadingTransferSectorUsers, setIsLoadingTransferSectorUsers] =
     useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
+  const [isClosingChat, setIsClosingChat] = useState(false);
+  const [attendingChatId, setAttendingChatId] = useState<string | null>(null);
   const [labelInfoModalVisible, setLabelInfoModalVisible] = useState(false);
   const [labelInfoNames, setLabelInfoNames] = useState<string[]>([]);
   const [closeServiceModalVisible, setCloseServiceModalVisible] =
@@ -1922,7 +1924,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   const submitTransfer = useCallback(async () => {
     const transferChatTarget = transferTargetChat;
     const chatId = transferChatTarget?.chat_id;
-    if (!transferChatTarget || !chatId) return;
+    if (!transferChatTarget || !chatId || isTransferring) return;
 
     const canManageInChatLifecycle =
       isChatPrimary(transferChatTarget, currentUserId) ||
@@ -1975,20 +1977,25 @@ export function ChatListScreen({ route, navigation }: Props) {
     }
 
     setIsTransferring(true);
-    const transferResult = await transferChat(chatId, payload);
-    setIsTransferring(false);
+    try {
+      const transferResult = await transferChat(chatId, payload);
 
-    if (!transferResult.ok) {
-      Alert.alert(
-        pt.error_title,
-        transferResult.message ?? pt.chat_transfer_error
-      );
-      return;
+      if (!transferResult.ok) {
+        Alert.alert(
+          pt.error_title,
+          transferResult.message ?? pt.chat_transfer_error
+        );
+        return;
+      }
+
+      Alert.alert(pt.success_title, pt.transfer_successfully);
+      closeTransferModal();
+      void load({ trigger: 'action' });
+    } catch {
+      Alert.alert(pt.error_title, pt.chat_transfer_error);
+    } finally {
+      setIsTransferring(false);
     }
-
-    Alert.alert(pt.success_title, pt.transfer_successfully);
-    closeTransferModal();
-    void load({ trigger: 'action' });
   }, [
     closeTransferModal,
     load,
@@ -2003,6 +2010,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     transferType,
     shouldShowTransferSendMessageToggle,
     currentUserId,
+    isTransferring,
     isCurrentUserMasterOrAdministrator,
     socketPermissions,
   ]);
@@ -2018,6 +2026,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
     setCloseServiceBackendRequiresClosureReason(false);
     setCloseServiceClosureError(null);
+    setIsClosingChat(false);
   }, [canToggleOptionalClosureReasonAction]);
 
   const focusCloseServiceClosureInput = useCallback(() => {
@@ -2036,7 +2045,7 @@ export function ChatListScreen({ route, navigation }: Props) {
 
   const confirmCloseChat = useCallback(async () => {
     const chatId = closeServiceTargetChat?.chat_id;
-    if (!chatId) return;
+    if (!chatId || isClosingChat) return;
 
     const closeOptions = buildCloseChatPatchOptions({
       canToggleOptionalClosureReason: canToggleOptionalClosureReasonAction,
@@ -2055,6 +2064,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       return;
     }
 
+    setIsClosingChat(true);
     try {
       const result = await updateChatStatusDetailed(
         chatId,
@@ -2085,6 +2095,8 @@ export function ChatListScreen({ route, navigation }: Props) {
       void load({ trigger: 'action' });
     } catch {
       Alert.alert(pt.error_title, pt.chat_status_update_error);
+    } finally {
+      setIsClosingChat(false);
     }
   }, [
     canToggleOptionalClosureReasonAction,
@@ -2095,6 +2107,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     closeServiceSendMessageOnFinishAttendance,
     closeServiceTargetChat?.chat_id,
     focusCloseServiceClosureInput,
+    isClosingChat,
     load,
     shouldShowCloseServiceSendMessageToggle,
   ]);
@@ -2117,6 +2130,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
       setCloseServiceBackendRequiresClosureReason(false);
       setCloseServiceClosureError(null);
+      setIsClosingChat(false);
       setCloseServiceTargetChat(chat);
       setCloseServiceWorkerConfig(null);
       setCloseServiceModalVisible(true);
@@ -2155,8 +2169,19 @@ export function ChatListScreen({ route, navigation }: Props) {
 
   const handleAttendQueueChat = useCallback(
     async (chat: ListChatsResult) => {
-      openedSwipeableRef.current?.close();
-      const ok = await updateChatStatus(chat.chat_id, 'in_chat');
+      if (attendingChatId) return;
+
+      setAttendingChatId(chat.chat_id);
+      let ok = false;
+      try {
+        ok = await updateChatStatus(chat.chat_id, 'in_chat');
+      } catch {
+        ok = false;
+      } finally {
+        setAttendingChatId(null);
+        openedSwipeableRef.current?.close();
+      }
+
       if (!ok) {
         Alert.alert(pt.error_title, pt.chat_status_update_error);
         return;
@@ -2190,7 +2215,7 @@ export function ChatListScreen({ route, navigation }: Props) {
 
       navigation.push('ChatRoom', { chat: attendedChat });
     },
-    [navigation, setChatCounts]
+    [attendingChatId, navigation, setChatCounts]
   );
 
   const handleClearSearch = useCallback(() => {
@@ -2542,7 +2567,9 @@ export function ChatListScreen({ route, navigation }: Props) {
         statusBarTranslucent
         navigationBarTranslucent
         animationType="fade"
-        onRequestClose={closeCloseServiceModal}
+        onRequestClose={() => {
+          if (!isClosingChat) closeCloseServiceModal();
+        }}
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
@@ -2558,11 +2585,16 @@ export function ChatListScreen({ route, navigation }: Props) {
             <Pressable
               style={styles.transferBackdrop}
               onPress={closeCloseServiceModal}
+              disabled={isClosingChat}
             />
             <View style={styles.closeServiceCard}>
               <View style={styles.transferHeaderRow}>
                 <Text style={styles.transferTitle}>{pt.close_service}</Text>
-                <Pressable onPress={closeCloseServiceModal} hitSlop={12}>
+                <Pressable
+                  onPress={closeCloseServiceModal}
+                  hitSlop={12}
+                  disabled={isClosingChat}
+                >
                   <Ionicons name="close" size={22} color={colors.onSurface} />
                 </Pressable>
               </View>
@@ -2673,16 +2705,25 @@ export function ChatListScreen({ route, navigation }: Props) {
                 <Pressable
                   style={styles.transferCancelBtn}
                   onPress={closeCloseServiceModal}
+                  disabled={isClosingChat}
                 >
                   <Text style={styles.transferCancelText}>{pt.cancel}</Text>
                 </Pressable>
                 <Pressable
-                  style={styles.closeServiceConfirmBtn}
+                  style={[
+                    styles.closeServiceConfirmBtn,
+                    isClosingChat && styles.actionBtnDisabled,
+                  ]}
                   onPress={dismissKeyboardAnd(() => void confirmCloseChat())}
+                  disabled={isClosingChat}
                 >
-                  <Text style={styles.transferSubmitText}>
-                    {pt.close_service}
-                  </Text>
+                  {isClosingChat ? (
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.transferSubmitText}>
+                      {pt.close_service}
+                    </Text>
+                  )}
                 </Pressable>
               </View>
             </View>
@@ -2852,7 +2893,10 @@ export function ChatListScreen({ route, navigation }: Props) {
                       <Text style={styles.transferCancelText}>{pt.cancel}</Text>
                     </Pressable>
                     <Pressable
-                      style={styles.transferSubmitBtn}
+                      style={[
+                        styles.transferSubmitBtn,
+                        isTransferring && styles.actionBtnDisabled,
+                      ]}
                       onPress={dismissKeyboardAnd(() => {
                         void submitTransfer();
                       })}
@@ -2976,6 +3020,9 @@ export function ChatListScreen({ route, navigation }: Props) {
                 visible: isQueueItem,
                 style: styles.swipeAttendBtn,
                 label: pt.attend_service,
+                loading: attendingChatId === item.chat_id,
+                disabled:
+                  attendingChatId !== null && attendingChatId !== item.chat_id,
                 onPress: () => {
                   if (!canAttendQueueItem) {
                     Alert.alert(
@@ -2992,6 +3039,8 @@ export function ChatListScreen({ route, navigation }: Props) {
                 visible: canTransferItem,
                 style: styles.swipeTransferBtn,
                 label: pt.transfer,
+                loading: false,
+                disabled: attendingChatId !== null,
                 onPress: () => {
                   openedSwipeableRef.current?.close();
                   void openTransferModal(item);
@@ -3002,6 +3051,8 @@ export function ChatListScreen({ route, navigation }: Props) {
                 visible: canCloseItem,
                 style: styles.swipeCloseBtn,
                 label: closeSwipeLabel,
+                loading: false,
+                disabled: attendingChatId !== null,
                 onPress: () => {
                   handleCloseChat(item);
                 },
@@ -3069,17 +3120,26 @@ export function ChatListScreen({ route, navigation }: Props) {
                             style={[
                               styles.swipeActionBtn,
                               action.style,
+                              action.disabled && styles.actionBtnDisabled,
                               { width: actionWidth },
                             ]}
                             onPress={action.onPress}
+                            disabled={action.disabled || action.loading}
                           >
                             <View style={styles.swipeActionTextWrap}>
-                              <Text
-                                style={styles.swipeActionText}
-                                numberOfLines={1}
-                              >
-                                {action.label}
-                              </Text>
+                              {action.loading ? (
+                                <ActivityIndicator
+                                  size="small"
+                                  color={colors.onPrimary}
+                                />
+                              ) : (
+                                <Text
+                                  style={styles.swipeActionText}
+                                  numberOfLines={1}
+                                >
+                                  {action.label}
+                                </Text>
+                              )}
                             </View>
                           </Pressable>
                         ))}
@@ -3726,5 +3786,8 @@ const styles = StyleSheet.create({
   transferSubmitText: {
     color: colors.onPrimary,
     fontWeight: '700',
+  },
+  actionBtnDisabled: {
+    opacity: 0.55,
   },
 });
