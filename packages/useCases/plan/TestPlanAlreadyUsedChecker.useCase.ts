@@ -44,7 +44,7 @@ export class TestPlanAlreadyUsedCheckerUseCase {
       return false;
     }
 
-    return this.accountTestService.checkExistingTest({
+    return this.accountTestService.checkExistingCreatedTest({
       document: sensitiveData.document,
       phone: sensitiveData.phone,
       email: sensitiveData.email,

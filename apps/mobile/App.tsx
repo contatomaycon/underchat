@@ -19,9 +19,12 @@ import {
   canViewChatbotTab as checkCanViewChatbotTab,
   canViewChat,
   hasChatModuleAccessPermission,
+  hasInternalChatAccessPermission,
+  hasMobileAppAccessPermission,
   canUpdateOwnChatStatusPermission,
 } from './constants/chatAuthorization';
 import { ChatFilterProvider } from './context/ChatFilterContext';
+import { InternalChatProvider } from './context/InternalChatContext';
 import { ChannelStatusProvider } from './context/ChannelStatusContext';
 import { RootNavigator } from './navigation/RootNavigator';
 import {
@@ -34,6 +37,11 @@ import {
   initializeChatSocket,
   addChatSocketListener,
 } from './socket/chatSocket';
+import {
+  cleanupInternalChatSocket,
+  initializeInternalChatSocket,
+  addInternalChatSocketListener,
+} from './socket/internalChatSocket';
 import { publishPresence } from './socket/presence';
 import { addCentrifugoConnectionListener } from './socket/centrifugo';
 import { pt } from './locales/pt';
@@ -137,6 +145,8 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [canViewChatbotTab, setCanViewChatbotTab] = useState(false);
+  const [canViewChatTabs, setCanViewChatTabs] = useState(false);
+  const [canViewInternalChatTab, setCanViewInternalChatTab] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [navigationReady, setNavigationReady] = useState(false);
   const [pendingNotificationChat, setPendingNotificationChat] =
@@ -152,6 +162,8 @@ export default function App() {
   const attendanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attendanceOffsetMsRef = useRef(0);
   const authenticatedRef = useRef(false);
+  const canViewChatTabsRef = useRef(false);
+  const canViewInternalChatTabRef = useRef(false);
   const canUpdateOwnStatusRef = useRef(false);
   const socketConnectedRef = useRef(false);
   const disconnectOfflineTimerRef = useRef<ReturnType<
@@ -366,17 +378,21 @@ export default function App() {
         if (!cancelled) {
           setAuthenticated(false);
           setCanViewChatbotTab(false);
+          setCanViewChatTabs(false);
+          setCanViewInternalChatTab(false);
           setReady(true);
         }
         return;
       }
 
       const permissions = await getPermissions();
-      if (!hasChatModuleAccessPermission(permissions)) {
+      if (!hasMobileAppAccessPermission(permissions)) {
         await clearAuth();
         if (!cancelled) {
           setAuthenticated(false);
           setCanViewChatbotTab(false);
+          setCanViewChatTabs(false);
+          setCanViewInternalChatTab(false);
           canUpdateOwnStatusRef.current = false;
           setAuthError(pt.chat_permission_denied);
           setReady(true);
@@ -385,10 +401,14 @@ export default function App() {
       }
 
       if (!cancelled) {
+        const hasChatAccess = hasChatModuleAccessPermission(permissions);
+        const hasInternalAccess = hasInternalChatAccessPermission(permissions);
         setAuthenticated(true);
-        setCanViewChatbotTab(checkCanViewChatbotTab(permissions));
+        setCanViewChatbotTab(hasChatAccess && checkCanViewChatbotTab(permissions));
+        setCanViewChatTabs(hasChatAccess);
+        setCanViewInternalChatTab(hasInternalAccess);
         canUpdateOwnStatusRef.current =
-          canUpdateOwnChatStatusPermission(permissions);
+          hasChatAccess && canUpdateOwnChatStatusPermission(permissions);
         setReady(true);
       }
     };
@@ -397,6 +417,8 @@ export default function App() {
       if (cancelled) return;
       setAuthenticated(false);
       setCanViewChatbotTab(false);
+      setCanViewChatTabs(false);
+      setCanViewInternalChatTab(false);
       canUpdateOwnStatusRef.current = false;
       setReady(true);
     });
@@ -408,6 +430,8 @@ export default function App() {
 
   useEffect(() => {
     authenticatedRef.current = authenticated;
+    canViewChatTabsRef.current = canViewChatTabs;
+    canViewInternalChatTabRef.current = canViewInternalChatTab;
 
     if (!authenticated) {
       resetAttendanceLock();
@@ -420,24 +444,31 @@ export default function App() {
       return;
     }
 
-    void refreshAttendanceStatus();
+    if (canViewChatTabs) {
+      void refreshAttendanceStatus();
+    } else {
+      resetAttendanceLock();
+    }
 
-    if (Platform.OS === 'android') {
+    if (canViewChatTabs && Platform.OS === 'android') {
       void isIgnoringBatteryOptimizations().then((ignoring) => {
         if (!ignoring) {
           setBatteryModalVisible(true);
         }
       });
     }
-  }, [authenticated]);
+  }, [authenticated, canViewChatTabs, canViewInternalChatTab]);
 
   useEffect(() => {
     let cancelled = false;
 
     if (!authenticated) {
       setCanViewChatbotTab(false);
+      setCanViewChatTabs(false);
+      setCanViewInternalChatTab(false);
       canUpdateOwnStatusRef.current = false;
       cleanupChatSocket().catch(() => {});
+      cleanupInternalChatSocket().catch(() => {});
       return;
     }
 
@@ -445,21 +476,30 @@ export default function App() {
       .then(async (permissions) => {
         if (cancelled) return;
 
-        if (!hasChatModuleAccessPermission(permissions)) {
+        if (!hasMobileAppAccessPermission(permissions)) {
           await clearAuth();
           if (cancelled) return;
           setAuthenticated(false);
           setCanViewChatbotTab(false);
+          setCanViewChatTabs(false);
+          setCanViewInternalChatTab(false);
           canUpdateOwnStatusRef.current = false;
           setAuthError(pt.chat_permission_denied);
           return;
         }
 
-        setCanViewChatbotTab(checkCanViewChatbotTab(permissions));
-        canUpdateOwnStatusRef.current =
-          canUpdateOwnChatStatusPermission(permissions);
+        const hasChatAccess = hasChatModuleAccessPermission(permissions);
+        const hasInternalAccess = hasInternalChatAccessPermission(permissions);
 
-        if (socketConnectedRef.current) {
+        setCanViewChatbotTab(
+          hasChatAccess && checkCanViewChatbotTab(permissions)
+        );
+        setCanViewChatTabs(hasChatAccess);
+        setCanViewInternalChatTab(hasInternalAccess);
+        canUpdateOwnStatusRef.current =
+          hasChatAccess && canUpdateOwnChatStatusPermission(permissions);
+
+        if (hasChatAccess && socketConnectedRef.current) {
           void handleSocketConnected();
         }
       })
@@ -471,7 +511,7 @@ export default function App() {
   }, [authenticated, handleSocketConnected]);
 
   useEffect(() => {
-    if (!authenticated) {
+    if (!authenticated || !canViewChatTabs) {
       return;
     }
 
@@ -507,7 +547,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [authenticated, forceOnlineAtSessionStart]);
+  }, [authenticated, canViewChatTabs, forceOnlineAtSessionStart]);
 
   useEffect(() => {
     return addCurrentUserPresenceStatusListener(
@@ -527,7 +567,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!authenticated) {
+    if (!authenticated || !canViewChatTabs) {
       return;
     }
 
@@ -546,7 +586,12 @@ export default function App() {
     return () => {
       removeListener();
     };
-  }, [authenticated, handleSocketConnected, handleSocketDisconnected]);
+  }, [
+    authenticated,
+    canViewChatTabs,
+    handleSocketConnected,
+    handleSocketDisconnected,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -554,7 +599,7 @@ export default function App() {
     let offUserPresence: (() => void) | null = null;
     let offForceLogout: (() => void) | null = null;
 
-    if (!authenticated) {
+    if (!authenticated || !canViewChatTabs) {
       cleanupChatSocket().catch(() => {});
       return;
     }
@@ -615,7 +660,50 @@ export default function App() {
       offUserPresence?.();
       offForceLogout?.();
     };
-  }, [authenticated]);
+  }, [authenticated, canViewChatTabs]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let offForceLogout: (() => void) | null = null;
+
+    if (!authenticated || !canViewInternalChatTab) {
+      cleanupInternalChatSocket().catch(() => {});
+      return;
+    }
+
+    getUser()
+      .then(async (user) => {
+        if (cancelled) return;
+        const accountId = getUserAccountId(user);
+        const loggedUserId = getUserId(user);
+
+        if (accountId) {
+          await initializeInternalChatSocket(accountId).catch(() => {});
+        }
+
+        offForceLogout = addInternalChatSocketListener(
+          'forceLogout',
+          (payload) => {
+            const eventUserId = normalizeIdentifier(payload.user_id);
+            if (!loggedUserId || !eventUserId || eventUserId !== loggedUserId) {
+              return;
+            }
+
+            if (payload.session_platform !== 'mobile') {
+              return;
+            }
+
+            void teardownMobileSessionOnUnauthorized();
+          }
+        );
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      offForceLogout?.();
+    };
+  }, [authenticated, canViewInternalChatTab]);
 
   useEffect(() => {
     void initializePushNotifications({
@@ -693,9 +781,11 @@ export default function App() {
       }
 
       emitAppResume();
-      void refreshAttendanceStatus();
+      if (canViewChatTabsRef.current) {
+        void refreshAttendanceStatus();
+      }
 
-      if (Platform.OS === 'android') {
+      if (canViewChatTabsRef.current && Platform.OS === 'android') {
         void isIgnoringBatteryOptimizations().then((ignoring) => {
           if (!ignoring) {
             setBatteryModalVisible(true);
@@ -706,17 +796,24 @@ export default function App() {
       void getUser()
         .then(async (user) => {
           const accountId = getUserAccountId(user);
-          emitCurrentUserPresenceStatus(readChatUserStatus(user));
-          reconnectTargetStatusRef.current = normalizePresenceStatus(
-            readChatUserStatus(user)
-          );
 
           if (!accountId) return;
 
-          await initializeChatSocket(accountId).catch(() => {});
+          if (canViewChatTabsRef.current) {
+            emitCurrentUserPresenceStatus(readChatUserStatus(user));
+            reconnectTargetStatusRef.current = normalizePresenceStatus(
+              readChatUserStatus(user)
+            );
 
-          if (socketConnectedRef.current) {
-            await handleSocketConnected();
+            await initializeChatSocket(accountId).catch(() => {});
+
+            if (socketConnectedRef.current) {
+              await handleSocketConnected();
+            }
+          }
+
+          if (canViewInternalChatTabRef.current) {
+            await initializeInternalChatSocket(accountId).catch(() => {});
           }
         })
         .catch(() => {});
@@ -731,6 +828,8 @@ export default function App() {
     const onUnauthorized = () => {
       setAuthenticated(false);
       setCanViewChatbotTab(false);
+      setCanViewChatTabs(false);
+      setCanViewInternalChatTab(false);
       setAuthError(null);
     };
     return addAuthUnauthorizedListener(onUnauthorized);
@@ -739,6 +838,9 @@ export default function App() {
   useEffect(() => {
     const onAttendanceBlocked = (payload: AttendanceBlockedPayload) => {
       if (!authenticatedRef.current) {
+        return;
+      }
+      if (!canViewChatTabsRef.current) {
         return;
       }
 
@@ -754,6 +856,7 @@ export default function App() {
       clearDisconnectOfflineTimer();
       stopPresenceHeartbeat();
       cleanupChatSocket().catch(() => {});
+      cleanupInternalChatSocket().catch(() => {});
     };
   }, []);
 
@@ -773,28 +876,38 @@ export default function App() {
     );
   }
 
+  if (!canViewChatTabs && !canViewInternalChatTab) {
+    return null;
+  }
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ChatFilterProvider canViewChatbotTab={canViewChatbotTab}>
-          <ChannelStatusProvider>
-            <NavigationContainer
-              ref={navigationRef}
-              onReady={() => setNavigationReady(true)}
-            >
-              <RootNavigator />
-              <AttendanceGuardLockModal
-                visible={attendanceLocked}
-                status={attendanceGuardStatus}
-                message={attendanceLockMessage}
-              />
-              <BatteryOptimizationModal
-                visible={batteryModalVisible}
-                onDismiss={() => setBatteryModalVisible(false)}
-              />
-              <StatusBar style="dark" />
-            </NavigationContainer>
-          </ChannelStatusProvider>
+        <ChatFilterProvider
+          canViewChatbotTab={canViewChatbotTab}
+          canViewChatTabs={canViewChatTabs}
+          canViewInternalChatTab={canViewInternalChatTab}
+        >
+          <InternalChatProvider enabled={canViewInternalChatTab}>
+            <ChannelStatusProvider enabled={canViewChatTabs}>
+              <NavigationContainer
+                ref={navigationRef}
+                onReady={() => setNavigationReady(true)}
+              >
+                <RootNavigator />
+                <AttendanceGuardLockModal
+                  visible={canViewChatTabs && attendanceLocked}
+                  status={attendanceGuardStatus}
+                  message={attendanceLockMessage}
+                />
+                <BatteryOptimizationModal
+                  visible={canViewChatTabs && batteryModalVisible}
+                  onDismiss={() => setBatteryModalVisible(false)}
+                />
+                <StatusBar style="dark" />
+              </NavigationContainer>
+            </ChannelStatusProvider>
+          </InternalChatProvider>
         </ChatFilterProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

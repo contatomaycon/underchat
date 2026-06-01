@@ -6,6 +6,10 @@ import {
   canPickQueueChat,
   canPreviewChatContent,
   canViewChat,
+  hasInternalChatAccessPermission,
+  hasMobileAppAccessPermission,
+  canCreateInternalChatGroup,
+  canManageInternalChatGroupMembers,
 } from './chatAuthorization';
 
 function buildChat(overrides: Partial<ListChatsResult> = {}): ListChatsResult {
@@ -42,6 +46,32 @@ describe('chatAuthorization', () => {
     expect(canViewChatbotTab(['view_chatbot_messages'])).toBe(true);
     expect(canViewChatbotTab(['chat_group'])).toBe(true);
     expect(canViewChatbotTab(['pick_queue_chat'])).toBe(false);
+  });
+
+  it('grants mobile access for internal-chat-only users', () => {
+    expect(hasInternalChatAccessPermission(['internal_chat_access'])).toBe(true);
+    expect(hasInternalChatAccessPermission(['internal_chat_group'])).toBe(true);
+    expect(hasInternalChatAccessPermission(['full_access'])).toBe(true);
+    expect(hasInternalChatAccessPermission(['chat_access'])).toBe(false);
+
+    expect(hasMobileAppAccessPermission(['internal_chat_access'])).toBe(true);
+    expect(hasMobileAppAccessPermission(['chat_access'])).toBe(true);
+    expect(hasMobileAppAccessPermission(['pick_queue_chat'])).toBe(false);
+  });
+
+  it('detects internal group management permissions', () => {
+    expect(canCreateInternalChatGroup(['internal_chat_group_create'])).toBe(
+      true
+    );
+    expect(canCreateInternalChatGroup(['internal_chat_access'])).toBe(false);
+    expect(
+      canManageInternalChatGroupMembers([
+        'internal_chat_group_manage_members',
+      ])
+    ).toBe(true);
+    expect(canManageInternalChatGroupMembers(['internal_chat_access'])).toBe(
+      false
+    );
   });
 
   it('detects pick queue chat permission', () => {

@@ -10,6 +10,7 @@ export const navigationRef = createNavigationContainerRef<RootTabParamList>();
 const ROOT_TAB_ROUTES: Array<keyof RootTabParamList> = [
   'InChat',
   'Queue',
+  'InternalChat',
   'Chatbot',
   'Closed',
   'New',
@@ -70,6 +71,7 @@ function resolveTargetTabRoute(
     'Queue',
     'Chatbot',
     'Closed',
+    'InternalChat',
   ];
 
   for (const fallback of fallbacks) {

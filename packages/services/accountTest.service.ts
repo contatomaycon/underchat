@@ -89,47 +89,12 @@ export class AccountTestService {
       daysTrial: data.daysTrial,
     });
 
-    const updatedReservation =
-      await this.accountTestRepository.completeValidatedReservation({
-        document: documentEncrypted,
-        documentC,
-        phoneC,
-        emailC,
-      });
+    await this.accountTestRepository.deleteValidatedReservationsByContact({
+      phoneC,
+      emailC,
+    });
 
-    if (!updatedReservation) {
-      await this.accountTestRepository.createAccountTest({
-        document: documentEncrypted,
-        documentC,
-        phone: phoneEncrypted,
-        phoneC,
-        email: emailEncrypted,
-        emailC,
-      });
-    }
-
-    await this.notificationMessageService.sendPlanNotification(
-      data.accountId,
-      data.planId,
-      ENotificationTypeId.test_plan_new
-    );
-  };
-
-  reserveValidatedTest = async (data: {
-    validationId: string;
-    phone: string;
-    email: string;
-  }): Promise<void> => {
-    const documentPlaceholder = `validation:${data.validationId}`;
-    const documentEncrypted =
-      this.passwordEncryptorService.encrypt(documentPlaceholder);
-    const documentC = this.encryptService.encrypt(documentPlaceholder);
-    const phoneEncrypted = this.passwordEncryptorService.encrypt(data.phone);
-    const phoneC = this.encryptService.encrypt(data.phone);
-    const emailEncrypted = this.passwordEncryptorService.encrypt(data.email);
-    const emailC = this.encryptService.encrypt(data.email);
-
-    await this.accountTestRepository.createValidatedReservation({
+    await this.accountTestRepository.createAccountTest({
       document: documentEncrypted,
       documentC,
       phone: phoneEncrypted,
@@ -137,5 +102,11 @@ export class AccountTestService {
       email: emailEncrypted,
       emailC,
     });
+
+    await this.notificationMessageService.sendPlanNotification(
+      data.accountId,
+      data.planId,
+      ENotificationTypeId.test_plan_new
+    );
   };
 }

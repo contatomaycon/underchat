@@ -1,8 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import jwt, { type SignOptions } from 'jsonwebtoken';
-import Redis from 'ioredis';
 import { TwoFactorService } from '@core/services/twoFactor.service';
-import { AccountTestService } from '@core/services/accountTest.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { AuthRepository } from '@core/repositories/auth/Auth.repository';
@@ -17,27 +15,21 @@ import {
 import { ITwoFactorData } from '@core/common/interfaces/ITwoFactorData';
 import { generalEnvironment } from '@core/config/environments';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
-import { withLock } from '@core/common/functions/withLock';
 
 type ActiveValidationReason =
   | 'code_expired'
-  | 'worker_mismatch'
   | 'phone_mismatch'
-  | 'phone_already_validated'
   | 'invalid_context'
   | 'user_not_found'
   | 'account_blocked';
 
 @injectable()
 export class ActiveWhatsappValidationService {
-  private readonly codeRegex =
-    /^Código de Validação: ([A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}-UNDERCHAT)$/;
+  private readonly codeRegex = /([A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}-UNDERCHAT)/;
 
   constructor(
     @inject(TwoFactorService)
     private readonly twoFactorService: TwoFactorService,
-    @inject(AccountTestService)
-    private readonly accountTestService: AccountTestService,
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
     @inject(CentrifugoService)
@@ -45,8 +37,7 @@ export class ActiveWhatsappValidationService {
     @inject(AuthRepository)
     private readonly authRepository: AuthRepository,
     @inject(AccountService)
-    private readonly accountService: AccountService,
-    @inject('Redis') private readonly redis: Redis
+    private readonly accountService: AccountService
   ) {}
 
   parseValidationText(text: string | null | undefined): string | null {
@@ -65,10 +56,13 @@ export class ActiveWhatsappValidationService {
     if (!code) return false;
 
     const validation =
-      await this.twoFactorService.findActiveValidationByCode(code);
+      await this.twoFactorService.findActiveValidationByCodeAndWorkerId(
+        code,
+        input.workerId
+      );
 
     if (!validation) {
-      return true;
+      return false;
     }
 
     if (this.isExpired(validation)) {
@@ -77,11 +71,6 @@ export class ActiveWhatsappValidationService {
         validation.two_factor_id,
         new Date().toISOString()
       );
-      return true;
-    }
-
-    if (!validation.worker_id || validation.worker_id !== input.workerId) {
-      await this.reject(validation, 'worker_mismatch');
       return true;
     }
 
@@ -156,36 +145,7 @@ export class ActiveWhatsappValidationService {
     email: string;
     phoneDdi: string;
   }): Promise<string | null> {
-    const phoneCandidates = buildCandidatesWithDdi(
-      input.phone,
-      input.phoneDdi,
-      { order: 'input_first' }
-    );
-
-    const lockKey = `active-whatsapp-validation:phone:${phoneCandidates[0]}`;
-
-    return withLock(
-      this.redis,
-      lockKey,
-      async () => {
-        const phoneAlreadyValidated =
-          await this.hasExistingTestByAnyPhone(phoneCandidates);
-
-        if (phoneAlreadyValidated) {
-          await this.reject(input.validation, 'phone_already_validated');
-          return null;
-        }
-
-        await this.accountTestService.reserveValidatedTest({
-          validationId: input.validation.two_factor_id,
-          phone: input.phone,
-          email: input.email,
-        });
-
-        return this.signRegisterToken(input.validation);
-      },
-      { ttlMs: 15000, retryMs: 100, maxWaitMs: 30000 }
-    );
+    return this.signRegisterToken(input.validation);
   }
 
   private async buildForgotPasswordToken(
@@ -240,18 +200,6 @@ export class ActiveWhatsappValidationService {
       generalEnvironment.jwtSecret,
       { expiresIn: '30m' }
     );
-  }
-
-  private async hasExistingTestByAnyPhone(
-    phoneCandidates: string[]
-  ): Promise<boolean> {
-    const checks = await Promise.all(
-      phoneCandidates.map((phone) =>
-        this.accountTestService.checkExistingTestByPhone(phone)
-      )
-    );
-
-    return checks.some(Boolean);
   }
 
   private async reject(

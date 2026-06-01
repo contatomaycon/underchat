@@ -165,4 +165,45 @@ export class TwoFactorViewerRepository {
 
     return result[0];
   };
+
+  findActiveValidationByCodeAndWorkerId = async (
+    code: string,
+    workerId: string
+  ): Promise<ITwoFactorData | null> => {
+    const result = await this.dbRo
+      .select({
+        two_factor_id: twoFactor.two_factor_id,
+        user_id: twoFactor.user_id,
+        phone_ddi: twoFactor.phone_ddi,
+        phone: twoFactor.phone,
+        phone_c: twoFactor.phone_c,
+        email: twoFactor.email,
+        email_c: twoFactor.email_c,
+        code: twoFactor.code,
+        token: twoFactor.token,
+        worker_id: twoFactor.worker_id,
+        worker_number: twoFactor.worker_number,
+        validation_context: twoFactor.validation_context,
+        validated_at: twoFactor.validated_at,
+        created_at: twoFactor.created_at,
+        deleted_at: twoFactor.deleted_at,
+      })
+      .from(twoFactor)
+      .where(
+        and(
+          eq(twoFactor.code, code),
+          eq(twoFactor.worker_id, workerId),
+          isNull(twoFactor.deleted_at),
+          isNull(twoFactor.validated_at)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    if (!result.length) {
+      return null;
+    }
+
+    return result[0];
+  };
 }

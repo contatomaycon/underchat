@@ -60,6 +60,8 @@ interface ChatFilterContextValue {
   toggleChatbotFilter: (filter: ChatbotFilterStatus) => void;
   clearAllChatListFilters: () => void;
   canViewChatbotTab: boolean;
+  canViewChatTabs: boolean;
+  canViewInternalChatTab: boolean;
   chatCounts: ChatListCounts;
   setChatCounts: (counts: Partial<ChatListCounts>) => void;
   resetChatCounts: () => void;
@@ -70,9 +72,13 @@ const ChatFilterContext = createContext<ChatFilterContextValue | null>(null);
 export function ChatFilterProvider({
   children,
   canViewChatbotTab,
+  canViewChatTabs,
+  canViewInternalChatTab,
 }: {
   children: ReactNode;
   canViewChatbotTab: boolean;
+  canViewChatTabs: boolean;
+  canViewInternalChatTab: boolean;
 }) {
   const [hasAppliedAdvancedFilters, setHasAppliedAdvancedFilters] =
     useState(false);
@@ -136,6 +142,8 @@ export function ChatFilterProvider({
     toggleChatbotFilter,
     clearAllChatListFilters,
     canViewChatbotTab,
+    canViewChatTabs,
+    canViewInternalChatTab,
     chatCounts,
     setChatCounts,
     resetChatCounts,

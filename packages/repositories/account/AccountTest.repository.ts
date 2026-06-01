@@ -89,58 +89,23 @@ export class AccountTestRepository {
     return accountTestId;
   };
 
-  createValidatedReservation = async (data: {
-    document: string;
-    documentC: string;
-    phone: string;
-    phoneC: string;
-    email: string;
-    emailC: string;
-  }): Promise<string> => {
-    const accountTestId = randomUUID();
-    const now = new Date().toISOString();
-
-    await this.dbRw.insert(accountTest).values({
-      account_test_id: accountTestId,
-      document: data.document,
-      document_c: data.documentC,
-      phone: data.phone,
-      phone_c: data.phoneC,
-      email: data.email,
-      email_c: data.emailC,
-      status: 'validated',
-      created_at: now,
-      updated_at: now,
-    });
-
-    return accountTestId;
-  };
-
-  completeValidatedReservation = async (data: {
-    document: string;
-    documentC: string;
+  deleteValidatedReservationsByContact = async (data: {
     phoneC: string;
     emailC: string;
-  }): Promise<boolean> => {
-    const now = new Date().toISOString();
-
+  }): Promise<number> => {
     const result = await this.dbRw
-      .update(accountTest)
-      .set({
-        document: data.document,
-        document_c: data.documentC,
-        status: 'created',
-        updated_at: now,
-      })
+      .delete(accountTest)
       .where(
         and(
-          eq(accountTest.phone_c, data.phoneC),
-          eq(accountTest.email_c, data.emailC),
-          eq(accountTest.status, 'validated')
+          eq(accountTest.status, 'validated'),
+          or(
+            eq(accountTest.phone_c, data.phoneC),
+            eq(accountTest.email_c, data.emailC)
+          )
         )
       )
       .returning({ account_test_id: accountTest.account_test_id });
 
-    return result.length > 0;
+    return result.length;
   };
 }

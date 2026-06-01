@@ -26,6 +26,16 @@ export class TwoFactorService {
     return this.twoFactorViewerRepository.findActiveValidationByCode(code);
   };
 
+  findActiveValidationByCodeAndWorkerId = async (
+    code: string,
+    workerId: string
+  ): Promise<ITwoFactorData | null> => {
+    return this.twoFactorViewerRepository.findActiveValidationByCodeAndWorkerId(
+      code,
+      workerId
+    );
+  };
+
   findTwoFactorByCodeAndEmailPhone = async (
     data: IFindTwoFactorByCodeAndEmailPhone
   ): Promise<ITwoFactorData | null> => {

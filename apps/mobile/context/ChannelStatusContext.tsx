@@ -65,7 +65,13 @@ function getStatusName(statusId: string | undefined): string | null {
   return STATUS_NAMES[statusId] ?? null;
 }
 
-export function ChannelStatusProvider({ children }: { children: ReactNode }) {
+export function ChannelStatusProvider({
+  children,
+  enabled = true,
+}: {
+  children: ReactNode;
+  enabled?: boolean;
+}) {
   const [offlineChannelsRaw, setOfflineChannelsRaw] = useState<
     OfflineChannel[]
   >([]);
@@ -103,13 +109,14 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     setIsLoading(true);
     await refreshUserChannels();
     await Promise.all([fetchOfflineChannels(), fetchAllChannels()]);
     if (mountedRef.current) {
       setIsLoading(false);
     }
-  }, [refreshUserChannels, fetchOfflineChannels, fetchAllChannels]);
+  }, [enabled, refreshUserChannels, fetchOfflineChannels, fetchAllChannels]);
 
   const offlineChannels =
     userChannelIds.size === 0
@@ -126,6 +133,15 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
     }));
 
   useEffect(() => {
+    if (!enabled) {
+      setOfflineChannelsRaw([]);
+      setAllChannelsRaw([]);
+      setUserChannelIds(new Set());
+      setIsLoading(false);
+      cleanupChannelStatusSocket().catch(() => {});
+      return;
+    }
+
     mountedRef.current = true;
     let removeListener: (() => void) | null = null;
 
@@ -229,7 +245,7 @@ export function ChannelStatusProvider({ children }: { children: ReactNode }) {
       }
       cleanupChannelStatusSocket().catch(() => {});
     };
-  }, []);
+  }, [enabled, fetchAllChannels, fetchOfflineChannels, refreshUserChannels]);
 
   return (
     <ChannelStatusContext.Provider

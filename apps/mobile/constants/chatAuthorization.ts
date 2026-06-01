@@ -27,6 +27,41 @@ export const CHAT_MODULE_ACCESS_PERMISSIONS = [
   'chatbot_access',
 ] as const;
 
+export const INTERNAL_CHAT_ACCESS_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'internal_chat_group',
+  'internal_chat_access',
+] as const;
+
+export const INTERNAL_CHAT_GROUP_CREATE_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'internal_chat_group',
+  'internal_chat_group_create',
+] as const;
+
+export const INTERNAL_CHAT_GROUP_UPDATE_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'internal_chat_group',
+  'internal_chat_group_update',
+] as const;
+
+export const INTERNAL_CHAT_GROUP_MANAGE_MEMBERS_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'internal_chat_group',
+  'internal_chat_group_manage_members',
+] as const;
+
+export const INTERNAL_CHAT_GROUP_TRANSFER_LEADER_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'internal_chat_group',
+  'internal_chat_group_transfer_leader',
+] as const;
+
 export const CONTACTS_MODULE_PERMISSIONS = CHAT_ACCESS_PERMISSIONS;
 
 export const CONTACT_VIEW_PHONE_PERMISSIONS = [
@@ -284,6 +319,43 @@ export function hasChatAccessPermission(permissions: string[]): boolean {
 
 export function hasChatModuleAccessPermission(permissions: string[]): boolean {
   return hasAnyPermission(permissions, CHAT_MODULE_ACCESS_PERMISSIONS);
+}
+
+export function hasInternalChatAccessPermission(permissions: string[]): boolean {
+  return hasAnyPermission(permissions, INTERNAL_CHAT_ACCESS_PERMISSIONS);
+}
+
+export function hasMobileAppAccessPermission(permissions: string[]): boolean {
+  return (
+    hasChatModuleAccessPermission(permissions) ||
+    hasInternalChatAccessPermission(permissions)
+  );
+}
+
+export function canCreateInternalChatGroup(permissions: string[]): boolean {
+  return hasAnyPermission(permissions, INTERNAL_CHAT_GROUP_CREATE_PERMISSIONS);
+}
+
+export function canUpdateInternalChatGroup(permissions: string[]): boolean {
+  return hasAnyPermission(permissions, INTERNAL_CHAT_GROUP_UPDATE_PERMISSIONS);
+}
+
+export function canManageInternalChatGroupMembers(
+  permissions: string[]
+): boolean {
+  return hasAnyPermission(
+    permissions,
+    INTERNAL_CHAT_GROUP_MANAGE_MEMBERS_PERMISSIONS
+  );
+}
+
+export function canTransferInternalChatGroupLeader(
+  permissions: string[]
+): boolean {
+  return hasAnyPermission(
+    permissions,
+    INTERNAL_CHAT_GROUP_TRANSFER_LEADER_PERMISSIONS
+  );
 }
 
 export function hasContactsModuleAccess(permissions: string[]): boolean {

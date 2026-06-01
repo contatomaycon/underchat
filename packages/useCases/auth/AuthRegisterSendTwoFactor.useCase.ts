@@ -2,7 +2,6 @@ import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AuthRegisterSendTwoFactorRequest } from '@core/schema/register/sendTwoFactor/request.schema';
 import { AuthRegisterSendTwoFactorResponse } from '@core/schema/register/sendTwoFactor/response.schema';
-import { AccountTestService } from '@core/services/accountTest.service';
 import { UserService } from '@core/services/user.service';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { EncryptService } from '@core/services/encrypt.service';
@@ -11,8 +10,6 @@ import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR
 @injectable()
 export class AuthRegisterSendTwoFactorUseCase {
   constructor(
-    @inject(AccountTestService)
-    private readonly accountTestService: AccountTestService,
     @inject(UserService)
     private readonly userService: UserService,
     @inject(NotificationMessageService)
@@ -23,16 +20,6 @@ export class AuthRegisterSendTwoFactorUseCase {
 
   private buildPhoneCandidates(phone: string, phoneDdi: string): string[] {
     return buildCandidatesWithDdi(phone, phoneDdi, { order: 'input_first' });
-  }
-
-  private async hasExistingTestByAnyPhone(phoneCandidates: string[]) {
-    const checks = await Promise.all(
-      phoneCandidates.map((phone) =>
-        this.accountTestService.checkExistingTestByPhone(phone)
-      )
-    );
-
-    return checks.some(Boolean);
   }
 
   private async hasExistingUserByAnyPhone(phoneCandidates: string[]) {
@@ -56,21 +43,7 @@ export class AuthRegisterSendTwoFactorUseCase {
     const fullPhone = phoneDDD ? `${phoneDDD}${phoneNumber}` : phoneNumber;
     const phoneCandidates = this.buildPhoneCandidates(fullPhone, phoneDDI);
 
-    const existingTestByPhone =
-      await this.hasExistingTestByAnyPhone(phoneCandidates);
-
-    if (existingTestByPhone) {
-      throw new Error(t('register_phone_already_used_in_test'));
-    }
-
     const emailC = this.encryptService.encrypt(normalizedEmail);
-    const existingTestByEmail =
-      await this.accountTestService.checkExistingTestByEmail(normalizedEmail);
-
-    if (existingTestByEmail) {
-      throw new Error(t('register_email_already_used_in_test'));
-    }
-
     const existingUserByEmail =
       await this.userService.existsUserByEmail(emailC);
 

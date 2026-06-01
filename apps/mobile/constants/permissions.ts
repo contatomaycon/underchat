@@ -3,6 +3,7 @@ import {
   VIEW_CHATBOT_TAB_PERMISSIONS,
   canUseUserAndSectorFilters as canUseUserAndSectorFiltersByAuthorization,
   canViewChatbotTab as canViewChatbotTabByAuthorization,
+  hasInternalChatAccessPermission as hasInternalChatAccessPermissionByAuthorization,
 } from './chatAuthorization';
 
 export const PERMISSIONS_USER_SECTOR_FILTERS = [
@@ -17,4 +18,10 @@ export function canUseUserAndSectorFilters(permissions: string[]): boolean {
 
 export function canViewChatbotTab(permissions: string[]): boolean {
   return canViewChatbotTabByAuthorization(permissions);
+}
+
+export function hasInternalChatAccessPermission(
+  permissions: string[]
+): boolean {
+  return hasInternalChatAccessPermissionByAuthorization(permissions);
 }

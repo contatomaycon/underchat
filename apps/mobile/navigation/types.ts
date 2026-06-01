@@ -1,5 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { ListChatsResult } from '../types/chat';
+import type { InternalChatConversation } from '../types/internalChat';
 
 export type ChatTab = 'all' | 'queue' | 'in_chat' | 'closed' | 'chatbot';
 
@@ -15,6 +16,11 @@ export type ChatStackParamList = {
   Contacts: undefined;
 };
 
+export type InternalChatStackParamList = {
+  InternalChatList: undefined;
+  InternalChatRoom: { conversation: InternalChatConversation };
+};
+
 export type RootTabParamList = {
   New: NavigatorScreenParams<ChatStackParamList> & {
     tab?: ChatTab;
@@ -24,4 +30,5 @@ export type RootTabParamList = {
   Queue: NavigatorScreenParams<ChatStackParamList> & { tab?: ChatTab };
   Closed: NavigatorScreenParams<ChatStackParamList> & { tab?: ChatTab };
   Chatbot: NavigatorScreenParams<ChatStackParamList> & { tab?: ChatTab };
+  InternalChat: NavigatorScreenParams<InternalChatStackParamList>;
 };

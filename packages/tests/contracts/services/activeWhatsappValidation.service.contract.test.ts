@@ -4,9 +4,6 @@ jest.mock('@core/common/vendors/nodeRdkafka', () => ({ rdkafka: {} }));
 jest.mock('@core/services/twoFactor.service', () => ({
   TwoFactorService: class {},
 }));
-jest.mock('@core/services/accountTest.service', () => ({
-  AccountTestService: class {},
-}));
 jest.mock('@core/services/passwordEncryptor.service', () => ({
   PasswordEncryptorService: class {},
 }));
@@ -18,11 +15,6 @@ jest.mock('@core/repositories/auth/Auth.repository', () => ({
 }));
 jest.mock('@core/services/account.service', () => ({
   AccountService: class {},
-}));
-jest.mock('@core/common/functions/withLock', () => ({
-  withLock: jest.fn(
-    async (_redis: unknown, _key: string, fn: () => Promise<unknown>) => fn()
-  ),
 }));
 jest.mock('jsonwebtoken', () => ({
   __esModule: true,
@@ -63,13 +55,9 @@ function createValidation(
 
 function createService() {
   const twoFactorService = {
-    findActiveValidationByCode: jest.fn(),
+    findActiveValidationByCodeAndWorkerId: jest.fn(),
     updateDeletedAt: jest.fn(async () => undefined),
     updateValidatedAt: jest.fn(async () => undefined),
-  };
-  const accountTestService = {
-    checkExistingTestByPhone: jest.fn(async () => false),
-    reserveValidatedTest: jest.fn(async () => undefined),
   };
   const passwordEncryptorService = {
     decrypt: jest.fn((value: string) => value.replace(/^pwd:/, '')),
@@ -89,19 +77,16 @@ function createService() {
 
   const service = new ActiveWhatsappValidationService(
     twoFactorService as never,
-    accountTestService as never,
     passwordEncryptorService as never,
     centrifugoService as never,
     authRepository as never,
-    accountService as never,
-    {} as never
+    accountService as never
   );
 
   return {
     service,
     mocks: {
       twoFactorService,
-      accountTestService,
       passwordEncryptorService,
       centrifugoService,
       authRepository,
@@ -123,20 +108,16 @@ describe('ActiveWhatsappValidationService', () => {
     ).resolves.toBe(false);
 
     expect(
-      mocks.twoFactorService.findActiveValidationByCode
+      mocks.twoFactorService.findActiveValidationByCodeAndWorkerId
     ).not.toHaveBeenCalled();
   });
 
   it.each([
-    `Recebi o ${validationText}`,
-    `${validationText} agora`,
-    ` ${validationText}`,
-    `${validationText} `,
-    `Código de Validação:  ${validationCode}`,
-    `Código de validacão: ${validationCode}`,
+    validationCode.replace('UNDERCHAT', 'NDERCHAT'),
+    `Código de Validação: ${validationCode.replace('UNDERCHAT', 'NDERCHAT')}`,
     `Código de Validação: ${validationCode.toLowerCase()}`,
   ])(
-    'does not consume similar validation messages: %s',
+    'does not consume messages without a valid uppercase validation code: %s',
     async (messageText) => {
       const { service, mocks } = createService();
 
@@ -149,16 +130,154 @@ describe('ActiveWhatsappValidationService', () => {
       ).resolves.toBe(false);
 
       expect(
-        mocks.twoFactorService.findActiveValidationByCode
+        mocks.twoFactorService.findActiveValidationByCodeAndWorkerId
       ).not.toHaveBeenCalled();
       expect(mocks.centrifugoService.publishSub).not.toHaveBeenCalled();
     }
   );
 
-  it('validates register message from the expected phone and channel', async () => {
+  it.each([
+    validationText,
+    validationCode,
+    `Olá, segue código "${validationText}"`,
+    `texto qualquer ${validationCode}`,
+    `Código de Validação:  ${validationCode}`,
+    `Código de validacão: ${validationCode}`,
+  ])(
+    'validates register message from the expected phone and channel: %s',
+    async (messageText) => {
+      const { service, mocks } = createService();
+      mocks.twoFactorService.findActiveValidationByCodeAndWorkerId.mockResolvedValue(
+        createValidation()
+      );
+
+      await expect(
+        service.handleIncomingMessage({
+          workerId: 'worker-1',
+          fromPhone: '5561995999040',
+          messageText,
+        })
+      ).resolves.toBe(true);
+
+      expect(
+        mocks.twoFactorService.findActiveValidationByCodeAndWorkerId
+      ).toHaveBeenCalledWith(validationCode, 'worker-1');
+      expect(mocks.twoFactorService.updateValidatedAt).toHaveBeenCalledWith(
+        'two-factor-1',
+        expect.any(String)
+      );
+      expect(mocks.centrifugoService.publishSub).toHaveBeenCalledWith(
+        registerValidationCentrifugo('two-factor-1'),
+        {
+          status: 'validated',
+          context: 'register',
+          token: 'signed-token',
+        }
+      );
+    }
+  );
+
+  it.each([
+    {
+      expectedPhone: '6195999040',
+      fromPhone: '5561995999040',
+      label: 'generated without 9 and received with 9',
+    },
+    {
+      expectedPhone: '61995999040',
+      fromPhone: '556195999040',
+      label: 'generated with 9 and received without 9',
+    },
+  ])(
+    'validates Brazilian phone variants with and without the ninth digit: $label',
+    async ({ expectedPhone, fromPhone }) => {
+      const { service, mocks } = createService();
+      mocks.twoFactorService.findActiveValidationByCodeAndWorkerId.mockResolvedValue(
+        createValidation({
+          phone: `pwd:${expectedPhone}`,
+          phone_c: `enc:${expectedPhone}`,
+        })
+      );
+
+      await expect(
+        service.handleIncomingMessage({
+          workerId: 'worker-1',
+          fromPhone,
+          messageText: validationText,
+        })
+      ).resolves.toBe(true);
+
+      expect(mocks.twoFactorService.updateValidatedAt).toHaveBeenCalledWith(
+        'two-factor-1',
+        expect.any(String)
+      );
+    }
+  );
+
+  it.each([
+    {
+      fromPhone: '556295999040',
+      label: 'different Brazilian DDD',
+    },
+    {
+      fromPhone: '16195999040',
+      label: 'different DDI',
+    },
+  ])(
+    'rejects phone variants when the origin has a $label',
+    async ({ fromPhone }) => {
+      const { service, mocks } = createService();
+      mocks.twoFactorService.findActiveValidationByCodeAndWorkerId.mockResolvedValue(
+        createValidation({
+          phone: 'pwd:6195999040',
+          phone_c: 'enc:6195999040',
+        })
+      );
+
+      await service.handleIncomingMessage({
+        workerId: 'worker-1',
+        fromPhone,
+        messageText: validationText,
+      });
+
+      expect(mocks.centrifugoService.publishSub).toHaveBeenCalledWith(
+        registerValidationCentrifugo('two-factor-1'),
+        {
+          status: 'rejected',
+          context: 'register',
+          reason: 'phone_mismatch',
+        }
+      );
+      expect(mocks.twoFactorService.updateValidatedAt).not.toHaveBeenCalled();
+    }
+  );
+
+  it('lets validation-like messages from a different channel continue as normal messages', async () => {
     const { service, mocks } = createService();
-    mocks.twoFactorService.findActiveValidationByCode.mockResolvedValue(
-      createValidation()
+    mocks.twoFactorService.findActiveValidationByCodeAndWorkerId.mockResolvedValue(
+      null
+    );
+
+    await expect(
+      service.handleIncomingMessage({
+        workerId: 'worker-2',
+        fromPhone: '5561995999040',
+        messageText: validationText,
+      })
+    ).resolves.toBe(false);
+
+    expect(
+      mocks.twoFactorService.findActiveValidationByCodeAndWorkerId
+    ).toHaveBeenCalledWith(validationCode, 'worker-2');
+    expect(mocks.centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(mocks.twoFactorService.updateValidatedAt).not.toHaveBeenCalled();
+    expect(mocks.twoFactorService.updateDeletedAt).not.toHaveBeenCalled();
+  });
+
+  it('continues normal processing when no active validation exists for the code and channel', async () => {
+    const { service, mocks } = createService();
+    mocks.twoFactorService.findActiveValidationByCodeAndWorkerId.mockResolvedValue(
+      null
     );
 
     await expect(
@@ -167,53 +286,16 @@ describe('ActiveWhatsappValidationService', () => {
         fromPhone: '5561995999040',
         messageText: validationText,
       })
-    ).resolves.toBe(true);
+    ).resolves.toBe(false);
 
-    expect(mocks.accountTestService.reserveValidatedTest).toHaveBeenCalledWith({
-      validationId: 'two-factor-1',
-      phone: '61995999040',
-      email: 'john@example.com',
-    });
-    expect(mocks.twoFactorService.updateValidatedAt).toHaveBeenCalledWith(
-      'two-factor-1',
-      expect.any(String)
-    );
-    expect(mocks.centrifugoService.publishSub).toHaveBeenCalledWith(
-      registerValidationCentrifugo('two-factor-1'),
-      {
-        status: 'validated',
-        context: 'register',
-        token: 'signed-token',
-      }
-    );
-  });
-
-  it('rejects validation sent to a different channel', async () => {
-    const { service, mocks } = createService();
-    mocks.twoFactorService.findActiveValidationByCode.mockResolvedValue(
-      createValidation()
-    );
-
-    await service.handleIncomingMessage({
-      workerId: 'worker-2',
-      fromPhone: '5561995999040',
-      messageText: validationText,
-    });
-
-    expect(mocks.centrifugoService.publishSub).toHaveBeenCalledWith(
-      registerValidationCentrifugo('two-factor-1'),
-      {
-        status: 'rejected',
-        context: 'register',
-        reason: 'worker_mismatch',
-      }
-    );
+    expect(mocks.centrifugoService.publishSub).not.toHaveBeenCalled();
     expect(mocks.twoFactorService.updateValidatedAt).not.toHaveBeenCalled();
+    expect(mocks.twoFactorService.updateDeletedAt).not.toHaveBeenCalled();
   });
 
   it('rejects validation sent by a different phone', async () => {
     const { service, mocks } = createService();
-    mocks.twoFactorService.findActiveValidationByCode.mockResolvedValue(
+    mocks.twoFactorService.findActiveValidationByCodeAndWorkerId.mockResolvedValue(
       createValidation()
     );
 
@@ -231,15 +313,12 @@ describe('ActiveWhatsappValidationService', () => {
         reason: 'phone_mismatch',
       }
     );
-    expect(
-      mocks.accountTestService.reserveValidatedTest
-    ).not.toHaveBeenCalled();
   });
 
   it('rejects expired validation code', async () => {
     const { service, mocks } = createService();
     const expired = new Date(Date.now() - 31 * 60 * 1000).toISOString();
-    mocks.twoFactorService.findActiveValidationByCode.mockResolvedValue(
+    mocks.twoFactorService.findActiveValidationByCodeAndWorkerId.mockResolvedValue(
       createValidation({ created_at: expired })
     );
 
@@ -263,36 +342,9 @@ describe('ActiveWhatsappValidationService', () => {
     );
   });
 
-  it('rejects second pending window when the phone is already reserved', async () => {
-    const { service, mocks } = createService();
-    mocks.twoFactorService.findActiveValidationByCode.mockResolvedValue(
-      createValidation()
-    );
-    mocks.accountTestService.checkExistingTestByPhone.mockResolvedValue(true);
-
-    await service.handleIncomingMessage({
-      workerId: 'worker-1',
-      fromPhone: '5561995999040',
-      messageText: validationText,
-    });
-
-    expect(mocks.centrifugoService.publishSub).toHaveBeenCalledWith(
-      registerValidationCentrifugo('two-factor-1'),
-      {
-        status: 'rejected',
-        context: 'register',
-        reason: 'phone_already_validated',
-      }
-    );
-    expect(
-      mocks.accountTestService.reserveValidatedTest
-    ).not.toHaveBeenCalled();
-    expect(mocks.twoFactorService.updateValidatedAt).not.toHaveBeenCalled();
-  });
-
   it('publishes forgot password reset token after active validation', async () => {
     const { service, mocks } = createService();
-    mocks.twoFactorService.findActiveValidationByCode.mockResolvedValue(
+    mocks.twoFactorService.findActiveValidationByCodeAndWorkerId.mockResolvedValue(
       createValidation({
         user_id: 'user-1',
         validation_context: 'forgot_password',
@@ -305,9 +357,6 @@ describe('ActiveWhatsappValidationService', () => {
       messageText: validationText,
     });
 
-    expect(
-      mocks.accountTestService.reserveValidatedTest
-    ).not.toHaveBeenCalled();
     expect(mocks.authRepository.findUserById).toHaveBeenCalledWith('user-1');
     expect(mocks.centrifugoService.publishSub).toHaveBeenCalledWith(
       registerValidationCentrifugo('two-factor-1'),

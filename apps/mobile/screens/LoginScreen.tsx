@@ -22,7 +22,7 @@ import {
   setChannels,
   clearAuth,
 } from '../storage/authStorage';
-import { hasChatModuleAccessPermission } from '../constants/chatAuthorization';
+import { hasMobileAppAccessPermission } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import {
@@ -82,7 +82,7 @@ export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
       const permissions = result.data.permissions ?? [];
       const channels = result.data.channels ?? [];
 
-      if (!hasChatModuleAccessPermission(permissions)) {
+      if (!hasMobileAppAccessPermission(permissions)) {
         await clearAuth();
         setError(pt.chat_permission_denied);
         return;
