@@ -4,6 +4,7 @@ import {
   Animated,
   Easing,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -14,10 +15,21 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
   type ListRenderItem,
+  type NativeSyntheticEvent,
+  type StyleProp,
+  type TextStyle,
 } from 'react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
@@ -29,12 +41,15 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import {
+  createAudioPlayer,
+  type AudioPlayer,
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { AppAvatar } from '../components/AppAvatar';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import {
@@ -64,6 +79,15 @@ import type {
   InternalChatSearchMessageResult,
   InternalChatUploadFile,
 } from '../types/internalChat';
+import type {
+  MessageContent,
+  MessageContentContact,
+  MessageContentDocument,
+  MessageContentLinkPreview,
+  MessageContentVideo,
+  MessageQuoted,
+  MessageReaction,
+} from '../types/chat';
 import {
   INTERNAL_CHAT_ACTIVITY_STATE,
   INTERNAL_CHAT_CONVERSATION_TYPE,
@@ -77,6 +101,15 @@ import {
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import { resolveImageUri } from '../utils/imageUri';
+import {
+  parseWhatsAppTextTokens,
+  type WhatsAppTextToken,
+} from '../utils/whatsAppTextFormat';
+import {
+  createFlatWaveformPlaceholder,
+  parseWaveform,
+  type WaveformInput,
+} from '../utils/audioWaveform';
 import {
   isInternalChatSystemMessage,
   resolveInternalChatMessageText,
@@ -110,6 +143,20 @@ const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
+const WAVEFORM_BAR_WIDTH = 2;
+const WAVEFORM_BAR_GAP = 2;
+const WAVEFORM_HORIZONTAL_INSET = 2;
+const WAVEFORM_FALLBACK_MAX_BARS = 28;
+const AUDIO_WAVEFORM_DEFAULT_BARS = 64;
+const AUDIO_FINISH_THRESHOLD_SECONDS = 0.05;
+const CHAT_LIST_HORIZONTAL_PADDING = 12;
+const CHAT_BUBBLE_MAX_WIDTH_RATIO = 0.9;
+const CHAT_DOCUMENT_BUBBLE_MAX_WIDTH_RATIO = 0.84;
+const CHAT_DOCUMENT_BUBBLE_MIN_WIDTH = 224;
+const SOFT_WRAP_TOKEN_MIN_LENGTH = 24;
+const SOFT_WRAP_BREAK_CHAR = '\u200B';
+const LONG_TEXT_COLLAPSE_LINES = 8;
+const LONG_TEXT_COLLAPSE_CHAR_THRESHOLD = 420;
 const VOICE_LOCK_SWIPE_THRESHOLD = 70;
 const VOICE_RELEASE_LOCK_GRACE_MS = 220;
 const VOICE_CANCEL_SWIPE_THRESHOLD = 90;
@@ -164,6 +211,160 @@ function normalizeRecordingMetering(value: unknown): number {
   const clamped = Math.max(-60, Math.min(0, value));
   const normalized = (clamped + 60) / 60;
   return Math.max(0.15, normalized);
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeInlineUrl(url: string): string {
+  return url.startsWith('www.') ? `https://${url}` : url;
+}
+
+type TextChunk = {
+  text: string;
+  url: string | null;
+};
+
+function splitTextChunksWithLinks(text: string): TextChunk[] {
+  if (!text) return [];
+
+  const chunks: TextChunk[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(/((?:https?:\/\/|www\.)[^\s<>()]+[^\s<>().,;:!?])/gi)) {
+    const urlText = match[0];
+    const index = match.index ?? 0;
+
+    if (index > lastIndex) {
+      chunks.push({ text: text.slice(lastIndex, index), url: null });
+    }
+
+    chunks.push({ text: urlText, url: normalizeInlineUrl(urlText) });
+    lastIndex = index + urlText.length;
+  }
+
+  if (lastIndex < text.length) {
+    chunks.push({ text: text.slice(lastIndex), url: null });
+  }
+
+  return chunks.length > 0 ? chunks : [{ text, url: null }];
+}
+
+function insertSoftWrapOpportunities(text: string): string {
+  if (!text) return text;
+
+  return text.replace(
+    new RegExp(`\\S{${SOFT_WRAP_TOKEN_MIN_LENGTH},}`, 'g'),
+    (token) => {
+      let out = '';
+      for (
+        let index = 0;
+        index < token.length;
+        index += SOFT_WRAP_TOKEN_MIN_LENGTH
+      ) {
+        if (index > 0) out += SOFT_WRAP_BREAK_CHAR;
+        out += token.slice(index, index + SOFT_WRAP_TOKEN_MIN_LENGTH);
+      }
+      return out;
+    }
+  );
+}
+
+async function openExternalTextUrl(url: string): Promise<void> {
+  try {
+    await Linking.openURL(url);
+  } catch {}
+}
+
+function renderWhatsAppTextToken(
+  token: WhatsAppTextToken,
+  tokenIndex: number,
+  onLinkLongPress?: (url: string) => void
+): ReactElement | string | Array<ReactElement | null> {
+  if (token.type === 'newline') return '\n';
+
+  const tokenStyle =
+    token.type === 'bold'
+      ? styles.whatsAppBold
+      : token.type === 'italic'
+        ? styles.whatsAppItalic
+        : token.type === 'strike'
+          ? styles.whatsAppStrike
+          : token.type === 'code'
+            ? styles.whatsAppCode
+            : null;
+
+  const chunks = splitTextChunksWithLinks(token.text);
+  return chunks.map((chunk, chunkIndex) => {
+    if (!chunk.text) return null;
+    const chunkText = insertSoftWrapOpportunities(chunk.text);
+
+    if (chunk.url) {
+      const url = chunk.url;
+      return (
+        <Text
+          key={`internal-whatsapp-token-${tokenIndex}-${chunkIndex}`}
+          style={[tokenStyle, styles.whatsAppLink]}
+          onPress={() => {
+            void openExternalTextUrl(url);
+          }}
+          onLongPress={() => {
+            onLinkLongPress?.(url);
+          }}
+          suppressHighlighting
+        >
+          {chunkText}
+        </Text>
+      );
+    }
+
+    return (
+      <Text
+        key={`internal-whatsapp-token-${tokenIndex}-${chunkIndex}`}
+        style={tokenStyle}
+      >
+        {chunkText}
+      </Text>
+    );
+  });
+}
+
+function WhatsAppFormattedText({
+  text,
+  style,
+  numberOfLines,
+  ellipsizeMode,
+  selectable,
+  onTextLayout,
+  onLinkLongPress,
+}: {
+  text: string;
+  style?: StyleProp<TextStyle>;
+  numberOfLines?: number;
+  ellipsizeMode?: 'head' | 'middle' | 'tail' | 'clip';
+  selectable?: boolean;
+  onTextLayout?: (event: NativeSyntheticEvent<{ lines?: unknown[] }>) => void;
+  onLinkLongPress?: (url: string) => void;
+}) {
+  const tokens = useMemo(() => parseWhatsAppTextTokens(text), [text]);
+
+  return (
+    <Text
+      style={style}
+      numberOfLines={numberOfLines}
+      ellipsizeMode={ellipsizeMode}
+      textBreakStrategy="highQuality"
+      selectable={selectable}
+      onTextLayout={onTextLayout}
+    >
+      {tokens.map((token, tokenIndex) =>
+        renderWhatsAppTextToken(token, tokenIndex, onLinkLongPress)
+      )}
+    </Text>
+  );
 }
 
 function formatDateSeparator(date: string): string {
@@ -256,10 +457,1829 @@ function createBaseFormData(type: string, hash: string, replyId?: string | null)
   return formData;
 }
 
+function resolveMediaUri(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return resolveImageUri(url) ?? url;
+}
+
+function formatFileSize(bytes: number | null | undefined): string {
+  if (bytes == null || bytes === 0) return '';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function sanitizeFilename(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+    .slice(0, 80);
+}
+
+function extractFileExtension(name: string | null | undefined): string {
+  if (!name) return '';
+  const ext = name.split('.').pop()?.trim().toLowerCase();
+  return ext ?? '';
+}
+
+function getExtensionFromUrl(url: string): string | null {
+  const withoutQuery = url.split('?')[0]?.split('#')[0] ?? '';
+  const fileName = withoutQuery.split('/').pop() ?? '';
+  const match = fileName.match(/\.([a-zA-Z0-9]+)$/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function resolveDocumentDisplayName(
+  document: MessageContentDocument | null | undefined
+): string {
+  const explicitName = readNonEmptyString(document?.name);
+  if (explicitName) {
+    const sanitizedName = sanitizeFilename(explicitName);
+    if (sanitizedName.length > 0) return sanitizedName;
+  }
+
+  const documentUrl = readNonEmptyString(document?.url);
+  if (documentUrl) {
+    const nameFromUrl = sanitizeFilename(getFileNameFromUri(documentUrl, ''));
+    if (nameFromUrl.length > 0) return nameFromUrl;
+  }
+
+  return pt.document;
+}
+
+function resolveDocumentExtensionLabel(
+  document: MessageContentDocument | null | undefined
+): string {
+  const extensionFromPayload = readNonEmptyString(document?.extension)?.replace(
+    /^\./,
+    ''
+  );
+  if (extensionFromPayload) return extensionFromPayload.toUpperCase();
+
+  const extensionFromName = extractFileExtension(document?.name).toUpperCase();
+  if (extensionFromName) return extensionFromName;
+
+  const extensionFromUrl = getExtensionFromUrl(document?.url ?? '');
+  if (extensionFromUrl) return extensionFromUrl.toUpperCase();
+
+  return 'FILE';
+}
+
+function resolveVideoMeta(video: MessageContentVideo | null | undefined): string {
+  if (!video) return '';
+  const ext =
+    (video.extension ?? '').replace(/^\./, '').toUpperCase() || 'VIDEO';
+  const size = formatFileSize(video.size);
+  const duration = formatAudioTime(video.duration ?? 0);
+  return [ext, size, duration === '0:00' ? '' : duration]
+    .filter(Boolean)
+    .join(' • ');
+}
+
+function resolvePreviewThumbnail(
+  value: string | null | undefined
+): string | null {
+  const normalized = readNonEmptyString(value);
+  if (!normalized) return null;
+
+  if (
+    normalized.startsWith('http://') ||
+    normalized.startsWith('https://') ||
+    normalized.startsWith('data:')
+  ) {
+    return resolveMediaUri(normalized) ?? normalized;
+  }
+
+  return `data:image/jpeg;base64,${normalized}`;
+}
+
+function resolvePreviewImage(
+  preview: MessageContentLinkPreview | null | undefined
+): string | null {
+  if (!preview) return null;
+
+  return (
+    resolvePreviewThumbnail(preview.originalThumbnailUrl) ??
+    resolvePreviewThumbnail(preview.highQualityThumbnail) ??
+    resolvePreviewThumbnail(preview.jpegThumbnail)
+  );
+}
+
+function resolvePreviewUrl(
+  preview: MessageContentLinkPreview | null | undefined
+): string | null {
+  const matched = readNonEmptyString(preview?.['matched-text']);
+  const canonical = readNonEmptyString(preview?.['canonical-url']);
+  return matched ?? canonical;
+}
+
+function resolveDomainFromUrl(value: string | null | undefined): string {
+  const normalized = readNonEmptyString(value);
+  if (!normalized) return '';
+
+  try {
+    const url = new URL(normalized);
+    return url.hostname.replace(/^www\./i, '');
+  } catch {
+    return normalized;
+  }
+}
+
+function formatPreviewUrlForDisplay(value: string | null | undefined): string {
+  const normalized = readNonEmptyString(value);
+  if (!normalized) return '';
+  return normalized.replace(/([/:?&=#._-])/g, '$1\u200B');
+}
+
+function fitWaveformToWidth(waveform: number[], width: number): number[] {
+  if (waveform.length <= 1) return waveform;
+
+  const usableWidth = Math.max(0, width - WAVEFORM_HORIZONTAL_INSET * 2);
+  const maxBars =
+    usableWidth > 0
+      ? Math.max(
+          8,
+          Math.floor(
+            (usableWidth + WAVEFORM_BAR_GAP) /
+              (WAVEFORM_BAR_WIDTH + WAVEFORM_BAR_GAP)
+          )
+        )
+      : WAVEFORM_FALLBACK_MAX_BARS;
+
+  if (waveform.length <= maxBars) return waveform;
+
+  const bucketSize = waveform.length / maxBars;
+  const reduced: number[] = [];
+
+  for (let i = 0; i < maxBars; i++) {
+    const start = Math.floor(i * bucketSize);
+    const end = Math.max(start + 1, Math.floor((i + 1) * bucketSize));
+    let peak = 0;
+
+    for (let j = start; j < end && j < waveform.length; j++) {
+      peak = Math.max(peak, waveform[j] ?? 0);
+    }
+
+    reduced.push(Math.max(0.15, peak));
+  }
+
+  return reduced;
+}
+
+function createWaveformCacheSignature(data: WaveformInput): string {
+  if (!data) return 'waveform:empty';
+  if (typeof data === 'string') return `waveform:string:${data.trim()}`;
+  return `waveform:array:${data.length}:${data.join(',')}`;
+}
+
+function isAudioPlaybackNearEnd(position: number, duration: number): boolean {
+  if (!Number.isFinite(position) || !Number.isFinite(duration)) return false;
+  if (duration <= 0) return false;
+  return position >= Math.max(0, duration - AUDIO_FINISH_THRESHOLD_SECONDS);
+}
+
+const PLAYBACK_AUDIO_MODE = {
+  allowsRecording: false,
+  playsInSilentMode: true,
+  interruptionMode: 'mixWithOthers',
+  shouldPlayInBackground: false,
+  shouldRouteThroughEarpiece: false,
+  allowsBackgroundRecording: false,
+} as const;
+
+async function ensureIosPlaybackAudioMode(): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  try {
+    await setAudioModeAsync(PLAYBACK_AUDIO_MODE);
+  } catch {}
+}
+
+type InternalAudioState = {
+  isPlaying: boolean;
+  position: number;
+  duration: number;
+  rate: number;
+  isLoading: boolean;
+  isBuffering: boolean;
+};
+
+const DEFAULT_INTERNAL_AUDIO_STATE: InternalAudioState = {
+  isPlaying: false,
+  position: 0,
+  duration: 0,
+  rate: 1,
+  isLoading: false,
+  isBuffering: false,
+};
+
+function useInternalChatAudio() {
+  const [state, setState] = useState<Record<string, InternalAudioState>>({});
+  const [waveformWidths, setWaveformWidths] = useState<Record<string, number>>(
+    {}
+  );
+  const soundRefs = useRef<Record<string, AudioPlayer | null>>({});
+  const listenerRefs = useRef<Record<string, { remove?: () => void } | null>>(
+    {}
+  );
+  const waveformCache = useRef<Record<string, number[]>>({});
+  const waveformCacheSignature = useRef<Record<string, string>>({});
+  const pendingAutoPlayRef = useRef<Record<string, boolean>>({});
+  const pendingAutoPlayRateRef = useRef<Record<string, number>>({});
+  const finishedPlaybackRef = useRef<Record<string, boolean>>({});
+
+  const updateState = useCallback(
+    (messageId: string, patch: Partial<InternalAudioState>) => {
+      setState((prev) => ({
+        ...prev,
+        [messageId]: {
+          ...DEFAULT_INTERNAL_AUDIO_STATE,
+          ...prev[messageId],
+          ...patch,
+        },
+      }));
+    },
+    []
+  );
+
+  const releaseSound = useCallback((messageId: string) => {
+    pendingAutoPlayRef.current[messageId] = false;
+    delete pendingAutoPlayRateRef.current[messageId];
+    delete finishedPlaybackRef.current[messageId];
+    delete waveformCache.current[messageId];
+    delete waveformCacheSignature.current[messageId];
+
+    const listener = listenerRefs.current[messageId];
+    if (listener?.remove) {
+      try {
+        listener.remove();
+      } catch {}
+    }
+    delete listenerRefs.current[messageId];
+
+    const player = soundRefs.current[messageId];
+    if (player) {
+      try {
+        player.pause();
+      } catch {}
+      try {
+        player.remove();
+      } catch {}
+    }
+    delete soundRefs.current[messageId];
+  }, []);
+
+  const disposeAllPlayers = useCallback(() => {
+    for (const messageId of Object.keys(soundRefs.current)) {
+      releaseSound(messageId);
+    }
+    waveformCache.current = {};
+    waveformCacheSignature.current = {};
+  }, [releaseSound]);
+
+  const resetPlaybackToStart = useCallback(
+    (messageId: string, player: AudioPlayer, durationHint: number) => {
+      finishedPlaybackRef.current[messageId] = true;
+      pendingAutoPlayRef.current[messageId] = false;
+      const durationSec = durationHint > 0 ? durationHint : player.duration || 0;
+
+      const applyReset = () => {
+        const patch: Partial<InternalAudioState> = {
+          isPlaying: false,
+          position: 0,
+          isLoading: false,
+          isBuffering: false,
+        };
+        if (durationSec > 0) patch.duration = durationSec;
+        updateState(messageId, patch);
+      };
+
+      try {
+        player.pause();
+      } catch {}
+
+      try {
+        player.seekTo(0).then(applyReset).catch(applyReset);
+      } catch {
+        applyReset();
+      }
+    },
+    [updateState]
+  );
+
+  const getOrCreateSound = useCallback(
+    (messageId: string, url: string): AudioPlayer | null => {
+      if (soundRefs.current[messageId]) return soundRefs.current[messageId];
+      try {
+        const player = createAudioPlayer(url, {
+          updateInterval: 300,
+          downloadFirst: true,
+          preferredForwardBufferDuration: 10,
+        });
+        player.loop = false;
+        const initialDuration = player.duration || 0;
+        const initialPatch: Partial<InternalAudioState> = {
+          isLoading: !player.isLoaded,
+          isBuffering: player.isBuffering,
+        };
+        if (initialDuration > 0) initialPatch.duration = initialDuration;
+        updateState(messageId, initialPatch);
+
+        const subscription = player.addListener(
+          'playbackStatusUpdate',
+          (status) => {
+            const statusDuration = status.duration || player.duration || 0;
+            const statusPosition = status.currentTime || 0;
+            const didFinish =
+              status.didJustFinish ||
+              (!status.playing &&
+                isAudioPlaybackNearEnd(statusPosition, statusDuration));
+
+            if (didFinish) {
+              resetPlaybackToStart(messageId, player, statusDuration);
+              return;
+            }
+
+            setState((prev) => {
+              const cur = prev[messageId];
+              const nextRate =
+                cur?.rate ??
+                status.playbackRate ??
+                pendingAutoPlayRateRef.current[messageId] ??
+                1;
+              return {
+                ...prev,
+                [messageId]: {
+                  ...DEFAULT_INTERNAL_AUDIO_STATE,
+                  ...cur,
+                  isPlaying: status.playing,
+                  position: statusPosition,
+                  duration:
+                    statusDuration > 0 ? statusDuration : (cur?.duration ?? 0),
+                  rate: nextRate,
+                  isLoading: !status.isLoaded,
+                  isBuffering: status.isBuffering,
+                },
+              };
+            });
+
+            if (
+              status.isLoaded &&
+              pendingAutoPlayRef.current[messageId] &&
+              !finishedPlaybackRef.current[messageId] &&
+              !status.playing
+            ) {
+              pendingAutoPlayRef.current[messageId] = false;
+              const rate = pendingAutoPlayRateRef.current[messageId] ?? 1;
+              try {
+                player.setPlaybackRate(rate);
+                player.play();
+              } catch {}
+            }
+          }
+        );
+        listenerRefs.current[messageId] = subscription ?? null;
+        soundRefs.current[messageId] = player;
+        return player;
+      } catch {
+        return null;
+      }
+    },
+    [resetPlaybackToStart, updateState]
+  );
+
+  const playPause = useCallback(
+    (messageId: string, url: string) => {
+      const runPlaybackToggle = async () => {
+        const player = getOrCreateSound(messageId, url);
+        if (!player) return;
+        const cur = state[messageId] ?? DEFAULT_INTERNAL_AUDIO_STATE;
+
+        if (cur.isPlaying) {
+          pendingAutoPlayRef.current[messageId] = false;
+          player.pause();
+          updateState(messageId, {
+            isPlaying: false,
+            isLoading: false,
+            isBuffering: false,
+          });
+          return;
+        }
+
+        await ensureIosPlaybackAudioMode();
+
+        const rate = cur.rate ?? 1;
+        finishedPlaybackRef.current[messageId] = false;
+        pendingAutoPlayRateRef.current[messageId] = rate;
+
+        const startPlayback = () => {
+          try {
+            player.setPlaybackRate(rate);
+          } catch {}
+
+          if (player.isLoaded && !player.isBuffering) {
+            pendingAutoPlayRef.current[messageId] = false;
+            updateState(messageId, {
+              isLoading: false,
+              isBuffering: false,
+            });
+            try {
+              player.play();
+            } catch {}
+            return;
+          }
+
+          pendingAutoPlayRef.current[messageId] = true;
+          updateState(messageId, {
+            isLoading: true,
+            isBuffering: player.isBuffering,
+          });
+
+          if (player.isLoaded) {
+            try {
+              player.play();
+            } catch {}
+          }
+        };
+
+        const durationSec =
+          cur.duration > 0 ? cur.duration : player.duration || 0;
+        const positionSec =
+          cur.position > 0 ? cur.position : player.currentTime || 0;
+        if (isAudioPlaybackNearEnd(positionSec, durationSec)) {
+          try {
+            player.seekTo(0).then(() => {
+              updateState(messageId, { position: 0 });
+              startPlayback();
+            });
+            return;
+          } catch {}
+        }
+
+        startPlayback();
+      };
+
+      void runPlaybackToggle();
+    },
+    [getOrCreateSound, state, updateState]
+  );
+
+  const seek = useCallback(
+    (messageId: string, url: string, percentage: number) => {
+      const player = getOrCreateSound(messageId, url);
+      if (!player) return;
+      finishedPlaybackRef.current[messageId] = false;
+      pendingAutoPlayRef.current[messageId] = false;
+
+      const cur = state[messageId];
+      const durationSec =
+        (cur?.duration && cur.duration > 0 ? cur.duration : player.duration) ||
+        0;
+      if (durationSec <= 0) return;
+      const positionSec = Math.max(0, Math.min(1, percentage)) * durationSec;
+      player.seekTo(positionSec).then(() => {
+        updateState(messageId, { position: positionSec });
+      });
+    },
+    [getOrCreateSound, state, updateState]
+  );
+
+  const toggleSpeed = useCallback(
+    (messageId: string) => {
+      const cur = state[messageId];
+      const currentRate = cur?.rate ?? 1;
+      const nextRate = currentRate === 1 ? 1.5 : currentRate === 1.5 ? 2 : 1;
+      pendingAutoPlayRateRef.current[messageId] = nextRate;
+      updateState(messageId, { rate: nextRate });
+      const player = soundRefs.current[messageId];
+      if (player) {
+        try {
+          player.setPlaybackRate(nextRate);
+        } catch {}
+      }
+    },
+    [state, updateState]
+  );
+
+  const getWaveform = useCallback(
+    (messageId: string, data: WaveformInput): number[] => {
+      const signature = createWaveformCacheSignature(data);
+      if (
+        waveformCache.current[messageId] &&
+        waveformCacheSignature.current[messageId] === signature
+      ) {
+        return waveformCache.current[messageId];
+      }
+      const parsed = parseWaveform(data);
+      if (parsed && parsed.length > 0) {
+        waveformCache.current[messageId] = parsed;
+        waveformCacheSignature.current[messageId] = signature;
+        return parsed;
+      }
+      const placeholder = createFlatWaveformPlaceholder(
+        AUDIO_WAVEFORM_DEFAULT_BARS
+      );
+      waveformCache.current[messageId] = placeholder;
+      waveformCacheSignature.current[messageId] = signature;
+      return placeholder;
+    },
+    []
+  );
+
+  const getState = useCallback(
+    (messageId: string): InternalAudioState => {
+      return state[messageId] ?? DEFAULT_INTERNAL_AUDIO_STATE;
+    },
+    [state]
+  );
+
+  const getSpeedLabel = useCallback(
+    (messageId: string): string => {
+      const rate = state[messageId]?.rate ?? 1;
+      if (rate === 1.5) return '1.5x';
+      if (rate === 2) return '2x';
+      return '1x';
+    },
+    [state]
+  );
+
+  const setWaveformWidth = useCallback((messageId: string, width: number) => {
+    const nextWidth = Math.max(0, Math.round(width));
+    setWaveformWidths((prev) => {
+      if (prev[messageId] === nextWidth) return prev;
+      return { ...prev, [messageId]: nextWidth };
+    });
+  }, []);
+
+  const getWaveformWidth = useCallback(
+    (messageId: string): number => {
+      return waveformWidths[messageId] ?? 0;
+    },
+    [waveformWidths]
+  );
+
+  useEffect(() => {
+    return () => {
+      disposeAllPlayers();
+    };
+  }, [disposeAllPlayers]);
+
+  return {
+    getState,
+    getSpeedLabel,
+    playPause,
+    seek,
+    toggleSpeed,
+    getWaveform,
+    setWaveformWidth,
+    getWaveformWidth,
+  };
+}
+
+type InternalAudioCtrl = ReturnType<typeof useInternalChatAudio>;
+
+function buildLocationPreviewCandidates(
+  latitude: number,
+  longitude: number
+): string[] {
+  const previewZoom = 18;
+  const lat = Number(latitude.toFixed(6));
+  const lng = Number(longitude.toFixed(6));
+  const center = `${lat},${lng}`;
+  const osm = `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(
+    center
+  )}&zoom=${previewZoom}&size=600x340`;
+  const yandex = `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lng},${lat}&z=${previewZoom}&l=map&size=600,340`;
+  const google = `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(
+    center
+  )}&zoom=${previewZoom}&size=600x340`;
+  return [osm, yandex, google];
+}
+
+async function openLocationInMaps(
+  latitude: number,
+  longitude: number,
+  label: string | null | undefined
+): Promise<void> {
+  const name = (label ?? pt.location).trim() || pt.location;
+  const webUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    `${latitude},${longitude}`
+  )}`;
+
+  if (Platform.OS === 'android') {
+    const geoUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodeURIComponent(
+      name
+    )})`;
+    try {
+      await Linking.openURL(geoUrl);
+      return;
+    } catch {}
+  }
+
+  if (Platform.OS === 'ios') {
+    const appleMapsUrl = `http://maps.apple.com/?ll=${latitude},${longitude}&q=${encodeURIComponent(
+      name
+    )}`;
+    try {
+      await Linking.openURL(appleMapsUrl);
+      return;
+    } catch {}
+  }
+
+  try {
+    await Linking.openURL(webUrl);
+  } catch {}
+}
+
+function InternalVideoMessagePreview({
+  sourceUri,
+  thumbnailUri,
+  onPress,
+  onLongPress,
+}: {
+  sourceUri: string;
+  thumbnailUri: string | null;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
+  const [thumbnailLoadError, setThumbnailLoadError] = useState(false);
+  const [generatedThumbnailUri, setGeneratedThumbnailUri] = useState<
+    string | null
+  >(null);
+  const [generatingThumbnail, setGeneratingThumbnail] = useState(false);
+  const shouldGenerateThumbnail = !thumbnailUri || thumbnailLoadError;
+
+  useEffect(() => {
+    setThumbnailLoadError(false);
+  }, [sourceUri, thumbnailUri]);
+
+  useEffect(() => {
+    if (!shouldGenerateThumbnail) {
+      setGeneratedThumbnailUri(null);
+      setGeneratingThumbnail(false);
+      return;
+    }
+
+    let active = true;
+    setGeneratingThumbnail(true);
+    setGeneratedThumbnailUri(null);
+
+    void VideoThumbnails.getThumbnailAsync(sourceUri, {
+      time: 1000,
+      quality: 0.7,
+    })
+      .then((result) => {
+        if (active) setGeneratedThumbnailUri(result.uri);
+      })
+      .catch(() => {
+        if (active) setGeneratedThumbnailUri(null);
+      })
+      .finally(() => {
+        if (active) setGeneratingThumbnail(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [shouldGenerateThumbnail, sourceUri]);
+
+  const previewUri = shouldGenerateThumbnail
+    ? generatedThumbnailUri
+    : thumbnailUri;
+
+  return (
+    <Pressable
+      style={styles.videoThumbWrap}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={220}
+    >
+      {previewUri ? (
+        <Image
+          source={{ uri: previewUri }}
+          style={styles.videoThumb}
+          resizeMode="cover"
+          onError={() => setThumbnailLoadError(true)}
+        />
+      ) : (
+        <View style={styles.videoPlaceholder}>
+          {generatingThumbnail ? (
+            <ActivityIndicator size="small" color={colors.grey600} />
+          ) : (
+            <Ionicons
+              name="videocam-outline"
+              size={28}
+              color={colors.grey600}
+            />
+          )}
+        </View>
+      )}
+      <View style={styles.videoOverlay}>
+        <Ionicons name="play-circle" size={48} color="#fff" />
+      </View>
+    </Pressable>
+  );
+}
+
+function InternalLocationMessagePreview({
+  latitude,
+  longitude,
+  name,
+  address,
+  onLongPress,
+}: {
+  latitude: number;
+  longitude: number;
+  name: string | null | undefined;
+  address: string | null | undefined;
+  onLongPress?: () => void;
+}) {
+  const [previewSourceIndex, setPreviewSourceIndex] = useState(0);
+  const [previewLoadError, setPreviewLoadError] = useState(false);
+  const previewCandidates = useMemo(
+    () => buildLocationPreviewCandidates(latitude, longitude),
+    [latitude, longitude]
+  );
+  const previewUri =
+    previewCandidates[
+      Math.min(previewSourceIndex, previewCandidates.length - 1)
+    ];
+  const title = name?.trim() || pt.location;
+
+  return (
+    <Pressable
+      style={styles.locationBubble}
+      onPress={() => {
+        void openLocationInMaps(latitude, longitude, title || address);
+      }}
+      onLongPress={onLongPress}
+      delayLongPress={220}
+    >
+      <View style={styles.locationMapPreview}>
+        {previewLoadError ? (
+          <View style={styles.locationMapFallback}>
+            <Ionicons name="location" size={28} color={colors.primary} />
+          </View>
+        ) : (
+          <>
+            <Image
+              key={previewUri}
+              source={{ uri: previewUri }}
+              style={styles.locationMapImage}
+              resizeMode="cover"
+              onError={() => {
+                if (previewSourceIndex < previewCandidates.length - 1) {
+                  setPreviewSourceIndex((current) => current + 1);
+                  return;
+                }
+                setPreviewLoadError(true);
+              }}
+            />
+            <View style={styles.locationPinOverlay}>
+              <Ionicons name="location-sharp" size={36} color="#EF4444" />
+            </View>
+          </>
+        )}
+      </View>
+      <View style={styles.locationInfo}>
+        <Text style={styles.locationName} numberOfLines={1}>
+          {title}
+        </Text>
+        {address ? (
+          <Text style={styles.locationAddress} numberOfLines={2}>
+            {address}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function InternalLinkPreviewMessage({
+  preview,
+  fromMe,
+  onLongPress,
+}: {
+  preview: MessageContentLinkPreview;
+  fromMe: boolean;
+  onLongPress?: () => void;
+}) {
+  const previewUrl = resolvePreviewUrl(preview);
+  const previewImage = resolvePreviewImage(preview);
+  const title = readNonEmptyString(preview.title);
+  const description = readNonEmptyString(preview.description);
+  const domain = resolveDomainFromUrl(
+    preview['canonical-url'] ?? preview['matched-text'] ?? previewUrl
+  );
+
+  if (!title && !description && !previewImage && !previewUrl) return null;
+
+  return (
+    <Pressable
+      style={[
+        styles.linkPreviewCard,
+        fromMe ? styles.linkPreviewCardRight : styles.linkPreviewCardLeft,
+      ]}
+      onPress={() => {
+        if (previewUrl) void Linking.openURL(previewUrl);
+      }}
+      onLongPress={onLongPress}
+      delayLongPress={220}
+      disabled={!previewUrl}
+    >
+      <View style={styles.linkPreviewMain}>
+        {previewImage ? (
+          <Image
+            source={{ uri: previewImage }}
+            style={styles.linkPreviewThumb}
+            resizeMode="cover"
+          />
+        ) : null}
+        <View style={styles.linkPreviewText}>
+          {domain ? (
+            <Text style={styles.linkPreviewDomain} numberOfLines={1}>
+              {insertSoftWrapOpportunities(domain)}
+            </Text>
+          ) : null}
+          {title ? (
+            <Text style={styles.linkPreviewTitle} numberOfLines={2}>
+              {insertSoftWrapOpportunities(title)}
+            </Text>
+          ) : null}
+          {description ? (
+            <Text style={styles.linkPreviewDescription} numberOfLines={2}>
+              {insertSoftWrapOpportunities(description)}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+      {previewUrl ? (
+        <View
+          style={[
+            styles.linkPreviewUrlContainer,
+            previewImage && styles.linkPreviewUrlContainerWithThumb,
+          ]}
+        >
+          <Text
+            style={styles.linkPreviewUrl}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+            textBreakStrategy="highQuality"
+          >
+            {insertSoftWrapOpportunities(formatPreviewUrlForDisplay(previewUrl))}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+type ReactionSummaryItem = {
+  emoji: string;
+  count: number;
+};
+
+function getReactionsSummary(
+  reactions: MessageReaction[] | null | undefined
+): ReactionSummaryItem[] {
+  if (!reactions || reactions.length === 0) return [];
+  const summary = new Map<string, number>();
+
+  for (const reaction of reactions) {
+    const emoji =
+      typeof reaction?.emoji === 'string' ? reaction.emoji.trim() : '';
+    if (!emoji) continue;
+    summary.set(emoji, (summary.get(emoji) ?? 0) + 1);
+  }
+
+  return Array.from(summary.entries())
+    .map(([emoji, count]) => ({ emoji, count }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.emoji.localeCompare(b.emoji);
+    });
+}
+
+function resolveInternalMessageContentType(
+  content: MessageContent | null | undefined
+): string {
+  const explicitType = readNonEmptyString(content?.type);
+  if (explicitType) return explicitType;
+  if (content?.image) return INTERNAL_MESSAGE_TYPE.image;
+  if (content?.video) return INTERNAL_MESSAGE_TYPE.video;
+  if (content?.audio) return INTERNAL_MESSAGE_TYPE.audio;
+  if (content?.document) return INTERNAL_MESSAGE_TYPE.document;
+  if (content?.location) return INTERNAL_MESSAGE_TYPE.location;
+  if (content?.contact) return INTERNAL_MESSAGE_TYPE.contact_card;
+  if (content?.contacts && content.contacts.length > 0) {
+    return INTERNAL_MESSAGE_TYPE.contacts;
+  }
+  return INTERNAL_MESSAGE_TYPE.text;
+}
+
+function resolveQuotedType(quoted: MessageQuoted | null | undefined): string {
+  const explicitType = readNonEmptyString(quoted?.type);
+  if (explicitType) return explicitType;
+  if (quoted?.image) return INTERNAL_MESSAGE_TYPE.image;
+  if (quoted?.video) return INTERNAL_MESSAGE_TYPE.video;
+  if (quoted?.audio) return INTERNAL_MESSAGE_TYPE.audio;
+  if (quoted?.document) return INTERNAL_MESSAGE_TYPE.document;
+  if (quoted?.location) return INTERNAL_MESSAGE_TYPE.location;
+  if (quoted?.contact) return INTERNAL_MESSAGE_TYPE.contact_card;
+  if (quoted?.contacts && quoted.contacts.length > 0) {
+    return INTERNAL_MESSAGE_TYPE.contacts;
+  }
+  return INTERNAL_MESSAGE_TYPE.text;
+}
+
+function resolveQuotedText(
+  quoted: MessageQuoted | null | undefined,
+  quotedType: string
+): string {
+  if (!quoted) return '';
+  if (quotedType === INTERNAL_MESSAGE_TYPE.image) {
+    return readNonEmptyString(quoted.image?.caption) ?? 'Foto';
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.document) {
+    return (
+      readNonEmptyString(quoted.document?.name) ||
+      readNonEmptyString(quoted.message) ||
+      pt.document
+    );
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.video) {
+    return readNonEmptyString(quoted.video?.caption) ?? 'Vídeo';
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.audio) {
+    return readNonEmptyString(quoted.message) ?? pt.audio;
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.location) {
+    return (
+      readNonEmptyString(quoted.location?.name) ||
+      readNonEmptyString(quoted.location?.address) ||
+      pt.location
+    );
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.contact_card && quoted.contact) {
+    return (
+      [quoted.contact.name, quoted.contact.last_name]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || pt.contact
+    );
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.contacts) {
+    const first = quoted.contacts?.[0];
+    if (!first) return pt.contact;
+    const firstName =
+      [first.name, first.last_name].filter(Boolean).join(' ').trim() ||
+      pt.contact;
+    const extraCount = (quoted.contacts?.length ?? 0) - 1;
+    return extraCount > 0
+      ? `${firstName} e ${extraCount} ${pt.contacts_other}`
+      : firstName;
+  }
+  return (
+    resolveInternalChatTextTag(quoted.message) ??
+    readNonEmptyString(quoted.message) ??
+    ''
+  );
+}
+
+function resolveQuotedMeta(
+  quoted: MessageQuoted | null | undefined,
+  quotedType: string
+): string {
+  if (!quoted) return '';
+  if (quotedType === INTERNAL_MESSAGE_TYPE.image) {
+    const ext = quoted.image?.extension
+      ? quoted.image.extension.replace(/^\./, '').toUpperCase()
+      : 'IMG';
+    return [ext, formatFileSize(quoted.image?.size)].filter(Boolean).join(' • ');
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.video) {
+    const ext = quoted.video?.extension
+      ? quoted.video.extension.replace(/^\./, '').toUpperCase()
+      : 'VIDEO';
+    return [ext, formatFileSize(quoted.video?.size), formatAudioTime(quoted.video?.duration ?? 0)]
+      .filter((value) => value && value !== '0:00')
+      .join(' • ');
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.audio) {
+    return [formatFileSize(quoted.audio?.size), formatAudioTime(quoted.audio?.duration ?? 0)]
+      .filter((value) => value && value !== '0:00')
+      .join(' • ');
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.document) {
+    const ext = quoted.document?.extension
+      ? quoted.document.extension.replace(/^\./, '').toUpperCase()
+      : 'FILE';
+    return [ext, formatFileSize(quoted.document?.size)]
+      .filter(Boolean)
+      .join(' • ');
+  }
+  return '';
+}
+
+function resolveQuotedPreviewImage(
+  quoted: MessageQuoted | null | undefined,
+  quotedType: string
+): string | null {
+  if (!quoted) return null;
+  if (quotedType === INTERNAL_MESSAGE_TYPE.image) {
+    return resolveMediaUri(quoted.image?.thumbnail ?? quoted.image?.url);
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.video) {
+    return resolveMediaUri(quoted.video?.thumbnail ?? quoted.video?.url);
+  }
+  return null;
+}
+
+function resolveQuotedContactPhoto(
+  quoted: MessageQuoted | null | undefined,
+  quotedType: string
+): string | null {
+  if (!quoted) return null;
+  if (quotedType === INTERNAL_MESSAGE_TYPE.contact_card) {
+    return resolveMediaUri(quoted.contact?.photo);
+  }
+  if (quotedType === INTERNAL_MESSAGE_TYPE.contacts) {
+    return resolveMediaUri(quoted.contacts?.[0]?.photo);
+  }
+  return null;
+}
+
+function InternalQuotedReplyPreview({
+  quoted,
+  fromMe,
+}: {
+  quoted: MessageQuoted | null | undefined;
+  fromMe: boolean;
+}) {
+  if (!quoted) return null;
+  const quotedType = resolveQuotedType(quoted);
+  const quotedText = resolveQuotedText(quoted, quotedType);
+  const quotedMeta = resolveQuotedMeta(quoted, quotedType);
+  const quotedImageUri = resolveQuotedPreviewImage(quoted, quotedType);
+  const quotedContactPhoto = resolveQuotedContactPhoto(quoted, quotedType);
+  const isContactType =
+    quotedType === INTERNAL_MESSAGE_TYPE.contact_card ||
+    quotedType === INTERNAL_MESSAGE_TYPE.contacts;
+  const showVideoOverlay = quotedType === INTERNAL_MESSAGE_TYPE.video;
+
+  return (
+    <View style={[styles.quotedBlock, fromMe && styles.quotedBlockRight]}>
+      <View style={[styles.quotedBar, fromMe && styles.quotedBarRight]} />
+      <View
+        style={[
+          styles.quotedBody,
+          isContactType && styles.quotedBodyContact,
+        ]}
+      >
+        <Text
+          style={[
+            styles.quotedName,
+            fromMe && styles.quotedNameRight,
+            isContactType && styles.quotedNameContact,
+          ]}
+          numberOfLines={1}
+        >
+          Resposta
+        </Text>
+        <View
+          style={[
+            styles.quotedContentRow,
+            isContactType && styles.quotedContentRowContact,
+          ]}
+        >
+          {quotedImageUri ? (
+            <View style={styles.quotedThumbWrap}>
+              <Image
+                source={{ uri: quotedImageUri }}
+                style={styles.quotedThumb}
+                resizeMode="cover"
+              />
+              {showVideoOverlay ? (
+                <View style={styles.quotedVideoOverlay}>
+                  <Ionicons name="play" size={11} color="#FFFFFF" />
+                </View>
+              ) : null}
+            </View>
+          ) : quotedType === INTERNAL_MESSAGE_TYPE.document ? (
+            <Ionicons
+              name="document-text-outline"
+              size={18}
+              color={colors.primary}
+            />
+          ) : quotedType === INTERNAL_MESSAGE_TYPE.audio ? (
+            <Ionicons name="mic-outline" size={18} color={colors.primary} />
+          ) : quotedType === INTERNAL_MESSAGE_TYPE.location ? (
+            <Ionicons
+              name="location-outline"
+              size={18}
+              color={colors.primary}
+            />
+          ) : isContactType ? (
+            quotedContactPhoto ? (
+              <Image
+                source={{ uri: quotedContactPhoto }}
+                style={styles.quotedContactAvatar}
+                resizeMode="cover"
+              />
+            ) : (
+              <Ionicons
+                name={
+                  quotedType === INTERNAL_MESSAGE_TYPE.contacts
+                    ? 'people-outline'
+                    : 'person-outline'
+                }
+                size={18}
+                color={colors.primary}
+              />
+            )
+          ) : null}
+          <View
+            style={[
+              styles.quotedTextWrap,
+              isContactType && styles.quotedTextWrapContact,
+            ]}
+          >
+            {quotedText ? (
+              <WhatsAppFormattedText
+                text={quotedText}
+                style={[
+                  styles.quotedText,
+                  fromMe && styles.quotedTextRight,
+                  isContactType && styles.quotedTextContact,
+                ]}
+                numberOfLines={2}
+                ellipsizeMode="tail"
+              />
+            ) : null}
+            {quotedMeta ? (
+              <Text style={styles.quotedMeta} numberOfLines={1}>
+                {quotedMeta}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function InternalMessageContent({
+  msg,
+  fromMe,
+  audioCtrl,
+  onOpenActions,
+}: {
+  msg: InternalChatMessage;
+  fromMe: boolean;
+  audioCtrl: InternalAudioCtrl;
+  onOpenActions: (message: InternalChatMessage) => void;
+}) {
+  const [isLongTextExpanded, setIsLongTextExpanded] = useState(false);
+  const [isLongTextByLines, setIsLongTextByLines] = useState(false);
+
+  useEffect(() => {
+    setIsLongTextExpanded(false);
+    setIsLongTextByLines(false);
+  }, [msg.message_id]);
+
+  const content = msg.content;
+  const type = resolveInternalMessageContentType(content);
+  const textColor = fromMe ? styles.bubbleTextRight : styles.bubbleTextLeft;
+  const linkPreview = content?.link_preview;
+  const hasLinkPreview = Boolean(
+    linkPreview &&
+      (readNonEmptyString(linkPreview.title) ||
+        readNonEmptyString(linkPreview.description) ||
+        resolvePreviewImage(linkPreview) ||
+        resolvePreviewUrl(linkPreview))
+  );
+  const renderWithContextCards = (child: ReactElement | null) => {
+    if (!hasLinkPreview || !linkPreview) return child;
+    return (
+      <View style={styles.contentStack}>
+        <InternalLinkPreviewMessage
+          preview={linkPreview}
+          fromMe={fromMe}
+          onLongPress={() => onOpenActions(msg)}
+        />
+        {child}
+      </View>
+    );
+  };
+
+  if (msg.deleted) {
+    return renderWithContextCards(
+      <WhatsAppFormattedText
+        text={getMessageText(msg)}
+        style={[styles.bubbleText, textColor, styles.messageDeletedText]}
+      />
+    );
+  }
+
+  if (type === INTERNAL_MESSAGE_TYPE.system) {
+    const text = getMessageText(msg);
+    return renderWithContextCards(
+      <View style={styles.systemWrap}>
+        <WhatsAppFormattedText text={text} style={styles.systemText} />
+      </View>
+    );
+  }
+
+  if (type === INTERNAL_MESSAGE_TYPE.image && content?.image?.url) {
+    const imageUri = resolveMediaUri(content.image.url);
+    if (!imageUri) return null;
+    const cap = content.image.caption;
+    return renderWithContextCards(
+      <View style={[styles.mediaBubble, styles.mediaBubbleImage]}>
+        <Pressable
+          onPress={() => {
+            void Linking.openURL(imageUri);
+          }}
+          onLongPress={() => onOpenActions(msg)}
+          delayLongPress={220}
+        >
+          <ExpoImage
+            source={{ uri: imageUri }}
+            style={styles.imageThumb}
+            contentFit="cover"
+          />
+        </Pressable>
+        {cap ? (
+          <WhatsAppFormattedText
+            text={cap}
+            style={[styles.mediaCaption, textColor]}
+            onLinkLongPress={() => onOpenActions(msg)}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  if (type === INTERNAL_MESSAGE_TYPE.video && content?.video?.url) {
+    const videoUri = resolveMediaUri(content.video.url);
+    if (!videoUri) return null;
+    const thumbUri = resolveMediaUri(content.video.thumbnail);
+    const cap = content.video.caption;
+    const videoMeta = resolveVideoMeta(content.video);
+
+    return renderWithContextCards(
+      <View style={styles.mediaBubble}>
+        <InternalVideoMessagePreview
+          sourceUri={videoUri}
+          thumbnailUri={thumbUri}
+          onPress={() => {
+            void Linking.openURL(videoUri);
+          }}
+          onLongPress={() => onOpenActions(msg)}
+        />
+        {videoMeta ? <Text style={styles.mediaMeta}>{videoMeta}</Text> : null}
+        {cap ? (
+          <WhatsAppFormattedText
+            text={cap}
+            style={[styles.mediaCaption, textColor]}
+            onLinkLongPress={() => onOpenActions(msg)}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  if (type === INTERNAL_MESSAGE_TYPE.location && content?.location) {
+    const latitude = Number(content.location.latitude);
+    const longitude = Number(content.location.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+    return renderWithContextCards(
+      <InternalLocationMessagePreview
+        latitude={latitude}
+        longitude={longitude}
+        name={content.location.name}
+        address={content.location.address}
+        onLongPress={() => onOpenActions(msg)}
+      />
+    );
+  }
+
+  if (type === INTERNAL_MESSAGE_TYPE.audio && content?.audio?.url) {
+    const messageId = msg.message_id;
+    const url = resolveMediaUri(content.audio.url) ?? content.audio.url;
+    const cap = readNonEmptyString(content.message);
+    const fallbackDuration = content.audio.duration ?? 0;
+    const audioState = audioCtrl.getState(messageId);
+    const waveform = audioCtrl.getWaveform(
+      messageId,
+      content.audio.waveform ?? undefined
+    );
+    const durationSec =
+      audioState.duration > 0 ? audioState.duration : fallbackDuration;
+    const currentTime =
+      audioState.isPlaying || audioState.position > 0 ? audioState.position : 0;
+    const progressPercent =
+      durationSec > 0
+        ? Math.max(0, Math.min(100, (currentTime / durationSec) * 100))
+        : 0;
+    const waveformWidth = audioCtrl.getWaveformWidth(messageId);
+    const waveformToRender = fitWaveformToWidth(waveform, waveformWidth);
+
+    return renderWithContextCards(
+      <View style={styles.audioBubble}>
+        <View
+          style={[
+            styles.audioPlayerContainer,
+            fromMe && styles.audioPlayerContainerRight,
+          ]}
+        >
+          <Pressable
+            style={[styles.audioSpeedBtn, fromMe && styles.audioSpeedBtnRight]}
+            onPress={() => audioCtrl.toggleSpeed(messageId)}
+            onLongPress={() => onOpenActions(msg)}
+            delayLongPress={220}
+          >
+            <Text
+              style={[
+                styles.audioSpeedBtnText,
+                fromMe && styles.audioSpeedBtnTextRight,
+              ]}
+            >
+              {audioCtrl.getSpeedLabel(messageId)}
+            </Text>
+          </Pressable>
+          <View style={styles.audioPlayAndTimeWrap}>
+            <Pressable
+              style={[
+                styles.audioPlayBtnCircle,
+                fromMe && styles.audioPlayBtnCircleRight,
+              ]}
+              onPress={() => audioCtrl.playPause(messageId, url)}
+              onLongPress={() => onOpenActions(msg)}
+              delayLongPress={220}
+            >
+              {audioState.isLoading || audioState.isBuffering ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons
+                  name={audioState.isPlaying ? 'pause' : 'play'}
+                  size={16}
+                  color={colors.primary}
+                />
+              )}
+            </Pressable>
+            <Text
+              style={[
+                styles.audioTimeBelowPlay,
+                fromMe
+                  ? styles.audioTimeBelowPlayRight
+                  : styles.audioTimeBelowPlayLeft,
+              ]}
+            >
+              {formatAudioTime(currentTime)}
+            </Text>
+          </View>
+          <Pressable
+            style={styles.audioWaveformContainer}
+            onLayout={(event) => {
+              audioCtrl.setWaveformWidth(
+                messageId,
+                event.nativeEvent.layout.width
+              );
+            }}
+            onLongPress={() => onOpenActions(msg)}
+            delayLongPress={220}
+            onPress={(event) => {
+              const width = audioCtrl.getWaveformWidth(messageId);
+              if (!width) return;
+              const locationX = event.nativeEvent.locationX;
+              const percentage = Math.max(0, Math.min(1, locationX / width));
+              audioCtrl.seek(messageId, url, percentage);
+            }}
+          >
+            <View style={styles.audioWaveform}>
+              {waveformToRender.map((barValue, index) => {
+                const barProgress = (index / waveformToRender.length) * 100;
+                const isActive = progressPercent > barProgress;
+                return (
+                  <View
+                    key={`${messageId}-${index}`}
+                    style={[
+                      styles.audioWaveformBar,
+                      fromMe && styles.audioWaveformBarRight,
+                      isActive && styles.audioWaveformBarActive,
+                      fromMe && isActive && styles.audioWaveformBarActiveRight,
+                      { height: `${Math.max(8, barValue * 100)}%` },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+            <View
+              style={[
+                styles.audioProgressIndicator,
+                fromMe && styles.audioProgressIndicatorRight,
+                { left: `${progressPercent}%` },
+              ]}
+            />
+          </Pressable>
+        </View>
+        {cap ? (
+          <WhatsAppFormattedText
+            text={cap}
+            style={[styles.mediaCaption, textColor, styles.audioCaption]}
+            onLinkLongPress={() => onOpenActions(msg)}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  if (type === INTERNAL_MESSAGE_TYPE.document && content?.document?.url) {
+    const doc = content.document;
+    const docUrl = resolveMediaUri(doc.url);
+    if (!docUrl) return null;
+    const ext = resolveDocumentExtensionLabel(doc);
+    const extLabel = ext.slice(0, 4);
+    const sizeStr = formatFileSize(doc.size);
+    const name = resolveDocumentDisplayName(doc);
+    const meta = [ext, sizeStr].filter(Boolean).join(' • ');
+    const cap = readNonEmptyString(content.message);
+
+    return renderWithContextCards(
+      <View>
+        <View style={[styles.documentCard, fromMe && styles.documentCardRight]}>
+          <Pressable
+            style={styles.documentMainAction}
+            onPress={() => {
+              void Linking.openURL(docUrl);
+            }}
+            onLongPress={() => onOpenActions(msg)}
+            delayLongPress={220}
+          >
+            <View
+              style={[
+                styles.documentIconCircle,
+                fromMe && styles.documentIconCircleRight,
+              ]}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={styles.documentTypeText}>{extLabel}</Text>
+            </View>
+            <View style={styles.documentInfo}>
+              <Text style={styles.documentName} numberOfLines={1}>
+                {name}
+              </Text>
+              {meta ? (
+                <Text style={styles.documentMeta} numberOfLines={1}>
+                  {meta}
+                </Text>
+              ) : null}
+            </View>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.documentDownloadBtn,
+              fromMe && styles.documentDownloadBtnRight,
+            ]}
+            onPress={() => {
+              void Linking.openURL(docUrl);
+            }}
+            onLongPress={() => onOpenActions(msg)}
+            delayLongPress={220}
+            accessibilityLabel={pt.download}
+          >
+            <Ionicons
+              name="download-outline"
+              size={18}
+              color={colors.primary}
+            />
+          </Pressable>
+        </View>
+        {cap ? (
+          <WhatsAppFormattedText
+            text={cap}
+            style={[styles.mediaCaption, textColor, styles.documentCaption]}
+            onLinkLongPress={() => onOpenActions(msg)}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  if (type === INTERNAL_MESSAGE_TYPE.contact_card && content?.contact) {
+    return renderWithContextCards(
+      <InternalContactCard
+        contact={content.contact}
+        fromMe={fromMe}
+        onLongPress={() => onOpenActions(msg)}
+      />
+    );
+  }
+
+  if (type === INTERNAL_MESSAGE_TYPE.contacts && content?.contacts?.length) {
+    const list = content.contacts;
+    const first = list[0];
+    const name = first?.name ?? pt.contact;
+    const extra =
+      list.length > 1 ? ` e ${list.length - 1} ${pt.contacts_other}` : '';
+    return renderWithContextCards(
+      <Pressable
+        style={({ pressed }) => [
+          styles.contactWrap,
+          fromMe && styles.contactWrapRight,
+          pressed && styles.contactWrapPressed,
+        ]}
+        onLongPress={() => onOpenActions(msg)}
+        delayLongPress={220}
+      >
+        <Ionicons name="people" size={32} color={colors.primary} />
+        <Text style={[styles.contactName, textColor]}>
+          {name}
+          {extra}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  const text = getMessageText(msg);
+  if (text) {
+    const isLongByLength = text.length > LONG_TEXT_COLLAPSE_CHAR_THRESHOLD;
+    const shouldCollapse = !isLongTextExpanded;
+    const canExpand = isLongByLength || isLongTextByLines;
+
+    return renderWithContextCards(
+      <View style={styles.bubbleTextWrap}>
+        <WhatsAppFormattedText
+          text={text}
+          style={[styles.bubbleText, textColor]}
+          selectable={false}
+          numberOfLines={shouldCollapse ? LONG_TEXT_COLLAPSE_LINES : undefined}
+          onLinkLongPress={() => onOpenActions(msg)}
+          onTextLayout={(event) => {
+            if (isLongTextByLines || !text) return;
+            if (
+              (event.nativeEvent.lines?.length ?? 0) > LONG_TEXT_COLLAPSE_LINES
+            ) {
+              setIsLongTextByLines(true);
+            }
+          }}
+        />
+        {canExpand ? (
+          <Pressable
+            onPress={() => setIsLongTextExpanded((previous) => !previous)}
+            hitSlop={8}
+            style={styles.readMoreButton}
+          >
+            <Text style={styles.readMoreText}>
+              {shouldCollapse ? pt.read_more : pt.read_less}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
+
+  return renderWithContextCards(null);
+}
+
+function InternalContactCard({
+  contact,
+  fromMe,
+  onLongPress,
+}: {
+  contact: MessageContentContact;
+  fromMe: boolean;
+  onLongPress?: () => void;
+}) {
+  const contactName =
+    [contact.name, contact.last_name].filter(Boolean).join(' ').trim() ||
+    pt.contact;
+  const photoUri = resolveMediaUri(contact.photo);
+  const phone =
+    readNonEmptyString(contact.phone) ??
+    readNonEmptyString(contact.phone_partial);
+  const phoneDisplay = phone
+    ? `${contact.phone_ddi ? `+${contact.phone_ddi} ` : ''}${phone}`
+    : readNonEmptyString(contact.email_partial);
+
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.contactWrap,
+        fromMe && styles.contactWrapRight,
+        pressed && styles.contactWrapPressed,
+      ]}
+      onPress={() => {
+        if (!contact.contact_id) return;
+        void viewInternalChatContactPhone(contact.contact_id).then(
+          (contactPhone) => {
+            Alert.alert(
+              contactName,
+              contactPhone?.phone
+                ? `+${contactPhone.phone_ddi ?? ''} ${contactPhone.phone}`
+                : 'Telefone indisponível'
+            );
+          }
+        );
+      }}
+      onLongPress={onLongPress}
+      delayLongPress={220}
+    >
+      <View
+        style={[
+          styles.contactAvatarWrap,
+          fromMe && styles.contactAvatarWrapRight,
+        ]}
+      >
+        <AppAvatar
+          uri={photoUri}
+          size={36}
+          style={styles.contactAvatar}
+          iconName="person"
+          iconSize={18}
+          iconColor={colors.primary}
+        />
+      </View>
+      <View style={styles.contactInfo}>
+        <Text style={styles.contactName} numberOfLines={2}>
+          {contactName}
+        </Text>
+        {phoneDisplay ? (
+          <Text style={styles.contactPhone} numberOfLines={1}>
+            {phoneDisplay}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function InternalMessageBubble({
+  msg,
+  fromMe,
+  showAvatar,
+  bubbleMaxWidth,
+  documentBubbleWidth,
+  audioCtrl,
+  onOpenActions,
+}: {
+  msg: InternalChatMessage;
+  fromMe: boolean;
+  showAvatar: boolean;
+  bubbleMaxWidth: number;
+  documentBubbleWidth: number;
+  audioCtrl: InternalAudioCtrl;
+  onOpenActions: (message: InternalChatMessage) => void;
+}) {
+  const content = msg.content;
+  const type = resolveInternalMessageContentType(content);
+  const latestText = getMessageText(msg).trim();
+  const isSystem = isInternalChatSystemMessage(msg);
+  const isAudio = type === INTERNAL_MESSAGE_TYPE.audio && !!content?.audio?.url;
+  const isDocument =
+    type === INTERNAL_MESSAGE_TYPE.document && !!content?.document?.url;
+  const isContactCard =
+    type === INTERNAL_MESSAGE_TYPE.contact_card ||
+    type === INTERNAL_MESSAGE_TYPE.contacts;
+  const hasQuoted = !!content?.quoted;
+  const isShortTextMessage =
+    latestText.length > 0 &&
+    latestText.length <= 8 &&
+    !isSystem &&
+    !isAudio &&
+    !isDocument &&
+    !isContactCard &&
+    !content?.image?.url &&
+    !content?.video?.url &&
+    !content?.location &&
+    !content?.link_preview;
+  const reactionsSummary = getReactionsSummary(content?.reactions);
+  const bubbleBg = isSystem
+    ? 'rgba(47, 43, 61, 0.08)'
+    : fromMe
+      ? colors.bubbleSent
+      : colors.surface;
+
+  return (
+    <View
+      style={[
+        styles.messageBubbleWrap,
+        isSystem && styles.messageBubbleWrapCenter,
+        !isSystem &&
+          (fromMe ? styles.messageBubbleWrapRight : styles.messageBubbleWrapLeft),
+      ]}
+    >
+      <View
+        style={[
+          styles.messageBubbleRow,
+          fromMe && styles.messageBubbleRowRight,
+          isSystem && styles.messageBubbleRowCenter,
+        ]}
+      >
+        {showAvatar && !isSystem ? (
+          <AppAvatar uri={msg.user?.photo ?? null} size={28} />
+        ) : null}
+        <Pressable
+          style={({ pressed }) => [
+            styles.bubble,
+            { maxWidth: bubbleMaxWidth, backgroundColor: bubbleBg },
+            isSystem && styles.bubbleSystem,
+            isContactCard && styles.bubbleContact,
+            isAudio && styles.bubbleAudio,
+            isDocument && styles.bubbleDocument,
+            isDocument && {
+              minWidth: documentBubbleWidth,
+              width: documentBubbleWidth,
+              maxWidth: documentBubbleWidth,
+            },
+            hasQuoted && styles.bubbleQuotedMinWidth,
+            isShortTextMessage && styles.bubbleShortMinWidth,
+            msg.deleted && styles.bubbleDeleted,
+            pressed && styles.bubblePressed,
+          ]}
+          onLongPress={() => onOpenActions(msg)}
+          delayLongPress={220}
+        >
+          {!fromMe && !isSystem && showAvatar ? (
+            <Text
+              style={[
+                styles.senderName,
+                isInternalChatSystemMessage(msg) && styles.systemSenderName,
+              ]}
+              numberOfLines={1}
+            >
+              {resolveInternalChatSenderName(msg)}
+            </Text>
+          ) : null}
+          <InternalQuotedReplyPreview quoted={content?.quoted} fromMe={fromMe} />
+          <InternalMessageContent
+            msg={msg}
+            fromMe={fromMe}
+            audioCtrl={audioCtrl}
+            onOpenActions={onOpenActions}
+          />
+          <View
+            style={[
+              styles.bubbleMeta,
+              isAudio && styles.bubbleMetaAudio,
+              isDocument && styles.bubbleMetaDocument,
+            ]}
+          >
+            {msg.local_status === 'sending' ? (
+              <Text style={styles.bubbleEditedBadgeLeft}>enviando</Text>
+            ) : msg.local_status === 'error' ? (
+              <Text style={styles.errorMetaText}>erro</Text>
+            ) : null}
+            <Text
+              style={[
+                styles.bubbleTime,
+                fromMe ? styles.bubbleTimeRight : styles.bubbleTimeLeft,
+              ]}
+            >
+              {formatMessageTime(msg.date)}
+            </Text>
+          </View>
+        </Pressable>
+      </View>
+      {reactionsSummary.length > 0 && !isSystem ? (
+        <View
+          style={[
+            styles.reactionsSummary,
+            fromMe ? styles.reactionsSummaryRight : styles.reactionsSummaryLeft,
+            isContactCard && styles.reactionsSummaryContact,
+          ]}
+        >
+          <View style={styles.reactionSummaryBubble}>
+            {reactionsSummary.map((reaction) => (
+              <View key={reaction.emoji} style={styles.reactionSummaryItem}>
+                <Text style={styles.reactionSummaryEmoji}>
+                  {reaction.emoji}
+                </Text>
+                <Text style={styles.reactionSummaryCount}>
+                  {reaction.count}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export function InternalChatRoomScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<ScreenRoute>();
   const insets = useSafeAreaInsets();
+  const { width: viewportWidth } = useWindowDimensions();
+  const audioCtrl = useInternalChatAudio();
   const listRef = useRef<FlatList<InternalChatMessage>>(null);
   const micPressActiveRef = useRef(false);
   const micStartXRef = useRef<number | null>(null);
@@ -449,6 +2469,31 @@ export function InternalChatRoomScreen() {
     (isPreparingRecording || recording);
   const showRecordingComposer =
     recording && (isRecordingLocked || !isMicPressActive);
+  const responsiveBubbleMaxWidth = useMemo(
+    () =>
+      Math.max(
+        0,
+        Math.floor(
+          Math.max(0, viewportWidth - CHAT_LIST_HORIZONTAL_PADDING * 2) *
+            CHAT_BUBBLE_MAX_WIDTH_RATIO
+        )
+      ),
+    [viewportWidth]
+  );
+  const documentBubbleWidth = useMemo(() => {
+    const minWidth = Math.min(
+      CHAT_DOCUMENT_BUBBLE_MIN_WIDTH,
+      responsiveBubbleMaxWidth
+    );
+    const maxWidth = Math.min(
+      responsiveBubbleMaxWidth,
+      Math.floor(
+        Math.max(0, viewportWidth - CHAT_LIST_HORIZONTAL_PADDING * 2) *
+          CHAT_DOCUMENT_BUBBLE_MAX_WIDTH_RATIO
+      )
+    );
+    return Math.max(minWidth, maxWidth);
+  }, [responsiveBubbleMaxWidth, viewportWidth]);
 
   const remoteActivity = useMemo(() => {
     return Object.values(state.remoteActivities).find(
@@ -1567,10 +3612,6 @@ export function InternalChatRoomScreen() {
       const own = !!currentUserId && item.user?.id === currentUserId;
       const previous = messages[index - 1];
       const showDate = !previous || !isSameDay(previous.date, item.date);
-      const content = item.content;
-      const imageUri = resolveImageUri(content?.image?.url);
-      const documentName = content?.document?.name;
-      const reactions = content?.reactions ?? [];
 
       return (
         <View>
@@ -1581,162 +3622,26 @@ export function InternalChatRoomScreen() {
               </Text>
             </View>
           ) : null}
-          <Pressable
-            style={[styles.messageRow, own && styles.messageRowOwn]}
-            onLongPress={() => setActionMessage(item)}
-          >
-            {!own && isGroup ? (
-              <AppAvatar uri={item.user?.photo ?? null} size={28} />
-            ) : null}
-            <View
-              style={[
-                styles.bubble,
-                own ? styles.bubbleOwn : styles.bubbleOther,
-                item.deleted && styles.bubbleDeleted,
-              ]}
-            >
-              {!own && isGroup ? (
-                <Text
-                  style={[
-                    styles.senderName,
-                    isInternalChatSystemMessage(item) && styles.systemSenderName,
-                  ]}
-                >
-                  {resolveInternalChatSenderName(item)}
-                </Text>
-              ) : null}
-              {content?.quoted ? (
-                <View style={styles.quoteBox}>
-                  <Text style={styles.quoteText} numberOfLines={2}>
-                    {resolveInternalChatTextTag(content.quoted.message) ||
-                      resolveInternalChatTextTag(content.quoted.type) ||
-                      'Resposta'}
-                  </Text>
-                </View>
-              ) : null}
-              {imageUri ? (
-                <ExpoImage
-                  source={{ uri: imageUri }}
-                  style={styles.messageImage}
-                  contentFit="cover"
-                />
-              ) : null}
-              {content?.video ? (
-                <View style={styles.mediaBox}>
-                  <Ionicons name="play-circle" size={26} color={colors.primary} />
-                  <Text style={styles.mediaText} numberOfLines={1}>
-                    {content.video.name || 'Vídeo'}
-                  </Text>
-                </View>
-              ) : null}
-              {content?.audio ? (
-                <View style={styles.mediaBox}>
-                  <Ionicons name="mic" size={22} color={colors.primary} />
-                  <Text style={styles.mediaText} numberOfLines={1}>
-                    {content.audio.name || 'Áudio'}
-                  </Text>
-                </View>
-              ) : null}
-              {content?.document ? (
-                <Pressable
-                  style={styles.mediaBox}
-                  onPress={() => {
-                    const url = resolveImageUri(content.document?.url ?? null);
-                    if (url) void Linking.openURL(url);
-                  }}
-                >
-                  <Ionicons name="document-text" size={22} color={colors.primary} />
-                  <Text style={styles.mediaText} numberOfLines={1}>
-                    {documentName || 'Documento'}
-                  </Text>
-                </Pressable>
-              ) : null}
-              {content?.location ? (
-                <Pressable
-                  style={styles.mediaBox}
-                  onPress={() => {
-                    const { latitude, longitude } = content.location ?? {};
-                    if (latitude && longitude) {
-                      void Linking.openURL(
-                        `https://maps.google.com/?q=${latitude},${longitude}`
-                      );
-                    }
-                  }}
-                >
-                  <Ionicons name="location" size={22} color={colors.primary} />
-                  <Text style={styles.mediaText} numberOfLines={1}>
-                    {content.location.name || 'Localização'}
-                  </Text>
-                </Pressable>
-              ) : null}
-              {content?.contact ? (
-                <Pressable
-                  style={styles.mediaBox}
-                  onPress={() => {
-                    if (!content.contact?.contact_id) return;
-                    void viewInternalChatContactPhone(
-                      content.contact.contact_id
-                    ).then((phone) => {
-                      Alert.alert(
-                        content.contact?.name ?? 'Contato',
-                        phone?.phone
-                          ? `+${phone.phone_ddi ?? ''} ${phone.phone}`
-                          : 'Telefone indisponível'
-                      );
-                    });
-                  }}
-                >
-                  <Ionicons name="person-circle" size={24} color={colors.primary} />
-                  <Text style={styles.mediaText} numberOfLines={1}>
-                    {content.contact.name}
-                  </Text>
-                </Pressable>
-              ) : null}
-              {content?.link_preview?.title ? (
-                <View style={styles.linkPreview}>
-                  <Text style={styles.linkTitle} numberOfLines={1}>
-                    {content.link_preview.title}
-                  </Text>
-                  {content.link_preview.description ? (
-                    <Text style={styles.linkDescription} numberOfLines={2}>
-                      {content.link_preview.description}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-              {content?.message || item.deleted ? (
-                <Text
-                  style={[
-                    styles.messageText,
-                    item.deleted && styles.messageDeletedText,
-                  ]}
-                >
-                  {getMessageText(item)}
-                </Text>
-              ) : null}
-              <View style={styles.messageMeta}>
-                {item.local_status === 'sending' ? (
-                  <Text style={styles.metaText}>enviando</Text>
-                ) : item.local_status === 'error' ? (
-                  <Text style={styles.errorMetaText}>erro</Text>
-                ) : null}
-                <Text style={styles.metaText}>{formatMessageTime(item.date)}</Text>
-              </View>
-              {reactions.length > 0 ? (
-                <View style={styles.reactionsRow}>
-                  {reactions.map((reaction, reactionIndex) => (
-                    <Text key={`${reaction.emoji}-${reactionIndex}`}>
-                      {reaction.emoji}
-                    </Text>
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          </Pressable>
+          <InternalMessageBubble
+            msg={item}
+            fromMe={own}
+            showAvatar={!own && isGroup}
+            bubbleMaxWidth={responsiveBubbleMaxWidth}
+            documentBubbleWidth={documentBubbleWidth}
+            audioCtrl={audioCtrl}
+            onOpenActions={setActionMessage}
+          />
         </View>
       );
     },
-    [currentUserId, isGroup, messages]
+    [
+      audioCtrl,
+      currentUserId,
+      documentBubbleWidth,
+      isGroup,
+      messages,
+      responsiveBubbleMaxWidth,
+    ]
   );
 
   return (
@@ -2724,29 +4629,69 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  messageRow: {
+  messageBubbleWrap: {
+    marginVertical: 5,
+  },
+  messageBubbleWrapLeft: {
+    alignItems: 'flex-start',
+  },
+  messageBubbleWrapRight: {
+    alignItems: 'flex-end',
+  },
+  messageBubbleWrapCenter: {
+    alignItems: 'center',
+  },
+  messageBubbleRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 6,
-    marginVertical: 3,
-    maxWidth: '92%',
   },
-  messageRowOwn: {
-    alignSelf: 'flex-end',
+  messageBubbleRowRight: {
+    justifyContent: 'flex-end',
+  },
+  messageBubbleRowCenter: {
+    justifyContent: 'center',
   },
   bubble: {
     maxWidth: '100%',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingRight: 28,
+    borderRadius: 8,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
+    overflow: 'hidden',
   },
-  bubbleOwn: {
-    backgroundColor: colors.bubbleSent,
-    borderTopRightRadius: 4,
+  bubbleSystem: {
+    alignSelf: 'center',
+    maxWidth: '100%',
   },
-  bubbleOther: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 4,
+  bubbleContact: {
+    minWidth: 0,
+  },
+  bubbleAudio: {
+    minWidth: 0,
+    width: '70%',
+    maxWidth: '70%',
+    paddingRight: 12,
+    overflow: 'hidden',
+  },
+  bubbleDocument: {
+    minWidth: 0,
+    paddingRight: 12,
+    paddingBottom: 10,
+  },
+  bubbleQuotedMinWidth: {
+    minWidth: 192,
+  },
+  bubbleShortMinWidth: {
+    minWidth: 128,
+  },
+  bubblePressed: {
+    opacity: 0.92,
   },
   bubbleDeleted: {
     opacity: 0.72,
@@ -2755,92 +4700,698 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 12,
     fontWeight: '800',
-    marginBottom: 3,
+    marginBottom: 5,
   },
   systemSenderName: {
     color: colors.grey600,
   },
-  quoteBox: {
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
-    backgroundColor: 'rgba(40,101,183,0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-    marginBottom: 5,
+  bubbleText: {
+    fontSize: 15,
+    lineHeight: 21,
+    minWidth: 0,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
-  quoteText: {
-    color: colors.grey700,
-    fontSize: 12,
+  bubbleTextWrap: {
+    minWidth: 0,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
-  messageImage: {
-    width: 210,
-    height: 160,
+  bubbleTextLeft: {
+    color: colors.onSurface,
+  },
+  bubbleTextRight: {
+    color: 'rgba(17, 27, 33, 0.95)',
+  },
+  readMoreButton: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  readMoreText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  whatsAppBold: {
+    fontWeight: '700',
+  },
+  whatsAppItalic: {
+    fontStyle: 'italic',
+  },
+  whatsAppStrike: {
+    textDecorationLine: 'line-through',
+  },
+  whatsAppCode: {
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
+    backgroundColor: 'rgba(47, 43, 61, 0.1)',
+    borderRadius: 4,
+    paddingHorizontal: 2,
+  },
+  whatsAppLink: {
+    color: colors.primary,
+    textDecorationLine: 'underline',
+    flexShrink: 1,
+  },
+  quotedBlock: {
+    flexDirection: 'row',
     borderRadius: 8,
-    marginBottom: 5,
-    backgroundColor: colors.grey200,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 255, 255, 0.58)',
+    marginBottom: 8,
+    width: '100%',
+    minWidth: 152,
+    alignSelf: 'stretch',
   },
-  mediaBox: {
-    minWidth: 180,
-    minHeight: 42,
+  quotedBlockRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.62)',
+  },
+  quotedBar: {
+    width: 3,
+    backgroundColor: colors.primary,
+  },
+  quotedBarRight: {
+    backgroundColor: 'rgba(30, 90, 180, 0.95)',
+  },
+  quotedBody: {
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    minWidth: 0,
+  },
+  quotedBodyContact: {
+    paddingBottom: 15,
+  },
+  quotedName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+    marginBottom: 3,
+  },
+  quotedNameContact: {
+    marginTop: 1,
+    marginBottom: 4,
+    paddingRight: 6,
+  },
+  quotedNameRight: {
+    color: '#1E5AB4',
+  },
+  quotedContentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: 'rgba(40,101,183,0.08)',
-    marginBottom: 5,
   },
-  mediaText: {
+  quotedContentRowContact: {
+    alignItems: 'flex-start',
+    paddingRight: 6,
+    paddingBottom: 4,
+  },
+  quotedThumbWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(47, 43, 61, 0.12)',
+    flexShrink: 0,
+  },
+  quotedThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  quotedContactAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    flexShrink: 0,
+  },
+  quotedVideoOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.26)',
+  },
+  quotedTextWrap: {
     flex: 1,
-    color: colors.onSurface,
-    fontWeight: '700',
+    minWidth: 0,
   },
-  linkPreview: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(0,0,0,0.06)',
-    marginBottom: 5,
+  quotedTextWrapContact: {
+    paddingBottom: 8,
   },
-  linkTitle: {
-    color: colors.onSurface,
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  linkDescription: {
-    color: colors.grey700,
+  quotedText: {
     fontSize: 12,
+    lineHeight: 16,
+    color: colors.onSurface,
+  },
+  quotedTextContact: {
+    lineHeight: 17,
+  },
+  quotedTextRight: {
+    color: 'rgba(17, 27, 33, 0.92)',
+  },
+  quotedMeta: {
+    fontSize: 10,
+    color: colors.grey700,
+    marginTop: 2,
+  },
+  contentStack: {
+    gap: 8,
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+  },
+  mediaBubble: {
+    maxWidth: 232,
+    overflow: 'hidden',
+    borderRadius: 8,
+  },
+  mediaBubbleImage: {
+    maxWidth: 210,
+  },
+  imageThumb: {
+    width: '100%',
+    maxWidth: 210,
+    maxHeight: 280,
+    aspectRatio: 1,
+    borderRadius: 6,
+  },
+  videoThumbWrap: {
+    width: '100%',
+    maxWidth: 232,
+    height: 144,
+    position: 'relative',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  videoThumb: {
+    width: '100%',
+    height: '100%',
+    maxWidth: 232,
+    borderRadius: 6,
+  },
+  videoPlaceholder: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: colors.grey200,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 6,
+  },
+  mediaCaption: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+  mediaMeta: {
+    fontSize: 11,
+    color: colors.grey600,
+    marginTop: 4,
+  },
+  locationBubble: {
+    width: '100%',
+    maxWidth: 200,
+    minWidth: 0,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
+  locationMapPreview: {
+    width: '100%',
+    height: 112,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+  },
+  locationMapImage: {
+    width: '100%',
+    height: '100%',
+  },
+  locationMapFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationPinOverlay: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    transform: [{ translateX: -18 }, { translateY: -32 }],
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  locationInfo: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minWidth: 0,
+  },
+  locationName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(17, 27, 33, 0.95)',
+  },
+  locationAddress: {
+    fontSize: 12,
+    color: colors.grey700,
     marginTop: 3,
   },
-  messageText: {
+  linkPreviewCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(47, 43, 61, 0.12)',
+    padding: 10,
+    gap: 8,
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    overflow: 'hidden',
+  },
+  linkPreviewCardLeft: {
+    backgroundColor: 'rgba(47, 43, 61, 0.04)',
+  },
+  linkPreviewCardRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.36)',
+    alignSelf: 'stretch',
+    minWidth: 0,
+  },
+  linkPreviewMain: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    width: '100%',
+    minWidth: 0,
+  },
+  linkPreviewThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+    flexShrink: 0,
+  },
+  linkPreviewText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  linkPreviewDomain: {
+    fontSize: 11,
+    color: 'rgba(47, 43, 61, 0.72)',
+  },
+  linkPreviewTitle: {
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '600',
     color: colors.onSurface,
-    fontSize: 15,
-    lineHeight: 20,
+  },
+  linkPreviewDescription: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: 'rgba(47, 43, 61, 0.74)',
+  },
+  linkPreviewUrlContainer: {
+    width: '100%',
+    minWidth: 0,
+    marginTop: 0,
+  },
+  linkPreviewUrlContainerWithThumb: {
+    paddingLeft: 0,
+    paddingBottom: 10,
+  },
+  linkPreviewUrl: {
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.primary,
+    flexShrink: 1,
+    includeFontPadding: false,
   },
   messageDeletedText: {
     color: colors.grey600,
     fontStyle: 'italic',
   },
-  messageMeta: {
-    marginTop: 3,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+  audioBubble: {
+    maxWidth: '100%',
+    width: '100%',
     gap: 6,
+    alignSelf: 'stretch',
+    overflow: 'hidden',
   },
-  metaText: {
-    color: colors.bubbleSentTime,
+  audioPlayerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    maxWidth: '100%',
+    width: '100%',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(47, 43, 61, 0.06)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(47, 43, 61, 0.1)',
+    overflow: 'hidden',
+  },
+  audioPlayerContainerRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderBottomColor: 'rgba(17, 27, 33, 0.08)',
+  },
+  audioSpeedBtn: {
+    minWidth: 34,
+    height: 22,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(47, 43, 61, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  audioSpeedBtnRight: {
+    borderColor: 'rgba(17, 27, 33, 0.35)',
+  },
+  audioSpeedBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(47, 43, 61, 0.7)',
+  },
+  audioSpeedBtnTextRight: {
+    color: 'rgba(17, 27, 33, 0.7)',
+  },
+  audioPlayBtnCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderWidth: 2,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  audioPlayBtnCircleRight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(17, 27, 33, 0.25)',
+  },
+  audioPlayAndTimeWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    gap: 3,
+  },
+  audioTimeBelowPlay: {
     fontSize: 10,
+    fontWeight: '500',
+  },
+  audioTimeBelowPlayLeft: {
+    color: 'rgba(47, 43, 61, 0.6)',
+  },
+  audioTimeBelowPlayRight: {
+    color: 'rgba(17, 27, 33, 0.6)',
+  },
+  audioWaveformContainer: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 100,
+    minWidth: 0,
+    height: 34,
+    position: 'relative',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  audioWaveform: {
+    position: 'absolute',
+    left: WAVEFORM_HORIZONTAL_INSET,
+    right: WAVEFORM_HORIZONTAL_INSET,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+    gap: WAVEFORM_BAR_GAP,
+    paddingVertical: 6,
+    overflow: 'hidden',
+  },
+  audioWaveformBar: {
+    width: WAVEFORM_BAR_WIDTH,
+    minHeight: 4,
+    backgroundColor: 'rgba(47, 43, 61, 0.4)',
+    borderRadius: 2,
+  },
+  audioWaveformBarRight: {
+    backgroundColor: 'rgba(17, 27, 33, 0.45)',
+  },
+  audioWaveformBarActive: {
+    backgroundColor: colors.primary,
+  },
+  audioWaveformBarActiveRight: {
+    backgroundColor: 'rgba(17, 27, 33, 0.9)',
+  },
+  audioProgressIndicator: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    backgroundColor: colors.primary,
+    marginLeft: -1,
+    borderRadius: 1,
+  },
+  audioProgressIndicatorRight: {
+    backgroundColor: 'rgba(17, 27, 33, 0.85)',
+  },
+  audioCaption: {
+    marginTop: 8,
+  },
+  documentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(47, 43, 61, 0.04)',
+    marginBottom: 6,
+    width: '100%',
+    minWidth: 0,
+    maxWidth: '100%',
+  },
+  documentCardRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+  },
+  documentMainAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  documentIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    backgroundColor: 'rgba(40, 101, 183, 0.12)',
+    flexShrink: 0,
+  },
+  documentIconCircleRight: {
+    backgroundColor: 'rgba(40, 101, 183, 0.18)',
+  },
+  documentTypeText: {
+    fontSize: 8,
+    lineHeight: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 0.4,
+  },
+  documentInfo: {
+    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  documentName: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: colors.primary,
+    maxWidth: '100%',
+  },
+  documentMeta: {
+    fontSize: 11,
+    lineHeight: 14,
+    color: colors.grey600,
+    marginTop: 2,
+  },
+  documentDownloadBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(40, 101, 183, 0.1)',
+    flexShrink: 0,
+  },
+  documentDownloadBtnRight: {
+    backgroundColor: 'rgba(40, 101, 183, 0.2)',
+  },
+  documentCaption: {
+    marginTop: 4,
+  },
+  contactWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    minWidth: 0,
+    maxWidth: '100%',
+  },
+  contactWrapRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+  },
+  contactWrapPressed: {
+    opacity: 0.72,
+  },
+  contactAvatarWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(40, 101, 183, 0.14)',
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  contactAvatarWrapRight: {
+    backgroundColor: 'rgba(40, 101, 183, 0.2)',
+  },
+  contactAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 21,
+  },
+  contactInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  contactName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'rgba(17, 27, 33, 0.95)',
+  },
+  contactPhone: {
+    fontSize: 14,
+    color: colors.grey700,
+    marginTop: 2,
+  },
+  systemWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  systemText: {
+    fontSize: 14,
+    color: colors.grey700,
+    lineHeight: 20,
+  },
+  bubbleMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+    marginTop: 4,
+  },
+  bubbleMetaAudio: {
+    marginTop: 6,
+  },
+  bubbleMetaDocument: {
+    marginTop: 6,
+  },
+  bubbleTime: {
+    fontSize: 11,
+  },
+  bubbleTimeLeft: {
+    color: colors.grey600,
+  },
+  bubbleTimeRight: {
+    color: colors.bubbleSentTime,
+  },
+  bubbleEditedBadgeLeft: {
+    color: colors.grey600,
+    fontSize: 11,
+    fontWeight: '600',
   },
   errorMetaText: {
     color: colors.error,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
   },
-  reactionsRow: {
+  reactionsSummary: {
+    marginTop: -2,
+    zIndex: 2,
+  },
+  reactionsSummaryRight: {
+    alignSelf: 'flex-end',
+    marginRight: 12,
+  },
+  reactionsSummaryLeft: {
+    alignSelf: 'flex-start',
+    marginLeft: 12,
+  },
+  reactionsSummaryContact: {
+    marginTop: -8,
+  },
+  reactionSummaryBubble: {
     flexDirection: 'row',
-    gap: 3,
-    marginTop: 4,
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    minHeight: 26,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.14)',
+  },
+  reactionSummaryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 18,
+  },
+  reactionSummaryEmoji: {
+    fontSize: 15,
+    lineHeight: 20,
+    textAlignVertical: 'center',
+  },
+  reactionSummaryCount: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '600',
+    color: 'rgba(47, 43, 61, 0.72)',
   },
   replyBar: {
     minHeight: 54,
