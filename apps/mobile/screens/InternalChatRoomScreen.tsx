@@ -2633,12 +2633,54 @@ function InternalChatRoomSkeleton({ compact = false }: { compact?: boolean }) {
   );
 }
 
+function InternalSearchResultsSkeleton({ rows = 5 }: { rows?: number }) {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const useNativeDriver = Platform.OS !== 'web';
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.7,
+          duration: 600,
+          useNativeDriver,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 600,
+          useNativeDriver,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  return (
+    <View style={styles.searchSkeletonList}>
+      {Array.from({ length: rows }).map((_, index) => (
+        <View
+          key={`internal-search-skeleton-${index}`}
+          style={styles.searchSkeletonRow}
+        >
+          <Animated.View style={[styles.searchSkeletonDate, { opacity }]} />
+          <Animated.View style={[styles.searchSkeletonText, { opacity }]} />
+          <Animated.View
+            style={[styles.searchSkeletonTextShort, { opacity }]}
+          />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function InternalMessageBubble({
   msg,
   fromMe,
   showAvatar,
   bubbleMaxWidth,
   documentBubbleWidth,
+  highlighted,
   audioCtrl,
   onOpenActions,
   onOpenImage,
@@ -2651,6 +2693,7 @@ function InternalMessageBubble({
   showAvatar: boolean;
   bubbleMaxWidth: number;
   documentBubbleWidth: number;
+  highlighted?: boolean;
   audioCtrl: InternalAudioCtrl;
   onOpenActions: (message: InternalChatMessage) => void;
   onOpenImage: (message: InternalChatMessage) => void;
@@ -2729,6 +2772,7 @@ function InternalMessageBubble({
             },
             hasQuoted && styles.bubbleQuotedMinWidth,
             isShortTextMessage && styles.bubbleShortMinWidth,
+            highlighted && styles.bubbleHighlighted,
             msg.deleted && styles.bubbleDeleted,
             pressed && styles.bubblePressed,
           ]}
@@ -2822,6 +2866,7 @@ export function InternalChatRoomScreen() {
   const loadingOlderRef = useRef(false);
   const isNearBottomRef = useRef(true);
   const previousMessagesLengthRef = useRef(0);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const preserveScrollOnPrependRef = useRef<{
     previousOffset: number;
     previousContentHeight: number;
@@ -2888,6 +2933,10 @@ export function InternalChatRoomScreen() {
   const conversationId = activeConversation.conversation_id;
   const messages = state.messages[conversationId] ?? [];
   const paging = state.messagesPaging[conversationId];
+  const messageIdSet = useMemo(
+    () => new Set(messages.map((message) => message.message_id)),
+    [messages]
+  );
 
   const [composerText, setComposerText] = useState('');
   const [replyTo, setReplyTo] = useState<InternalChatMessage | null>(null);
@@ -2905,9 +2954,23 @@ export function InternalChatRoomScreen() {
     Awaited<ReturnType<typeof viewMessageHistory>>
   >([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<
     InternalChatSearchMessageResult[]
   >([]);
+  const [searchCurrentPage, setSearchCurrentPage] = useState(1);
+  const [searchTotalPages, setSearchTotalPages] = useState(0);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchLoadingMore, setSearchLoadingMore] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [openingSearchMessageId, setOpeningSearchMessageId] = useState<
+    string | null
+  >(null);
+  const [pendingSearchScrollMessageId, setPendingSearchScrollMessageId] =
+    useState<string | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
   const [contactsVisible, setContactsVisible] = useState(false);
   const [contacts, setContacts] = useState<InternalChatContact[]>([]);
   const [contactFormVisible, setContactFormVisible] = useState(false);
@@ -3457,6 +3520,25 @@ export function InternalChatRoomScreen() {
   }, [messages.length]);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.trim());
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchTerm]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     void getPermissions().then((permissions) => {
       if (cancelled) return;
@@ -3670,6 +3752,81 @@ export function InternalChatRoomScreen() {
     },
     [loadingOlderMessages, scrollToEnd]
   );
+
+  const scrollToMessageById = useCallback(
+    (targetMessageId: string): boolean => {
+      const targetIndex = messages.findIndex(
+        (message) => message.message_id === targetMessageId
+      );
+      if (targetIndex < 0) return false;
+
+      pendingScrollToBottomRef.current = false;
+      preserveScrollOnPrependRef.current = null;
+
+      listRef.current?.scrollToIndex({
+        index: targetIndex,
+        animated: true,
+        viewPosition: 0.5,
+      });
+
+      setHighlightedMessageId(targetMessageId);
+
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+      }
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedMessageId((current) =>
+          current === targetMessageId ? null : current
+        );
+        highlightTimerRef.current = null;
+      }, 2200);
+
+      return true;
+    },
+    [messages]
+  );
+
+  const handleScrollToIndexFailed = useCallback(
+    (info: { index: number; averageItemLength: number }) => {
+      if (!listRef.current) return;
+
+      const fallbackOffset =
+        info.averageItemLength > 0 ? info.averageItemLength * info.index : 0;
+      listRef.current.scrollToOffset({
+        offset: Math.max(0, fallbackOffset),
+        animated: true,
+      });
+
+      setTimeout(() => {
+        listRef.current?.scrollToIndex({
+          index: info.index,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      }, 120);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!pendingSearchScrollMessageId || searchVisible) return;
+    if (!messageIdSet.has(pendingSearchScrollMessageId)) return;
+
+    const timer = setTimeout(() => {
+      if (scrollToMessageById(pendingSearchScrollMessageId)) {
+        setPendingSearchScrollMessageId(null);
+      }
+    }, 120);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [
+    messageIdSet,
+    pendingSearchScrollMessageId,
+    scrollToMessageById,
+    searchVisible,
+  ]);
 
   const sendText = useCallback(async () => {
     const text = composerText.trim();
@@ -4540,15 +4697,137 @@ export function InternalChatRoomScreen() {
     ]
   );
 
-  const runSearch = useCallback(async () => {
-    const normalized = searchTerm.trim();
-    if (!normalized) {
+  const runSearch = useCallback(
+    async (reset: boolean, page: number) => {
+      const normalized = debouncedSearchTerm.trim();
+      if (normalized.length < 3) {
+        setSearchResults([]);
+        setSearchCurrentPage(1);
+        setSearchTotalPages(0);
+        setSearchError(null);
+        return;
+      }
+
+      if (reset) {
+        setSearchLoading(true);
+      } else {
+        setSearchLoadingMore(true);
+      }
+      setSearchError(null);
+
+      try {
+        const result = await searchMessages(conversationId, normalized, {
+          page,
+          perPage: 30,
+        });
+
+        if (reset) {
+          setSearchResults(result.results);
+        } else {
+          setSearchResults((current) => [...current, ...result.results]);
+        }
+        setSearchCurrentPage(result.current_page);
+        setSearchTotalPages(result.total_pages);
+      } catch {
+        if (reset) {
+          setSearchResults([]);
+        }
+        setSearchError(pt.search_messages_error);
+      } finally {
+        if (reset) {
+          setSearchLoading(false);
+        } else {
+          setSearchLoadingMore(false);
+        }
+      }
+    },
+    [conversationId, debouncedSearchTerm, searchMessages]
+  );
+
+  useEffect(() => {
+    if (!searchVisible) {
+      setSearchTerm('');
+      setDebouncedSearchTerm('');
       setSearchResults([]);
+      setSearchCurrentPage(1);
+      setSearchTotalPages(0);
+      setSearchLoading(false);
+      setSearchLoadingMore(false);
+      setSearchError(null);
+      setOpeningSearchMessageId(null);
       return;
     }
-    const result = await searchMessages(conversationId, normalized);
-    setSearchResults(result.results);
-  }, [conversationId, searchMessages, searchTerm]);
+
+    void runSearch(true, 1);
+  }, [debouncedSearchTerm, runSearch, searchVisible]);
+
+  const loadMoreSearchResults = useCallback(() => {
+    if (searchLoading || searchLoadingMore) return;
+    if (debouncedSearchTerm.trim().length < 3) return;
+    if (searchCurrentPage >= searchTotalPages) return;
+
+    void runSearch(false, searchCurrentPage + 1);
+  }, [
+    debouncedSearchTerm,
+    runSearch,
+    searchCurrentPage,
+    searchLoading,
+    searchLoadingMore,
+    searchTotalPages,
+  ]);
+
+  const ensureSearchedMessageLoaded = useCallback(
+    async (messageId: string): Promise<boolean> => {
+      if (messageIdSet.has(messageId)) return true;
+
+      pendingScrollToBottomRef.current = false;
+      isNearBottomRef.current = false;
+      preserveScrollOnPrependRef.current = null;
+
+      let nextPage = (paging?.current_page ?? 1) + 1;
+      const totalPages = paging?.total_pages ?? 1;
+
+      while (nextPage <= totalPages) {
+        const loaded = await loadMessages(conversationId, {
+          page: nextPage,
+          append: true,
+        });
+
+        if (loaded.some((message) => message.message_id === messageId)) {
+          return true;
+        }
+
+        nextPage += 1;
+      }
+
+      return false;
+    },
+    [conversationId, loadMessages, messageIdSet, paging]
+  );
+
+  const openSearchResult = useCallback(
+    async (item: InternalChatSearchMessageResult) => {
+      if (openingSearchMessageId) return;
+
+      setOpeningSearchMessageId(item.message_id);
+      try {
+        const found = await ensureSearchedMessageLoaded(item.message_id);
+        if (!found) {
+          Alert.alert(
+            pt.warning_title,
+            'Não foi possível abrir a mensagem encontrada.'
+          );
+          return;
+        }
+
+        setSearchVisible(false);
+        setPendingSearchScrollMessageId(item.message_id);
+      } finally {
+        setOpeningSearchMessageId(null);
+      }
+    },
+    [ensureSearchedMessageLoaded, openingSearchMessageId]
+  );
 
   const closePendingGroupAction = useCallback(() => {
     if (memberActionLoading) return;
@@ -4704,6 +4983,7 @@ export function InternalChatRoomScreen() {
             showAvatar={!own && isGroup}
             bubbleMaxWidth={responsiveBubbleMaxWidth}
             documentBubbleWidth={documentBubbleWidth}
+            highlighted={highlightedMessageId === item.message_id}
             audioCtrl={audioCtrl}
             onOpenActions={setActionMessage}
             onOpenImage={openImageViewer}
@@ -4722,6 +5002,7 @@ export function InternalChatRoomScreen() {
       messages,
       handlePressMessageContactCard,
       handlePressMessageContactsGroup,
+      highlightedMessageId,
       openImageViewer,
       openVideoViewer,
       responsiveBubbleMaxWidth,
@@ -4785,6 +5066,7 @@ export function InternalChatRoomScreen() {
             onScroll={handleMessagesScroll}
             scrollEventThrottle={16}
             onContentSizeChange={handleMessagesContentSizeChange}
+            onScrollToIndexFailed={handleScrollToIndexFailed}
           />
           {loadingOlderMessages ? (
             <View pointerEvents="none" style={styles.loadingOlderTopWrap}>
@@ -5633,51 +5915,98 @@ export function InternalChatRoomScreen() {
         ) : null}
       </BottomSheetModal>
 
-      <Modal
+      <BottomSheetModal
         visible={searchVisible}
-        animationType="slide"
-        onRequestClose={() => setSearchVisible(false)}
+        onClose={() => setSearchVisible(false)}
+        title={pt.search_messages}
+        cardStyle={styles.searchSheetCard}
+        noScroll
       >
-        <View style={[styles.fullModal, { paddingTop: insets.top + 12 }]}>
-          <View style={styles.fullModalHeader}>
-            <Text style={styles.fullModalTitle}>Buscar mensagens</Text>
-            <Pressable onPress={() => setSearchVisible(false)}>
-              <Ionicons name="close" size={24} color={colors.grey700} />
-            </Pressable>
+        <View style={styles.searchInputWrap}>
+          <Ionicons name="search-outline" size={18} color={colors.grey600} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            placeholder={pt.search_messages_placeholder}
+            placeholderTextColor={colors.grey500}
+            returnKeyType="search"
+            maxLength={120}
+            onSubmitEditing={() => setDebouncedSearchTerm(searchTerm.trim())}
+          />
+        </View>
+
+        {debouncedSearchTerm.length > 0 && debouncedSearchTerm.length < 3 ? (
+          <Text style={styles.modalHintText}>
+            {pt.search_minimum_characters.replace('{count}', '3')}
+          </Text>
+        ) : null}
+
+        {searchError ? (
+          <Text style={styles.searchErrorText}>{searchError}</Text>
+        ) : null}
+
+        {openingSearchMessageId ? (
+          <View style={styles.searchOpeningStatus}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.searchOpeningStatusText}>
+              Abrindo mensagem...
+            </Text>
           </View>
-          <View style={styles.searchModalRow}>
-            <TextInput
-              style={styles.searchModalInput}
-              value={searchTerm}
-              onChangeText={setSearchTerm}
-              placeholder="Pesquisar"
-              placeholderTextColor={colors.grey500}
-              returnKeyType="search"
-              onSubmitEditing={runSearch}
-            />
-            <Pressable style={styles.searchModalBtn} onPress={runSearch}>
-              <Ionicons name="search" size={20} color={colors.onPrimary} />
-            </Pressable>
-          </View>
+        ) : null}
+
+        {searchLoading ? (
+          <InternalSearchResultsSkeleton />
+        ) : (
           <FlatList
             data={searchResults}
             keyExtractor={(item) => item.message_id}
+            contentContainerStyle={styles.searchResultsList}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            onEndReached={loadMoreSearchResults}
+            onEndReachedThreshold={0.25}
             renderItem={({ item }) => (
               <Pressable
                 style={styles.searchResultRow}
-                onPress={() => setSearchVisible(false)}
+                onPress={dismissKeyboardAnd(() => void openSearchResult(item))}
+                disabled={!!openingSearchMessageId}
               >
-                <Text style={styles.searchResultText} numberOfLines={2}>
-                  {resolveInternalChatTextTag(item.message) || 'Mensagem'}
-                </Text>
-                <Text style={styles.searchResultDate}>
-                  {formatDateSeparator(item.date)}
-                </Text>
+                <View style={styles.searchResultContent}>
+                  <Text style={styles.searchResultDate}>
+                    {formatDateSeparator(item.date)}{' '}
+                    {formatMessageTime(item.date)}
+                  </Text>
+                  <Text style={styles.searchResultText} numberOfLines={3}>
+                    {resolveInternalChatTextTag(item.message) ||
+                      item.message ||
+                      'Mensagem'}
+                  </Text>
+                </View>
+                {openingSearchMessageId === item.message_id ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color={colors.grey600}
+                  />
+                )}
               </Pressable>
             )}
+            ListEmptyComponent={
+              debouncedSearchTerm.trim().length >= 3 ? (
+                <Text style={styles.emptyText}>{pt.no_results_found}</Text>
+              ) : null
+            }
+            ListFooterComponent={
+              searchLoadingMore ? (
+                <InternalSearchResultsSkeleton rows={2} />
+              ) : null
+            }
           />
-        </View>
-      </Modal>
+        )}
+      </BottomSheetModal>
 
       <Modal
         visible={historyVisible}
@@ -6086,6 +6415,10 @@ const styles = StyleSheet.create({
   },
   bubbleShortMinWidth: {
     minWidth: 128,
+  },
+  bubbleHighlighted: {
+    borderWidth: 1,
+    borderColor: 'rgba(30, 90, 180, 0.42)',
   },
   bubblePressed: {
     opacity: 0.92,
@@ -7563,41 +7896,117 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontWeight: '800',
   },
-  searchModalRow: {
-    flexDirection: 'row',
-    gap: 8,
-    padding: 16,
+  searchSheetCard: {
+    maxHeight: '88%',
   },
-  searchModalInput: {
-    flex: 1,
-    minHeight: 42,
+  searchInputWrap: {
+    height: 44,
     borderRadius: 10,
-    backgroundColor: colors.inputBg,
     paddingHorizontal: 12,
-    color: colors.onSurface,
-  },
-  searchModalBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 10,
+    marginBottom: 12,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
+    gap: 8,
+    backgroundColor: colors.inputBg,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.onSurface,
+    paddingVertical: 0,
+  },
+  modalHintText: {
+    fontSize: 12,
+    color: colors.grey700,
+    marginBottom: 10,
+  },
+  searchErrorText: {
+    fontSize: 12,
+    color: colors.error,
+    marginBottom: 10,
+  },
+  searchOpeningStatus: {
+    minHeight: 36,
+    borderRadius: 10,
+    marginBottom: 10,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(40, 101, 183, 0.08)',
+  },
+  searchOpeningStatusText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  searchResultsList: {
+    paddingBottom: 16,
   },
   searchResultRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.grey100,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(40, 101, 183, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(40, 101, 183, 0.1)',
+  },
+  searchResultContent: {
+    flex: 1,
+    minWidth: 0,
   },
   searchResultText: {
+    marginTop: 4,
     color: colors.onSurface,
-    fontSize: 14,
+    fontSize: 13,
+    lineHeight: 18,
   },
   searchResultDate: {
-    color: colors.grey500,
-    fontSize: 12,
-    marginTop: 4,
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  searchSkeletonList: {
+    paddingBottom: 4,
+  },
+  searchSkeletonRow: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginBottom: 8,
+    backgroundColor: 'rgba(40, 101, 183, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(40, 101, 183, 0.1)',
+  },
+  searchSkeletonDate: {
+    width: 88,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.grey300,
+  },
+  searchSkeletonText: {
+    width: '86%',
+    height: 12,
+    borderRadius: 6,
+    marginTop: 8,
+    backgroundColor: colors.grey300,
+  },
+  searchSkeletonTextShort: {
+    width: '56%',
+    height: 12,
+    borderRadius: 6,
+    marginTop: 6,
+    backgroundColor: colors.grey300,
+  },
+  emptyText: {
+    textAlign: 'center',
+    fontSize: 13,
+    color: colors.grey600,
+    paddingVertical: 18,
   },
   historyRow: {
     paddingHorizontal: 16,

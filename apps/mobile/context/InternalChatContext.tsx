@@ -128,7 +128,8 @@ type InternalChatContextValue = {
   ) => Promise<InternalChatMessageHistoryItem[]>;
   searchMessages: (
     conversationId: string,
-    search: string
+    search: string,
+    options?: { page?: number; perPage?: number }
   ) => Promise<InternalChatPagedResponse<InternalChatSearchMessageResult>>;
   publishActivity: (
     conversationId: string,
@@ -593,10 +594,14 @@ export function InternalChatProvider({
   );
 
   const searchMessages = useCallback(
-    (conversationId: string, search: string) =>
+    (
+      conversationId: string,
+      search: string,
+      options?: { page?: number; perPage?: number }
+    ) =>
       searchInternalChatMessages(conversationId, search, {
-        currentPage: 1,
-        perPage: 30,
+        currentPage: options?.page ?? 1,
+        perPage: options?.perPage ?? 30,
       }),
     []
   );
