@@ -6,6 +6,7 @@ import type {
   InternalChatRemoteActivity,
   InternalChatUser,
 } from '../types/internalChat';
+import { resolveInternalChatMessagePreview } from '../utils/internalChatText';
 
 const DEFAULT_PAGING: InternalChatPaging = {
   current_page: 1,
@@ -150,21 +151,6 @@ function mergeMessages(
   return sortMessages(Array.from(map.values()));
 }
 
-function normalizeMessagePreview(message: InternalChatMessage): string | null {
-  if (message.deleted) return 'Mensagem apagada';
-  const content = message.content;
-  if (!content) return null;
-  if (content.message && content.message.trim()) return content.message.trim();
-  if (content.image) return '[Imagem]';
-  if (content.video) return '[Video]';
-  if (content.audio) return '[Audio]';
-  if (content.document) return '[Documento]';
-  if (content.location) return '[Localizacao]';
-  if (content.contact || content.contacts) return '[Contato]';
-  if (content.type === 'system') return 'Atualizacao do grupo';
-  return null;
-}
-
 function upsertMessageState(
   state: InternalChatState,
   message: InternalChatMessage,
@@ -188,7 +174,7 @@ function upsertMessageState(
         ...conversation,
         last_message_id: message.message_id,
         last_message_at: message.date,
-        last_message_preview: normalizeMessagePreview(message),
+        last_message_preview: resolveInternalChatMessagePreview(message),
         is_closed_for_me: false,
         unread_count:
           isActive || fromMe ? 0 : Math.max(0, conversation.unread_count) + 1,
@@ -202,7 +188,7 @@ function upsertMessageState(
           ...state.activeConversation,
           last_message_id: message.message_id,
           last_message_at: message.date,
-          last_message_preview: normalizeMessagePreview(message),
+          last_message_preview: resolveInternalChatMessagePreview(message),
           is_closed_for_me: false,
           unread_count: isActive || fromMe ? 0 : state.activeConversation.unread_count,
         }

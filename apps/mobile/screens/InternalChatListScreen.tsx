@@ -42,6 +42,7 @@ import {
   dismissKeyboardAnd,
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
+import { resolveInternalChatTextTag } from '../utils/internalChatText';
 
 type Navigation = NativeStackNavigationProp<InternalChatStackParamList>;
 
@@ -136,6 +137,12 @@ export function InternalChatListScreen() {
     mimeType: string;
   } | null>(null);
   const [creatingGroup, setCreatingGroup] = useState(false);
+  const [openingConversationId, setOpeningConversationId] = useState<
+    string | null
+  >(null);
+  const [openingUserId, setOpeningUserId] = useState<string | null>(null);
+
+  const openingChat = !!openingConversationId || !!openingUserId;
 
   useEffect(() => {
     let cancelled = false;
@@ -175,22 +182,42 @@ export function InternalChatListScreen() {
 
   const handleOpenConversation = useCallback(
     async (conversation: InternalChatConversation) => {
-      const opened = await openConversation(conversation.conversation_id);
-      if (opened) {
-        navigation.navigate('InternalChatRoom', { conversation: opened });
+      if (openingChat) return;
+      setOpeningConversationId(conversation.conversation_id);
+      try {
+        const opened = await openConversation(conversation.conversation_id);
+        if (opened) {
+          navigation.navigate('InternalChatRoom', { conversation: opened });
+          return;
+        }
+        Alert.alert(pt.error_title, 'Não foi possível abrir a conversa.');
+      } catch {
+        Alert.alert(pt.error_title, 'Não foi possível abrir a conversa.');
+      } finally {
+        setOpeningConversationId(null);
       }
     },
-    [navigation, openConversation]
+    [navigation, openConversation, openingChat]
   );
 
   const handleOpenDirect = useCallback(
     async (user: InternalChatUser) => {
-      const conversation = await openDirect(user.user_id);
-      if (conversation) {
-        navigation.navigate('InternalChatRoom', { conversation });
+      if (openingChat) return;
+      setOpeningUserId(user.user_id);
+      try {
+        const conversation = await openDirect(user.user_id);
+        if (conversation) {
+          navigation.navigate('InternalChatRoom', { conversation });
+          return;
+        }
+        Alert.alert(pt.error_title, 'Não foi possível abrir a conversa.');
+      } catch {
+        Alert.alert(pt.error_title, 'Não foi possível abrir a conversa.');
+      } finally {
+        setOpeningUserId(null);
       }
     },
-    [navigation, openDirect]
+    [navigation, openDirect, openingChat]
   );
 
   const loadMoreConversations = useCallback(() => {
@@ -301,16 +328,18 @@ export function InternalChatListScreen() {
       ({ item }) => {
         const title = resolveConversationTitle(item, currentUserId);
         const photo = resolveConversationPhoto(item, currentUserId);
+        const opening = openingConversationId === item.conversation_id;
         const preview =
-          item.last_message_preview?.trim() ||
+          resolveInternalChatTextTag(item.last_message_preview) ||
           (item.type === INTERNAL_CHAT_CONVERSATION_TYPE.group
             ? 'Atualização do grupo'
             : 'Conversa direta');
 
         return (
           <Pressable
-            style={styles.row}
+            style={[styles.row, opening && styles.rowOpening]}
             onPress={() => void handleOpenConversation(item)}
+            disabled={openingChat}
           >
             <AppAvatar
               uri={photo}
@@ -346,7 +375,9 @@ export function InternalChatListScreen() {
                 ) : null}
               </View>
             </View>
-            {item.unread_count > 0 ? (
+            {opening ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : item.unread_count > 0 ? (
               <View style={styles.unreadBadge}>
                 <Text style={styles.unreadText}>
                   {item.unread_count > 99 ? '99+' : item.unread_count}
@@ -356,27 +387,45 @@ export function InternalChatListScreen() {
           </Pressable>
         );
       },
-      [currentUserId, handleOpenConversation]
+      [currentUserId, handleOpenConversation, openingChat, openingConversationId]
     );
 
   const renderUser: ListRenderItem<InternalChatUser> = useCallback(
-    ({ item }) => (
-      <Pressable style={styles.row} onPress={() => void handleOpenDirect(item)}>
-        <AppAvatar uri={item.photo} size={48} />
-        <View style={styles.rowContent}>
-          <Text style={styles.rowTitle} numberOfLines={1}>
-            {item.name}
-          </Text>
-          {item.email || item.sector || item.position ? (
-            <Text style={styles.previewText} numberOfLines={1}>
-              {[item.email, item.sector, item.position].filter(Boolean).join(' • ')}
+    ({ item }) => {
+      const opening = openingUserId === item.user_id;
+
+      return (
+        <Pressable
+          style={[styles.row, opening && styles.rowOpening]}
+          onPress={() => void handleOpenDirect(item)}
+          disabled={openingChat}
+        >
+          <AppAvatar uri={item.photo} size={48} />
+          <View style={styles.rowContent}>
+            <Text style={styles.rowTitle} numberOfLines={1}>
+              {item.name}
             </Text>
-          ) : null}
-        </View>
-        <Ionicons name="chatbubble-outline" size={22} color={colors.primary} />
-      </Pressable>
-    ),
-    [handleOpenDirect]
+            {item.email || item.sector || item.position ? (
+              <Text style={styles.previewText} numberOfLines={1}>
+                {[item.email, item.sector, item.position]
+                  .filter(Boolean)
+                  .join(' • ')}
+              </Text>
+            ) : null}
+          </View>
+          {opening ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : (
+            <Ionicons
+              name="chatbubble-outline"
+              size={22}
+              color={colors.primary}
+            />
+          )}
+        </Pressable>
+      );
+    },
+    [handleOpenDirect, openingChat, openingUserId]
   );
 
   const listEmpty = (
@@ -521,6 +570,25 @@ export function InternalChatListScreen() {
           }
         />
       )}
+
+      <Modal
+        visible={openingChat}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={() => {}}
+      >
+        <View style={styles.openingOverlay}>
+          <View style={styles.openingCard}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.openingTitle}>Abrindo conversa...</Text>
+            <Text style={styles.openingText}>
+              Carregando mensagens do chat interno.
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={groupModalVisible}
@@ -719,6 +787,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.grey100,
     backgroundColor: colors.surface,
   },
+  rowOpening: {
+    opacity: 0.72,
+  },
   rowContent: {
     flex: 1,
     minWidth: 0,
@@ -800,6 +871,40 @@ const styles = StyleSheet.create({
     color: colors.grey600,
     fontSize: 14,
     textAlign: 'center',
+  },
+  openingOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
+  openingCard: {
+    width: '100%',
+    maxWidth: 300,
+    borderRadius: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
+  },
+  openingTitle: {
+    marginTop: 14,
+    color: colors.onSurface,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  openingText: {
+    marginTop: 6,
+    color: colors.grey600,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,

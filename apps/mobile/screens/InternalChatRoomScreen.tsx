@@ -33,6 +33,7 @@ import {
   useAudioRecorderState,
 } from 'expo-audio';
 import { AppAvatar } from '../components/AppAvatar';
+import { BottomSheetModal } from '../components/BottomSheetModal';
 import {
   buildInternalOptimisticFileMessage,
   createInternalChatMessageHash,
@@ -73,9 +74,19 @@ import {
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import { resolveImageUri } from '../utils/imageUri';
+import {
+  isInternalChatSystemMessage,
+  resolveInternalChatMessageText,
+  resolveInternalChatSenderName,
+  resolveInternalChatTextTag,
+} from '../utils/internalChatText';
 
 type Navigation = NativeStackNavigationProp<InternalChatStackParamList>;
 type ScreenRoute = RouteProp<InternalChatStackParamList, 'InternalChatRoom'>;
+type PendingGroupAction =
+  | { type: 'remove'; member: InternalChatParticipant }
+  | { type: 'transfer'; member: InternalChatParticipant }
+  | { type: 'leave' };
 
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
@@ -136,18 +147,7 @@ function resolveConversationPhoto(
 }
 
 function getMessageText(message: InternalChatMessage): string {
-  const content = message.content;
-  if (message.deleted) return 'Mensagem apagada';
-  if (content?.message) return content.message;
-  if (content?.image) return content.image.caption || '[Imagem]';
-  if (content?.video) return content.video.caption || '[Video]';
-  if (content?.audio) return '[Audio]';
-  if (content?.document) return content.document.name || '[Documento]';
-  if (content?.location) return content.location.name || '[Localizacao]';
-  if (content?.contact) return content.contact.name || '[Contato]';
-  if (content?.contacts) return '[Contatos]';
-  if (content?.type === INTERNAL_MESSAGE_TYPE.system) return 'Atualização do grupo';
-  return '';
+  return resolveInternalChatMessageText(message);
 }
 
 function getMediaUrl(message: InternalChatMessage): string | null {
@@ -265,6 +265,18 @@ export function InternalChatRoomScreen() {
   const [canUpdateGroup, setCanUpdateGroup] = useState(false);
   const [canManageMembers, setCanManageMembers] = useState(false);
   const [canTransferLeader, setCanTransferLeader] = useState(false);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [transferringLeaderId, setTransferringLeaderId] = useState<
+    string | null
+  >(null);
+  const [leavingConversation, setLeavingConversation] = useState(false);
+  const [pendingGroupAction, setPendingGroupAction] =
+    useState<PendingGroupAction | null>(null);
+  const [groupActionError, setGroupActionError] = useState<string | null>(null);
+  const [openingMemberDirectId, setOpeningMemberDirectId] = useState<
+    string | null
+  >(null);
+  const [infoActionError, setInfoActionError] = useState<string | null>(null);
 
   const conversationTitle = resolveConversationTitle(
     activeConversation,
@@ -280,6 +292,49 @@ export function InternalChatRoomScreen() {
     !!currentUserId && activeConversation.leader_user_id === currentUserId;
   const canEditGroup = isGroup && isLeader && canUpdateGroup;
   const canManageGroupMembers = isGroup && isLeader && canManageMembers;
+  const memberActionLoading =
+    !!removingMemberId || !!transferringLeaderId || leavingConversation;
+  const infoActionLoading = memberActionLoading || !!openingMemberDirectId;
+  const initialMessagesLoading = loadingMessages && messages.length === 0;
+
+  const pendingGroupActionContent = useMemo(() => {
+    if (!pendingGroupAction) {
+      return {
+        title: '',
+        message: '',
+        confirmText: '',
+        loadingText: '',
+        danger: false,
+      };
+    }
+    if (pendingGroupAction.type === 'remove') {
+      return {
+        title: 'Remover membro',
+        message: `Remover ${pendingGroupAction.member.name} do grupo?`,
+        confirmText: 'Remover',
+        loadingText: 'Removendo...',
+        danger: true,
+      };
+    }
+    if (pendingGroupAction.type === 'transfer') {
+      return {
+        title: 'Tornar líder',
+        message: `Transferir a liderança do grupo para ${pendingGroupAction.member.name}?`,
+        confirmText: 'Tornar líder',
+        loadingText: 'Transferindo...',
+        danger: false,
+      };
+    }
+    return {
+      title: isGroup ? 'Sair do grupo' : 'Fechar conversa',
+      message: isGroup
+        ? 'Você deixará de receber mensagens deste grupo.'
+        : 'A conversa será removida da sua lista.',
+      confirmText: isGroup ? 'Sair do grupo' : 'Fechar conversa',
+      loadingText: isGroup ? 'Saindo...' : 'Fechando...',
+      danger: true,
+    };
+  }, [isGroup, pendingGroupAction]);
 
   const remoteActivity = useMemo(() => {
     return Object.values(state.remoteActivities).find(
@@ -714,10 +769,110 @@ export function InternalChatRoomScreen() {
     setSearchResults(result.results);
   }, [conversationId, searchMessages, searchTerm]);
 
-  const closeOrLeave = useCallback(async () => {
-    const ok = await closeConversation(conversationId);
-    if (ok) navigation.goBack();
-  }, [closeConversation, conversationId, navigation]);
+  const closePendingGroupAction = useCallback(() => {
+    if (memberActionLoading) return;
+    setPendingGroupAction(null);
+    setGroupActionError(null);
+  }, [memberActionLoading]);
+
+  const requestRemoveGroupMember = useCallback(
+    (member: InternalChatParticipant) => {
+      if (infoActionLoading) return;
+      setInfoActionError(null);
+      setGroupActionError(null);
+      setPendingGroupAction({ type: 'remove', member });
+    },
+    [infoActionLoading]
+  );
+
+  const requestTransferGroupLeader = useCallback(
+    (member: InternalChatParticipant) => {
+      if (infoActionLoading) return;
+      setInfoActionError(null);
+      setGroupActionError(null);
+      setPendingGroupAction({ type: 'transfer', member });
+    },
+    [infoActionLoading]
+  );
+
+  const closeOrLeave = useCallback(() => {
+    if (infoActionLoading) return;
+    setInfoActionError(null);
+    setGroupActionError(null);
+    setPendingGroupAction({ type: 'leave' });
+  }, [infoActionLoading]);
+
+  const confirmPendingGroupAction = useCallback(async () => {
+    const action = pendingGroupAction;
+    if (!action || memberActionLoading) return;
+    setGroupActionError(null);
+
+    if (action.type === 'remove') {
+      setRemovingMemberId(action.member.user_id);
+      try {
+        const ok = await removeGroupMember(
+          conversationId,
+          action.member.user_id
+        );
+        if (!ok) {
+          setGroupActionError('Não foi possível remover o membro.');
+          return;
+        }
+        setPendingGroupAction(null);
+      } finally {
+        setRemovingMemberId(null);
+      }
+      return;
+    }
+
+    if (action.type === 'transfer') {
+      setTransferringLeaderId(action.member.user_id);
+      try {
+        const updated = await transferGroupLeader(
+          conversationId,
+          action.member.user_id
+        );
+        if (!updated) {
+          setGroupActionError('Não foi possível alterar a liderança.');
+          return;
+        }
+        setPendingGroupAction(null);
+      } finally {
+        setTransferringLeaderId(null);
+      }
+      return;
+    }
+
+    setLeavingConversation(true);
+    let navigated = false;
+    try {
+      const ok = await closeConversation(conversationId);
+      if (!ok) {
+        setGroupActionError(
+          isGroup
+            ? 'Não foi possível sair do grupo.'
+            : 'Não foi possível fechar a conversa.'
+        );
+        return;
+      }
+      navigated = true;
+      setPendingGroupAction(null);
+      navigation.goBack();
+    } finally {
+      if (!navigated) {
+        setLeavingConversation(false);
+      }
+    }
+  }, [
+    closeConversation,
+    conversationId,
+    isGroup,
+    memberActionLoading,
+    navigation,
+    pendingGroupAction,
+    removeGroupMember,
+    transferGroupLeader,
+  ]);
 
   const updateGroupName = useCallback(async () => {
     const normalized = groupNameDraft.trim();
@@ -728,13 +883,22 @@ export function InternalChatRoomScreen() {
 
   const openDirectFromMember = useCallback(
     async (member: InternalChatParticipant) => {
-      const conversation = await openDirect(member.user_id);
-      if (conversation) {
-        setInfoVisible(false);
-        navigation.push('InternalChatRoom', { conversation });
+      if (infoActionLoading) return;
+      setInfoActionError(null);
+      setOpeningMemberDirectId(member.user_id);
+      try {
+        const conversation = await openDirect(member.user_id);
+        if (conversation) {
+          setInfoVisible(false);
+          navigation.push('InternalChatRoom', { conversation });
+          return;
+        }
+        setInfoActionError('Não foi possível abrir a conversa direta.');
+      } finally {
+        setOpeningMemberDirectId(null);
       }
     },
-    [navigation, openDirect]
+    [infoActionLoading, navigation, openDirect]
   );
 
   const renderMessage: ListRenderItem<InternalChatMessage> = useCallback(
@@ -771,12 +935,21 @@ export function InternalChatRoomScreen() {
               ]}
             >
               {!own && isGroup ? (
-                <Text style={styles.senderName}>{item.user?.name ?? 'Usuário'}</Text>
+                <Text
+                  style={[
+                    styles.senderName,
+                    isInternalChatSystemMessage(item) && styles.systemSenderName,
+                  ]}
+                >
+                  {resolveInternalChatSenderName(item)}
+                </Text>
               ) : null}
               {content?.quoted ? (
                 <View style={styles.quoteBox}>
                   <Text style={styles.quoteText} numberOfLines={2}>
-                    {content.quoted.message || content.quoted.type || 'Resposta'}
+                    {resolveInternalChatTextTag(content.quoted.message) ||
+                      resolveInternalChatTextTag(content.quoted.type) ||
+                      'Resposta'}
                   </Text>
                 </View>
               ) : null}
@@ -964,6 +1137,17 @@ export function InternalChatRoomScreen() {
           ) : null
         }
       />
+
+      {initialMessagesLoading ? (
+        <View pointerEvents="none" style={styles.initialMessagesLoading}>
+          <View style={styles.initialMessagesLoadingCard}>
+            <ActivityIndicator size="small" color={colors.onPrimary} />
+            <Text style={styles.initialMessagesLoadingText}>
+              Abrindo conversa...
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       {replyTo || editingMessage ? (
         <View style={styles.replyBar}>
@@ -1202,54 +1386,110 @@ export function InternalChatRoomScreen() {
                 </Pressable>
               </View>
             ) : null}
+            {infoActionError ? (
+              <View style={styles.infoErrorBox}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={18}
+                  color={colors.error}
+                />
+                <Text style={styles.infoErrorText}>{infoActionError}</Text>
+              </View>
+            ) : null}
             {isGroup ? (
               <View style={styles.infoSection}>
                 <Text style={styles.infoSectionTitle}>
                   Membros ({groupMembers.length})
                 </Text>
-                {groupMembers.map((member) => (
-                  <View key={member.user_id} style={styles.memberRow}>
-                    <AppAvatar uri={member.photo} size={42} />
-                    <View style={styles.memberInfo}>
-                      <Text style={styles.memberName} numberOfLines={1}>
-                        {member.name}
-                      </Text>
-                      <Text style={styles.memberSub}>
-                        {member.role === INTERNAL_CHAT_PARTICIPANT_ROLE.leader
-                          ? 'Líder'
-                          : member.email || member.sector || 'Membro'}
-                      </Text>
+                {groupMembers.map((member) => {
+                  const removing = removingMemberId === member.user_id;
+                  const transferring = transferringLeaderId === member.user_id;
+                  const openingDirect = openingMemberDirectId === member.user_id;
+                  const actionDisabled = infoActionLoading;
+
+                  return (
+                    <View key={member.user_id} style={styles.memberRow}>
+                      <AppAvatar uri={member.photo} size={42} />
+                      <View style={styles.memberInfo}>
+                        <Text style={styles.memberName} numberOfLines={1}>
+                          {member.name}
+                        </Text>
+                        <Text style={styles.memberSub}>
+                          {member.role === INTERNAL_CHAT_PARTICIPANT_ROLE.leader
+                            ? 'Líder'
+                            : member.email || member.sector || 'Membro'}
+                        </Text>
+                      </View>
+                      {member.user_id !== currentUserId ? (
+                        <Pressable
+                          style={[
+                            styles.memberIconBtn,
+                            actionDisabled && styles.memberIconBtnDisabled,
+                          ]}
+                          onPress={() => void openDirectFromMember(member)}
+                          disabled={actionDisabled}
+                        >
+                          {openingDirect ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={colors.primary}
+                            />
+                          ) : (
+                            <Ionicons
+                              name="chatbubble-outline"
+                              size={19}
+                              color={colors.primary}
+                            />
+                          )}
+                        </Pressable>
+                      ) : null}
+                      {canManageGroupMembers &&
+                      member.user_id !== currentUserId ? (
+                        <Pressable
+                          style={[
+                            styles.memberIconBtn,
+                            actionDisabled && styles.memberIconBtnDisabled,
+                          ]}
+                          onPress={() => requestRemoveGroupMember(member)}
+                          disabled={actionDisabled}
+                        >
+                          {removing ? (
+                            <ActivityIndicator size="small" color={colors.error} />
+                          ) : (
+                            <Ionicons
+                              name="person-remove-outline"
+                              size={19}
+                              color={colors.error}
+                            />
+                          )}
+                        </Pressable>
+                      ) : null}
+                      {canTransferLeader && member.user_id !== currentUserId ? (
+                        <Pressable
+                          style={[
+                            styles.memberIconBtn,
+                            actionDisabled && styles.memberIconBtnDisabled,
+                          ]}
+                          onPress={() => requestTransferGroupLeader(member)}
+                          disabled={actionDisabled}
+                        >
+                          {transferring ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={colors.warning}
+                            />
+                          ) : (
+                            <Ionicons
+                              name="ribbon-outline"
+                              size={19}
+                              color={colors.warning}
+                            />
+                          )}
+                        </Pressable>
+                      ) : null}
                     </View>
-                    {member.user_id !== currentUserId ? (
-                      <Pressable
-                        style={styles.memberIconBtn}
-                        onPress={() => void openDirectFromMember(member)}
-                      >
-                        <Ionicons name="chatbubble-outline" size={19} color={colors.primary} />
-                      </Pressable>
-                    ) : null}
-                    {canManageGroupMembers && member.user_id !== currentUserId ? (
-                      <Pressable
-                        style={styles.memberIconBtn}
-                        onPress={() =>
-                          void removeGroupMember(conversationId, member.user_id)
-                        }
-                      >
-                        <Ionicons name="person-remove-outline" size={19} color={colors.error} />
-                      </Pressable>
-                    ) : null}
-                    {canTransferLeader && member.user_id !== currentUserId ? (
-                      <Pressable
-                        style={styles.memberIconBtn}
-                        onPress={() =>
-                          void transferGroupLeader(conversationId, member.user_id)
-                        }
-                      >
-                        <Ionicons name="ribbon-outline" size={19} color={colors.warning} />
-                      </Pressable>
-                    ) : null}
-                  </View>
-                ))}
+                  );
+                })}
                 {canManageGroupMembers ? (
                   <View style={styles.availableUsersSection}>
                     <Pressable
@@ -1301,15 +1541,91 @@ export function InternalChatRoomScreen() {
                 ) : null}
               </View>
             ) : null}
-            <Pressable style={styles.closeConversationBtn} onPress={closeOrLeave}>
-              <Ionicons name="exit-outline" size={20} color={colors.error} />
+            <Pressable
+              style={[
+                styles.closeConversationBtn,
+                infoActionLoading && styles.closeConversationBtnDisabled,
+              ]}
+              onPress={closeOrLeave}
+              disabled={infoActionLoading}
+            >
+              {leavingConversation ? (
+                <ActivityIndicator color={colors.error} />
+              ) : (
+                <Ionicons name="exit-outline" size={20} color={colors.error} />
+              )}
               <Text style={styles.closeConversationText}>
-                {isGroup ? 'Sair do grupo' : 'Fechar conversa'}
+                {leavingConversation
+                  ? isGroup
+                    ? 'Saindo...'
+                    : 'Fechando...'
+                  : isGroup
+                    ? 'Sair do grupo'
+                    : 'Fechar conversa'}
               </Text>
             </Pressable>
           </ScrollView>
         </View>
       </Modal>
+
+      <BottomSheetModal
+        visible={pendingGroupAction !== null}
+        onClose={closePendingGroupAction}
+        title={pendingGroupActionContent.title}
+        cardStyle={styles.confirmSheetCard}
+        footerStyle={styles.confirmSheetFooter}
+        avoidKeyboard={false}
+        footer={
+          <>
+            <Pressable
+              style={[
+                styles.secondaryBtn,
+                memberActionLoading && styles.confirmBtnDisabled,
+              ]}
+              onPress={closePendingGroupAction}
+              disabled={memberActionLoading}
+            >
+              <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.confirmBtn,
+                pendingGroupActionContent.danger && styles.confirmBtnDanger,
+                memberActionLoading && styles.confirmBtnDisabled,
+              ]}
+              onPress={() => void confirmPendingGroupAction()}
+              disabled={memberActionLoading}
+            >
+              {memberActionLoading ? (
+                <>
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                  <Text style={styles.confirmBtnText}>
+                    {pendingGroupActionContent.loadingText}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.confirmBtnText}>
+                  {pendingGroupActionContent.confirmText}
+                </Text>
+              )}
+            </Pressable>
+          </>
+        }
+      >
+        <Text style={styles.confirmSheetMessage}>
+          {pendingGroupActionContent.message}
+        </Text>
+        {groupActionError ? (
+          <View style={styles.confirmErrorBox}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={18}
+              color={colors.error}
+            />
+            <Text style={styles.confirmErrorText}>{groupActionError}</Text>
+          </View>
+        ) : null}
+      </BottomSheetModal>
 
       <Modal visible={searchVisible} animationType="slide" onRequestClose={() => setSearchVisible(false)}>
         <View style={[styles.fullModal, { paddingTop: insets.top + 12 }]}>
@@ -1339,7 +1655,7 @@ export function InternalChatRoomScreen() {
             renderItem={({ item }) => (
               <Pressable style={styles.searchResultRow} onPress={() => setSearchVisible(false)}>
                 <Text style={styles.searchResultText} numberOfLines={2}>
-                  {item.message || 'Mensagem'}
+                  {resolveInternalChatTextTag(item.message) || 'Mensagem'}
                 </Text>
                 <Text style={styles.searchResultDate}>
                   {formatDateSeparator(item.date)}
@@ -1434,6 +1750,33 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 12,
   },
+  initialMessagesLoading: {
+    position: 'absolute',
+    top: 78,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  initialMessagesLoadingCard: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  initialMessagesLoadingText: {
+    color: colors.onPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   dateSeparator: {
     alignSelf: 'center',
     paddingHorizontal: 12,
@@ -1479,6 +1822,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     marginBottom: 3,
+  },
+  systemSenderName: {
+    color: colors.grey600,
   },
   quoteBox: {
     borderLeftWidth: 3,
@@ -1746,6 +2092,72 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
   },
+  confirmSheetCard: {
+    maxHeight: '45%',
+  },
+  confirmSheetFooter: {
+    paddingTop: 14,
+  },
+  confirmSheetMessage: {
+    color: colors.onSurface,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  confirmErrorBox: {
+    minHeight: 40,
+    borderRadius: 10,
+    marginBottom: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFF0F0',
+  },
+  confirmErrorText: {
+    flex: 1,
+    color: colors.error,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  secondaryBtn: {
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.grey300,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  secondaryBtnText: {
+    color: colors.onSurface,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  confirmBtn: {
+    minHeight: 40,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+  },
+  confirmBtnDanger: {
+    backgroundColor: colors.error,
+  },
+  confirmBtnDisabled: {
+    opacity: 0.65,
+  },
+  confirmBtnText: {
+    color: colors.onPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   memberRow: {
     minHeight: 62,
     flexDirection: 'row',
@@ -1810,6 +2222,25 @@ const styles = StyleSheet.create({
   infoSection: {
     marginTop: 8,
   },
+  infoErrorBox: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    minHeight: 40,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFF0F0',
+  },
+  infoErrorText: {
+    flex: 1,
+    color: colors.error,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
   infoSectionTitle: {
     color: colors.grey700,
     fontSize: 13,
@@ -1822,6 +2253,9 @@ const styles = StyleSheet.create({
     height: 34,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  memberIconBtnDisabled: {
+    opacity: 0.55,
   },
   addMemberBtn: {
     minHeight: 48,
@@ -1848,6 +2282,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: '#FFF0F0',
+  },
+  closeConversationBtnDisabled: {
+    opacity: 0.7,
   },
   closeConversationText: {
     color: colors.error,
