@@ -35,6 +35,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type TextStyle,
+  type TextInputContentSizeChangeEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -567,6 +568,12 @@ const VOICE_RELEASE_LOCK_GRACE_MS = 220;
 const VOICE_CANCEL_SWIPE_THRESHOLD = 90;
 const RECORDING_WAVEFORM_MAX_BARS = 44;
 const RECORDING_WAVEFORM_MIN_BARS = 26;
+const COMPOSER_INPUT_LINE_HEIGHT = 20;
+const COMPOSER_INPUT_VERTICAL_PADDING = 10;
+const COMPOSER_INPUT_MIN_HEIGHT =
+  COMPOSER_INPUT_LINE_HEIGHT + COMPOSER_INPUT_VERTICAL_PADDING * 2;
+const COMPOSER_INPUT_MAX_HEIGHT =
+  COMPOSER_INPUT_LINE_HEIGHT * 5 + COMPOSER_INPUT_VERTICAL_PADDING * 2;
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
@@ -5852,6 +5859,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [input, setInput] = useState('');
+  const [composerInputHeight, setComposerInputHeight] = useState(
+    COMPOSER_INPUT_MIN_HEIGHT
+  );
   const [showQuickMessageList, setShowQuickMessageList] = useState(false);
   const [quickMessageTemplates, setQuickMessageTemplates] = useState<
     QuickMessageTemplate[]
@@ -12923,6 +12933,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     [chatInfo.worker?.id, selectedQuickMessage]
   );
 
+  const handleComposerContentSizeChange = useCallback(
+    (event: TextInputContentSizeChangeEvent) => {
+      const nextHeight = Math.min(
+        COMPOSER_INPUT_MAX_HEIGHT,
+        Math.max(
+          COMPOSER_INPUT_MIN_HEIGHT,
+          Math.ceil(event.nativeEvent.contentSize.height)
+        )
+      );
+
+      setComposerInputHeight((currentHeight) =>
+        currentHeight === nextHeight ? currentHeight : nextHeight
+      );
+    },
+    []
+  );
+
   const handleTemplateButtonPress = useCallback(
     (button: MessageTemplateButton, _message: ListMessageResult) => {
       if (!canComposeInChat) return;
@@ -13142,6 +13169,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     },
     [selectedQuickMessage]
   );
+
+  useEffect(() => {
+    if (input.length === 0) {
+      setComposerInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
+    }
+  }, [input]);
 
   const messageActionOverlayContent = (
     <KeyboardAvoidingView
@@ -14170,14 +14203,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   <View style={styles.inputStack}>
                     <TextInput
                       ref={messageInputRef}
-                      style={styles.input}
+                      style={[styles.input, { height: composerInputHeight }]}
                       placeholder={pt.type_message}
                       placeholderTextColor={colors.grey500}
                       value={input}
                       onChangeText={handleComposerInputChange}
+                      onContentSizeChange={handleComposerContentSizeChange}
                       onPressIn={focusComposerInput}
                       keyboardType="default"
                       multiline
+                      textAlignVertical="top"
+                      scrollEnabled={
+                        composerInputHeight >= COMPOSER_INPUT_MAX_HEIGHT
+                      }
                       maxLength={65535}
                       editable={
                         canComposeInChat &&
@@ -18229,15 +18267,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   input: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
+    width: '100%',
+    minHeight: COMPOSER_INPUT_MIN_HEIGHT,
+    maxHeight: COMPOSER_INPUT_MAX_HEIGHT,
     backgroundColor: colors.inputBg,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingRight: 46,
-    paddingVertical: 10,
+    paddingVertical: COMPOSER_INPUT_VERTICAL_PADDING,
     fontSize: 15,
+    lineHeight: COMPOSER_INPUT_LINE_HEIGHT,
     color: colors.onSurface,
   },
   inputStack: {

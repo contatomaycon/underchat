@@ -22,6 +22,7 @@ import {
   type NativeSyntheticEvent,
   type StyleProp,
   type TextStyle,
+  type TextInputContentSizeChangeEvent,
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import {
@@ -196,6 +197,12 @@ const VOICE_RELEASE_LOCK_GRACE_MS = 220;
 const VOICE_CANCEL_SWIPE_THRESHOLD = 90;
 const RECORDING_WAVEFORM_MAX_BARS = 44;
 const RECORDING_WAVEFORM_MIN_BARS = 26;
+const COMPOSER_INPUT_LINE_HEIGHT = 20;
+const COMPOSER_INPUT_VERTICAL_PADDING = 10;
+const COMPOSER_INPUT_MIN_HEIGHT =
+  COMPOSER_INPUT_LINE_HEIGHT + COMPOSER_INPUT_VERTICAL_PADDING * 2;
+const COMPOSER_INPUT_MAX_HEIGHT =
+  COMPOSER_INPUT_LINE_HEIGHT * 5 + COMPOSER_INPUT_VERTICAL_PADDING * 2;
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const COMPOSER_EMOJIS = [
   '😀',
@@ -2740,6 +2747,9 @@ export function InternalChatRoomScreen() {
   );
 
   const [composerText, setComposerText] = useState('');
+  const [composerInputHeight, setComposerInputHeight] = useState(
+    COMPOSER_INPUT_MIN_HEIGHT
+  );
   const [replyTo, setReplyTo] = useState<InternalChatMessage | null>(null);
   const [editingMessage, setEditingMessage] =
     useState<InternalChatMessage | null>(null);
@@ -3256,6 +3266,24 @@ export function InternalChatRoomScreen() {
     (isPreparingRecording || recording);
   const showRecordingComposer =
     recording && (isRecordingLocked || !isMicPressActive);
+
+  const handleComposerContentSizeChange = useCallback(
+    (event: TextInputContentSizeChangeEvent) => {
+      const nextHeight = Math.min(
+        COMPOSER_INPUT_MAX_HEIGHT,
+        Math.max(
+          COMPOSER_INPUT_MIN_HEIGHT,
+          Math.ceil(event.nativeEvent.contentSize.height)
+        )
+      );
+
+      setComposerInputHeight((currentHeight) =>
+        currentHeight === nextHeight ? currentHeight : nextHeight
+      );
+    },
+    []
+  );
+
   const responsiveBubbleMaxWidth = useMemo(
     () =>
       Math.max(
@@ -3389,6 +3417,12 @@ export function InternalChatRoomScreen() {
     }, 300);
     return () => clearTimeout(timer);
   }, [composerText, conversationId, publishActivity, recording]);
+
+  useEffect(() => {
+    if (composerText.length === 0) {
+      setComposerInputHeight(COMPOSER_INPUT_MIN_HEIGHT);
+    }
+  }, [composerText]);
 
   useEffect(() => {
     composerTextRef.current = composerText;
@@ -5051,12 +5085,15 @@ export function InternalChatRoomScreen() {
             ) : null}
             <View style={styles.inputStack}>
               <TextInput
-                style={styles.composerInput}
+                style={[styles.composerInput, { height: composerInputHeight }]}
                 value={composerText}
                 onChangeText={setComposerText}
+                onContentSizeChange={handleComposerContentSizeChange}
                 placeholder={pt.type_message}
                 placeholderTextColor={colors.grey500}
                 multiline
+                textAlignVertical="top"
+                scrollEnabled={composerInputHeight >= COMPOSER_INPUT_MAX_HEIGHT}
                 maxLength={65535}
                 editable={
                   !sending &&
@@ -7056,16 +7093,17 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   composerInput: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
+    width: '100%',
+    minHeight: COMPOSER_INPUT_MIN_HEIGHT,
+    maxHeight: COMPOSER_INPUT_MAX_HEIGHT,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingRight: 46,
-    paddingVertical: 10,
+    paddingVertical: COMPOSER_INPUT_VERTICAL_PADDING,
     backgroundColor: colors.inputBg,
     color: colors.onSurface,
     fontSize: 15,
+    lineHeight: COMPOSER_INPUT_LINE_HEIGHT,
   },
   emojiInputBtn: {
     position: 'absolute',
