@@ -109,6 +109,8 @@ import {
   searchMessages,
   updateForwardToOutputChatbot,
   viewWorkerConfigForChat,
+  viewChatAttendanceInactivity,
+  updateChatAttendanceInactivity,
   searchChats,
   listQuickMessageTemplates,
   type LabelTemplate,
@@ -149,6 +151,7 @@ import {
   canPickQueueChat,
   canReopenChat,
   canDisableSendMessageOnFinishAttendance,
+  canDisableSendMessageOnTransfer,
   canToggleOptionalClosureReason,
   canToggleForwardToOutputChatbot,
   hasContactViewPhonePermission,
@@ -197,6 +200,11 @@ import {
   parseWaveform,
   type WaveformInput,
 } from '../utils/audioWaveform';
+import {
+  buildCloseChatPatchOptions,
+  isClosureCommentRequiredFailure,
+  shouldShowClosureReasonInput,
+} from '../utils/chatClosure';
 
 type EmojiDatasetEntry = {
   unified?: string;
@@ -617,6 +625,7 @@ type ChatMenuActionKey =
   | 'transfer'
   | 'leave_conversation'
   | 'search_messages'
+  | 'attendance_inactivity'
   | 'forward_to_output_chatbot'
   | 'close_service';
 
@@ -5715,6 +5724,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const recordingStartTokenRef = useRef(0);
   const cancelArmedRef = useRef(false);
   const messageInputRef = useRef<TextInput | null>(null);
+  const closeServiceClosureInputRef = useRef<TextInput | null>(null);
   const inputRef = useRef('');
   const sendingRef = useRef(false);
   const isQueueOrUraStatusRef = useRef(false);
@@ -5803,6 +5813,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     useState('');
   const [closeServiceInformClosureReason, setCloseServiceInformClosureReason] =
     useState(false);
+  const [
+    closeServiceBackendRequiresClosureReason,
+    setCloseServiceBackendRequiresClosureReason,
+  ] = useState(false);
+  const [closeServiceClosureError, setCloseServiceClosureError] = useState<
+    string | null
+  >(null);
   const [protocolModalVisible, setProtocolModalVisible] = useState(false);
   const [labelModalVisible, setLabelModalVisible] = useState(false);
   const [isLoadingLabelModal, setIsLoadingLabelModal] = useState(false);
@@ -5840,6 +5857,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     useState<TransferPickerKind>(null);
   const [transferAnnotation, setTransferAnnotation] = useState('');
   const [transferKeepInChat, setTransferKeepInChat] = useState(false);
+  const [transferSendMessageOnTransfer, setTransferSendMessageOnTransfer] =
+    useState(true);
+  const [transferWorkerConfigForChat, setTransferWorkerConfigForChat] =
+    useState<WorkerConfigForChat | null>(null);
   const [selectedTransferChannelId, setSelectedTransferChannelId] = useState<
     string | null
   >(null);
@@ -5872,6 +5893,21 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [isLeavingConversation, setIsLeavingConversation] = useState(false);
   const [isTogglingForwardToOutput, setIsTogglingForwardToOutput] =
     useState(false);
+  const [
+    attendanceInactivityDisabledForActiveChat,
+    setAttendanceInactivityDisabledForActiveChat,
+  ] = useState(false);
+  const [
+    isLoadingAttendanceInactivityState,
+    setIsLoadingAttendanceInactivityState,
+  ] = useState(false);
+  const [
+    isUpdatingAttendanceInactivityState,
+    setIsUpdatingAttendanceInactivityState,
+  ] = useState(false);
+  const [operatorReplyPendingNow, setOperatorReplyPendingNow] = useState(() =>
+    Date.now()
+  );
   const [isTyping, setIsTyping] = useState(false);
   const [remoteActivityMode, setRemoteActivityMode] =
     useState<RemoteActivityMode | null>(null);
@@ -6372,6 +6408,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setSearchModalVisible(false);
     setAttendanceHistoryVisible(false);
     setTransferModalVisible(false);
+    setCloseServiceModalVisible(false);
+    setCloseServiceBackendRequiresClosureReason(false);
+    setCloseServiceClosureError(null);
+    setAttendanceInactivityDisabledForActiveChat(false);
+    setIsLoadingAttendanceInactivityState(false);
+    setIsUpdatingAttendanceInactivityState(false);
     setContactFormVisible(false);
     setContactFormContactId(null);
     setContactFormInitialValues(null);
@@ -7792,6 +7834,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       (isQueueOrUraStatus && canCloseChatWithoutAttending(permissionList)));
   const canDisableSendMessageOnFinishAttendanceAction =
     canDisableSendMessageOnFinishAttendance(permissionList);
+  const canDisableSendMessageOnTransferAction =
+    canDisableSendMessageOnTransfer(permissionList);
   const canToggleOptionalClosureReasonAction =
     canToggleOptionalClosureReason(permissionList);
   const canViewChatAttendantsInfoAction =
@@ -7799,6 +7843,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const shouldShowCloseServiceSendMessageToggle =
     workerConfigForChat?.send_message_on_finish_attendance_enabled === true &&
     canDisableSendMessageOnFinishAttendanceAction;
+  const shouldShowTransferSendMessageToggle =
+    transferWorkerConfigForChat?.send_message_on_transfer_enabled === true &&
+    canDisableSendMessageOnTransferAction;
+  const showCloseServiceClosureReasonInput = shouldShowClosureReasonInput({
+    canToggleOptionalClosureReason: canToggleOptionalClosureReasonAction,
+    informClosureReason: closeServiceInformClosureReason,
+    backendRequiresClosureReason: closeServiceBackendRequiresClosureReason,
+  });
   const canTransferAction =
     !isHistoryReadonly && isInChatStatus && canManageInChatLifecycle;
   const canLeaveConversationAction =
@@ -7813,6 +7865,36 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     (isInChatStatus || isQueueOrUraStatus) &&
     workerConfigForChat?.has_ura_output === true &&
     canToggleForwardToOutputChatbot(permissionList);
+  const canShowAttendanceInactivityAction =
+    !isHistoryReadonly &&
+    isInChatStatus &&
+    canManageInChatLifecycle &&
+    workerConfigForChat?.attendance_inactivity_alert_enabled === true;
+  const operatorReplyPendingSince =
+    chatInfo.summary?.operator_reply_pending_since ?? null;
+  const operatorReplyPendingThresholdMinutes =
+    typeof workerConfigForChat?.operator_reply_pending_alert_time_minutes ===
+      'number' &&
+    workerConfigForChat.operator_reply_pending_alert_time_minutes >= 1
+      ? workerConfigForChat.operator_reply_pending_alert_time_minutes
+      : 15;
+  const operatorReplyPendingElapsedMs = (() => {
+    if (!operatorReplyPendingSince) return 0;
+    const pendingSinceMs = new Date(operatorReplyPendingSince).getTime();
+    if (!Number.isFinite(pendingSinceMs)) return 0;
+    return Math.max(operatorReplyPendingNow - pendingSinceMs, 0);
+  })();
+  const operatorReplyPendingElapsedMinutes = Math.max(
+    Math.floor(operatorReplyPendingElapsedMs / 60000),
+    1
+  );
+  const showOperatorReplyPendingBanner =
+    !isHistoryReadonly &&
+    isInChatStatus &&
+    workerConfigForChat?.operator_reply_pending_alert_enabled === true &&
+    !!operatorReplyPendingSince &&
+    operatorReplyPendingElapsedMs >=
+      operatorReplyPendingThresholdMinutes * 60 * 1000;
   const canViewContactPhone = hasContactViewPhonePermission(permissionList);
   const isForwardToOutputActive = chatInfo.forward_to_output_chatbot !== false;
   const attendantsPrimaryUser = attendantsInfo?.primary_user ?? null;
@@ -7821,6 +7903,58 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   )
     ? attendantsInfo.secondary_users
     : [];
+
+  useEffect(() => {
+    if (
+      !canShowAttendanceInactivityAction ||
+      !readNonEmptyString(chatInfo.chat_id)
+    ) {
+      setAttendanceInactivityDisabledForActiveChat(false);
+      setIsLoadingAttendanceInactivityState(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingAttendanceInactivityState(true);
+    viewChatAttendanceInactivity(chatInfo.chat_id)
+      .then((state) => {
+        if (cancelled) return;
+        setAttendanceInactivityDisabledForActiveChat(state?.disabled === true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAttendanceInactivityDisabledForActiveChat(false);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsLoadingAttendanceInactivityState(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canShowAttendanceInactivityAction, chatInfo.chat_id]);
+
+  useEffect(() => {
+    if (
+      !operatorReplyPendingSince ||
+      workerConfigForChat?.operator_reply_pending_alert_enabled !== true
+    ) {
+      return;
+    }
+
+    setOperatorReplyPendingNow(Date.now());
+    const timer = setInterval(() => {
+      setOperatorReplyPendingNow(Date.now());
+    }, 30000);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [
+    operatorReplyPendingSince,
+    workerConfigForChat?.operator_reply_pending_alert_enabled,
+  ]);
 
   const handleToggleHeaderPhoneVisibility = useCallback(async () => {
     const contactId = readNonEmptyString(chatInfo.contact?.id);
@@ -7841,6 +7975,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setIsHeaderPhoneDecrypted(true);
   }, [chatInfo.contact?.id, isHeaderPhoneDecrypted]);
 
+  const focusCloseServiceClosureInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      closeServiceClosureInputRef.current?.focus();
+    });
+  }, []);
+
+  const handleCloseServiceClosureCommentChange = useCallback(
+    (value: string) => {
+      setCloseServiceClosureComment(value);
+      setCloseServiceClosureError(null);
+    },
+    []
+  );
+
   const confirmCloseService = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
     if (!chatId) return;
@@ -7850,60 +7998,70 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       return;
     }
 
-    const trimmedClosure = closeServiceClosureComment.trim();
-    if (canToggleOptionalClosureReasonAction) {
-      if (closeServiceInformClosureReason && !trimmedClosure) {
-        Alert.alert(pt.warning_title, pt.closure_comment_required);
+    const closeOptions = buildCloseChatPatchOptions({
+      canToggleOptionalClosureReason: canToggleOptionalClosureReasonAction,
+      informClosureReason: closeServiceInformClosureReason,
+      backendRequiresClosureReason: closeServiceBackendRequiresClosureReason,
+      closureComment: closeServiceClosureComment,
+      includeSendMessageOnFinishAttendance:
+        shouldShowCloseServiceSendMessageToggle,
+      sendMessageOnFinishAttendance: closeServiceSendMessageOnFinishAttendance,
+    });
+
+    if (!closeOptions.ok) {
+      setCloseServiceClosureError(pt.closure_comment_required);
+      setCloseServiceInformClosureReason(true);
+      focusCloseServiceClosureInput();
+      return;
+    }
+
+    try {
+      const result = await updateChatStatusDetailed(
+        chatId,
+        'closed',
+        closeOptions.options
+      );
+      if (!result.ok) {
+        if (
+          isClosureCommentRequiredFailure({
+            reason: result.reason,
+            message: result.message,
+            expectedMessage: pt.closure_comment_required,
+          })
+        ) {
+          setCloseServiceBackendRequiresClosureReason(true);
+          setCloseServiceInformClosureReason(true);
+          setCloseServiceClosureError(pt.closure_comment_required);
+          focusCloseServiceClosureInput();
+          return;
+        }
+
+        Alert.alert(
+          pt.error_title,
+          result.message ?? pt.chat_status_update_error
+        );
         return;
       }
-    } else if (!trimmedClosure) {
-      Alert.alert(pt.warning_title, pt.closure_comment_required);
-      return;
+
+      setCloseServiceModalVisible(false);
+      setCloseServiceClosureComment('');
+      setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
+      setCloseServiceBackendRequiresClosureReason(false);
+      setCloseServiceClosureError(null);
+      Alert.alert(pt.success_title, pt.close_service_success);
+      navigation.goBack();
+    } catch {
+      Alert.alert(pt.error_title, pt.chat_status_update_error);
     }
-
-    const patchOptions: {
-      send_message_on_finish_attendance?: boolean;
-      closure_comment?: string;
-    } = {};
-
-    if (shouldShowCloseServiceSendMessageToggle) {
-      patchOptions.send_message_on_finish_attendance =
-        closeServiceSendMessageOnFinishAttendance;
-    }
-
-    if (canToggleOptionalClosureReasonAction) {
-      if (closeServiceInformClosureReason && trimmedClosure) {
-        patchOptions.closure_comment = trimmedClosure;
-      }
-    } else {
-      patchOptions.closure_comment = trimmedClosure;
-    }
-
-    const result = await updateChatStatusDetailed(
-      chatId,
-      'closed',
-      Object.keys(patchOptions).length > 0 ? patchOptions : undefined
-    );
-    if (!result.ok) {
-      Alert.alert(
-        pt.error_title,
-        result.message ?? pt.chat_status_update_error
-      );
-      return;
-    }
-
-    setCloseServiceModalVisible(false);
-    setCloseServiceClosureComment('');
-    setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
-    Alert.alert(pt.success_title, pt.close_service_success);
-    navigation.goBack();
   }, [
     canToggleOptionalClosureReasonAction,
     chatInfo.chat_id,
+    closeServiceBackendRequiresClosureReason,
     closeServiceClosureComment,
     closeServiceInformClosureReason,
     closeServiceSendMessageOnFinishAttendance,
     canManageInChatLifecycle,
+    focusCloseServiceClosureInput,
     isInChatStatus,
     navigation,
     shouldShowCloseServiceSendMessageToggle,
@@ -7913,7 +8071,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setCloseServiceSendMessageOnFinishAttendance(true);
     setCloseServiceClosureComment('');
     setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
+    setCloseServiceBackendRequiresClosureReason(false);
+    setCloseServiceClosureError(null);
     setCloseServiceModalVisible(true);
+  }, [canToggleOptionalClosureReasonAction]);
+
+  const dismissCloseServiceModal = useCallback(() => {
+    setCloseServiceModalVisible(false);
+    setCloseServiceClosureComment('');
+    setCloseServiceInformClosureReason(!canToggleOptionalClosureReasonAction);
+    setCloseServiceBackendRequiresClosureReason(false);
+    setCloseServiceClosureError(null);
   }, [canToggleOptionalClosureReasonAction]);
 
   const confirmLeaveConversation = useCallback(async () => {
@@ -7976,6 +8144,40 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       },
     ]);
   }, [confirmLeaveConversation]);
+
+  const handleToggleAttendanceInactivity = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (
+      !chatId ||
+      !canShowAttendanceInactivityAction ||
+      isUpdatingAttendanceInactivityState
+    ) {
+      return;
+    }
+
+    const nextDisabled = !attendanceInactivityDisabledForActiveChat;
+    setIsUpdatingAttendanceInactivityState(true);
+    const ok = await updateChatAttendanceInactivity(chatId, nextDisabled);
+    setIsUpdatingAttendanceInactivityState(false);
+
+    if (!ok) {
+      Alert.alert(pt.error_title, pt.chat_attendance_inactivity_update_failed);
+      return;
+    }
+
+    setAttendanceInactivityDisabledForActiveChat(nextDisabled);
+    Alert.alert(
+      pt.success_title,
+      nextDisabled
+        ? pt.chat_attendance_inactivity_update_success
+        : pt.chat_attendance_inactivity_update_enable_success
+    );
+  }, [
+    attendanceInactivityDisabledForActiveChat,
+    canShowAttendanceInactivityAction,
+    chatInfo.chat_id,
+    isUpdatingAttendanceInactivityState,
+  ]);
 
   const openAttendantsInfo = useCallback(async () => {
     const chatId = readNonEmptyString(chatInfo.chat_id);
@@ -8451,6 +8653,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       setTransferType(null);
       setTransferAnnotation('');
       setTransferKeepInChat(false);
+      setTransferSendMessageOnTransfer(true);
+      setTransferWorkerConfigForChat(null);
       setSelectedTransferChannelId(null);
       setSelectedTransferUserId(null);
       setSelectedTransferSectorId(null);
@@ -8468,6 +8672,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
 
     setTransferKeepInChat(false);
+    setTransferSendMessageOnTransfer(true);
+    setTransferWorkerConfigForChat(null);
 
     setIsLoadingTransferChannels(true);
     setIsLoadingTransferSectors(true);
@@ -8505,19 +8711,38 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setSelectedTransferSectorUserId(null);
     setTransferUsers([]);
     setTransferSectorUsers([]);
+    setTransferWorkerConfigForChat(null);
+    setTransferSendMessageOnTransfer(true);
 
     if (!selectedTransferChannelId) return;
+
+    let cancelled = false;
+    viewWorkerConfigForChat(selectedTransferChannelId)
+      .then((config) => {
+        if (cancelled) return;
+        setTransferWorkerConfigForChat(config);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTransferWorkerConfigForChat(null);
+      });
 
     setIsLoadingTransferUsers(true);
     listTransferUsers(chatInfo.chat_id, selectedTransferChannelId)
       .then((users) => {
+        if (cancelled) return;
         setTransferUsers(
           users.filter((user) => user.id !== (chatInfo.user?.id ?? null))
         );
       })
       .finally(() => {
+        if (cancelled) return;
         setIsLoadingTransferUsers(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     chatInfo.chat_id,
     chatInfo.user?.id,
@@ -8703,6 +8928,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       keep_in_chat: transferKeepInChat,
     };
 
+    if (shouldShowTransferSendMessageToggle) {
+      payload.send_message_on_transfer = transferSendMessageOnTransfer;
+    }
+
     setIsTransferring(true);
     const transferResult = await transferChat(chatId, payload);
     setIsTransferring(false);
@@ -8727,7 +8956,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     selectedTransferUserId,
     transferAnnotation,
     transferKeepInChat,
+    transferSendMessageOnTransfer,
     transferType,
+    shouldShowTransferSendMessageToggle,
   ]);
 
   const menuActions = useMemo<ChatMenuAction[]>(() => {
@@ -8821,6 +9052,22 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       });
     }
 
+    if (canShowAttendanceInactivityAction) {
+      actions.push({
+        key: 'attendance_inactivity',
+        label: attendanceInactivityDisabledForActiveChat
+          ? pt.chat_attendance_inactivity_enable_action
+          : pt.chat_attendance_inactivity_disable_action,
+        icon: attendanceInactivityDisabledForActiveChat
+          ? 'notifications-outline'
+          : 'notifications-off-outline',
+        active: attendanceInactivityDisabledForActiveChat,
+        onPress: () => {
+          void handleToggleAttendanceInactivity();
+        },
+      });
+    }
+
     if (canShowCloseButton) {
       actions.push({
         key: 'close_service',
@@ -8838,12 +9085,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     canViewChatAttendantsInfoAction,
     canLabelAction,
     canShowCloseButton,
+    canShowAttendanceInactivityAction,
     canToggleForwardToOutputAction,
     canTransferAction,
     canLeaveConversationAction,
     canViewAttendanceHistoryAction,
+    attendanceInactivityDisabledForActiveChat,
     handleLeaveConversation,
     handleCloseService,
+    handleToggleAttendanceInactivity,
     handleToggleForwardToOutput,
     isForwardToOutputActive,
     openAttendantsInfo,
@@ -13637,6 +13887,21 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             ) : null}
           </View>
         ) : null}
+        {showOperatorReplyPendingBanner ? (
+          <View style={styles.operatorReplyPendingBanner}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={16}
+              color={colors.error}
+            />
+            <Text style={styles.operatorReplyPendingBannerText}>
+              {pt.chat_operator_reply_pending_alert_banner.replace(
+                '{minutes}',
+                String(operatorReplyPendingElapsedMinutes)
+              )}
+            </Text>
+          </View>
+        ) : null}
         {shouldObfuscateContent ? (
           <View style={styles.protectedBanner}>
             <Ionicons
@@ -14680,6 +14945,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 action.key === 'forward_to_output_chatbot' ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : null}
+                {(isLoadingAttendanceInactivityState ||
+                  isUpdatingAttendanceInactivityState) &&
+                action.key === 'attendance_inactivity' ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : null}
               </Pressable>
             ))}
           </Pressable>
@@ -14772,15 +15042,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
       <BottomSheetModal
         visible={closeServiceModalVisible}
-        onClose={() => setCloseServiceModalVisible(false)}
+        onClose={dismissCloseServiceModal}
         title={pt.close_service}
         cardStyle={styles.annotationSheetCard}
-        avoidKeyboard={false}
+        avoidKeyboard
         footer={
           <>
             <Pressable
               style={styles.secondaryBtn}
-              onPress={() => setCloseServiceModalVisible(false)}
+              onPress={dismissCloseServiceModal}
             >
               <Text style={styles.secondaryBtnText}>{pt.cancel}</Text>
             </Pressable>
@@ -14821,30 +15091,36 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
         {canToggleOptionalClosureReasonAction ? (
           <>
-            <View style={styles.closeServiceToggleRow}>
-              <View style={styles.closeServiceToggleTextWrap}>
-                <Text style={styles.closeServiceToggleLabel}>
-                  {pt.close_service_inform_closure_toggle_label}
-                </Text>
-                <Text style={styles.closeServiceToggleDescription}>
-                  {pt.close_service_inform_closure_toggle_description}
-                </Text>
+            {!closeServiceBackendRequiresClosureReason ? (
+              <View style={styles.closeServiceToggleRow}>
+                <View style={styles.closeServiceToggleTextWrap}>
+                  <Text style={styles.closeServiceToggleLabel}>
+                    {pt.close_service_inform_closure_toggle_label}
+                  </Text>
+                  <Text style={styles.closeServiceToggleDescription}>
+                    {pt.close_service_inform_closure_toggle_description}
+                  </Text>
+                </View>
+                <Switch
+                  value={closeServiceInformClosureReason}
+                  onValueChange={(value) => {
+                    setCloseServiceInformClosureReason(value);
+                    setCloseServiceClosureError(null);
+                  }}
+                  trackColor={{
+                    false: colors.grey400,
+                    true: colors.primary,
+                  }}
+                  thumbColor="#FFFFFF"
+                />
               </View>
-              <Switch
-                value={closeServiceInformClosureReason}
-                onValueChange={setCloseServiceInformClosureReason}
-                trackColor={{
-                  false: colors.grey400,
-                  true: colors.primary,
-                }}
-                thumbColor="#FFFFFF"
-              />
-            </View>
-            {closeServiceInformClosureReason ? (
+            ) : null}
+            {showCloseServiceClosureReasonInput ? (
               <TextInput
+                ref={closeServiceClosureInputRef}
                 style={styles.closeServiceClosureInput}
                 value={closeServiceClosureComment}
-                onChangeText={setCloseServiceClosureComment}
+                onChangeText={handleCloseServiceClosureCommentChange}
                 placeholder={pt.closure_reason_label}
                 placeholderTextColor={colors.grey500}
                 multiline
@@ -14855,9 +15131,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           </>
         ) : (
           <TextInput
+            ref={closeServiceClosureInputRef}
             style={styles.closeServiceClosureInput}
             value={closeServiceClosureComment}
-            onChangeText={setCloseServiceClosureComment}
+            onChangeText={handleCloseServiceClosureCommentChange}
             placeholder={pt.closure_reason_label}
             placeholderTextColor={colors.grey500}
             multiline
@@ -14865,6 +15142,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             textAlignVertical="top"
           />
         )}
+        {closeServiceClosureError ? (
+          <Text style={styles.closeServiceErrorText}>
+            {closeServiceClosureError}
+          </Text>
+        ) : null}
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -15258,6 +15540,25 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               thumbColor={colors.onPrimary}
             />
           </View>
+
+          {shouldShowTransferSendMessageToggle ? (
+            <View style={styles.closeServiceToggleRow}>
+              <View style={styles.closeServiceToggleTextWrap}>
+                <Text style={styles.closeServiceToggleLabel}>
+                  {pt.send_message_on_transfer}
+                </Text>
+                <Text style={styles.closeServiceToggleDescription}>
+                  {pt.send_message_on_transfer_description}
+                </Text>
+              </View>
+              <Switch
+                value={transferSendMessageOnTransfer}
+                onValueChange={setTransferSendMessageOnTransfer}
+                trackColor={{ false: colors.grey300, true: colors.primary }}
+                thumbColor={colors.onPrimary}
+              />
+            </View>
+          ) : null}
         </ScrollView>
       </BottomSheetModal>
 
@@ -17826,6 +18127,24 @@ const styles = StyleSheet.create({
     color: colors.grey700,
     fontWeight: '500',
   },
+  operatorReplyPendingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255, 77, 79, 0.08)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 77, 79, 0.22)',
+  },
+  operatorReplyPendingBannerText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.error,
+    fontWeight: '600',
+  },
   attendReopenBanner: {
     gap: 8,
     paddingHorizontal: 16,
@@ -18977,6 +19296,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.onSurface,
     backgroundColor: colors.surface,
+  },
+  closeServiceErrorText: {
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.error,
   },
   modalLoadingWrap: {
     alignItems: 'center',

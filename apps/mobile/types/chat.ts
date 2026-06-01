@@ -13,6 +13,7 @@ export type EChatStatus =
 export interface ChatSummary {
   last_message: string | null;
   last_date: string | null;
+  operator_reply_pending_since?: string | null;
   unread_count: number;
 }
 

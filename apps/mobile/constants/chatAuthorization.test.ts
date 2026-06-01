@@ -1,3 +1,4 @@
+import { describe, expect, it } from '@jest/globals';
 import type { ListChatsResult } from '../types/chat';
 import {
   hasChatAccessPermission,
@@ -10,6 +11,7 @@ import {
   hasMobileAppAccessPermission,
   canCreateInternalChatGroup,
   canManageInternalChatGroupMembers,
+  canDisableSendMessageOnTransfer,
 } from './chatAuthorization';
 
 function buildChat(overrides: Partial<ListChatsResult> = {}): ListChatsResult {
@@ -49,7 +51,9 @@ describe('chatAuthorization', () => {
   });
 
   it('grants mobile access for internal-chat-only users', () => {
-    expect(hasInternalChatAccessPermission(['internal_chat_access'])).toBe(true);
+    expect(hasInternalChatAccessPermission(['internal_chat_access'])).toBe(
+      true
+    );
     expect(hasInternalChatAccessPermission(['internal_chat_group'])).toBe(true);
     expect(hasInternalChatAccessPermission(['full_access'])).toBe(true);
     expect(hasInternalChatAccessPermission(['chat_access'])).toBe(false);
@@ -65,9 +69,7 @@ describe('chatAuthorization', () => {
     );
     expect(canCreateInternalChatGroup(['internal_chat_access'])).toBe(false);
     expect(
-      canManageInternalChatGroupMembers([
-        'internal_chat_group_manage_members',
-      ])
+      canManageInternalChatGroupMembers(['internal_chat_group_manage_members'])
     ).toBe(true);
     expect(canManageInternalChatGroupMembers(['internal_chat_access'])).toBe(
       false
@@ -84,6 +86,14 @@ describe('chatAuthorization', () => {
     expect(canPreviewChatContent(['preview_chat'])).toBe(true);
     expect(canPreviewChatContent(['chat_group'])).toBe(true);
     expect(canPreviewChatContent(['pick_queue_chat'])).toBe(false);
+  });
+
+  it('detects transfer auto-message disable permission', () => {
+    expect(
+      canDisableSendMessageOnTransfer(['disable_send_message_on_transfer'])
+    ).toBe(true);
+    expect(canDisableSendMessageOnTransfer(['full_access'])).toBe(true);
+    expect(canDisableSendMessageOnTransfer(['chat_group'])).toBe(false);
   });
 
   it('blocks chat when user channel list does not include chat channel', () => {

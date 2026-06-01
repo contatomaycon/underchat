@@ -286,6 +286,9 @@ export const pt = {
   keep_in_chat: 'Manter-se na conversa',
   keep_in_chat_description:
     'Ao transferir, você continua como atendente secundário.',
+  send_message_on_transfer: 'Enviar mensagem ao transferir atendimento',
+  send_message_on_transfer_description:
+    'Desative para transferir sem enviar a mensagem automática de transferência.',
   transfer_successfully: 'Atendimento transferido com sucesso!',
   chat_transfer_error: 'Erro ao transferir atendimento.',
   channel_required: 'Selecione um canal.',
@@ -407,6 +410,19 @@ export const pt = {
   forward_to_output_chatbot: 'Encaminhar para saída do chatbot',
   chat_forward_to_output_chatbot_update_failed:
     'Erro ao atualizar encaminhamento para saída do chatbot.',
+  chat_attendance_inactivity_disable_action:
+    'Desativar inatividade deste atendimento',
+  chat_attendance_inactivity_enable_action:
+    'Ativar inatividade deste atendimento',
+  chat_attendance_inactivity_update_success:
+    'Inatividade deste atendimento desativada com sucesso!',
+  chat_attendance_inactivity_update_enable_success:
+    'Inatividade deste atendimento ativada com sucesso!',
+  chat_attendance_inactivity_update_failed:
+    'Erro ao atualizar inatividade deste atendimento. Por favor, tente novamente.',
+  chat_operator_reply_pending_alert_short: 'Cliente aguardando resposta',
+  chat_operator_reply_pending_alert_banner:
+    'Cliente aguardando resposta há {minutes} minuto(s).',
   close: 'Fechar',
   chat_action_ai_reply: 'Responder com IA',
   chat_action_transcribe: 'Transcrever',

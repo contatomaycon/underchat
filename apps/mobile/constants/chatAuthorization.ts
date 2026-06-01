@@ -149,6 +149,12 @@ export const DISABLE_SEND_MESSAGE_ON_FINISH_ATTENDANCE_PERMISSIONS = [
   'disable_send_message_on_finish_attendance',
 ] as const;
 
+export const DISABLE_SEND_MESSAGE_ON_TRANSFER_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'disable_send_message_on_transfer',
+] as const;
+
 export const REQUIRE_CHAT_CLOSURE_COMMENT_PERMISSIONS = [
   'full_access',
   'full_access_group',
@@ -321,7 +327,9 @@ export function hasChatModuleAccessPermission(permissions: string[]): boolean {
   return hasAnyPermission(permissions, CHAT_MODULE_ACCESS_PERMISSIONS);
 }
 
-export function hasInternalChatAccessPermission(permissions: string[]): boolean {
+export function hasInternalChatAccessPermission(
+  permissions: string[]
+): boolean {
   return hasAnyPermission(permissions, INTERNAL_CHAT_ACCESS_PERMISSIONS);
 }
 
@@ -415,6 +423,15 @@ export function canDisableSendMessageOnFinishAttendance(
   return hasAnyPermission(
     permissions,
     DISABLE_SEND_MESSAGE_ON_FINISH_ATTENDANCE_PERMISSIONS
+  );
+}
+
+export function canDisableSendMessageOnTransfer(
+  permissions: string[]
+): boolean {
+  return hasAnyPermission(
+    permissions,
+    DISABLE_SEND_MESSAGE_ON_TRANSFER_PERMISSIONS
   );
 }
 

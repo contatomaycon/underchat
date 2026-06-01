@@ -55,6 +55,20 @@ export const updateChatStatusSchema = {
       },
       { description: 'Forbidden' }
     ),
+    400: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ default: false }),
+        message: Type.String(),
+        data: Type.Union([
+          Type.Object({
+            reason: Type.String({ enum: ['closure_comment_required'] }),
+          }),
+          Type.Null(),
+        ]),
+      },
+      { description: 'Bad Request' }
+    ),
     500: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

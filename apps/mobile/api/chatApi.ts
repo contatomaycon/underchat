@@ -97,6 +97,7 @@ export interface TransferChatPayload {
   sector_id?: string | null;
   annotation?: string | null;
   keep_in_chat?: boolean;
+  send_message_on_transfer?: boolean;
 }
 
 export interface TransferUserOption {
@@ -599,7 +600,26 @@ export type UpdateChatStatusDetailedResult = {
   ok: boolean;
   message: string | null;
   data: ListChatsResult | null;
+  reason: 'closure_comment_required' | null;
 };
+
+type UpdateChatStatusErrorData = {
+  reason?: unknown;
+};
+
+function readUpdateChatStatusReason(
+  data: ListChatsResult | UpdateChatStatusErrorData | null
+): UpdateChatStatusDetailedResult['reason'] {
+  if (!data || typeof data !== 'object') return null;
+  const reason = (data as UpdateChatStatusErrorData).reason;
+  return reason === 'closure_comment_required' ? reason : null;
+}
+
+function isListChatsResultData(
+  data: ListChatsResult | UpdateChatStatusErrorData | null
+): data is ListChatsResult {
+  return !!data && typeof data === 'object' && 'chat_id' in data;
+}
 
 export async function updateChatStatusDetailed(
   chatId: string,
@@ -614,6 +634,7 @@ export async function updateChatStatusDetailed(
       ok: false,
       message: null,
       data: null,
+      reason: null,
     };
   }
   const body: {
@@ -631,23 +652,26 @@ export async function updateChatStatusDetailed(
     body.closure_comment = options.closure_comment;
   }
 
-  const res = await apiPatchWithMessage<ListChatsResult>(
-    `/chat/${chatId}/status`,
-    body
-  );
+  const res = await apiPatchWithMessage<
+    ListChatsResult | UpdateChatStatusErrorData
+  >(`/chat/${chatId}/status`, body);
 
   if (!res) {
     return {
       ok: false,
       message: null,
       data: null,
+      reason: null,
     };
   }
+
+  const reason = readUpdateChatStatusReason(res.data);
 
   return {
     ok: res.status === true,
     message: res.message,
-    data: res.data ?? null,
+    data: isListChatsResultData(res.data) ? res.data : null,
+    reason,
   };
 }
 
@@ -666,6 +690,10 @@ export async function transferChat(
     annotation: payload.annotation?.trim() || undefined,
     keep_in_chat: payload.keep_in_chat === true,
   };
+
+  if (payload.send_message_on_transfer !== undefined) {
+    body.send_message_on_transfer = payload.send_message_on_transfer;
+  }
 
   const res = await apiPostWithMessage<{ chat_id: string; status: boolean }>(
     `/chat/${chatId}/transfer`,
@@ -1495,6 +1523,32 @@ export async function viewWorkerConfigForChat(
     `/chat/worker/${workerId}/config`
   );
   return res?.data ?? null;
+}
+
+export type ViewChatAttendanceInactivityResult = {
+  disabled: boolean;
+};
+
+export async function viewChatAttendanceInactivity(
+  chatId: string
+): Promise<ViewChatAttendanceInactivityResult | null> {
+  if (!chatId || chatId.trim().length === 0) return null;
+  const res = await apiGet<ViewChatAttendanceInactivityResult>(
+    `/chat/${chatId}/attendance-inactivity`
+  );
+  return res?.data ?? null;
+}
+
+export async function updateChatAttendanceInactivity(
+  chatId: string,
+  disabled: boolean
+): Promise<boolean> {
+  if (!chatId || chatId.trim().length === 0) return false;
+  const res = await apiPatch<{ success: boolean }>(
+    `/chat/${chatId}/attendance-inactivity`,
+    { disabled }
+  );
+  return res?.status === true && res.data?.success === true;
 }
 
 export async function startChatWithContact(

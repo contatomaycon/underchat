@@ -50,6 +50,9 @@ export const updateChatStatus = async (
         return sendResponse(reply, {
           message: error.message,
           httpStatusCode: EHTTPStatusCode.bad_request,
+          data: {
+            reason: 'closure_comment_required',
+          },
         });
       }
       if (

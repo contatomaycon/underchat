@@ -168,8 +168,14 @@ export interface WorkerConfigForChat {
   show_attendee_name: boolean;
   show_protocol_in_chat: boolean;
   send_message_on_finish_attendance_enabled: boolean;
+  send_message_on_transfer_enabled: boolean;
   allow_attendance_only_online: boolean;
   simultaneous_attendance: number | null;
   simultaneous_attendance_enabled: boolean;
+  attendance_inactivity_alert_enabled: boolean;
+  operator_reply_pending_alert_enabled: boolean;
+  operator_reply_pending_alert_time_minutes: number;
   has_ura_output: boolean;
+  ai_agent_enabled: boolean;
+  ai_agent_id: string | null;
 }
