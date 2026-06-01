@@ -101,7 +101,10 @@ type InternalChatContextValue = {
     conversationId: string,
     options?: { page?: number; append?: boolean }
   ) => Promise<InternalChatMessage[]>;
-  markRead: (conversationId: string, lastReadMessageId?: string | null) => Promise<boolean>;
+  markRead: (
+    conversationId: string,
+    lastReadMessageId?: string | null
+  ) => Promise<boolean>;
   sendMessage: (
     conversationId: string,
     payload: InternalChatCreateMessagePayload
@@ -121,7 +124,10 @@ type InternalChatContextValue = {
     messageId: string,
     message: string
   ) => Promise<boolean>;
-  deleteMessage: (conversationId: string, messageId: string) => Promise<boolean>;
+  deleteMessage: (
+    conversationId: string,
+    messageId: string
+  ) => Promise<boolean>;
   viewMessageHistory: (
     conversationId: string,
     messageId: string
@@ -135,7 +141,9 @@ type InternalChatContextValue = {
     conversationId: string,
     state: InternalChatActivityState
   ) => Promise<void>;
-  listGroupMembers: (conversationId: string) => Promise<InternalChatParticipant[]>;
+  listGroupMembers: (
+    conversationId: string
+  ) => Promise<InternalChatParticipant[]>;
   createGroup: (
     payload: InternalChatCreateGroupPayload
   ) => Promise<InternalChatConversation | null>;
@@ -147,7 +155,10 @@ type InternalChatContextValue = {
     conversationId: string,
     userId: string
   ) => Promise<InternalChatConversation | null>;
-  removeGroupMember: (conversationId: string, userId: string) => Promise<boolean>;
+  removeGroupMember: (
+    conversationId: string,
+    userId: string
+  ) => Promise<boolean>;
   transferGroupLeader: (
     conversationId: string,
     userId: string
@@ -155,7 +166,9 @@ type InternalChatContextValue = {
   resetInternalChat: () => void;
 };
 
-const InternalChatContext = createContext<InternalChatContextValue | null>(null);
+const InternalChatContext = createContext<InternalChatContextValue | null>(
+  null
+);
 
 function normalizeIdentifier(value: unknown): string | null {
   if (typeof value === 'string') {
@@ -257,9 +270,9 @@ export function InternalChatProvider({
   const stateRef = useRef(state);
   const currentUserIdRef = useRef(currentUserId);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activityTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
-    {}
-  );
+  const activityTimersRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
 
   useEffect(() => {
     stateRef.current = state;
@@ -341,11 +354,13 @@ export function InternalChatProvider({
   }, [loadConversations]);
 
   const loadUsers = useCallback(
-    async (options: {
-      search?: string | null;
-      page?: number;
-      append?: boolean;
-    } = {}) => {
+    async (
+      options: {
+        search?: string | null;
+        page?: number;
+        append?: boolean;
+      } = {}
+    ) => {
       if (!enabled) return;
       const page = options.page ?? 1;
       const append = options.append ?? page > 1;
@@ -408,7 +423,9 @@ export function InternalChatProvider({
   );
 
   const openConversation = useCallback(
-    async (conversationId: string): Promise<InternalChatConversation | null> => {
+    async (
+      conversationId: string
+    ): Promise<InternalChatConversation | null> => {
       if (!enabled) return null;
       const conversation = await viewInternalChatConversation(conversationId);
       if (!conversation) return null;
@@ -490,14 +507,21 @@ export function InternalChatProvider({
         currentUserId: currentUserIdRef.current,
       });
 
-      const result = await createInternalChatMessage(conversationId, nextPayload);
-      if (result.ok && result.message) {
-        dispatch({
-          type: 'upsertMessage',
-          message: result.message,
-          currentUserId: currentUserIdRef.current,
-        });
-        return result.message;
+      try {
+        const result = await createInternalChatMessage(
+          conversationId,
+          nextPayload
+        );
+        if (result.ok && result.message) {
+          dispatch({
+            type: 'upsertMessage',
+            message: result.message,
+            currentUserId: currentUserIdRef.current,
+          });
+          return result.message;
+        }
+      } catch {
+        // The optimistic message below must not remain stuck as "sending".
       }
 
       dispatch({
@@ -528,17 +552,21 @@ export function InternalChatProvider({
           currentUserId: currentUserIdRef.current,
         });
       }
-      const result = await createInternalChatMessageWithFormData(
-        conversationId,
-        formData
-      );
-      if (result.ok && result.message) {
-        dispatch({
-          type: 'upsertMessage',
-          message: result.message,
-          currentUserId: currentUserIdRef.current,
-        });
-        return result.message;
+      try {
+        const result = await createInternalChatMessageWithFormData(
+          conversationId,
+          formData
+        );
+        if (result.ok && result.message) {
+          dispatch({
+            type: 'upsertMessage',
+            message: result.message,
+            currentUserId: currentUserIdRef.current,
+          });
+          return result.message;
+        }
+      } catch {
+        // The optimistic message below must not remain stuck as "sending".
       }
       if (optimisticMessage) {
         dispatch({
@@ -558,10 +586,15 @@ export function InternalChatProvider({
 
   const reactMessage = useCallback(
     async (conversationId: string, messageId: string, emoji: string | null) => {
-      const ok = await reactInternalChatMessage(conversationId, messageId, emoji);
+      const ok = await reactInternalChatMessage(
+        conversationId,
+        messageId,
+        emoji
+      );
       if (ok) {
         const conversation = await viewInternalChatConversation(conversationId);
-        if (conversation) dispatch({ type: 'upsertConversation', conversation });
+        if (conversation)
+          dispatch({ type: 'upsertConversation', conversation });
         await loadMessages(conversationId, { page: 1, append: false });
       }
       return ok;
@@ -571,7 +604,11 @@ export function InternalChatProvider({
 
   const editMessage = useCallback(
     async (conversationId: string, messageId: string, message: string) => {
-      const ok = await editInternalChatMessage(conversationId, messageId, message);
+      const ok = await editInternalChatMessage(
+        conversationId,
+        messageId,
+        message
+      );
       if (ok) await loadMessages(conversationId, { page: 1, append: false });
       return ok;
     },
@@ -643,7 +680,10 @@ export function InternalChatProvider({
       conversationId: string,
       payload: InternalChatUpdateGroupPayload
     ): Promise<InternalChatConversation | null> => {
-      const conversation = await updateInternalChatGroup(conversationId, payload);
+      const conversation = await updateInternalChatGroup(
+        conversationId,
+        payload
+      );
       if (!conversation) return null;
       dispatch({ type: 'upsertConversation', conversation });
       dispatch({ type: 'setActiveConversation', conversation });
@@ -657,7 +697,10 @@ export function InternalChatProvider({
       conversationId: string,
       userId: string
     ): Promise<InternalChatConversation | null> => {
-      const conversation = await addInternalChatGroupMember(conversationId, userId);
+      const conversation = await addInternalChatGroupMember(
+        conversationId,
+        userId
+      );
       if (!conversation) return null;
       dispatch({ type: 'upsertConversation', conversation });
       await listGroupMembers(conversationId);
@@ -728,40 +771,46 @@ export function InternalChatProvider({
       }
     });
 
-    const offSync = addInternalChatSocketListener('conversationSync', (sync) => {
-      if (sync.reason === 'message') return;
-      scheduleRefreshConversations();
-    });
+    const offSync = addInternalChatSocketListener(
+      'conversationSync',
+      (sync) => {
+        if (sync.reason === 'message') return;
+        scheduleRefreshConversations();
+      }
+    );
 
-    const offActivity = addInternalChatSocketListener('activity', (activity) => {
-      if (activity.user_id === currentUserIdRef.current) return;
-      const key = `${activity.conversation_id}:${activity.user_id}`;
-      if (activityTimersRef.current[key]) {
-        clearTimeout(activityTimersRef.current[key]);
-        delete activityTimersRef.current[key];
-      }
-      dispatch({
-        type: 'setRemoteActivity',
-        activity: {
-          conversation_id: activity.conversation_id,
-          user_id: activity.user_id,
-          user_name: activity.user_name ?? null,
-          user_photo: activity.user_photo ?? null,
-          state: activity.state,
-          expires_at: Date.now() + REMOTE_ACTIVITY_TIMEOUT_MS,
-        },
-      });
-      if (activity.state !== INTERNAL_CHAT_ACTIVITY_STATE.available) {
-        activityTimersRef.current[key] = setTimeout(() => {
-          dispatch({
-            type: 'clearRemoteActivity',
-            conversationId: activity.conversation_id,
-            userId: activity.user_id,
-          });
+    const offActivity = addInternalChatSocketListener(
+      'activity',
+      (activity) => {
+        if (activity.user_id === currentUserIdRef.current) return;
+        const key = `${activity.conversation_id}:${activity.user_id}`;
+        if (activityTimersRef.current[key]) {
+          clearTimeout(activityTimersRef.current[key]);
           delete activityTimersRef.current[key];
-        }, REMOTE_ACTIVITY_TIMEOUT_MS);
+        }
+        dispatch({
+          type: 'setRemoteActivity',
+          activity: {
+            conversation_id: activity.conversation_id,
+            user_id: activity.user_id,
+            user_name: activity.user_name ?? null,
+            user_photo: activity.user_photo ?? null,
+            state: activity.state,
+            expires_at: Date.now() + REMOTE_ACTIVITY_TIMEOUT_MS,
+          },
+        });
+        if (activity.state !== INTERNAL_CHAT_ACTIVITY_STATE.available) {
+          activityTimersRef.current[key] = setTimeout(() => {
+            dispatch({
+              type: 'clearRemoteActivity',
+              conversationId: activity.conversation_id,
+              userId: activity.user_id,
+            });
+            delete activityTimersRef.current[key];
+          }, REMOTE_ACTIVITY_TIMEOUT_MS);
+        }
       }
-    });
+    );
 
     const offRecovery = addInternalChatSocketListener('recoveryFailed', () => {
       scheduleRefreshConversations();

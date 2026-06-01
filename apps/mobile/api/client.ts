@@ -6,6 +6,8 @@ import { teardownMobileSessionOnUnauthorized } from '../utils/sessionTeardown';
 import { refreshSessionTokenWithSingleFlight } from './sessionRefresh';
 
 const BASE = `${BACKEND_URL}/v1`;
+const AUTH_REQUEST_TIMEOUT_MS = 30000;
+const AUTH_FORM_REQUEST_TIMEOUT_MS = 120000;
 
 async function handleUnauthorized(): Promise<void> {
   await teardownMobileSessionOnUnauthorized();
@@ -125,16 +127,46 @@ async function buildAuthHeaders(
   return headers;
 }
 
+async function executeAuthRequest(
+  execute: (headers: Record<string, string>) => Promise<Response>,
+  headers: Record<string, string>,
+  timeoutMs: number
+): Promise<Response | null> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    const timeoutPromise = new Promise<null>((resolve) => {
+      timeout = setTimeout(() => resolve(null), timeoutMs);
+    });
+
+    return await Promise.race([execute(headers), timeoutPromise]);
+  } catch {
+    return null;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 async function requestWithAuthRetry(
   contentType: 'application/json' | undefined,
-  execute: (headers: Record<string, string>) => Promise<Response>
+  execute: (headers: Record<string, string>) => Promise<Response>,
+  timeoutMs = AUTH_REQUEST_TIMEOUT_MS
 ): Promise<Response | null> {
   const initialHeaders = await buildAuthHeaders(contentType);
   if (!initialHeaders) {
     return null;
   }
 
-  const initialResponse = await execute(initialHeaders);
+  const initialResponse = await executeAuthRequest(
+    execute,
+    initialHeaders,
+    timeoutMs
+  );
+  if (!initialResponse) {
+    return null;
+  }
 
   if (initialResponse.status !== 401) {
     return initialResponse;
@@ -154,7 +186,14 @@ async function requestWithAuthRetry(
     return null;
   }
 
-  const retriedResponse = await execute(retryHeaders);
+  const retriedResponse = await executeAuthRequest(
+    execute,
+    retryHeaders,
+    timeoutMs
+  );
+  if (!retriedResponse) {
+    return null;
+  }
 
   if (retriedResponse.status === 401) {
     await handleUnauthorized();
@@ -273,12 +312,15 @@ export async function apiPostForm<T>(
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await requestWithAuthRetry(undefined, (headers) =>
-    fetch(url, {
-      method: 'POST',
-      headers,
-      body,
-    })
+  const res = await requestWithAuthRetry(
+    undefined,
+    (headers) =>
+      fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+      }),
+    AUTH_FORM_REQUEST_TIMEOUT_MS
   );
 
   if (!res) {
@@ -300,12 +342,15 @@ export async function apiPostFormWithMessage<T>(
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await requestWithAuthRetry(undefined, (headers) =>
-    fetch(url, {
-      method: 'POST',
-      headers,
-      body,
-    })
+  const res = await requestWithAuthRetry(
+    undefined,
+    (headers) =>
+      fetch(url, {
+        method: 'POST',
+        headers,
+        body,
+      }),
+    AUTH_FORM_REQUEST_TIMEOUT_MS
   );
 
   if (!res) {
@@ -408,12 +453,15 @@ export async function apiPatchForm<T>(
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await requestWithAuthRetry(undefined, (headers) =>
-    fetch(url, {
-      method: 'PATCH',
-      headers,
-      body,
-    })
+  const res = await requestWithAuthRetry(
+    undefined,
+    (headers) =>
+      fetch(url, {
+        method: 'PATCH',
+        headers,
+        body,
+      }),
+    AUTH_FORM_REQUEST_TIMEOUT_MS
   );
 
   if (!res) {
@@ -435,12 +483,15 @@ export async function apiPatchFormWithMessage<T>(
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
 
-  const res = await requestWithAuthRetry(undefined, (headers) =>
-    fetch(url, {
-      method: 'PATCH',
-      headers,
-      body,
-    })
+  const res = await requestWithAuthRetry(
+    undefined,
+    (headers) =>
+      fetch(url, {
+        method: 'PATCH',
+        headers,
+        body,
+      }),
+    AUTH_FORM_REQUEST_TIMEOUT_MS
   );
 
   if (!res) {
