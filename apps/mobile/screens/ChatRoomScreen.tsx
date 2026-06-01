@@ -185,6 +185,10 @@ import {
   type WhatsAppTextToken,
 } from '../utils/whatsAppTextFormat';
 import {
+  LONG_TEXT_COLLAPSE_LINES,
+  resolveLongTextCollapse,
+} from '../utils/longTextCollapse';
+import {
   dismissKeyboard,
   dismissKeyboardAnd,
   getKeyboardVerticalOffset,
@@ -1187,8 +1191,6 @@ type ReactionCategoryConfig = {
   icon: keyof typeof Ionicons.glyphMap;
   sourceCategories: readonly string[];
 };
-const LONG_TEXT_COLLAPSE_LINES = 8;
-const LONG_TEXT_COLLAPSE_CHAR_THRESHOLD = 420;
 const FALLBACK_GALLERY_WINDOW_MS = 5000;
 const MAX_IMAGE_GALLERY_THUMBNAILS = 4;
 const CHAT_LIST_HORIZONTAL_PADDING = 12;
@@ -4452,12 +4454,15 @@ function BubbleContent({
   obfuscateContent?: boolean;
 }) {
   const [isLongTextExpanded, setIsLongTextExpanded] = useState(false);
-  const [isLongTextByLines, setIsLongTextByLines] = useState(false);
+  const [longTextLineCount, setLongTextLineCount] = useState<number | null>(
+    null
+  );
+  const latestRenderedText = getLatestMessageText(msg);
 
   useEffect(() => {
     setIsLongTextExpanded(false);
-    setIsLongTextByLines(false);
-  }, [msg.message_id, forceCollapsedLongText]);
+    setLongTextLineCount(null);
+  }, [msg.message_id, latestRenderedText, forceCollapsedLongText]);
 
   if (obfuscateContent) {
     return <ProtectedContentPlaceholder fromMe={fromMe} />;
@@ -5000,7 +5005,7 @@ function BubbleContent({
     type === EMessageType.system &&
     (content.message || content.pin || content.ephemeral)
   ) {
-    const text = getLatestMessageText(msg);
+    const text = latestRenderedText;
     return renderWithContextCards(
       <View style={styles.systemWrap}>
         {content.ephemeral ? (
@@ -5085,7 +5090,7 @@ function BubbleContent({
     );
   }
 
-  const text = getLatestMessageText(msg);
+  const text = latestRenderedText;
   if (
     text &&
     type !== EMessageType.image &&
@@ -5096,10 +5101,12 @@ function BubbleContent({
     type !== EMessageType.contacts &&
     type !== EMessageType.system
   ) {
-    const isLongByLength = text.length > LONG_TEXT_COLLAPSE_CHAR_THRESHOLD;
-    const shouldCollapse = forceCollapsedLongText || !isLongTextExpanded;
-    const canExpand = isLongByLength || isLongTextByLines;
-    const canToggleExpanded = canExpand && !forceCollapsedLongText;
+    const longTextState = resolveLongTextCollapse({
+      text,
+      isExpanded: isLongTextExpanded,
+      measuredLineCount: longTextLineCount,
+      forceCollapsed: forceCollapsedLongText,
+    });
 
     return renderWithContextCards(
       <View style={styles.bubbleTextWrap}>
@@ -5107,29 +5114,29 @@ function BubbleContent({
           text={text}
           style={[styles.bubbleText, textColor]}
           selectable={false}
-          numberOfLines={shouldCollapse ? LONG_TEXT_COLLAPSE_LINES : undefined}
+          numberOfLines={longTextState.numberOfLines}
           onLinkLongPress={() => onOpenActions?.(msg)}
           onTextLayout={(event) => {
-            if (isLongTextByLines || !text) return;
-            if (
-              (event.nativeEvent.lines?.length ?? 0) > LONG_TEXT_COLLAPSE_LINES
-            ) {
-              setIsLongTextByLines(true);
+            const lineCount = event.nativeEvent.lines?.length ?? 0;
+            if (lineCount > LONG_TEXT_COLLAPSE_LINES) {
+              setLongTextLineCount((previous) =>
+                previous === lineCount ? previous : lineCount
+              );
             }
           }}
         />
-        {canExpand ? (
+        {longTextState.canToggle ? (
           <Pressable
             onPress={() => {
-              if (!canToggleExpanded) return;
               setIsLongTextExpanded((previous) => !previous);
             }}
             hitSlop={8}
             style={styles.readMoreButton}
-            disabled={!canToggleExpanded}
           >
             <Text style={styles.readMoreText}>
-              {shouldCollapse ? pt.read_more : pt.read_less}
+              {longTextState.toggleLabel === 'more'
+                ? pt.read_more
+                : pt.read_less}
             </Text>
           </Pressable>
         ) : null}

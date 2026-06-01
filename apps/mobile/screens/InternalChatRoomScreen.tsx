@@ -115,6 +115,10 @@ import {
   type WhatsAppTextToken,
 } from '../utils/whatsAppTextFormat';
 import {
+  LONG_TEXT_COLLAPSE_LINES,
+  resolveLongTextCollapse,
+} from '../utils/longTextCollapse';
+import {
   createFlatWaveformPlaceholder,
   parseWaveform,
   type WaveformInput,
@@ -187,8 +191,6 @@ const LOAD_OLDER_SCROLL_THRESHOLD = 180;
 const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 const SOFT_WRAP_TOKEN_MIN_LENGTH = 24;
 const SOFT_WRAP_BREAK_CHAR = '\u200B';
-const LONG_TEXT_COLLAPSE_LINES = 8;
-const LONG_TEXT_COLLAPSE_CHAR_THRESHOLD = 420;
 const VOICE_LOCK_SWIPE_THRESHOLD = 70;
 const VOICE_RELEASE_LOCK_GRACE_MS = 220;
 const VOICE_CANCEL_SWIPE_THRESHOLD = 90;
@@ -1872,12 +1874,15 @@ function InternalMessageContent({
   ) => void;
 }) {
   const [isLongTextExpanded, setIsLongTextExpanded] = useState(false);
-  const [isLongTextByLines, setIsLongTextByLines] = useState(false);
+  const [longTextLineCount, setLongTextLineCount] = useState<number | null>(
+    null
+  );
+  const renderedText = getMessageText(msg);
 
   useEffect(() => {
     setIsLongTextExpanded(false);
-    setIsLongTextByLines(false);
-  }, [msg.message_id]);
+    setLongTextLineCount(null);
+  }, [msg.message_id, renderedText]);
 
   const content = msg.content;
   const type = resolveInternalMessageContentType(content);
@@ -1907,14 +1912,14 @@ function InternalMessageContent({
   if (msg.deleted) {
     return renderWithContextCards(
       <WhatsAppFormattedText
-        text={getMessageText(msg)}
+        text={renderedText}
         style={[styles.bubbleText, textColor, styles.messageDeletedText]}
       />
     );
   }
 
   if (type === INTERNAL_MESSAGE_TYPE.system) {
-    const text = getMessageText(msg);
+    const text = renderedText;
     return renderWithContextCards(
       <View style={styles.systemWrap}>
         <WhatsAppFormattedText text={text} style={styles.systemText} />
@@ -2243,11 +2248,13 @@ function InternalMessageContent({
     );
   }
 
-  const text = getMessageText(msg);
+  const text = renderedText;
   if (text) {
-    const isLongByLength = text.length > LONG_TEXT_COLLAPSE_CHAR_THRESHOLD;
-    const shouldCollapse = !isLongTextExpanded;
-    const canExpand = isLongByLength || isLongTextByLines;
+    const longTextState = resolveLongTextCollapse({
+      text,
+      isExpanded: isLongTextExpanded,
+      measuredLineCount: longTextLineCount,
+    });
 
     return renderWithContextCards(
       <View style={styles.bubbleTextWrap}>
@@ -2255,25 +2262,27 @@ function InternalMessageContent({
           text={text}
           style={[styles.bubbleText, textColor]}
           selectable={false}
-          numberOfLines={shouldCollapse ? LONG_TEXT_COLLAPSE_LINES : undefined}
+          numberOfLines={longTextState.numberOfLines}
           onLinkLongPress={() => onOpenActions(msg)}
           onTextLayout={(event) => {
-            if (isLongTextByLines || !text) return;
-            if (
-              (event.nativeEvent.lines?.length ?? 0) > LONG_TEXT_COLLAPSE_LINES
-            ) {
-              setIsLongTextByLines(true);
+            const lineCount = event.nativeEvent.lines?.length ?? 0;
+            if (lineCount > LONG_TEXT_COLLAPSE_LINES) {
+              setLongTextLineCount((previous) =>
+                previous === lineCount ? previous : lineCount
+              );
             }
           }}
         />
-        {canExpand ? (
+        {longTextState.canToggle ? (
           <Pressable
             onPress={() => setIsLongTextExpanded((previous) => !previous)}
             hitSlop={8}
             style={styles.readMoreButton}
           >
             <Text style={styles.readMoreText}>
-              {shouldCollapse ? pt.read_more : pt.read_less}
+              {longTextState.toggleLabel === 'more'
+                ? pt.read_more
+                : pt.read_less}
             </Text>
           </Pressable>
         ) : null}
