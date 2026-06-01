@@ -10,8 +10,8 @@ import { useInternalChat } from '../context/InternalChatContext';
 import { formatBadgeCount } from '../utils/countFormat';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
-const INTERNAL_CHAT_ACCENT = '#E35D65';
-const INTERNAL_CHAT_ACCENT_DARK = '#C94A52';
+const INTERNAL_CHAT_ACCENT = colors.primary;
+const INTERNAL_CHAT_ACCENT_DARK = colors.primary;
 
 export function RootNavigator() {
   const {
