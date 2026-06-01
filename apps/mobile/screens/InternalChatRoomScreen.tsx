@@ -18,6 +18,7 @@ import {
   useWindowDimensions,
   View,
   type ListRenderItem,
+  type NativeScrollEvent,
   type NativeSyntheticEvent,
   type StyleProp,
   type TextStyle,
@@ -229,6 +230,8 @@ const CHAT_LIST_HORIZONTAL_PADDING = 12;
 const CHAT_BUBBLE_MAX_WIDTH_RATIO = 0.9;
 const CHAT_DOCUMENT_BUBBLE_MAX_WIDTH_RATIO = 0.84;
 const CHAT_DOCUMENT_BUBBLE_MIN_WIDTH = 224;
+const LOAD_OLDER_SCROLL_THRESHOLD = 180;
+const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 const SOFT_WRAP_TOKEN_MIN_LENGTH = 24;
 const SOFT_WRAP_BREAK_CHAR = '\u200B';
 const LONG_TEXT_COLLAPSE_LINES = 8;
@@ -2813,6 +2816,16 @@ export function InternalChatRoomScreen() {
   const { width: viewportWidth } = useWindowDimensions();
   const audioCtrl = useInternalChatAudio();
   const listRef = useRef<FlatList<InternalChatMessage>>(null);
+  const pendingScrollToBottomRef = useRef(true);
+  const scrollOffsetRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const loadingOlderRef = useRef(false);
+  const isNearBottomRef = useRef(true);
+  const previousMessagesLengthRef = useRef(0);
+  const preserveScrollOnPrependRef = useRef<{
+    previousOffset: number;
+    previousContentHeight: number;
+  } | null>(null);
   const micPressActiveRef = useRef(false);
   const micStartXRef = useRef<number | null>(null);
   const micStartYRef = useRef<number | null>(null);
@@ -2921,6 +2934,7 @@ export function InternalChatRoomScreen() {
   const [recordingWaveform, setRecordingWaveform] = useState<number[]>([]);
   const [showRecordingHint, setShowRecordingHint] = useState(false);
   const [sending, setSending] = useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
   const [groupNameDraft, setGroupNameDraft] = useState(
     activeConversation.name ?? ''
   );
@@ -3417,6 +3431,32 @@ export function InternalChatRoomScreen() {
   }, [conversationId, openConversation]);
 
   useEffect(() => {
+    pendingScrollToBottomRef.current = true;
+    scrollOffsetRef.current = 0;
+    contentHeightRef.current = 0;
+    loadingOlderRef.current = false;
+    isNearBottomRef.current = true;
+    previousMessagesLengthRef.current = 0;
+    preserveScrollOnPrependRef.current = null;
+    setLoadingOlderMessages(false);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      previousMessagesLengthRef.current = 0;
+      return;
+    }
+
+    const previousLength = previousMessagesLengthRef.current;
+    previousMessagesLengthRef.current = messages.length;
+
+    if (preserveScrollOnPrependRef.current) return;
+    if (previousLength === 0 || isNearBottomRef.current) {
+      pendingScrollToBottomRef.current = true;
+    }
+  }, [messages.length]);
+
+  useEffect(() => {
     let cancelled = false;
     void getPermissions().then((permissions) => {
       if (cancelled) return;
@@ -3577,11 +3617,59 @@ export function InternalChatRoomScreen() {
       recording || isRecordingPaused || recorderState.isRecording;
   }, [isRecordingPaused, recorderState.isRecording, recording]);
 
-  const scrollToEnd = useCallback(() => {
+  const scrollToEnd = useCallback((animated = true, retries = 6) => {
+    pendingScrollToBottomRef.current = true;
+
+    const attempt = (remaining: number) => {
+      if (!pendingScrollToBottomRef.current) return;
+
+      listRef.current?.scrollToEnd({
+        animated: remaining === retries ? animated : false,
+      });
+
+      if (remaining <= 0) {
+        pendingScrollToBottomRef.current = false;
+        isNearBottomRef.current = true;
+        scrollOffsetRef.current = Math.max(0, contentHeightRef.current);
+        return;
+      }
+
+      setTimeout(() => {
+        attempt(remaining - 1);
+      }, 80);
+    };
+
     requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd({ animated: true });
+      attempt(retries);
     });
   }, []);
+
+  const handleMessagesContentSizeChange = useCallback(
+    (_width: number, height: number) => {
+      contentHeightRef.current = height;
+
+      const preserveData = preserveScrollOnPrependRef.current;
+      if (preserveData && height >= preserveData.previousContentHeight) {
+        const delta = height - preserveData.previousContentHeight;
+        const targetOffset = Math.max(0, preserveData.previousOffset + delta);
+        preserveScrollOnPrependRef.current = null;
+
+        requestAnimationFrame(() => {
+          listRef.current?.scrollToOffset({
+            offset: targetOffset,
+            animated: false,
+          });
+          scrollOffsetRef.current = targetOffset;
+        });
+        return;
+      }
+
+      if (pendingScrollToBottomRef.current && !loadingOlderMessages) {
+        scrollToEnd(false);
+      }
+    },
+    [loadingOlderMessages, scrollToEnd]
+  );
 
   const sendText = useCallback(async () => {
     const text = composerText.trim();
@@ -4336,19 +4424,62 @@ export function InternalChatRoomScreen() {
     ]
   );
 
-  const loadOlder = useCallback(() => {
+  const loadOlder = useCallback(async () => {
     if (
       loadingMessages ||
+      loadingOlderRef.current ||
+      messages.length === 0 ||
       !paging ||
       paging.current_page >= paging.total_pages
     ) {
       return;
     }
-    void loadMessages(conversationId, {
-      page: paging.current_page + 1,
-      append: true,
-    });
-  }, [conversationId, loadMessages, loadingMessages, paging]);
+
+    loadingOlderRef.current = true;
+    setLoadingOlderMessages(true);
+    preserveScrollOnPrependRef.current = {
+      previousOffset: scrollOffsetRef.current,
+      previousContentHeight: contentHeightRef.current,
+    };
+
+    try {
+      const loaded = await loadMessages(conversationId, {
+        page: paging.current_page + 1,
+        append: true,
+      });
+      if (loaded.length === 0) {
+        preserveScrollOnPrependRef.current = null;
+      }
+    } catch {
+      preserveScrollOnPrependRef.current = null;
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlderMessages(false);
+    }
+  }, [conversationId, loadMessages, loadingMessages, messages.length, paging]);
+
+  const handleMessagesScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = Math.max(0, event.nativeEvent.contentOffset.y);
+      const viewportHeight = event.nativeEvent.layoutMeasurement.height;
+      const contentHeight =
+        event.nativeEvent.contentSize.height || contentHeightRef.current;
+      const distanceFromBottom = Math.max(
+        0,
+        contentHeight - (offsetY + viewportHeight)
+      );
+
+      scrollOffsetRef.current = offsetY;
+      isNearBottomRef.current =
+        distanceFromBottom <= SHOW_SCROLL_TO_BOTTOM_THRESHOLD;
+
+      if (pendingScrollToBottomRef.current) return;
+      if (offsetY <= LOAD_OLDER_SCROLL_THRESHOLD) {
+        void loadOlder();
+      }
+    },
+    [loadOlder]
+  );
 
   const handleAction = useCallback(
     async (action: string) => {
@@ -4643,25 +4774,29 @@ export function InternalChatRoomScreen() {
       {initialMessagesLoading ? (
         <InternalChatRoomSkeleton />
       ) : (
-        <FlatList
-          ref={listRef}
-          data={messages}
-          keyExtractor={(item) => item.message_id}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.messagesContent}
-          onContentSizeChange={scrollToEnd}
-          ListHeaderComponent={
-            paging && paging.current_page < paging.total_pages ? (
-              loadingMessages ? (
-                <InternalChatRoomSkeleton compact />
-              ) : (
-                <Pressable style={styles.loadOlderBtn} onPress={loadOlder}>
-                  <Text style={styles.loadOlderText}>Carregar anteriores</Text>
-                </Pressable>
-              )
-            ) : null
-          }
-        />
+        <View style={styles.messagesListWrap}>
+          <FlatList
+            ref={listRef}
+            data={messages}
+            keyExtractor={(item) => item.message_id}
+            renderItem={renderMessage}
+            style={styles.messagesList}
+            contentContainerStyle={styles.messagesContent}
+            onScroll={handleMessagesScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={handleMessagesContentSizeChange}
+          />
+          {loadingOlderMessages ? (
+            <View pointerEvents="none" style={styles.loadingOlderTopWrap}>
+              <View style={styles.loadingOlderTopChip}>
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+                <Text style={styles.loadingOlderTopText}>
+                  Carregando mensagens
+                </Text>
+              </View>
+            </View>
+          ) : null}
+        </View>
       )}
 
       {replyTo || editingMessage ? (
@@ -5778,6 +5913,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  messagesListWrap: {
+    flex: 1,
+    position: 'relative',
+  },
+  messagesList: {
+    flex: 1,
+  },
   messagesContent: {
     paddingHorizontal: 10,
     paddingVertical: 12,
@@ -5843,20 +5985,33 @@ const styles = StyleSheet.create({
     width: 80,
     marginBottom: 0,
   },
-  loadOlderBtn: {
-    alignSelf: 'center',
-    minHeight: 34,
-    paddingHorizontal: 14,
-    borderRadius: 17,
-    backgroundColor: colors.surface,
+  loadingOlderTopWrap: {
+    position: 'absolute',
+    top: 8,
+    left: 0,
+    right: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    zIndex: 20,
   },
-  loadOlderText: {
-    color: colors.primary,
-    fontWeight: '800',
+  loadingOlderTopChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: colors.primary,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  loadingOlderTopText: {
     fontSize: 12,
+    fontWeight: '600',
+    color: colors.onPrimary,
   },
   dateSeparator: {
     alignSelf: 'center',
